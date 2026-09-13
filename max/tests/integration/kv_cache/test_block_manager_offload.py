@@ -277,6 +277,11 @@ class _FakeKVMemory:
         self._recorder.on_batch_copy = fn
 
 
+def _leaf_id(unit_idx: int) -> str:
+    """The pool leaf the fake unit at ``unit_idx`` stands in for."""
+    return f"leaf{unit_idx}"
+
+
 def _make_block_manager(
     *,
     num_replicas: int = 1,
@@ -294,17 +299,19 @@ def _make_block_manager(
     # unit carries every TP shard, so a quantized cache is two units over the
     # same devices (e.g. ((0,1),(0,1))) whether it is MLA-replicated or sharded;
     # a single-kind cache is one unit (e.g. ((0,1),)).
-    replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None
+    replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]] | None = None
     if num_replicas > 1:
         recorder = _BatchCopyRecorder()
         fakes = [
-            [
-                _FakeKVMemory(device_ids=device_ids, recorder=recorder)
-                for device_ids in unit_device_ids
-            ]
+            {
+                _leaf_id(unit_idx): _FakeKVMemory(
+                    device_ids=device_ids, recorder=recorder
+                )
+                for unit_idx, device_ids in enumerate(unit_device_ids)
+            }
             for _ in range(num_replicas)
         ]
-        replica_kv_memory = cast("Sequence[Sequence[KVCacheMemory]]", fakes)
+        replica_kv_memory = cast("Sequence[Mapping[str, KVCacheMemory]]", fakes)
     bm = BlockManager(
         total_num_blocks=64,
         block_size=16,
@@ -542,7 +549,7 @@ def test_cross_replica_hit_issues_a_single_batched_copy() -> None:
     local_cache = bm.device_block_pools[0].prefix_cache
     visible_during_batch: list[bool] = []
     assert bm._replica_kv_memory is not None
-    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][0])
+    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][_leaf_id(0)])
 
     def _snapshot_local_visibility() -> None:
         visible_during_batch.append(any(h in local_cache for h in hashes))
@@ -585,7 +592,7 @@ def test_cross_replica_hit_merges_units_into_one_submit() -> None:
     visible_during_batch: list[bool] = []
     assert bm._replica_kv_memory is not None
     # Units in a replica share one recorder; either unit surfaces the totals.
-    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][0])
+    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][_leaf_id(0)])
 
     def _snapshot_local_visibility() -> None:
         visible_during_batch.append(any(h in local_cache for h in hashes))
@@ -626,7 +633,7 @@ def test_cross_replica_hit_covers_every_device_in_one_submit() -> None:
     _commit_device_block(bm.device_block_pools[1], 222)
 
     assert bm._replica_kv_memory is not None
-    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][0])
+    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][_leaf_id(0)])
 
     served, _, _ = bm.get_full_blocks_from_prefix_cache(
         _make_ctx(bm, rid, replica_idx=0)
@@ -669,7 +676,8 @@ def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:
     assert bm.metrics.cross_replica_blocks_copied == 0
     assert bm._replica_kv_memory is not None
     for units in bm._replica_kv_memory:
-        assert cast(_FakeKVMemory, units[0]).copies == []  # no D2D issued
+        # No device-to-device copy was issued.
+        assert cast(_FakeKVMemory, units[_leaf_id(0)]).copies == []
 
 
 def test_cross_replica_copy_disabled_count_is_local_only() -> None:

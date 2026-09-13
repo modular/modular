@@ -3479,7 +3479,14 @@ struct Grouped1D1DMatmulKernel[
                 # to match `tile_writer`'s cast width and stay byte-
                 # identical with the standalone-matmul BF16 GMEM output.
                 comptime SIMD_CAST_W = 2
-                comptime _n_pairs = rep_frag_size // SIMD_CAST_W
+                # `r0 * 4` already selects repeat r0's 4-element slice, so
+                # `_off` must span [0, 4) -- ONE repeat -- not the whole
+                # `rep_frag_size = 4 * repeats` fragment. The old form was
+                # correct only by coincidence at repeats == 1 (shipping
+                # decode, stageN == 8); at repeats == 2 it indexed to 11 in
+                # an 8-element Array and scaled each element `repeats` times.
+                # PROVABLY a no-op at repeats == 1: index set {0,1,2,3}.
+                comptime _n_pairs = 4 // SIMD_CAST_W
                 comptime for r0 in range(repeats):
                     comptime for _pair in range(_n_pairs):
                         comptime _off = _pair * SIMD_CAST_W

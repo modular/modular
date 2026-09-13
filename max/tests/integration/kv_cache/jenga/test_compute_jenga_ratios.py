@@ -25,7 +25,12 @@ unrelated geometry into the shared pool would cost.
 
 from __future__ import annotations
 
+import importlib
+from collections.abc import Callable, Iterator
+from types import ModuleType
+
 import pytest
+from max.pipelines.kv_cache.paged_kv_cache import jenga_block_pool
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     JengaGeometry,
     compute_jenga_ratios,
@@ -369,7 +374,9 @@ def test_vision_encoder_stops_exploding_the_huge_block() -> None:
         "vision/values": mha_row_bytes(16, 1152 // 16),
     }
     _, exact_huge_page, _ = compute_jenga_ratios(120 * GIB, cache_sizes)
-    geometry = plan_jenga_geometry(120 * GIB, cache_sizes, row_sizes)
+    geometry = plan_jenga_geometry(
+        120 * GIB, cache_sizes, row_sizes, max_padding_fraction=0.25
+    )
 
     assert exact_huge_page == 24300 * MIB
     # Three orders of magnitude off the exact block, and the block count goes
@@ -412,7 +419,9 @@ def test_v4_pro_seven_leaf_geometry() -> None:
     with pytest.raises(ValueError, match="too small to build a pool"):
         compute_jenga_ratios(100 * GIB, cache_sizes)
 
-    geometry = plan_jenga_geometry(100 * GIB, cache_sizes, row_sizes)
+    geometry = plan_jenga_geometry(
+        100 * GIB, cache_sizes, row_sizes, max_padding_fraction=0.25
+    )
     assert geometry.huge_page_bytes <= 128 * MIB
     assert geometry.num_huge_blocks > 2000
     check_row_aligned_and_tiling(geometry, row_sizes)
@@ -442,3 +451,96 @@ def test_padded_invalid_arguments() -> None:
         plan_jenga_geometry(0, {"values": page}, {"values": row})
     with pytest.raises(ValueError, match="too small to build a pool"):
         plan_jenga_geometry(page, {"values": page}, {"values": row})
+
+
+def gated_delta_state_bytes(
+    num_layers: int, num_value_heads: int = 48, dtype_bytes: int = BF16
+) -> tuple[dict[str, int], dict[str, int]]:
+    """One request's Gated DeltaNet state leaves: page bytes, then row bytes.
+
+    A state page is one whole state -- the layer count times a row -- so an
+    awkward layer count survives into the huge block whole.
+    """
+    conv_row = (128 * 16 * 2 + 128 * num_value_heads) * 3 * dtype_bytes
+    recurrent_row = num_value_heads * 128 * 128 * dtype_bytes
+    return (
+        {
+            "linear_attn/conv": num_layers * conv_row,
+            "linear_attn/recurrent": num_layers * recurrent_row,
+        },
+        {
+            "linear_attn/conv": conv_row,
+            "linear_attn/recurrent": recurrent_row,
+        },
+    )
+
+
+def test_a_hybrid_ssm_geometry_is_not_padded_by_default() -> None:
+    cache_sizes, row_sizes = gated_delta_state_bytes(48)
+    cache_sizes["full_attention/values"] = mha_page_bytes(61, 4, 144)
+    row_sizes["full_attention/values"] = mha_row_bytes(4, 144)
+
+    geometry = plan_jenga_geometry(120 * GIB, cache_sizes, row_sizes)
+    assert geometry.padded_sizes == cache_sizes
+    assert all(
+        geometry.padding_fraction(cache_id, size) == 0
+        for cache_id, size in cache_sizes.items()
+    )
+    check_row_aligned_and_tiling(geometry, row_sizes)
+
+    # Allowing padding pads two of the three leaves -- which is exactly what
+    # made the buffers strided -- and buys a much finer allocation quantum.
+    # That trade is the reason the knob exists rather than being hardcoded.
+    padded = plan_jenga_geometry(
+        120 * GIB, cache_sizes, row_sizes, max_padding_fraction=0.25
+    )
+    assert padded.padded_sizes != cache_sizes
+    assert padded.num_huge_blocks > geometry.num_huge_blocks
+
+
+@pytest.fixture
+def reloaded_with_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[Callable[..., ModuleType]]:
+    """Reloads the pool module with env overrides, then restores the default.
+
+    The bounds are read once at import, so an override only lands on a reload.
+    """
+
+    def reload(**env: str) -> ModuleType:
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        return importlib.reload(jenga_block_pool)
+
+    yield reload
+    monkeypatch.undo()
+    importlib.reload(jenga_block_pool)
+
+
+def test_env_vars_override_the_search_bounds(
+    reloaded_with_env: Callable[..., ModuleType],
+) -> None:
+    module = reloaded_with_env(
+        MODULAR_KV_JENGA_MAX_PADDING_FRACTION="0.25",
+        MODULAR_KV_JENGA_MAX_HUGE_PAGE_BYTES=str(64 * MIB),
+        MODULAR_KV_JENGA_MAX_TILING_RATIO="512",
+    )
+    assert module._MAX_PADDING_FRACTION == 0.25
+    assert module._MAX_HUGE_PAGE_BYTES == 64 * MIB
+    assert module._MAX_TILING_RATIO == 512
+
+
+def test_padding_fraction_env_var_turns_padding_back_on(
+    reloaded_with_env: Callable[..., ModuleType],
+) -> None:
+    cache_sizes, row_sizes = gated_delta_state_bytes(48)
+    cache_sizes["full_attention/values"] = mha_page_bytes(61, 4, 144)
+    row_sizes["full_attention/values"] = mha_row_bytes(4, 144)
+    assert (
+        plan_jenga_geometry(120 * GIB, cache_sizes, row_sizes).padded_sizes
+        == cache_sizes
+    )
+
+    module = reloaded_with_env(MODULAR_KV_JENGA_MAX_PADDING_FRACTION="0.25")
+    geometry = module.plan_jenga_geometry(120 * GIB, cache_sizes, row_sizes)
+    assert geometry.padded_sizes != cache_sizes

@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -40,6 +40,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVCacheMemory,
+    recurrent_leaf,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -286,6 +287,14 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
+        if recurrent_leaf(params) is not None:
+            # A state is drawn from a slab, and this pool hands out flat pages
+            # of one size. ``load_kv_manager`` routes such a cache to Jenga, so
+            # reaching here means a caller built this manager directly.
+            raise ValueError(
+                "PagedKVCacheManager cannot hold a recurrent state leaf; use"
+                " JengaKVCacheManager, whose slab the state shares."
+            )
 
         self.params = params
 
@@ -304,16 +313,9 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             params.allocate_buffers(total_num_pages + 1)
         )
 
-        # Per-replica offload-ready KV memory, keyed by leaf id (each buffer's
-        # `to_memory()` emits one unit per leaf in `params.leaves()` order).
+        # Per-replica offload-ready KV memory, keyed by leaf id.
         replica_kv_memory = [
-            dict(
-                zip(
-                    params.leaves(),
-                    self._kv_buffers[replica_idx].to_memory(),
-                    strict=True,
-                )
-            )
+            self._kv_buffers[replica_idx].to_memory()
             for replica_idx in range(num_replicas)
         ]
 
@@ -343,11 +345,11 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         # request admitted on one replica can reuse a prefix block resident on
         # another replica's GPU via a device-to-device copy (SERVOPT-1500). The
         # block manager needs each replica's device memory to perform the copy.
-        cross_replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None
+        cross_replica_kv_memory: (
+            Sequence[Mapping[str, KVCacheMemory]] | None
+        ) = None
         if num_replicas > 1 and params.enable_prefix_caching:
-            cross_replica_kv_memory = [
-                list(memories.values()) for memories in replica_kv_memory
-            ]
+            cross_replica_kv_memory = replica_kv_memory
 
         # A single block manager owns every replica's device block pool and the
         # single shared connector.

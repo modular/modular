@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from max.driver import Buffer, batch_inplace_copy
@@ -285,7 +285,7 @@ class BlockManager:
         num_replicas: int = 1,
         kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
-        replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None,
+        replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]] | None = None,
         enable_dp_cross_replica_prefix_copy: bool = True,
     ) -> None:
         if num_replicas < 1:
@@ -307,13 +307,12 @@ class BlockManager:
         # to select the device endpoint.
         self.connector = connector
 
-        # Per-replica offload-ready device memory units, used to copy committed
-        # prefix blocks device-to-device between replicas. Required (non-None)
-        # when ``num_replicas > 1`` and prefix caching is on.
-        self._replica_kv_memory: list[list[KVCacheMemory]] | None = (
-            [list(units) for units in replica_kv_memory]
-            if replica_kv_memory is not None
-            else None
+        # Per-replica offload-ready device memory units, keyed by leaf id,
+        # used to copy committed prefix blocks device-to-device between
+        # replicas. Required (non-None) when ``num_replicas > 1`` and prefix
+        # caching is on.
+        self._replica_kv_memory: list[Mapping[str, KVCacheMemory]] | None = (
+            list(replica_kv_memory) if replica_kv_memory is not None else None
         )
 
         # Whether a cross-replica device prefix-cache hit may be served by a
@@ -700,7 +699,8 @@ class BlockManager:
 
         dst_pages: list[Buffer] = []
         src_pages: list[Buffer] = []
-        for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
+        for leaf_id, src_unit in src_units.items():
+            dst_unit = dst_units[leaf_id]
             # Every shard is fanned out with an independent point-to-point copy
             # (no broadcast collective).
             for src_buf, dst_buf in zip(

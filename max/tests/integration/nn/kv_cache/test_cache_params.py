@@ -26,6 +26,7 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     MLAAttnKey,
     MLAKVCacheParams,
+    PagedKVLeafRegion,
 )
 from max.nn.kv_cache.cache_params import (
     SpeculativeMethod as CacheSpeculativeMethod,
@@ -370,6 +371,73 @@ def test_kv_cache_quantization_config() -> None:
     assert params.kvcache_quant_config is not None
     assert params.kvcache_quant_config.quantization_granularity == 64
     assert params.quantized_kv_cache
+
+
+# ==================== slots_per_page Tests ====================
+
+
+def _mla_params(
+    *,
+    slots_per_page: int | None = None,
+    dtype: DType = DType.bfloat16,
+    kvcache_quant_config: KVCacheQuantizationConfig | None = None,
+) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=dtype,
+        head_dim=576,
+        num_layers=4,
+        devices=[DeviceRef.GPU()],
+        page_size=128,
+        num_q_heads=128,
+        slots_per_page=slots_per_page,
+        kvcache_quant_config=kvcache_quant_config,
+    )
+
+
+def test_slots_per_page_defaults_to_page_size() -> None:
+    """Unset, a page stores one slot per token."""
+    params = _mla_params()
+    assert params.slots_per_page == 128
+    assert params.shape_per_block == [1, 4, 128, 1, 576]
+
+
+def test_slots_per_page_sets_the_slot_dimension() -> None:
+    """A compressed cache stores fewer slots than the tokens a page covers."""
+    params = _mla_params(slots_per_page=4)
+    assert params.shape_per_block == [1, 4, 4, 1, 576]
+    assert params.shape_per_layer_block == [1, 1, 4, 1, 576]
+    # The block shrinks with the slot count; the tokens it covers do not.
+    assert params.bytes_per_block == _mla_params().bytes_per_block // 32
+    assert params.page_size == 128
+
+
+def test_slots_per_page_leaves_block_allocation_in_tokens() -> None:
+    """The pool still pages by token: only the leaf's byte footprint moves."""
+    compressed = _mla_params(slots_per_page=4)
+    leaf = compressed.leaves()["full_group"]
+    assert isinstance(leaf, PagedKVLeafRegion)
+    assert leaf.page_size == 128
+    assert leaf.bytes_per_page == compressed.bytes_per_value_block
+
+
+def test_slots_per_page_applies_to_scale_blocks() -> None:
+    """A quantized cache's scales are addressed by the same slots."""
+    params = _mla_params(
+        dtype=DType.float8_e4m3fn,
+        slots_per_page=32,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            quantization_granularity=64
+        ),
+    )
+    assert params.shape_per_scale_block == [1, 4, 32, 1, 576 // 64]
+    assert params.shape_per_layer_scale_block[2] == 32
+
+
+@pytest.mark.parametrize("slots_per_page", [48, 256, 0, -4])
+def test_slots_per_page_must_divide_page_size(slots_per_page: int) -> None:
+    """A page that would end mid-slot is rejected at construction."""
+    with pytest.raises(ValueError, match="must be a positive divisor"):
+        _mla_params(slots_per_page=slots_per_page)
 
 
 # ==================== AttnKey Tests ====================

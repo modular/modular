@@ -400,9 +400,9 @@ def _layout_fields(
     :class:`MultiKVCacheParams` tree contributes a ``multi`` marker, its child
     count, and each child's fields recursively, prefixed by the child's index
     and name in the tree's insertion order. That order is deterministic for a
-    fixed model config and matches the ``to_memory()`` unit order the
-    concatenated block (and thus ``unit_strides``) follows, so folding the index
-    and name makes any child add/remove/reorder flip the fingerprint.
+    fixed model config and matches the declared leaf order the concatenated
+    block (and thus ``unit_strides``) follows, so folding the index and name
+    makes any child add/remove/reorder flip the fingerprint.
 
     Excludes the contract version and the concatenated ``unit_strides``, which
     :func:`_kv_config_hash` owns at the top level so a multi-cache tree folds
@@ -470,8 +470,8 @@ def _kv_config_hash(
       (speculative draft+target, quantized values+scales), a ``multi`` marker
       plus each child's fields folded recursively under its index and name.
     * ``unit_strides`` — comma-joined per-page byte stride of one shard's
-      buffer units in canonical ``to_memory()`` order (values, quant scales,
-      indexer, draft, and so on), derived by :func:`_shard_unit_strides`. A
+      buffer units in declared leaf order (values, quant scales, indexer,
+      draft, and so on), derived by :func:`_shard_unit_strides`. A
       shard's dKV block is these strides concatenated across the WHOLE cache
       tree, so any change to the unit set or its ordering makes stored blocks
       byte-incompatible and must flip the hash. Folding one shard's subsequence
@@ -972,7 +972,7 @@ class DKVConnector(KVConnector):
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
     ) -> object:
-        # Group the to_memory() units into one (device_id, units) entry
+        # Group the per-leaf units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
         # this order, into one dKV block, so a quantized cache's scale buffers
         # and a multi-cache buffer's extra caches (speculative draft and
@@ -1001,8 +1001,8 @@ class DKVConnector(KVConnector):
         # seq_hash)`` key, so its shard ids must line up with ours by device
         # rank. ``expected_devices`` is the replica's device order sourced from
         # the pipeline config, so comparing it against the shard order the
-        # grouping derived catches a future ``to_memory`` change that reorders
-        # buffers before it silently shifts every key.
+        # grouping derived catches a future change that reorders buffers
+        # before it silently shifts every key.
         registered_order = [device_id for device_id, _ in shards]
         expected_order = [device.id for device in expected_devices]
         if registered_order != expected_order:

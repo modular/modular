@@ -278,18 +278,8 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         groups = create_groups(leaf_infos, pools, params.page_size)
 
         # A single connector serves every replica; each load/offload passes
-        # the replica_idx that selects the device endpoint. A row-addressed
-        # leaf allocates no buffer, so `to_memory()` emits nothing for it and
-        # the strict zip below only lines up over the paged leaves.
-        offloadable_leaves = [
-            leaf_id
-            for leaf_id, leaf in leaves.items()
-            if not leaf.group_id.is_recurrent()
-        ]
-        replica_kv_memory = [
-            dict(zip(offloadable_leaves, buf.to_memory(), strict=True))
-            for buf in kv_buffers
-        ]
+        # the replica_idx that selects the device endpoint.
+        replica_kv_memory = [buf.to_memory() for buf in kv_buffers]
         connector = create_connector(
             leaves={leaf_id: leaf.group_id for leaf_id, leaf in leaves.items()},
             devices=devices,

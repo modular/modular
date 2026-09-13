@@ -368,6 +368,11 @@ def contiguous_page_view_and_stride(
     )
 
 
+def _scales_leaf_id(leaf_id: str) -> str:
+    """Returns the id of the leaf holding ``leaf_id``'s quantization scales."""
+    return leaf_id + "/scales"
+
+
 def _view_as_uint8_pages(buffer: Buffer) -> Buffer:
     """Re-view a KV buffer as a 2-D ``[num_pages, bytes_per_page]`` uint8 array.
 
@@ -457,8 +462,8 @@ class KVCacheBufferInterface(Protocol):
         """Returns all buffers."""
         ...
 
-    def to_memory(self) -> list[KVCacheMemory]:
-        """Returns the offload-ready KV cache memory units, one per leaf kind."""
+    def to_memory(self) -> Mapping[str, KVCacheMemory]:
+        """Returns the offload-ready memory units, keyed by pool leaf id."""
         ...
 
 
@@ -487,15 +492,18 @@ class MultiKVCacheBuffer(KVCacheBufferInterface):
             bufs.extend(child.all_buffers)
         return bufs
 
-    def to_memory(self) -> list[KVCacheMemory]:
+    def to_memory(self) -> Mapping[str, KVCacheMemory]:
         """Returns the offload-ready memory units for all children.
 
-        Aggregated child-major, so a nested tree yields one unit per leaf cache
-        per kind.
+        Raises:
+            ValueError: If two children claim the same leaf.
         """
-        memories: list[KVCacheMemory] = []
+        memories: dict[str, KVCacheMemory] = {}
         for child in self.children.values():
-            memories.extend(child.to_memory())
+            for leaf_id, memory in child.to_memory().items():
+                if leaf_id in memories:
+                    raise ValueError(f"Duplicate cache leaf {leaf_id!r}")
+                memories[leaf_id] = memory
         return memories
 
 
@@ -511,6 +519,9 @@ class KVCacheBuffer(KVCacheBufferInterface):
     identically across TP shards and ``False`` when it is sharded. The data is
     replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
     """
+
+    leaf_id: str = field(kw_only=True)
+    """The pool leaf these pages belong to, as ``leaves()`` names it."""
 
     replicates_kv_across_tp: bool
     values: list[Buffer]
@@ -657,8 +668,8 @@ class KVCacheBuffer(KVCacheBufferInterface):
             *(self.scales if self.scales is not None else []),
         ]
 
-    def to_memory(self) -> list[KVCacheMemory]:
-        """Converts to offload-ready memory units, one per buffer kind.
+    def to_memory(self) -> Mapping[str, KVCacheMemory]:
+        """Converts to offload-ready memory units, keyed by pool leaf id.
 
         Every buffer is re-viewed as 2-D ``uint8`` pages so consumers can treat
         all caches uniformly regardless of dtype or shape.
@@ -668,20 +679,51 @@ class KVCacheBuffer(KVCacheBufferInterface):
         ``per_layer_buffers`` alongside off-device connectors and DP > 1.
 
         Returns:
-            One :class:`KVCacheMemory` per kind (values, and scales if present).
+            This cache's values leaf, plus its scales leaf when quantized.
         """
-        memories: list[KVCacheMemory] = []
-        shard_lists: list[list[Buffer]] = [self.values]
+        shards_by_leaf: dict[str, list[Buffer]] = {self.leaf_id: self.values}
         if self.scales is not None:
-            shard_lists.append(self.scales)
-        for shards in shard_lists:
-            memories.append(
-                KVCacheMemory(
-                    replicated=self.replicates_kv_across_tp,
-                    buffers=[_view_as_uint8_pages(b) for b in shards],
-                )
+            shards_by_leaf[_scales_leaf_id(self.leaf_id)] = self.scales
+        return {
+            leaf_id: KVCacheMemory(
+                replicated=self.replicates_kv_across_tp,
+                buffers=[_view_as_uint8_pages(b) for b in shards],
             )
-        return memories
+            for leaf_id, shards in shards_by_leaf.items()
+        }
+
+
+@dataclass
+class RecurrentStateBuffer(KVCacheBufferInterface):
+    """One replica's recurrent state pool, viewed as the pages it holds."""
+
+    pages: dict[str, list[Buffer]]
+    """Each state leaf's ``[num_blocks, bytes_per_state]`` uint8 pages, one
+    buffer per device."""
+
+    def __post_init__(self) -> None:
+        if not self.pages:
+            raise ValueError("RecurrentStateBuffer needs at least one leaf")
+        for leaf_id, buffers in self.pages.items():
+            if not buffers:
+                raise ValueError(f"state leaf {leaf_id!r} has no device pages")
+
+    @property
+    def total_num_pages(self) -> int:
+        """Returns the first leaf's block count, including the null block."""
+        return next(iter(self.pages.values()))[0].shape[0]
+
+    @property
+    def all_buffers(self) -> list[Buffer]:
+        """Returns every leaf's pages, leaf-major then device order."""
+        return [buffer for buffers in self.pages.values() for buffer in buffers]
+
+    def to_memory(self) -> Mapping[str, KVCacheMemory]:
+        """Returns one unit per state leaf, keyed as ``leaves()`` names it."""
+        return {
+            leaf_id: KVCacheMemory(replicated=False, buffers=list(buffers))
+            for leaf_id, buffers in self.pages.items()
+        }
 
 
 @dataclass
@@ -967,11 +1009,15 @@ class CacheLeafParamInterface(Protocol):
         ...
 
     def allocate_buffers(
-        self, total_num_pages: int
+        self, total_num_pages: int, _prefix: str = ""
     ) -> Sequence[KVCacheBufferInterface]:
         """Allocates the buffers for the cache, one per replica.
 
         Empty for a cache with no buffer an op indexes.
+
+        Args:
+            total_num_pages: Pages the pool holds, including the null block.
+            _prefix: Names the buffers' leaves the way :meth:`leaves` does.
         """
         ...
 
@@ -985,6 +1031,21 @@ class CacheLeafParamInterface(Protocol):
 
         Args:
             slabs: One replica's slab per device.
+        """
+        ...
+
+    def slab_to_buffer_views(
+        self,
+        buffers: Sequence[Buffer],
+        padded_page_bytes: Mapping[str, int] | None = None,
+        _prefix: str = "",
+    ) -> KVCacheBufferInterface:
+        """Converts one replica's slabs into the pages its leaves occupy.
+
+        Args:
+            buffers: One replica's slab per device.
+            padded_page_bytes: Each padded leaf's page stride, or ``None``.
+            _prefix: Names the views' leaves the way :meth:`leaves` does.
         """
         ...
 
@@ -1082,15 +1143,6 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
         """
         ...
 
-    def slab_to_buffer_views(
-        self,
-        buffers: Sequence[Buffer],
-        padded_page_bytes: Mapping[str, int] | None = None,
-        _prefix: str = "",
-    ) -> KVCacheBufferInterface:
-        """Converts a slab of memory into a buffer view."""
-        ...
-
 
 @dataclass
 class KVCacheParams(KVCacheParamInterface):
@@ -1156,6 +1208,22 @@ class KVCacheParams(KVCacheParamInterface):
     Current constraints: the page size must be a multiple of 128 and at least 128.
     """
 
+    slots_per_page: int | None = None
+    """Number of storage slots a page holds, which may be fewer than the
+    :attr:`page_size` tokens it covers.
+
+    ``None`` (the default) means one slot per token; construction resolves it
+    to ``page_size``, so every later reader sees an ``int``. An architecture
+    whose attention compresses a run of tokens into a single cached entry -- a
+    pooled key, a compressed latent -- sets this to the number of entries a
+    page's tokens compress into, and gets a page that many slots deep instead.
+    It must divide :attr:`page_size` evenly, so a page never ends mid-slot.
+
+    Only the physical buffer shape and the kernels reading it are affected:
+    block allocation, the page table and prefix caching stay in tokens, and a
+    block still covers ``page_size`` of them.
+    """
+
     data_parallel_degree: int = 1
     """Degree of data parallelism. Devices are grouped replica-major, with
     ``n_devices // data_parallel_degree`` TP shards per replica."""
@@ -1199,6 +1267,17 @@ class KVCacheParams(KVCacheParamInterface):
                 f"Number of devices ({self.n_devices}) must be divisible by"
                 " data parallelism degree"
                 f" ({self.data_parallel_degree})"
+            )
+
+        if self.slots_per_page is None:
+            self.slots_per_page = self.page_size
+        if (
+            self.slots_per_page <= 0
+            or self.page_size % self.slots_per_page != 0
+        ):
+            raise ValueError(
+                f"Slots per page ({self.slots_per_page}) must be a positive"
+                f" divisor of the page size ({self.page_size})."
             )
 
         # Validate connector configuration
@@ -1347,16 +1426,21 @@ class KVCacheParams(KVCacheParamInterface):
     def shape_per_block(self) -> list[int]:
         """Returns the shape of each cache block.
 
+        The slot dimension is :attr:`slots_per_page`, which equals
+        :attr:`page_size` unless the architecture stores a page's tokens
+        compressed.
+
         Returns:
             The shape of the cache block.
         """
+        assert self.slots_per_page is not None
         # split k and v caches across a single dim
         # 0 = key
         # 1 = value
         return [
             self.kv_dim,
             self.num_layers,
-            self.page_size,
+            self.slots_per_page,
             self.n_kv_heads_per_device,
             self.head_dim,
         ]
@@ -1372,10 +1456,8 @@ class KVCacheParams(KVCacheParamInterface):
         single-layer buffer (``num_layers == 1``) with ``layer_idx == 0`` is
         self-consistent.
         """
-        kv_dim, _num_layers, page_size, n_kv_heads, head_dim = (
-            self.shape_per_block
-        )
-        return [kv_dim, 1, page_size, n_kv_heads, head_dim]
+        kv_dim, _num_layers, slots, n_kv_heads, head_dim = self.shape_per_block
+        return [kv_dim, 1, slots, n_kv_heads, head_dim]
 
     @property
     def shape_per_scale_block(self) -> list[int]:
@@ -1494,7 +1576,9 @@ class KVCacheParams(KVCacheParamInterface):
         """Unflattens the KV cache inputs from a graph-input iterator."""
         return self.get_symbolic_inputs().unflatten(it)
 
-    def allocate_buffers(self, total_num_pages: int) -> list[KVCacheBuffer]:
+    def allocate_buffers(
+        self, total_num_pages: int, _prefix: str = ""
+    ) -> list[KVCacheBuffer]:
         """Allocates the buffers for the KV cache."""
         if self.per_layer_buffers:
             # Validate the per-layer configuration before materializing any
@@ -1603,6 +1687,7 @@ class KVCacheParams(KVCacheParamInterface):
                         scales.append(scale)
 
             kv_cache_buffer = KVCacheBuffer(
+                leaf_id=self.leaf_id(_prefix),
                 values=values,
                 scales=scales,
                 replicates_kv_across_tp=self.replicates_kv_across_tp,
@@ -1673,12 +1758,12 @@ class KVCacheParams(KVCacheParamInterface):
                 )
             ):
                 device = blocks.device
-                lut = luts[_prefix + str(self.group_id)]
+                lut = luts[buffer.leaf_id]
                 kv_scales = (
                     buffer.scales[i] if buffer.scales is not None else None
                 )
                 scales_lut = (
-                    luts[_prefix + str(self.group_id) + "/scales"]
+                    luts[_scales_leaf_id(buffer.leaf_id)]
                     if buffer.scales is not None
                     else None
                 )
@@ -1741,11 +1826,16 @@ class KVCacheParams(KVCacheParamInterface):
         else:
             return KVCacheGroupId(type="full")
 
+    def leaf_id(self, _prefix: str = "") -> str:
+        """Returns the id this cache's pages are pooled under."""
+        return _prefix + str(self.group_id)
+
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns the leaves of the KV cache."""
+        leaf_id = self.leaf_id(_prefix)
         leaves = {
-            _prefix + str(self.group_id): PagedKVLeafRegion(
-                leaf_id=_prefix + str(self.group_id),
+            leaf_id: PagedKVLeafRegion(
+                leaf_id=leaf_id,
                 group_id=self.group_id,
                 bytes_per_page=self.bytes_per_value_block,
                 row_bytes=self.row_bytes,
@@ -1754,16 +1844,14 @@ class KVCacheParams(KVCacheParamInterface):
         }
 
         if self.quantized_kv_cache:
-            leaves[_prefix + str(self.group_id) + "/scales"] = (
-                PagedKVLeafRegion(
-                    leaf_id=_prefix + str(self.group_id) + "/scales",
-                    group_id=self.group_id,
-                    bytes_per_page=self.bytes_per_scale_block,
-                    row_bytes=math.lcm(
-                        self.scale_row_bytes, _SCALE_TMA_ALIGN_BYTES
-                    ),
-                    page_size=self.page_size,
-                )
+            leaves[_scales_leaf_id(leaf_id)] = PagedKVLeafRegion(
+                leaf_id=_scales_leaf_id(leaf_id),
+                group_id=self.group_id,
+                bytes_per_page=self.bytes_per_scale_block,
+                row_bytes=math.lcm(
+                    self.scale_row_bytes, _SCALE_TMA_ALIGN_BYTES
+                ),
+                page_size=self.page_size,
             )
 
         return leaves
@@ -1797,8 +1885,8 @@ class KVCacheParams(KVCacheParamInterface):
         """
         padded = padded_page_bytes or {}
         quant_config = self.kvcache_quant_config
-        values_id = _prefix + str(self.group_id)
-        scales_id = values_id + "/scales"
+        values_id = self.leaf_id(_prefix)
+        scales_id = _scales_leaf_id(values_id)
         quantized = self.quantized_kv_cache and quant_config is not None
 
         def views(
@@ -1827,6 +1915,7 @@ class KVCacheParams(KVCacheParamInterface):
             else (None, None)
         )
         return KVCacheBuffer(
+            leaf_id=values_id,
             replicates_kv_across_tp=self.replicates_kv_across_tp,
             values=values,
             values_packed=values_packed,
@@ -2421,10 +2510,33 @@ class RecurrentStateParams(CacheLeafParamInterface):
         return 0
 
     def allocate_buffers(
-        self, total_num_pages: int
+        self, total_num_pages: int, _prefix: str = ""
     ) -> list[KVCacheBufferInterface]:
-        """Returns nothing: a state is addressed by row rather than by page."""
+        """Returns nothing: a state draws from a slab it does not allocate."""
         return []
+
+    def slab_to_buffer_views(
+        self,
+        buffers: Sequence[Buffer],
+        padded_page_bytes: Mapping[str, int] | None = None,
+        _prefix: str = "",
+    ) -> KVCacheBufferInterface:
+        """Returns each leaf's pages, one state per page."""
+        padded = padded_page_bytes or {}
+        return RecurrentStateBuffer(
+            pages={
+                region.leaf_id: [
+                    page_view(
+                        slab,
+                        (region.bytes_per_state,),
+                        DType.uint8,
+                        padded.get(region.leaf_id),
+                    )
+                    for slab in buffers
+                ]
+                for region in self.regions
+            }
+        )
 
     def get_symbolic_inputs(
         self, namespace: str = ""
@@ -2844,7 +2956,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         return sorted(lengths)
 
     def allocate_buffers(
-        self, total_num_pages: int
+        self, total_num_pages: int, _prefix: str = ""
     ) -> list[KVCacheBufferInterface]:
         """Allocates per-replica buffers for every cache in the tree.
 
@@ -2853,7 +2965,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         that allocates one.
         """
         per_key = {
-            k: p.allocate_buffers(total_num_pages)
+            k: p.allocate_buffers(total_num_pages, _prefix + k + ".")
             for k, p in self.children.items()
         }
         return [
@@ -2929,16 +3041,13 @@ class MultiKVCacheParams(KVCacheParamInterface):
         padded_page_bytes: Mapping[str, int] | None = None,
         _prefix: str = "",
     ) -> KVCacheBufferInterface:
-        """Converts a slab of memory into a buffer view.
-
-        Only the attention children have pages to view.
-        """
+        """Converts a slab of memory into every child's view of it."""
         return MultiKVCacheBuffer(
             children={
                 child_id: child.slab_to_buffer_views(
                     buffers, padded_page_bytes, _prefix + child_id + "."
                 )
-                for child_id, child in self._attention_children.items()
+                for child_id, child in self.children.items()
             },
         )
 
