@@ -589,8 +589,16 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 
   // Local control flow ops.
   if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, ParamForBreakOp,
-          ParamForContinueOp>(op))
+          ParamForContinueOp, HLCF::MatchNextOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
+
+  // Match complete exits the enclosing match (like yield) and may produce
+  // match results via its operands.
+  if (isa<HLCF::MatchCompleteOp>(op)) {
+    for (Value o : op.getOperands())
+      operands.push_back({o, OperandEffect::regConsume});
+    return OverallOpValueEffect::localControlFlowOp;
+  }
 
   // If-like operations.
   if (isa<ParamIfOp, HLCF::IfOp>(op)) {
@@ -613,6 +621,16 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
       results.push_back(resultEffect);
     }
     return OverallOpValueEffect::elifOp;
+  }
+
+  if (isa<HLCF::MatchOp>(op)) {
+    for (auto opResult : op.getResults()) {
+      auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
+                              ? ResultEffect::ignore
+                              : ResultEffect::regDefine;
+      results.push_back(resultEffect);
+    }
+    return OverallOpValueEffect::matchOp;
   }
 
   /// This is HLCF::LoopOp.

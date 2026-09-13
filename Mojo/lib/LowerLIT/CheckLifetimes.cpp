@@ -19,6 +19,7 @@
 #include "Mojo/ToolCommon/KGENPasses.h"
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
+#include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -68,6 +69,26 @@ struct RaiseSetEntry {
     while (matchingSet && matchingSet->label != label)
       matchingSet = matchingSet->prev;
     return matchingSet;
+  }
+};
+
+/// Nested `hlcf.match` contexts for `match.next` / `match.complete`. The active
+/// match for a terminator is resolved via `HLCF::getParentNode` (else regions
+/// target an enclosing match), then looked up in this stack.
+template <typename ElementType>
+struct MatchSetEntry {
+  Operation *match;
+  /// Live/consume set merged by `hlcf.match.next` (advance to next case/else).
+  ElementType *nextSet;
+  /// Live/consume set merged by `hlcf.match.complete` (exit the match).
+  ElementType *completeSet;
+  MatchSetEntry *prev;
+
+  MatchSetEntry *getMatching(Operation *matchOp) {
+    for (MatchSetEntry *entry = this; entry; entry = entry->prev)
+      if (entry->match == matchOp)
+        return entry;
+    return nullptr;
   }
 };
 } // namespace
@@ -2138,6 +2159,7 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
   void checkElIfOp(HLCF::ElifOp op);
+  void checkMatchOp(HLCF::MatchOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -2174,6 +2196,9 @@ private:
   /// When analyzing the body of a try, this stack indicates what a
   /// 'raise' should intersect with. It is indexed with a raise label.
   RaiseSetEntry<TrackedAndInteriorLiveness> *raiseEntryInfo = nullptr;
+  /// When analyzing cases of a match, this stack indicates what
+  /// `match.next` / `match.complete` should intersect with.
+  MatchSetEntry<TrackedAndInteriorLiveness> *matchEntryInfo = nullptr;
 };
 } // namespace
 
@@ -3049,6 +3074,9 @@ void UninitializedValueScan::scanBlock(Block &block) {
         checkElIfOp(elifOp);
       break;
     }
+    case OverallOpValueEffect::matchOp:
+      checkMatchOp(cast<HLCF::MatchOp>(op));
+      break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
       break;
@@ -3143,8 +3171,9 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, which all
-/// perform local control flow.
+/// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp,
+/// HLCF::MatchNextOp, HLCF::MatchCompleteOp, which all perform local control
+/// flow.
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
@@ -3152,6 +3181,19 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   } else if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     continueSet->mergeWith(liveness, valueSet.domInfo);
+  } else if (isa<HLCF::MatchNextOp, HLCF::MatchCompleteOp>(op)) {
+    auto *match = HLCF::getParentNode(cast<HLCF::ControlFlowTerminator>(op));
+    assert(match && "match next/complete without enclosing match?");
+    MatchSetEntry<TrackedAndInteriorLiveness> *entry =
+        matchEntryInfo ? matchEntryInfo->getMatching(match) : nullptr;
+    assert(entry && "match next/complete without active match scan?");
+    if (isa<HLCF::MatchNextOp>(op)) {
+      assert(entry->nextSet && "match.next without a next-case set?");
+      entry->nextSet->mergeWith(liveness, valueSet.domInfo);
+    } else {
+      assert(entry->completeSet && "match.complete without a complete set?");
+      entry->completeSet->mergeWith(liveness, valueSet.domInfo);
+    }
   } else {
     StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
     RaiseSetEntry<TrackedAndInteriorLiveness> *matchingSet =
@@ -3222,10 +3264,49 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
   liveness.mergeWith(thenLiveOutValues, valueSet.domInfo);
 }
 
+void UninitializedValueScan::checkMatchOp(HLCF::MatchOp op) {
+  // Cases run in order: each `match.next` carries liveness into the next case
+  // (or else). Each `match.complete` contributes to the match live-out. The
+  // else region's yield (or outer next/complete) also contributes to live-out.
+  auto completeLiveOut =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+  TrackedAndInteriorLiveness caseLiveIn = liveness;
+
+  MatchSetEntry<TrackedAndInteriorLiveness> entry = {
+      op.getOperation(),
+      /*nextSet=*/nullptr,
+      &completeLiveOut,
+      matchEntryInfo,
+  };
+  llvm::SaveAndRestore restoreMatchEntry(matchEntryInfo, &entry);
+
+  for (Region &caseRegion : op.getCaseRegions()) {
+    auto nextSet =
+        TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+    entry.nextSet = &nextSet;
+
+    liveness = caseLiveIn;
+    scanBlock(caseRegion.front());
+
+    // Subsequent cases (and eventually else) start from the next-exit state.
+    caseLiveIn = std::move(nextSet);
+  }
+
+  // Else is outside this match's next/complete scope; keep the entry pushed so
+  // next/complete inside else resolve to an enclosing match via getMatching.
+  entry.nextSet = nullptr;
+  liveness = std::move(caseLiveIn);
+  scanBlock(op.getElseRegion().front());
+
+  // Live-out is the intersection of all complete paths and the else path.
+  liveness.mergeWith(completeLiveOut, valueSet.domInfo);
+}
+
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   UninitializedValueScan bodySets(valueSet, interiorOriginTracker);
-  // Loops are transparent to raise.
+  // Loops are transparent to raise / match.
   bodySets.raiseEntryInfo = raiseEntryInfo;
+  bodySets.matchEntryInfo = matchEntryInfo;
 
   // The default continueSet is the live-in set of values.  This can lose
   // values if some 'continue' path through the body of the loop consumes a
@@ -3270,9 +3351,10 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   // Our current live-in set is live-in to the try body.
   bodySets.liveness = liveness;
 
-  // Try is transparent to break/continue.
+  // Try is transparent to break/continue/match.
   bodySets.continueSet = continueSet;
   bodySets.breakSet = breakSet;
+  bodySets.matchEntryInfo = matchEntryInfo;
 
   // We capture all the common values live-out of raise's as being the live-in
   // to the except block.
@@ -4169,6 +4251,7 @@ struct DestructorInsertion {
     DestructorInsertion result(existing.valueSet);
     result.consumedValues = existing.consumedValues;
     result.raiseEntryInfo = existing.raiseEntryInfo;
+    result.matchEntryInfo = existing.matchEntryInfo;
     result.breakSet = existing.breakSet;
     result.continueSet = existing.continueSet;
     result.dryRun = existing.dryRun;
@@ -4185,6 +4268,7 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op, SmallVector<ResultEffect> &resultEffects);
   void checkElIfOp(HLCF::ElifOp op, SmallVector<ResultEffect> &resultEffects);
+  void checkMatchOp(HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -4230,6 +4314,10 @@ private:
   /// surrounding loop.
   BitVector *breakSet = nullptr;
   BitVector *continueSet = nullptr;
+
+  /// When analyzing cases of a match, this stack indicates what
+  /// `match.next` / `match.complete` should produce.
+  MatchSetEntry<BitVector> *matchEntryInfo = nullptr;
 
   /// This is a set of warnings to emit from this pass.  We buffer them and then
   /// emit them at the end of the pass, because dtor insertion is "bottom up"
@@ -4351,6 +4439,9 @@ void DestructorInsertion::scanBlock(Block &block) {
         checkElIfOp(elifOp, opEffects.results);
       break;
     }
+    case OverallOpValueEffect::matchOp:
+      checkMatchOp(cast<HLCF::MatchOp>(op), opEffects.results);
+      break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
       break;
@@ -4367,7 +4458,8 @@ void DestructorInsertion::scanBlock(Block &block) {
 
     assert((opEffects.results.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp ||
-            overall == OverallOpValueEffect::elifOp) &&
+            overall == OverallOpValueEffect::elifOp ||
+            overall == OverallOpValueEffect::matchOp) &&
            "OperationEffects::analyze returned wrong # effects");
 
     for (auto [result, effect] :
@@ -4550,6 +4642,21 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
     consumedValues = *continueSet;
     return;
   }
+  if (isa<HLCF::MatchNextOp, HLCF::MatchCompleteOp>(op)) {
+    auto *match = HLCF::getParentNode(cast<HLCF::ControlFlowTerminator>(op));
+    assert(match && "match next/complete without enclosing match?");
+    MatchSetEntry<BitVector> *entry =
+        matchEntryInfo ? matchEntryInfo->getMatching(match) : nullptr;
+    assert(entry && "match next/complete without active match scan?");
+    if (isa<HLCF::MatchNextOp>(op)) {
+      assert(entry->nextSet && "match.next without a next-case set?");
+      consumedValues = *entry->nextSet;
+    } else {
+      assert(entry->completeSet && "match.complete without a complete set?");
+      consumedValues = *entry->completeSet;
+    }
+    return;
+  }
 
   // A raise will use the consume set that was seen on entry to the enclosing
   // except block.
@@ -4693,6 +4800,54 @@ void DestructorInsertion::checkElIfOp(
       consumedValues = std::move(merged);
     }
   }
+}
+
+void DestructorInsertion::checkMatchOp(
+    HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects) {
+  // Handle owned register results of the match the same way as if-like ops.
+  if (!resultEffects.empty()) {
+    ImplicitLocOpBuilder builder(op.getLoc(), op->getBlock(),
+                                 std::next(Block::iterator(op)));
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
+      switch (effect) {
+      case ResultEffect::ignore:
+        continue;
+      case ResultEffect::regDefine:
+        checkDef(result, *op, /*isDeref=*/false, dtorInserter);
+        break;
+      default:
+        llvm_unreachable("unknown result effect for 'match'");
+      }
+    }
+    resultEffects.clear();
+  }
+
+  // Demand after the match is what `match.complete` / else `yield` require.
+  BitVector completeExitSet = consumedValues;
+
+  MatchSetEntry<BitVector> entry = {
+      op.getOperation(),
+      /*nextSet=*/nullptr,
+      &completeExitSet,
+      matchEntryInfo,
+  };
+  llvm::SaveAndRestore restoreMatchEntry(matchEntryInfo, &entry);
+
+  // Backward: else first, then cases from last to first. Each case's
+  // `match.next` loads the entry demand of the following case/else.
+  scanBlock(op.getElseRegion().front());
+  BitVector nextDemand = consumedValues;
+
+  for (Region &caseRegion : llvm::reverse(op.getCaseRegions())) {
+    entry.nextSet = &nextDemand;
+    // Seed with the post-match demand (like if-arms); terminators overwrite.
+    consumedValues = completeExitSet;
+    scanBlock(caseRegion.front());
+    nextDemand = consumedValues;
+  }
+
+  consumedValues = std::move(nextDemand);
 }
 
 /// Given two consume sets that correspond to an 'if-like' construct which

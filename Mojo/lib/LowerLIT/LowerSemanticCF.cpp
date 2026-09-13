@@ -90,6 +90,9 @@ private:
   /// Lower an `HLCF::ElifOp`, including constant-condition dead-arm cleanup.
   /// Returns true when the elif does not fall through (caller should stop).
   bool lowerElIfOp(HLCF::ElifOp elifOp, bool &doesRaise, bool &doesBreak);
+  /// Pass through an `HLCF::MatchOp`, rewriting nested regions.
+  /// Returns true when the match does not fall through (caller should stop).
+  bool lowerMatchOp(HLCF::MatchOp matchOp, bool &doesRaise, bool &doesBreak);
   bool checkSelfRecursion(Block &block, bool isConditional);
 };
 } // end anonymous namespace
@@ -371,6 +374,31 @@ bool LowerSemanticCF::lowerElIfOp(HLCF::ElifOp elifOp, bool &doesRaise,
     markRegionDeadDueToConstantCond(elifOp.getElseRegion(), "'if True'",
                                     elifOp.getLoc());
   }
+
+  return !doesFallThrough;
+}
+
+/// Pass through an `HLCF::MatchOp`: rewrite each case and the else region.
+/// Returns true when the match does not fall through so the enclosing block
+/// should stop.
+bool LowerSemanticCF::lowerMatchOp(HLCF::MatchOp matchOp, bool &doesRaise,
+                                   bool &doesBreak) {
+  bool doesFallThrough = false;
+
+  for (Region &caseRegion : matchOp.getCaseRegions()) {
+    bool blockRaises = false, blockBreaks = false, caseFallsThrough = false;
+    lowerBlock(caseRegion.front(), blockRaises, blockBreaks, caseFallsThrough);
+    doesRaise |= blockRaises;
+    doesBreak |= blockBreaks;
+    doesFallThrough |= caseFallsThrough;
+  }
+
+  bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
+  lowerBlock(matchOp.getElseRegion().front(), elseRaises, elseBreaks,
+             elseFallsThrough);
+  doesRaise |= elseRaises;
+  doesBreak |= elseBreaks;
+  doesFallThrough |= elseFallsThrough;
 
   return !doesFallThrough;
 }
@@ -852,6 +880,17 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       continue;
     }
 
+    // Process a HLCF::MatchOp: pass through cases and else.
+    if (auto matchOp = dyn_cast<HLCF::MatchOp>(op)) {
+      if (lowerMatchOp(matchOp, doesRaise, doesBreak)) {
+        auto b = handleSemanticTerminatorOp(
+            op, "match statement that does not fall through");
+        UnreachableOp::create(b, op.getLoc());
+        return;
+      }
+      continue;
+    }
+
     // Otherwise we must have an if / comptime if.
     assert((isa<HLCF::IfOp, ParamIfOp>(op)) &&
            "Unknown operation with regions");
@@ -902,8 +941,15 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
   // These are not fallthroughs.
   if (isa<KGEN::ReturnOp, HLCF::ContinueOp, ParamForContinueOp,
-          KGEN::UnreachableOp, LIT::ErrorReturnOp>(terminator))
+          KGEN::UnreachableOp, LIT::ErrorReturnOp, HLCF::MatchNextOp>(
+          terminator))
     return;
+
+  // Match complete exits the match and continues after it (like yield).
+  if (isa<HLCF::MatchCompleteOp>(terminator)) {
+    doesFallThrough = true;
+    return;
+  }
 
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
@@ -949,7 +995,8 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
-        isConditional || isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp>(op);
+        isConditional ||
+        isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp, HLCF::MatchOp>(op);
     // Handle things like if statements, HLCF::Loop, try, etc.
     for (auto &region : op.getRegions()) {
       if (checkSelfRecursion(region.front(), isSubregionConditional))

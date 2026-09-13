@@ -167,6 +167,8 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
                            SmallVector<ValueRange>(entries.size() - 1));
     b.eraseOp(node);
   } else {
+    // Generic single-entry nodes: `hlcf.loop`, `hlcf.for`, `hlcf.match`, etc.
+    // Match regions are ordered else=0 then cases=1..N; entry targets case 0.
     SmallVector<ControlFlowTarget, 1> targets;
     node.getEntryTargets(
         SmallVector<Attribute>(node->getNumOperands(), Attribute()), targets);

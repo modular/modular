@@ -1255,3 +1255,49 @@ lit.fn @dead_code_after_param_assert_false<cond: i1>() -> !kgen.none {
   lit.return %none : !kgen.none
   lit.end_fn
 }
+
+// CHECK-LABEL: lit.fn @match_pass_through
+lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
+  // CHECK: hlcf.match
+  hlcf.match {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
+      // CHECK: hlcf.match.complete
+      hlcf.match.complete
+    } else {
+      // CHECK: hlcf.match.next
+      hlcf.match.next
+    }
+    kgen.unreachable
+  }
+  case {
+    // CHECK: hlcf.match.complete
+    hlcf.match.complete
+  }
+  else {
+    // CHECK: hlcf.yield
+    hlcf.yield
+  }
+  // CHECK: kgen.return %a : i32
+  lit.return %a : i32
+  lit.end_fn
+}
+
+// CHECK-LABEL: lit.fn @match_no_fallthrough
+lit.fn @match_no_fallthrough(%a: i32) -> i32 {
+  // CHECK: hlcf.match
+  hlcf.match {
+    // CHECK: kgen.return %a : i32
+    lit.return %a : i32
+    kgen.unreachable
+  }
+  else {
+    // CHECK: kgen.return %a : i32
+    lit.return %a : i32
+    hlcf.yield
+  }
+  // CHECK: kgen.unreachable
+  // expected-warning @+1 {{unreachable code after match statement that does not fall through}}
+  lit.return %a : i32
+  lit.end_fn
+}
