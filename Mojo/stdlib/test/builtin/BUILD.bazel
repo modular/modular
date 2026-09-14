@@ -132,6 +132,7 @@ _EXTRA_DEPS = {
         name = src + ".test",
         srcs = [src],
         enable_assertions = False,
+        tags = ["skip-external-ci"],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
