@@ -31,8 +31,65 @@ concurrency: # Only allow a single build/test run at a time for a PR.
   cancel-in-progress: true
 
 jobs:
+  # Decide which Mojo toolchain the test job below should use, based on what the
+  # pull request touches. The prebuilt Mojo has more functionality than what is
+  # open source, so it is what we use by default, but it cannot test changes to
+  # the compiler itself. Building Mojo from source can, but it is slow, so we
+  # only do it when the compiler actually changed.
+  detect-changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      mojo: ${{ steps.filter.outputs.mojo }}
+      max: ${{ steps.filter.outputs.max }}
+    steps:
+      # NOTE: Only on pull requests, where the action reads the changed files
+      # from the API. On any other event it would shell out to git and need the
+      # repo checked out, and there is no diff to classify anyway, so the step is
+      # skipped and the empty outputs fall back to the prebuilt Mojo.
+      - name: Classify changed files
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            # The Mojo compiler and the support libraries it is built on. The
+            # prebuilt toolchain ships these as binaries, so testing a change to
+            # them requires building Mojo from source.
+            mojo:
+              - "AsyncRT/**"
+              - "Cache/**"
+              - "Config/**"
+              - "Init/**"
+              - "Support/**"
+              - "Mojo/BUILD.bazel"
+              - "Mojo/include/**"
+              - "Mojo/lib/**"
+              - "Mojo/test/**"
+              - "Mojo/tools/**"
+              - "Mojo/unittests/**"
+              - "Mojo/utils/**"
+            # Everything in MAX, including the kernels and the Mojo packages it
+            # ships. These depend on functionality that only the prebuilt Mojo has.
+            max:
+              - "max/**"
+
+      - name: Reject changes to both Mojo and MAX
+        if: steps.filter.outputs.mojo == 'true' && steps.filter.outputs.max == 'true'
+        run: |
+          echo "::error::This pull request changes both the Mojo compiler and MAX." \
+            "Those are tested with different Mojo toolchains (--config=build-mojo" \
+            "and --config=prebuilt-mojo respectively), so they cannot be validated" \
+            "in the same run. Please split them into separate pull requests."
+          exit 1
+
   build-and-test:
     name: Build and Test on ${{ matrix.os }}
+    needs: detect-changes
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +102,7 @@ jobs:
         shell: bash
     env:
       DEBIAN_FRONTEND: noninteractive
+      MOJO_CHANGED: ${{ needs.detect-changes.outputs.mojo }}
 
     steps:
       - name: Checkout repo
@@ -52,6 +110,38 @@ jobs:
 
       - name: Build and Test
         run: |
+          if [[ "${MOJO_CHANGED:-}" == "true" ]]; then
+            # NOTE: A change to the Mojo compiler has to build Mojo from source,
+            # and can then only test Mojo and the standard library. MAX is not
+            # tested because it needs functionality only the prebuilt Mojo has.
+            # TODO: We also only build + test //Mojo/... since we don't continuously
+            # validate that other directories' tests work in OSS. Eventually we should
+            # unify these.
+            mojo_config=build-mojo
+            targets=(
+              //Mojo/...
+            )
+          else
+            # NOTE: Everything else, MAX included, uses the prebuilt Mojo. The
+            # Mojo compiler targets are excluded because the prebuilt toolchain
+            # cannot build them.
+            mojo_config=prebuilt-mojo
+            targets=(
+              //...
+              -//AsyncRT/...
+              -//Cache/...
+              -//Config/...
+              -//Init/...
+              -//Mojo/...
+              -//Support/...
+              //Mojo/docs/site/...
+              //Mojo/examples/...
+              //Mojo/integration-test/...
+              //Mojo/python/...
+              //Mojo/stdlib/...
+            )
+          fi
+
           if [[ -n "${BUILDBUDDY_TOKEN:-}" ]]; then
             # NOTE: Read+write token that only runs on trusted PRs.
             args=(
@@ -77,19 +167,8 @@ jobs:
             "${args[@]}" \
             --build_tag_filters=-skip-external-ci,-requires-network \
             --test_tag_filters=-skip-external-ci,-requires-network \
-            --config=prebuilt-mojo \
+            --config="$mojo_config" \
             -- \
-            //... \
-            -//AsyncRT/... \
-            -//Cache/... \
-            -//Config/... \
-            -//Init/... \
-            -//Mojo/... \
-            -//Support/... \
-            //Mojo/docs/site/... \
-            //Mojo/examples/... \
-            //Mojo/integration-test/... \
-            //Mojo/python/... \
-            //Mojo/stdlib/...
+            "${targets[@]}"
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}
