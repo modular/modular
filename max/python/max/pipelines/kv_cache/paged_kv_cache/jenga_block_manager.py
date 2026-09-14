@@ -318,6 +318,7 @@ class JengaBlockManager:
         # here, so skipping this leaks every offload source for the run.
         self.poll_transfers()
 
+        committed_before = self._state_of(ctx).committed_idx
         transfer = self._reuse_blocks_from_prefix_cache(ctx, replica_idx)
 
         self._metrics.input_tokens += ctx.tokens.active_length
@@ -331,6 +332,7 @@ class JengaBlockManager:
                 group.blocks_to_allocate(ctx.request_id, num_required_blocks)
             )
         if not pool.can_satisfy_demand(demand):
+            self._rollback_prefix_reuse(ctx, replica_idx, committed_before)
             raise InsufficientBlocksError(
                 f"Serving {demand} needs more huge blocks than are available"
             )
@@ -1023,6 +1025,26 @@ class JengaBlockManager:
             "must never hash the last token."
         )
         return transfer
+
+    def _rollback_prefix_reuse(
+        self, ctx: TextContext, replica_idx: int, committed_idx: int
+    ) -> None:
+        """Undoes the prefix-cache splice made past ``committed_idx``.
+
+        Keeps a failed ``alloc`` from leaving the request half-served: the
+        spliced blocks go back (an in-flight onload keeps its own pin until it
+        lands), the token window is rewound over them, and the cached-prefix
+        attribution is cleared.
+        """
+        state = self._state_of(ctx)
+        reused_tokens = state.committed_idx - committed_idx
+        if reused_tokens == 0:
+            return
+        state.committed_idx = committed_idx
+        self._release_uncommitted_blocks(ctx, replica_idx)
+        self._metrics.cache_tokens -= reused_tokens
+        ctx.cached_prefix_length = 0
+        ctx.cached_prefix_external_length = 0
 
     def _release_uncommitted_blocks(
         self, ctx: TextContext, replica_idx: int

@@ -88,5 +88,14 @@ This version is still a work in progress.
   `SIGKILL`, or OOM-kill is reclaimed on the next start instead of being
   reported to an operator. Directories left by earlier versions carry no lock
   and are still only reported, not deleted.
+- Fixed a decode-engine crash in disaggregated (prefill/decode) serving under
+  memory pressure. When the decode node could not allocate KV blocks for a
+  new request whose prompt partly hit the prefix cache, it re-queued the
+  request with its token window still advanced past the cached prefix while
+  handing the cached blocks back. If those blocks were evicted before the
+  retry, the block manager asserted (`Expected at least N blocks to store KV
+  for M committed tokens, but only 0 are assigned`) and the model worker
+  died. A KV cache allocation that fails now leaves the request exactly as it
+  found it, in both the paged and the Jenga cache managers.
 
 ## Mojo language

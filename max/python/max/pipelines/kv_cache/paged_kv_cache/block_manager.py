@@ -1239,6 +1239,24 @@ class BlockManager:
         elif delta < 0:
             ctx.tokens.skip_processing(-delta)
 
+    def rollback_prefix_reuse(self, ctx: TextContext, num_tokens: int) -> None:
+        """Undoes a ``reuse_blocks_from_prefix_cache`` splice of ``num_tokens``.
+
+        For an allocation that fails after the splice, so the request is left
+        as consistent as it was found: the spliced blocks go back to the pool
+        (an in-flight onload keeps its own pin until it lands), the token
+        window is rewound over them, and a first admission's cached-prefix
+        attribution is cleared.
+        """
+        if num_tokens == 0:
+            return
+        self.req_to_committed_idx[ctx.request_id] -= num_tokens
+        self.release_uncommitted_blocks(ctx)
+        self._metrics.cache_tokens -= num_tokens
+        if ctx.tokens.processed_length == 0:
+            ctx.cached_prefix_length = 0
+            ctx.cached_prefix_external_length = 0
+
     def register_dummy_request(self, ctx: TextContext) -> None:
         """Maps a dummy request to the replica pool's reserved null block."""
         request_id = ctx.request_id

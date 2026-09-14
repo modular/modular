@@ -62,6 +62,7 @@ from .block_manager import (
     _compute_seq_len,
     compute_block_hashes,
 )
+from .block_utils import InsufficientBlocksError
 from .cache_manager_interface import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
@@ -439,18 +440,28 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
-            satisfy the allocation.
+            satisfy the allocation. The request is left as it was before the
+            call, so the caller can release or retry it.
         """
         # Drain completed async KV transfers first to release any g0 blocks of
         # completed transfers.
         self._block_manager.poll_transfers()
 
-        _, load_event = self._block_manager.reuse_blocks_from_prefix_cache(ctx)
-        self._block_manager.allocate_new_blocks(
-            ctx,
-            self.params.num_draft_tokens,
-            self.params.num_draft_tokens_per_step,
+        skip_amount, load_event = (
+            self._block_manager.reuse_blocks_from_prefix_cache(ctx)
         )
+        try:
+            self._block_manager.allocate_new_blocks(
+                ctx,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
+            )
+        except InsufficientBlocksError:
+            # The splice already advanced the token window past the reused
+            # blocks; undo it, or a caller that releases and retries walks
+            # into the next alloc claiming tokens it holds no blocks for.
+            self._block_manager.rollback_prefix_reuse(ctx, skip_amount)
+            raise
         return load_event
 
     @traced
