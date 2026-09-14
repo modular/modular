@@ -20,6 +20,7 @@
 #include "IREmitter.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/CallOperands.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -39,130 +40,172 @@ using namespace M::KGEN::LIT;
 AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
                                 ArrayRef<Operand> exprOperands, ExprDest &dest,
                                 IREmitter &emitter);
-static CValue emitEnumCaseNameMatch(IREmitter &emitter, CValue subject,
-                                    const ExprNode *expr, StringRef caseName,
-                                    const ExprNode *typeBase);
+static LogicalResult emitEnumCaseNameMatch(IREmitter &emitter, CValue subject,
+                                           const ExprNode *expr,
+                                           StringRef caseName,
+                                           const ExprNode *typeBase);
 
 //===----------------------------------------------------------------------===//
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
 
-CValue ExprNode::emitMatch(IREmitter &emitter, CValue subject,
-                           PatternDeclKind patternKind,
-                           SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult ExprNode::emitMatch(IREmitter &emitter, CValue subject,
+                                  PatternDeclKind patternKind,
+                                  SmallVectorImpl<BoundName> &bindings) const {
   emitter.emitError(getLoc(), "expression is not a valid match pattern");
-  return {};
+  return failure();
+}
+
+/// Drive match CF from a success predicate: on mismatch take `hlcf.match.next`,
+/// on match fall through via `hlcf.yield`. Known-true predicates are a no-op;
+/// known-false predicates emit only `match.next`.
+///
+/// Dynamic form (equivalent to `elif !matches { next } else { yield }`):
+///   hlcf.elif matches {
+///     hlcf.yield
+///   } else {
+///     hlcf.match.next
+///   }
+static LogicalResult emitMatchOutcome(IREmitter &emitter, Location loc,
+                                      CValue matches, const ExprNode *expr) {
+  if (!matches)
+    return failure();
+
+  if (!emitter.builder) {
+    emitter.emitErrorForDynamicValueInParameter(expr);
+    return failure();
+  }
+
+  auto asBoolAttr = sugarDynCastIfPresent<SIMDAttr>(matches.getIfPValue());
+  if (asBoolAttr) {
+    if (!asBoolAttr.getAsBool())
+      HLCF::MatchNextOp::create(*emitter.builder, loc);
+    return success();
+  }
+
+  SRValue matchesSR = emitter.emitSRValue({matches, expr}, EC_BoolCondition);
+  if (!matchesSR)
+    return failure();
+  HLCF::ElifOp::create(
+      *emitter.builder, loc, TypeRange(), matchesSR,
+      [&]() -> LogicalResult {
+        HLCF::YieldOp::create(*emitter.builder, loc);
+        return success();
+      },
+      [&]() -> LogicalResult {
+        HLCF::MatchNextOp::create(*emitter.builder, loc);
+        return success();
+      });
+  return success();
 }
 
 /// Match a literal / attribute pattern by emitting it as the subject's type
-/// and comparing with `__eq__`, then converting to i1.
-static CValue emitMatchAgainstValue(const ExprNode *expr, IREmitter &emitter,
-                                    CValue subject) {
+/// and comparing with `__eq__`. Mismatch advances via `hlcf.match.next`:
+///
+///   hlcf.elif subject != lit {   // equivalently: elif eq { yield } else
+///     hlcf.match.next
+///   } else {
+///     hlcf.yield
+///   }
+static LogicalResult emitMatchAgainstValue(const ExprNode *expr,
+                                           IREmitter &emitter, CValue subject) {
   // Emit this literal as a value of the subject's type, then compare.
   ExprDest litDest(subject.getRValueType(), EC_MatchSubject);
   AnyValue litValue = emitter.emitExpr(expr, litDest);
   if (!litValue)
-    return {};
+    return failure();
 
   CValue eqResult = emitter.emitNamedMethodCall(
       "__eq__",
       CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
                    {{AnyValue(subject), expr}, {litValue, expr}}));
   if (!eqResult)
-    return {};
+    return failure();
 
   // Convert Bool (or other boolable) to scalar<bool> / i1 for hlcf.elif.
-  return emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
+  CValue matches = emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
+  return emitMatchOutcome(emitter, expr->getLocation(emitter), matches, expr);
 }
 
-CValue
+LogicalResult
 SimpleLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
                              PatternDeclKind patternKind,
                              SmallVectorImpl<BoundName> &bindings) const {
   // `_` always succeeds and introduces no bindings.
   if (kind == kDiscardLiteral)
-    return PValue(SIMDAttr::getScalarBool(emitter.getContext(), true));
+    return success();
 
   return ExprNode::emitMatch(emitter, subject, patternKind, bindings);
 }
 
-CValue BoolLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
-                                  PatternDeclKind patternKind,
-                                  SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+BoolLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
+                           PatternDeclKind patternKind,
+                           SmallVectorImpl<BoundName> &bindings) const {
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
-CValue IntLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
-                                 PatternDeclKind patternKind,
-                                 SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+IntLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
+                          PatternDeclKind patternKind,
+                          SmallVectorImpl<BoundName> &bindings) const {
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
-CValue FloatLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
-                                   PatternDeclKind patternKind,
-                                   SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+FloatLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
+                            PatternDeclKind patternKind,
+                            SmallVectorImpl<BoundName> &bindings) const {
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
-CValue
+LogicalResult
 StringLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
                              PatternDeclKind patternKind,
                              SmallVectorImpl<BoundName> &bindings) const {
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
-CValue DeclRefNode::emitMatch(IREmitter &emitter, CValue subject,
-                              PatternDeclKind patternKind,
-                              SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+DeclRefNode::emitMatch(IREmitter &emitter, CValue subject,
+                       PatternDeclKind patternKind,
+                       SmallVectorImpl<BoundName> &bindings) const {
   // Bare identifiers are only valid match patterns when nested under a `var`
-  // or `ref` binding. Do not treat them as "match this existing value" — that
-  // would create Python's capture-vs-value ambiguity and consume the syntax
-  // reserved for a future implicit-binding form (like `for x in ...`).
-  // See Mojo/proposals/pattern-matching.md "Future Direction: Implicit
-  // Bindings".
+  // or `ref` binding (or top-level bind mode). Do not treat them as "match
+  // this existing value" — that would create Python's capture-vs-value
+  // ambiguity and consume the syntax reserved for a future implicit-binding
+  // form (like `for x in ...`). See Mojo/proposals/pattern-matching.md
+  // "Future Direction: Implicit Bindings".
   if (patternKind == PatternDeclKind::kNone) {
     emitter.emitError(getLoc(), "bare identifier '")
         << spelling << "' is not a valid match pattern; use 'var " << spelling
         << "' or 'ref " << spelling << "' to bind a name";
-    return {};
+    return failure();
   }
 
   // Binding patterns are irrefutable: declare `spelling` under the requested
   // mode and initialize it from the subject. Match subjects are borrowed
   // (BValues), so `var` bindings copy and `ref` bindings borrow — same
-  // machinery as `var x = ...` / `ref x = ...` assignment.
-  //
-  // An elif condition region and its then region are siblings, so a VarDecl
-  // emitted into the condition would not dominate uses in the body (or in a
-  // guard that shares this scope). Emit the declaration in the parent block
-  // before the enclosing elif, then initialize it from the condition region.
-  // The first case's predicate is emitted directly into the parent block
-  // (it becomes the elif operand), where no hoisting is needed.
-  OpBuilder &b = *emitter.builder;
-  OpBuilder::InsertPoint condIP = b.saveInsertionPoint();
-  if (auto elifOp =
-          dyn_cast_if_present<HLCF::ElifOp>(condIP.getBlock()->getParentOp()))
-    b.setInsertionPoint(elifOp);
-
+  // machinery as `var x = ...` / `ref x = ...` assignment. Declarations live
+  // in the enclosing match case region and dominate the case body.
   ExprDest declDest(LValueInitializerType{subject.getRValueType()}, EC_VarInit);
   declDest.setPatternDeclKind(patternKind);
   LValue bindingLV = emitter.emitExprLValue(this, declDest);
-
-  b.restoreInsertionPoint(condIP);
   if (!bindingLV)
-    return {};
+    return failure();
 
   ExprDest storeDest(bindingLV, EC_VarInit);
   if (!emitter.emitCResult(subject, this, storeDest))
-    return {};
+    return failure();
 
   bindings.push_back({spelling, subject, patternKind});
-  return PValue(SIMDAttr::getScalarBool(emitter.getContext(), true));
+  return success();
 }
 
-CValue AttributeRefNode::emitMatch(IREmitter &emitter, CValue subject,
-                                   PatternDeclKind patternKind,
-                                   SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+AttributeRefNode::emitMatch(IREmitter &emitter, CValue subject,
+                            PatternDeclKind patternKind,
+                            SmallVectorImpl<BoundName> &bindings) const {
   // `Optional.None` / `Type.Case` against an EnumLike subject is a discriminant
   // pattern (no payload). Other attribute refs keep value-equality matching.
   ASTType subjectType = subject.getRValueType();
@@ -172,7 +215,7 @@ CValue AttributeRefNode::emitMatch(IREmitter &emitter, CValue subject,
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
-CValue InferredAttributeRefNode::emitMatch(
+LogicalResult InferredAttributeRefNode::emitMatch(
     IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
     SmallVectorImpl<BoundName> &bindings) const {
   // `.None` / `.Case` against an EnumLike subject is a discriminant pattern.
@@ -186,9 +229,9 @@ CValue InferredAttributeRefNode::emitMatch(
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
-CValue ParenNode::emitMatch(IREmitter &emitter, CValue subject,
-                            PatternDeclKind patternKind,
-                            SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult ParenNode::emitMatch(IREmitter &emitter, CValue subject,
+                                   PatternDeclKind patternKind,
+                                   SmallVectorImpl<BoundName> &bindings) const {
   return subExpr->emitMatch(emitter, subject, patternKind, bindings);
 }
 
@@ -196,9 +239,9 @@ bool ParenNode::mayContainBindingPatterns() const {
   return subExpr->mayContainBindingPatterns();
 }
 
-CValue BinOpNode::emitMatch(IREmitter &emitter, CValue subject,
-                            PatternDeclKind patternKind,
-                            SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult BinOpNode::emitMatch(IREmitter &emitter, CValue subject,
+                                   PatternDeclKind patternKind,
+                                   SmallVectorImpl<BoundName> &bindings) const {
   if (kind == kOr)
     return emitOrMatch(emitter, subject, patternKind, bindings);
   if (kind == kAsPat)
@@ -374,84 +417,108 @@ static LogicalResult mergeOrPatternBoundNames(
   return success();
 }
 
-CValue BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
-                              PatternDeclKind patternKind,
-                              SmallVectorImpl<BoundName> &bindings) const {
-  // `pat1 | pat2` matches if either alternative matches. Bindings introduced
-  // by either arm must agree; they are collected in temporary scopes, checked
-  // for compatibility, then promoted into the enclosing case scope. This
-  // enables matching patterns like "(var x, 4) | (5, var x)", but both sides
-  // must bind the same names and to the same types.
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(this);
+LogicalResult
+BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
+                       PatternDeclKind patternKind,
+                       SmallVectorImpl<BoundName> &bindings) const {
+  // `pat1 | pat2` matches if either alternative matches. Lowered as a nested
+  // `hlcf.match` whose cases try each alternative: success completes the
+  // nested match (then the enclosing case continues); failing both
+  // alternatives uses `hlcf.match.next` in the else region so control
+  // advances the *enclosing* match case.
+  if (!emitter.builder) {
+    emitter.emitErrorForDynamicValueInParameter(this);
+    return failure();
+  }
 
   auto createBindingScope = [&](SMLoc scopeLoc) -> ASTDecl & {
     return emitter.getDeclResolver().addFullyResolvedDecl(
         /*declVal=*/nullptr, StringAttr(), scopeLoc, &emitter.declScope);
   };
 
-  // Emit the LHS to catch any nested bindings.
+  Location loc = getLocation(emitter);
+  auto matchOp = HLCF::MatchOp::create(*emitter.builder, loc, TypeRange(),
+                                       /*caseRegionsCount=*/2);
+  matchOp.getElseRegion().emplaceBlock();
+  for (Region &region : matchOp.getCaseRegions())
+    region.emplaceBlock();
+
+  // Case 0: try the LHS alternative. `emitMatch` advances with `match.next`
+  // on failure; on success fall through and complete this nested match.
+  emitter.builder->setInsertionPointToStart(
+      &matchOp.getCaseRegions()[0].front());
   ASTDecl &lhsScope = createBindingScope(lhs->getLoc());
   IREmitter lhsEmitter(lhsScope, *emitter.builder);
   SmallVector<BoundName, 4> lhsBindings;
-  CValue lhsMatch =
-      lhs->emitMatch(lhsEmitter, subject, patternKind, lhsBindings);
+  if (failed(lhs->emitMatch(lhsEmitter, subject, patternKind, lhsBindings)))
+    return failure();
   emitter.builder = lhsEmitter.builder;
-  if (!lhsMatch)
-    return {};
+  HLCF::MatchCompleteOp::create(*emitter.builder, loc);
 
-  // Emit the RHS to catch any nested bindings - if the LHS is irrefutable, the
-  // RHS doesn't get emitted.
-  ASTDecl *rhsScope = nullptr;
+  // Case 1: try the RHS alternative.
+  emitter.builder->setInsertionPointToStart(
+      &matchOp.getCaseRegions()[1].front());
+  ASTDecl *rhsScope = &createBindingScope(rhs->getLoc());
   SmallVector<BoundName, 4> rhsBindings;
-  CValue result = emitter.emitOrMatchPredicates({lhsMatch, lhs}, [&] {
-    rhsScope = &createBindingScope(rhs->getLoc());
+  {
     IREmitter rhsEmitter(*rhsScope, *emitter.builder);
-    CValue rhsMatch =
-        rhs->emitMatch(rhsEmitter, subject, patternKind, rhsBindings);
+    if (failed(rhs->emitMatch(rhsEmitter, subject, patternKind, rhsBindings)))
+      return failure();
     emitter.builder = rhsEmitter.builder;
-    return ASTExprAnd<CValue>{rhsMatch, rhs};
-  });
-  if (!result)
-    return {};
+  }
+  HLCF::MatchCompleteOp::create(*emitter.builder, loc);
 
-  // Merge BoundName sets from both arms into `bindings`.
+  // Both alternatives failed: advance the enclosing match case.
+  emitter.builder->setInsertionPointToStart(&matchOp.getElseRegion().front());
+  HLCF::MatchNextOp::create(*emitter.builder, loc);
+
+  // Surviving binding decls are created inside case regions; hoist them so
+  // they dominate the enclosing case body after this nested match completes.
+  SmallVector<std::pair<StringAttr, VarDeclOp>, 4> lhsVarDecls;
+  collectPatternBindings(lhsScope, lhsVarDecls);
+
   if (failed(mergeOrPatternBoundNames(emitter, getLoc(), lhsBindings,
-                                      rhsBindings, /*rhsEmitted=*/rhsScope,
+                                      rhsBindings, /*rhsEmitted=*/true,
                                       bindings)))
-    return {};
-
-  // Verify that VarDecl bindings are compatible.
+    return failure();
   if (failed(mergeOrPatternBindings(emitter, emitter.declScope, lhsScope,
                                     rhsScope, getLoc())))
-    return {};
-  return result;
+    return failure();
+
+  for (auto &[name, varDecl] : lhsVarDecls) {
+    (void)name;
+    if (varDecl->getParentOp() == matchOp.getOperation())
+      varDecl->moveBefore(matchOp);
+  }
+
+  emitter.builder->setInsertionPointAfter(matchOp);
+  return success();
 }
 
-CValue BinOpNode::emitAsMatch(IREmitter &emitter, CValue subject,
-                              PatternDeclKind patternKind,
-                              SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+BinOpNode::emitAsMatch(IREmitter &emitter, CValue subject,
+                       PatternDeclKind patternKind,
+                       SmallVectorImpl<BoundName> &bindings) const {
   // `pattern as name` applies `pattern` and binds `name` to the whole
   // subject without copying. Memory values use `ref`; register-passable
   // (trivial) values have no address, so they use `bind` instead.
   auto *name = dyn_cast<DeclRefNode>(rhs);
   if (!name) {
     emitter.emitError(rhs->getLoc(), "expected a name after 'as'");
-    return {};
+    return failure();
   }
 
-  // Bind first, while still in the case condition, so the VarDecl is hoisted
-  // before the enclosing elif and dominates the case body.
   PatternDeclKind bindKind =
       subject.isMValue() ? PatternDeclKind::kRef : PatternDeclKind::kBind;
-  if (!name->emitMatch(emitter, subject, bindKind, bindings))
-    return {};
+  if (failed(name->emitMatch(emitter, subject, bindKind, bindings)))
+    return failure();
   return lhs->emitMatch(emitter, subject, patternKind, bindings);
 }
 
-CValue UnaryOpNode::emitMatch(IREmitter &emitter, CValue subject,
-                              PatternDeclKind patternKind,
-                              SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+UnaryOpNode::emitMatch(IREmitter &emitter, CValue subject,
+                       PatternDeclKind patternKind,
+                       SmallVectorImpl<BoundName> &bindings) const {
   // `var`/`ref` patterns are unary wrappers that set the binding mode for
   // their subpattern (e.g. `case var x:` / `case ref (a, b):`).
   if (kind != kVarPat && kind != kRefPat)
@@ -476,9 +543,9 @@ bool UnaryOpNode::mayContainBindingPatterns() const {
   return subExpr->mayContainBindingPatterns();
 }
 
-CValue TupleNode::emitMatch(IREmitter &emitter, CValue subject,
-                            PatternDeclKind patternKind,
-                            SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult TupleNode::emitMatch(IREmitter &emitter, CValue subject,
+                                   PatternDeclKind patternKind,
+                                   SmallVectorImpl<BoundName> &bindings) const {
   ASTType subjectType = subject.getRValueType();
   ASTType tupleType = emitter.shared.lookupBuiltinType(
       "Tuple", emitter.getDeclScope(), getLoc());
@@ -487,7 +554,7 @@ CValue TupleNode::emitMatch(IREmitter &emitter, CValue subject,
           subjectType.getWithoutParameters(emitter.shared))) {
     emitter.emitError(getLoc(), "expected a tuple type to match against, got ")
         << subjectType << getRange();
-    return {};
+    return failure();
   }
 
   assert(subjectType.getParamBindings().size() == 2 &&
@@ -498,17 +565,17 @@ CValue TupleNode::emitMatch(IREmitter &emitter, CValue subject,
         << subjectType << " of " << vaAttr.getValues().size() << " element"
         << plural(vaAttr.getValues().size()) << " against a pattern with "
         << exprs.size() << " element" << plural(exprs.size()) << getRange();
-    return {};
+    return failure();
   }
 
   // Empty tuple pattern `()` always matches an empty `Tuple[]`.
   if (exprs.empty())
-    return PValue(SIMDAttr::getScalarBool(emitter.getContext(), true));
+    return success();
 
   // Borrow the subject so each element access can reuse it.
   BValue subjectBVal = emitter.emitBValue({subject, this}, EC_MatchSubject);
   if (!subjectBVal)
-    return {};
+    return failure();
 
   // Extract `subject[i]` the same way comptime tuple destructuring does —
   // via a synthesized subscript that prefers `__getitem_param__`.
@@ -536,29 +603,16 @@ CValue TupleNode::emitMatch(IREmitter &emitter, CValue subject,
     return emitter.emitCValue({elem, this}, EC_TupleElement);
   };
 
-  auto matchElement = [&, patternKind](unsigned index) -> ASTExprAnd<CValue> {
-    CValue eltVal = getTupleItem(ASTType(vaAttr.getValues()[index]), index);
+  // Match elements sequentially. Earlier mismatches take `match.next` and
+  // skip later element tests at runtime.
+  for (unsigned i = 0, e = exprs.size(); i != e; ++i) {
+    CValue eltVal = getTupleItem(ASTType(vaAttr.getValues()[i]), i);
     if (!eltVal)
-      return {};
-    CValue eltMatch =
-        exprs[index]->emitMatch(emitter, eltVal, patternKind, bindings);
-    return {eltMatch, exprs[index]};
-  };
-
-  // Match the first element, then AND each subsequent element with
-  // short-circuiting so later patterns (and future bindings) are skipped on
-  // failure.
-  ASTExprAnd<CValue> combined = matchElement(0);
-  if (!combined.ir)
-    return {};
-  for (unsigned i = 1, e = exprs.size(); i != e; ++i) {
-    combined.ir = emitter.emitAndMatchPredicates(
-        combined, [&] { return matchElement(i); });
-    if (!combined.ir)
-      return {};
-    combined.expr = exprs[i];
+      return failure();
+    if (failed(exprs[i]->emitMatch(emitter, eltVal, patternKind, bindings)))
+      return failure();
   }
-  return combined.ir;
+  return success();
 }
 
 bool TupleNode::mayContainBindingPatterns() const {
@@ -568,9 +622,9 @@ bool TupleNode::mayContainBindingPatterns() const {
   return false;
 }
 
-CValue CallNode::emitMatch(IREmitter &emitter, CValue subject,
-                           PatternDeclKind patternKind,
-                           SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult CallNode::emitMatch(IREmitter &emitter, CValue subject,
+                                  PatternDeclKind patternKind,
+                                  SmallVectorImpl<BoundName> &bindings) const {
   ASTType subjectType = subject.getRValueType();
 
   // `Optional.Some(ref elt)` / `Type.Case(...)`: when the subject is
@@ -585,12 +639,12 @@ CValue CallNode::emitMatch(IREmitter &emitter, CValue subject,
   // operands bind in field-declaration order; keywords select by name.
   ASTType patternType = emitter.emitExprType(callee);
   if (!patternType)
-    return {};
+    return failure();
 
   if (!patternType.isEqualCanon(subjectType)) {
     emitter.emitError(getLoc(), "cannot match value of type ")
         << subjectType << " against pattern type " << patternType << getRange();
-    return {};
+    return failure();
   }
 
   auto structType =
@@ -598,14 +652,14 @@ CValue CallNode::emitMatch(IREmitter &emitter, CValue subject,
   if (!structType) {
     emitter.emitError(getLoc(), "expected a struct type to match against, got ")
         << subjectType << getRange();
-    return {};
+    return failure();
   }
 
   ASTDecl *typeDecl = subjectType.getDecl(emitter.shared);
   if (!typeDecl) {
     emitter.emitError(getLoc(), "cannot match fields of ")
         << subjectType << getRange();
-    return {};
+    return failure();
   }
 
   SmallVector<StructFieldOp, 8> storedFields;
@@ -630,7 +684,7 @@ CValue CallNode::emitMatch(IREmitter &emitter, CValue subject,
           operand.getLoc(),
           "struct patterns do not support positional or unpacked arguments")
           << operand.expr->getRange();
-      return {};
+      return failure();
     }
 
     StringAttr fieldName = operand.name;
@@ -638,12 +692,12 @@ CValue CallNode::emitMatch(IREmitter &emitter, CValue subject,
         fieldName.getValue(), operand.getLoc(), *typeDecl,
         /*searchParentScopes=*/false);
     if (lookup.isErroneous())
-      return {};
+      return failure();
     if (!lookup.isSuccess() || lookup.getIfSuccess().size() != 1) {
       emitter.emitError(operand.getLoc(), "'")
           << fieldName.getValue() << "' is not a field of " << subjectType
           << operand.expr->getRange();
-      return {};
+      return failure();
     }
     auto fieldOp = dyn_cast_or_null<StructFieldOp>(
         lookup.getIfSuccess().front()->getIfOperation());
@@ -651,26 +705,27 @@ CValue CallNode::emitMatch(IREmitter &emitter, CValue subject,
       emitter.emitError(operand.getLoc(), "'")
           << fieldName.getValue() << "' is not a stored field of "
           << subjectType << operand.expr->getRange();
-      return {};
+      return failure();
     }
 
     if (!seenFields.insert(fieldName).second) {
       emitter.emitError(operand.getLoc(), "duplicate field '")
           << fieldName.getValue() << "' in struct pattern"
           << operand.expr->getRange();
-      return {};
+      return failure();
     }
     fieldPatterns.push_back({&operand, fieldOp});
   }
 
   if (fieldPatterns.empty())
-    return PValue(SIMDAttr::getScalarBool(emitter.getContext(), true));
+    return success();
 
   BValue subjectBVal = emitter.emitBValue({subject, this}, EC_MatchSubject);
   if (!subjectBVal)
-    return {};
+    return failure();
 
-  auto matchField = [&](const FieldPattern &fp) -> ASTExprAnd<CValue> {
+  // Match fields sequentially. Earlier mismatches take `match.next`.
+  for (const FieldPattern &fp : fieldPatterns) {
     StructFieldOp fieldOp = fp.fieldOp;
     ASTType fieldType = fieldOp.getReboundType(
         structType, &emitter.shared.getEvaluationContext());
@@ -678,23 +733,12 @@ CValue CallNode::emitMatch(IREmitter &emitter, CValue subject,
     CValue fieldVal = AttributeRefNode::emitStoredFieldRef(
         {subjectBVal, this}, fieldOp, fp.operand->expr, fieldDest, emitter);
     if (!fieldVal)
-      return {};
-    CValue fieldMatch =
-        fp.operand->expr->emitMatch(emitter, fieldVal, patternKind, bindings);
-    return {fieldMatch, fp.operand->expr};
-  };
-
-  ASTExprAnd<CValue> combined = matchField(fieldPatterns[0]);
-  if (!combined.ir)
-    return {};
-  for (unsigned i = 1, e = fieldPatterns.size(); i != e; ++i) {
-    combined.ir = emitter.emitAndMatchPredicates(
-        combined, [&] { return matchField(fieldPatterns[i]); });
-    if (!combined.ir)
-      return {};
-    combined.expr = fieldPatterns[i].operand->expr;
+      return failure();
+    if (failed(fp.operand->expr->emitMatch(emitter, fieldVal, patternKind,
+                                           bindings)))
+      return failure();
   }
-  return combined.ir;
+  return success();
 }
 
 bool CallNode::mayContainBindingPatterns() const {
@@ -838,27 +882,31 @@ emitEnumDiscriminantMatch(IREmitter &emitter, CValue subject,
 /// Match `Type.Case` / `.Case` (no parentheses) against an EnumLike subject.
 /// "expr" may be either an AttributeRefNode or an InferredAttributeRefNode.
 /// typeBase is null in the later case.
-static CValue emitEnumCaseNameMatch(IREmitter &emitter, CValue subject,
-                                    const ExprNode *expr, StringRef caseName,
-                                    const ExprNode *typeBase) {
+static LogicalResult emitEnumCaseNameMatch(IREmitter &emitter, CValue subject,
+                                           const ExprNode *expr,
+                                           StringRef caseName,
+                                           const ExprNode *typeBase) {
   if (typeBase &&
       failed(checkEnumCaseTypeBase(emitter, subject, typeBase, expr)))
-    return {};
+    return failure();
   std::optional<size_t> caseIndex =
       lookupEnumCaseIndex(emitter, subject.getRValueType(), caseName, expr);
   if (!caseIndex)
-    return {};
+    return failure();
 
-  return emitEnumDiscriminantMatch(emitter, subject, *caseIndex, expr).first;
+  CValue discMatch =
+      emitEnumDiscriminantMatch(emitter, subject, *caseIndex, expr).first;
+  return emitMatchOutcome(emitter, expr->getLocation(emitter), discMatch, expr);
 }
 
 //===----------------------------------------------------------------------===//
 // EnumLike call patterns (`Type.Case(payload)`).
 //===----------------------------------------------------------------------===//
 
-CValue CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
-                               PatternDeclKind patternKind,
-                               SmallVectorImpl<BoundName> &bindings) const {
+LogicalResult
+CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
+                        PatternDeclKind patternKind,
+                        SmallVectorImpl<BoundName> &bindings) const {
   // `Optional.Some(ref elt)` / `.Some(pat)`: call form carries payload
   // subpatterns. Cases with no associated value must use `Optional.None` /
   // `.None` without parentheses.
@@ -866,7 +914,7 @@ CValue CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
   if (auto *attr = dyn_cast<AttributeRefNode>(callee)) {
     caseName = attr->spelling;
     if (failed(checkEnumCaseTypeBase(emitter, subject, attr->base, this)))
-      return {};
+      return failure();
   } else if (auto *inferred = dyn_cast<InferredAttributeRefNode>(callee)) {
     caseName = inferred->spelling;
   } else {
@@ -874,25 +922,24 @@ CValue CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
                       "enum case pattern must be written as 'Type.Case(...)' "
                       "or '.Case(...)'")
         << callee->getRange();
-    return {};
+    return failure();
   }
 
   // Figure out what case we're matching against, and the payload type.
   ASTType subjectType = subject.getRValueType();
   auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, caseName, this);
   if (!caseIndex)
-    return {};
-  FailureOr<ASTType> payloadTypeOrErr =
+    return failure();
+  ASTType payloadType =
       getEnumCasePayloadType(emitter, subjectType, *caseIndex, this);
-  if (failed(payloadTypeOrErr))
-    return {};
+  if (!payloadType)
+    return failure();
 
   // Reject attempts to pattern match on a None case.
-  ASTType payloadType = *payloadTypeOrErr;
   if (isEnumCaseWithoutPayload(emitter, payloadType, this)) {
     emitter.emitError(getLoc(), "enum case '")
         << caseName << "' has no associated value" << getParenRange();
-    return {};
+    return failure();
   }
 
   // Empty `Type.Case()` is never valid: no-payload cases omit parentheses,
@@ -901,7 +948,7 @@ CValue CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
     emitter.emitError(getLoc(), "enum case '")
         << caseName << "' requires a payload pattern inside the parentheses"
         << getParenRange();
-    return {};
+    return failure();
   }
 
   // Reject unsupported unpacking and keyword arguments.
@@ -910,13 +957,13 @@ CValue CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
       emitter.emitError(operand.getLoc(),
                         "enum case patterns do not support keyword arguments")
           << operand.expr->getRange();
-      return {};
+      return failure();
     }
     if (operand.unpackStyle != ArgUnpackStyle::kPositional) {
       emitter.emitError(operand.getLoc(),
                         "enum case patterns do not support unpacked arguments")
           << operand.expr->getRange();
-      return {};
+      return failure();
     }
   }
 
@@ -927,35 +974,28 @@ CValue CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
                       "enum case patterns currently support at most one "
                       "payload subpattern")
         << operands[1].expr->getRange();
-    return {};
+    return failure();
   }
-  // Emit a dynamic check to see if this is the right case.
+
+  // Check the discriminant; on mismatch `match.next` skips payload extraction.
   auto [discMatch, caseIdxInt] =
       emitEnumDiscriminantMatch(emitter, subject, *caseIndex, this);
   if (!discMatch || !caseIdxInt)
-    return {};
+    return failure();
+  if (failed(emitMatchOutcome(emitter, getLocation(emitter), discMatch, this)))
+    return failure();
 
-  // This lambda generates code to match against the payload of the enum case
-  // after the discriminant is matched.
-  auto matchPayload = [&]() -> ASTExprAnd<CValue> {
-    // Extract the payload reference.
-    SyntheticNode subjectNode(getLoc(), subject);
-    AttributeRefNode payloadMethod(&subjectNode, getLoc(),
-                                   "_unsafe_get_enum_payload");
-    SyntheticNode indexNode(getLoc(), caseIdxInt);
-    Operand indexOperand(&indexNode, getLoc(), ArgUnpackStyle::kPositional);
-    SubscriptNode subscript(&payloadMethod, getLoc(), indexOperand, getLoc());
-    CallNode payloadCall(&subscript, getLoc(), /*operands=*/{}, getLoc());
-    CValue payload = emitter.emitExprCValue(&payloadCall, EC_MatchSubject);
-    if (!payload)
-      return {};
+  // Extract the payload and deep-match the subpattern.
+  SyntheticNode subjectNode(getLoc(), subject);
+  AttributeRefNode payloadMethod(&subjectNode, getLoc(),
+                                 "_unsafe_get_enum_payload");
+  SyntheticNode indexNode(getLoc(), caseIdxInt);
+  Operand indexOperand(&indexNode, getLoc(), ArgUnpackStyle::kPositional);
+  SubscriptNode subscript(&payloadMethod, getLoc(), indexOperand, getLoc());
+  CallNode payloadCall(&subscript, getLoc(), /*operands=*/{}, getLoc());
+  CValue payload = emitter.emitExprCValue(&payloadCall, EC_MatchSubject);
+  if (!payload)
+    return failure();
 
-    CValue payloadMatch =
-        operands[0].expr->emitMatch(emitter, payload, patternKind, bindings);
-    return {payloadMatch, operands[0].expr};
-  };
-
-  // Project the payload and deep-match operands, short-circuiting so
-  // `_unsafe_get_enum_payload` runs only when the discriminant matches.
-  return emitter.emitAndMatchPredicates({discMatch, this}, matchPayload);
+  return operands[0].expr->emitMatch(emitter, payload, patternKind, bindings);
 }

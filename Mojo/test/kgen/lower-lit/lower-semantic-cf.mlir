@@ -883,15 +883,17 @@ lit.fn @self_recursive_arg_diff(%a: index) -> !kgen.none {
 // CHECK-NEXT: [[V1:%*.]] = index.cmp eq(%arg0, %idx0)
 // CHECK-NEXT: [[V1SB:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
 // CHECK-NEXT: [[V0:%.*]] = hlcf.elif [[V1SB]] -> index {
-// CHECK-NEXT: hlcf.yield %arg0 : index
+// CHECK-NEXT:   hlcf.yield %arg0 : index
 // CHECK-NEXT: } else {
 // CHECK-NEXT: [[V2:%*.]] = index.cmp eq(%arg0, %idx1)
 // CHECK-NEXT: [[V2SB:%.*]] = pop.cast_from_builtin [[V2]] : i1 to !kgen.scalar<bool>
 // CHECK-NEXT: hlcf.elif.yield [[V2SB]]
 // CHECK-NEXT: } then {
-// CHECK-NEXT: kgen.return %arg1 : index
+// CHECK-NEXT:   kgen.return %arg1 : index
 // CHECK-NEXT: } else {
 // CHECK-NEXT: kgen.return %arg1 : index
+// CHECK-NEXT: }
+// CHECK-NEXT: kgen.return %2 : index
 // CHECK-NEXT: }
 lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx0 = index.constant 0
@@ -915,6 +917,46 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   kgen.return %0 : index
 }
 
+
+// CHECK-LABEL: lit.fn @elif_2
+// CHECK-NEXT: %idx0 = index.constant 0
+// CHECK-NEXT: %idx1 = index.constant 1
+// CHECK-NEXT: %idx2 = index.constant 2
+// CHECK-NEXT: [[V1:%*.]] = index.cmp eq(%arg0, %idx0)
+// CHECK-NEXT: [[V1SB:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
+// CHECK-NEXT: [[V0:%.*]] = hlcf.elif [[V1SB]] -> index {
+// CHECK-NEXT:   hlcf.yield %arg0 : index
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   %simd = kgen.param.constant: scalar<bool> = <true>
+// CHECK-NEXT:   hlcf.elif.yield %simd
+// CHECK-NEXT: } then {
+// CHECK-NEXT:   kgen.return %arg1 : index
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   kgen.unreachable
+// CHECK-NEXT: }
+// CHECK-NEXT: kgen.return %2 : index
+// CHECK-NEXT: }
+lit.fn @elif_2(%arg0: index, %arg1: index, %arg2: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %c0 = index.cmp eq(%arg0, %idx0)
+  %c0_sb = pop.cast_from_builtin %c0 : i1 to !kgen.scalar<bool>
+  %0 = hlcf.elif %c0_sb -> index {
+    hlcf.yield %arg0 : index
+  } else {
+    %simd = kgen.param.constant: scalar<bool> = <true>
+    hlcf.elif.yield %simd
+  } then {
+    lit.return %arg1 : index
+    hlcf.yield %arg1 : index
+  } else {
+    // expected-warning @+1 {{unreachable code after 'if True'}}
+    lit.return %arg1 : index
+    hlcf.yield %arg2 : index
+  }
+  kgen.return %0 : index
+}
 
 // COM: https://github.com/modularml/modular/issues/33570
 // COM: When cloning the finally block, we must uniquely mangle parameters to

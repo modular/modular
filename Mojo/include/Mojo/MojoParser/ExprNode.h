@@ -216,19 +216,20 @@ public:
 
   /// Emit this expression as a match pattern against `subject`.
   ///
-  /// On success, returns a boolean CValue that is true when the subject
-  /// matches this pattern (and any bindings introduced by the pattern have
-  /// been declared in the current scope). Pattern bindings are also appended
-  /// to `bindings`. The default implementation rejects the expression as an
-  /// invalid pattern.
+  /// On a runtime mismatch, emits `hlcf.match.next` (typically via
+  /// `hlcf.elif`) so the enclosing match case advances; on success, falls
+  /// through so subsequent pattern tests / the case body can run. Returns
+  /// failure if IR emission fails. Pattern bindings are declared in the
+  /// current scope and appended to `bindings`. The default implementation
+  /// rejects the expression as an invalid pattern.
   ///
   /// `patternKind` is the enclosing `var`/`ref` binding mode for this pattern
   /// (or `kNone` when none applies). Unary `var`/`ref` patterns update it and
   /// pass it down to their subpattern; binding sites such as identifiers
   /// consume it to decide how to declare.
-  virtual CValue emitMatch(IREmitter &emitter, CValue subject,
-                           PatternDeclKind patternKind,
-                           llvm::SmallVectorImpl<BoundName> &bindings) const;
+  virtual LogicalResult
+  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
+            llvm::SmallVectorImpl<BoundName> &bindings) const;
 
   /// Return true if this expression, used as a match pattern, may introduce
   /// variable bindings (`var`/`ref`/`as` names, or nested subpatterns that do).

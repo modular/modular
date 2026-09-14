@@ -818,3 +818,16 @@ def test_control_flow_invalidation(var d : MiniDict) raises:
   var str = ""
   ref entry = d[str]
   use_two_strings(d[entry], entry)
+
+def test_match_cf(opt: Optional[Int]):
+    __match opt:
+    case _:
+        _ = opt
+    case _:
+        _ = opt  # expected-warning {{unreachable code after match case that always completes}}
+
+    __match opt:
+    case _:
+        pass
+    case _:
+        pass # FIXME: No warning?
