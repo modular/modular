@@ -1893,7 +1893,12 @@ struct StringSpan[origin: ImmOrigin](
 
         return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
 
+    @doc_hidden
+    @deprecated(use=is_ascii_whitespace)
     def isspace[single_character: Bool = False](self) -> Bool:
+        return self.is_ascii_whitespace[single_character=single_character]()
+
+    def is_ascii_whitespace[single_character: Bool = False](self) -> Bool:
         """Determines whether every character in the given StringSpan is a
         python whitespace String. This corresponds to Python's
         [universal separators](
@@ -2909,7 +2914,7 @@ def _split[
         # Python adds all "whitespace chars" as one separator
         # if no separator was specified
         for s in _build_slice(ptr, lhs, str_byte_len).codepoint_slices():
-            if not s.isspace[single_character=True]():
+            if not s.is_ascii_whitespace[single_character=True]():
                 break
             lhs += s.byte_length()
         # if it went until the end of the String, then it should be sliced
@@ -2918,7 +2923,7 @@ def _split[
             break
         rhs = lhs + _utf8_first_byte_sequence_length(ptr[unsafe_offset=lhs])
         for s in _build_slice(ptr, rhs, str_byte_len).codepoint_slices():
-            if s.isspace[single_character=True]():
+            if s.is_ascii_whitespace[single_character=True]():
                 break
             rhs += s.byte_length()
 

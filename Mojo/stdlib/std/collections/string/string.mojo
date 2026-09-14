@@ -1681,7 +1681,7 @@ struct String(
 
         return StringSlice(self).rfind(substr, start=start)
 
-    def isspace(self) -> Bool:
+    def is_ascii_whitespace(self) -> Bool:
         """Determines whether every character in the given String is a
         python whitespace String. This corresponds to Python's
         [universal separators](
@@ -1692,7 +1692,12 @@ struct String(
             True if the whole String is made up of whitespace characters
                 listed above, otherwise False.
         """
-        return StringSlice(self).isspace()
+        return StringSlice(self).is_ascii_whitespace()
+
+    @doc_hidden
+    @deprecated(use=is_ascii_whitespace)
+    def isspace(self) -> Bool:
+        return self.is_ascii_whitespace()
 
     @inline(.always)
     def split(

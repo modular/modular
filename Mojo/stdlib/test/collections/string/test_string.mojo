@@ -851,7 +851,7 @@ def test_splitlines() raises:
 
 
 def test_isspace() raises:
-    assert_false(String().isspace())
+    assert_false(String().is_ascii_whitespace())
 
     # test all utf8 and unicode separators
     var next_line: List[UInt8] = [0xC2, 0x85]
@@ -875,17 +875,17 @@ def test_isspace() raises:
     ]
 
     for i in univ_sep_var:
-        assert_true(i.isspace())
+        assert_true(i.is_ascii_whitespace())
 
     for i in [String("not"), "space", "", "s", "a", "c"]:
-        assert_false(i.isspace())
+        assert_false(i.is_ascii_whitespace())
 
     for sep1 in univ_sep_var:
         var sep = String()
         for sep2 in univ_sep_var:
             sep += sep1
             sep += sep2
-        assert_true(sep.isspace())
+        assert_true(sep.is_ascii_whitespace())
         _ = sep
 
 
