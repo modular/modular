@@ -187,6 +187,20 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    prefill_coalesce_min_pending: int = Field(
+        default=0,
+        description=(
+            "Under in-flight batching each replica holds queued fresh prefill "
+            "requests until enough can share one decode step. The same number "
+            "is used two ways. Prefills are released once this many are "
+            "queued. A held prefill is also released after this many decode "
+            "steps so it never waits indefinitely. Holding keeps more steps "
+            "pure decode so they can replay the captured graph. A step "
+            "holding a prefill request runs eager. The default of 0 holds "
+            "nothing back."
+        ),
+    )
+
     eplb_replicas_per_gpu: int = Field(
         default=0,
         description=(

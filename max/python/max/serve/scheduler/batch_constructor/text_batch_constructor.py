@@ -530,6 +530,10 @@ class TextBatchConstructor:
         self._prev_dp_padding: DPPaddingInfo | None = None
         self._current_dp_padding: DPPaddingInfo | None = None
 
+        # Per-replica count of consecutive TG steps that held pending fresh
+        # prefills below ``prefill_coalesce_min_pending``.
+        self._prefill_coalesce_held_steps: list[int] = [0] * self.num_replicas
+
     def _create_new_token_budget(
         self, ce_capacity: int | None = None
     ) -> TokenBudgetCollection:
@@ -1301,6 +1305,39 @@ class TextBatchConstructor:
                     raise ValueError(f"Unexpected budget status: {status}")
 
     @traced
+    def _should_backfill_ce(self, replica_idx: int) -> bool:
+        """Whether this TG step should mix pending CE work into the batch.
+
+        Every mixed step runs eagerly (device graph capture replays only
+        pure-decode shapes), so admitting prefills the moment a slot frees
+        converts most decode steps to eager execution.
+
+        This decision is per replica. However, capture depends on the whole
+        DP group. One fresh prefill on any rank runs that step eagerly
+        everywhere, so at DP > 1 the threshold buys little.
+
+        TODO(MXSERV-497): decide admission once per step for the group
+        and split the threshold from the decode-step deadline it also
+        serves.
+        """
+        threshold = self.scheduler_config.prefill_coalesce_min_pending
+        if threshold <= 0:
+            return True
+        ce_reqs = self.replicas[replica_idx].ce_reqs
+        if not ce_reqs:
+            self._prefill_coalesce_held_steps[replica_idx] = 0
+            return True
+        head = next(iter(ce_reqs.values()))
+        if (
+            head.tokens.processed_length > 0
+            or len(ce_reqs) >= threshold
+            or self._prefill_coalesce_held_steps[replica_idx] >= threshold
+        ):
+            self._prefill_coalesce_held_steps[replica_idx] = 0
+            return True
+        self._prefill_coalesce_held_steps[replica_idx] += 1
+        return False
+
     def _construct_replica_batch(
         self, replica_idx: int, priority_override: RequestType | None = None
     ) -> ReplicaBatch:
@@ -1364,6 +1401,7 @@ class TextBatchConstructor:
                     self.scheduler_config.enable_in_flight_batching
                     and len(batch) > 0
                     and priority_override is None
+                    and self._should_backfill_ce(replica_idx)
                 ):
                     self._add_ce_requests(batch, replica_idx)
 

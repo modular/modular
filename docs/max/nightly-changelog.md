@@ -48,6 +48,14 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added `--prefill-coalesce-min-pending` (default 0, off): under in-flight
+  batching, hold pending fresh prefills until that many can share one mixed
+  step instead of admitting them one by one. Mixed steps forfeit device graph
+  capture for their decode rows, so coalescing admissions keeps more decode
+  steps on the captured fast path, trading a bounded prefill-admission delay
+  (at most the same number of decode steps) for lower decode latency at high
+  concurrency. Mid-prefill chunked continuations are never held.
+
 ### Server metrics
 
 ### `max` CLI

@@ -50,6 +50,12 @@ class TokenGenerationSchedulerConfig:
     enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
+    prefill_coalesce_min_pending: int = 0
+    """Minimum pending fresh prefills before in-flight batching mixes them
+    into a decode step. Every mixed step forfeits device graph capture for
+    all of its decode rows. A held prefill is admitted after at most this many
+    decode steps. 0 admits immediately (the default behavior)."""
+
     data_parallel_degree: int = 1
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
@@ -129,6 +135,11 @@ class TokenGenerationSchedulerConfig:
                 "`dp_ce_balance_threshold` must be in [0, 1], found"
                 f" {self.dp_ce_balance_threshold}"
             )
+        if self.prefill_coalesce_min_pending < 0:
+            raise ValueError(
+                "`prefill_coalesce_min_pending` must be non-negative, found"
+                f" {self.prefill_coalesce_min_pending}"
+            )
 
     @classmethod
     def from_pipeline_config(
@@ -160,6 +171,9 @@ class TokenGenerationSchedulerConfig:
             enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
             chunked_prefill_min_chunk_size=pipeline_config.runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
+            prefill_coalesce_min_pending=(
+                pipeline_config.runtime.prefill_coalesce_min_pending
+            ),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             decode_stall_timeout_s=pipeline_config.runtime.decode_stall_timeout_s,
             decode_request_ttl_s=pipeline_config.runtime.decode_request_ttl_s,
