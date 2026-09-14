@@ -103,3 +103,35 @@ def f(x):
         mblack.Mode(target_versions={mblack.TargetVersion.PY310}),
         minimum_version=(3, 10),
     )
+
+
+def test_mojo_formats_var_ref_patterns_in_kwargs():
+    source = """\
+def classify_point(p: Point) -> String:
+    __match p:
+    case Point(x=var x, y=0):
+        return String("x-axis:", x)
+    case Point(x=0, y=ref y):
+        return String("y-axis:", y)
+    case Point(var x, 0):
+        return String("x:", x)
+    case (var x, var y):
+        return String(x, y)
+    case _:
+        return "other"
+"""
+    expected = """\
+def classify_point(p: Point) -> String:
+    __match p:
+    case Point(x=var x, y=0):
+        return String("x-axis:", x)
+    case Point(x=0, y=ref y):
+        return String("y-axis:", y)
+    case Point(var x, 0):
+        return String("x:", x)
+    case (var x, var y):
+        return String(x, y)
+    case _:
+        return "other"
+"""
+    assert_mojo_format(source, expected)

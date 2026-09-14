@@ -10,6 +10,31 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Added experimental `__match` / `case` pattern matching for early testing.
+  Patterns include literals, or-patterns (`|`), guards (`if`), `var` / `ref` /
+  `as` bindings, tuples, structs, and `EnumLike` types such as `Optional`.
+  Nested patterns can dig through several layers in one case — for example
+  matching an optional point without a nested `match`:
+
+  ```mojo
+  def describe(p: Optional[Point]) -> String:
+      __match p:
+      case .Some(Point(x=0, y=0)):
+          return "origin"
+      case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
+          return String("axis:", x)
+      case .Some(Point(x=x, y=y)) if x == y:
+          return "diagonal"
+      case .None:
+          return "missing"
+      case _:
+          return "unreachable"
+  ```
+
+  Exhaustiveness is not checked yet for enums or `Bool`, so you may still need
+  a redundant `case _` even when the other cases appear complete. The spelling
+  remains `__match` while the feature is experimental.
+
 - The message on a `where` clause can now be written
   `where <condition> else "<message>"`, as the preferred alternative to the
   existing `where (<condition>, "<message>")`, which will be deprecated over

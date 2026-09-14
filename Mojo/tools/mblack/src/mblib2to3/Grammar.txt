@@ -202,7 +202,12 @@ not_test: 'not' not_test | comparison
 comparison: expr (comp_op expr)*
 comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr
-expr: (VAR exprlist) | (REF exprlist) | or_expr
+# `var`/`ref` bind a single subexpression (not an exprlist). Using
+# exprlist here made `Point(x=var x, y=0)` greedily consume `, y=0`
+# into the binding and then fail on `=`. Comma-separated bindings like
+# `for var x, z in ys` still work: each element of the outer exprlist
+# is its own expr, so only `x` is under `var`.
+expr: (VAR expr) | (REF expr) | or_expr
 or_expr: xor_expr ('|' xor_expr)*
 xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor] (('*'|'@'|'/'|'%'|'//') factor)* (('+' | '-') term)* (('<<' | '>>') arith_expr)* ('&' shift_expr)*])*
 and_expr: shift_expr ('&' shift_expr)*
