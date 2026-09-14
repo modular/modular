@@ -155,6 +155,7 @@ def top_k[
     dtype: DType,
     out_idx_type: DType,
     //,
+    KEngine: TensorEngine,
     largest: Bool = True,
     target: StaticString = "cpu",
 ](
@@ -166,7 +167,9 @@ def top_k[
     sorted: Bool,
     ctx: DeviceContext,
     k: Optional[
-        TileTensor[.int64, RowMajorLayout[Int64], ImmutAnyOrigin],
+        TileTensor[
+            .int64, RowMajorLayout[Int64], ImmutAnyOrigin, Engine=KEngine
+        ],
     ] = None,
 ) raises:
     """
@@ -176,6 +179,7 @@ def top_k[
     Parameters:
         dtype: Data type of the input buffer.
         out_idx_type: The data dtype of the output indices (default == .int64).
+        KEngine: Engine policy of the `k` tensor.
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
         target: The target to run on.
 
@@ -228,7 +232,7 @@ def top_k[
             ), "out_idx_type must be int64 for cpu"
 
             comptime grain_size = 1000
-            _top_k_cpu[largest=largest](
+            _top_k_cpu[largest=largest, KEngine=KEngine](
                 input,
                 bound_max_k,
                 Int(normalized_axis),
@@ -247,7 +251,7 @@ def top_k[
                     "Warning: Unsorted top-k is not supported on GPU. Falling"
                     " back to sorted top-k."
                 )
-            topk_gpu[sampling=False, largest=largest](
+            topk_gpu[sampling=False, largest=largest, KEngine=KEngine](
                 ctx,
                 bound_max_k,
                 input,
@@ -2216,9 +2220,15 @@ def apply_gumbel_noise_kernel[
     InputLayoutType: TensorLayout,
     num_sms: Int,
     num_threads: Int,
+    OutputEngine: TensorEngine,
+    InputEngine: TensorEngine,
 ](
-    output: TileTensor[mut=True, dtype, OutputLayoutType, MutAnyOrigin],
-    input: TileTensor[dtype, InputLayoutType, ImmutAnyOrigin],
+    output: TileTensor[
+        mut=True, dtype, OutputLayoutType, MutAnyOrigin, Engine=OutputEngine
+    ],
+    input: TileTensor[
+        dtype, InputLayoutType, ImmutAnyOrigin, Engine=InputEngine
+    ],
     temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
 ):
@@ -2230,6 +2240,8 @@ def apply_gumbel_noise_kernel[
         InputLayoutType: Layout of the input tensor.
         num_sms: Number of streaming multiprocessors to launch with.
         num_threads: Number of threads per block.
+        OutputEngine: Engine policy of the `output` tensor.
+        InputEngine: Engine policy of the `input` tensor.
 
     Args:
         output: Output tensor of noised logits.
@@ -2787,6 +2799,8 @@ def gumbel_sampling_gpu[
             input.LayoutType,
             hw_info.sm_count,
             hw_info.max_thread_block_size,
+            noised_input.Engine,
+            input.Engine,
         ]
 
         var temperature_ptr: Optional[

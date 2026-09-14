@@ -33,6 +33,8 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    DefaultEngine,
+    TensorEngine,
     TileTensor,
     row_major,
     coord_to_index_list,
@@ -1425,19 +1427,38 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     scales_offsets_layout: TensorLayout,
     expert_ids_layout: TensorLayout,
     sf_layout: TensorLayout,
+    OutputEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    RowOffsetsEngine: TensorEngine,
+    ScalesOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SfEngine: TensorEngine,
     num_threads: Int = 128,
     k_tiles_per_block: Int = 1,
 ](
-    output_tensor: TileTensor[output_dtype, output_layout, MutAnyOrigin],
+    output_tensor: TileTensor[
+        output_dtype, output_layout, MutAnyOrigin, Engine=OutputEngine
+    ],
     scales_tma_op: TMATensorTile[
         scales_dtype, scales_tile_rank, scales_tile_shape, scales_desc_shape
     ],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmutAnyOrigin],
-    row_offsets: TileTensor[.uint32, row_offsets_layout, ImmutAnyOrigin],
-    scales_offsets: TileTensor[.uint32, scales_offsets_layout, ImmutAnyOrigin],
-    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    input_tensor: TileTensor[
+        input_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
+    ],
+    row_offsets: TileTensor[
+        .uint32, row_offsets_layout, ImmutAnyOrigin, Engine=RowOffsetsEngine
+    ],
+    scales_offsets: TileTensor[
+        .uint32,
+        scales_offsets_layout,
+        ImmutAnyOrigin,
+        Engine=ScalesOffsetsEngine,
+    ],
+    expert_ids: TileTensor[
+        .int32, expert_ids_layout, ImmutAnyOrigin, Engine=ExpertIdsEngine
+    ],
     sf_tensor: TileTensor[
-        .float32, sf_layout, ImmutAnyOrigin
+        .float32, sf_layout, ImmutAnyOrigin, Engine=SfEngine
     ],  # tensor-wise scale factor
 ):
     """GPU kernel that quantizes per-expert BF16 activation tiles to NVFP4/MXFP4/MXFP8 with TMA-based scale-factor stores.
@@ -1474,6 +1495,12 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             tensor (inferred).
         sf_layout: TileTensor layout of the per-expert tensor-wise
             scale factor tensor (inferred).
+        OutputEngine: Engine policy of the `output_tensor`.
+        InputEngine: Engine policy of the `input_tensor`.
+        RowOffsetsEngine: Engine policy of the `row_offsets` tensor.
+        ScalesOffsetsEngine: Engine policy of the `scales_offsets` tensor.
+        ExpertIdsEngine: Engine policy of the `expert_ids` tensor.
+        SfEngine: Engine policy of the `sf_tensor`.
         num_threads: Number of threads per block in the launch grid
             (defaults to 128).
         k_tiles_per_block: Column tiles handled by one block. Batching them
@@ -1501,6 +1528,12 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     ), "scales_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert sf_tensor.flat_rank == 1, "sf_tensor must be rank 1"
+    comptime assert OutputEngine.element_size == 1
+    comptime assert InputEngine.element_size == 1
+    comptime assert RowOffsetsEngine.element_size == 1
+    comptime assert ScalesOffsetsEngine.element_size == 1
+    comptime assert ExpertIdsEngine.element_size == 1
+    comptime assert SfEngine.element_size == 1
     comptime assert scales_offsets_layout.all_dims_known
     comptime num_experts = scales_offsets_layout.static_shape[0]
 
@@ -1547,8 +1580,11 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         var best = 0 if lane == 0 else -1
         if coarse < num_experts:
             if (
-                ufloordiv(Int(row_offsets[coarse]), SF_MN_GROUP_SIZE)
-                + Int(scales_offsets[coarse])
+                ufloordiv(
+                    Int(row_offsets.load[width=1](Coord(coarse))[0]),
+                    SF_MN_GROUP_SIZE,
+                )
+                + Int(scales_offsets.load[width=1](Coord(coarse))[0])
             ) <= target:
                 best = coarse
         var span = Int(lane_group_max[WARP_SIZE](Int32(best)))
@@ -1558,8 +1594,11 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             var refined = span
             if lane < probe_stride and fine < num_experts:
                 if (
-                    ufloordiv(Int(row_offsets[fine]), SF_MN_GROUP_SIZE)
-                    + Int(scales_offsets[fine])
+                    ufloordiv(
+                        Int(row_offsets.load[width=1](Coord(fine))[0]),
+                        SF_MN_GROUP_SIZE,
+                    )
+                    + Int(scales_offsets.load[width=1](Coord(fine))[0])
                 ) <= target:
                     refined = fine
             span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
@@ -1569,11 +1608,13 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     barrier()
     var expert_idx = Int(search_smem.load(0))
 
-    var curr_expert_start = Int(row_offsets[expert_idx])
-    var curr_expert_end = Int(row_offsets[expert_idx + 1])
+    var curr_expert_start = Int(row_offsets.load[width=1](Coord(expert_idx))[0])
+    var curr_expert_end = Int(
+        row_offsets.load[width=1](Coord(expert_idx + 1))[0]
+    )
     var expert_tiles_start = ufloordiv(
         curr_expert_start, SF_MN_GROUP_SIZE
-    ) + Int(scales_offsets[expert_idx])
+    ) + Int(scales_offsets.load[width=1](Coord(expert_idx))[0])
     var expert_num_tiles = uceildiv(
         curr_expert_end - curr_expert_start, SF_MN_GROUP_SIZE
     )
@@ -1581,8 +1622,8 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
         return
 
-    var expert_id = expert_ids[expert_idx]
-    var input_sf = sf_tensor[expert_id]
+    var expert_id = expert_ids.load[width=1](Coord(expert_idx))[0]
+    var input_sf = sf_tensor.load[width=1](Coord(expert_id))[0]
 
     var token_start = (
         curr_expert_start
@@ -1763,20 +1804,43 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     output_dtype: DType,
     scales_dtype: DType,
     //,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
+    RowOffsetsEngine: TensorEngine,
+    ScalesOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SfEngine: TensorEngine,
 ](
     output_tensor: TileTensor[
-        mut=True, output_dtype, address_space=.GENERIC, ...
+        mut=True, output_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
     ],
     scales_tensor: TileTensor[
-        mut=True, scales_dtype, address_space=.GENERIC, ...
+        mut=True,
+        scales_dtype,
+        address_space=.GENERIC,
+        ...,
+        Engine=ScalesEngine,
     ],
     input_tensor: TileTensor[
-        mut=False, input_dtype, address_space=.GENERIC, ...
+        mut=False, input_dtype, address_space=.GENERIC, ..., Engine=InputEngine
     ],
-    row_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
-    scales_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
-    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
-    sf_tensor: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ..., Engine=RowOffsetsEngine
+    ],
+    scales_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        address_space=.GENERIC,
+        ...,
+        Engine=ScalesOffsetsEngine,
+    ],
+    expert_ids: TileTensor[
+        mut=False, .int32, address_space=.GENERIC, ..., Engine=ExpertIdsEngine
+    ],
+    sf_tensor: TileTensor[
+        mut=False, .float32, address_space=.GENERIC, ..., Engine=SfEngine
+    ],
     ctx: DeviceContext,
 ) raises:
     """Launches the grouped per-expert quantization kernel for NVFP4/MXFP4/MXFP8 on SM100 hardware.
@@ -1792,6 +1856,13 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             (inferred).
         scales_dtype: Element type of the block scale-factor tensor
             (inferred).
+        OutputEngine: Engine policy of the `output_tensor`.
+        ScalesEngine: Engine policy of the `scales_tensor`.
+        InputEngine: Engine policy of the `input_tensor`.
+        RowOffsetsEngine: Engine policy of the `row_offsets` tensor.
+        ScalesOffsetsEngine: Engine policy of the `scales_offsets` tensor.
+        ExpertIdsEngine: Engine policy of the `expert_ids` tensor.
+        SfEngine: Engine policy of the `sf_tensor`.
     Args:
         output_tensor: Output quantized tensor of packed FP4 `uint8`
             or `float8_e4m3fn` for MXFP8.
@@ -1900,6 +1971,12 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             scales_offsets.LayoutType,
             expert_ids.LayoutType,
             sf_tensor.LayoutType,
+            OutputEngine,
+            InputEngine,
+            RowOffsetsEngine,
+            ScalesOffsetsEngine,
+            ExpertIdsEngine,
+            SfEngine,
             num_threads=BLOCK_THREADS,
             k_tiles_per_block=k_tiles_per_block,
         ]
@@ -2731,14 +2808,23 @@ def _quantize_mx_amd_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
     *,
     ELEMENTS_PER_THREAD: Int = 8,
     SF_VECTOR_SIZE: Int = MXFP4_SF_VECTOR_SIZE,  # 32 for MXFP4 and MXFP8 alike
     num_max_threads: Int = 512,
 ](
-    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
-    scales: TileTensor[.float8_e8m0fnu, scales_layout, MutAnyOrigin],
-    input: TileTensor[.bfloat16, input_layout, MutAnyOrigin],
+    output: TileTensor[
+        out_dtype, output_layout, MutAnyOrigin, Engine=OutputEngine
+    ],
+    scales: TileTensor[
+        .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
+    ],
+    input: TileTensor[
+        .bfloat16, input_layout, MutAnyOrigin, Engine=InputEngine
+    ],
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -2760,6 +2846,9 @@ def _quantize_mx_amd_kernel[
     comptime assert (
         NUM_THREADS_PER_SF == 4
     ), "MX quantization requires 4 threads per scale factor group"
+    comptime assert OutputEngine.element_size == 1
+    comptime assert ScalesEngine.element_size == 1
+    comptime assert InputEngine.element_size == 1
 
     var num_col_threads = _num_cols // ELEMENTS_PER_THREAD
 
@@ -2813,15 +2902,26 @@ def quantize_mx_amd[
     scales_dtype: DType = .float8_e8m0fnu,
     in_dtype: DType = .bfloat16,
     //,
+    OutputEngine: TensorEngine,
+    ScalesEngine: TensorEngine,
+    InputEngine: TensorEngine,
     *,
     num_max_threads: Int = 512,
 ](
     ctx: DeviceContext,
-    output_tile: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
-    scales_tile: TileTensor[
-        mut=True, scales_dtype, address_space=.GENERIC, ...
+    output_tile: TileTensor[
+        mut=True, out_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
     ],
-    input_tile: TileTensor[mut=False, in_dtype, address_space=.GENERIC, ...],
+    scales_tile: TileTensor[
+        mut=True,
+        scales_dtype,
+        address_space=.GENERIC,
+        ...,
+        Engine=ScalesEngine,
+    ],
+    input_tile: TileTensor[
+        mut=False, in_dtype, address_space=.GENERIC, ..., Engine=InputEngine
+    ],
 ) raises:
     """Quantize BF16 activations to MXFP4 or MXFP8 on AMD CDNA4 (MI355X).
 
@@ -2839,6 +2939,9 @@ def quantize_mx_amd[
             Must be `float8_e8m0fnu` (inferred).
         in_dtype: Element type of the input activation tensor. Must
             be `bfloat16` (inferred).
+        OutputEngine: Engine policy of the `output_tile` tensor.
+        ScalesEngine: Engine policy of the `scales_tile` tensor.
+        InputEngine: Engine policy of the `input_tile` tensor.
         num_max_threads: Maximum number of threads per block for the
             launch grid (defaults to 512).
     Args:
@@ -2883,7 +2986,12 @@ def quantize_mx_amd[
     )
 
     var input_tt = rebind[
-        TileTensor[.bfloat16, type_of(input_tile).LayoutType, MutAnyOrigin]
+        TileTensor[
+            .bfloat16,
+            type_of(input_tile).LayoutType,
+            MutAnyOrigin,
+            Engine=InputEngine,
+        ]
     ](input_tile)
 
     comptime kernel = _quantize_mx_amd_kernel[
@@ -2891,6 +2999,9 @@ def quantize_mx_amd[
         type_of(output_tile).LayoutType,
         type_of(scales_tile).LayoutType,
         type_of(input_tt).LayoutType,
+        OutputEngine,
+        ScalesEngine,
+        InputEngine,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
         num_max_threads=num_max_threads,
     ]

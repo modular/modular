@@ -77,7 +77,7 @@ comptime logger = Logger()
 
 from std.utils import IndexList
 from std.utils.coord import ComptimeInt, Coord, coord_to_index_list
-from layout import UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, DefaultEngine
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
@@ -1993,7 +1993,11 @@ struct BottomK:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        top_k[largest=False, target=target](
+        top_k[
+            KEngine=DefaultEngine[element_width=1],
+            largest=False,
+            target=target,
+        ](
             input.to_tile_tensor[.int64](),
             Int(k),
             Int(axis),
@@ -2070,7 +2074,11 @@ struct TopK:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        top_k[largest=True, target=target](
+        top_k[
+            KEngine=DefaultEngine[element_width=1],
+            largest=True,
+            target=target,
+        ](
             input.to_tile_tensor[.int64](),
             Int(k),
             Int(axis),

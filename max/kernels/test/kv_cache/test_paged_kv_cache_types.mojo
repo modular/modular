@@ -155,8 +155,11 @@ def test_paged_kv_cache_stride_is_unknown() raises:
         MutUntrackedOrigin,
         DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         MutUntrackedOrigin,
+        DefaultEngine[element_width=1],
     ]
 
     # Verify stride[0] is UNKNOWN_VALUE
@@ -343,8 +346,11 @@ def test_paged_kv_cache_quantization() raises:
         MutUntrackedOrigin,
         DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         ImmUntrackedOrigin,
+        DefaultEngine[element_width=1],
         MutUntrackedOrigin,
+        DefaultEngine[element_width=1],
         scale_dtype_=DType.float8_e4m3fn,
         quantization_granularity_=256,
     ]

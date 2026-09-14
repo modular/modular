@@ -94,7 +94,7 @@ struct TileLoaderTMA[
         alignment: Int = 128,
     ](
         self,
-        dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
+        dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment, Engine=_],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,
         row_coord: Int,

@@ -59,6 +59,7 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.sync import async_copy_arrive, syncwarp
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
+    DefaultEngine,
     ComptimeInt,
     Coord,
     CoordLike,
@@ -2605,8 +2606,18 @@ struct BlackwellMatmulSM100FallbackKernel[
     comptime b_size: Int = Self.BN * Self.BK
 
     # ========== Tile Type Aliases (TileTensor-based) ==========
-    comptime ATile = TTSMemTile[Self.a_type, Self.a_smem_layout_typed]
-    comptime BTile = TTSMemTile[Self.b_type, Self.b_smem_layout_typed]
+    comptime ATile = TTSMemTile[
+        Self.a_type,
+        Self.a_smem_layout_typed,
+        # Shared memory is raw-pointer addressed so pin DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
+    ]
+    comptime BTile = TTSMemTile[
+        Self.b_type,
+        Self.b_smem_layout_typed,
+        # Shared memory is raw-pointer addressed so pin DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
+    ]
 
     comptime accum_type = get_accum_type[Self.a_type]()
     comptime c_frag_size = Self.MMA_M * Self.MMA_N // Self.num_threads

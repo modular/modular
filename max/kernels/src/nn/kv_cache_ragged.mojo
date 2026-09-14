@@ -3288,8 +3288,11 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
         kv_collection.blocks_origin,
         kv_collection.blocks_tt_type.Engine,
         kv_collection.cache_lengths_origin,
+        kv_collection.CacheType.cache_lengths_engine,
         kv_collection.lookup_table_origin,
+        kv_collection.CacheType.lookup_table_engine,
         kv_collection.scales_origin,
+        kv_collection.CacheType.scales_engine,
     ]
     var k_cache_reg = rebind[cache_t](k_cache)
     var v_cache_reg = rebind[cache_t](v_cache)

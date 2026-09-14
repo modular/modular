@@ -294,6 +294,7 @@ def _make_cache_tt[
     dtype: DType,
     ResultLayout: TensorLayout,
     rank: Int,
+    Engine: TensorEngine,
 ](
     ptr: UnsafePointer[mut=_, Scalar[dtype], _],
     shape: DynamicCoord[.int64, rank],
@@ -305,6 +306,7 @@ def _make_cache_tt[
         stride_types=ResultLayout._stride_types,
     ],
     ptr.origin,
+    Engine=Engine,
 ]:
     """Construct a TileTensor from a pointer and `Coord` shape/strides.
 
@@ -326,7 +328,7 @@ def _make_cache_tt[
             stride_c[i] = rebind[stride_c.element_types[i]](
                 rebind[Int64](strides[i])
             )
-    return TileTensor[dtype, ConcLayout](
+    return TileTensor[dtype, ConcLayout, ptr.origin, Engine=Engine](
         ptr=ptr, layout=ConcLayout(shape_c, stride_c)
     )
 
@@ -1316,6 +1318,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
 
     comptime dtype: DType
     comptime Engine: TensorEngine
+    comptime cache_lengths_engine: TensorEngine
     comptime kv_params: KVCacheStaticParams
     comptime page_size_: Int
     comptime scale_dtype: DType
@@ -1338,7 +1341,12 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
 
     def cache_lengths_nd(
         self,
-    ) -> TileTensor[.uint32, _1d_tt_layout, ImmutAnyOrigin]:
+    ) -> TileTensor[
+        .uint32,
+        _1d_tt_layout,
+        ImmutAnyOrigin,
+        Engine=Self.cache_lengths_engine,
+    ]:
         """Returns the cache lengths as a TileTensor."""
         ...
 
@@ -1710,8 +1718,11 @@ struct ContinuousBatchingKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     blocks_origin: MutOrigin,
+    blocks_engine: TensorEngine,
     cache_lengths_origin: ImmOrigin,
+    cache_lengths_engine_: TensorEngine,
     lookup_table_origin: ImmOrigin,
+    lookup_table_engine: TensorEngine,
 ](KVCacheT, TrivialRegisterPassable):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer
     model.
@@ -1720,8 +1731,11 @@ struct ContinuousBatchingKVCache[
         dtype_: The dtype of the kv-cache.
         kv_params_: The kv-cache static parameters.
         blocks_origin: Origin of the KV cache blocks buffer.
+        blocks_engine: Engine policy of the KV cache blocks buffer.
         cache_lengths_origin: Origin of the cache lengths buffer.
+        cache_lengths_engine_: Engine policy of the cache lengths buffer.
         lookup_table_origin: Origin of the lookup table buffer.
+        lookup_table_engine: Engine policy of the lookup table buffer.
 
     This abstracts the Pointer indirection for accessing the ContinuousKVCache
     for a given batch entry.
@@ -1763,18 +1777,28 @@ struct ContinuousBatchingKVCache[
         ].element_types,
     ]
     comptime blocks_tt_type = TileTensor[
-        Self.dtype, Self.blocks_tt_layout, Self.blocks_origin
+        Self.dtype,
+        Self.blocks_tt_layout,
+        Self.blocks_origin,
+        Engine=Self.blocks_engine,
     ]
-    comptime Engine: TensorEngine = DefaultEngine[element_width=1]
+    comptime Engine: TensorEngine = Self.blocks_engine
+    comptime cache_lengths_engine: TensorEngine = Self.cache_lengths_engine_
 
     comptime cache_lengths_tt_layout = _1d_tt_layout
     comptime cache_lengths_tt_type = TileTensor[
-        .uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
+        .uint32,
+        Self.cache_lengths_tt_layout,
+        Self.cache_lengths_origin,
+        Engine=Self.cache_lengths_engine,
     ]
 
     comptime lookup_table_tt_layout = _1d_tt_layout
     comptime lookup_table_tt_type = TileTensor[
-        .uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
+        .uint32,
+        Self.lookup_table_tt_layout,
+        Self.lookup_table_origin,
+        Engine=Self.lookup_table_engine,
     ]
 
     var blocks: Self.blocks_tt_type
@@ -1865,7 +1889,7 @@ struct ContinuousBatchingKVCache[
         assert (
             batch_idx < self._batch_size()
         ), "KVCache batch_idx is out of bounds"
-        return Int(self.cache_lengths[batch_idx])
+        return Int(self.cache_lengths.load[width=1](Coord(batch_idx))[0])
 
     @inline(.always)
     def load[
@@ -1876,7 +1900,7 @@ struct ContinuousBatchingKVCache[
     ]:
         assert bs < self._batch_size(), "KVCache::load batch_size out of range"
 
-        var block_idx = self.lookup_table[bs]
+        var block_idx = self.lookup_table.load[width=1](Coord(bs))[0]
         var idx = self._get_idx_tuple(
             Int(block_idx), head_idx, tok_idx, head_dim_idx
         )
@@ -1893,7 +1917,7 @@ struct ContinuousBatchingKVCache[
         val: SIMD[Self.dtype, ...],
     ):
         assert bs < self._batch_size(), "KVCache::store batch_size out of range"
-        var block_idx = self.lookup_table[bs]
+        var block_idx = self.lookup_table.load[width=1](Coord(bs))[0]
         var idx = self._get_idx_tuple(
             Int(block_idx), head_idx, tok_idx, head_dim_idx
         )
@@ -2016,7 +2040,9 @@ struct ContinuousBatchingKVCache[
     @inline(.always)
     def row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
-        var block_idx = self.lookup_table[Int(batch_idx)]
+        var block_idx = self.lookup_table.load[width=1](Coord(Int(batch_idx)))[
+            0
+        ]
         return block_idx * self._stride() + tok_idx
 
     @inline(.always)
@@ -2238,7 +2264,9 @@ struct ContinuousBatchingKVCache[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
-        var block_idx = Int(self.lookup_table[batch_idx])
+        var block_idx = Int(
+            self.lookup_table.load[width=1](Coord(batch_idx))[0]
+        )
         var full_block_idx = self._get_idx_tuple(
             block_idx, head_idx, start_tok_idx, head_dim_idx
         )
@@ -2273,7 +2301,9 @@ struct ContinuousBatchingKVCache[
         Returns:
             The blocks storage handle advanced to the block.
         """
-        var block_idx = Int(self.lookup_table[batch_idx])
+        var block_idx = Int(
+            self.lookup_table.load[width=1](Coord(batch_idx))[0]
+        )
         var full_block_idx = self._get_idx_tuple(
             block_idx, head_idx, start_tok_idx, head_dim_idx
         )
@@ -2328,8 +2358,11 @@ struct PagedKVCache[
     blocks_origin: MutOrigin,
     blocks_engine: TensorEngine,
     cache_lengths_origin: ImmOrigin,
+    cache_lengths_engine_: TensorEngine,
     lookup_table_origin: ImmOrigin,
+    lookup_table_engine: TensorEngine,
     scales_origin: MutOrigin,
+    scales_engine: TensorEngine = DefaultEngine[element_width=1],
     *,
     scale_dtype_: Optional[DType] = None,
     quantization_granularity_: Int = 1,
@@ -2350,8 +2383,11 @@ struct PagedKVCache[
         blocks_origin: Origin of the KV cache blocks buffer.
         blocks_engine: Engine policy of the KV cache blocks buffer.
         cache_lengths_origin: Origin of the cache lengths buffer.
+        cache_lengths_engine_: Engine policy of the cache lengths buffer.
         lookup_table_origin: Origin of the lookup table buffer.
+        lookup_table_engine: Engine policy of the lookup table buffer.
         scales_origin: Origin of the quantization scales buffer.
+        scales_engine: Engine policy of the quantization scales buffer.
         scale_dtype_: Dtype of the quantization scales (if quantization enabled).
         quantization_granularity_:  Block size used for quantization (e.g. 128).
     """
@@ -2407,15 +2443,22 @@ struct PagedKVCache[
         Engine=Self.blocks_engine,
     ]
     comptime Engine: TensorEngine = Self.blocks_engine
+    comptime cache_lengths_engine: TensorEngine = Self.cache_lengths_engine_
 
     comptime cache_lengths_tt_layout = _1d_tt_layout
     comptime cache_lengths_tt_type = TileTensor[
-        .uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
+        .uint32,
+        Self.cache_lengths_tt_layout,
+        Self.cache_lengths_origin,
+        Engine=Self.cache_lengths_engine,
     ]
 
     comptime lookup_table_tt_layout = _2d_row_major_tt_layout
     comptime lookup_table_tt_type = TileTensor[
-        .uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
+        .uint32,
+        Self.lookup_table_tt_layout,
+        Self.lookup_table_origin,
+        Engine=Self.lookup_table_engine,
     ]
 
     var blocks: Self.blocks_tt_type
@@ -2462,7 +2505,10 @@ struct PagedKVCache[
         ].element_types,
     ]
     comptime scales_tt_type = TileTensor[
-        Self.scale_dtype, Self.scales_tt_layout, Self.scales_origin
+        Self.scale_dtype,
+        Self.scales_tt_layout,
+        Self.scales_origin,
+        Engine=Self.scales_engine,
     ]
 
     # KV Cache quantization scales
@@ -2533,7 +2579,7 @@ struct PagedKVCache[
 
     def cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
-        return Int(self.cache_lengths[batch_idx])
+        return Int(self.cache_lengths.load[width=1](Coord(batch_idx))[0])
 
     @inline(.always)
     def _stride(self) -> UInt32:
@@ -2611,9 +2657,9 @@ struct PagedKVCache[
             " with scales_lookup_table inner dim ",
             Int(self.scales_lookup_table.dim[1]()),
         )
-        var block_idx = self.scales_lookup_table[
-            Int(batch_idx), lut_block_index
-        ]
+        var block_idx = self.scales_lookup_table.load[width=1](
+            Coord(Int(batch_idx), lut_block_index)
+        )[0]
         return block_idx * self._scale_stride() + UInt32(tok_in_block_idx)
 
     @inline(.always)
@@ -2636,7 +2682,9 @@ struct PagedKVCache[
             " with lookup_table inner dim ",
             Int(self.lookup_table.dim[1]()),
         )
-        var block_idx = self.lookup_table[Int(batch_idx), lut_block_index]
+        var block_idx = self.lookup_table.load[width=1](
+            Coord(Int(batch_idx), lut_block_index)
+        )[0]
         # alias row_stride = Int(num_heads * head_size * Self.collection_size)
         return block_idx * self._stride() + UInt32(tok_in_block_idx)
 
@@ -2711,7 +2759,9 @@ struct PagedKVCache[
                     ),
                 )
                 var lut_idx = base_kv_row // UInt32(Self.page_size)
-                var block_idx = self.lookup_table[Int(batch_idx), Int(lut_idx)]
+                var block_idx = self.lookup_table.load[width=1](
+                    Coord(Int(batch_idx), Int(lut_idx))
+                )[0]
                 result.rows[0] = block_idx * self._stride()
             else:
                 result.rows[0] = self.row_idx(batch_idx, base_kv_row)
@@ -2808,9 +2858,7 @@ struct PagedKVCache[
                 ),
             )
             var lut_row_ptr = (
-                self.lookup_table._storage
-                + batch_idx * row_stride
-                + first_lut_idx
+                self.lookup_table.ptr + batch_idx * row_stride + first_lut_idx
             )
             comptime for c in range(num_chunks):
                 var simd = lut_row_ptr.load[width=chunk, alignment=4 * chunk](
@@ -3108,7 +3156,9 @@ struct PagedKVCache[
             " with lookup_table inner dim ",
             Int(self.lookup_table.dim[1]()),
         )
-        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        var block_idx = Int(
+            self.lookup_table.load[width=1](Coord(bs, lut_block_idx))[0]
+        )
         return dyn_coord[.int64](
             (
                 block_idx,
@@ -3215,7 +3265,9 @@ struct PagedKVCache[
         immediately after the KV cache.
         """
         var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
-        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        var block_idx = Int(
+            self.lookup_table.load[width=1](Coord(bs, lut_block_idx))[0]
+        )
         debug_assert(
             block_idx < Int(self.blocks.dim[0]()),
             "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
@@ -3451,7 +3503,7 @@ struct PagedKVCache[
         assert self.scales is not None, "Quantization scale factors not set."
         var scales_block = self.scales.value()
 
-        var scales_ptr = scales_block._storage + Int(
+        var scales_ptr = scales_block.ptr + Int(
             scales_block.layout(full_scale_block_idx)
         )
         return scales_ptr.as_unsafe_any_origin()
@@ -3464,7 +3516,7 @@ struct PagedKVCache[
         dangling pointer if scales are not set."""
 
         comptime if Self.quantization_enabled:
-            return self.scales.value()._storage.as_unsafe_any_origin()
+            return self.scales.value().ptr.as_unsafe_any_origin()
         # SAFETY: Only reached when quantization is disabled; callers guard
         # scales access behind comptime `quantization_enabled` checks.
         return UnsafePointer[
@@ -3514,12 +3566,17 @@ struct ContinuousBatchingKVCacheCollection[
     comptime name_str = "continuous_batching"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
+    # A `LayoutTensor` is a bare pointer, so a collection built at the MOGG
+    # boundary is always raw-pointer backed.
     comptime CacheType = ContinuousBatchingKVCache[
         Self.dtype,
         Self.kv_params,
         Self.blocks_origin,
+        DefaultEngine[element_width=1],
         Self.cache_lengths_origin,
+        DefaultEngine[element_width=1],
         Self.lookup_table_origin,
+        DefaultEngine[element_width=1],
     ]
     comptime scale_dtype: DType = Self.CacheType.scale_dtype
 
@@ -3644,6 +3701,7 @@ struct ContinuousBatchingKVCacheCollection[
                 Self.CacheType.dtype,
                 Self.CacheType.blocks_tt_layout,
                 4,
+                Engine=Self.CacheType.blocks_engine,
             ](
                 self.blocks.ptr + offset,
                 self.kv_cache_dynamic_shape,
@@ -3656,7 +3714,7 @@ struct ContinuousBatchingKVCacheCollection[
         )
 
     def cache_length(self, bs_idx: Int) -> Int:
-        return Int(self.cache_lengths[bs_idx])
+        return Int(self.cache_lengths.load[width=1](Coord(bs_idx))[0])
 
 
 struct PagedKVCacheCollection[
@@ -3695,6 +3753,8 @@ struct PagedKVCacheCollection[
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
     comptime scale_dtype = Self.scale_dtype_.or_else(Self.dtype_)
+    # A `LayoutTensor` is a bare pointer, so a collection built at the MOGG
+    # boundary is always raw-pointer backed.
     comptime CacheType = PagedKVCache[
         Self.dtype,
         Self.kv_params,
@@ -3702,8 +3762,11 @@ struct PagedKVCacheCollection[
         Self.blocks_origin,
         Self.blocks_tt_type.Engine,
         Self.cache_lengths_origin,
+        DefaultEngine[element_width=1],
         Self.lookup_table_origin,
+        DefaultEngine[element_width=1],
         Self.scales_origin,
+        DefaultEngine[element_width=1],
         scale_dtype_=Self.scale_dtype_,
         quantization_granularity_=Self.quantization_granularity_,
     ]
@@ -3986,8 +4049,9 @@ struct PagedKVCacheCollection[
                     Self.CacheType.scale_dtype,
                     Self.CacheType.scales_tt_layout,
                     4,
+                    Engine=Self.CacheType.scales_engine,
                 ](
-                    self.scales.value()._storage + scale_offset,
+                    self.scales.value().ptr + scale_offset,
                     self.kv_cache_scales_dynamic_shape,
                     self.kv_cache_scales_dynamic_strides,
                 )
@@ -3998,6 +4062,7 @@ struct PagedKVCacheCollection[
                 Self.CacheType.dtype,
                 Self.CacheType.blocks_tt_layout,
                 4,
+                Engine=Self.CacheType.blocks_engine,
             ](
                 self.blocks.ptr + blocks_offset,
                 self.kv_cache_dynamic_shape,
@@ -4012,4 +4077,4 @@ struct PagedKVCacheCollection[
         )
 
     def cache_length(self, bs_idx: Int) -> Int:
-        return Int(self.cache_lengths[bs_idx])
+        return Int(self.cache_lengths.load[width=1](Coord(bs_idx))[0])

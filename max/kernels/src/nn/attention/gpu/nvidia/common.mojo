@@ -102,22 +102,34 @@ def elect() -> Int32:
     ](-1)
 
 
-comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
+comptime _LocalTT[
+    dtype: DType,
+    layout: InternalLayout,
+    *,
+    Engine: TensorEngine,
+] = TileTensor[
     dtype,
     InternalLayout[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
+    Engine=Engine,
     address_space=.LOCAL,
 ]
-comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
+comptime _SharedMemTT[
+    dtype: DType,
+    layout: InternalLayout,
+    *,
+    Engine: TensorEngine,
+] = TileTensor[
     dtype,
     InternalLayout[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
+    Engine=Engine,
     address_space=.SHARED,
 ]
 
@@ -915,8 +927,12 @@ def output_reg_to_smem_st_matrix[
 ](
     warp_group_thread_idx: UInt32,
     local_warp_group_idx: UInt32,
-    output_reg_tile: _LocalTT[accum_type, row_major[num_m_mmas, o_frag_size]()],
-    accum_smem_tile: _SharedMemTT[output_type, row_major[BM, padded_depth]()],
+    output_reg_tile: _LocalTT[
+        accum_type, row_major[num_m_mmas, o_frag_size](), Engine=_
+    ],
+    accum_smem_tile: _SharedMemTT[
+        output_type, row_major[BM, padded_depth](), Engine=_
+    ],
 ):
     """Stores output register fragments to shared memory using the `stmatrix` PTX instruction.
 
