@@ -42,7 +42,7 @@ from max.benchmark import (
     bench_multicontext,
     bencher_iter_custom,
 )
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.allreduce import allreduce, elementwise_epilogue_type
 from comm.allreduce_residual_rmsnorm import (
     allreduce_residual_rmsnorm,
@@ -72,7 +72,7 @@ def _verify_results[
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -307,7 +307,7 @@ def _verify_add_results[
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -589,7 +589,7 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length

@@ -41,7 +41,7 @@ from std.sys.defines import get_defined_bool, get_defined_int
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from comm.reducescatter import (
     _reducescatter_p2p_relay,
     reducescatter,
@@ -167,10 +167,10 @@ def main() raises:
     var signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var relay_signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var flag_bufs = List[DeviceBuffer[.int32]](capacity=WORLD)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
         uninitialized=True
     )
-    var relay_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var relay_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
         uninitialized=True
     )
     var host_buffer = List[Scalar[dtype]](unsafe_uninit_length=max_input)
@@ -260,7 +260,7 @@ def main() raises:
         var group_base = ualign_down(rank, GROUP)
         var group_in = Array[InTileType, GROUP](uninitialized=True)
         var group_out = Array[OutTileType, GROUP](uninitialized=True)
-        var group_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var group_sigs = Array[MutPointer[Signal, MutAnyOrigin], GROUP](
             uninitialized=True
         )
         for i in range(GROUP):
@@ -323,7 +323,7 @@ def main() raises:
             peer_starts[i] = Int32(i * part)
             peer_res_ptrs[i] = res_ptrs[peer_base + i]
 
-        var pair_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var pair_sigs = Array[MutPointer[Signal, MutAnyOrigin], PAIR](
             uninitialized=True
         )
         for i in range(PAIR):

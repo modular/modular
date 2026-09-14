@@ -49,7 +49,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from max.benchmark import bench_multicontext, bencher_iter_custom
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm, _dispatch_rs_norm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
@@ -121,7 +121,7 @@ def _verify_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[in_dtype],
     gamma_host: List[Scalar[in_dtype]],
     host_bufs: List[List[Scalar[in_dtype]]],
@@ -534,7 +534,7 @@ def bench_reducescatter_rmsnorm[
     var fused_sum = List[DeviceBuffer[in_dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

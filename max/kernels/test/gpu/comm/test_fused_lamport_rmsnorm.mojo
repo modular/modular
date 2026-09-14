@@ -34,7 +34,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, TileTensor, row_major
 
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.sync import init_signal_buffer
 from comm.sync import enable_p2p
 from comm.allreduce import allreduce
@@ -160,10 +160,10 @@ def rmsnorm_test[
     # lamport_state) but each rotates its own generation flag independently.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -377,10 +377,10 @@ def unsynced_skew_test[
     # Separate signal buffers per kernel path -- as in `rmsnorm_test`.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

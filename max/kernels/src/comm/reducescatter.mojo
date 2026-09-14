@@ -370,7 +370,7 @@ def _reducescatter_kernel[
         1 if use_multimem else ngpus,
     ],
     out_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     axis_size: Int32,
     unit_numel: Int32,
     my_rank: Int32,
@@ -490,7 +490,7 @@ def _reducescatter_relay_kernel[
     in_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
     peer_out_ptrs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
     peer_in_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], 2 * ngpus],
     my_start: Int32,
     my_numel: Int32,
     peer_starts: StaticTuple[Int32, ngpus],
@@ -699,7 +699,7 @@ def _reducescatter_p2p_relay[
     in_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
     peer_out_ptrs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
     peer_in_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], 2 * ngpus],
     my_start: Int,
     my_numel: Int,
     peer_starts: StaticTuple[Int32, ngpus],
@@ -845,7 +845,7 @@ def _reducescatter_p2p[
     output_buffers: Array[
         TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     max_num_blocks: Int,
     ctx: DeviceContext,
     my_rank: Int,
@@ -954,7 +954,7 @@ def _reducescatter_p2p[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
         uninitialized=True
     )
     comptime for i in range(group_size):
@@ -1029,7 +1029,7 @@ def _reducescatter_p2p[
 
         if pair_max_numel > 0 and recipe.relay_percent > 0:
             var relay_sigs = Array[
-                UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+                UnsafePointer[Signal, MutAnyOrigin], 2 * group_size
             ](uninitialized=True)
             for i in range(2 * group_size):
                 relay_sigs[i] = rank_sigs[pair_base + i]
@@ -1156,7 +1156,7 @@ def reducescatter[
     output_buffers: Array[
         TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     my_rank: Optional[Int] = None,

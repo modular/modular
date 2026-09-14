@@ -32,7 +32,6 @@ from max.gpu.intrinsics import Scope
 from layout import TensorLayout, TensorEngine, TileTensor
 
 from .sync import (
-    MAX_GPUS,
     Signal,
     _multi_gpu_barrier,
     circular_add,
@@ -62,7 +61,7 @@ def broadcast_multimem_kernel[
 ](
     output: TileTensor[dtype, Layout, MutAnyOrigin, Engine=out_engine],
     input: TileTensor[dtype, Layout, ImmutAnyOrigin, Engine=in_engine],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int32,
     root: Int32,
 ):
@@ -181,7 +180,7 @@ def broadcast_pull_1stage_kernel[
 ](
     output: TileTensor[dtype, layout, MutAnyOrigin, Engine=out_engine],
     input: TileTensor[dtype, layout, ImmutAnyOrigin, Engine=in_engine],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int32,
 ):
     """Single-stage pull broadcast kernel: each GPU reads root's input directly.
@@ -259,7 +258,7 @@ def broadcast_pull_2stage_kernel[
 ](
     result: TileTensor[dtype, OutputLayout, MutAnyOrigin, Engine=result_engine],
     root_input_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     num_elements: Int32,
     my_rank: Int32,
     root: Int32,
@@ -482,7 +481,7 @@ def broadcast[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin, Engine=in_engine],
     output_tensor: TileTensor[mut=True, dtype, in_layout, _, Engine=out_engine],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -610,7 +609,7 @@ def broadcast_2stage[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin, Engine=in_engine],
     output_tensor: TileTensor[mut=True, dtype, in_layout, _, Engine=out_engine],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,

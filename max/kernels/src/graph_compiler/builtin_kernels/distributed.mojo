@@ -194,7 +194,7 @@ struct DistributedAllReduceSum:
         # Marshal signal buffers into the expected format. World-view, indexed
         # by GLOBAL device rank -- the collectives below do their own
         # group-local slicing internally.
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -349,7 +349,7 @@ struct DistributedReduceScatterSum:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -497,7 +497,7 @@ struct DistributedAllGather:
         var out_tensors = Array[OutputTensorType, num_devices * group_size](
             uninitialized=True
         )
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -605,7 +605,7 @@ struct DistributedBroadcast:
 
         var in_buf = input.to_tile_tensor[.int64]()
 
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
 
@@ -694,7 +694,7 @@ struct DistributedScatter:
             inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, ngpus](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], ngpus](
             uninitialized=True
         )
 
@@ -807,7 +807,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         var in_tensors = Array[InputTensorType, inputs.size](uninitialized=True)
 
         # Marshal signal buffers.
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
 
@@ -977,7 +977,7 @@ struct DistributedReduceScatterRMSNorm:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -1246,7 +1246,7 @@ struct DistributedAllGatherRMSNorm:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -1485,7 +1485,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -1816,7 +1816,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -2078,7 +2078,7 @@ struct DistributedMatmulReduceScatterSum:
             )
 
         # Marshal signal buffers.
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
@@ -2202,7 +2202,7 @@ struct LamportAllreduceRMSNorm:
         comptime epsilon = Float32(1e-6)
         comptime dtype = output.dtype
 
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], ngpus](
             uninitialized=True
         )
         comptime for i in range(ngpus):

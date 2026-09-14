@@ -49,7 +49,7 @@ from .allgather import allgather_tuning_table
 from .device_query import dispatch_select_comm_config, get_sm_version
 from .reducescatter import _target_address_space
 from .relay import _relay_pairs
-from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
+from .sync import Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 # H the fuse threshold was calibrated at; a different H must recalibrate (both the
@@ -102,7 +102,7 @@ def _allgather_rmsnorm_kernel[
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     cols_dev: Int32,
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank_dev: Int32,
 ):
     """Gather every source-GPU row into `[rows, cols]` and RMSNorm it in registers.
@@ -223,7 +223,7 @@ def _allgather_rmsnorm_launch[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int,
     ctx: DeviceContext,
 ) raises:
@@ -301,7 +301,7 @@ def allgather_rmsnorm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     my_rank: Optional[Int] = None,
 ) raises:
@@ -364,7 +364,7 @@ def _allgather_rmsnorm_impl[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     my_rank: Optional[Int] = None,
 ) raises:
@@ -534,7 +534,7 @@ def _allgather_rmsnorm_impl[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
         uninitialized=True
     )
     comptime for i in range(group_size):
@@ -580,7 +580,7 @@ def allgather_rmsnorm_quant[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     my_rank: Optional[Int] = None,
 ) raises:
@@ -645,7 +645,7 @@ def _dispatch_ag_norm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,
@@ -774,7 +774,7 @@ def _dispatch_ag_norm_quant[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,

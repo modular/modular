@@ -32,7 +32,7 @@ from internal_utils.fp8_utils import cast_saturating
 
 from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.device_collective import _launch_device_collective
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from extensibility import StaticTensorSpec
 from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
@@ -2979,7 +2979,7 @@ struct BundledAllReduceSum:
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var out_buf = output.to_tile_tensor[.int64]()
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
 
@@ -3109,7 +3109,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
 

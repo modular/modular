@@ -45,7 +45,6 @@ from std.sys import simd_width_of
 from std.utils import StaticTuple
 
 from .sync import (
-    MAX_GPUS,
     Signal,
     _multi_gpu_barrier,
     is_p2p_enabled,
@@ -70,7 +69,7 @@ def scatter_pull_kernel[
     output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     input_ptrs: Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], dp_size],
     chunk_num_elems: Array[Int32, dp_size],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int32,
 ):
     """Pull-based scatter+broadcast: each GPU reads its chunk from root.
@@ -130,7 +129,7 @@ def scatter[
         TileTensor[dtype, in_layout, in_origin, Engine=in_engine], dp_size
     ],
     output_buffer: TileTensor[mut=True, dtype, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
 ) raises:
     """Pull-based scatter+broadcast.

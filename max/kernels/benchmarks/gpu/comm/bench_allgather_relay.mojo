@@ -40,7 +40,7 @@ from std.sys import size_of, simd_width_of
 from std.sys.defines import get_defined_int
 from std.utils import StaticTuple
 
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from comm.allgather import (
     _allgather_p2p_relay,
     allgather,
@@ -132,10 +132,10 @@ def main() raises:
     var signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var relay_signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var flag_bufs = List[DeviceBuffer[.int32]](capacity=WORLD)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
         uninitialized=True
     )
-    var relay_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var relay_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
         uninitialized=True
     )
     var host_buffer = List[Scalar[dtype]](unsafe_uninit_length=max_length)
@@ -214,7 +214,7 @@ def main() raises:
         var group_base = ualign_down(rank, GROUP)
         var group_in = Array[InTileType, GROUP](uninitialized=True)
         var group_out = Array[OutTileType, GROUP * GROUP](uninitialized=True)
-        var group_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var group_sigs = Array[MutPointer[Signal, MutAnyOrigin], GROUP](
             uninitialized=True
         )
         for i in range(GROUP):
@@ -287,7 +287,7 @@ def main() raises:
                     MutPointer[Scalar[dtype], MutAnyOrigin]
                 ](out_tile(peer_base + dst_idx, src_idx, length).ptr)
 
-        var pair_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var pair_sigs = Array[MutPointer[Signal, MutAnyOrigin], PAIR](
             uninitialized=True
         )
         for i in range(PAIR):

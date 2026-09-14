@@ -240,7 +240,7 @@ def _allgather_p2p_kernel[
 ](
     outputs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     lengths: StaticTuple[Int32, ngpus],
     max_num_blocks: Int32,
     my_rank: Int32,
@@ -349,7 +349,7 @@ def _allgather_tma_kernel[
 ](
     outputs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     lengths: StaticTuple[Int32, ngpus],
     my_rank: Int32,
 ):
@@ -444,7 +444,7 @@ def _allgather_p2p_tma[
     list_of_in_ptrs: StaticTuple[
         ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     lengths: StaticTuple[Int32, ngpus],
     ctx: DeviceContext,
     my_rank: Int,
@@ -515,7 +515,7 @@ def _allgather_relay_kernel[
     peer_out_ptrs: StaticTuple[
         MutPointer[Scalar[dtype], MutAnyOrigin], ngpus * ngpus
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], 2 * ngpus],
     lengths: StaticTuple[Int32, ngpus],
     peer_lengths: StaticTuple[Int32, ngpus],
     relay_percent: Int32,
@@ -695,7 +695,7 @@ def _allgather_p2p_relay[
     peer_output_ptrs: StaticTuple[
         MutPointer[Scalar[dtype], MutAnyOrigin], ngpus * ngpus
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], 2 * ngpus],
     recipe: RelayTuningConfig,
     ctx: DeviceContext,
     my_rank: Int,
@@ -813,7 +813,7 @@ def _allgather_p2p[
         TileTensor[mut=True, dtype, out_layout, out_origin, Engine=out_engine],
         ngpus * group_size,
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     _max_num_blocks: Optional[Int],
     ctx: DeviceContext,
     my_rank: Int,
@@ -862,7 +862,7 @@ def _allgather_p2p[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
         uninitialized=True
     )
     comptime for i in range(group_size):
@@ -922,9 +922,9 @@ def _allgather_p2p[
         ](pair_max_length * size_of[dtype]())
 
         if pair_max_length > 0 and recipe.relay_percent > 0:
-            var relay_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
-                uninitialized=True
-            )
+            var relay_sigs = Array[
+                MutPointer[Signal, MutAnyOrigin], 2 * group_size
+            ](uninitialized=True)
             for i in range(2 * group_size):
                 relay_sigs[i] = rank_sigs[pair_base + i]
 
@@ -1027,7 +1027,7 @@ def allgather[
         TileTensor[mut=True, dtype, out_layout, out_origin, Engine=out_engine],
         ngpus * group_size,
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     my_rank: Int,
     _max_num_blocks: Optional[Int] = None,

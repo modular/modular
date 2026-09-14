@@ -130,7 +130,7 @@ from ..structured_kernels.tile_scheduler_splitk import (
 )
 from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from comm.sync import _multi_gpu_barrier
 
 # Import shared kernel components from kernel_common
@@ -1696,7 +1696,10 @@ struct BlackwellMatmulSM100Kernel[
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
         rank_sigs: Optional[
-            Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+            Array[
+                UnsafePointer[Signal, MutAnyOrigin],
+                Self.num_c_tma_descriptors,
+            ]
         ] = None,
         my_rank_dev: Int32 = 0,
     ):

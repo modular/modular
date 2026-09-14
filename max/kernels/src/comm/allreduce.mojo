@@ -135,7 +135,6 @@ from .reducescatter import (
     _target_address_space,
 )
 from .sync import (
-    MAX_GPUS,
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
@@ -708,7 +707,7 @@ def _allreduce_2stage_kernel[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     num_elements: Int32,
     my_rank: Int32,
 ):
@@ -928,7 +927,7 @@ def _allreduce_1stage_kernel[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     num_elements: Int32,
     my_rank: Int32,
 ):
@@ -1070,7 +1069,7 @@ def _allreduce_lamport_kernel[
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
     src_tensors: Array[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     num_elements: Int32,
     my_rank: Int32,
 ):
@@ -1296,7 +1295,7 @@ def _allreduce_lamport_p2p[
 ](
     list_of_in_tensors: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     dispatch_config: AllReduceTuningConfig,
     ctx: DeviceContext,
     my_rank: Int,
@@ -1389,7 +1388,7 @@ def _allreduce_p2p[
         1 if use_multimem else ngpus,
     ],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     dispatch_config: AllReduceTuningConfig,
     ctx: DeviceContext,
     my_rank: Int,
@@ -1479,7 +1478,7 @@ def _allreduce_p2p[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
         uninitialized=True
     )
     comptime for i in range(group_size):
@@ -1624,7 +1623,7 @@ def allreduce[
         1 if use_multimem else ngpus,
     ],
     output_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     my_rank: Optional[Int] = None,

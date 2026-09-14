@@ -59,7 +59,7 @@ from .allreduce import allreduce_tuning_table
 from .device_query import dispatch_select_comm_config, get_sm_version
 from .reducescatter import ReduceScatterConfig, _target_address_space
 from .relay import _relay_pairs
-from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
+from .sync import Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 # Per-rank shard bytes at/below which `_dispatch_rs_norm` fuses. Fused
@@ -116,7 +116,7 @@ def _reducescatter_rmsnorm_kernel[
     weight_offset: Scalar[in_dtype],
     rows_dev: Int32,
     cols_dev: Int32,
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank_dev: Int32,
 ):
     """Reduce-scatter each owned row in f32, then RMSNorm it in registers.
@@ -284,7 +284,7 @@ def _reducescatter_rmsnorm_launch[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int,
     ctx: DeviceContext,
     residual: _ComptimeConditionalTileTensor[
@@ -406,7 +406,7 @@ def reducescatter_rmsnorm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     my_rank: Optional[Int] = None,
     residual: _ComptimeConditionalTileTensor[
@@ -604,7 +604,7 @@ def reducescatter_rmsnorm[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
         uninitialized=True
     )
     comptime for i in range(group_size):
@@ -654,7 +654,7 @@ def _dispatch_rs_norm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     threshold: Int = RS_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,

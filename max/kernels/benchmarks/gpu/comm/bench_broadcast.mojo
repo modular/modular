@@ -34,7 +34,7 @@ from max.benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.broadcast import broadcast
-from comm import MAX_GPUS, Signal
+from comm import Signal
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import (
     DeviceBuffer,
@@ -116,7 +116,7 @@ def bench_broadcast[
     var chunk_bytes = ceildiv(num_bytes, ngpus)
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

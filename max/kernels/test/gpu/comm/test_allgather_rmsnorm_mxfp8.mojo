@@ -41,7 +41,7 @@ from std.utils.index import Index
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import Coord, TileTensor, row_major
 
-from comm import MAX_GPUS, Signal, group_end, group_start
+from comm import Signal, group_end, group_start
 from comm.allgather_rmsnorm import (
     _dispatch_ag_norm_quant,
     allgather_rmsnorm,
@@ -102,7 +102,7 @@ def _run_case[
     var scales_ref = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var scales_fused = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

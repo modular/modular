@@ -61,7 +61,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
 
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.reducescatter import ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
@@ -150,7 +150,7 @@ def bench_rs_norm_gemm_pdl[
     var c_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_ref_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

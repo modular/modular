@@ -16,7 +16,7 @@ from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from std.itertools import product
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import (
     _allreduce_naive_single,
@@ -84,7 +84,7 @@ def allreduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

@@ -342,7 +342,7 @@ def _multi_gpu_barrier[
     named_barrier_id: Int = 1,
     domain_id: Int = 0,
 ](
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     self_sg: MutPointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):
@@ -367,7 +367,8 @@ def _multi_gpu_barrier[
             full-world bank on a shared `Signal` buffer.
 
     Args:
-        rank_sigs: Signal pointers for all GPUs.
+        rank_sigs: Signal pointers for the `ngpus` ranks in this barrier's
+            domain, indexed by domain-local rank.
         self_sg: Signal pointer for current GPU.
         my_rank: Current GPU rank.
 

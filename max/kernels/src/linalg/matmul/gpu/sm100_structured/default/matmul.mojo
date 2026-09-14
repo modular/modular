@@ -22,7 +22,7 @@ All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
@@ -358,7 +358,10 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # This is wrapped in an Array to match reduce-scatter friendly kernel interface
     var c_tma_ops: Array[type_of(c_tma_op), 1] = [c_tma_op]
     var rank_sigs: Optional[
-        Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+        Array[
+            UnsafePointer[Signal, MutAnyOrigin],
+            KernelType.num_c_tma_descriptors,
+        ]
     ] = None
 
     ctx.enqueue_function[kernel](

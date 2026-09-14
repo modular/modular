@@ -41,7 +41,7 @@ from std.sys import size_of, simd_width_of
 from std.itertools import product
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.sync import enable_p2p, init_signal_buffer
 from comm.lamport import Lamport
 from comm.allreduce import (
@@ -107,7 +107,7 @@ def lamport_allreduce_test[
     # (3 generations * ngpus slots * max-small-message).
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -319,7 +319,7 @@ def lamport_mixed_size_test[
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -509,7 +509,7 @@ def lamport_coexist_test[
     # scratch (ngpus * large message), which trails the struct.
     var scratch_bytes = ngpus * large_len * size_of[dtype]()
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -715,7 +715,7 @@ def lamport_unsynced_skew_test[
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

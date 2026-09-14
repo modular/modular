@@ -37,7 +37,7 @@ from std.sys import size_of
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_true
 
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.scatter import scatter
 from comm.sync import enable_p2p, init_signal_buffer
 
@@ -111,7 +111,7 @@ def _test_pull[
 
     # Signal buffers.
     var signal_bufs = List[DeviceBuffer[.uint8]]()
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
     for i in range(ngpus):

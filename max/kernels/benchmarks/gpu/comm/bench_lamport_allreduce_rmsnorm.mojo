@@ -54,7 +54,7 @@ from max.benchmark import (
     bench_multicontext,
     bencher_iter_custom,
 )
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.allreduce import allreduce
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
@@ -126,8 +126,8 @@ def _verify_results[
     sigs_ar: List[DeviceBuffer[.uint8]],
     sigs_fused: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[dtype]],
-    rank_sigs_ar: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
-    rank_sigs_fused: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs_ar: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    rank_sigs_fused: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[dtype],
     epsilon: Scalar[dtype],
 ) raises:
@@ -272,10 +272,10 @@ def bench_fused_lamport_allreduce_rmsnorm[
     # interleaving the two paths on the same buffer would confuse the state.
     var sigs_ar = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 

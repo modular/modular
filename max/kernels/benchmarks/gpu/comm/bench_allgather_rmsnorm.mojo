@@ -48,7 +48,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.allgather import allgather
 from comm.reducescatter import ReduceScatterConfig
 from comm.allgather_rmsnorm import allgather_rmsnorm, _dispatch_ag_norm
@@ -120,7 +120,7 @@ def _verify_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_shards: List[CacheBustingBuffer[in_dtype]],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[in_dtype],
     gamma_host: List[Scalar[in_dtype]],
     epsilon: Float32,
@@ -322,7 +322,7 @@ def bench_allgather_rmsnorm[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
