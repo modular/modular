@@ -262,6 +262,20 @@ class VisionPreprocessCache(Generic[_T]):
         self._hits = 0
         self._misses = 0
 
+    def contains(self, key: int) -> bool:
+        """Whether ``key`` is cached right now, without disturbing the cache.
+
+        A peek, not a lookup: LRU order, the idle deadline and the hit/miss
+        counters are all left alone, so the :meth:`get_or_preprocess` that
+        follows still accounts for itself.
+
+        The answer is a snapshot, not a reservation: an entry can be evicted
+        between the peek and the lookup, so a caller must stay correct when
+        what it saw here has gone.
+        """
+        with self._lock:
+            return key in self._cache
+
     def get(self, key: int) -> _T | None:
         """Look up a payload by content key, refreshing LRU order.
 

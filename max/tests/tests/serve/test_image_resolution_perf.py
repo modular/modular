@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import logging
 import threading
 from collections.abc import AsyncIterator
 from typing import Any
@@ -43,7 +44,10 @@ from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
 from max.serve.router import _image_resolution
 from max.serve.router._image_resolution import resolve_image_from_url
-from max.serve.router.openai_routes import openai_parse_chat_completion_request
+from max.serve.router.openai_routes import (
+    _preprocessed_image_probe,
+    openai_parse_chat_completion_request,
+)
 from max.serve.schemas.openai import CreateChatCompletionRequest
 from PIL import Image
 from pydantic import AnyUrl
@@ -551,3 +555,161 @@ async def test_settings_media_kind_used_in_error_message() -> None:
         await resolve_image_from_url(
             AnyUrl(_data_uri(b"\x00" * 4096)), settings=settings
         )
+
+
+# ---------------------------------------------------------------------------
+# ENABLE-2953: the route skips the admission decode for images the tokenizer
+# has already preprocessed.
+# ---------------------------------------------------------------------------
+
+
+def _image_request(images: list[bytes]) -> CreateChatCompletionRequest:
+    content: list[dict[str, Any]] = [{"type": "text", "text": "describe"}]
+    content += [
+        {"type": "image_url", "image_url": {"url": _data_uri(image)}}
+        for image in images
+    ]
+    return CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [{"role": "user", "content": content}]}
+    )
+
+
+async def test_parse_skips_the_decode_for_a_cached_image() -> None:
+    """A cached image's pixels are never touched at admission.
+
+    This is the whole point: on a multi-turn computer-use conversation almost
+    every image in a request is one an earlier turn already preprocessed, and
+    the decode of those images was 18% of the API server's busy CPU.
+    """
+    cached, fresh = _png_bytes((8, 8)), _png_bytes((16, 16))
+
+    def mask(images: list[bytes], messages: list[Any]) -> list[bool]:
+        return [image == cached for image in images]
+
+    parsed = await openai_parse_chat_completion_request(
+        _image_request([cached, fresh]),
+        wrap_content=True,
+        settings=Settings(),
+        preprocessed_image_mask=mask,
+    )
+
+    assert parsed.images == [cached, fresh]
+    assert parsed.decoded_images[0] is None
+    assert parsed.decoded_images[1] is not None
+    assert parsed.decoded_images[1].size == (16, 16)
+
+
+async def test_parse_decodes_everything_without_a_probe() -> None:
+    """An architecture with no preprocessed-image cache is unaffected."""
+    parsed = await openai_parse_chat_completion_request(
+        _image_request([_png_bytes((8, 8)), _png_bytes((16, 16))]),
+        wrap_content=True,
+        settings=Settings(),
+    )
+
+    assert all(image is not None for image in parsed.decoded_images)
+
+
+async def test_parse_still_rejects_a_bad_uncached_image() -> None:
+    """Skipping cached images must not weaken validation of the rest."""
+    cached = _png_bytes((8, 8))
+    bad = b"definitely-not-an-image"
+
+    def mask(images: list[bytes], messages: list[Any]) -> list[bool]:
+        return [image == cached for image in images]
+
+    with pytest.raises(InputError, match="invalid or unreadable"):
+        await openai_parse_chat_completion_request(
+            _image_request([cached, bad]),
+            wrap_content=True,
+            settings=Settings(),
+            preprocessed_image_mask=mask,
+        )
+
+
+async def test_parse_decodes_everything_when_the_probe_length_is_wrong(
+    caplog,  # noqa: ANN001
+) -> None:
+    """A malformed probe answer costs the optimization, not the request.
+
+    The mask is positional; a short one used to index out of range and
+    surface as a 500. Decoding every image is exactly the behaviour before
+    the probe existed, so that is the fallback. (ENABLE-2953.)
+    """
+
+    def short_mask(images: list[bytes], messages: list[Any]) -> list[bool]:
+        return [True]
+
+    with caplog.at_level(logging.WARNING, logger="max.serve"):
+        parsed = await openai_parse_chat_completion_request(
+            _image_request([_png_bytes((8, 8)), _png_bytes((16, 16))]),
+            wrap_content=True,
+            settings=Settings(),
+            preprocessed_image_mask=short_mask,
+        )
+
+    assert all(image is not None for image in parsed.decoded_images)
+    assert "returned 1 entries for 2 image(s)" in caplog.text
+
+
+async def test_parse_runs_the_probe_off_the_event_loop() -> None:
+    """The probe shares the decode's worker hop, not the event loop.
+
+    It hashes every request image, so it belongs off the loop with the other
+    CPU-bound media work -- and in the same hop, since its answer is what
+    decides what the decode may skip. A second ``to_thread`` would add a
+    scheduling bounce to move ~0.084ms of hashing for a typical request.
+    """
+    loop_thread = threading.get_ident()
+    probe_threads: list[int] = []
+
+    def recording_probe(images: list[bytes], messages: list[Any]) -> list[bool]:
+        probe_threads.append(threading.get_ident())
+        return [False] * len(images)
+
+    await openai_parse_chat_completion_request(
+        _image_request([_png_bytes((8, 8)), _png_bytes((16, 16))]),
+        wrap_content=True,
+        settings=Settings(),
+        preprocessed_image_mask=recording_probe,
+    )
+
+    assert probe_threads, "probe was never called"
+    assert loop_thread not in probe_threads
+
+
+def test_probe_resolution_requires_the_protocol() -> None:
+    """Only a tokenizer implementing the protocol opts in."""
+
+    class WithoutProbe:
+        pass
+
+    class WithProbe:
+        def preprocessed_image_mask(
+            self, images: list[bytes], messages: list[Any]
+        ) -> list[bool]:
+            return [False] * len(images)
+
+    assert _preprocessed_image_probe(WithoutProbe()) is None
+    probe = _preprocessed_image_probe(WithProbe())
+    assert probe is not None
+    assert probe([b"a"], []) == [False]
+
+
+def test_probe_resolution_rejects_a_non_callable_attribute(
+    caplog,  # noqa: ANN001
+) -> None:
+    """A protocol check proves the attribute exists, not that it is callable.
+
+    An architecture defining this as a list or property would otherwise reach
+    the call site and fail there, which the route reports as a 400 about the
+    request body -- pointing the operator at the client's JSON for a
+    server-side mistake.
+    """
+
+    class BadProbe:
+        preprocessed_image_mask = [True, False]
+
+    with caplog.at_level(logging.WARNING, logger="max.serve"):
+        assert _preprocessed_image_probe(BadProbe()) is None
+    assert "not callable" in caplog.text

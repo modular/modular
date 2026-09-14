@@ -359,7 +359,7 @@ class TextGenerationRequest:
     A list of video byte arrays that can be included as part of the request.
     Each video is decoded into frames during preprocessing.
     """
-    decoded_images: list[PILImage] = field(default_factory=list)
+    decoded_images: list[PILImage | None] = field(default_factory=list)
     """
     Decoded ``PIL.Image`` objects corresponding 1:1 to :attr:`images`, decoded
     once at request admission (the API server validates images by fully
@@ -368,6 +368,9 @@ class TextGenerationRequest:
     the worker boundary, so it must stay populated only for the in-process
     tokenization step. Empty when images were not pre-decoded (offline/test
     callers); tokenizers fall back to decoding :attr:`images` in that case.
+    An individual entry is ``None`` when the admission decode was skipped
+    because the tokenizer already holds that image's preprocessed tensor --
+    the same per-index fallback to :attr:`images` applies.
     """
     tools: list[TextGenerationRequestTool] | None = None
     """
@@ -447,8 +450,21 @@ class TextGenerationRequest:
         for offline and test callers. Tokenizers consume images through this so
         the decode-once policy lives in one place rather than being repeated at
         every per-model decode site.
+
+        The fallback is per index, not per request: the API server skips the
+        admission decode for an image whose preprocessed tensor the tokenizer
+        already holds, leaving a ``None`` in that slot. Such an image is only
+        decoded if the tokenizer actually needs its pixels, which a cache hit
+        means it does not.
         """
-        return self.decoded_images or self.images
+        if not self.decoded_images:
+            return list(self.images)
+        return [
+            raw if decoded is None else decoded
+            for decoded, raw in zip(
+                self.decoded_images, self.images, strict=True
+            )
+        ]
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""

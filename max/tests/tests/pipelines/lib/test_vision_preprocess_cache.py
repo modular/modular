@@ -180,6 +180,52 @@ class TestVisionPreprocessCache:
         assert revived.total_bytes == 10
 
 
+class TestContains:
+    """``contains`` answers without disturbing anything.
+
+    The API server calls it per image before deciding whether to decode, so
+    it must not turn into a lookup: the real ``get_or_preprocess`` that
+    follows is what the hit/miss counters and LRU order are for.
+    """
+
+    def test_reports_presence(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(1024)
+        cache.put(7, "seven", 10)
+
+        assert cache.contains(7)
+        assert not cache.contains(8)
+
+    def test_does_not_count_as_a_lookup(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(1024)
+        cache.put(7, "seven", 10)
+
+        cache.contains(7)
+        cache.contains(8)
+
+        assert cache.hits == 0
+        assert cache.misses == 0
+
+    def test_does_not_refresh_lru_order(self) -> None:
+        # Budget for two entries; peeking at the older one must not save it
+        # from being the next eviction.
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+
+        cache.contains(1)
+        cache.put(3, "three", 10)
+
+        assert not cache.contains(1)
+        assert cache.contains(2)
+        assert cache.contains(3)
+
+    def test_a_disabled_cache_never_contains(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(0)
+        cache.put(7, "seven", 10)
+
+        assert not cache.contains(7)
+
+
 class TestGetOrPreprocess:
     """The one entry point a tokenizer uses, hoisted out of the models."""
 

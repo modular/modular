@@ -26,6 +26,7 @@ import io
 import ipaddress
 import logging
 import socket
+from collections.abc import Sequence
 from pathlib import Path
 from typing import NoReturn, Protocol
 from urllib.parse import unquote, urlparse
@@ -41,48 +42,13 @@ from httpx import (
     TransportError,
 )
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.tokenizer import ALLOWED_IMAGE_FORMATS
 from max.serve.config import Settings
 from max.support.human_readable_formatter import to_human_readable_bytes
 from PIL import Image, UnidentifiedImageError
 from pydantic import AnyUrl
 
 logger = logging.getLogger("max.serve")
-
-# Formats we are willing to decode. Passing this to ``Image.open`` means the
-# decoder is chosen from this set rather than from every registered PIL plugin
-# by magic bytes, which shrinks the native-decoder attack surface. Most
-# importantly it keeps attacker-controlled bytes away from PIL's EPS plugin,
-# which shells out to Ghostscript (``subprocess.check_call`` with no timeout) --
-# a repeat CVE target and an unbounded-runtime DoS vector reachable from an
-# unauthenticated-shaped request. "JPEG" also covers MPO (multi-picture JPEG),
-# which PIL opens through the JPEG factory.
-#
-# The set is the common web formats a vision client sends plus a few
-# semi-popular ones. HEIC/HEIF are deliberately absent: base Pillow cannot
-# decode them without the optional ``pillow-heif`` plugin (not a dependency),
-# and JPEG2000/EPS-style exotic decoders are left out to keep the surface small.
-_DESIRED_IMAGE_FORMATS = (
-    "PNG",
-    "JPEG",
-    "WEBP",
-    "GIF",
-    "BMP",
-    "PPM",
-    "TIFF",
-    "TGA",
-    "AVIF",
-)
-
-# Register every PIL plugin now, then keep only the formats this build actually
-# provides. Intersecting is what makes it safe to list an *optional* codec such
-# as AVIF: on a platform whose Pillow wheel ships without libavif the name is
-# simply dropped here, instead of turning every non-first-format image into an
-# uncaught ``KeyError`` inside ``Image.open`` (which looks up ``OPEN[name]``
-# after a one-shot ``init()``). ``init()`` is idempotent and runs once at import.
-Image.init()
-_ALLOWED_IMAGE_FORMATS = tuple(
-    fmt for fmt in _DESIRED_IMAGE_FORMATS if fmt in Image.OPEN
-)
 
 # SSRF protection for client-supplied media URLs: validate the host, reject
 # internal/reserved addresses, and pin to the resolved IP. See
@@ -335,7 +301,8 @@ def _estimated_decoded_bytes(image: Image.Image) -> int:
 def decode_and_validate_images(
     images: list[bytes],
     max_decoded_bytes: int | None = None,
-) -> list[Image.Image]:
+    skip_decode: Sequence[bool] | None = None,
+) -> list[Image.Image | None]:
     # Fully decode each image so empty, non-image, or truncated/streamed
     # content (e.g. animated or content-negotiated WebP) fails here as a clean
     # 400 instead of reaching the model worker and crashing it with an
@@ -348,13 +315,27 @@ def decode_and_validate_images(
     # The decoded images are returned and carried on the request
     # (``TextGenerationRequest.decoded_images``) so the tokenizer reuses them
     # instead of decoding the same bytes a second time. We therefore do not
-    # close the images here (no ``with`` block): ``load()`` has already pulled
-    # the pixels into memory and the caller owns the decoded image.
-    decoded: list[Image.Image] = []
-    for image_bytes in images:
+    # close the images we return (no ``with`` block): ``load()`` has already
+    # pulled the pixels into memory and the caller owns the decoded image.
+    #
+    # ``skip_decode`` marks images whose preprocessed tensor the tokenizer
+    # already holds, so nothing downstream reads their pixels. Only ``load()``
+    # is skipped -- the format allowlist and the decoded-size estimate are
+    # cheap header reads and stay unconditional, so a skipped image is held to
+    # the same limits as any other. Its slot is ``None``;
+    # ``TextGenerationRequest.images_for_processing`` falls back to the raw
+    # bytes per index, and ``open_image`` applies the same allowlist and the
+    # same 400 if they do have to be decoded after all.
+    if skip_decode is not None and len(skip_decode) != len(images):
+        raise ValueError(
+            f"skip_decode has {len(skip_decode)} entries but there are "
+            f"{len(images)} image(s); it must be aligned with ``images``."
+        )
+    decoded: list[Image.Image | None] = []
+    for index, image_bytes in enumerate(images):
         try:
             image = Image.open(
-                io.BytesIO(image_bytes), formats=_ALLOWED_IMAGE_FORMATS
+                io.BytesIO(image_bytes), formats=ALLOWED_IMAGE_FORMATS
             )
         except (
             UnidentifiedImageError,
@@ -387,6 +368,14 @@ def decode_and_validate_images(
                     f"{to_human_readable_bytes(max_decoded_bytes)} per request "
                     f"by {to_human_readable_bytes(estimated - max_decoded_bytes)}"
                 )
+        if skip_decode is not None and skip_decode[index]:
+            # Past both cheap checks, so this image is as validated as any
+            # other; what is skipped is only the allocation. Closed rather
+            # than carried: handing the tokenizer a lazy, un-loaded image
+            # would just move the decode to whenever it first touches a pixel.
+            image.close()
+            decoded.append(None)
+            continue
         try:
             image.load()
         except (
@@ -873,6 +862,8 @@ def _encode_data_uri(image_bytes: bytes, max_decoded_bytes: int | None) -> str:
     handed -- so the image is released as soon as its format is read.
     """
     image = decode_and_validate_images([image_bytes], max_decoded_bytes)[0]
+    # No ``skip_decode`` here, so the one slot always holds a decoded image.
+    assert image is not None
     try:
         mime = _sniff_image_mime(image)
     finally:

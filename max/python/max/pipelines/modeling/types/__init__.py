@@ -63,7 +63,12 @@ from .reasoning import (
     ReasoningSpan,
 )
 from .task import InputModality, PipelineTask
-from .tokenizer import PipelineTokenizer, TokenizerEncoded, UnboundContextType
+from .tokenizer import (
+    PipelineTokenizer,
+    PreprocessedImageProbe,
+    TokenizerEncoded,
+    UnboundContextType,
+)
 from .tool_parsing import (
     ParsedToolCall,
     ParsedToolCallDelta,
@@ -112,6 +117,7 @@ __all__ = [
     "PipelineTokenizer",
     "PipelinesFactory",
     "PixelGenerationInputs",
+    "PreprocessedImageProbe",
     "ProcessorInputs",
     "ReasoningParser",
     "ReasoningPipelineTokenizer",
