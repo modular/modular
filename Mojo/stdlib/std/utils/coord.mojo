@@ -84,14 +84,6 @@ trait CoordLike(
         """
         ...
 
-    def sum(self) -> Scalar[Self.DTYPE]:
-        """Calculate the sum of all elements.
-
-        Returns:
-            The sum of all elements.
-        """
-        ...
-
 
 struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     """Compile-time known index value.
@@ -148,15 +140,6 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     @inline(.nodebug)
     def product(self) -> Scalar[Self.DTYPE]:
         """Calculate the product (returns the value for scalar types).
-
-        Returns:
-            The integer value.
-        """
-        return self.value()
-
-    @inline(.nodebug)
-    def sum(self) -> Scalar[Self.DTYPE]:
-        """Calculate the sum (returns the value for scalar types).
 
         Returns:
             The integer value.
@@ -242,10 +225,6 @@ struct _All(CoordLike, TrivialRegisterPassable):
     @inline(.nodebug)
     def product(self) -> Scalar[Self.DTYPE]:
         return Scalar[Self.DTYPE](1)
-
-    @inline(.nodebug)
-    def sum(self) -> Scalar[Self.DTYPE]:
-        return Scalar[Self.DTYPE](0)
 
     @inline(.nodebug)
     def value(self) -> Scalar[Self.DTYPE]:
@@ -475,27 +454,9 @@ struct Coord[*element_types: CoordLike](
         # its `DTYPE` before being narrowed to `T`, since `CoordLike` only
         # guarantees the unparameterized `product()`.
         # TODO(GPUA-12): Add comptime asserts to make sure that Coord's
-        # product and sum do not overflow.
+        # product does not overflow.
         comptime for i in range(Self.__len__()):
             result *= Scalar[result_dtype](self[i].product())
-
-        return result
-
-    @inline(.nodebug)
-    def sum(self) -> Scalar[Self.DTYPE]:
-        """Calculate the sum of all elements recursively.
-
-        Returns:
-            The sum of all leaf values in the `Coord`.
-        """
-        var result: Scalar[Self.DTYPE] = 0
-
-        # See `product()`: aggregating heterogeneous child `DTYPE`s into
-        # `Self.DTYPE` is intentional.
-        # TODO(GPUA-12): Add comptime asserts to make sure that Coord's
-        # product and sum do not overflow.
-        comptime for i in range(Self.__len__()):
-            result += Scalar[Self.DTYPE](self[i].sum())
 
         return result
 

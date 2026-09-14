@@ -115,4 +115,11 @@ This version is still a work in progress.
 
 ## Removed
 
+- Removed `sum()` from the `CoordLike` trait and from its implementations
+  (`Coord`, `ComptimeInt` and the `All` marker). Nothing called it: a
+  coordinate's elements are extents and indices, so adding them together
+  has no meaning the way `product()` does, where the result is the number
+  of elements a shape describes. Use `product()` for that, or iterate the
+  elements and add them yourself if you really want a sum.
+
 ## Fixed
