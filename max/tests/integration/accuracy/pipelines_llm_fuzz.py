@@ -506,6 +506,22 @@ def _run_fuzz_with_crash_detection(
                 proc.wait(timeout=5)
 
 
+def _redacted(cmd: Sequence[str]) -> list[str]:
+    """Return ``cmd`` with the value following --api-key masked.
+
+    Both log sites print the whole argv, and GitHub's secret masking only
+    covers values it already knows; a token supplied any other way would
+    otherwise land in the log verbatim.
+    """
+    out = list(cmd)
+    for i, arg in enumerate(out):
+        if arg == "--api-key" and i + 1 < len(out):
+            out[i + 1] = "***"
+        elif arg.startswith("--api-key="):
+            out[i] = "--api-key=***"
+    return out
+
+
 @click.command()
 @click.option("--pipelines-arg", "pipelines_args", multiple=True)
 @click.option("--pipelines-probe-port", type=int, default=8000)
@@ -557,6 +573,27 @@ def _run_fuzz_with_crash_detection(
     ),
 )
 @click.option("--pipeline-name", type=str, default="")
+@click.option(
+    "--max-serve-url",
+    type=str,
+    default="",
+    help=(
+        "Fuzz an already-running endpoint at this URL instead of starting"
+        " MAX Serve. Mutually exclusive with --pipelines-arg: nothing is"
+        " launched or supervised, so the crash/hang detection that wraps a"
+        " locally-managed server does not apply and a failure here is the"
+        " endpoint's, not a sitter's."
+    ),
+)
+@click.option(
+    "--api-key",
+    type=str,
+    default="",
+    help=(
+        "Bearer token forwarded to llm-fuzz --api-key. Needed when"
+        " --max-serve-url points at an authenticated gateway."
+    ),
+)
 def main(
     pipelines_args: Sequence[str],
     pipelines_probe_port: int,
@@ -572,8 +609,15 @@ def main(
     output_dir: Path,
     emit_only: bool,
     pipeline_name: str,
+    max_serve_url: str,
+    api_key: str,
 ) -> None:
-    """Manage MAX Serve, run llm-fuzz, summarize, and exit with the fuzz rc."""
+    """Run llm-fuzz, summarize, and exit with the fuzz rc.
+
+    Manages a MAX Serve subprocess for the duration of the run, except
+    under ``--max-serve-url``, which fuzzes an endpoint this process
+    neither starts nor supervises.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
@@ -603,11 +647,19 @@ def main(
         )
         sys.exit(2)
 
+    if max_serve_url and pipelines_args:
+        logger.error(
+            "--max-serve-url fuzzes an endpoint this process does not own,"
+            " so the --pipelines-arg values that configure a locally"
+            " launched MAX Serve cannot take effect; pass one or the other"
+        )
+        sys.exit(2)
+
     fuzz_program = _resolve_fuzz_program()
     fuzz_cmd = [
         fuzz_program,
         "--url",
-        f"http://localhost:{pipelines_probe_port}",
+        max_serve_url or f"http://localhost:{pipelines_probe_port}",
         "--model",
         model_path,
         "--model-profile",
@@ -615,6 +667,8 @@ def main(
         "--log-file",
         str(log_path.resolve()),
     ]
+    if api_key:
+        fuzz_cmd.extend(["--api-key", api_key])
     if scenarios:
         fuzz_cmd.extend(["--scenarios", scenarios])
     if exclude:
@@ -636,25 +690,38 @@ def main(
     fuzz_rc = 1
     mechanical_failure = True
     try:
-        with PipelineSitter(
-            pipelines_program + list(pipelines_args),
-            extra_env=pipelines_env,
-        ) as sitter:
-            sitter.wait_for_alive(
-                probe_port=pipelines_probe_port,
-                timeout=pipelines_probe_timeout,
+        if max_serve_url:
+            # Nothing to launch or supervise: the endpoint outlives this
+            # process, so there is no sitter to correlate a crash against and
+            # mechanical_failure stays False. A non-zero rc here is the fuzz
+            # suite's own verdict on a server somebody else owns.
+            logger.info(
+                "Running llm-fuzz against %s: %s",
+                max_serve_url,
+                _redacted(fuzz_cmd),
             )
-            health_url = (
-                f"http://127.0.0.1:{pipelines_probe_port}/health"
-                if pipelines_health_timeout > 0
-                else None
-            )
-            logger.info("Running llm-fuzz: %s", fuzz_cmd)
-            fuzz_rc, mechanical_failure = _run_fuzz_with_crash_detection(
-                fuzz_cmd,
-                sitter=sitter,
-                health_probe_url=health_url,
-            )
+            fuzz_rc = subprocess.run(fuzz_cmd, check=False).returncode
+            mechanical_failure = False
+        else:
+            with PipelineSitter(
+                pipelines_program + list(pipelines_args),
+                extra_env=pipelines_env,
+            ) as sitter:
+                sitter.wait_for_alive(
+                    probe_port=pipelines_probe_port,
+                    timeout=pipelines_probe_timeout,
+                )
+                health_url = (
+                    f"http://127.0.0.1:{pipelines_probe_port}/health"
+                    if pipelines_health_timeout > 0
+                    else None
+                )
+                logger.info("Running llm-fuzz: %s", _redacted(fuzz_cmd))
+                fuzz_rc, mechanical_failure = _run_fuzz_with_crash_detection(
+                    fuzz_cmd,
+                    sitter=sitter,
+                    health_probe_url=health_url,
+                )
     finally:
         # Always summarize whatever JSONL we have, even on failure.
         summary = _summarize_jsonl(log_path)
