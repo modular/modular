@@ -10,16 +10,22 @@ then follow the [contribution process](contribution-process.md).
 
 ## Compiler
 
-The compiler isn't accepting contributions yet. The source is open, and you're
-welcome to read it, build it, and file issues against it, but we aren't taking
-pull requests against the compiler while we get our contribution processes
-ready.
+The compiler team currently accepts *bug fixes only*.
 
-Bug reports are still valuable. File them on the
-[GitHub issue tracker](https://github.com/modular/modular/issues) following the
-[issue and PR etiquette](issue-pr-etiquette.md).
+A change should:
 
-To read or build the compiler, see the
+- Fix incorrect or misleading diagnostics, crashes, or mis-compiles where the
+  current behavior is clearly not intentional, meaning it deviates from the
+  generally perceived semantics of the language, whether explicit or implicit.
+- Have a user-observable effect.
+
+A change should not:
+
+- Alter the intended Mojo language semantics.
+- Alter the intended IR semantics for our MLIR dialects.
+- Alter the compilation pipeline.
+
+For technical details on working in the compiler codebase, see the
 [compiler contributor docs](compiler/README.md).
 
 ## Standard library
