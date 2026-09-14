@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std._gpu.host.info import GPUInfo, _all_targets
+from std._gpu.host.info import GPUInfo, _all_target_accelerator_values
 from std.sys.info import Vendor, _vendor_from_arch
 from std.testing import TestSuite, assert_equal
 
@@ -21,6 +21,8 @@ comptime _MI250X_SPELLINGS = (
     StaticString("mi250x"),
     StaticString("amdgpu:gfx90a"),
     StaticString("amd:gfx90a"),
+    StaticString("amdgpu:mi250x"),
+    StaticString("amd:mi250x"),
 )
 
 
@@ -47,8 +49,8 @@ def test_api_identifies_the_vendor() raises:
     of failing to compile. This pins each record against `_vendor_from_arch`,
     the independent arch-string classifier.
     """
-    comptime for i in range(len(_all_targets)):
-        comptime arch: StaticString = _all_targets[i]
+    comptime for i in range(len(_all_target_accelerator_values)):
+        comptime arch: StaticString = _all_target_accelerator_values[i]
 
         # "cuda" is the generic NVIDIA target: it resolves through runtime GPU
         # detection, so what it names depends on the build's accelerator flag.
@@ -69,10 +71,10 @@ def test_api_identifies_the_vendor() raises:
 def test_amd_spellings_resolve() raises:
     """Each accepted spelling of an AMD target must reach the same record.
 
-    The normalization chain rewrites substrings, so a rule meant for one arch
-    can corrupt another that merely shares its prefix. That is how `gfx90a` came
-    to normalize to the unsupported `gfx90aa`, which left MI250X unreachable
-    through every spelling below.
+    Model names are declared as alternative target-accelerator values on their
+    corresponding table entries. Vendor prefixes are normalized before that
+    lookup, so prefixed model aliases must remain equivalent to their bare
+    forms.
     """
     comptime for i in range(len(_MI250X_SPELLINGS)):
         comptime spelling = rebind[StaticString](_MI250X_SPELLINGS[i])
@@ -83,12 +85,16 @@ def test_amd_spellings_resolve() raises:
         )
 
     assert_equal(GPUInfo.from_name["mi300x"]().name, "MI300X")
+    assert_equal(GPUInfo.from_name["amdgpu:mi300x"]().name, "MI300X")
+    assert_equal(GPUInfo.from_name["amd:mi300x"]().name, "MI300X")
     assert_equal(GPUInfo.from_name["amdgpu:gfx942"]().name, "MI300X")
     assert_equal(GPUInfo.from_name["amd:gfx942"]().name, "MI300X")
     assert_equal(GPUInfo.from_name["mi355x"]().name, "MI355X")
+    assert_equal(GPUInfo.from_name["amdgpu:mi355x"]().name, "MI355X")
+    assert_equal(GPUInfo.from_name["amd:mi355x"]().name, "MI355X")
 
     # MI300A shares the gfx942 ISA with MI300X, so this alias is the only way to
-    # reach its record: a rule matching "mi300" would silently divert it.
+    # reach its distinct record.
     assert_equal(GPUInfo.from_name["amdgpu:mi300a"]().name, "MI300A")
 
 

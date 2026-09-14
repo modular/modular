@@ -90,7 +90,6 @@ from std._gpu.host.info import (
 )
 
 from std._gpu.host.info import (
-    _all_targets,
     _a100_target,
     _empty_target,
     _h100_target,

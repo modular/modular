@@ -56,110 +56,135 @@ def _get_gpu_target[
     comptime assert (
         target_arch != ""
     ), "target_arch must be a valid GPU architecture."
-    return GPUInfo.from_name[target_arch]()._mlir_target()
+    comptime info = GPUInfo.from_name[target_arch]()
+    return GPUInfo._mlir_target[info.name]()
 
 
 # ===----------------------------------------------------------------------=== #
-# Additional Vendor Target Extensions
+# Target Accelerator Collections
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Combine this with GPUInfo?
-@fieldwise_init
-struct VendorTargetInfo:
-    var gpu_info: GPUInfo
-    var product_name: String
+# TODO: This trait wouldn't be needed if `type_of(TargetAccelerator)` worked as
+#       the `TypeList` metatype.
+trait TargetAcceleratorType:
+    comptime gpu_info: GPUInfo
+    comptime mlir_target: _TargetType
+    comptime target_accelerator_values: List[String]
 
 
-trait VendorTargetCollection:
+struct TargetAccelerator[
+    gpu_info_: GPUInfo,
+    target: CompilationTarget,
+    # TODO: Should be the same as either GPUInfo.arch_name or GPUInfo.version,
+    #       however that field is currently used inconsistently.
+    target_accelerator_values_: List[String],
+](TargetAcceleratorType):
+    comptime gpu_info = Self.gpu_info_
+    comptime mlir_target = Self.target._mlir_value
+    comptime target_accelerator_values = Self.target_accelerator_values_
+
+
+trait TargetAcceleratorCollection:
     comptime vendor_name: String
 
-    comptime EXTRA_TARGETS: List[VendorTargetInfo]
+    comptime RAW_TARGETS: TypeList[Trait=TargetAcceleratorType]._mlir_type
+
+    comptime TARGETS = TypeList[Trait=TargetAcceleratorType, Self.RAW_TARGETS]()
 
     @staticmethod
     def normalize_target_arch(target_arch0: StaticString) -> String:
         ...
 
     @staticmethod
+    def _provides_mlir_target_for_name(name: StaticString) -> Bool:
+        comptime for idx in range(Self.TARGETS.length):
+            comptime entry = Self.TARGETS[idx]
+            if name == entry.gpu_info.name:
+                return True
+        return False
+
+    @staticmethod
     def _get_mlir_target_from_name(name: StaticString) -> _TargetType:
-        """Returns the MLIR target for a registered target name.
+        """Gets the MLIR target for a registered target name.
 
         `name` must match the `gpu_info.name` of an entry in
-        `Self.EXTRA_TARGETS`. Callers must verify membership with
+        `Self.TARGETS`. Callers must verify membership with
         `_provides_mlir_target_for_name()` before calling.
-
-        Args:
-            name: The target name to resolve.
-
-        Returns:
-            The MLIR target corresponding to `name`.
         """
-        ...
+        comptime for idx in range(Self.TARGETS.length):
+            comptime entry = Self.TARGETS[idx]
+            if name == entry.gpu_info.name:
+                return entry.mlir_target
+
+        __mlir_op.`llvm.intr.trap`()
+        while True:
+            pass
+
+    @staticmethod
+    def _lookup_info_from_target_arch[
+        normalized_target_arch: StaticString
+    ]() -> Optional[GPUInfo]:
+        comptime _matches[
+            entry: TargetAcceleratorType, _idx: Int
+        ]: Bool = entry.target_accelerator_values.__contains__(
+            normalized_target_arch
+        )
+
+        comptime matching_targets = Self.TARGETS.filter_idx[_matches]()
+
+        comptime if matching_targets.length > 0:
+            comptime assert matching_targets.length == 1, (
+                "specified target accelerator unexpectedly matched more than"
+                " one target entry"
+            )
+            comptime entry = matching_targets[0]
+            return materialize[entry.gpu_info]()
+
+        return None
 
 
-struct EmptyVendorTargetCollection(VendorTargetCollection):
+struct EmptyTargetCollection(TargetAcceleratorCollection):
     comptime vendor_name: String = "<empty>"
 
-    comptime EXTRA_TARGETS = List[VendorTargetInfo]()
+    comptime RAW_TARGETS = TypeList.of[Trait=TargetAcceleratorType]().values
 
     @staticmethod
     def normalize_target_arch(target_arch0: StaticString) -> String:
         return target_arch0
 
-    @staticmethod
-    def _get_mlir_target_from_name(name: StaticString) -> _TargetType:
-        __mlir_op.`llvm.intr.trap`()
-        while True:
-            pass
 
+def _target_accelerator_values[
+    C: TargetAcceleratorCollection
+]() -> List[String]:
+    """Values recognizable by `--target-accelerator` from this target collection.
+    """
 
-def _provides_mlir_target_for_name[
-    C: VendorTargetCollection
-](name: StaticString) -> Bool:
-    comptime for idx in range(len(C.EXTRA_TARGETS)):
-        comptime entry = C.EXTRA_TARGETS[idx]
-        if name == entry.gpu_info.name:
-            return True
-    return False
+    var list = List[String]()
 
+    comptime for idx in range(C.TARGETS.length):
+        comptime entry = C.TARGETS[idx]
 
-def _lookup_info_from_target_arch[
-    C: VendorTargetCollection, normalized_target_arch: StaticString
-]() -> Optional[GPUInfo]:
-    comptime for idx in range(len(C.EXTRA_TARGETS)):
-        comptime entry = C.EXTRA_TARGETS[idx]
-        comptime if entry.gpu_info.arch_name == normalized_target_arch:
-            return materialize[entry.gpu_info]()
-
-    return None
-
-
-def _additional_normalized_targets[
-    C: VendorTargetCollection
-]() -> List[StaticString]:
-    var list = List[StaticString]()
-
-    comptime for idx in range(len(C.EXTRA_TARGETS)):
-        comptime entry = C.EXTRA_TARGETS[idx]
-
-        list.append(comptime (entry.gpu_info.arch_name))
+        list.extend(materialize[entry.target_accelerator_values]())
 
     return list^
 
 
-def _unsupported_arch_error_additions[C: VendorTargetCollection]() -> String:
+def _unsupported_arch_error_additions[
+    C: TargetAcceleratorCollection
+]() -> String:
     var string = String(t"{C.vendor_name}: ")
 
-    comptime for idx in range(len(C.EXTRA_TARGETS)):
+    comptime for idx in range(C.TARGETS.length):
         comptime if idx != 0:
             string.write(", ")
 
-        comptime entry = C.EXTRA_TARGETS[idx]
+        comptime entry = C.TARGETS[idx]
 
         comptime arch_name = entry.gpu_info.arch_name
-        comptime product_name = entry.product_name
+        comptime name = entry.gpu_info.name
 
-        string.write(t"{arch_name} ({product_name})")
+        string.write(t"{arch_name} ({name})")
 
     return string^
 
@@ -167,6 +192,107 @@ def _unsupported_arch_error_additions[C: VendorTargetCollection]() -> String:
 # ===----------------------------------------------------------------------=== #
 # Builtin Target Info
 # ===----------------------------------------------------------------------=== #
+
+
+struct BuiltinTargets(TargetAcceleratorCollection):
+    comptime vendor_name = "<builtin>"
+
+    # fmt: off
+    comptime RAW_TARGETS = TypeList.of[
+        Trait=TargetAcceleratorType,
+        # FIXME: GTX1060 and GTX1080Ti share `sm_61` but have different
+        # `sm_count`; target resolution should differentiate them at compile time.
+        TargetAccelerator[GTX1060   , _gtx1060_target    , []       ], # Could be ["sm_61"], but `sm_61` resolves to GTX1080Ti.
+        TargetAccelerator[GTX1080Ti , _gtx1080ti_target  , ["sm_61"]],
+        TargetAccelerator[TeslaP100 , _teslap100_target  , ["sm_60"]],
+        TargetAccelerator[GTX970    , _gtx970_target     , ["sm_52"]],
+        TargetAccelerator[RTX2060   , _rtx2060_target    , ["sm_75"]],
+        # Note: `sm_86` is ambiguous; it resolves to A10 rather than RTX3090.
+        TargetAccelerator[RTX3090   , _rtx3090_target    , []       ], # Could be ["sm_86"], but `sm_86` resolves to A10.
+        TargetAccelerator[A10       , _a10_target        , ["sm_86"]],
+        TargetAccelerator[A100      , _a100_target       , ["sm_80"]],
+        TargetAccelerator[OrinNano  , _orin_nano_target  , ["sm_87"]],
+        TargetAccelerator[L4        , _l4_target         , ["sm_89"]],
+        TargetAccelerator[RTX4090m  , _rtx4090m_target   , []       ], # Could be ["sm_89"], but `sm_89` resolves to L4.
+        TargetAccelerator[RTX4090   , _rtx4090_target    , []       ], # Could be ["sm_89"], but `sm_89` resolves to L4.
+        # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
+        # architecture wise are different. We need to differentiate between them here.
+        TargetAccelerator[B100      , _b100_target       , []                   ], # Could be ["sm_100", "sm_100a"], but both resolve to B200.
+        TargetAccelerator[B200      , _b100_target       , ["sm_100", "sm_100a"]],
+        TargetAccelerator[H100      , _h100_target       , ["sm_90" , "sm_90a" ]],
+        TargetAccelerator[B300      , _b300_target       , ["sm_103", "sm_103a"]],
+        TargetAccelerator[JetsonThor, _jetson_thor_target, ["sm_110", "sm_110a"]],
+        TargetAccelerator[RTX5090   , _rtx5090_target    , ["sm_120", "sm_120a"]],
+        TargetAccelerator[DGXSpark  , _dgx_spark_target  , ["sm_121", "sm_121a"]],
+        #
+        # Apple
+        #
+        TargetAccelerator[MetalM1      , _metal_m1_target       , ["apple-m1"       ]],
+        TargetAccelerator[MetalM1Metal4, _metal_m1_metal4_target, ["apple-m1-metal4"]],
+        TargetAccelerator[MetalM2      , _metal_m2_target       , ["apple-m2"       ]],
+        TargetAccelerator[MetalM2Metal4, _metal_m2_metal4_target, ["apple-m2-metal4"]],
+        TargetAccelerator[MetalM3      , _metal_m3_target       , ["apple-m3"       ]],
+        TargetAccelerator[MetalM3Metal4, _metal_m3_metal4_target, ["apple-m3-metal4"]],
+        TargetAccelerator[MetalM4      , _metal_m4_target       , ["apple-m4"       ]],
+        TargetAccelerator[MetalM4Metal4, _metal_m4_metal4_target, ["apple-m4-metal4"]],
+        TargetAccelerator[MetalM5      , _metal_m5_target       , ["apple-m5"       ]],
+        TargetAccelerator[MetalM5Metal4, _metal_m5_metal4_target, ["apple-m5-metal4"]],
+        #
+        # AMD
+        #
+        TargetAccelerator[MI250X     , _mi250x_target  , ["gfx90a", "mi250x"]],
+        TargetAccelerator[MI300X     , _mi300x_target  , ["gfx942", "mi300x"]],
+        # MI300A shares the gfx942 ISA with MI300X but has fewer CUs and
+        # unified host/device memory. Reached via explicit "mi300a" opt-in
+        # (e.g. `GPUInfo.from_name["amdgpu:mi300a"]()`) since gfx942-only
+        # detection cannot distinguish the two parts.
+        TargetAccelerator[MI300A     , _mi300a_target   , ["mi300a"]], # Could also include "gfx942", but `gfx942` resolves to MI300X.
+        TargetAccelerator[MI355X     , _mi355x_target   , ["gfx950", "mi355x"]],
+        TargetAccelerator[Radeon6900 , _6900_target     , ["gfx1030"]],
+        TargetAccelerator[SteamDeck  , _steamdeck_target, ["gfx1033"]],
+        TargetAccelerator[Radeon7900 , _7900_target     , ["gfx1100"]],
+        TargetAccelerator[Radeon7800 , _7800_target     , ["gfx1101"]],
+        TargetAccelerator[Radeon7600 , _7600_target     , ["gfx1102"]],
+        TargetAccelerator[Radeon780m , _780m_target     , ["gfx1103"]],
+        TargetAccelerator[Radeon880m , _880m_target     , ["gfx1150"]],
+        TargetAccelerator[Radeon8060s, _8060s_target    , ["gfx1151"]],
+        TargetAccelerator[Radeon860m , _860m_target     , ["gfx1152"]],
+        TargetAccelerator[Radeon9060 , _9060_target     , ["gfx1200"]],
+        TargetAccelerator[Radeon9070 , _9070_target     , ["gfx1201"]],
+    ]().values
+    # fmt: on
+
+    @staticmethod
+    def normalize_target_arch(target_arch0: StaticString) -> String:
+        # Normalize syntax-level target spellings before resolving table aliases.
+        #
+        # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90",
+        #         "nvidia:80" -> "sm_80", "sm80" -> "sm_80".
+        # AMD: "amdgpu:gfx942" -> "gfx942", "amd:gfx942" -> "gfx942"
+        #      (Model names such as "mi300x" are aliases in `BuiltinTargets`.)
+        # Apple: "metal:4" -> "apple-m4".
+        #
+        # Keep normalization idempotent: applying it to an already normalized
+        # target must not change it.
+        #
+        # These substring replacements must be ordered carefully, as a pattern
+        # that is a prefix of an already canonical name corrupts it.
+        return (
+            target_arch0
+            # NVIDIA normalization
+            .replace("nvidia:sm_", "sm_")
+            .replace("nvidia:sm", "sm_")
+            .replace("nvidia:", "sm_")
+            .replace("sm", "sm_")
+            .replace("sm__", "sm_")
+            # AMD normalization. Both "amdgpu:" (LLVM/ROCm target prefix) and
+            # "amd:" (vendor name) are accepted, mirroring the "nvidia:" prefix
+            # above.
+            .replace("amdgpu:", "")
+            .replace("amd:", "")
+            # Apple normalization, general "metal:" → "apple-m" replacement.
+            .replace("metal:", "apple-m")
+        )
 
 
 comptime _KB = 1024
@@ -1757,112 +1883,22 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
     var max_thread_block_size: Int
     """Maximum number of threads allowed in a thread block."""
 
-    @deprecated("Use CompilationTarget.from[info]() instead")
-    def target(self) -> _TargetType:
-        """Gets the MLIR target configuration for this GPU.
-
-        Returns:
-            MLIR target configuration for the GPU.
-        """
-        return self._mlir_target()
-
-    def _mlir_target(self) -> _TargetType:
-        if self.name == "NVIDIA Tesla P100":
-            return _teslap100_target._mlir_value
-        if self.name == "NVIDIA GeForce GTX 1060":
-            return _gtx1060_target._mlir_value
-        if self.name == "NVIDIA GeForce GTX 1080 Ti":
-            return _gtx1080ti_target._mlir_value
-        if self.name == "NVIDIA GeForce GTX 970":
-            return _gtx970_target._mlir_value
-        if self.name == "RTX2060":
-            return _rtx2060_target._mlir_value
-        if self.name == "NVIDIA GeForce RTX 3090":
-            return _rtx3090_target._mlir_value
-        if self.name == "A100":
-            return _a100_target._mlir_value
-        if self.name == "A10":
-            return _a10_target._mlir_value
-        if self.name == "L4":
-            return _l4_target._mlir_value
-        if self.name == "RTX4090m":
-            return _rtx4090m_target._mlir_value
-        if self.name == "RTX4090":
-            return _rtx4090_target._mlir_value
-        if self.name == "H100":
-            return _h100_target._mlir_value
-        if self.name == "B300":
-            return _b300_target._mlir_value
-        if self.name == "B100" or self.name == "B200":
-            return _b100_target._mlir_value
-        if self.name == "DGX Spark":
-            return _dgx_spark_target._mlir_value
-        if self.name == "RTX5090":
-            return _rtx5090_target._mlir_value
-        if self.name == "Jetson Thor":
-            return _jetson_thor_target._mlir_value
-        if self.name == "MI250X":
-            return _mi250x_target._mlir_value
-        if self.name == "MI300X":
-            return _mi300x_target._mlir_value
-        if self.name == "MI300A":
-            return _mi300a_target._mlir_value
-        if self.name == "MI355X":
-            return _mi355x_target._mlir_value
-        if self.name == "Radeon 780M":
-            return _780m_target._mlir_value
-        if self.name == "Radeon 880M":
-            return _880m_target._mlir_value
-        if self.name == "Radeon 8060S":
-            return _8060s_target._mlir_value
-        if self.name == "Radeon 860M":
-            return _860m_target._mlir_value
-        if self.name == "Radeon 6900":
-            return _6900_target._mlir_value
-        if self.name == "Radeon 7900":
-            return _7900_target._mlir_value
-        if self.name == "Radeon 7800/7700":
-            return _7800_target._mlir_value
-        if self.name == "Radeon 7600":
-            return _7600_target._mlir_value
-        if self.name == "Radeon 9070":
-            return _9070_target._mlir_value
-        if self.name == "Radeon 9060":
-            return _9060_target._mlir_value
-        if self.name == "Steam Deck":
-            return _steamdeck_target._mlir_value
-        if self.name == "M1":
-            return _metal_m1_target._mlir_value
-        if self.name == "M1 Metal4":
-            return _metal_m1_metal4_target._mlir_value
-        if self.name == "M2":
-            return _metal_m2_target._mlir_value
-        if self.name == "M2 Metal4":
-            return _metal_m2_metal4_target._mlir_value
-        if self.name == "M3":
-            return _metal_m3_target._mlir_value
-        if self.name == "M3 Metal4":
-            return _metal_m3_metal4_target._mlir_value
-        if self.name == "M4":
-            return _metal_m4_target._mlir_value
-        if self.name == "M4 Metal4":
-            return _metal_m4_metal4_target._mlir_value
-        if self.name == "M5":
-            return _metal_m5_target._mlir_value
-        if self.name == "M5 Metal4":
-            return _metal_m5_metal4_target._mlir_value
-
-        if self.name == "":
+    @staticmethod
+    def _mlir_target[name: StaticString]() -> _TargetType:
+        if name == "":
             return _empty_target._mlir_value
 
-        if _provides_mlir_target_for_name[ADDITIONAL_TARGETS](self.name):
-            return ADDITIONAL_TARGETS._get_mlir_target_from_name(self.name)
+        if BuiltinTargets._provides_mlir_target_for_name(name):
+            return BuiltinTargets._get_mlir_target_from_name(name)
+
+        if ADDITIONAL_TARGETS._provides_mlir_target_for_name(name):
+            return ADDITIONAL_TARGETS._get_mlir_target_from_name(name)
 
         # TODO: Don't return a default, instead issue an error.
         return _a100_target._mlir_value
 
     @staticmethod
-    def from_target[target: _TargetType]() -> Self:
+    def from_target[target: CompilationTarget]() -> Self:
         """Creates a `GPUInfo` instance from an MLIR target.
 
         Parameters:
@@ -1871,9 +1907,7 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         Returns:
             GPU info corresponding to the target.
         """
-        return _get_info_from_target[
-            CompilationTarget[_mlir_value=target]._arch()
-        ]()
+        return _get_info_from_target[target._arch()]()
 
     @staticmethod
     def from_name[name: StaticString]() -> Self:
@@ -2048,65 +2082,19 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 # ===-----------------------------------------------------------------------===#
 
 # All supported target architectures in canonical form.
-# This is the canonical list used for validation in _get_info_from_target.
-# Normalization: "nvidia:80" -> "sm_80", "mi300x" -> "gfx942",
-#                "amdgpu:gfx942" -> "gfx942", "metal:4" -> "apple-m4".
+#
+# Normalization: "nvidia:80"     -> "sm_80"
+#                "amdgpu:gfx942" -> "gfx942"
+#                "metal:4"       -> "apple-m4"
 #
 # SYNC: This list must stay in sync with the TargetTraits accelerator tables
 #       in Mojo/lib/Target/. Run the following test to verify:
 #       bazel test //Mojo/test/mojo-tool:build/internal/verify_supported_accelerators_sync.mojo.test
-comptime _all_targets: List[
-    StaticString
-] = _builtin_targets + _additional_normalized_targets[ADDITIONAL_TARGETS]()
-
-comptime _builtin_targets: List[StaticString] = [
-    "sm_52",
-    "sm_60",
-    "sm_61",
-    "sm_75",
-    "sm_80",
-    "sm_86",
-    "sm_87",
-    "sm_89",
-    "sm_90",
-    "sm_90a",
-    "sm_100",
-    "sm_100a",
-    "sm_103",
-    "sm_103a",
-    "sm_110",
-    "sm_110a",
-    "sm_120",
-    "sm_120a",
-    "sm_121",
-    "sm_121a",
-    "gfx90a",
-    "gfx942",
-    "mi300a",
-    "gfx950",
-    "gfx1030",
-    "gfx1033",
-    "gfx1100",
-    "gfx1101",
-    "gfx1102",
-    "gfx1103",
-    "gfx1150",
-    "gfx1151",
-    "gfx1152",
-    "gfx1200",
-    "gfx1201",
-    "apple-m1",
-    "apple-m1-metal4",
-    "apple-m2",
-    "apple-m2-metal4",
-    "apple-m3",
-    "apple-m3-metal4",
-    "apple-m4",
-    "apple-m4-metal4",
-    "apple-m5",
-    "apple-m5-metal4",
-    "cuda",
-]
+comptime _all_target_accelerator_values: List[String] = (
+    _target_accelerator_values[BuiltinTargets]()
+    + ["cuda"]
+    + _target_accelerator_values[ADDITIONAL_TARGETS]()
+)
 
 
 @inline(.always)
@@ -2121,141 +2109,29 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     Returns:
         `GPUInfo` instance for the specified target architecture.
     """
-    # Normalize the target architecture to canonical form.
-    # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90", "nvidia:80" -> "sm_80", "sm80" -> "sm_80"
-    # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942", "amd:gfx942" -> "gfx942"
-    # Apple: "metal:4" -> "apple-m4"
-    #
-    # Every rule below must leave each `_all_targets` entry unchanged: these are
-    # substring replacements, so a pattern that is a prefix of an already
-    # canonical name corrupts it.
-    comptime target_arch1 = (
-        target_arch0
-        # NVIDIA normalization
-        .replace("nvidia:sm_", "sm_")
-        .replace("nvidia:sm", "sm_")
-        .replace("nvidia:", "sm_")
-        .replace("sm", "sm_")
-        .replace("sm__", "sm_")
-        # AMD normalization. Both "amdgpu:" (LLVM/ROCm target prefix) and
-        # "amd:" (vendor name) are accepted, mirroring the "nvidia:" prefix
-        # above.
-        .replace("mi250x", "gfx90a")
-        .replace("mi300x", "gfx942")
-        .replace("mi355x", "gfx950")
-        .replace("amdgpu:", "")
-        .replace("amd:", "")
-        # Apple normalization, general "metal:" → "apple-m" replacement.
-        .replace("metal:", "apple-m")
-    )
+    comptime target_arch1 = BuiltinTargets.normalize_target_arch(target_arch0)
     comptime target_arch = ADDITIONAL_TARGETS.normalize_target_arch(
         target_arch1
     )
 
-    comptime assert (
-        StaticString(target_arch) in _all_targets
-    ), _build_unsupported_arch_error[target_arch0]()
-
-    comptime if target_arch == "sm_52":
-        return materialize[GTX970]()
-    elif target_arch == "sm_60":
-        return materialize[TeslaP100]()
-    elif target_arch == "sm_61":
-        # FIXME GTX1060 and GTX1080Ti architecture wise are different (sm_count is different). We need to differentiate between them here at compile time.
-        # return materialize[GTX1060]()
-        return materialize[GTX1080Ti]()
-    elif target_arch == "sm_75":
-        return materialize[RTX2060]()
-    elif target_arch == "sm_80":
-        return materialize[A100]()
-    elif target_arch == "sm_86":
-        return materialize[A10]()
-    elif target_arch == "sm_87":
-        return materialize[OrinNano]()
-    elif target_arch == "sm_89":
-        return materialize[L4]()
-    elif target_arch == "sm_90" or target_arch == "sm_90a":
-        return materialize[H100]()
-    elif target_arch == "sm_100" or target_arch == "sm_100a":
-        # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
-        # architecture wise are different. We need to differentiate between them here.
-        return materialize[B200]()
-    elif target_arch == "sm_103" or target_arch == "sm_103a":
-        return materialize[B300]()
-    elif target_arch == "sm_110" or target_arch == "sm_110a":
-        return materialize[JetsonThor]()
-    elif target_arch == "sm_120" or target_arch == "sm_120a":
-        return materialize[RTX5090]()
-    elif target_arch == "sm_121" or target_arch == "sm_121a":
-        return materialize[DGXSpark]()
-    # AMD (gfx IDs; "mi250x"/"mi300x"/"mi355x" aliases are normalized above)
-    elif target_arch == "gfx90a":
-        return materialize[MI250X]()
-    elif target_arch == "gfx942":
-        return materialize[MI300X]()
-    # MI300A shares the gfx942 ISA with MI300X but has fewer CUs and
-    # unified host/device memory. Reached via explicit "mi300a" opt-in
-    # (e.g. `GPUInfo.from_name["amdgpu:mi300a"]()`) since gfx942-only
-    # detection cannot distinguish the two parts.
-    elif target_arch == "mi300a":
-        return materialize[MI300A]()
-    elif target_arch == "gfx950":
-        return materialize[MI355X]()
-    elif target_arch == "gfx1030":
-        return materialize[Radeon6900]()
-    elif target_arch == "gfx1033":
-        return materialize[SteamDeck]()
-    elif target_arch == "gfx1100":
-        return materialize[Radeon7900]()
-    elif target_arch == "gfx1101":
-        return materialize[Radeon7800]()
-    elif target_arch == "gfx1102":
-        return materialize[Radeon7600]()
-    elif target_arch == "gfx1103":
-        return materialize[Radeon780m]()
-    elif target_arch == "gfx1150":
-        return materialize[Radeon880m]()
-    elif target_arch == "gfx1151":
-        return materialize[Radeon8060s]()
-    elif target_arch == "gfx1152":
-        return materialize[Radeon860m]()
-    elif target_arch == "gfx1200":
-        return materialize[Radeon9060]()
-    elif target_arch == "gfx1201":
-        return materialize[Radeon9070]()
-    elif target_arch == "apple-m1":
-        return materialize[MetalM1]()
-    elif target_arch == "apple-m1-metal4":
-        return materialize[MetalM1Metal4]()
-    elif target_arch == "apple-m2":
-        return materialize[MetalM2]()
-    elif target_arch == "apple-m2-metal4":
-        return materialize[MetalM2Metal4]()
-    elif target_arch == "apple-m3":
-        return materialize[MetalM3]()
-    elif target_arch == "apple-m3-metal4":
-        return materialize[MetalM3Metal4]()
-    elif target_arch == "apple-m4":
-        return materialize[MetalM4]()
-    elif target_arch == "apple-m4-metal4":
-        return materialize[MetalM4Metal4]()
-    elif target_arch == "apple-m5":
-        return materialize[MetalM5]()
-    elif target_arch == "apple-m5-metal4":
-        return materialize[MetalM5Metal4]()
     # "cuda" means generic CUDA — use runtime GPU detection.
-    elif target_arch == "cuda":
+    comptime if target_arch == "cuda":
         return _get_info_from_target[_accelerator_arch()]()
-    elif _accelerator_arch() == "":
-        return materialize[NoGPU]()
+
+    comptime builtin_info = BuiltinTargets._lookup_info_from_target_arch[
+        target_arch
+    ]()
+    comptime if builtin_info:
+        return materialize[builtin_info.value()]()
+
+    comptime vendor_info = ADDITIONAL_TARGETS._lookup_info_from_target_arch[
+        target_arch
+    ]()
+    comptime if vendor_info:
+        return materialize[vendor_info.value()]()
     else:
-        comptime vendor_info = _lookup_info_from_target_arch[
-            ADDITIONAL_TARGETS, target_arch
-        ]()
-        comptime if vendor_info:
-            return materialize[vendor_info.value()]()
-        else:
-            return _get_info_from_target[_accelerator_arch()]()
+        # No matching target could be found, so issue a descriptive error.
+        comptime assert False, _build_unsupported_arch_error[target_arch0]()
 
 
 # ===-----------------------------------------------------------------------===#

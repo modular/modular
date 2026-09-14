@@ -91,7 +91,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     @inline(.nodebug)
     def from[
         info: GPUInfo
-    ]() -> CompilationTarget[_mlir_value=info._mlir_target()]:
+    ]() -> CompilationTarget[_mlir_value=GPUInfo._mlir_target[info.name]()]:
         return {}
 
     @doc_hidden
