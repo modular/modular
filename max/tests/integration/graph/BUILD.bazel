@@ -1,4 +1,6 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load("//max/tests/integration/test_common:mef_precompile.bzl", "precompiled_mefs")
+load(":rowwise_reduction_specs.bzl", "ROWWISE_REDUCTION_SPECS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -120,8 +122,10 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+            "_rowwise_reduction_specs.py",
             "buffer_create_init_shared.py",
             "fusion_utils.py",
+            "precompile_rowwise_reductions.py",
             "test_nan_check.py",
         ],
     ),
@@ -417,21 +421,58 @@ modular_py_test(
     ],
 )
 
-# Row-wise reduction correctness tests. Each parametrization builds and compiles
-# one symbolic-dimension graph, so the wall time is compile-dominated;
-# shard_count parallelizes those compiles across CI workers (see the "Avoid
-# Per-Test Graph Recompilation" guidance in max/CLAUDE.md). Measured 17m11s
-# unsharded for the ~85 parametrizations on a B200 box (~12.6s each), so 8 shards
-# land near 130s -- enough margin under the 600s `ci-persistent` clamp for a
-# contended worker, which 4 shards (~260s) would not have.
+# Shared by the row-wise reduction CPU producer and its GPU consumer, so the
+# compiled MEF and the runtime inputs are built from one construction path.
+modular_py_library(
+    name = "rowwise_reduction_specs",
+    testonly = True,
+    srcs = ["_rowwise_reduction_specs.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/tests/integration/test_common:reduction_graphs",
+    ],
+)
+
+modular_py_binary(
+    name = "precompile_rowwise_reductions_bin",
+    testonly = True,
+    srcs = ["precompile_rowwise_reductions.py"],
+    imports = ["."],
+    main = "precompile_rowwise_reductions.py",
+    tags = ["manual"],
+    deps = [
+        ":rowwise_reduction_specs",
+        "//max/python/max/graph",
+        "//max/tests/integration/test_common:mef_precompile",
+    ],
+)
+
+# One CPU build action per spec. The graphs are plain reduce/softmax/norm ops
+# that build on every lane, so the only gate is the consumer's own.
+precompiled_mefs(
+    name = "rowwise_reduction_mefs",
+    producer = ":precompile_rowwise_reductions_bin",
+    specs = ROWWISE_REDUCTION_SPECS,
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+# Row-wise reduction correctness tests. Each parametrization initializes one
+# precompiled symbolic-dimension MEF and feeds several concrete shapes as data;
+# the compiles moved to the CPU build actions above, so no graph is compiled on
+# the GPU worker.
 #
 # Needs a GPU lane: every case is parametrized over CPU and GPU, and the GPU half
 # is the priority -- the cooperative tiers, the cross-thread combine and the
 # split-K path exist only there, and a fault in them can be silent memory
 # corruption rather than a crash. The CPU half pins DeviceRef.CPU() explicitly,
-# so one target on a GPU worker covers both devices with no duplicated compiles.
-# Apple is excluded because `syncwarp` there is execution-only (no shared-memory
-# fence), which the combine's shmem tree relies on.
+# so one target on a GPU worker executes on both devices while compiling on
+# neither. Apple is excluded because `syncwarp` there is execution-only (no
+# shared-memory fence), which the combine's shmem tree relies on.
 modular_py_test(
     name = "test_rowwise_reductions",
     size = "large",
@@ -439,6 +480,10 @@ modular_py_test(
         "conftest.py",
         "test_rowwise_reductions.py",
     ],
+    data = [":rowwise_reduction_mefs"],
+    env = {
+        "ROWWISE_MEF_RLOCATIONS": "$(rlocationpaths :rowwise_reduction_mefs)",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -446,13 +491,14 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    shard_count = 8,
+    imports = ["."],
     tags = ["gpu"],
     deps = [
+        ":rowwise_reduction_specs",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
+        "//max/tests/integration/test_common:mef_precompile",
         "//max/tests/integration/test_common:reduction_graphs",
         requirement("hypothesis"),
         requirement("numpy"),
@@ -818,8 +864,10 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + _ADV_FUSION_EXCLUDED_TESTS + [
+            "_rowwise_reduction_specs.py",
             "buffer_create_init_shared.py",
             "fusion_utils.py",
+            "precompile_rowwise_reductions.py",
             "test_nan_check.py",
         ],
     ),
