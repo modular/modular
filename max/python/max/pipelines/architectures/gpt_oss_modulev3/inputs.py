@@ -10,28 +10,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for MPNet ModuleV3 pipeline models."""
+"""Model inputs for the GPT OSS ModuleV3 pipeline."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from max.driver import Buffer
-from max.pipelines.lib.interfaces.batch_processor import (
-    PaddedEncoderBatchProcessor,
-)
-
-from .inputs import MPNetInputs
+from max.pipelines.lib import ModelInputs
 
 
-class MPNetModuleV3BatchProcessor(PaddedEncoderBatchProcessor[MPNetInputs]):
-    """Fixed-shape padded batching for MPNet ModuleV3 encoder models."""
+@dataclass
+class GptOssInputs(ModelInputs):
+    """A class representing inputs for the GPT OSS model.
 
-    def _make_inputs(
-        self,
-        *,
-        next_tokens_batch: Buffer,
-        attention_mask: Buffer,
-    ) -> MPNetInputs:
-        return MPNetInputs(
-            next_tokens_batch=next_tokens_batch,
-            attention_mask=attention_mask,
-        )
+    This class encapsulates the input tensors required for the GPT OSS model
+    execution.
+    """
+
+    tokens: Buffer
+    """Buffer containing the input token IDs."""
+
+    input_row_offsets: Buffer
+    """Buffer containing the offsets for each row in the ragged input sequence.
+    """
+
+    return_n_logits: Buffer
+    """Number of logits to return."""

@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheInputsInterface
 from max.pipelines.context import TextContext
@@ -23,12 +21,11 @@ from max.pipelines.lib.interfaces.batch_processor import (
     ModuleV3SingleReplicaBatchProcessor,
 )
 
-if TYPE_CHECKING:
-    from .model import Llama3Inputs
+from .inputs import Llama3Inputs
 
 
 class Llama3ModuleV3BatchProcessor(
-    ModuleV3SingleReplicaBatchProcessor[TextContext, "Llama3Inputs"]
+    ModuleV3SingleReplicaBatchProcessor[TextContext, Llama3Inputs]
 ):
     """Ragged batching for Llama3 ModuleV3 models (single GPU, no signals)."""
 
@@ -40,8 +37,6 @@ class Llama3ModuleV3BatchProcessor(
         return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
     ) -> Llama3Inputs:
-        from .model import Llama3Inputs
-
         return Llama3Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,

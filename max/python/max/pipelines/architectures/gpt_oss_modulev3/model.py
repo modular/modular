@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 import numpy as np
@@ -34,28 +33,10 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import GptOssModuleV3BatchProcessor
 from .gpt_oss import GptOss
+from .inputs import GptOssInputs
 from .model_config import GptOssConfig
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class GptOssInputs(ModelInputs):
-    """A class representing inputs for the GPT OSS model.
-
-    This class encapsulates the input tensors required for the GPT OSS model
-    execution.
-    """
-
-    tokens: Buffer
-    """Buffer containing the input token IDs."""
-
-    input_row_offsets: Buffer
-    """Buffer containing the offsets for each row in the ragged input sequence.
-    """
-
-    return_n_logits: Buffer
-    """Number of logits to return."""
 
 
 class GptOssModel(ModuleV3PipelineModelWithKVCache[TextContext]):

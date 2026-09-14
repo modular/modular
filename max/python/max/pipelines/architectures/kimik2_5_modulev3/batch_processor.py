@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -33,11 +33,9 @@ from ..deepseekV3_modulev3.batch_processor import (
     DeepseekV3ModuleV3BatchProcessor,
 )
 from .context import KimiK2_5TextAndVisionContext
+from .inputs import KimiK2_5ModelInputs
 from .memory_planner import _vision_encoder_token_budget, _vision_merge_sq
 from .model_config import KimiK2_5Config
-
-if TYPE_CHECKING:
-    from .model import KimiK2_5ModelInputs
 
 logger = logging.getLogger("max.pipelines")
 
@@ -92,9 +90,6 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
-
-        from .model import KimiK2_5ModelInputs
-
         return KimiK2_5ModelInputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,

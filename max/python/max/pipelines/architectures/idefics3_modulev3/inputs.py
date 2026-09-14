@@ -10,16 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Idefics3 vision-language architecture for multimodal text generation."""
+"""Model inputs for the Idefics3 ModuleV3 pipeline."""
 
-from .arch import idefics3_modulev3_arch
-from .inputs import Idefics3Inputs
-from .model import Idefics3Model
-from .model_config import Idefics3Config
+from __future__ import annotations
 
-__all__ = [
-    "Idefics3Config",
-    "Idefics3Inputs",
-    "Idefics3Model",
-    "idefics3_modulev3_arch",
-]
+from dataclasses import dataclass
+
+from max.driver import Buffer
+from max.pipelines.lib import ModelInputs
+
+
+@dataclass
+class Idefics3Inputs(ModelInputs):
+    """Inputs for the Idefics3 model."""
+
+    tokens: Buffer
+    input_row_offsets: Buffer
+    return_n_logits: Buffer
+
+    # Vision inputs
+    pixel_values: Buffer | None = None
+    image_token_indices: Buffer | None = None
+
+    @property
+    def has_vision_inputs(self) -> bool:
+        return self.pixel_values is not None

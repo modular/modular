@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device, DeviceSpec
@@ -43,19 +42,10 @@ from typing_extensions import override
 
 from .batch_processor import DeepseekV2ModuleV3BatchProcessor
 from .deepseekV2 import DeepseekV2
+from .inputs import DeepseekV2Inputs
 from .model_config import DeepseekV2Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class DeepseekV2Inputs(ModelInputs):
-    """Inputs for the DeepseekV2 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-
-    return_n_logits: Buffer = field(kw_only=True)
 
 
 class DeepseekV2Model(

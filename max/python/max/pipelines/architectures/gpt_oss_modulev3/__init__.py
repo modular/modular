@@ -13,7 +13,8 @@
 """GPT-OSS mixture-of-experts architecture for text generation."""
 
 from .arch import gpt_oss_modulev3_arch
-from .model import GptOssInputs, GptOssModel
+from .inputs import GptOssInputs
+from .model import GptOssModel
 from .model_config import GptOssConfig
 
 __all__ = [

@@ -10,16 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Idefics3 vision-language architecture for multimodal text generation."""
+"""Model inputs for the Qwen3 Embedding ModuleV3 pipeline."""
 
-from .arch import idefics3_modulev3_arch
-from .inputs import Idefics3Inputs
-from .model import Idefics3Model
-from .model_config import Idefics3Config
+from __future__ import annotations
 
-__all__ = [
-    "Idefics3Config",
-    "Idefics3Inputs",
-    "Idefics3Model",
-    "idefics3_modulev3_arch",
-]
+from dataclasses import dataclass
+
+from max.driver import Buffer
+from max.pipelines.lib import ModelInputs
+
+
+@dataclass
+class Qwen3EmbeddingInputs(ModelInputs):
+    """Input structure for Qwen3 embedding models."""
+
+    tokens: Buffer
+    """Input token IDs [total_seq_len]"""
+
+    input_row_offsets: Buffer
+    """Row offsets for ragged tensors [batch_size + 1]"""
+
+    return_n_logits: Buffer
+    """Number of logits to return (kept for interface compatibility)"""

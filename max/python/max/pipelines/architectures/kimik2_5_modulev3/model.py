@@ -18,8 +18,8 @@ EP MoE via a :class:`DeviceMesh`). The two towers are compiled as separate
 callables, mirroring ``gemma3multimodal_modulev3``.
 
 The text path is wired for bf16, FP8, and NVFP4 under the DeepseekV3 ModuleV3
-DP-attention + EP-MoE ABI (:class:`KimiK2_5ModelInputs` below, produced by
-``batch_processor.py``). Validated end to end on 8xB200 for NVFP4
+DP-attention + EP-MoE ABI (:class:`KimiK2_5ModelInputs` in ``inputs.py``,
+produced by ``batch_processor.py``). Validated end to end on 8xB200 for NVFP4
 (``nvidia/Kimi-K2.5-NVFP4``, DP=8/EP=8).
 
 TODO(MODELS-kimi-v3): the multimodal (image) path under the multi-GPU V3 ABI
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any, ClassVar
 
 from max.driver import Buffer, Device, DeviceSpec, is_virtual_device_mode
@@ -77,64 +77,13 @@ from ..deepseekV3_modulev3.layers.quant_ops import (
 )
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
+from .inputs import KimiK2_5ModelInputs
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .layers.language_model import KimiK2_5MoEDecoder
 from .layers.vision.transformer import Transformer
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class KimiK2_5ModelInputs(ModelInputs):
-    """Flat ModuleV3 inputs for the Kimi-K2.5 model.
-
-    The language ABI is ``(tokens, return_n_logits, input_row_offsets,
-    vision_embeddings, vision_scatter_indices, *kv, *ep)`` — the DeepseekV3
-    ModuleV3 order with the two multimodal tensors spliced in after the row
-    offsets. ``vision_embeddings``/``vision_scatter_indices`` are the base
-    :class:`ModelInputs` fields, set by the pipeline's vision seam
-    (``finalize_vision_inputs``); replicated per device (one ``Buffer`` per
-    device, identical data). Shape ``[num_patches, hidden]`` /
-    ``[num_image_tokens]`` during prefill, ``[0, hidden]`` / ``[0]`` otherwise.
-    """
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-
-    batch_context_lengths: list[Buffer] = field(kw_only=True)
-    """Host (CPU) page-aligned KV context length, one per DP replica.
-
-    Substituted for the planner's device-resident ``buffer_lengths`` so the
-    per-layer ``.to(CPU())`` stays host-to-host and the graph is capturable."""
-
-    data_parallel_splits: Buffer | None = field(default=None, kw_only=True)
-    input_row_offsets_i64: Buffer | None = field(default=None, kw_only=True)
-    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        """Flat language-model input tuple in compile ABI order."""
-        dp_inputs: tuple[Buffer, ...] = ()
-        if self.data_parallel_splits is not None:
-            assert self.input_row_offsets_i64 is not None
-            dp_inputs = (self.data_parallel_splits, self.input_row_offsets_i64)
-        return (
-            self.tokens,
-            self.return_n_logits,
-            self.input_row_offsets,
-            *self.vision_embeddings,
-            *self.vision_scatter_indices,
-            *self.batch_context_lengths,
-            *dp_inputs,
-            *(
-                self.kv_cache_inputs.flatten()
-                if self.kv_cache_inputs is not None
-                else ()
-            ),
-            *self.ep_inputs,
-        )
 
 
 class KimiK2_5Model(

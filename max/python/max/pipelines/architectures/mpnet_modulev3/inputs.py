@@ -10,16 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Idefics3 vision-language architecture for multimodal text generation."""
+"""Model inputs for the MPNet ModuleV3 pipeline."""
 
-from .arch import idefics3_modulev3_arch
-from .inputs import Idefics3Inputs
-from .model import Idefics3Model
-from .model_config import Idefics3Config
+from __future__ import annotations
 
-__all__ = [
-    "Idefics3Config",
-    "Idefics3Inputs",
-    "Idefics3Model",
-    "idefics3_modulev3_arch",
-]
+from dataclasses import dataclass
+
+from max.driver import Buffer
+from max.pipelines.lib import ModelInputs
+
+
+@dataclass
+class MPNetInputs(ModelInputs):
+    """Input tensors for the MPNet model."""
+
+    next_tokens_batch: Buffer
+    attention_mask: Buffer

@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device
@@ -36,28 +35,10 @@ from transformers import AutoConfig
 
 from .batch_processor import Gemma3ModuleV3BatchProcessor
 from .gemma3 import Gemma3
+from .inputs import Gemma3Inputs
 from .model_config import Gemma3Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class Gemma3Inputs(ModelInputs):
-    """A class representing inputs for the Gemma3 model (ModuleV3).
-
-    This class encapsulates the input tensors required for the Gemma3 model
-    execution.
-    """
-
-    tokens: Buffer
-    """Tensor containing the input token IDs."""
-
-    input_row_offsets: Buffer
-    """Tensor containing the offsets for each row in the ragged input
-    sequence."""
-
-    return_n_logits: Buffer
-    """Number of logits to return."""
 
 
 class Gemma3Model(

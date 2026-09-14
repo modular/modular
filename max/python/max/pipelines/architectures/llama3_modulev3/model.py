@@ -14,10 +14,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, cast
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
@@ -35,40 +33,12 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lora import LoRATargetModule
 
 from .batch_processor import Llama3ModuleV3BatchProcessor
+from .inputs import Llama3Inputs
 from .llama3 import Llama3
 from .lora import LLAMA3_LORA_TARGETS
 from .model_config import Llama3Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class Llama3Inputs(ModelInputs):
-    """A class representing inputs for the Llama3 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        if isinstance(self.input_row_offsets, np.ndarray):
-            input_row_offsets = Buffer.from_numpy(self.input_row_offsets).to(
-                self.tokens.device
-            )
-        else:
-            input_row_offsets = self.input_row_offsets
-        return (
-            self.tokens,
-            self.return_n_logits,
-            input_row_offsets,
-            *(
-                self.kv_cache_inputs.flatten()
-                if self.kv_cache_inputs is not None
-                else ()
-            ),
-            *self.lora_buffers,
-        )
 
 
 class Llama3Model(
