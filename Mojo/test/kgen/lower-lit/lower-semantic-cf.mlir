@@ -1271,8 +1271,16 @@ lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
     kgen.unreachable
   }
   case {
-    // CHECK: hlcf.match.complete
-    hlcf.match.complete
+    // Second case can match.next, so the else remains reachable.
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
+      // CHECK: hlcf.match.complete
+      hlcf.match.complete
+    } else {
+      // CHECK: hlcf.match.next
+      hlcf.match.next
+    }
+    kgen.unreachable
   }
   else {
     // CHECK: hlcf.yield
@@ -1287,9 +1295,8 @@ lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
 lit.fn @match_no_fallthrough(%a: i32) -> i32 {
   // CHECK: hlcf.match
   hlcf.match {
-    // CHECK: kgen.return %a : i32
-    lit.return %a : i32
-    kgen.unreachable
+    // CHECK: hlcf.match.next
+    hlcf.match.next
   }
   else {
     // CHECK: kgen.return %a : i32
