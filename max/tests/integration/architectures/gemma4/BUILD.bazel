@@ -201,6 +201,22 @@ modular_py_test(
 )
 
 modular_py_library(
+    name = "gemma4_torch_reference",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures/gemma4",
+        requirement("pytest"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
     name = "attention_helpers",
     testonly = True,
     srcs = [
