@@ -1574,15 +1574,21 @@ struct LayoutTensorMHAOperand[
 struct RaggedMHAOperand[
     origin: ImmOrigin,
     cache_origin: ImmOrigin,
-    //,
     dtype_: DType,
     layout: TensorLayout,
     cache_layout: TensorLayout,
+    buffer_engine: TensorEngine,
+    cache_row_offsets_engine: TensorEngine,
+    scale_buffer_engine: TensorEngine,
     scale_dtype_: DType = dtype_,
     scale_layout: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],
-](MHAOperand, TrivialRegisterPassable):
+](MHAOperand, TrivialRegisterPassable) where (
+    buffer_engine.element_size == 1
+    and scale_buffer_engine.element_size == 1
+    and cache_row_offsets_engine.element_size == 1
+):
     """An implementation for ragged contiguous tensor arguments to MHA kernels.
     """
 
@@ -1590,17 +1596,26 @@ struct RaggedMHAOperand[
     comptime scale_dtype = Self.scale_dtype_
     comptime page_size = 0
     comptime quantization_granularity = 0
-    var buffer: TileTensor[Self.dtype, Self.layout, Self.origin]
+    var buffer: TileTensor[
+        Self.dtype, Self.layout, Self.origin, Engine=Self.buffer_engine
+    ]
 
     @__allow_legacy_any_origin_fields
     var scale_buffer: TileTensor[
-        Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
+        Self.scale_dtype,
+        Self.scale_layout,
+        ImmutAnyOrigin,
+        Engine=Self.scale_buffer_engine,
     ]
     var cache_row_offsets: TileTensor[
-        .uint32, Self.cache_layout, Self.cache_origin
+        .uint32,
+        Self.cache_layout,
+        Self.cache_origin,
+        Engine=Self.cache_row_offsets_engine,
     ]
 
-    comptime Engine: TensorEngine = DefaultEngine[element_width=1]
+    comptime Engine: TensorEngine = Self.buffer_engine
+
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -1613,10 +1628,29 @@ struct RaggedMHAOperand[
         return "RaggedMHAOperand"
 
     def __init__(
-        out self,
-        buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
+        # The dangling scale tile this constructor builds is only expressible
+        # through a bare pointer, so pin that engine here rather than give the
+        # struct a default every caller would silently inherit.
+        out self: RaggedMHAOperand[
+            Self.origin,
+            Self.cache_origin,
+            Self.dtype_,
+            Self.layout,
+            Self.cache_layout,
+            Self.buffer_engine,
+            Self.cache_row_offsets_engine,
+            DefaultEngine[element_width=1],
+            scale_dtype_=Self.scale_dtype_,
+            scale_layout=Self.scale_layout,
+        ],
+        buffer: TileTensor[
+            Self.dtype, Self.layout, Self.origin, Engine=Self.buffer_engine
+        ],
         cache_row_offsets: TileTensor[
-            .uint32, Self.cache_layout, Self.cache_origin
+            .uint32,
+            Self.cache_layout,
+            Self.cache_origin,
+            Engine=Self.cache_row_offsets_engine,
         ],
     ):
         comptime assert (
@@ -1634,9 +1668,7 @@ struct RaggedMHAOperand[
             shape_types=Self.scale_layout._shape_types,
             stride_types=Self.scale_layout._stride_types,
         ]
-        self.scale_buffer = rebind[
-            TileTensor[Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin]
-        ](
+        self.scale_buffer = rebind[type_of(self.scale_buffer)](
             TileTensor[Self.scale_dtype, NullScaleLayout, ImmutAnyOrigin](
                 ptr=UnsafePointer[
                     Scalar[Self.scale_dtype], ImmutAnyOrigin
@@ -1647,12 +1679,20 @@ struct RaggedMHAOperand[
 
     def __init__(
         out self,
-        buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
+        buffer: TileTensor[
+            Self.dtype, Self.layout, Self.origin, Engine=Self.buffer_engine
+        ],
         scale_buffer: TileTensor[
-            Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
+            Self.scale_dtype,
+            Self.scale_layout,
+            ImmutAnyOrigin,
+            Engine=Self.scale_buffer_engine,
         ],
         cache_row_offsets: TileTensor[
-            .uint32, Self.cache_layout, Self.cache_origin
+            .uint32,
+            Self.cache_layout,
+            Self.cache_origin,
+            Engine=Self.cache_row_offsets_engine,
         ],
     ):
         self.buffer = buffer
