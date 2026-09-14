@@ -34,6 +34,7 @@ vLLM Interface:
 from std.bit import next_power_of_two
 from std.algorithm import vectorize
 from std.math import ceildiv
+from std.utils.numerics import get_accum_type
 
 
 from max.gpu import block_idx, thread_idx
@@ -420,6 +421,7 @@ def causal_conv1d_varlen_fwd_cpu[
     cache_indices_dtype: DType,
     has_initial_state_dtype: DType,
     conv_states_dtype: DType,
+    use_residual: Bool = False,
 ](
     dim: Int,
     total_seqlen: Int,
@@ -478,6 +480,8 @@ def causal_conv1d_varlen_fwd_cpu[
         cache_indices_dtype: Data type of the cache indices.
         has_initial_state_dtype: Data type of the initial-state flags.
         conv_states_dtype: Data type of the convolution states.
+        use_residual: If True, adds `x[d, s]` to the convolution sum at each
+            output position, before the activation.
 
     Args:
         dim: Number of channels in the convolution.
@@ -516,6 +520,8 @@ def causal_conv1d_varlen_fwd_cpu[
             updated.
         has_bias: Whether to add `bias` to the convolution sum.
     """
+    comptime accum_dtype = get_accum_type[output_dtype]()
+
     var width_minus_1 = width - 1
 
     # Forward-path DRAM I/O owner. `load_x`/`store_out` address through the
@@ -558,9 +564,9 @@ def causal_conv1d_varlen_fwd_cpu[
         # Process each channel
         for d in range(dim):
             # Load bias
-            var bias_val: Scalar[output_dtype] = 0
+            var bias_val: Scalar[accum_dtype] = 0
             if has_bias:
-                bias_val = Scalar[output_dtype](io.load_bias(d))
+                bias_val = Scalar[accum_dtype](io.load_bias(d))
 
             # Load weights for this channel
             var weights = List[Scalar[weight_dtype]]()
@@ -594,14 +600,17 @@ def causal_conv1d_varlen_fwd_cpu[
                                 conv_states.raw_load(state_offset)
                             )
 
-                    conv_sum += Scalar[output_dtype](
-                        input_val * Scalar[x_dtype](weights[w_idx])
-                    )
+                    conv_sum += Scalar[accum_dtype](input_val) * Scalar[
+                        accum_dtype
+                    ](weights[w_idx])
 
-                # Apply activation
-                var out_val = _apply_silu[output_dtype](
+                comptime if use_residual:
+                    conv_sum += Scalar[accum_dtype](io.load_x(d, seq_start + l))
+
+                var out_val_accum = _apply_silu[accum_dtype](
                     conv_sum, silu_activation
                 )
+                var out_val = out_val_accum.cast[output_dtype]()
 
                 # Store output
                 io.store_out(d, seq_start + l, out_val)
@@ -975,6 +984,7 @@ def causal_conv1d_varlen_fwd_gpu[
     has_initial_state_engine: TensorEngine,
     conv_states_engine: TensorEngine,
     output_engine: TensorEngine,
+    use_residual: Bool = False,
 ](
     dim: Int32,
     total_seqlen: Int32,
@@ -1036,9 +1046,13 @@ def causal_conv1d_varlen_fwd_gpu[
 
     Each block processes BLOCK_DIM channels for one sequence.
 
+    `use_residual` adds `x[d, s]` to the convolution sum before the activation.
+
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
+    comptime accum_dtype = get_accum_type[output_dtype]()
+
     var _dim = Int(dim)
     var _total_seqlen = Int(total_seqlen)
     var _batch = Int(batch)
@@ -1088,9 +1102,9 @@ def causal_conv1d_varlen_fwd_gpu[
     )
 
     # Load bias
-    var bias_val: Scalar[output_dtype] = 0
+    var bias_val: Scalar[accum_dtype] = 0
     if has_bias != 0:
-        bias_val = Scalar[output_dtype](io.load_bias(d))
+        bias_val = Scalar[accum_dtype](io.load_bias(d))
 
     # Load weights into registers
     var weights = _channel_weights[weight_dtype, WIDTH](weight, d)
@@ -1120,12 +1134,17 @@ def causal_conv1d_varlen_fwd_gpu[
                         conv_states.raw_load(state_offset)
                     )
 
-            conv_sum += Scalar[output_dtype](
-                input_val * Scalar[x_dtype](weights[w_idx])
+            conv_sum += Scalar[accum_dtype](input_val) * Scalar[accum_dtype](
+                weights[w_idx]
             )
 
-        # Apply activation
-        var out_val = _apply_silu[output_dtype](conv_sum, silu_activation != 0)
+        comptime if use_residual:
+            conv_sum += Scalar[accum_dtype](io.load_x(d, seq_start + l))
+
+        var out_val_accum = _apply_silu[accum_dtype](
+            conv_sum, silu_activation != 0
+        )
+        var out_val = out_val_accum.cast[output_dtype]()
 
         # Store output
         io.store_out(d, seq_start + l, out_val)
@@ -1207,6 +1226,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     has_initial_state_engine: TensorEngine,
     conv_states_engine: TensorEngine,
     output_engine: TensorEngine,
+    use_residual: Bool = False,
 ](
     dim_dev: Int32,
     total_seqlen_dev: Int32,
@@ -1288,9 +1308,13 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     max-reduction over ragged per-sequence lengths; blocks whose z-index
     exceeds a given sequence's actual tile count early-return.
 
+    `use_residual` adds `x[d, s]` to the convolution sum before the activation.
+
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
+    comptime accum_dtype = get_accum_type[output_dtype]()
+
     # `Int` is not device-passable; widen the fixed-width args. Only `dim` is
     # read in this variant; the other two match the serial kernel's signature.
     var dim = Int(dim_dev)
@@ -1337,9 +1361,9 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
         cache_idx = Int(cache_indices.raw_load(batch_idx))
 
     # Load bias
-    var bias_val: Scalar[output_dtype] = 0
+    var bias_val: Scalar[accum_dtype] = 0
     if has_bias != 0:
-        bias_val = Scalar[output_dtype](bias.raw_load(d))
+        bias_val = Scalar[accum_dtype](bias.raw_load(d))
 
     # Load weights into registers
     var weights = _channel_weights[weight_dtype, WIDTH](weight, d)
@@ -1347,7 +1371,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     comptime WIDTH_MINUS_1 = WIDTH - 1
     comptime UNROLL = _CONV1D_SEQPARALLEL_UNROLL
     comptime TAP_LANES = _TAP_LANES[WIDTH]
-    var tap_weights = weights.cast[x_dtype]()
+    var tap_weights = weights.cast[accum_dtype]()
 
     # Register sliding window over the WIDTH-1 inputs preceding the current
     # position, so the steady state costs one global load per output instead
@@ -1394,18 +1418,20 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
             )
 
         comptime for u in range(U):
-            var window = SIMD[x_dtype, TAP_LANES](0)
+            var window = SIMD[accum_dtype, TAP_LANES](0)
             comptime for w in range(WIDTH):
-                window[w] = taps[u + w]
-            var conv_sum = (
-                bias_val
-                + (window * tap_weights).reduce_add().cast[output_dtype]()
-            )
+                window[w] = taps[u + w].cast[accum_dtype]()
+            var conv_sum = bias_val + (window * tap_weights).reduce_add()
 
-            # Apply activation
-            var out_val = _apply_silu[output_dtype](
+            comptime if use_residual:
+                # The last tap is this output's own `x`, so the residual
+                # costs no extra load.
+                conv_sum += window[WIDTH - 1]
+
+            var out_val_accum = _apply_silu[accum_dtype](
                 conv_sum, silu_activation != 0
             )
+            var out_val = out_val_accum.cast[output_dtype]()
 
             # Store output
             var out_offset = (

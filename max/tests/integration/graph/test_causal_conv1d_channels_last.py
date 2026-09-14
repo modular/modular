@@ -25,7 +25,10 @@ This test builds one graph containing BOTH paths on identical inputs:
   — the legacy contract;
 * channels-last arm: ``op(channels_last=True)`` on the tokens-major tensor.
 
-and asserts bitwise-identical outputs and conv-state pools for a ragged
+Each pair runs twice, with ``use_residual`` off and on: the residual reads
+``x`` through the same strided accessor the layout parameter steers.
+
+The test asserts bitwise-identical outputs and conv-state pools for a ragged
 prefill step followed by a state-carrying decode step (one token per
 sequence, ``has_initial_state=True``), reusing the same compiled model via a
 symbolic ``total_seqlen`` dimension.
@@ -40,7 +43,16 @@ import torch
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    DimLike,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 
 # Nemotron-H conv kernel width (widths 1-4 are compiled in the builtin).
 _KERNEL_SIZE = 4
@@ -58,21 +70,60 @@ _STATE_LEN = _KERNEL_SIZE - 1
 _BATCH = 2
 _SLOTS = [1, 3]
 
+# The four arms, in graph-output and conv-state-pool order: each layout with
+# and without the fused residual add, as (channels_last, use_residual).
+_ARMS = [(False, False), (True, False), (False, True), (True, True)]
+_CF, _CL, _CF_RES, _CL_RES = range(len(_ARMS))
+# Conv-state pools are graph inputs 3..6; the ragged metadata follows.
+_FIRST_POOL_INPUT = 3
+
+
+def _conv_arm(
+    gpu: DeviceRef,
+    x_cl: TensorValue,
+    operands: list[TensorValue | BufferValue],
+    *,
+    channels_last: bool,
+    use_residual: bool,
+) -> TensorValue:
+    """One conv arm, returning tokens-major ``[N, dim]`` either way.
+
+    Every kernel parameter is passed explicitly: the op does not inherit
+    the defaults the Mojo struct declares.
+    """
+    x = ops.transpose(x_cl, 0, 1) if not channels_last else x_cl
+    n = x_cl.shape[0]
+    shape: list[DimLike] = [n, _DIM] if channels_last else [_DIM, n]
+    out = ops.inplace_custom(
+        "causal_conv1d_varlen_fwd",
+        gpu,
+        [x, *operands],
+        [TensorType(DType.float32, shape, device=gpu)],
+        parameters={
+            "activation": "silu",
+            "channels_last": channels_last,
+            "use_residual": use_residual,
+        },
+    )[0].tensor
+    return out if channels_last else ops.transpose(out, 0, 1)
+
 
 def _build_dual_layout_graph(gpu: DeviceRef) -> Graph:
-    """One graph computing the conv through both layout contracts."""
+    """One graph computing the conv through all four arms.
+
+    Each arm needs its own conv-state pool, since every arm mutates its pool
+    in place.
+    """
+    pool_type = BufferType(
+        DType.float32, [_MAX_SLOTS, _DIM, _STATE_LEN], device=gpu
+    )
     with Graph(
         "causal_conv1d_channels_last_equivalence",
         input_types=[
             TensorType(DType.float32, ["total_seqlen", _WIDE_DIM], device=gpu),
             TensorType(DType.float32, [_DIM, _KERNEL_SIZE], device=gpu),
             TensorType(DType.float32, [_DIM], device=gpu),
-            BufferType(
-                DType.float32, [_MAX_SLOTS, _DIM, _STATE_LEN], device=gpu
-            ),
-            BufferType(
-                DType.float32, [_MAX_SLOTS, _DIM, _STATE_LEN], device=gpu
-            ),
+            *([pool_type] * len(_ARMS)),
             TensorType(DType.int32, [_BATCH + 1], device=gpu),
             TensorType(DType.int32, [_BATCH], device=gpu),
             TensorType(DType.bool, [_BATCH], device=gpu),
@@ -85,54 +136,30 @@ def _build_dual_layout_graph(gpu: DeviceRef) -> Graph:
         )  # [N, dim]
         weight = graph.inputs[1].tensor
         bias = graph.inputs[2].tensor
-        pool_cf = graph.inputs[3].buffer
-        pool_cl = graph.inputs[4].buffer
-        qsl = graph.inputs[5].tensor
-        cache_indices = graph.inputs[6].tensor
-        has_initial_state = graph.inputs[7].tensor
+        meta = _FIRST_POOL_INPUT + len(_ARMS)
+        qsl = graph.inputs[meta].tensor
+        cache_indices = graph.inputs[meta + 1].tensor
+        has_initial_state = graph.inputs[meta + 2].tensor
 
-        total_seqlen = x_cl.shape[0]
-
-        # Channels-first arm: the legacy (dim, total_seqlen) contract.
-        # NOTE: MOGG kernel parameters are not defaulted from the Mojo struct
-        # declaration — `channels_last` must be passed explicitly (same as
-        # the `dt_softplus` precedent in the SSD ops).
-        x_cf = ops.transpose(x_cl, 0, 1)  # [dim, N]
-        out_cf_t = ops.inplace_custom(
-            "causal_conv1d_varlen_fwd",
-            gpu,
-            [
-                x_cf,
-                weight,
-                bias,
-                pool_cf,
-                qsl,
-                cache_indices,
-                has_initial_state,
-            ],
-            [TensorType(DType.float32, [_DIM, total_seqlen], device=gpu)],
-            parameters={"activation": "silu", "channels_last": False},
-        )[0]
-        out_cf = ops.transpose(out_cf_t.tensor, 0, 1)  # [N, dim]
-
-        # Channels-last arm: tokens-major in and out, no transposes.
-        out_cl = ops.inplace_custom(
-            "causal_conv1d_varlen_fwd",
-            gpu,
-            [
-                x_cl,
-                weight,
-                bias,
-                pool_cl,
-                qsl,
-                cache_indices,
-                has_initial_state,
-            ],
-            [TensorType(DType.float32, [total_seqlen, _DIM], device=gpu)],
-            parameters={"activation": "silu", "channels_last": True},
-        )[0]
-
-        graph.output(out_cf, out_cl)
+        graph.output(
+            *[
+                _conv_arm(
+                    gpu,
+                    x_cl,
+                    [
+                        weight,
+                        bias,
+                        graph.inputs[_FIRST_POOL_INPUT + arm].buffer,
+                        qsl,
+                        cache_indices,
+                        has_initial_state,
+                    ],
+                    channels_last=channels_last,
+                    use_residual=use_residual,
+                )
+                for arm, (channels_last, use_residual) in enumerate(_ARMS)
+            ]
+        )
     return graph
 
 
@@ -140,7 +167,10 @@ def _build_dual_layout_graph(gpu: DeviceRef) -> Graph:
 def test_causal_conv1d_channels_last_matches_channels_first(
     session: InferenceSession,
 ) -> None:
-    """channels_last output/state must be bitwise-equal to channels-first."""
+    """channels_last output/state must be bitwise-equal to channels-first.
+
+    Holds with the fused residual add on as well as off.
+    """
     gpu = DeviceRef.GPU()
     model = session.load(_build_dual_layout_graph(gpu))
     gpu_device = model.input_devices[0]
@@ -154,21 +184,23 @@ def test_causal_conv1d_channels_last_matches_channels_first(
     slot_idx_np = np.asarray(_SLOTS, dtype=np.int32)
     untouched_slots = [s for s in range(_MAX_SLOTS) if s not in _SLOTS]
 
-    pool_cf_buf = md.Buffer.from_numpy(pool_initial_np.copy()).to(gpu_device)
-    pool_cl_buf = md.Buffer.from_numpy(pool_initial_np.copy()).to(gpu_device)
+    # One pool per arm, in `_ARMS` order, so no two arms write the same slots.
+    pool_bufs = [
+        md.Buffer.from_numpy(pool_initial_np.copy()).to(gpu_device)
+        for _ in _ARMS
+    ]
     weight_buf = md.Buffer.from_numpy(weight_np).to(gpu_device)
     bias_buf = md.Buffer.from_numpy(bias_np).to(gpu_device)
     slot_buf = md.Buffer.from_numpy(slot_idx_np).to(gpu_device)
 
     def _run(
         x_np: np.ndarray, offsets: list[int], has_init: bool
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
         outputs = model.execute(
             md.Buffer.from_numpy(x_np).to(gpu_device),
             weight_buf,
             bias_buf,
-            pool_cf_buf,
-            pool_cl_buf,
+            *pool_bufs,
             md.Buffer.from_numpy(np.asarray(offsets, dtype=np.int32)).to(
                 gpu_device
             ),
@@ -177,32 +209,37 @@ def test_causal_conv1d_channels_last_matches_channels_first(
                 gpu_device
             ),
         )
-        out_cf = torch.from_dlpack(outputs[0]).cpu().numpy()
-        out_cl = torch.from_dlpack(outputs[1]).cpu().numpy()
-        pool_cf = torch.from_dlpack(pool_cf_buf).cpu().numpy()
-        pool_cl = torch.from_dlpack(pool_cl_buf).cpu().numpy()
-        return out_cf, out_cl, pool_cf, pool_cl
+        outs = [torch.from_dlpack(o).cpu().numpy() for o in outputs]
+        pools = [torch.from_dlpack(p).cpu().numpy() for p in pool_bufs]
+        return outs, pools
+
+    def _check_step(outs: list[np.ndarray], pools: list[np.ndarray]) -> None:
+        """Each layout pair must agree bitwise, with and without residual."""
+        np.testing.assert_array_equal(outs[_CL], outs[_CF])
+        np.testing.assert_array_equal(pools[_CL], pools[_CF])
+        np.testing.assert_array_equal(outs[_CL_RES], outs[_CF_RES])
+        np.testing.assert_array_equal(pools[_CL_RES], pools[_CF_RES])
+        # The residual arms must not be silently computing the plain conv;
+        # the conv state is the x window either way, so only outputs differ.
+        assert not np.array_equal(outs[_CF_RES], outs[_CF]), (
+            "use_residual=True produced the same output as use_residual=False"
+        )
+        np.testing.assert_array_equal(pools[_CF_RES], pools[_CF])
 
     # Ragged prefill: two fresh sequences of lengths 7 and 5.
     prefill_len = 12
     x_prefill = rng.standard_normal((prefill_len, _WIDE_DIM)).astype(np.float32)
-    out_cf, out_cl, pool_cf, pool_cl = _run(
-        x_prefill, [0, 7, prefill_len], has_init=False
-    )
-    np.testing.assert_array_equal(out_cl, out_cf)
-    np.testing.assert_array_equal(pool_cl, pool_cf)
+    outs, pools = _run(x_prefill, [0, 7, prefill_len], has_init=False)
+    _check_step(outs, pools)
     for s in _SLOTS:
-        assert not np.array_equal(pool_cf[s], pool_initial_np[s]), (
+        assert not np.array_equal(pools[_CF][s], pool_initial_np[s]), (
             f"conv-state slot {s} should have been mutated by prefill"
         )
     for s in untouched_slots:
-        np.testing.assert_array_equal(pool_cf[s], pool_initial_np[s])
-        np.testing.assert_array_equal(pool_cl[s], pool_initial_np[s])
+        for pool in pools:
+            np.testing.assert_array_equal(pool[s], pool_initial_np[s])
 
     # Decode: one new token per sequence, carrying the stored conv state.
     x_decode = rng.standard_normal((_BATCH, _WIDE_DIM)).astype(np.float32)
-    out_cf, out_cl, pool_cf, pool_cl = _run(
-        x_decode, [0, 1, _BATCH], has_init=True
-    )
-    np.testing.assert_array_equal(out_cl, out_cf)
-    np.testing.assert_array_equal(pool_cl, pool_cf)
+    outs, pools = _run(x_decode, [0, 1, _BATCH], has_init=True)
+    _check_step(outs, pools)

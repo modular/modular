@@ -35,6 +35,7 @@ def causal_conv1d_varlen_fwd(
     has_initial_state: TensorValue,
     activation: str = "silu",
     channels_last: bool = False,
+    use_residual: bool = False,
 ) -> TensorValue:
     """Slot-indexed varlen causal depthwise conv1d (prefill and decode).
 
@@ -58,6 +59,8 @@ def causal_conv1d_varlen_fwd(
             strides, so this only relabels the axes — it avoids the
             materialized transposes the ``[dim, total_seqlen]`` contract
             forces on a tokens-major caller.
+        use_residual: If true, adds ``x`` to the convolution sum at each
+            output position, before ``activation``.
 
     Returns:
         Conv output with the same shape/layout as ``x``. ``conv_states`` is
@@ -84,6 +87,10 @@ def causal_conv1d_varlen_fwd(
             has_initial_state,
         ],
         [out_type],
-        parameters={"activation": activation, "channels_last": channels_last},
+        parameters={
+            "activation": activation,
+            "channels_last": channels_last,
+            "use_residual": use_residual,
+        },
     )
     return cast(TensorValue, results[0])

@@ -114,7 +114,7 @@ class InklingDecoderLayer(Module):
             dtype=dtype,
             device=device,
         )
-        self.attn_sconv.sharding_strategy = tensor_parallel
+        self.attn_sconv.sharding_strategy = replicate
         self.attn_sconv_shards = list(self.attn_sconv.shard(devices))
 
         self.mlp_norm = RMSNorm(
@@ -183,7 +183,7 @@ class InklingDecoderLayer(Module):
             dtype=dtype,
             device=device,
         )
-        self.mlp_sconv.sharding_strategy = tensor_parallel
+        self.mlp_sconv.sharding_strategy = replicate
         self.mlp_sconv_shards = list(self.mlp_sconv.shard(devices))
 
     def __call__(
@@ -215,33 +215,33 @@ class InklingDecoderLayer(Module):
             for rank, shard in enumerate(self.attn_shards)
         ]
         # wo_ud is row-parallel: each rank holds a partial sum of the delta.
-        convolved = self._branch_convolution(
+        hs, norm_outs = self._branch_delta(
             self.attn_sconv_shards,
             attention,
+            hs,
             [pools[ConvSite.ATTN_OUT] for pools in conv_pools],
             slot_idx,
             has_initial_state,
             input_row_offsets,
             signal_buffers,
+            self.mlp_norm_shards,
         )
-        hs = [h + delta for h, delta in zip(hs, convolved, strict=True)]
 
-        norm_outs = forward_sharded_layers(self.mlp_norm_shards, hs)
-        convolved = self._branch_convolution(
+        return self._branch_delta(
             self.mlp_sconv_shards,
             self._feed_forward(norm_outs),
+            hs,
             [pools[ConvSite.MLP_OUT] for pools in conv_pools],
             slot_idx,
             has_initial_state,
             input_row_offsets,
             signal_buffers,
-        )
-        return [h + delta for h, delta in zip(hs, convolved, strict=True)]
+        )[0]
 
     def _feed_forward(
         self, norm_xs: Sequence[TensorValue]
     ) -> list[TensorValue]:
-        """The dense scale applies before the reduce-scatter splits channels."""
+        """The dense scale applies before the ranks are reduced."""
         outs = [
             shard(norm_xs[rank]) for rank, shard in enumerate(self.mlp_shards)
         ]
@@ -257,24 +257,27 @@ class InklingDecoderLayer(Module):
             )
         ]
 
-    def _branch_convolution(
+    def _branch_delta(
         self,
         convs: Sequence[ShortConvolution],
         partials: Sequence[TensorValue],
+        hs: Sequence[TensorValue],
         pools: Sequence[BufferValue],
         slot_idx: Sequence[TensorValue],
         has_initial_state: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-    ) -> list[TensorValue]:
-        """Reduce-scatters onto each rank's channels, convolves, all-gathers."""
-        if self.num_devices > 1:
-            deltas = ops.reducescatter.sum(partials, signal_buffers, axis=-1)
-        else:
-            deltas = list(partials)
-        outputs = [
+        norm: Sequence[RMSNorm] = (),
+    ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Returns ``hs`` plus this branch's convolved delta, and its norm.
+
+        Each rank convolves its own full-width partial sum and the ranks are
+        reduced afterwards, which the convolution's linearity makes equivalent
+        to reducing first.
+        """
+        convolved = [
             conv(
-                deltas[rank],
+                partials[rank],
                 pools[rank],
                 slot_idx[rank],
                 input_row_offsets[rank],
@@ -283,8 +286,11 @@ class InklingDecoderLayer(Module):
             for rank, conv in enumerate(convs)
         ]
         if self.num_devices > 1:
-            outputs = ops.allgather(outputs, signal_buffers, axis=-1)
-        return outputs
+            convolved = ops.allreduce.sum(convolved, signal_buffers)
+        outs = [h + delta for h, delta in zip(hs, convolved, strict=True)]
+        if not norm:
+            return outs, []
+        return outs, forward_sharded_layers(list(norm), outs)
 
 
 def _subgraph_layer_groups(

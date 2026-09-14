@@ -52,6 +52,7 @@ def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
 def run_varlen_causal_conv1d_fwd_gpu[
     dtype: DType,
     activation: StaticString,
+    use_residual: Bool = False,
 ](
     batch: Int,
     dim: Int,
@@ -66,6 +67,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
     Also cross-checks the sequence-parallel prefill kernel
     (`causal_conv1d_varlen_fwd_seqparallel_gpu`) against both the CPU
     reference and the serial GPU kernel's output and final `conv_states`.
+
+    `use_residual` threads through all three, so the same cross-check covers
+    the fused residual add.
     """
     # Calculate total_seqlen (sum of all sequence lengths)
     var total_seqlen = 0
@@ -285,6 +289,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.Engine,
                 conv_states_device_tt.Engine,
                 output_device_tt.Engine,
+                use_residual,
             ]
         ]()
         ctx.enqueue_function(
@@ -349,6 +354,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.Engine,
                 conv_states_device_tt.Engine,
                 output_device_tt.Engine,
+                use_residual,
             ]
         ]()
         ctx.enqueue_function(
@@ -413,6 +419,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.Engine,
                 conv_states_device_tt.Engine,
                 output_device_tt.Engine,
+                use_residual,
             ]
         ]()
         ctx.enqueue_function(
@@ -477,6 +484,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.Engine,
                 conv_states_device_tt.Engine,
                 output_device_tt.Engine,
+                use_residual,
             ]
         ]()
         ctx.enqueue_function(
@@ -617,6 +625,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.Engine,
                 conv_states_seqpar_device_tt.Engine,
                 output_seqpar_device_tt.Engine,
+                use_residual,
             ]
         ]()
         with ctx.push_context():
@@ -733,6 +742,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
         DType.int32,
         DType.bool,
         dtype,
+        use_residual,
     ](
         dim,
         total_seqlen,
@@ -1400,6 +1410,30 @@ def test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
     )
     run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4, ctx=ctx
+    )
+
+
+def test_varlen_causal_conv1d_fwd_gpu_residual_decode_shape() raises:
+    """`use_residual=True` at a decode shape: one token per sequence, so
+    `total_seqlen == batch` routes to the serial kernel.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none", use_residual=True](
+        batch=4, dim=16, seq_lengths=Index(1, 1, 1, 1), width=4, ctx=ctx
+    )
+
+
+def test_varlen_causal_conv1d_fwd_gpu_residual_prefill_shape() raises:
+    """`use_residual=True` at a multi-tile prefill shape: `total_seqlen >
+    batch` routes to the seq-parallel kernel.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none", use_residual=True](
+        batch=2, dim=8, seq_lengths=Index(512, 300), width=4, ctx=ctx
     )
 
 

@@ -4604,7 +4604,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
 
 @extensibility.register("causal_conv1d_varlen_fwd")
 struct CausalConv1DVarlenFwd[
-    activation: StaticString, channels_last: Bool = False
+    activation: StaticString,
+    channels_last: Bool = False,
+    use_residual: Bool = False,
 ]:
     """Varlen causal 1D convolution forward pass.
 
@@ -4612,23 +4614,15 @@ struct CausalConv1DVarlenFwd[
     concatenated together. Uses cumulative sequence lengths to identify
     sequence boundaries.
 
-    The registration lives here in the built-in kernel library (mirroring the
-    `gated_delta_conv1d_fwd` precedent) so the graph compiler / serve path can
-    resolve the op with no out-of-tree `custom_extensions`. The kernel math
-    lives in `state_space.varlen_causal_conv1d`.
-
-    The underlying kernels index `x`/`output` purely through runtime
-    dim/seqlen strides, so the token-axis memory layout is a free parameter.
-    With `channels_last=True` the op consumes and produces tokens-major
-    `(total_seqlen, dim)` tensors — the layout the surrounding graph
-    naturally carries — eliminating the materialized `(dim, total_seqlen)`
-    transposes on both sides of the op. Only the stride/extent bookkeeping
-    below changes; the per-element compute is identical in both layouts.
+    `channels_last=True` lets a tokens-major caller skip the transposes on
+    both sides of the op.
 
     Parameters:
         activation: Activation function - "none" or "silu".
         channels_last: If True, `x` and `output` are tokens-major
             (total_seqlen, dim) instead of (dim, total_seqlen).
+        use_residual: If True, adds `x[d, s]` to the convolution sum at each
+            output position, before `activation`.
 
     Tensor Shapes:
         - output: (dim, total_seqlen) - Output tensor
@@ -4646,19 +4640,15 @@ struct CausalConv1DVarlenFwd[
     @staticmethod
     def execute[
         dtype: DType,
+        conv_states_dtype: DType,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        # `conv_states` is a slot-indexed in/out pool of shape
-        # [max_slots, dim, width - 1], read+written in place at slot
-        # `cache_indices[b]`. It must be a `MutableInputTensor` (not an
-        # `OutputTensor`) so the graph binds the caller's persistent pool
-        # buffer rather than treating it as a freshly-produced output --
-        # mirroring the `gated_delta_conv1d_fwd` precedent above.
-        conv_states: MutableInputTensor[dtype=dtype, rank=3, ...],
+        # The caller owns this pool and the kernel writes it in place.
+        conv_states: MutableInputTensor[dtype=conv_states_dtype, rank=3, ...],
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
         cache_indices: InputTensor[dtype=.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
@@ -4726,6 +4716,7 @@ struct CausalConv1DVarlenFwd[
                 cache_indices_tt.dtype,
                 has_initial_state_tt.dtype,
                 conv_states_tt.dtype,
+                use_residual=Self.use_residual,
             ](
                 dim,
                 total_seqlen,
@@ -4806,6 +4797,7 @@ struct CausalConv1DVarlenFwd[
                             has_initial_state_tt.Engine,
                             conv_states_tt.Engine,
                             output_tt.Engine,
+                            use_residual=Self.use_residual,
                         ]
                     ]()
                     # Host-side safe upper bound on the per-sequence tile
@@ -4883,6 +4875,7 @@ struct CausalConv1DVarlenFwd[
                         has_initial_state_tt.Engine,
                         conv_states_tt.Engine,
                         output_tt.Engine,
+                        use_residual=Self.use_residual,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -4939,11 +4932,8 @@ def causal_conv1d_varlen_fwd_shape(
     x: Some[Tensor],
     weight: Some[Tensor],
     bias: Some[Tensor],
-    # Must mirror the execute function's input-tensor list (incl. the in/out
-    # `conv_states` pool) or the MOGG kernel-library validator rejects the op
-    # ("Execute and shape functions do not have the same input tensors").
-    # Bound as a role-less tensor trait here (the shape fn does not mutate),
-    # matching the SSD-inplace `ssm_pool` shape-fn convention.
+    # The shape function must take the same tensors as execute, or the op
+    # is rejected.
     conv_states: Some[Tensor],
     query_start_loc: Some[Tensor],
     cache_indices: Some[Tensor],
@@ -4971,8 +4961,7 @@ def causal_conv1d_varlen_fwd_shape(
     comptime assert (
         type_of(weight).dtype == type_of(x).dtype
         and type_of(bias).dtype == type_of(x).dtype
-        and type_of(conv_states).dtype == type_of(x).dtype
-    ), "x, weight, bias, and conv_states must share a dtype"
+    ), "x, weight, and bias must share a dtype"
     comptime assert (
         type_of(query_start_loc).rank == 1
     ), "query_start_loc must be rank 1"

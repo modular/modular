@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Per-request slot pool for Inkling's short-convolution state: one pool per
 convolution site per layer per device, updated in place by the conv kernel.
-Rank ``r`` owns the channel range ``[r * C / tp_size, (r + 1) * C / tp_size)``
-of every site, matching the reference's TP narrowing.
+The attention K and V sites sit behind the sharded qkvr projection, so rank
+``r`` owns only the channel range ``[r * C / tp_size, (r + 1) * C / tp_size)``
+of those two. The branch sites are full-width on every rank.
 
 A slot is never cleared. A request's first chunk has no convolution history by
 definition, so it runs with ``has_initial_state`` false and the kernel reads
@@ -120,7 +121,9 @@ class InklingConvStateLayout:
         tp_size: int = 1,
     ) -> Self:
         """Layout for decoder blocks with an explicit local/global mix."""
-        residual_width = text_config.hidden_size // tp_size
+        # Not channel-sharded: each rank convolves a full-width partial sum
+        # and the ranks are summed afterwards.
+        residual_width = text_config.hidden_size
         layers = []
         for local in is_local:
             kv_width = text_config.kv_conv_dim(local) // tp_size
