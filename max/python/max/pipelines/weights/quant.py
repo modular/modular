@@ -989,23 +989,26 @@ def build_modelopt_nvfp4_config(
     """Builds the QuantConfig for modelopt's NVFP4 two-level scheme.
 
     Skips the whole-checkpoint ``quant_algo == "NVFP4"`` check that a
-    ``MIXED_PRECISION`` export cannot pass, so the caller must have established
-    which modules are NVFP4: handing this config to one quantized some other
-    way reads its payload as packed FP4 and yields garbage.
+    ``MIXED_PRECISION`` export cannot pass, so the caller must have
+    established which modules are NVFP4: handing this config to one
+    quantized some other way reads its payload as packed FP4 and yields
+    garbage.
 
     Args:
         huggingface_config: The config the layer count is read from.
-        state_dict: The checkpoint weights, read for the bias and embedding
-            dtypes.
+        state_dict: The checkpoint weights, read for the bias and
+            embedding dtypes.
         resolved_quant_config: The resolved quantization config, from
-            :func:`resolve_hf_quant_config`. Only its ``ignore`` globs are read;
-            ``None`` means nothing is ignored.
-        state_dict_name_prefix: Optional prefix on the ``state_dict`` keys.
-        ignored_modules_prefix: Prefix the ``ignore`` globs are written against.
+            :func:`resolve_hf_quant_config`. Only its ``ignore`` globs
+            are read; ``None`` means nothing is ignored.
+        state_dict_name_prefix: The optional prefix on the ``state_dict``
+            keys.
+        ignored_modules_prefix: The prefix the ``ignore`` globs are
+            written against.
 
     Returns:
-        The NVFP4 config, with the fused-kernel flags left at their defaults
-        for :func:`apply_fused_kernel_flags` to set.
+        The NVFP4 config, with the fused-kernel flags left at their
+        defaults for :func:`apply_fused_kernel_flags` to set.
     """
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.BLOCK,

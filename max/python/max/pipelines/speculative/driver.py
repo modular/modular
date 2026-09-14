@@ -203,7 +203,11 @@ class SequentialProposer(Protocol):
 
 
 class SequentialDriver(Module):
-    """Merge -> verify -> mask -> accept -> shift -> propose -> pack."""
+    """Drives the sequential speculative-decoding loop.
+
+    Each iteration runs merge, verify, mask, accept, shift, propose,
+    and pack.
+    """
 
     def __init__(
         self,

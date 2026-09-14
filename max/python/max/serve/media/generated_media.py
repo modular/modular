@@ -373,7 +373,7 @@ def _decode_output_image_bytes(content: OutputImageContent) -> bytes:
 
 
 def encode_video_bytes_b64(video_bytes: bytes) -> str:
-    """Encode an MP4 byte payload as a base64 response string."""
+    """Encodes an MP4 byte payload as a base64 response string."""
     return base64.b64encode(video_bytes).decode("utf-8")
 
 
