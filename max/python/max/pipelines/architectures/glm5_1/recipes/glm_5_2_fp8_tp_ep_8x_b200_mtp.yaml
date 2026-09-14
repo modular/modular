@@ -17,7 +17,11 @@ model:
   max_length: 1048576  # The checkpoint's full 1M context.
   kv_cache:
     kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.75
+    # TODO(MXSERV-487): 0.75 stopped fitting the full 1M window once the
+    # DeepSeekV3 planner's 64 GiB of graph-capture headroom came back, and the
+    # worker now refuses to start. 0.78 matches the sibling GLM 5.3 recipes;
+    # restore 0.75 when the headroom requirement is understood.
+    device_memory_utilization: 0.78
 
 speculative:
   speculative_method: mtp
