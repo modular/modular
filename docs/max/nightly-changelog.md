@@ -12,6 +12,18 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- `max serve` gained a `--cascade` flag that routes the request to the
+  experimental Cascade server (`max.experimental.cascade.serve.main.serve`)
+  instead of the standard API server + model worker. The resolved `PipelineArgs`
+  is forwarded to the Cascade entrypoint, so `max serve --cascade --model ...`
+  runs the Cascade server with the same model-selection flags. The Cascade
+  deployment context is configurable from the same command: `--transport`
+  (http/grpc), `--local-cpu-workers`, `--local-gpu-workers`, and
+  `--remote-cpu-workers` / `--remote-gpu-workers` map onto `ContextConfig`.
+  `--host` is now exposed for both paths and defaults `max serve --cascade` to
+  `0.0.0.0`, matching `max serve`, instead of the Cascade entrypoint's
+  `localhost` default.
+
 - Hardened decoding of client-supplied images. `Image.open` is now restricted
   to an explicit format allowlist (PNG, JPEG, WEBP, GIF, BMP, PPM, TIFF, TGA,
   and AVIF where the platform provides it), shrinking the native-decoder attack

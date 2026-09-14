@@ -105,6 +105,28 @@ def test_sampling_flags_survive_flat_kwargs_path() -> None:
     assert config.sampling.enable_structured_output is True
 
 
+def test_cascade_field_round_trips_through_flat_kwargs() -> None:
+    # ``--cascade`` is a top-level PipelineArgs bool surfaced by the serve
+    # CLI; it must survive the flat-kwargs path so ``cli_serve`` can branch on
+    # ``pipeline_args.cascade``.
+    assert PipelineArgs.from_flat_kwargs(cascade=False).cascade is False
+    assert PipelineArgs.from_flat_kwargs(cascade=True).cascade is True
+
+
+def test_cascade_skips_huggingface_manifest_probe() -> None:
+    # Cascade accepts Cascade-only model paths (e.g. ``echo:``) that the
+    # HuggingFace manifest probe rejects. With ``--cascade`` set, the probe
+    # must be skipped so ``from_flat_kwargs`` does not fail before the serve
+    # entrypoint can forward to Cascade.
+    with pytest.raises(ValueError):
+        PipelineArgs.from_flat_kwargs(model_path="echo:org/some-model")
+    args = PipelineArgs.from_flat_kwargs(
+        cascade=True, model_path="echo:org/some-model"
+    )
+    assert args.cascade is True
+    assert args.model_path == "echo:org/some-model"
+
+
 def test_empty_models_kwarg_is_not_a_manifest_override() -> None:
     # The CLI generates a --models flag from PipelineConfig's models field,
     # so every invocation carries an empty-manifest default. It must not be
