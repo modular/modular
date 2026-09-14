@@ -349,13 +349,8 @@ struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_empty_target() -> _TargetType:
-    """Creates an empty target configuration for when no GPU is available.
-
-    Returns:
-        An empty MLIR target configuration.
-    """
-    return __mlir_attr[
+comptime _empty_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "", `,
         `arch = "", `,
         `features = "", `,
@@ -364,6 +359,8 @@ def _get_empty_target() -> _TargetType:
         `simd_bit_width = 0`,
         `> : !kgen.target`,
     ]
+]()
+"""Empty target configuration for when no GPU is available."""
 
 
 comptime NoGPU = GPUInfo(
@@ -385,13 +382,10 @@ comptime NoGPU = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 # Apple Silicon
 # ===-----------------------------------------------------------------------===#
-def _get_metal_m1_target() -> _TargetType:
-    """Creates an MLIR target configuration for M1 Metal GPU.
 
-    Returns:
-        MLIR target configuration for M1 Metal.
-    """
-    return __mlir_attr[
+
+comptime _metal_m1_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m1", `,
@@ -400,15 +394,12 @@ def _get_metal_m1_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M1 Metal GPU."""
 
 
-def _get_metal_m2_target() -> _TargetType:
-    """Creates an MLIR target configuration for M2 Metal GPU.
-
-    Returns:
-        MLIR target configuration for M2 Metal.
-    """
-    return __mlir_attr[
+comptime _metal_m2_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m2", `,
@@ -417,15 +408,12 @@ def _get_metal_m2_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M2 Metal GPU."""
 
 
-def _get_metal_m3_target() -> _TargetType:
-    """Creates an MLIR target configuration for M3 Metal GPU.
-
-    Returns:
-        MLIR target configuration for M3 Metal.
-    """
-    return __mlir_attr[
+comptime _metal_m3_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m3", `,
@@ -434,15 +422,12 @@ def _get_metal_m3_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M3 Metal GPU."""
 
 
-def _get_metal_m4_target() -> _TargetType:
-    """Creates an MLIR target configuration for M4 Metal GPU.
-
-    Returns:
-        MLIR target configuration for M4 Metal.
-    """
-    return __mlir_attr[
+comptime _metal_m4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m4", `,
@@ -451,15 +436,12 @@ def _get_metal_m4_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M4 Metal GPU."""
 
 
-def _get_metal_m5_target() -> _TargetType:
-    """Creates an MLIR target configuration for M5 Metal GPU.
-
-    Returns:
-        MLIR target configuration for M5 Metal.
-    """
-    return __mlir_attr[
+comptime _metal_m5_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m5", `,
@@ -468,15 +450,12 @@ def _get_metal_m5_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M5 Metal GPU."""
 
 
-def _get_metal_m1_metal4_target() -> _TargetType:
-    """Creates an MLIR target configuration for M1 Metal GPU with Metal 4.0.
-
-    Returns:
-        MLIR target configuration for M1 Metal 4.0.
-    """
-    return __mlir_attr[
+comptime _metal_m1_metal4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m1", `,
@@ -485,15 +464,12 @@ def _get_metal_m1_metal4_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M1 Metal GPU with Metal 4.0."""
 
 
-def _get_metal_m2_metal4_target() -> _TargetType:
-    """Creates an MLIR target configuration for M2 Metal GPU with Metal 4.0.
-
-    Returns:
-        MLIR target configuration for M2 Metal 4.0.
-    """
-    return __mlir_attr[
+comptime _metal_m2_metal4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m2", `,
@@ -502,15 +478,12 @@ def _get_metal_m2_metal4_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M2 Metal GPU with Metal 4.0."""
 
 
-def _get_metal_m3_metal4_target() -> _TargetType:
-    """Creates an MLIR target configuration for M3 Metal GPU with Metal 4.0.
-
-    Returns:
-        MLIR target configuration for M3 Metal 4.0.
-    """
-    return __mlir_attr[
+comptime _metal_m3_metal4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m3", `,
@@ -519,15 +492,12 @@ def _get_metal_m3_metal4_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M3 Metal GPU with Metal 4.0."""
 
 
-def _get_metal_m4_metal4_target() -> _TargetType:
-    """Creates an MLIR target configuration for M4 Metal GPU with Metal 4.0.
-
-    Returns:
-        MLIR target configuration for M4 Metal 4.0.
-    """
-    return __mlir_attr[
+comptime _metal_m4_metal4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m4", `,
@@ -536,15 +506,12 @@ def _get_metal_m4_metal4_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M4 Metal GPU with Metal 4.0."""
 
 
-def _get_metal_m5_metal4_target() -> _TargetType:
-    """Creates an MLIR target configuration for M5 Metal GPU with Metal 4.0.
-
-    Returns:
-        MLIR target configuration for M5 Metal 4.0.
-    """
-    return __mlir_attr[
+comptime _metal_m5_metal4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `stdlib_plugin = "metal", `,
         `arch = "apple-m5", `,
@@ -553,6 +520,8 @@ def _get_metal_m5_metal4_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for M5 Metal GPU with Metal 4.0."""
 
 
 comptime MetalM1 = GPUInfo.from_family(
@@ -678,13 +647,8 @@ comptime MetalM5Metal4 = GPUInfo.from_family(
 # https://developer.nvidia.com/cuda-toolkit-archive.
 
 
-def _get_a100_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA A100 GPU.
-
-    Returns:
-        MLIR target configuration for A100.
-    """
-    return __mlir_attr[
+comptime _a100_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_80", `,
@@ -695,6 +659,8 @@ def _get_a100_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA A100 GPU."""
 
 
 comptime A100 = GPUInfo.from_family(
@@ -713,13 +679,8 @@ comptime A100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_a10_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA A10 GPU.
-
-    Returns:
-        MLIR target configuration for A10.
-    """
-    return __mlir_attr[
+comptime _a10_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_86", `,
@@ -730,6 +691,8 @@ def _get_a10_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA A10 GPU."""
 
 
 comptime A10 = GPUInfo.from_family(
@@ -748,13 +711,8 @@ comptime A10 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_orin_nano_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
-
-    Returns:
-        MLIR target configuration for Orin Nano.
-    """
-    return __mlir_attr[
+comptime _orin_nano_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_87", `,
@@ -765,6 +723,8 @@ def _get_orin_nano_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA Jetson Orin Nano GPU."""
 
 
 comptime OrinNano = GPUInfo.from_family(
@@ -783,14 +743,8 @@ comptime OrinNano = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_jetson_thor_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA Jetson Thor.
-
-    Returns:
-        MLIR target configuration for Jetson Thor.
-    """
-
-    return __mlir_attr[
+comptime _jetson_thor_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_110", `,
@@ -801,6 +755,8 @@ def _get_jetson_thor_target() -> _TargetType:
         `index_bit_width = 64`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA Jetson Thor."""
 
 
 comptime JetsonThor = GPUInfo.from_family(
@@ -819,13 +775,8 @@ comptime JetsonThor = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_dgx_spark_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA DGX Spark.
-
-    Returns:
-        MLIR target configuration for DGX Spark.
-    """
-    return __mlir_attr[
+comptime _dgx_spark_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_121a", `,
@@ -836,6 +787,8 @@ def _get_dgx_spark_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA DGX Spark."""
 
 
 comptime DGXSpark = GPUInfo.from_family(
@@ -854,13 +807,8 @@ comptime DGXSpark = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_l4_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA L4 GPU.
-
-    Returns:
-        MLIR target configuration for L4.
-    """
-    return __mlir_attr[
+comptime _l4_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_89", `,
@@ -871,6 +819,8 @@ def _get_l4_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA L4 GPU."""
 
 
 comptime L4 = GPUInfo.from_family(
@@ -889,13 +839,8 @@ comptime L4 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_rtx4090m_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
-
-    Returns:
-        MLIR target configuration for RTX 4090M.
-    """
-    return __mlir_attr[
+comptime _rtx4090m_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_89", `,
@@ -906,6 +851,8 @@ def _get_rtx4090m_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA RTX 4090 Mobile GPU."""
 
 
 comptime RTX4090m = GPUInfo.from_family(
@@ -924,13 +871,8 @@ comptime RTX4090m = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_rtx4090_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA RTX 4090.
-
-    Returns:
-        MLIR target configuration for RTX 4090.
-    """
-    return __mlir_attr[
+comptime _rtx4090_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_89", `,
@@ -941,6 +883,8 @@ def _get_rtx4090_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA RTX 4090."""
 
 
 comptime RTX4090 = GPUInfo.from_family(
@@ -960,13 +904,8 @@ comptime RTX4090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_h100_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA H100 GPU.
-
-    Returns:
-        MLIR target configuration for H100.
-    """
-    return __mlir_attr[
+comptime _h100_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_90a", `,
@@ -977,6 +916,8 @@ def _get_h100_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA H100 GPU."""
 
 
 # https://resources.nvidia.com/en-us-tensor-core/gtc22-whitepaper-hopper
@@ -996,13 +937,8 @@ comptime H100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_b100_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA B100 GPU.
-
-    Returns:
-        MLIR target configuration for B100.
-    """
-    return __mlir_attr[
+comptime _b100_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_100a", `,
@@ -1013,6 +949,8 @@ def _get_b100_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA B100 GPU."""
 
 
 # https://resources.nvidia.com/en-us-blackwell-architecture
@@ -1044,13 +982,8 @@ comptime B200 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_b300_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA B300 GPU.
-
-    Returns:
-        MLIR target configuration for B300.
-    """
-    return __mlir_attr[
+comptime _b300_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_103a", `,
@@ -1061,6 +994,8 @@ def _get_b300_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA B300 GPU."""
 
 
 comptime B300 = GPUInfo.from_family(
@@ -1116,13 +1051,8 @@ def _is_sm12x_gpu(info: GPUInfo) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_rtx5090_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA RTX5090 GPU.
-
-    Returns:
-        MLIR target configuration for RTX5090.
-    """
-    return __mlir_attr[
+comptime _rtx5090_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_120a", `,
@@ -1133,6 +1063,8 @@ def _get_rtx5090_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA RTX5090 GPU."""
 
 
 # https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/
@@ -1153,13 +1085,8 @@ comptime RTX5090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_rtx3090_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA GeForce RTX 3090.
-
-    Returns:
-        MLIR target configuration for NVIDIA GeForce RTX 3090.
-    """
-    return __mlir_attr[
+comptime _rtx3090_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_86", `,
@@ -1170,6 +1097,8 @@ def _get_rtx3090_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA GeForce RTX 3090."""
 
 
 # https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3090-3090ti/
@@ -1190,14 +1119,10 @@ comptime RTX3090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_gtx1080ti_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA GTX 1080 Ti GPU.
-
-    Returns:
-        MLIR target configuration for GTX 1080 Ti.
-    """
+comptime _gtx1080ti_target = CompilationTarget[
+    _mlir_value=
     # Note: GTX 1080 Ti doesn't specify tune_cpu, data_layout, or index_bit_width
-    return __mlir_attr[
+    __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_61", `,
@@ -1205,6 +1130,8 @@ def _get_gtx1080ti_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA GTX 1080 Ti GPU."""
 
 
 comptime GTX1080Ti = GPUInfo.from_family(
@@ -1224,15 +1151,8 @@ comptime GTX1080Ti = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_gtx1060_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA GTX 1060 GPU.
-
-    Returns:
-        MLIR target configuration for GTX 1060.
-    """
-
-    return __mlir_attr[
+comptime _gtx1060_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_61", `,
@@ -1243,6 +1163,8 @@ def _get_gtx1060_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA GTX 1060 GPU."""
 
 
 comptime GTX1060 = GPUInfo.from_family(
@@ -1262,14 +1184,10 @@ comptime GTX1060 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_gtx970_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA GTX 970 GPU.
-
-    Returns:
-        MLIR target configuration for GTX 970.
-    """
+comptime _gtx970_target = CompilationTarget[
+    _mlir_value=
     # Note: GTX 970 doesn't specify tune_cpu, data_layout, or index_bit_width
-    return __mlir_attr[
+    __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_52", `,
@@ -1277,6 +1195,8 @@ def _get_gtx970_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA GTX 970 GPU."""
 
 
 comptime GTX970 = GPUInfo.from_family(
@@ -1296,13 +1216,8 @@ comptime GTX970 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_teslap100_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA Tesla P100 GPU.
-
-    Returns:
-        MLIR target configuration for Tesla P100.
-    """
-    return __mlir_attr[
+comptime _teslap100_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_60", `,
@@ -1313,6 +1228,8 @@ def _get_teslap100_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA Tesla P100 GPU."""
 
 
 comptime TeslaP100 = GPUInfo.from_family(
@@ -1332,13 +1249,8 @@ comptime TeslaP100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_rtx2060_target() -> _TargetType:
-    """Creates an MLIR target configuration for NVIDIA RTX 2060 GPU.
-
-    Returns:
-        MLIR target configuration for RTX 2060.
-    """
-    return __mlir_attr[
+comptime _rtx2060_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `stdlib_plugin = "cuda", `,
         `arch = "sm_75", `,
@@ -1349,6 +1261,8 @@ def _get_rtx2060_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for NVIDIA RTX 2060 GPU."""
 
 
 comptime RTX2060 = GPUInfo.from_family(
@@ -1368,13 +1282,8 @@ comptime RTX2060 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_mi250x_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD MI250X GPU.
-
-    Returns:
-        MLIR target configuration for MI250X.
-    """
-    return __mlir_attr[
+comptime _mi250x_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx90a", `,
@@ -1384,6 +1293,8 @@ def _get_mi250x_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD MI250X GPU."""
 
 
 comptime MI250X = GPUInfo.from_family(
@@ -1403,13 +1314,8 @@ comptime MI250X = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_mi300x_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD MI300X GPU.
-
-    Returns:
-        MLIR target configuration for MI300X.
-    """
-    return __mlir_attr[
+comptime _mi300x_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx942", `,
@@ -1419,6 +1325,8 @@ def _get_mi300x_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD MI300X GPU."""
 
 
 comptime MI300X = GPUInfo.from_family(
@@ -1438,13 +1346,8 @@ comptime MI300X = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_mi300a_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD MI300A APU.
-
-    Returns:
-        MLIR target configuration for MI300A.
-    """
-    return __mlir_attr[
+comptime _mi300a_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx942", `,
@@ -1454,6 +1357,8 @@ def _get_mi300a_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD MI300A APU."""
 
 
 comptime MI300A = GPUInfo.from_family(
@@ -1480,13 +1385,8 @@ supercomputer.
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_mi355x_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD MI355X GPU.
-
-    Returns:
-        MLIR target configuration for MI355X.
-    """
-    return __mlir_attr[
+comptime _mi355x_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx950", `,
@@ -1496,6 +1396,8 @@ def _get_mi355x_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD MI355X GPU."""
 
 
 comptime MI355X = GPUInfo.from_family(
@@ -1515,13 +1417,8 @@ comptime MI355X = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_9070_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 9070 GPU.
-
-    Returns:
-        MLIR target configuration for 9070.
-    """
-    return __mlir_attr[
+comptime _9070_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1201", `,
@@ -1531,15 +1428,12 @@ def _get_9070_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 9070 GPU."""
 
 
-def _get_9060_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 9060 GPU.
-
-    Returns:
-        MLIR target configuration for 9060.
-    """
-    return __mlir_attr[
+comptime _9060_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1200", `,
@@ -1549,15 +1443,12 @@ def _get_9060_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 9060 GPU."""
 
 
-def _get_7900_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 7900 GPU.
-
-    Returns:
-        MLIR target configuration for 7900.
-    """
-    return __mlir_attr[
+comptime _7900_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1100", `,
@@ -1567,15 +1458,12 @@ def _get_7900_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 7900 GPU."""
 
 
-def _get_7800_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 7800/7700 GPU.
-
-    Returns:
-        MLIR target configuration for 7800/7700.
-    """
-    return __mlir_attr[
+comptime _7800_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1101", `,
@@ -1585,15 +1473,12 @@ def _get_7800_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 7800/7700 GPU."""
 
 
-def _get_7600_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 7600 GPU.
-
-    Returns:
-        MLIR target configuration for 7600.
-    """
-    return __mlir_attr[
+comptime _7600_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1102", `,
@@ -1603,15 +1488,12 @@ def _get_7600_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 7600 GPU."""
 
 
-def _get_6900_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 6900 GPU.
-
-    Returns:
-        MLIR target configuration for 6900.
-    """
-    return __mlir_attr[
+comptime _6900_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1030", `,
@@ -1621,15 +1503,12 @@ def _get_6900_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 6900 GPU."""
 
 
-def _get_780m_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 780m GPU.
-
-    Returns:
-        MLIR target configuration for 780m.
-    """
-    return __mlir_attr[
+comptime _780m_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1103", `,
@@ -1639,15 +1518,12 @@ def _get_780m_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 780m GPU."""
 
 
-def _get_880m_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 880M GPU.
-
-    Returns:
-        MLIR target configuration for 880M.
-    """
-    return __mlir_attr[
+comptime _880m_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1150", `,
@@ -1657,15 +1533,12 @@ def _get_880m_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 880M GPU."""
 
 
-def _get_8060s_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 8060S GPU.
-
-    Returns:
-        MLIR target configuration for 8060S.
-    """
-    return __mlir_attr[
+comptime _8060s_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1151", `,
@@ -1675,15 +1548,12 @@ def _get_8060s_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 8060S GPU."""
 
 
-def _get_860m_target() -> _TargetType:
-    """Creates an MLIR target configuration for AMD Radeon 860M GPU.
-
-    Returns:
-        MLIR target configuration for 860M.
-    """
-    return __mlir_attr[
+comptime _860m_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1152", `,
@@ -1693,15 +1563,12 @@ def _get_860m_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for AMD Radeon 860M GPU."""
 
 
-def _get_steamdeck_target() -> _TargetType:
-    """Creates an MLIR target configuration for the Steam Deck's Van Gogh APU.
-
-    Returns:
-        MLIR target configuration for the Steam Deck's Van Gogh APU.
-    """
-    return __mlir_attr[
+comptime _steamdeck_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1033", `,
@@ -1711,6 +1578,8 @@ def _get_steamdeck_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for the Steam Deck's Van Gogh APU."""
 
 
 comptime Radeon9070 = GPUInfo.from_family(
@@ -1899,98 +1768,98 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
 
     def _mlir_target(self) -> _TargetType:
         if self.name == "NVIDIA Tesla P100":
-            return _get_teslap100_target()
+            return _teslap100_target._mlir_value
         if self.name == "NVIDIA GeForce GTX 1060":
-            return _get_gtx1060_target()
+            return _gtx1060_target._mlir_value
         if self.name == "NVIDIA GeForce GTX 1080 Ti":
-            return _get_gtx1080ti_target()
+            return _gtx1080ti_target._mlir_value
         if self.name == "NVIDIA GeForce GTX 970":
-            return _get_gtx970_target()
+            return _gtx970_target._mlir_value
         if self.name == "RTX2060":
-            return _get_rtx2060_target()
+            return _rtx2060_target._mlir_value
         if self.name == "NVIDIA GeForce RTX 3090":
-            return _get_rtx3090_target()
+            return _rtx3090_target._mlir_value
         if self.name == "A100":
-            return _get_a100_target()
+            return _a100_target._mlir_value
         if self.name == "A10":
-            return _get_a10_target()
+            return _a10_target._mlir_value
         if self.name == "L4":
-            return _get_l4_target()
+            return _l4_target._mlir_value
         if self.name == "RTX4090m":
-            return _get_rtx4090m_target()
+            return _rtx4090m_target._mlir_value
         if self.name == "RTX4090":
-            return _get_rtx4090_target()
+            return _rtx4090_target._mlir_value
         if self.name == "H100":
-            return _get_h100_target()
+            return _h100_target._mlir_value
         if self.name == "B300":
-            return _get_b300_target()
+            return _b300_target._mlir_value
         if self.name == "B100" or self.name == "B200":
-            return _get_b100_target()
+            return _b100_target._mlir_value
         if self.name == "DGX Spark":
-            return _get_dgx_spark_target()
+            return _dgx_spark_target._mlir_value
         if self.name == "RTX5090":
-            return _get_rtx5090_target()
+            return _rtx5090_target._mlir_value
         if self.name == "Jetson Thor":
-            return _get_jetson_thor_target()
+            return _jetson_thor_target._mlir_value
         if self.name == "MI250X":
-            return _get_mi250x_target()
+            return _mi250x_target._mlir_value
         if self.name == "MI300X":
-            return _get_mi300x_target()
+            return _mi300x_target._mlir_value
         if self.name == "MI300A":
-            return _get_mi300a_target()
+            return _mi300a_target._mlir_value
         if self.name == "MI355X":
-            return _get_mi355x_target()
+            return _mi355x_target._mlir_value
         if self.name == "Radeon 780M":
-            return _get_780m_target()
+            return _780m_target._mlir_value
         if self.name == "Radeon 880M":
-            return _get_880m_target()
+            return _880m_target._mlir_value
         if self.name == "Radeon 8060S":
-            return _get_8060s_target()
+            return _8060s_target._mlir_value
         if self.name == "Radeon 860M":
-            return _get_860m_target()
+            return _860m_target._mlir_value
         if self.name == "Radeon 6900":
-            return _get_6900_target()
+            return _6900_target._mlir_value
         if self.name == "Radeon 7900":
-            return _get_7900_target()
+            return _7900_target._mlir_value
         if self.name == "Radeon 7800/7700":
-            return _get_7800_target()
+            return _7800_target._mlir_value
         if self.name == "Radeon 7600":
-            return _get_7600_target()
+            return _7600_target._mlir_value
         if self.name == "Radeon 9070":
-            return _get_9070_target()
+            return _9070_target._mlir_value
         if self.name == "Radeon 9060":
-            return _get_9060_target()
+            return _9060_target._mlir_value
         if self.name == "Steam Deck":
-            return _get_steamdeck_target()
+            return _steamdeck_target._mlir_value
         if self.name == "M1":
-            return _get_metal_m1_target()
+            return _metal_m1_target._mlir_value
         if self.name == "M1 Metal4":
-            return _get_metal_m1_metal4_target()
+            return _metal_m1_metal4_target._mlir_value
         if self.name == "M2":
-            return _get_metal_m2_target()
+            return _metal_m2_target._mlir_value
         if self.name == "M2 Metal4":
-            return _get_metal_m2_metal4_target()
+            return _metal_m2_metal4_target._mlir_value
         if self.name == "M3":
-            return _get_metal_m3_target()
+            return _metal_m3_target._mlir_value
         if self.name == "M3 Metal4":
-            return _get_metal_m3_metal4_target()
+            return _metal_m3_metal4_target._mlir_value
         if self.name == "M4":
-            return _get_metal_m4_target()
+            return _metal_m4_target._mlir_value
         if self.name == "M4 Metal4":
-            return _get_metal_m4_metal4_target()
+            return _metal_m4_metal4_target._mlir_value
         if self.name == "M5":
-            return _get_metal_m5_target()
+            return _metal_m5_target._mlir_value
         if self.name == "M5 Metal4":
-            return _get_metal_m5_metal4_target()
+            return _metal_m5_metal4_target._mlir_value
 
         if self.name == "":
-            return _get_empty_target()
+            return _empty_target._mlir_value
 
         if _provides_mlir_target_for_name[ADDITIONAL_TARGETS](self.name):
             return ADDITIONAL_TARGETS._get_mlir_target_from_name(self.name)
 
         # TODO: Don't return a default, instead issue an error.
-        return _get_a100_target()
+        return _a100_target._mlir_value
 
     @staticmethod
     def from_target[target: _TargetType]() -> Self:

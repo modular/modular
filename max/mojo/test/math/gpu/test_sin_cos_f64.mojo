@@ -18,8 +18,7 @@
 
 from std.compile import compile_info
 from std.math.math import sin, cos
-from std.sys.info import CompilationTarget
-from max.gpu.host.info import _get_h100_target
+from max.gpu.host.info import _h100_target
 
 
 def sin_func(x: Float64) raises -> Float64:
@@ -35,14 +34,14 @@ def main() raises:
         compile_info[
             sin_func,
             emission_kind="llvm",
-            target=CompilationTarget[_mlir_value=_get_h100_target()](),
+            target=_h100_target,
         ]()
     )
     print(
         compile_info[
             cos_func,
             emission_kind="llvm",
-            target=CompilationTarget[_mlir_value=_get_h100_target()](),
+            target=_h100_target,
         ]()
     )
 

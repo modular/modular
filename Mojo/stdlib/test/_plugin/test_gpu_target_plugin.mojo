@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std._plugin._overlay import STD_PLUGINS
-from max.gpu.host.info import (
-    _get_a100_target,
-    _get_h100_target,
-    _get_metal_m1_target,
-    _get_mi300x_target,
-)
 from std.testing import assert_equal, TestSuite
+
+from max.gpu.host.info import (
+    _a100_target,
+    _h100_target,
+    _metal_m1_target,
+    _mi300x_target,
+)
 
 
 # STD_PLUGINS order: [DefaultPlugin=0, MetalPlugin=1, CUDAPlugin=2, HIPPlugin=3]
@@ -29,16 +30,16 @@ def _idx[target: __mlir_type.`!kgen.target`]() -> Int:
 
 
 def test_nvidia_targets_select_cuda_plugin() raises:
-    assert_equal(_idx[_get_a100_target()](), 2)
-    assert_equal(_idx[_get_h100_target()](), 2)
+    assert_equal(_idx[_a100_target._mlir_value](), 2)
+    assert_equal(_idx[_h100_target._mlir_value](), 2)
 
 
 def test_amd_targets_select_hip_plugin() raises:
-    assert_equal(_idx[_get_mi300x_target()](), 3)
+    assert_equal(_idx[_mi300x_target._mlir_value](), 3)
 
 
 def test_apple_targets_select_metal_plugin() raises:
-    assert_equal(_idx[_get_metal_m1_target()](), 1)
+    assert_equal(_idx[_metal_m1_target._mlir_value](), 1)
 
 
 def main() raises:
