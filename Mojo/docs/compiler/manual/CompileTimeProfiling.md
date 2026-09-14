@@ -386,8 +386,9 @@ Kepler runner, as does everything else on that command line. In CI the sources
 directory is named by `MOJO_COMPILE_SOURCES` instead, because the benchmark runs
 as a bazel test and cannot take arguments. `MOJO_COMPILE_PR_ONLY=1` restricts
 the run to the models the per-PR comparison measures, matching
-`make_artifacts --pr-only`; it is an environment variable because benchmarks are
-registered before any argument is parsed.
+`make_artifacts --pr-only`, and `MOJO_COMPILE_MODEL=<name>` restricts it to one
+model, matching `--model`; they are environment variables because benchmarks
+are registered before any argument is parsed.
 
 Each repeat compiles the source twice: once with no timing flags at the
 compiler's default thread count, reported as `wall.total`, and once with
@@ -502,6 +503,15 @@ uses the same word.
 
 A regression is reported, never enforced: more compile time is often the honest
 cost of more work. The check fails only when an arm fails to build or compile.
+
+The same comparison can be run by hand against a branch, naming the pull
+request to post on. This is how a model that sits out the label run gets
+compared -- one model per run, each keeping its own comment:
+
+```bash
+gh workflow run benchmarkMojoCompileTimeAB.yaml \
+  --ref <branch> -f pr=<number> -f model=kimi-k25
+```
 
 ## Notes for benchmarking
 
