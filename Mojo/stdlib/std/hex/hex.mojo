@@ -80,7 +80,7 @@ def hex_encode[
 @always_inline
 def hex_decode[
     *, is_lowercase: Bool = True
-](str: StringSlice[mut=False, _]) raises -> List[Byte]:
+](str: StringSlice[_]) raises -> List[Byte]:
     """Performs hex decoding on the input string.
 
     Parameters:
@@ -106,7 +106,7 @@ def hex_decode[
 @always_inline
 def hex_decode[
     length: Int, *, is_lowercase: Bool = True
-](str: StringSlice[mut=False, _]) raises -> Array[Byte, length]:
+](str: StringSlice[_]) raises -> Array[Byte, length]:
     """Performs hex decoding on the input string.
 
     Parameters:
@@ -133,7 +133,7 @@ def hex_decode[
 @always_inline
 def hex_decode[
     *, is_lowercase: Bool = True
-](str: StringSlice[mut=False, _], result: Span[mut=True, Byte, _]) raises:
+](str: StringSlice[_], result: Span[mut=True, Byte, _]) raises:
     """Performs hex decoding on the input string.
 
     Parameters:
