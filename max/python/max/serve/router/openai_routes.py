@@ -149,7 +149,7 @@ from max.serve.schemas.openai import (
 )
 from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
-from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import RequestQueueFull
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDeltaToolCall,
@@ -1520,7 +1520,7 @@ def _resolve_and_decode_images(
     max_decoded_bytes: int | None,
     probe: _PreprocessedImageMask | None,
     messages: list[TextGenerationRequestMessage],
-) -> list[Image.Image | None]:
+) -> tuple[list[Image.Image | None], list[bool] | None]:
     """Decide what to decode and decode it, in one worker-thread hop.
 
     Both halves are CPU-bound and the first decides what the second may skip,
@@ -1529,11 +1529,15 @@ def _resolve_and_decode_images(
     work measured in tens of microseconds -- a request of 16 typical
     screenshots hashes in 0.084ms, against the ~14ms per image the decode it
     avoids costs.
+
+    Returns:
+        The decoded images (``None`` where the pixel decode was skipped) and
+        the mask that produced them, which only this call knows.
     """
-    return decode_and_validate_images(
-        images,
-        max_decoded_bytes,
-        _skip_decode_mask(probe, images, messages),
+    skip_decode = _skip_decode_mask(probe, images, messages)
+    return (
+        decode_and_validate_images(images, max_decoded_bytes, skip_decode),
+        skip_decode,
     )
 
 
@@ -1862,13 +1866,18 @@ async def openai_parse_chat_completion_request(
     # can skip.
     decoded_images: list[Image.Image | None] = []
     if request_images:
-        decoded_images = await asyncio.to_thread(
-            _resolve_and_decode_images,
-            request_images,
-            budget.limit,
-            preprocessed_image_mask,
-            messages,
-        )
+        with record_ms(METRICS.image_admission_decode_time):
+            decoded_images, skip_decode = await asyncio.to_thread(
+                _resolve_and_decode_images,
+                request_images,
+                budget.limit,
+                preprocessed_image_mask,
+                messages,
+            )
+        if skip_decode is not None:
+            cached = sum(skip_decode)
+            METRICS.vision_preprocess_cache_hits(cached)
+            METRICS.vision_preprocess_cache_misses(len(skip_decode) - cached)
 
     resolve_video_tasks = [
         resolve_image_from_url(

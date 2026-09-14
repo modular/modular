@@ -677,6 +677,21 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="percent",
         description="Per-batch vision encoder cache hit rate (0-100%).",
     ),  # type: ignore
+    "maxserve.vision.preprocess_cache_hits": _meter.create_counter(
+        "maxserve.vision.preprocess_cache_hits",
+        unit="images",
+        description="Cumulative images already preprocessed at admission, whose decode and preprocessing are both skipped.",
+    ),  # type: ignore
+    "maxserve.vision.preprocess_cache_misses": _meter.create_counter(
+        "maxserve.vision.preprocess_cache_misses",
+        unit="images",
+        description="Cumulative images not yet preprocessed at admission, which the API server must decode and preprocess.",
+    ),  # type: ignore
+    "maxserve.vision.image_admission_decode_time": _meter.create_histogram(
+        "maxserve.vision.image_admission_decode_time",
+        unit="ms",
+        description="Per-request wall-clock time of the admission image work: deciding which images are already preprocessed, then decoding and validating the rest.",
+    ),  # type: ignore
     "maxserve.video.clips_encoded": _meter.create_counter(
         "maxserve.video.clips_encoded",
         unit="clips",
@@ -1388,6 +1403,33 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.vision.tokens_encoded",
                 tokens,
+                self.extra_attributes,
+            ),
+        )
+
+    def vision_preprocess_cache_hits(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.preprocess_cache_hits",
+                images,
+                self.extra_attributes,
+            ),
+        )
+
+    def vision_preprocess_cache_misses(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.preprocess_cache_misses",
+                images,
+                self.extra_attributes,
+            ),
+        )
+
+    def image_admission_decode_time(self, value: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.image_admission_decode_time",
+                value,
                 self.extra_attributes,
             ),
         )

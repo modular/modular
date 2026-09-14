@@ -713,3 +713,43 @@ def test_probe_resolution_rejects_a_non_callable_attribute(
     with caplog.at_level(logging.WARNING, logger="max.serve"):
         assert _preprocessed_image_probe(BadProbe()) is None
     assert "not callable" in caplog.text
+
+
+async def test_parse_reports_preprocess_cache_hits_and_misses(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """The stage that dominates API-server CPU has to be observable."""
+    recorded: dict[str, list[float]] = {
+        "hits": [],
+        "misses": [],
+        "decode_ms": [],
+    }
+    monkeypatch.setattr(
+        "max.serve.router.openai_routes.METRICS.vision_preprocess_cache_hits",
+        lambda n: recorded["hits"].append(n),
+    )
+    monkeypatch.setattr(
+        "max.serve.router.openai_routes.METRICS.vision_preprocess_cache_misses",
+        lambda n: recorded["misses"].append(n),
+    )
+    monkeypatch.setattr(
+        "max.serve.router.openai_routes.METRICS.image_admission_decode_time",
+        lambda ms: recorded["decode_ms"].append(ms),
+    )
+
+    cached, fresh = _png_bytes((8, 8)), _png_bytes((16, 16))
+
+    def mask(images: list[bytes], messages: list[Any]) -> list[bool]:
+        return [image == cached for image in images]
+
+    await openai_parse_chat_completion_request(
+        _image_request([cached, fresh]),
+        wrap_content=True,
+        settings=Settings(),
+        preprocessed_image_mask=mask,
+    )
+
+    assert recorded["hits"] == [1]
+    assert recorded["misses"] == [1]
+    assert len(recorded["decode_ms"]) == 1
+    assert recorded["decode_ms"][0] >= 0.0
