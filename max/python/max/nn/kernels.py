@@ -5378,7 +5378,6 @@ def moe_create_indices(
     num_local_experts: int,
     *,
     needs_scales_offset: bool = False,
-    scales_alignment: int = 128,
 ) -> tuple[TensorValue, ...]:
     """Creates indices for the MoE layer.
 
