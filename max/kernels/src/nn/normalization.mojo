@@ -756,14 +756,16 @@ def _rms_norm_gpu_block_subkernel[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    output_fn: def[width: SIMDLength, alignment: Int](
-        row: Int, col: Int, val: SIMD[dtype, width]
-    ) capturing -> None,
     multiply_before_cast: Bool,
+    InputFnType: ImplicitlyCopyable
+    & def[width: Int](Int, Int) -> SIMD[dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & def[width: SIMDLength, alignment: Int](
+        Int, Int, SIMD[dtype, width]
+    ) -> None,
 ](
+    input_fn: InputFnType,
+    output_fn: OutputFnType,
     gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
@@ -844,14 +846,29 @@ def rms_norm_gpu_block[
     var _num_cols = Int(num_cols)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
+    @always_inline
+    def unified_input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
+        return input_fn[width](row, col)
+
+    @always_inline
+    def unified_output_fn[
+        width: SIMDLength, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, width]) -> None:
+        output_fn[width, alignment](row, col, val)
+
     with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         _rms_norm_gpu_block_subkernel[
             simd_width,
             max_warps_per_block,
-            input_fn,
-            output_fn,
             multiply_before_cast,
-        ](gamma, epsilon, weight_offset.cast[dtype](), _num_cols)
+        ](
+            unified_input_fn,
+            unified_output_fn,
+            gamma,
+            epsilon,
+            weight_offset.cast[dtype](),
+            _num_cols,
+        )
 
 
 def rms_norm_gpu[
