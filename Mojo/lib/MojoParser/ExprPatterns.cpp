@@ -11,8 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// This file implements `emitMatch` and `mayContainBindingPatterns` for
-// expression nodes used as match patterns.
+// This file implements `emitMatch` for expression nodes used as match
+// patterns.
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,7 +20,6 @@
 #include "IREmitter.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
-#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/CallOperands.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -172,10 +171,7 @@ DeclRefNode::emitMatch(IREmitter &emitter, CValue subject,
                        SmallVectorImpl<BoundName> &bindings) const {
   // Bare identifiers are only valid match patterns when nested under a `var`
   // or `ref` binding (or top-level bind mode). Do not treat them as "match
-  // this existing value" — that would create Python's capture-vs-value
-  // ambiguity and consume the syntax reserved for a future implicit-binding
-  // form (like `for x in ...`). See Mojo/proposals/pattern-matching.md
-  // "Future Direction: Implicit Bindings".
+  // this existing value".
   if (patternKind == PatternDeclKind::kNone) {
     emitter.emitError(getLoc(), "bare identifier '")
         << spelling << "' is not a valid match pattern; use 'var " << spelling
@@ -235,10 +231,6 @@ LogicalResult ParenNode::emitMatch(IREmitter &emitter, CValue subject,
   return subExpr->emitMatch(emitter, subject, patternKind, bindings);
 }
 
-bool ParenNode::mayContainBindingPatterns() const {
-  return subExpr->mayContainBindingPatterns();
-}
-
 LogicalResult BinOpNode::emitMatch(IREmitter &emitter, CValue subject,
                                    PatternDeclKind patternKind,
                                    SmallVectorImpl<BoundName> &bindings) const {
@@ -247,15 +239,6 @@ LogicalResult BinOpNode::emitMatch(IREmitter &emitter, CValue subject,
   if (kind == kAsPat)
     return emitAsMatch(emitter, subject, patternKind, bindings);
   return ExprNode::emitMatch(emitter, subject, patternKind, bindings);
-}
-
-bool BinOpNode::mayContainBindingPatterns() const {
-  if (kind == kOr)
-    return lhs->mayContainBindingPatterns() || rhs->mayContainBindingPatterns();
-  // `pattern as name` always binds `name`.
-  if (kind == kAsPat)
-    return true;
-  return false;
 }
 
 /// Collect VarDeclOps registered in `scope`, keyed by binding name.
@@ -425,7 +408,9 @@ BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
   // `hlcf.match` whose cases try each alternative: success completes the
   // nested match (then the enclosing case continues); failing both
   // alternatives uses `hlcf.match.next` in the else region so control
-  // advances the *enclosing* match case.
+  // advances the *enclosing* match case.  This ensures that code this dominates
+  // will initialize the pattern bindings in the LHS/RHS consistently on the
+  // fallthrough.
   if (!emitter.builder) {
     emitter.emitErrorForDynamicValueInParameter(this);
     return failure();
@@ -436,6 +421,7 @@ BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
         /*declVal=*/nullptr, StringAttr(), scopeLoc, &emitter.declScope);
   };
 
+  // TODO: Look for other "or" patterns and merge them into a single match.
   Location loc = getLocation(emitter);
   auto matchOp = HLCF::MatchOp::create(*emitter.builder, loc, TypeRange(),
                                        /*caseRegionsCount=*/2);
@@ -537,12 +523,6 @@ UnaryOpNode::emitMatch(IREmitter &emitter, CValue subject,
   return subExpr->emitMatch(emitter, subject, subKind, bindings);
 }
 
-bool UnaryOpNode::mayContainBindingPatterns() const {
-  if (kind != kVarPat && kind != kRefPat)
-    return false;
-  return subExpr->mayContainBindingPatterns();
-}
-
 LogicalResult TupleNode::emitMatch(IREmitter &emitter, CValue subject,
                                    PatternDeclKind patternKind,
                                    SmallVectorImpl<BoundName> &bindings) const {
@@ -613,13 +593,6 @@ LogicalResult TupleNode::emitMatch(IREmitter &emitter, CValue subject,
       return failure();
   }
   return success();
-}
-
-bool TupleNode::mayContainBindingPatterns() const {
-  for (ExprNode *expr : exprs)
-    if (expr->mayContainBindingPatterns())
-      return true;
-  return false;
 }
 
 LogicalResult CallNode::emitMatch(IREmitter &emitter, CValue subject,
@@ -739,13 +712,6 @@ LogicalResult CallNode::emitMatch(IREmitter &emitter, CValue subject,
       return failure();
   }
   return success();
-}
-
-bool CallNode::mayContainBindingPatterns() const {
-  for (const Operand &operand : operands)
-    if (operand.expr->mayContainBindingPatterns())
-      return true;
-  return false;
 }
 
 //===----------------------------------------------------------------------===//

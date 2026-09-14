@@ -300,12 +300,6 @@ struct StmtParser : public ParserBase {
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseMatchStmt(size_t curIndent);
 
-  /// Emit a `match` as one `hlcf.match` with a case region per source case.
-  static ParseResult emitMatch(StmtParser &parser,
-                               ArrayRef<MatchCaseEntry> caseEntries,
-                               BValue subjectBVal, Location matchLocation,
-                               LexerCursor afterCaseCursor);
-
   // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
   // closure on success when in the scope of the loop, and the specified
   // 'errorFn' if there is a semantic error with the sequence expression or
@@ -1558,81 +1552,6 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   return success();
 }
 
-/// Emit a `match` as one `hlcf.match`. Each source case becomes a case region
-/// that tests its pattern (and optional guard), runs the body on success via
-/// `hlcf.match.complete`, or advances with `hlcf.match.next` on failure.
-ParseResult StmtParser::emitMatch(StmtParser &parser,
-                                  ArrayRef<MatchCaseEntry> caseEntries,
-                                  BValue subjectBVal, Location matchLocation,
-                                  LexerCursor afterCaseCursor) {
-  OpBuilder &builder = parser.getBuilder();
-
-  auto matchOp = HLCF::MatchOp::create(builder, matchLocation, TypeRange(),
-                                       /*caseRegionsCount=*/caseEntries.size());
-  matchOp.getElseRegion().emplaceBlock();
-
-  for (auto [idx, caseEntry] : llvm::enumerate(caseEntries)) {
-    auto &region = matchOp.getCaseRegions()[idx];
-    builder.setInsertionPointToStart(&region.emplaceBlock());
-
-    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-    llvm::SaveAndRestore<ASTDecl *> keepDecl(parser.curDeclScope);
-    parser.pushChildScope(scopeGuard, keepDecl);
-
-    IREmitter emitter = parser.getEmitter();
-    auto caseLoc = parser.translateLocation(caseEntry.patternExpr->getLoc());
-
-    // Emit the pattern; failable patterns fail by invoking hlcf.match.next.
-    // On emission failure, still parse the case body so later diagnostics in
-    // this function can fire (same recovery as other statement forms).
-    SmallVector<ExprNode::BoundName> bindings;
-    bool patternFailed = failed(caseEntry.patternExpr->emitMatch(
-        emitter, subjectBVal, PatternDeclKind::kBind, bindings));
-
-    // If a guard is present: `if guard { yield } else { match.next }` so a
-    // failing guard advances to the next case and a passing one continues into
-    // the case body below.
-    if (!patternFailed && caseEntry.guardExpr) {
-      RValue guardRVal =
-          emitter.emitExprScalarBool(caseEntry.guardExpr, EC_BoolCondition);
-      Value guardVal = emitter.emitSRValue(
-          {AnyValue(guardRVal), caseEntry.guardExpr}, EC_BoolCondition);
-      if (!guardVal)
-        return failure();
-      auto guardLoc = parser.translateLocation(caseEntry.guardExpr->getLoc());
-      HLCF::ElifOp::create(
-          builder, guardLoc, TypeRange{}, guardVal,
-          [&]() -> LogicalResult {
-            HLCF::YieldOp::create(builder, guardLoc);
-            return success();
-          },
-          [&]() -> LogicalResult {
-            HLCF::MatchNextOp::create(builder, guardLoc);
-            return success();
-          });
-    }
-
-    // Change the parser cursor to the start of the case body so we can parse
-    // the right text. Use parseSuite (not parseLocalScopeSuite) so the body
-    // shares the case scope above — pattern bindings remain visible.
-    caseEntry.caseCursor.restore(parser.getLexer());
-    if (failed(parser.parseSuite(caseEntry.caseIndent)))
-      return failure();
-    if (patternFailed)
-      HLCF::MatchNextOp::create(builder, caseLoc);
-    else
-      HLCF::MatchCompleteOp::create(builder, caseLoc);
-  }
-
-  // The match else is a no-op fallthrough. TODO: Mark unreachable when there
-  // is an irrefutable pattern so we don't get dead-code errors.
-  builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
-  HLCF::YieldOp::create(builder, matchLocation);
-  builder.setInsertionPointAfter(matchOp);
-  afterCaseCursor.restore(parser.getLexer());
-  return success();
-}
-
 /// match_stmt ::=  "match" subject_expr ":" NEWLINE
 ///                 case_block+
 /// case_block  ::= "case" pattern ["if" expression] ":" suite
@@ -1670,7 +1589,6 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   // patterns before emitting the IR so we can optimize the pattern tests and
   // allocate the MatchOp once.
   SmallVector<MatchCaseEntry, 4> caseEntries;
-  bool anyContainMatchBindings = false;
 
   while (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
          getToken().is(Token::kw_case)) {
@@ -1701,9 +1619,6 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
       patternExpr = shared.allocPersistent<BinOpNode>(ExprNode::kAsPat,
                                                       patternExpr, asLoc, name);
     }
-
-    // Notice if any of these contain binding patterns.
-    anyContainMatchBindings |= patternExpr->mayContainBindingPatterns();
 
     // Optional match guard: `case <pattern> if <cond>:`.
     ExprNode *guardExpr = nullptr;
@@ -1746,11 +1661,73 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   if (!subjectBVal)
     return failure();
 
-  // Emit as `hlcf.match`. Bindings are scoped per case region.
-  // TODO: remove anyContainMatchBindings
-  (void)anyContainMatchBindings;
-  return emitMatch(*this, caseEntries, subjectBVal, matchLocation,
-                   afterCaseCursor);
+  // Emit as one `hlcf.match`. Each source case becomes a case region that tests
+  // its pattern (and optional guard), runs the body on success via
+  // `hlcf.match.complete`, or advances with `hlcf.match.next` on failure.
+  auto matchOp = HLCF::MatchOp::create(builder, matchLocation, TypeRange(),
+                                       /*caseRegionsCount=*/caseEntries.size());
+  matchOp.getElseRegion().emplaceBlock();
+
+  for (auto [idx, caseEntry] : llvm::enumerate(caseEntries)) {
+    auto &region = matchOp.getCaseRegions()[idx];
+    builder.setInsertionPointToStart(&region.emplaceBlock());
+
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+
+    IREmitter emitter = getEmitter();
+    auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
+
+    // Emit the pattern; failable patterns fail by invoking hlcf.match.next.
+    // On emission failure, still parse the case body so later diagnostics in
+    // this function can fire (same recovery as other statement forms).
+    SmallVector<ExprNode::BoundName> bindings;
+    bool patternFailed = failed(caseEntry.patternExpr->emitMatch(
+        emitter, subjectBVal, PatternDeclKind::kBind, bindings));
+
+    // If a guard is present: `if guard { yield } else { match.next }` so a
+    // failing guard advances to the next case and a passing one continues into
+    // the case body below.
+    if (!patternFailed && caseEntry.guardExpr) {
+      RValue guardRVal =
+          emitter.emitExprScalarBool(caseEntry.guardExpr, EC_BoolCondition);
+      Value guardVal = emitter.emitSRValue(
+          {AnyValue(guardRVal), caseEntry.guardExpr}, EC_BoolCondition);
+      if (!guardVal)
+        return failure();
+      auto guardLoc = translateLocation(caseEntry.guardExpr->getLoc());
+      HLCF::ElifOp::create(
+          builder, guardLoc, TypeRange{}, guardVal,
+          [&]() -> LogicalResult {
+            HLCF::YieldOp::create(builder, guardLoc);
+            return success();
+          },
+          [&]() -> LogicalResult {
+            HLCF::MatchNextOp::create(builder, guardLoc);
+            return success();
+          });
+    }
+
+    // Change the parser cursor to the start of the case body so we can parse
+    // the right text. Use parseSuite (not parseLocalScopeSuite) so the body
+    // shares the case scope above — pattern bindings remain visible.
+    caseEntry.caseCursor.restore(getLexer());
+    if (failed(parseSuite(caseEntry.caseIndent)))
+      return failure();
+    if (patternFailed)
+      HLCF::MatchNextOp::create(builder, caseLoc);
+    else
+      HLCF::MatchCompleteOp::create(builder, caseLoc);
+  }
+
+  // The match else is a no-op fallthrough. TODO: Mark unreachable when there
+  // is an irrefutable pattern so we don't get dead-code errors.
+  builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
+  HLCF::YieldOp::create(builder, matchLocation);
+  builder.setInsertionPointAfter(matchOp);
+  afterCaseCursor.restore(getLexer());
+  return success();
 }
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
@@ -3034,7 +3011,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   // Parse all if/elif(/else) arms first so we know how many ElIf regions to
-  // allocate — same approach as parseMatchStmt.
+  // allocate.
   SmallVector<ElifEntry, 4> elifEntries;
 
   ExprNode *firstCondExpr = nullptr;
