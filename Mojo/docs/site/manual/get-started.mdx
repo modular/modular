@@ -124,17 +124,18 @@ def print_grid(grid: List[Int], num_cols: Int):
 
 Replace the print loop with `print_grid(glider_grid, num_cols)` and run.
 
-Improve performance by replacing individual prints with a single string:
+Improve performance by replacing individual prints with a single string.
+This solution uses *comprehensions*:
 
 ```mojo
-def print_grid(grid: List[Int], num_cols: Int):
-    var grid_str = ""
-    for index in range(len(grid)):
-        grid_str += "X" if grid[index] else "."
-        if (index % num_cols == (num_cols - 1) and
-            index != len(grid) - 1):
-            grid_str += "\n"
-    print(grid_str)
+    def print_grid(self):
+        var grid_str = "".join(
+            [(("X" if value else ".") + 
+              ("\n" if (index + 1) % Self.num_cols == 0 else ""))
+              for index, value in enumerate(self.cells)
+            ]
+        )
+        print(grid_str)
 ```
 
 When running the program with larger grids and many generations, this
@@ -147,6 +148,15 @@ Call `print_grid()` from `main()` and confirm the output:
 # Print the grid
 print_grid(glider_grid, num_cols)
 ```
+
+### Checkpoint
+
+- Comprehensions are a shorthand for creating lists and other
+  collections.`print_grid()` uses a list comprehension to transform each
+  cell into a `String`, then joins them (`join()`) for printing.
+- Enumeration (`enumerate()`) accesses each cell's index and value,
+  selecting "X" for live cells or "." for inactive cells. It also adds
+  newlines between rows.
 
 ## Add lookups
 
@@ -351,13 +361,9 @@ function helps:
 
 ```mojo
     def is_valid_coord(self, coord: Tuple[Int, Int]) -> Bool:
-        return (
-            not (
-                coord[0] < 0
-                or coord[0] >= Self.num_cols
-                or coord[1] < 0
-                or coord[1] >= Self.num_rows
-            )
+        return not (
+            coord[0] < 0 or coord[0] >= Self.num_cols or
+            coord[1] < 0 or coord[1] >= Self.num_rows
         )
 
     def __setitem__(mut self, coord: Tuple[Int, Int], value: Int):
@@ -610,22 +616,18 @@ struct Grid[num_cols: Int, num_rows: Int]:
     )
 
     def print_grid(self):
-        var grid_str = ""
-        for index in range(len(self.cells)):
-            grid_str += "X" if self.cells[index] else "."
-            if (
-                index % Self.num_cols == (Self.num_cols - 1)
-                and index != len(self.cells) - 1
-            ):
-                grid_str += "\n"
+        var grid_str = "".join(
+            [(("X" if value else ".") + 
+              ("\n" if (index + 1) % Self.num_cols == 0 else ""))
+              for index, value in enumerate(self.cells)
+            ]
+        )
         print(grid_str)
 
     def is_valid_coord(self, coord: Tuple[Int, Int]) -> Bool:
         return not (
-            coord[0] < 0
-            or coord[0] >= Self.num_cols
-            or coord[1] < 0
-            or coord[1] >= Self.num_rows
+            coord[0] < 0 or coord[0] >= Self.num_cols or
+            coord[1] < 0 or coord[1] >= Self.num_rows
         )
 
     def __setitem__(mut self, coord: Tuple[Int, Int], value: Int):
