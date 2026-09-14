@@ -20,7 +20,6 @@ import max.gpu.primitives.warp as warp
 from std.algorithm import vectorize
 from max.algorithm import map_reduce, mean, variance
 from max.algorithm.functional import (
-    _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
 from max.algorithm.reduction import _simd_sum, _simd_sum_elementwise
@@ -54,7 +53,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.coord import DynamicCoord
@@ -64,8 +62,10 @@ from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.reflection import reflect
 from std.utils.coord import ComptimeInt, CoordLike
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from algorithm.rowwise import strided_load
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
@@ -77,7 +77,6 @@ from algorithm import rowwise
 from algorithm.rowwise_types import RowCoord
 from algorithm.reduce_op import ReduceMax, ReduceSum, Welford
 from ._ragged_utils import get_batch_from_row_offsets
-from .reshape import reshape
 from .rope import _rope
 from .shapes import _get_start_indices_of_nth_subvolume_static
 
@@ -572,28 +571,44 @@ def rms_norm_gpu_warp_per_row[
                     col += stride
 
 
-# Rebuild a statically-typed `Coord` from a runtime `IndexList`, preserving the
-# `Coord`'s static dims (`ComptimeInt`) and filling its dynamic leaves from the
-# `IndexList`. Needed at the rms_norm/layer_norm call sites: the static-divisor
-# `divmod` fold needs the `Coord` *type*, but a `Coord` does
-# not survive the trip to a device, and captured into a `capturing` closure it
-# fails the launch the same way. So the device closures capture the `IndexList`
-# and rebuild the typed `Coord` in-kernel here.
-@inline(.always)
-def _index_list_to_typed_coord[
-    element_types: TypeList[Trait=CoordLike, ...]
-](witness: Coord[*element_types], il: IndexList[witness.rank]) -> Coord[
-    *element_types
-]:
-    # Default-construct sets every static dim to its `ComptimeInt` literal.
-    var res = Coord[*element_types]()
+# The warp-tiling kernel wants the row geometry as a typed `Coord` — its
+# `ComptimeInt` dims are what strength-reduce the per-thread row translation —
+# but it takes the shape as an explicit kernel argument, and a *bare* `Coord`
+# argument corrupts the launch: the param pack lowers to one scalar device
+# `.param` per dynamic leaf while the host packs the whole coord as a single
+# aggregate slot, and that arity mismatch makes the driver read undefined
+# parameter slots (MOCO-4307). Nesting the coord in a `DevicePassable` struct
+# keeps both sides at one aggregate slot, which is how `TileTensor` already
+# carries its `Layout`'s coords to a kernel;
+# `max/mojo/test/gpu/host/test_coord_device_launch.mojo` covers this path.
+#
+# `num_cols` rides along deliberately: a *single*-field struct is transparently
+# unwrapped to its field, which puts the bare param pack straight back on the
+# kernel boundary and reintroduces the mismatch. Two fields keep the struct a
+# struct, and the kernel needs both values anyway.
+# TODO(MOCO-4307): Remove this type and use a regular Coord
+@fieldwise_init
+struct _RowSpec[element_types: TypeList[Trait=CoordLike, ...]](
+    DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
+):
+    var shape: Coord[*Self.element_types]
+    var num_cols: Int32
 
-    comptime for i in range(witness.rank):
-        comptime ElemT = element_types[i]
-        comptime if not ElemT.is_static_value:
-            res[i] = rebind[ElemT](Scalar[ElemT.DTYPE](il[i]))
+    comptime device_type = Self
 
-    return res
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        comptime assert (
+            reflect[Self].field_count() >= 2
+        ), "_RowSpec must keep >= 2 fields or it is unwrapped to a bare Coord"
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return String(
+            "_RowSpec[", Coord[*Self.element_types].get_type_name(), "]"
+        )
 
 
 # SM100 (B200) primary target; portable (only uses `block_reduce`, warp
@@ -605,8 +620,8 @@ def _index_list_to_typed_coord[
 # throughput):
 #
 #   1. The rank-N row -> base-coords translation
-#      (`_get_start_indices_of_nth_subvolume`) is hoisted and run ONCE per
-#      thread, then reused for every chunk's load AND store. The old 2D
+#      (`_get_start_indices_of_nth_subvolume_static`) is hoisted and run ONCE
+#      per thread, then reused for every chunk's load AND store. The old 2D
 #      wrappers ran that divmod chain twice per thread (once in `input_fn_2d`,
 #      once in `output_fn_2d`); we now take the rank-N `input_fn`/`output_fn`
 #      directly and only mutate `base[rank - 1]` per chunk.
@@ -629,6 +644,7 @@ def rms_norm_gpu_warp_tiling[
     dtype: DType,
     rank: Int,
     Engine: TensorEngine,
+    shape_types: TypeList[Trait=CoordLike, ...],
     //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -641,13 +657,15 @@ def rms_norm_gpu_warp_tiling[
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
-    shape: IndexList[rank],
+    row_spec: _RowSpec[shape_types],
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
     epsilon: Float32,
     weight_offset: Float32,
-    num_cols: Int32,
 ):
-    var _num_cols = Int(num_cols)
+    comptime assert (
+        shape_types.length == rank
+    ), "shape_types.length must be the same as rank"
+    var _num_cols = Int(row_spec.num_cols)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert gamma.flat_rank >= 1
 
@@ -662,7 +680,7 @@ def rms_norm_gpu_warp_tiling[
     var bdim = Int(block_dim.x)
 
     # Hoist the rank-N row translation ONCE; reuse the base for load and store.
-    var base = _get_start_indices_of_nth_subvolume(row, shape)
+    var base = _get_start_indices_of_nth_subvolume_static(row, row_spec.shape)
 
     # Per-chunk register-cached input (in accum precision) and gamma weights,
     # carried across the reduction so the normalize pass needs no re-read.
@@ -702,7 +720,7 @@ def rms_norm_gpu_warp_tiling[
             thread_m2
         )
         var norm_factor = rsqrt(
-            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+            (row_m2 / row_spec.num_cols.cast[accum_type]()) + eps_accum
         )
 
         comptime for c in range(chunks_per_thread):
@@ -855,16 +873,11 @@ def rms_norm_gpu[
 ) raises:
     # `shape` arrives as a `Coord`, with statically-known outer dims encoded in
     # its type, and the lambdas are `Coord`-form all the way down to the
-    # kernels. `shape_il` materializes the runtime `IndexList` once, for the
-    # two things that cannot take a coord: the warp-tiling kernel's shape
-    # argument, and the row-translation wrappers' capture (see
-    # `_index_list_to_typed_coord` for why).
+    # kernels.
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     if rank == 0:
         return
-
-    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
 
     # Derive the number of columns from the `gamma` input as this value may be
     # statically known.
@@ -884,53 +897,46 @@ def rms_norm_gpu[
     # n-D coordinate. The row -> n-D decomposition divides by the outer dims; on
     # the static-shape path those divisors are the `ComptimeInt` dims carried in
     # `type_of(shape)` (a `Coord`), so the per-row `divmod` strength-reduces to
-    # magic-multiply + shift instead of the runtime Newton-reciprocal `IDIV` that
-    # a plain `IndexList` divisor forces. Dynamic dims fall back to the runtime
-    # value in `shape_il`, so this path is behavior-identical to the pre-migration
+    # magic-multiply + shift. Dynamic dims fall back to the coord's
+    # runtime leaf, so this path is behavior-identical to the pre-migration
     # `_get_start_indices_of_nth_subvolume` form for non-static shapes.
     #
-    # `@__copy_capture(shape_il)` is required: these wrappers are embedded into
-    # GPU kernels as `capturing` closures, and a captured *local* `var` (unlike
-    # a function parameter, which the pre-migration code captured directly) is
-    # not carried to the device without an explicit copy-capture. Without it the
-    # rank-N `_get_start_indices_of_nth_subvolume` divmod reads garbage outer
-    # dims on device (rank-2 is unaffected since its outer translation is
-    # trivial; rank>=3 produces wrong results / launch failures).
+    # `@__copy_capture(shape_layout)` is required: these wrappers are embedded
+    # into GPU kernels as `capturing` closures, and a captured *local* `var`
+    # (unlike a function parameter, which the pre-migration code captured
+    # directly) is not carried to the device without an explicit copy-capture.
+    # Without it the rank-N divmod reads garbage outer dims on device (rank-2 is
+    # unaffected since its outer translation is trivial; rank>=3 produces wrong
+    # results / launch failures).
     #
-    # The fold needs the `Coord` *type*, but a `Coord` captured here fails the
-    # launch (see `_index_list_to_typed_coord`), so the capture is the
-    # `IndexList` and the typed coord is rebuilt in-kernel: `type_of(shape)()`
-    # supplies the static dims at comptime, `shape_il` the dynamic leaves.
-    @__copy_capture(shape_il)
+    # The carrier is a `Layout`, not the `Coord` itself: a captured `Coord`
+    # lowers to one scalar device `.param` per dynamic leaf while the host packs
+    # it as a single capture slot, and that arity mismatch corrupts the launch
+    # (MOCO-4307). A `row_major` `Layout` is the one carrier that keeps the
+    # capture a single aggregate `.param`, so the typed `Coord` — static dims
+    # and all — arrives intact via `shape_coord()`.
+    var shape_layout = row_major(shape)
+
+    @__copy_capture(shape_layout)
     @__parameter
     @inline(.always)
     def output_fn_2d[
         simd_width: SIMDLength, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        var shape_witness = type_of(shape)()
-        var shape_coord = _index_list_to_typed_coord(
-            shape_witness,
-            rebind[IndexList[shape_witness.rank]](shape_il),
-        )
         var indices = _get_start_indices_of_nth_subvolume_static(
-            row, shape_coord
+            row, shape_layout.shape_coord()
         )
         indices[rank - 1] = col
         output_fn[simd_width, alignment](Coord(indices), val)
 
-    @__copy_capture(shape_il)
+    @__copy_capture(shape_layout)
     @__parameter
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        var shape_witness = type_of(shape)()
-        var shape_coord = _index_list_to_typed_coord(
-            shape_witness,
-            rebind[IndexList[shape_witness.rank]](shape_il),
-        )
         var indices = _get_start_indices_of_nth_subvolume_static(
-            row, shape_coord
+            row, shape_layout.shape_coord()
         )
         indices[rank - 1] = col
         return input_fn[simd_width](Coord(indices))
@@ -1035,6 +1041,7 @@ def rms_norm_gpu[
                 origin=gamma.origin,
                 Engine=gamma.Engine,
                 rank=rank,
+                shape_types=type_of(shape).element_types,
                 eff_simd,
                 max_warps_per_block,
                 chunks,
@@ -1045,11 +1052,10 @@ def rms_norm_gpu[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
-                shape_il.canonicalize(),
+                _RowSpec[type_of(shape).element_types](shape, Int32(cols)),
                 gamma,
                 epsilon.cast[.float32](),
                 weight_offset.cast[.float32](),
-                Int32(cols),
                 grid_dim=rows,
                 block_dim=threads_per_block,
                 attributes=pdl_launch_attributes(pdl_level),
@@ -1945,11 +1951,16 @@ def group_norm_reshape[
     comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     var group_size = channels_per_group * spatial
     var prod_all_but_group_dim = Int(shape.product()) // group_size
-    var new_shape = IndexList[2](prod_all_but_group_dim, group_size)
-    var reshaped = reshape[2](buf, new_shape)
+
+    # `buf` is contiguous, so the flattened view is row-major over the same
+    # storage: the group dim strides by one, the row dim by a whole group.
+    comptime Shape2D = DynamicCoord[.int64, 2]
     result = {
-        reshaped.ptr,
-        reshaped.layout,
+        buf.ptr,
+        Layout(
+            Shape2D(Int64(prod_all_but_group_dim), Int64(group_size)),
+            Shape2D(Int64(group_size), Int64(1)),
+        ),
     }
 
 
@@ -2738,8 +2749,6 @@ def group_norm[
         rank > 2 and rank < 5
     ), "group_norm requires input rank of 3 or 4"
 
-    var shape_il = coord_to_index_list(shape)
-
     if shape != output.layout.shape_coord():
         raise Error(
             "Input/output shape mismatch: input = {shape}, output ="
@@ -2748,7 +2757,7 @@ def group_norm[
 
     var num_groups: Int = Int(groups[0])
 
-    var C = shape_il[1]
+    var C = Int(shape[1].value())
     if C % num_groups != 0:
         raise Error(
             "Invalid num_groups: channels (C = {C}) must be divisible by"
@@ -2757,7 +2766,7 @@ def group_norm[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        return trace_arg("input", shape_il, dtype)
+        return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "group_norm",
@@ -3402,8 +3411,7 @@ def layer_norm_rope_ragged[
 
         # Ragged absolute position, resolved once per row (shared by every
         # column) -- same lookup rope_ragged's own kernel does per element.
-        var row_idx = coord_to_index_list(row_coords)
-        var global_token_idx = row_idx[0]
+        var global_token_idx = Int(row_coords[0].value())
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )

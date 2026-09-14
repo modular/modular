@@ -45,7 +45,6 @@ def run_rms_norm_gpu[
     //,
     dtype: DType,
     *,
-    static_cols: Int = -1,
     multiply_before_cast: Bool = True,
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
@@ -99,6 +98,86 @@ def run_rms_norm_gpu[
         identity_output_fn,
         multiply_before_cast=multiply_before_cast,
     ](Coord(shape), gamma, epsilon, weight_offset, ctx)
+    ctx.enqueue_copy(res, data_d)
+    ctx.synchronize()
+
+    for r in range(rows):
+        var vec = TileTensor(
+            data_h.unsafe_ptr() + r * cols,
+            row_major(cols),
+        )
+        var rms_ref = compute_rms(vec, cols, epsilon)
+        for c in range(cols):
+            var idx = r * cols + c
+            var val = (data_h[idx] / rms_ref) * (gamma_h[c] + weight_offset)
+            assert_almost_equal(val, res[idx], rtol=rtol)
+
+    _ = data_d
+    _ = gamma_d
+
+
+def run_rms_norm_gpu_static_dims[
+    dtype: DType, *, multiply_before_cast: Bool = True
+](ctx: DeviceContext, var shape: Coord, rtol: Float64 = 0.01) raises:
+    """Drives `rms_norm_gpu` with a shape whose inner dims are `ComptimeInt`.
+
+    The dynamic-only shapes above (`Coord(IndexList)`) leave every leaf
+    runtime, but production reaches this kernel through
+    `TileTensor.shape_coord()`, which preserves static dims. Static inner dims
+    make `row_major(shape)`'s stride list all-`ComptimeInt` and therefore
+    zero-sized, which collapses the `Layout` capture carrier and the
+    `_RowSpec` kernel argument back to a bare `Coord` -- the MOCO-4307 arity
+    mismatch both types exist to avoid. Only a static-dim shape exercises
+    that collapse.
+    """
+    print("== run_rms_norm_gpu_static_dims")
+
+    comptime rank = type_of(shape).rank
+    var cols = Int(shape[rank - 1].value())
+    var rows = Int(shape.product()) // cols
+
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+
+    rand[dtype](data_h.as_span())
+
+    for i in range(cols):
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+
+    var data_buf = TileTensor(data_d, row_major(shape))
+    var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
+    var epsilon = Float32(0.001)
+    var weight_offset = Scalar[dtype](0.0)
+
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+
+    @inline(.always)
+    @__copy_capture(data_buf)
+    @__parameter
+    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
+        return data_buf.raw_load[width=width](idx)
+
+    @inline(.always)
+    @__copy_capture(data_buf)
+    @__parameter
+    def identity_output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.layout(coords)
+        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+
+    rms_norm_gpu[
+        rank,
+        input_fn,
+        identity_output_fn,
+        multiply_before_cast=multiply_before_cast,
+    ](shape, gamma, epsilon, weight_offset, ctx)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
@@ -291,6 +370,10 @@ def main() raises:
         run_rms_norm_gpu[.float32](ctx, Index(8, 3072, 256))
         run_rms_norm_gpu[.float32](ctx, Index(4, 1024, 2048))
         run_rms_norm_gpu[.bfloat16](ctx, Index(4, 1024, 4096), rtol=2e-2)
+        # Rank 4 through the warp-tiling kernel: the widest coord that reached
+        # it was rank 3, leaving the `_RowSpec` argument untested past three
+        # dynamic leaves. cols=2048 is an exact fit at bf16.
+        run_rms_norm_gpu[.bfloat16](ctx, Index(2, 3, 4, 2048), rtol=2e-2)
 
         run_rms_norm_gpu[.float32](ctx, Index(32768, 1536))
         run_rms_norm_gpu[.bfloat16](ctx, Index(32768, 1536), rtol=2e-2)
@@ -302,13 +385,22 @@ def main() raises:
         run_rms_norm_gpu[.bfloat16](ctx, Index(8, 2048), rtol=2e-2)
         run_rms_norm_gpu[.float32](ctx, Index(8, 8193))
 
-        # Test static shape dispatch.
-        run_rms_norm_gpu[.bfloat16, static_cols=4096](
-            ctx, Index(2, 4096), rtol=2e-2
+        # Static-dim shapes: `row_major` derives an all-`ComptimeInt` stride
+        # list from these, so they are the only cases that exercise the
+        # zero-sized-stride collapse of the `Layout` capture carrier and the
+        # `_RowSpec` kernel argument (MOCO-4307). Rank 2 and rank 3 keep dim 0
+        # dynamic (the batch-dynamic production shape); the fully static rank-2
+        # case carries no dynamic leaf at all.
+        run_rms_norm_gpu_static_dims[.bfloat16](
+            ctx, Coord(Int64(2), Idx[4096]), rtol=2e-2
         )
-        run_rms_norm_gpu[.bfloat16, static_cols=16384](
-            ctx, Index(2, 16384), rtol=2e-2
+        run_rms_norm_gpu_static_dims[.bfloat16](
+            ctx, Coord(Int64(2), Idx[16384]), rtol=2e-2
         )
+        run_rms_norm_gpu_static_dims[.float32](
+            ctx, Coord(Int64(4), Idx[1024], Idx[2048])
+        )
+        run_rms_norm_gpu_static_dims[.float32](ctx, Coord(Idx[2], Idx[8192]))
 
         # High-row-count, register-resident widths: exercises the CDNA4
         # wide-SIMD warp-tiling path (gated on row count). cols are multiples
