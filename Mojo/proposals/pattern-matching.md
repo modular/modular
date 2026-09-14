@@ -1,6 +1,6 @@
 # Mojo Pattern Matching
 
-**Status**: Concept proposal.
+**Status**: Prototype implementation underway.
 
 Date: Aug 29, 2026
 

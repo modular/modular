@@ -29,7 +29,6 @@
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/StringMap.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -179,21 +178,8 @@ DeclRefNode::emitMatch(IREmitter &emitter, CValue subject,
     return failure();
   }
 
-  // Binding patterns are irrefutable: declare `spelling` under the requested
-  // mode and initialize it from the subject. Match subjects are borrowed
-  // (BValues), so `var` bindings copy and `ref` bindings borrow — same
-  // machinery as `var x = ...` / `ref x = ...` assignment. Declarations live
-  // in the enclosing match case region and dominate the case body.
-  ExprDest declDest(LValueInitializerType{subject.getRValueType()}, EC_VarInit);
-  declDest.setPatternDeclKind(patternKind);
-  LValue bindingLV = emitter.emitExprLValue(this, declDest);
-  if (!bindingLV)
-    return failure();
-
-  ExprDest storeDest(bindingLV, EC_VarInit);
-  if (!emitter.emitCResult(subject, this, storeDest))
-    return failure();
-
+  // Binding patterns are irrefutable: record the name and subject value for
+  // the caller to declare after the full pattern (and before any guard).
   bindings.push_back({spelling, subject, patternKind});
   return success();
 }
@@ -241,119 +227,16 @@ LogicalResult BinOpNode::emitMatch(IREmitter &emitter, CValue subject,
   return ExprNode::emitMatch(emitter, subject, patternKind, bindings);
 }
 
-/// Collect VarDeclOps registered in `scope`, keyed by binding name.
-static void
-collectPatternBindings(ASTDecl &scope,
-                       SmallVectorImpl<std::pair<StringAttr, VarDeclOp>> &out) {
-  for (auto &[name, decls] : scope.getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      auto varDecl = dyn_cast_or_null<VarDeclOp>(decl->getIfOperation());
-      if (!varDecl)
-        continue;
-      out.push_back({name, varDecl});
-    }
-  }
-}
-
-/// Verify LHS/RHS or-pattern alternatives bind the same names with matching
-/// kinds and types, rewrite RHS stores to use the LHS VarDecls, erase the
-/// duplicate RHS VarDeclOps, and promote the LHS bindings into `parentScope`.
-static LogicalResult mergeOrPatternBindings(IREmitter &emitter,
-                                            ASTDecl &parentScope,
-                                            ASTDecl &lhsScope,
-                                            ASTDecl *rhsScope, SMLoc loc) {
-  SmallVector<std::pair<StringAttr, VarDeclOp>, 4> lhsBindings;
-  collectPatternBindings(lhsScope, lhsBindings);
-
-  SmallVector<std::pair<StringAttr, VarDeclOp>, 4> rhsBindings;
-  if (rhsScope)
-    collectPatternBindings(*rhsScope, rhsBindings);
-
-  // No bindings on either side — nothing to promote.
-  if (lhsBindings.empty() && rhsBindings.empty())
-    return success();
-
-  // RHS was never emitted (e.g. LHS constant-folded true). Promote LHS only.
-  if (!rhsScope) {
-    parentScope.mergeDeclsFrom(lhsScope);
-    return success();
-  }
-
-  if (lhsBindings.empty() || rhsBindings.empty()) {
-    StringAttr missing = lhsBindings.empty() ? rhsBindings.front().first
-                                             : lhsBindings.front().first;
-    emitter.emitError(loc, "or-pattern alternatives must bind the same names")
-        << "; '" << missing.getValue() << "' is bound in one alternative but "
-        << "not the other";
-    return failure();
-  }
-
-  llvm::DenseMap<StringAttr, VarDeclOp> rhsByName;
-  for (auto &[name, varDecl] : rhsBindings)
-    rhsByName[name] = varDecl;
-
-  for (auto &[name, lhsVar] : lhsBindings) {
-    auto it = rhsByName.find(name);
-    if (it == rhsByName.end()) {
-      emitter.emitError(loc, "or-pattern alternatives must bind the same names")
-          << "; '" << name.getValue() << "' is bound in one alternative but "
-          << "not the other";
-      return failure();
-    }
-    VarDeclOp rhsVar = it->second;
-    if (lhsVar.getKind() != rhsVar.getKind()) {
-      emitter.emitError(loc, "or-pattern binding '")
-          << name.getValue() << "' must use the same 'var'/'ref' kind in each "
-          << "alternative";
-      return failure();
-    }
-    // VarDecl types are `!lit.ref[decl] T`. Each alternative creates its own
-    // decl, so the self-origin always differs even when `T` matches. Compare
-    // the element types (and address space) instead.
-    ASTType lhsType = lhsVar.getType().getElementType();
-    ASTType rhsType = rhsVar.getType().getElementType();
-    if (!lhsType.isEqualCanon(rhsType)) {
-      auto diag = emitter.emitError(loc, "or-pattern binding '")
-                  << name.getValue()
-                  << "' has incompatible types across alternatives";
-      diag.attachNote(loc) << "left alternative has type " << lhsType
-                           << ", right has type " << rhsType;
-      return failure();
-    }
-
-    // Both alternatives write the same name; keep the LHS VarDecl and retarget
-    // RHS initializers to it.
-    rhsVar.getResult().replaceAllUsesWith(lhsVar.getResult());
-    rhsVar->erase();
-    rhsByName.erase(it);
-  }
-
-  if (!rhsByName.empty()) {
-    emitter.emitError(loc, "or-pattern alternatives must bind the same names")
-        << "; '" << rhsByName.begin()->first.getValue()
-        << "' is bound in one alternative but not the other";
-    return failure();
-  }
-
-  parentScope.mergeDeclsFrom(lhsScope);
-  return success();
-}
-
 /// Merge BoundName sets from or-pattern alternatives into `out`. Both sides
 /// must bind the same names with the same `PatternDeclKind`. The surviving
 /// `CValue` currently comes from the LHS only.
-static LogicalResult mergeOrPatternBoundNames(
-    IREmitter &emitter, SMLoc loc, ArrayRef<ExprNode::BoundName> lhsBindings,
-    ArrayRef<ExprNode::BoundName> rhsBindings, bool rhsEmitted,
-    SmallVectorImpl<ExprNode::BoundName> &out) {
+static LogicalResult
+mergeOrPatternBoundNames(IREmitter &emitter, SMLoc loc,
+                         ArrayRef<ExprNode::BoundName> lhsBindings,
+                         ArrayRef<ExprNode::BoundName> rhsBindings,
+                         SmallVectorImpl<ExprNode::BoundName> &out) {
   if (lhsBindings.empty() && rhsBindings.empty())
     return success();
-
-  // RHS was never emitted (e.g. LHS constant-folded true). Take LHS only.
-  if (!rhsEmitted) {
-    out.append(lhsBindings.begin(), lhsBindings.end());
-    return success();
-  }
 
   if (lhsBindings.empty() || rhsBindings.empty()) {
     StringRef missing = lhsBindings.empty() ? rhsBindings.front().name
@@ -381,6 +264,17 @@ static LogicalResult mergeOrPatternBoundNames(
       emitter.emitError(loc, "or-pattern binding '")
           << lhsBN.name
           << "' must use the same 'var'/'ref' kind in each alternative";
+      return failure();
+    }
+
+    ASTType lhsType = lhsBN.value.getRValueType();
+    ASTType rhsType = rhsBN.value.getRValueType();
+    if (!lhsType.isEqualCanon(rhsType)) {
+      auto diag = emitter.emitError(loc, "or-pattern binding '")
+                  << lhsBN.name
+                  << "' has incompatible types across alternatives";
+      diag.attachNote(loc) << "left alternative has type " << lhsType
+                           << ", right has type " << rhsType;
       return failure();
     }
 
@@ -458,23 +352,15 @@ BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
   emitter.builder->setInsertionPointToStart(&matchOp.getElseRegion().front());
   HLCF::MatchNextOp::create(*emitter.builder, loc);
 
-  // Surviving binding decls are created inside case regions; hoist them so
-  // they dominate the enclosing case body after this nested match completes.
-  SmallVector<std::pair<StringAttr, VarDeclOp>, 4> lhsVarDecls;
-  collectPatternBindings(lhsScope, lhsVarDecls);
-
   if (failed(mergeOrPatternBoundNames(emitter, getLoc(), lhsBindings,
-                                      rhsBindings, /*rhsEmitted=*/true,
-                                      bindings)))
-    return failure();
-  if (failed(mergeOrPatternBindings(emitter, emitter.declScope, lhsScope,
-                                    rhsScope, getLoc())))
+                                      rhsBindings, bindings)))
     return failure();
 
-  for (auto &[name, varDecl] : lhsVarDecls) {
-    (void)name;
-    if (varDecl->getParentOp() == matchOp.getOperation())
-      varDecl->moveBefore(matchOp);
+  if (!lhsBindings.empty()) {
+    // emit an error about unsupported.
+    emitter.emitError(
+        getLoc(), "or-pattern doesn't support bindings in alternatives yet");
+    return failure();
   }
 
   emitter.builder->setInsertionPointAfter(matchOp);

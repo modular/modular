@@ -219,9 +219,10 @@ public:
   /// On a runtime mismatch, emits `hlcf.match.next` (typically via
   /// `hlcf.elif`) so the enclosing match case advances; on success, falls
   /// through so subsequent pattern tests / the case body can run. Returns
-  /// failure if IR emission fails. Pattern bindings are declared in the
-  /// current scope and appended to `bindings`. The default implementation
-  /// rejects the expression as an invalid pattern.
+  /// failure if IR emission fails. Binding sites append to `bindings` but do
+  /// not declare `VarDecl`s — the caller materializes those after the pattern
+  /// (and before any guard) so names are in scope for the guard and body.
+  /// The default implementation rejects the expression as an invalid pattern.
   ///
   /// `patternKind` is the enclosing `var`/`ref` binding mode for this pattern
   /// (or `kNone` when none applies). Unary `var`/`ref` patterns update it and

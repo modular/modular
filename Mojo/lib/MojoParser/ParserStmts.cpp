@@ -1683,19 +1683,46 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     // On emission failure, still parse the case body so later diagnostics in
     // this function can fire (same recovery as other statement forms).
     SmallVector<ExprNode::BoundName> bindings;
-    bool patternFailed = failed(caseEntry.patternExpr->emitMatch(
-        emitter, subjectBVal, PatternDeclKind::kBind, bindings));
+    if (failed(caseEntry.patternExpr->emitMatch(
+            emitter, subjectBVal, PatternDeclKind::kBind, bindings)))
+      continue;
 
-    // If a guard is present: `if guard { yield } else { match.next }` so a
-    // failing guard advances to the next case and a passing one continues into
-    // the case body below.
-    if (!patternFailed && caseEntry.guardExpr) {
+    // Materialize pattern bindings before the guard so guards can refer to
+    // them. Match subjects are borrowed (BValues), so `var` bindings copy and
+    // `ref` bindings borrow — same machinery as `var x = ...` / `ref x = ...`.
+    // On failure, treat like a pattern emission error so later cases/statements
+    // still parse (recovery), rather than aborting the whole match.
+    bool hadFailure = false;
+    for (const ExprNode::BoundName &bn : bindings) {
+      auto *name = shared.allocPersistent<DeclRefNode>(bn.name);
+      ExprDest declDest(LValueInitializerType{bn.value.getRValueType()},
+                        EC_VarInit);
+      declDest.setPatternDeclKind(bn.patternKind);
+      LValue bindingLV = emitter.emitExprLValue(name, declDest);
+      if (!bindingLV) {
+        hadFailure = true;
+        break;
+      }
+
+      ExprDest storeDest(bindingLV, EC_VarInit);
+      if (!emitter.emitCResult(bn.value, name, storeDest)) {
+        hadFailure = true;
+        break;
+      }
+    }
+    if (hadFailure)
+      continue;
+
+    // If a guard is present: `if guard { yield } else { match.next }` so
+    // a failing guard advances to the next case and a passing one
+    // continues into the case body below.
+    if (caseEntry.guardExpr) {
       RValue guardRVal =
           emitter.emitExprScalarBool(caseEntry.guardExpr, EC_BoolCondition);
       Value guardVal = emitter.emitSRValue(
           {AnyValue(guardRVal), caseEntry.guardExpr}, EC_BoolCondition);
       if (!guardVal)
-        return failure();
+        continue;
       auto guardLoc = translateLocation(caseEntry.guardExpr->getLoc());
       HLCF::ElifOp::create(
           builder, guardLoc, TypeRange{}, guardVal,
@@ -1714,11 +1741,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     // shares the case scope above — pattern bindings remain visible.
     caseEntry.caseCursor.restore(getLexer());
     if (failed(parseSuite(caseEntry.caseIndent)))
-      return failure();
-    if (patternFailed)
-      HLCF::MatchNextOp::create(builder, caseLoc);
-    else
-      HLCF::MatchCompleteOp::create(builder, caseLoc);
+      continue;
+    HLCF::MatchCompleteOp::create(builder, caseLoc);
   }
 
   // The match else is a no-op fallthrough. TODO: Mark unreachable when there
