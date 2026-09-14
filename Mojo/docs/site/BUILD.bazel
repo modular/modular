@@ -9,28 +9,34 @@ package(default_visibility = ["//oss/modular/docs:__subpackages__"])
 # -----------------------------------------------------------------------------
 # Targets cheat sheet
 #
-# Names mirror paths under modular-fe/mojosite/ after install-docs and
-# install-releases (underscores instead of slashes):
+# Names mirror paths under modular-fe/mojosite/ after install-docs,
+# install-releases, and install-contributing (underscores instead of slashes):
 #
-#   mojosite_docs (_pkg_tar_)  -> docs.tar; full tree installed under modular-fe/mojosite/docs/
+#   mojosite_docs (_pkg_tar_)  -> docs.tar; input to post-process
 #   mojosite_docs_root         -> from docs_root/; modular-fe/mojosite/docs/<file> (tar root)
 #   mojosite_docs_docs_*       -> modular-fe/mojosite/docs/docs/...
 #   mojosite_docs_archive      -> mojodocs.tar (post-processed docs drop)
+#     (after install, modular-fe/mojosite/docs/...)
 #   mojosite_releases_archive  -> releases.tar (releases drop)
 #   mojosite_releases_nightly_*, mojosite_releases_pack -> pieces that roll into releases.tar
 #     (after install, modular-fe/mojosite/releases/...)
+#   mojosite_contributing (_pkg_tar_) -> contributing.tar (as-is; no post-process)
+#     (after install, modular-fe/mojosite/community/contributing/...)
 #
-# Stable CI labels (aliases): :mojodocs, :releases
+# CI labels (aliases): :mojodocs, :releases, :contributing
 #
 # CI / artifacts:
-#   ./bazelw build --config=ci -- //Mojo/docs/site:mojodocs //Mojo/docs/site:releases
-# Outputs under bazel-bin/.../mojodocs.tar, docs.tar (pre-post-process), and releases.tar.
+#   ./bazelw build --config=ci -- //Mojo/docs/site:mojodocs //Mojo/docs/site:releases //Mojo/docs/site:contributing
+# Outputs under bazel-bin/.../mojodocs.tar, releases.tar, and contributing.tar.
+# docs.tar is the pre-post-process intermediate for :mojodocs only.
+# :contributing is latest/nightly/preview only; stable builds :mojodocs alone.
 #
 # Local dev (requires modular-fe cloned under .derived/modular-fe/; rsyncs from those tars):
 #   ./bazelw run //Mojo/docs/site:install
 # Or run separately:
 #   ./bazelw run //Mojo/docs/site:install-docs
 #   ./bazelw run //Mojo/docs/site:install-releases
+#   ./bazelw run //Mojo/docs/site:install-contributing
 # -----------------------------------------------------------------------------
 
 install_docs(
@@ -47,12 +53,20 @@ install_docs(
     target = ":releases",
 )
 
+install_docs(
+    name = "install-contributing",
+    dest_subdir = "mojosite/community/contributing",
+    tags = ["manual"],
+    target = ":contributing",
+)
+
 multirun(
     name = "install",
     buffer_output = True,
     commands = [
         ":install-docs",
         ":install-releases",
+        ":install-contributing",
     ],
     jobs = 1,
     tags = ["manual"],
@@ -114,7 +128,8 @@ pkg_tar(
 
 pkg_tar(
     name = "mojosite_docs",
-    # Installed under modular-fe/mojosite/docs/: top-level files + docs/ subtree (→ .../docs/docs/...).
+    # Pre-post-process drop: top-level files + docs/ subtree (→ .../docs/docs/...).
+    # :mojodocs is what install-docs extracts under modular-fe/mojosite/docs/.
     srcs = [
         ":mojosite_docs_docs",
         ":mojosite_docs_root",
@@ -208,6 +223,15 @@ pkg_filegroup(
     tags = ["manual"],
 )
 
+# contributing.tar = //Mojo/docs/contributing:docs as-is (no post-process).
+pkg_tar(
+    name = "mojosite_contributing",
+    srcs = ["//Mojo/docs/contributing:docs"],
+    out = "contributing.tar",
+    allow_duplicates_with_different_content = False,
+    tags = ["manual"],
+)
+
 modular_py_binary(
     name = "post-process-mojodocs",
     srcs = [
@@ -234,5 +258,11 @@ alias(
 alias(
     name = "releases",
     actual = ":mojosite_releases_archive",
+    tags = ["manual"],
+)
+
+alias(
+    name = "contributing",
+    actual = ":mojosite_contributing",
     tags = ["manual"],
 )

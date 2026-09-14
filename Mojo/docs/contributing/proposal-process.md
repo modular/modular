@@ -12,9 +12,9 @@ use this process.
 ## How to submit a proposal
 
 A proposal is a GitHub pull request that adds a document to the
-[`proposals/`](../../proposals) directory. Follow the
-[contribution process](contribution-process.md) to open it, and the
-[issue and PR etiquette](issue-pr-etiquette.md) when discussing it.
+[`proposals/`](https://github.com/modular/modular/tree/main/Mojo/proposals)
+directory. Follow the [contribution process](contribution-process.md) to open
+it, and the [issue and PR etiquette](issue-pr-etiquette.md) when discussing it.
 
 Contributors are encouraged to react with a *thumbs-up* to proposal PRs if
 they're generally interested in and supportive of the high-level direction.

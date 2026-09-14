@@ -68,7 +68,7 @@ formatted and consistent with the Mojo style guidelines.
 Note that you should not have any warnings.
 
 ```bash
-mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/src/
+mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/std/
 ```
 
 Note that this is also included in the pre-commit. So if you have `pre-commit`
@@ -465,5 +465,6 @@ For example `test_sort.mojo`.
 
 #### Integration with build system
 
-- See the [bazel usage docs](../../../../bazel/docs/usage.md) for more details
-  on how to run tests.
+- See the
+  [bazel usage docs](https://github.com/modular/modular/blob/main/bazel/docs/usage.md)
+  for more details on how to run tests.

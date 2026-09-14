@@ -8,12 +8,23 @@ one-stop-shop entry point to all documentation relevant to the Mojo compiler.
 >
 > The name `KGEN` stands for "kernel generator". When you see KGEN, think Mojo.
 
-## Working in the Open Source Repository
+## Where to start
 
-Most of the docs in this directory assume you're working in the Modular
+If you're new to the codebase, we recommend you first read these:
+
+- [Working with Mojo in the open source repo](./WorkingInOSRepo.md):
+  Most of the docs in this directory assume you're working in the Modular
 monorepo. If you're working in the open source repository, you'll need to adjust
-some of the commands. For details, see
-[Working with Mojo in the open source repo](WorkingInOSRepo.md).
+some of the commands, so you should read this first to understand the Bazel
+flags, Bazel aliases, and example commands.
+
+- [Compiler testing](./testing.md): Test tools, `FileCheck` conventions, and
+guidelines for writing compiler tests. Every bug fix needs a test.
+
+- [Compiler walkthrough](./MojoCompilerWalkthrough.md): A high-level tour of
+how a Mojo program becomes an executable.
+
+- [Debugging the compiler with LLDB](./MojoLLDB.md).
 
 ## File Overview
 

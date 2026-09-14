@@ -1,9 +1,8 @@
-# Frequently asked questions
+# Contributing FAQ
 
 A lot of questions about Mojo as a whole are answered in the
 [FAQ on our website](https://www.mojolang.org/docs/faq).
-This FAQ is specifically focused on the standard library with contributors
-in mind.
+This FAQ is specifically for Mojo contributors.
 
 ## Contributing & development
 
@@ -17,9 +16,9 @@ details, see
 ### 2. I hit a bug! What do I do?
 
 Don’t Panic! 😃 Check out our
-[bug submission guide](../../../../CONTRIBUTING.md#submitting-bugs) to make sure
-you include all the essential information to avoid unnecessary delays in
-getting your issues resolved.
+[bug submission guide](https://github.com/modular/modular/blob/main/CONTRIBUTING.md#submitting-bugs)
+to make sure you include all the essential information to avoid unnecessary
+delays in getting your issues resolved.
 
 ## Standard library code
 

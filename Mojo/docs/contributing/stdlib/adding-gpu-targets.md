@@ -2,9 +2,9 @@
 
 This guide explains how to add support for a new GPU architecture to the Mojo
 standard library. Targets live in
-[`std/_gpu/host/info.mojo`](../../../stdlib/std/_gpu/host/info.mojo); this
-document is for contributors extending that file and is not part of the public
-API.
+[`std/_gpu/host/info.mojo`](https://github.com/modular/modular/tree/main/Mojo/stdlib/std/_gpu/host/info.mojo);
+this document is for contributors extending that file and is not part of the
+public API.
 
 When adding support for a new GPU architecture, you must create a target
 configuration function that returns a `_TargetType`. The sections below explain
@@ -232,7 +232,7 @@ For AMD GPUs:
 
 ```bash
 echo 'target triple = "amdgcn-amd-amdhsa"' > test.ll
-clang -S test.ll -o - | grep datalayout
+clang -S -emit-llvm test.ll -o - | grep datalayout
 ```
 
 ### Method 2: Consult LLVM source code
