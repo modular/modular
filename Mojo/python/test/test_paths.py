@@ -14,11 +14,21 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from mojo.paths import _build_mojo_source_package
+import pytest
+from mojo.paths import MojoCompilationError, _build_mojo_source_package
+
+
+def _fake_precompile(args: list[str], **kwargs: object) -> MagicMock:
+    """Stands in for `subprocess_run_mojo`, honoring the `-o` output contract
+    the production code relies on: a successful run leaves the requested
+    artifact on disk."""
+    Path(args[args.index("-o") + 1]).write_bytes(b"mojoc")
+    return MagicMock()
 
 
 def test_build_mojo_source_package_path_is_user_specific() -> None:
@@ -33,7 +43,7 @@ def test_build_mojo_source_package_path_is_user_specific() -> None:
 
     with (
         patch("mojo.paths.is_mojo_source_package_path", return_value=True),
-        patch("mojo.paths.subprocess_run_mojo", return_value=MagicMock()),
+        patch("mojo.paths.subprocess_run_mojo", side_effect=_fake_precompile),
         tempfile.TemporaryDirectory() as tmp_dir,
         patch("mojo.paths.tempfile.gettempdir", return_value=tmp_dir),
     ):
@@ -56,7 +66,7 @@ def test_build_mojo_source_package_no_shared_directory_collision() -> None:
 
     with (
         patch("mojo.paths.is_mojo_source_package_path", return_value=True),
-        patch("mojo.paths.subprocess_run_mojo", return_value=MagicMock()),
+        patch("mojo.paths.subprocess_run_mojo", side_effect=_fake_precompile),
         tempfile.TemporaryDirectory() as tmp_dir,
         patch("mojo.paths.tempfile.gettempdir", return_value=tmp_dir),
     ):
@@ -67,3 +77,56 @@ def test_build_mojo_source_package_no_shared_directory_collision() -> None:
     assert not relative.startswith(".modular/mojo_pkg"), (
         f"Path still uses shared .modular/ directory: {result}"
     )
+
+
+def test_build_mojo_source_package_publishes_atomically() -> None:
+    """A successful build leaves exactly the final artifact in the cache dir.
+
+    The cache path is keyed only by source path and shared between
+    processes, so the compile must land in per-process staging and be
+    published with an atomic rename — a concurrent reader must never see a
+    half-written .mojoc, and no staging debris may accumulate.
+    """
+    fake_src = Path("/fake/mojo/package")
+
+    with (
+        patch("mojo.paths.is_mojo_source_package_path", return_value=True),
+        patch("mojo.paths.subprocess_run_mojo", side_effect=_fake_precompile),
+        tempfile.TemporaryDirectory() as tmp_dir,
+        patch("mojo.paths.tempfile.gettempdir", return_value=tmp_dir),
+    ):
+        result = _build_mojo_source_package(fake_src)
+
+        assert result.read_bytes() == b"mojoc"
+        assert {p.name for p in result.parent.iterdir()} == {result.name}, (
+            f"Staging debris left next to the artifact: "
+            f"{sorted(p.name for p in result.parent.iterdir())}"
+        )
+
+
+def test_build_mojo_source_package_failure_leaves_no_artifact() -> None:
+    """A failed compile must not publish anything nor leave staging debris.
+
+    Before the atomic-rename publish, the compiler wrote the shared cache
+    path in place, so a failed or interrupted compile could leave a partial
+    file that a concurrent reader would load.
+    """
+    fake_src = Path("/fake/mojo/package")
+    compile_error = subprocess.CalledProcessError(
+        1, ["mojo"], output=b"", stderr=b"boom"
+    )
+
+    with (
+        patch("mojo.paths.is_mojo_source_package_path", return_value=True),
+        patch("mojo.paths.subprocess_run_mojo", side_effect=compile_error),
+        tempfile.TemporaryDirectory() as tmp_dir,
+        patch("mojo.paths.tempfile.gettempdir", return_value=tmp_dir),
+    ):
+        with pytest.raises(MojoCompilationError):
+            _build_mojo_source_package(fake_src)
+
+        cache_dir = Path(tmp_dir) / f".modular_{os.getuid()}" / "mojo_pkg"
+        assert list(cache_dir.iterdir()) == [], (
+            f"Failed build left files behind: "
+            f"{sorted(p.name for p in cache_dir.iterdir())}"
+        )
