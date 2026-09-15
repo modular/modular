@@ -112,6 +112,7 @@ from typing import Any, Protocol, TypeAlias, cast
 from max import driver, graph
 from max.driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
+from max.experimental import _validation_hooks
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -1779,6 +1780,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
     def _values(self) -> Generator[Any]:
         self._check_not_distributed("_values")
+        _validation_hooks.device_transfer("Tensor._values()", self, CPU())
         self._sync_realize()
         dt = self.driver_tensor.to(CPU())
         for idx in dt._iterate_indices():
@@ -1789,6 +1791,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
     def __dlpack__(self, stream: int | None = None):
         self._check_not_distributed("__dlpack__")
+        _validation_hooks.device_transfer("Tensor.__dlpack__()", self, CPU())
         self._sync_realize()
         assert self._storages is not None
         return self._storages[0].__dlpack__(stream=stream)
@@ -1850,6 +1853,7 @@ class Tensor(DLPackArray, HasTensorValue):
             TypeError: If the tensor contains more than one element.
             ValueError: If the tensor is distributed and not fully replicated.
         """
+        _validation_hooks.device_transfer("Tensor.item()", self, CPU())
         if self.is_distributed:
             if not is_fully_replicated(self._mapping):
                 # Reuse the standard error for non-replicated distributed
@@ -1964,6 +1968,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Materializes distributed tensors and transfers to CPU if needed.
         """
+        _validation_hooks.device_transfer("Tensor.to_numpy()", self, CPU())
         t = _transfer_to(self, CPU()) if self.is_distributed else self
         if t.device != CPU():
             t = t.to(CPU())

@@ -41,7 +41,7 @@ Example:
     may change.
 """
 
-from . import functional, random, tensor
+from . import functional, random, tensor, validation
 from .tensor import Tensor
 
-__all__ = ["Tensor", "functional", "random", "tensor"]
+__all__ = ["Tensor", "functional", "random", "tensor", "validation"]

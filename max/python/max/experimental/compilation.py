@@ -72,6 +72,7 @@ from typing import Any, Generic, ParamSpec, TypeVar
 from max import tree
 from max.driver import Accelerator, Buffer, Device, DLPackArray
 from max.engine import CompiledModel, Model
+from max.experimental import _validation_hooks
 from max.experimental.realization_context import (
     GraphRealizationContext,
     _cached_signal_buffers,
@@ -485,7 +486,9 @@ class CompiledCallable(Generic[_P, _R]):
         Returns:
             One buffer per graph output, in graph order.
         """
-        return list(self.engine_model(*buffers, *self.signal_buffers))
+        results = list(self.engine_model(*buffers, *self._signal_buffers))
+        _validation_hooks.compiled_call(self.engine_model, buffers, results)
+        return results
 
     def export_mef(self, path: str | Path) -> None:
         """Writes the compiled graph to a MEF file.

@@ -8,6 +8,7 @@ modular_py_library(
         "__init__.py",
         "_passes.py",
         "_tensor_repr.py",
+        "_validation_hooks.py",
         "compilation.py",
         "compile_pool.py",
         "executor.py",
@@ -15,6 +16,7 @@ modular_py_library(
         "realization_context.py",
         "support.py",
         "tensor.py",
+        "validation.py",
     ] + glob([
         "functional/**/*.py",
         "sharding/**/*.py",
