@@ -21,6 +21,7 @@ from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -35,6 +36,7 @@ from std.utils import IndexList, StaticTuple
 
 def split[
     OutputLayoutType: TensorLayout,
+    OutputEngine: TensorEngine,
     //,
     dtype: DType,
     num_outputs: Int,
@@ -46,7 +48,7 @@ def split[
 ](
     input: TileTensor[dtype, ...],
     outputs: StaticTuple[
-        TileTensor[dtype, OutputLayoutType, output_origin],
+        TileTensor[dtype, OutputLayoutType, output_origin, Engine=OutputEngine],
         num_outputs,
     ],
     ctx: DeviceContext,
@@ -61,6 +63,7 @@ def split[
 
     Parameters:
         OutputLayoutType: Layout shared by all output tensors.
+        OutputEngine: Engine policy shared by all output tensors.
         dtype: Element type of the input and output tensors.
         num_outputs: Number of output chunks to produce.
         target: Target string used by the elementwise dispatch.
