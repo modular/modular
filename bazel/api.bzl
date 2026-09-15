@@ -12,6 +12,8 @@ load("//bazel/internal:mef.bzl", "MOJO_DEPS", _mef = "mef")  # buildifier: disab
 load("//bazel/internal:modular_cc_binary.bzl", _modular_cc_binary = "modular_cc_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_library.bzl", _modular_cc_library = "modular_cc_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_test.bzl", _modular_cc_test = "modular_cc_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_generate_stubfiles.bzl", _modular_generate_stubfiles = "modular_generate_stubfiles")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_genrule.bzl", _modular_genrule = "modular_genrule")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_multi_py_version_test.bzl", _modular_multi_py_version_test = "modular_multi_py_version_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_library.bzl", _modular_py_library = "modular_py_library")  # buildifier: disable=bzl-visibility
@@ -35,24 +37,25 @@ load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 dialect_checksum = _dialect_checksum
 driver_option_tablegen = _driver_option_tablegen
-gentbl_mlir_dialect = _gentbl_mlir_dialect
 gentbl_cc_library = _gentbl_cc_library
+gentbl_mlir_dialect = _gentbl_mlir_dialect
 gentbl_modular_passes = _gentbl_modular_passes
-lit_tests = _lit_tests
 kgen_kernel = _kgen_kernel
+lit_tests = _lit_tests
+modular_genrule = _modular_genrule
 modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
+modular_sphinx_docs = _modular_sphinx_docs
 modular_versioned_expand_template = _modular_versioned_expand_template
+mojo_filecheck_test = _mojo_filecheck_test
 mojo_overlay_layer = _mojo_overlay_layer
 mojo_overlay_srcs = _mojo_overlay_srcs
 mojo_test = _mojo_test
-mojo_filecheck_test = _mojo_filecheck_test
-modular_sphinx_docs = _modular_sphinx_docs
 mojo_test_environment = _mojo_test_environment
-pkg_files = _pkg_files
 pkg_filegroup = _pkg_filegroup
+pkg_files = _pkg_files
 py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
@@ -199,14 +202,6 @@ def modular_shared_library(name = None, internal_deps = [], defines = [], local_
         **kwargs
     )
 
-def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
-    modular_py_library(
-        name = name,
-        pyi_srcs = pyi_srcs,
-        deps = deps + ["@modular_wheel//:wheel"],
-        tags = tags + ["no-pydeps"],  # Pydeps works internally but not externally
-    )
-
 # Ignore use_production_compiler_for_asan for public builds
 # buildifier: disable=unused-variable
 def mojo_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
@@ -236,6 +231,15 @@ def modular_py_binary(mojo_deps = [], **kwargs):
 def mef(**kwargs):
     _mef(mojo_deps = _process_mojo_deps(MOJO_DEPS), **kwargs)
 
+def modular_nanobind_extension(name, **_kwargs):
+    native.alias(
+        name = name,
+        actual = "@modular_wheel//:wheel",
+    )
+
+def modular_generate_stubfiles(**kwargs):
+    _modular_generate_stubfiles(is_external = True, **kwargs)
+
 # buildifier: disable=function-docstring
 def copy_files(srcs, **kwargs):
     new_srcs = []
@@ -253,6 +257,5 @@ def _noop(**_kwargs):
 
 install_docs = _noop
 mlir_nanobind = _noop
-modular_nanobind_extension = _noop
 modular_nanobind_library = _noop
 modular_python_binding_library_test = _noop

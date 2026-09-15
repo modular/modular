@@ -59,9 +59,7 @@ load("@rules_cc//cc:defs.bzl", "cc_import")
 load("@rules_mojo//mojo:mojo_import.bzl", "mojo_import")
 load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 
-# Subdirectories of the wheel that are part of this repo and therefore should
-# be removed so that they're not accidentally used when testing changes that
-# depend on some closed-source portions of the wheel.
+# Only pull the parts of the wheels that are not included in this repo.
 py_library(
     name = "max",
     data = glob([
@@ -70,9 +68,6 @@ py_library(
         "modular/**",
     ], exclude = [
         "modular/lib/mojo/*",
-    ]),
-    pyi_srcs = glob([
-        "max/**/*.pyi",
     ]),
     visibility = ["//visibility:public"],
     imports = ["."],

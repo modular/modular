@@ -1172,7 +1172,8 @@ class Graph:
             diags = "\n  ".join(diagnostics)
             raise ValueError(f"Diagnostics:\n    {diags}\n{e}") from None
         finally:
-            handle.detach()  # type: ignore
+            # Doesn't cause a mypy error in the OSS repo for some reason
+            handle.detach()  # type: ignore[attr-defined, unused-ignore]
 
     @_classproperty
     def current(cls) -> Graph:
