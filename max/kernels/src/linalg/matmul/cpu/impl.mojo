@@ -28,6 +28,7 @@ from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
+    TensorEngine,
     TileTensor,
 )
 from layout.tile_layout import TensorLayout, row_major
@@ -253,6 +254,7 @@ struct TiledMatmul[
     b_type: DType,
     b_layout: TensorLayout,
     b_origin: ImmOrigin,
+    b_engine: TensorEngine,
     c_type: DType,
     c_layout: TensorLayout,
     c_origin: MutOrigin,
@@ -282,6 +284,7 @@ struct TiledMatmul[
         b_type: Element type of the B operand.
         b_layout: Memory layout of the B operand.
         b_origin: Memory origin provenance of the B operand.
+        b_engine: Engine of the B operand.
         c_type: Element type of the C output.
         c_layout: Memory layout of the C output.
         c_origin: Memory origin provenance of the mutable C output.
@@ -319,6 +322,7 @@ struct TiledMatmul[
         Self.transpose_b,
         Self.b_packed,
         Self.b_origin,
+        Self.b_engine,
     ]
     """Generator that packs `B` sub-tiles for the inner kernel."""
 

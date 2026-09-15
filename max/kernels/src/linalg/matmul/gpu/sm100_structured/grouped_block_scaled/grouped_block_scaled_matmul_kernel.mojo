@@ -50,6 +50,7 @@ from layout import (
     ComptimeInt,
     Layout,
     RowMajorLayout,
+    TensorEngine,
     TileTensor,
     CoordLike,
 )
@@ -118,14 +119,20 @@ from .grouped_tile_scheduler import (
 comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[1]].element_types
 ]
-comptime _GroupPtrTile[max_groups: Int] = TileTensor[
-    .uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
+comptime _GroupPtrTile[
+    max_groups: Int,
+    Engine: TensorEngine,
+] = TileTensor[
+    .uint64, _GroupPtrLayout[max_groups], MutAnyOrigin, Engine=Engine
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[4]].element_types
 ]
-comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
-    .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
+comptime _ProblemSizesTile[
+    max_groups: Int,
+    Engine: TensorEngine,
+] = TileTensor[
+    .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin, Engine=Engine
 ]
 
 
@@ -364,13 +371,14 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         sfb_tile_shape: IndexList[sfb_rank],
         sfb_desc_shape: IndexList[sfb_rank],
         max_groups: Int,
+        group_ptr_engine: TensorEngine,
     ](
         self,
         group_idx: UInt32,
-        group_a_ptrs: _GroupPtrTile[max_groups],
-        group_b_ptrs: _GroupPtrTile[max_groups],
-        group_sfa_ptrs: _GroupPtrTile[max_groups],
-        group_sfb_ptrs: _GroupPtrTile[max_groups],
+        group_a_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_b_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_sfa_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
+        group_sfb_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_a: UnsafePointer[
             TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
             MutAnyOrigin,
@@ -418,6 +426,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
                 tensor described by the TMA descriptor.
             max_groups: Maximum number of GEMM groups in the per-group
                 pointer arrays.
+            group_ptr_engine: Engine of the per-group pointer tiles.
 
         Args:
             group_idx: Index of the GEMM group whose tensor base
@@ -493,10 +502,11 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         c_tile_shape: IndexList[c_rank],
         c_desc_shape: IndexList[c_rank],
         max_groups: Int,
+        group_ptr_engine: TensorEngine,
     ](
         self,
         group_idx: UInt32,
-        group_c_ptrs: _GroupPtrTile[max_groups],
+        group_c_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_c: UnsafePointer[
             TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
             MutAnyOrigin,
@@ -515,6 +525,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
                 the TMA descriptor.
             max_groups: Maximum number of GEMM groups in the per-group
                 pointer arrays.
+            group_ptr_engine: Engine of the per-group pointer tiles.
 
         Args:
             group_idx: Index of the GEMM group whose C tensor base
@@ -701,6 +712,9 @@ struct GroupedBlockScaledMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
+    *,
+    group_ptr_engine: TensorEngine,
+    problem_sizes_engine: TensorEngine,
 ]:
     """Grouped block-scaled matmul kernel with dynamic tensormap updates.
 
@@ -727,6 +741,8 @@ struct GroupedBlockScaledMatmulKernel[
             `(cluster_m, cluster_n, cluster_k)` (defaults to `(1, 1, 1)`).
         elementwise_compute_lambda_fn: Optional epilogue fusion
             lambda applied to accumulated results (defaults to `None`).
+        group_ptr_engine: Engine of the per-group pointer tiles.
+        problem_sizes_engine: Engine of the problem-sizes tile.
     """
 
     # ========== Derived Constants (from config) ==========
@@ -824,6 +840,7 @@ struct GroupedBlockScaledMatmulKernel[
         tile_n=Self.BN,
         tile_k=Self.BK,
         max_groups=Self.max_groups,
+        problem_sizes_engine=Self.problem_sizes_engine,
     ]
 
     # ========== TMA Descriptor Array Types ==========
@@ -869,7 +886,9 @@ struct GroupedBlockScaledMatmulKernel[
     # Layout for arrays of per-group tensor pointers
 
     comptime GroupPtrLayout = _GroupPtrLayout[Self.max_groups]
-    comptime GroupPtrTile = _GroupPtrTile[Self.max_groups]
+    comptime GroupPtrTile = _GroupPtrTile[
+        Self.max_groups, Self.group_ptr_engine
+    ]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -1213,7 +1232,9 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Problem Sizes Layout ==========
     # Layout for problem_sizes tensor: (max_groups, 4) with [M, N, K, L] per group
     comptime ProblemSizesLayout = _ProblemSizesLayout[Self.max_groups]
-    comptime ProblemSizesTile = _ProblemSizesTile[Self.max_groups]
+    comptime ProblemSizesTile = _ProblemSizesTile[
+        Self.max_groups, Self.problem_sizes_engine
+    ]
 
     # ========== Static Helper Methods ==========
 
@@ -2139,6 +2160,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
@@ -2216,6 +2238,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
@@ -2272,6 +2295,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
@@ -2354,6 +2378,7 @@ struct GroupedBlockScaledMatmulKernel[
                 Self.max_groups,
                 Self.num_clc_pipeline_stages_2sm,
                 2,  # cta_group=2
+                problem_sizes_engine=Self.problem_sizes_engine,
             ](
                 problem_sizes,
                 _num_groups,
