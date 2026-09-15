@@ -994,27 +994,26 @@ bool MatchNextOp::isParentNode(Operation *op) {
 
 void MatchNextOp::getBranchTargets(
     ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
-  (void)operands;
+  assert(operands.size() == getNumOperands());
   auto match = cast<MatchOp>(getParentNode(*this));
   std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
   assert(caseIdx && "match.next must be nested in a case region");
   if (*caseIdx + 1 < match.getCaseRegions().size())
     // Next case region number is caseIdx+1 + 1 (else is region 0).
-    targets.emplace_back(*caseIdx + 2);
+    targets.emplace_back(*caseIdx + 2, getOperands());
   else
-    targets.emplace_back(0); // else region
+    targets.emplace_back(0, getOperands()); // else region
 }
 
 ErrorTreeOrSuccess MatchNextOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
-  (void)operands;
   auto match = cast<MatchOp>(getParentNode(*this));
   std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
   assert(caseIdx && "match.next must be nested in a case region");
   if (*caseIdx + 1 < match.getCaseRegions().size())
     return state.transferControlFlowTo(match.getCaseRegions()[*caseIdx + 1],
-                                       {});
-  return state.transferControlFlowTo(match.getElseRegion(), {});
+                                       operands);
+  return state.transferControlFlowTo(match.getElseRegion(), operands);
 }
 
 ErrorTreeOrSuccess

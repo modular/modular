@@ -629,3 +629,36 @@ kgen.generator @param_for() -> index {
   // CHECK: return %0
   kgen.return %1 : index
 }
+
+// Promote a stack allocation across `hlcf.match` cases: `match.next` must
+// carry the value into the next case, and `match.complete` / `yield` merge it
+// as a result of the match.
+// CHECK-LABEL: kgen.func @match_promote
+kgen.func @match_promote(%arg0: index, %arg1: index) -> index {
+  %0 = pop.stack_allocation 1 x index
+  pop.store %arg0, %0 : !kgen.pointer<index>
+
+  // CHECK: [[V:%.*]] = hlcf.match -> index {
+  // CHECK:   hlcf.match.next %arg1 : index
+  // CHECK: case {
+  // CHECK: ^bb0(%[[ARG:.*]]: index):
+  // CHECK:   hlcf.match.complete %[[ARG]] : index
+  // CHECK: } else {
+  // CHECK:   hlcf.yield %{{.*}} : index
+  // CHECK: }
+  hlcf.match {
+    pop.store %arg1, %0 : !kgen.pointer<index>
+    hlcf.match.next
+  }
+  case {
+    %1 = pop.load %0 : !kgen.pointer<index>
+    hlcf.match.complete
+  }
+  else {
+    hlcf.yield
+  }
+
+  %2 = pop.load %0 : !kgen.pointer<index>
+  // CHECK: kgen.return [[V]]
+  kgen.return %2 : index
+}

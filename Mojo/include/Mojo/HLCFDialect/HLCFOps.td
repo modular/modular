@@ -759,11 +759,20 @@ def HLCF_MatchNextOp : HLCFTerminatorOp<"match.next", [
     outside that match's scope: `hlcf.match.next` inside an `else` targets an
     enclosing match, not the current one.
 
+    Optional operands forward SSA values into the successor region's block
+    arguments (used by mem-2-reg when promoting allocations across cases).
+
     Values and partially initialized bindings local to the abandoned case must
     be cleaned up according to their normal ownership semantics.
   }];
 
-  let assemblyFormat = "attr-dict";
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+
+  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
 
 //===----------------------------------------------------------------------===//

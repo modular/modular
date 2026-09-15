@@ -330,14 +330,12 @@ checkOrBindings(IREmitter &emitter, SMLoc loc,
 
     // Copy/borrow the case binding into the shared aggregate slot.
     LValue destLV;
-    if (MLValue ml = bn.value.getIfMLValue())
+    if (MLValue ml = bn.value.getIfMLValue()) {
       destLV = LValue(ml);
-    else if (RLValue rl = bn.value.getIfRLValue())
+    } else {
+      RLValue rl = bn.value.getIfRLValue();
+      assert(rl && "aggregate or-pattern bindings are ML/RLValues");
       destLV = LValue(rl);
-    else {
-      emitter.emitError(loc, "internal error: or-pattern aggregate binding "
-                             "is not an LValue");
-      return failure();
     }
     ExprDest storeDest(destLV, EC_VarInit);
     SyntheticNode locExpr(loc);
@@ -443,10 +441,17 @@ BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
   // Project aggregate slots outward. `var` temps are MRValues (owned memory);
   // `ref`/`bind` temps are RLValues (borrowed).
   for (const BoundName &bn : aggregateBindings) {
-    if (MLValue ml = bn.value.getIfMLValue())
-      bindings.push_back({bn.name, MRValue(ml), bn.patternKind});
-    else
-      bindings.push_back(bn);
+    CValue resultBinding;
+    if (MLValue ml = bn.value.getIfMLValue()) {
+      // 'var' bindings promote from an MLValue to an MRValue.
+      resultBinding = MRValue(ml);
+    } else {
+      // 'ref'/'bind' bindings are loaded and uses as a MBPValue.
+      RLValue rl = bn.value.getIfRLValue();
+      Value refVal = RefLoadOp::create(*emitter.builder, loc, rl);
+      resultBinding = CValue::getMValueForRef(refVal);
+    }
+    bindings.push_back({bn.name, resultBinding, bn.patternKind});
   }
 
   return success();

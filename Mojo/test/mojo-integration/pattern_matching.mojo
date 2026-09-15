@@ -156,6 +156,22 @@ def classify_pair(pair: Tuple[Int, Int]) -> String:
         return String("pair:", x, ",", y)
 
 
+def classify_or_bind_var(pair: Tuple[Int, Int]) -> String:
+    __match pair:
+    case (0, var x) | (var x, 1):
+        return String("var:", x)
+    case _:
+        return "miss"
+
+
+def classify_or_bind_ref(var pair: Tuple[Int, Int]) -> String:
+    __match pair:
+    case (2, ref x) | (ref x, 3):
+        return String("ref:", x)
+    case _:
+        return "miss"
+
+
 # ===----------------------------------------------------------------------=== #
 # Tests
 # ===----------------------------------------------------------------------=== #
@@ -246,8 +262,35 @@ def test_tuples_and_structs():
     print(classify_point(Point(9, 1)))
 
 
+def test_or_bindings():
+    # CHECK-LABEL: == test_or_bindings
+    print("== test_or_bindings")
+
+    # Left alternative: (0, var x)
+    # CHECK: var:5
+    print(classify_or_bind_var((0, 5)))
+    # Right alternative: (var x, 1)
+    # CHECK: var:7
+    print(classify_or_bind_var((7, 1)))
+    # Both alternatives match; first wins with x from the left.
+    # CHECK: var:1
+    print(classify_or_bind_var((0, 1)))
+    # CHECK: miss
+    print(classify_or_bind_var((4, 4)))
+
+    # Left alternative: (2, ref x)
+    # CHECK: ref:9
+    print(classify_or_bind_ref((2, 9)))
+    # Right alternative: (ref x, 3)
+    # CHECK: ref:8
+    print(classify_or_bind_ref((8, 3)))
+    # CHECK: miss
+    print(classify_or_bind_ref((0, 0)))
+
+
 def main():
     test_optional()
     test_enum_like_token()
     test_literals_guards_or()
     test_tuples_and_structs()
+    test_or_bindings()
