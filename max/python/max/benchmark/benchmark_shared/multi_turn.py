@@ -250,6 +250,9 @@ async def chat_session_driver(
             # compare each measured turn against the previous one in-session.
             response.session_id = str(chat_session.id)
             response.turn_index = len(session_outputs)
+            response.response_format_constrained = (
+                turn_response_format is not None
+            )
             session_outputs.append(response)
 
         if not response.success:

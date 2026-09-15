@@ -495,13 +495,27 @@ def print_benchmark_summary(
             )
         )
 
+    # Printed only when the run constrained something: an unconstrained run
+    # would otherwise carry a permanent "0.00%" for a feature it never used.
+    if summary.constrained_request_rate:
+        print(
+            "{:<40} {:<10.2%}".format(
+                "Structured-output requests:",
+                summary.constrained_request_rate,
+            )
+        )
+
     latency = groups.latency_stats
     if latency is not None:
         latency_rows = [
             PercentileRow(label, pm)
             for label, pm in (
                 ("TTFT (ms)", latency.ttft_ms),
+                ("TTFT constrained (ms)", latency.ttft_ms_constrained),
+                ("TTFT unconstrained (ms)", latency.ttft_ms_unconstrained),
                 ("TPOT (ms)", latency.tpot_ms),
+                ("TPOT constrained (ms)", latency.tpot_ms_constrained),
+                ("TPOT unconstrained (ms)", latency.tpot_ms_unconstrained),
                 ("Step TPOT (ms)", latency.step_tpot_ms),
                 ("ITL (ms)", latency.itl_ms),
                 ("Request Latency (ms)", latency.latency_ms),

@@ -264,6 +264,13 @@ def calculate_metrics(
     input_throughputs: list[float] = []
     output_throughputs: list[float] = []
     per_turn_cached_token_rates: list[float] = []
+    # TTFT/TPOT split by whether the request carried a response_format:
+    # matcher construction lands in TTFT, the per-step bitmask fill in TPOT.
+    constrained_ttfts: list[float] = []
+    unconstrained_ttfts: list[float] = []
+    constrained_tpots: list[float] = []
+    unconstrained_tpots: list[float] = []
+    constrained_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -333,11 +340,23 @@ def calculate_metrics(
         max_output = max(max_output, output_len)
         max_total = max(max_total, o.prompt_len + output_len)
 
-        if output_len > 1:
-            tpots.append((o.latency - o.ttft) / (output_len - 1))
+        tpot = (
+            (o.latency - o.ttft) / (output_len - 1) if output_len > 1 else None
+        )
+        if tpot is not None:
+            tpots.append(tpot)
         step_tpots += o.tpot
         itls += o.itl
         ttfts.append(o.ttft)
+        if o.response_format_constrained:
+            constrained_requests += 1
+            constrained_ttfts.append(o.ttft)
+            if tpot is not None:
+                constrained_tpots.append(tpot)
+        else:
+            unconstrained_ttfts.append(o.ttft)
+            if tpot is not None:
+                unconstrained_tpots.append(tpot)
         if o.ttft > 0:
             input_throughputs.append(o.prompt_len / o.ttft)
         if (o.latency - o.ttft) > 0:
@@ -350,6 +369,14 @@ def calculate_metrics(
             )
             total_server_cached_tokens += o.server_token_stats.cached_tokens
             total_server_prompt_tokens += o.server_token_stats.prompt_tokens
+
+    # A split only says something when both halves have samples: with one
+    # side empty the other just restates ``ttft_ms`` / ``tpot_ms``, down to
+    # the confidence warning. TPOT is gated separately because a request that
+    # emits a single token has a TTFT but no TPOT, so the two pairs can have
+    # different populations.
+    mixed_ttft = bool(constrained_ttfts) and bool(unconstrained_ttfts)
+    mixed_tpot = bool(constrained_tpots) and bool(unconstrained_tpots)
 
     # Records span every request the run dispatched, not the window the
     # aggregates were computed over: the steady-state path passes a
@@ -509,6 +536,29 @@ def calculate_metrics(
         tpot_ms=StandardPercentileMetrics(tpots, scale_factor=1000.0, unit="ms")
         if tpots
         else None,
+        ttft_ms_constrained=StandardPercentileMetrics(
+            constrained_ttfts, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_ttft
+        else None,
+        ttft_ms_unconstrained=StandardPercentileMetrics(
+            unconstrained_ttfts, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_ttft
+        else None,
+        tpot_ms_constrained=StandardPercentileMetrics(
+            constrained_tpots, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_tpot
+        else None,
+        tpot_ms_unconstrained=StandardPercentileMetrics(
+            unconstrained_tpots, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_tpot
+        else None,
+        constrained_request_rate=(
+            constrained_requests / len(measured) if measured else None
+        ),
         step_tpot_ms=StandardPercentileMetrics(
             step_tpots, scale_factor=1000.0, unit="ms"
         )
