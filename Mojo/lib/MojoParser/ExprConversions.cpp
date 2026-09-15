@@ -1750,6 +1750,42 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
   return nullptr;
 }
 
+/// Returns failure when a struct cannot rebind to one of the closure traits,
+/// which rules out the conversion outright. Otherwise return a TraitType with
+/// the verified closure trait dropped.
+///
+/// FIXME: this does not handle cond. conf. on closure trait.
+static FailureOr<TraitType> verifyClosureTrait(SharedState &shared,
+                                               ASTType concreteType,
+                                               TraitType trait,
+                                               ASTDecl *declScope) {
+  SmallVector<TraitSymbolAttr> toCheck;
+  for (const auto &symbol : trait.getSymbols()) {
+    auto &symbolDecl =
+        shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
+    auto traitDeclOp =
+        dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+    if (!traitDeclOp || !traitDeclOp.getDefinesClosure()) {
+      // Non closure traits are checked separately.
+      toCheck.push_back(symbol);
+      continue;
+    }
+
+    // If this is a struct, check whether we can do lazy conformance.
+    if (sugarIsa<StructMetaType>(concreteType) &&
+        failed(
+            shared.closureEmitter->isCompatibleWith(concreteType, &symbolDecl)))
+      return failure();
+
+    if (sugarIsa<TraitType>(concreteType) &&
+        failed(shared.closureEmitter->isTraitCompatibleWith(
+            concreteType, traitDeclOp, declScope)))
+      toCheck.push_back(symbol); // maybe don't need extension.
+  }
+
+  return TraitType::get(shared.getContext(), toCheck);
+}
+
 // Returns the upcastability verdict (`yes`/`no`/`unknown`) for converting a
 // type value to a trait. Returns failure for non-applicable cases (i.e.,
 // `fromType` is not a typetype and/or `toType` is not a trait type).
@@ -1829,38 +1865,18 @@ canMetaTypeUpCastToImpl(SharedState &shared, SMLoc loc, ASTType fromType,
     } else if (sugarIsa<StructMetaMetaType, AnyTraitType>(
                    fromType.extractMetaType())) {
       if (ASTType(fromType).getDecl(shared)) {
-        SmallVector<TraitSymbolAttr> toCheck;
-        // Check for closure rebindability.
-        for (const auto &symbol : trait.getSymbols()) {
-          auto &symbolDecl =
-              shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-          auto traitDeclOp = cast<TraitDeclOp>(symbolDecl.getIfOperation());
-          if (traitDeclOp.getDefinesClosure()) {
-            // If this is a struct, check whether we can do lazy conformance.
-            if (sugarIsa<StructMetaType>(fromType) &&
-                failed(shared.closureEmitter->isCompatibleWith(fromType,
-                                                               &symbolDecl)))
-              return TriBool::no();
-
-            if (sugarIsa<TraitType>(fromType) &&
-                failed(shared.closureEmitter->isTraitCompatibleWith(
-                    fromType, traitDeclOp, declScope)))
-              toCheck.push_back(symbol); // maybe don't need extension.
-          } else {
-            // Non closure traits are checked separately.
-            toCheck.push_back(symbol);
-          }
-        }
-
-        // Test only traits which are not closure traits
-        trait = TraitType::get(shared.getContext(), toCheck);
+        // Test only traits which are not closure traits.
+        FailureOr<TraitType> residualTrait =
+            verifyClosureTrait(shared, fromType, trait, declScope);
+        if (failed(residualTrait))
+          return TriBool::no();
 
         // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
         // Tuple[*Ts]: Writable when binding to a Writable parameter.
         // Assumptions needed: implicit conversion of e.g. Tuple[*Ts] to
         // Writable
         // inside a fn with `where AllWritable[*Ts]`.
-        return conformanceVerdict(fromType, trait);
+        return conformanceVerdict(fromType, *residualTrait);
       }
     } else if (auto fnGen =
                    sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(
@@ -1896,25 +1912,16 @@ canMetaTypeUpCastToImpl(SharedState &shared, SMLoc loc, ASTType fromType,
     }
 
     if (concreteType) {
-      // Check for closure rebindability, mirroring the AnyTraitType-metatype
-      // branch above.
-      for (const auto &symbol : anyTrait.getTraitType().getSymbols()) {
-        auto &symbolDecl =
-            shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-        if (auto traitDeclOp =
-                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-            traitDeclOp && traitDeclOp.getDefinesClosure()) {
-          if (succeeded(shared.closureEmitter->isCompatibleWith(concreteType,
-                                                                &symbolDecl)) ||
-              succeeded(shared.closureEmitter->isTraitCompatibleWith(
-                  concreteType, traitDeclOp, declScope)))
-            return TriBool::yes();
-        }
-      }
+      // Test only traits which are not closure traits, mirroring the
+      // AnyTraitType-metatype branch above.
+      FailureOr<TraitType> residualTrait = verifyClosureTrait(
+          shared, concreteType, anyTrait.getTraitType(), declScope);
+      if (failed(residualTrait))
+        return TriBool::no();
 
       // Assumptions needed: e.g. AnyTraitType[Copyable] → AnyTraitType[Movable]
       // upcast when the Copyable conformance depends on caller assumptions.
-      return conformanceVerdict(concreteType, anyTrait.getTraitType());
+      return conformanceVerdict(concreteType, *residualTrait);
     }
   }
 
