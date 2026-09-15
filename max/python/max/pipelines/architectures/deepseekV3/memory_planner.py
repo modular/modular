@@ -43,11 +43,11 @@ _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 def _get_mtp_draft_ep_dispatch_dtype(
     pipeline_config: PipelineConfig,
 ) -> DType | None:
-    """Returns the draft model's EP dispatch dtype for MTP with FP4 target.
+    """Returns the EP dispatch dtype the MTP draft uses, for an FP4 target.
 
-    When MTP speculative decoding is used with an FP4 target model, EP
-    buffers must be sized for the draft model's (larger) dispatch dtype.
-    Returns ``None`` if this override is not needed.
+    With an FP4 target the draft dispatches wider than the target does, so
+    the shared EP buffers must be sized for the draft. Returns ``None`` when
+    the override does not apply.
     """
     spec_config = pipeline_config.speculative
     if spec_config is None or not spec_config.is_mtp():
@@ -59,16 +59,18 @@ def _get_mtp_draft_ep_dispatch_dtype(
     if not is_float4_encoding(encoding):
         return None
 
-    draft_encoding = (
-        _select_quantization_encoding(
-            pipeline_config.draft_model, DeepseekV3Config.DEFAULT_ENCODING
-        )
-        if pipeline_config.draft_model is not None
-        else None
-    )
-    if draft_encoding is None:
-        return None
+    if pipeline_config.draft_model is None:
+        # MTP baked into the target checkpoint has no separate draft to read an
+        # encoding from. FP4 checkpoints leave the NextN layer's routed experts
+        # unquantized, so the draft dispatches through EP in bfloat16 and the
+        # model upsizes the shared buffers to match (see
+        # ``UnifiedMTPGlm5_2Model``). Size for that here or the estimate misses
+        # the symmetric heap by the dispatch dtype ratio.
+        return DType.bfloat16
 
+    draft_encoding = _select_quantization_encoding(
+        pipeline_config.draft_model, DeepseekV3Config.DEFAULT_ENCODING
+    )
     return supported_encoding_dtype(draft_encoding)
 
 
