@@ -17,6 +17,7 @@ Submodules
 .. toctree::
    :maxdepth: 1
 
+   experimental.nn.common_layers.functional_kernels
    experimental.nn.norm
    experimental.nn.rope
 

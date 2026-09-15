@@ -309,6 +309,7 @@ def functional(
     w.__name__ = getattr(graph_op, "__name__", "wrapper")
     w.__qualname__ = getattr(graph_op, "__qualname__", w.__name__)
     w.__module__ = getattr(graph_op, "__module__", w.__module__)
+    w.__doc__ = getattr(graph_op, "__doc__", None)
     w.__wrapped__ = graph_op
     w.graph_op = graph_op
     w.rule = rule
