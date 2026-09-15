@@ -29,4 +29,4 @@ speculative:
 
 runtime:
   ep_size: 8
-  max_batch_input_tokens: 1024
+  max_batch_input_tokens: 8192

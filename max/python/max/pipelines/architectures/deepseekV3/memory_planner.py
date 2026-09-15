@@ -96,9 +96,8 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
     def _ep_max_rank_send_tokens(self, pipeline_config: PipelineConfig) -> int:
         """Upper bound on EP dispatch tokens held on one rank.
 
-        Delegates to the module-level helper by default. Subclasses (e.g.
-        ``DeepseekV3_2MemoryPlanner``) may override for architecture-specific
-        EP token sizing.
+        Delegates to the module-level helper by default. Subclasses may
+        override for architecture-specific EP token sizing.
         """
         return _ep_max_rank_send_tokens_for_pipeline(pipeline_config)
 

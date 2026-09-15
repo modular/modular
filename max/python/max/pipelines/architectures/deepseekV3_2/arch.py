@@ -17,8 +17,8 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3.batch_processor import DeepseekV3BatchProcessor
+from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from . import weight_adapters
-from .memory_planner import DeepseekV3_2MemoryPlanner
 from .model import DeepseekV3_2Model
 from .model_config import DeepseekV3_2Config
 
@@ -43,5 +43,5 @@ deepseekV3_2_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3_2Config,
-    memory_planner=DeepseekV3_2MemoryPlanner,
+    memory_planner=DeepseekV3MemoryPlanner,
 )
