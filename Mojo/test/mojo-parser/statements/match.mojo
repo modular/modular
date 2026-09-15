@@ -485,37 +485,36 @@ def match_as_pattern(value: String):
 # CHECK-NEXT:      hlcf.match.complete
 # CHECK-NEXT:    }
 # CHECK-NEXT:    case {
-# CHECK-NEXT:      hlcf.match {
-# CHECK-NEXT:        hlcf.match {
-# CHECK:             hlcf.yield
-# CHECK:           } else {
-# CHECK:             hlcf.match.next
-# CHECK:           }
-# CHECK:             hlcf.match.complete
-# CHECK:           case {
-# CHECK:             kgen.param.constant: !Int = <{:scalar<index> 1}>
-# CHECK:             hlcf.yield
-# CHECK:           } else {
-# CHECK:             hlcf.match.next
-# CHECK:           }
-# CHECK:             hlcf.match.complete
-# CHECK:           } else {
-# CHECK:             hlcf.match.next
-# CHECK:           }
-# CHECK:             hlcf.match.complete
-# CHECK:           case {
-# CHECK:             kgen.param.constant: !Int = <{:scalar<index> 2}>
+# Or-alternatives are flattened into one nested match (not recursively nested).
+# CHECK:         hlcf.match {
+# CHECK:           kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK:           hlcf.elif %{{.*}} {
 # CHECK:             hlcf.yield
 # CHECK:           } else {
 # CHECK:             hlcf.match.next
 # CHECK:           }
-# CHECK:             hlcf.match.complete
+# CHECK:           hlcf.match.complete
+# CHECK:         case {
+# CHECK:           kgen.param.constant: !Int = <{:scalar<index> 1}>
+# CHECK:           hlcf.elif %{{.*}} {
+# CHECK:             hlcf.yield
 # CHECK:           } else {
 # CHECK:             hlcf.match.next
 # CHECK:           }
-# CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:           hlcf.match.complete
+# CHECK:         case {
+# CHECK:           kgen.param.constant: !Int = <{:scalar<index> 2}>
+# CHECK:           hlcf.elif %{{.*}} {
+# CHECK:             hlcf.yield
+# CHECK:           } else {
+# CHECK:             hlcf.match.next
+# CHECK:           }
+# CHECK:           hlcf.match.complete
+# CHECK:         } else {
+# CHECK:           hlcf.match.next
+# CHECK:         }
+# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK:         hlcf.match.complete
 def match_or_pattern_int(x: Int):
     __match x:
     case 0 | 1:
@@ -545,6 +544,14 @@ def match_or_pattern_int(x: Int):
 # CHECK:         case {
 # CHECK:           lit.call {{.*}}@"__getitem_param__
 # CHECK:           lit.call {{.*}}@"__eq__(
+# CHECK:         hlcf.elif %{{.*}} {
+# CHECK:           hlcf.yield
+# CHECK:         } else {
+# CHECK:           hlcf.match.next
+# CHECK:         }
+# CHECK:           lit.call {{.*}}@"__getitem_param__
+# CHECK:           lit.call {{.*}}@"__eq__(
+# CHECK:         hlcf.elif %{{.*}} {
 # CHECK:           hlcf.yield
 # CHECK:         } else {
 # CHECK:           hlcf.match.next
@@ -563,28 +570,29 @@ def match_or_pattern_tup(point: Tuple[Int, Int]):
 
 # CHECK-LABEL: lit.fn @"match_or_pattern_bind
 def match_or_pattern_bind(var point: Tuple[Int, Int]):
-    # NOTE: These are temporarily disabled.
-
-    # Both alternatives bind `x`; one VarDecl is shared (hoisted above the
-    # nested or-match).
-    # HECK:       [[X:%.*]] = lit.var.decl "x" var
-    # HECK:       hlcf.match {
-    # HECK:       lit.ref.store {{.*}}, [[X]]
-    # HECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 3
-    #__match point:
-    #case (0, var x) | (var x, 1):
-    #    _ = x
-    #    case_callee[3]()
+    # Shared temp VarDecl before the nested or-match; each arm stores into it.
+    # CHECK:       [[X:%.*]] = lit.var.decl "x" var
+    # CHECK:       hlcf.match {
+    # CHECK:       lit.ref.store {{.*}}, [[X]]
+    # CHECK:       lit.ref.store {{.*}}, [[X]]
+    # CHECK:       lit.var.decl "x" var
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 3
+    __match point:
+    case (0, var x) | (var x, 1):
+        _ = x
+        case_callee[3]()
 
     # Same with `ref` bindings.
-    # HECK:       [[RX:%.*]] = lit.var.decl "x" ref
-    # HECK:       hlcf.match {
-    # HECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 4
-    #__match point:
-    #case (2, ref x) | (ref x, 3):
-    #    _ = x
-    #    case_callee[4]()
-    pass
+    # CHECK:       [[RX:%.*]] = lit.var.decl "x" ref
+    # CHECK:       hlcf.match {
+    # CHECK:       lit.ref.store {{.*}}, [[RX]]
+    # CHECK:       lit.ref.store {{.*}}, [[RX]]
+    # CHECK:       lit.var.decl "x" ref
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 4
+    __match point:
+    case (2, ref x) | (ref x, 3):
+        _ = x
+        case_callee[4]()
 
 @fieldwise_init
 struct Vec3:

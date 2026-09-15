@@ -156,7 +156,7 @@ def match_or_pattern_binding_diags(var point: Tuple[Int, Int],
     # Same name and kind, but incompatible types (String vs Int).
     __match mixed:
     # expected-error @+2 {{or-pattern binding 'x' has incompatible types across alternatives}}
-    # expected-note @+1 {{left alternative has type 'String', right has type 'Int'}}
+    # expected-note @+1 {{first alternative has type 'String', this alternative has type 'Int'}}
     case (0, var x) | (var x, _):
         pass
     case _:

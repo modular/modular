@@ -227,71 +227,148 @@ LogicalResult BinOpNode::emitMatch(IREmitter &emitter, CValue subject,
   return ExprNode::emitMatch(emitter, subject, patternKind, bindings);
 }
 
-/// Merge BoundName sets from or-pattern alternatives into `out`. Both sides
-/// must bind the same names with the same `PatternDeclKind`. The surviving
-/// `CValue` currently comes from the LHS only.
+/// Consider an "or" pattern like (1, x)|(x, 2).  This is handled by emitting
+/// temporary vardecls for the bound value, which is then initialized on each
+/// arm.  This sets up the temporary VarDecls to use for the intermediates.
 static LogicalResult
-mergeOrPatternBoundNames(IREmitter &emitter, SMLoc loc,
-                         ArrayRef<ExprNode::BoundName> lhsBindings,
-                         ArrayRef<ExprNode::BoundName> rhsBindings,
-                         SmallVectorImpl<ExprNode::BoundName> &out) {
-  if (lhsBindings.empty() && rhsBindings.empty())
+initOrBindings(IREmitter &emitter, HLCF::MatchOp matchOp, SMLoc loc,
+               SmallVectorImpl<ExprNode::BoundName> &aggregateBindings,
+               ArrayRef<ExprNode::BoundName> caseBindings) {
+  if (caseBindings.empty())
     return success();
 
-  if (lhsBindings.empty() || rhsBindings.empty()) {
-    StringRef missing = lhsBindings.empty() ? rhsBindings.front().name
-                                            : lhsBindings.front().name;
-    emitter.emitError(loc, "or-pattern alternatives must bind the same names")
-        << "; '" << missing << "' is bound in one alternative but not the "
-        << "other";
-    return failure();
+  // Create one VarDecl per binding before the nested or-match so each
+  // alternative can store into the same slots and the result dominates the
+  // enclosing case.
+  OpBuilder::InsertionGuard guard(*emitter.builder);
+  emitter.builder->setInsertionPoint(matchOp);
+  Location mlirLoc = emitter.shared.translateLocation(loc);
+
+  for (const ExprNode::BoundName &bn : caseBindings) {
+    ASTType varType = bn.value.getRValueType();
+    bool isRefOrBind = bn.patternKind == PatternDeclKind::kRef ||
+                       bn.patternKind == PatternDeclKind::kBind;
+    VarDeclKind declKind;
+    switch (bn.patternKind) {
+    default:
+      assert(false && "unhandled pattern decl kind");
+      return failure();
+    case PatternDeclKind::kRef:
+      declKind = VarDeclKind::Ref;
+      break;
+    case PatternDeclKind::kVar:
+      declKind = VarDeclKind::Var;
+      break;
+    case PatternDeclKind::kBind:
+      declKind = VarDeclKind::Bind;
+      break;
+    }
+
+    // Match DeclRefNode pattern bindings: ref/bind wrap with a placeholder
+    // origin replaced when the value is stored.
+    if (isRefOrBind)
+      varType = RefType::getAnyOrigin(varType, /*isMut=*/true);
+
+    // Temporary slots only — do not register in the AST scope. The enclosing
+    // match case materializes the user-visible bindings from these values.
+    VarDeclOp varDecl =
+        emitter.emitVarDecl(bn.name, varType, mlirLoc, declKind);
+    if (!varDecl)
+      return failure();
+
+    CValue slot =
+        isRefOrBind ? CValue(RLValue(varDecl)) : CValue(MLValue(varDecl));
+    aggregateBindings.push_back({bn.name, slot, bn.patternKind});
   }
+  return success();
+}
 
-  llvm::StringMap<const ExprNode::BoundName *> rhsByName;
-  for (const ExprNode::BoundName &bn : rhsBindings)
-    rhsByName[bn.name] = &bn;
+/// Verify each alternative binds the same names/kinds/types as the aggregate
+/// slots, and copy each case binding into its aggregate VarDecl.
+static LogicalResult
+checkOrBindings(IREmitter &emitter, SMLoc loc,
+                ArrayRef<ExprNode::BoundName> aggregateBindings,
+                ArrayRef<ExprNode::BoundName> caseBindings) {
+  if (aggregateBindings.empty() && caseBindings.empty())
+    return success();
 
-  for (const ExprNode::BoundName &lhsBN : lhsBindings) {
-    auto it = rhsByName.find(lhsBN.name);
-    if (it == rhsByName.end()) {
+  llvm::StringMap<const ExprNode::BoundName *> caseByName;
+  for (const ExprNode::BoundName &bn : caseBindings)
+    caseByName[bn.name] = &bn;
+
+  for (const ExprNode::BoundName &bn : aggregateBindings) {
+    auto it = caseByName.find(bn.name);
+    if (it == caseByName.end()) {
       emitter.emitError(loc, "or-pattern alternatives must bind the same names")
-          << "; '" << lhsBN.name << "' is bound in one alternative but not "
+          << "; '" << bn.name << "' is bound in one alternative but not "
           << "the other";
       return failure();
     }
-    const ExprNode::BoundName &rhsBN = *it->second;
-    if (lhsBN.patternKind != rhsBN.patternKind) {
+    const ExprNode::BoundName &caseBN = *it->second;
+    if (bn.patternKind != caseBN.patternKind) {
       emitter.emitError(loc, "or-pattern binding '")
-          << lhsBN.name
+          << bn.name
           << "' must use the same 'var'/'ref' kind in each alternative";
       return failure();
     }
 
-    ASTType lhsType = lhsBN.value.getRValueType();
-    ASTType rhsType = rhsBN.value.getRValueType();
+    ASTType lhsType = bn.value.getRValueType();
+    ASTType rhsType = caseBN.value.getRValueType();
+    // Aggregate ref/bind slots are `!lit.ref[any] T`; compare `T` to the case
+    // subject's type.
+    if ((bn.patternKind == PatternDeclKind::kRef ||
+         bn.patternKind == PatternDeclKind::kBind) &&
+        sugarIsa<RefType>(lhsType))
+      lhsType = ASTType(sugarCast<RefType>(lhsType).getElementType());
     if (!lhsType.isEqualCanon(rhsType)) {
       auto diag = emitter.emitError(loc, "or-pattern binding '")
-                  << lhsBN.name
-                  << "' has incompatible types across alternatives";
-      diag.attachNote(loc) << "left alternative has type " << lhsType
-                           << ", right has type " << rhsType;
+                  << bn.name << "' has incompatible types across alternatives";
+      diag.attachNote(loc) << "first alternative has type " << lhsType
+                           << ", this alternative has type " << rhsType;
       return failure();
     }
 
-    // FIXME: Merge LHS/RHS CValues (e.g. via select/phi) instead of keeping
-    // only the LHS subject value.
-    (void)rhsBN;
-    out.push_back(lhsBN);
-    rhsByName.erase(it);
+    // Copy/borrow the case binding into the shared aggregate slot.
+    LValue destLV;
+    if (MLValue ml = bn.value.getIfMLValue())
+      destLV = LValue(ml);
+    else if (RLValue rl = bn.value.getIfRLValue())
+      destLV = LValue(rl);
+    else {
+      emitter.emitError(loc, "internal error: or-pattern aggregate binding "
+                             "is not an LValue");
+      return failure();
+    }
+    ExprDest storeDest(destLV, EC_VarInit);
+    SyntheticNode locExpr(loc);
+    if (!emitter.emitCResult(caseBN.value, &locExpr, storeDest))
+      return failure();
+    caseByName.erase(it);
   }
 
-  if (!rhsByName.empty()) {
+  if (!caseByName.empty()) {
     emitter.emitError(loc, "or-pattern alternatives must bind the same names")
-        << "; '" << rhsByName.begin()->first()
+        << "; '" << caseByName.begin()->first()
         << "' is bound in one alternative but not the other";
     return failure();
   }
   return success();
+}
+
+// If this is the root of (1|2)|(3|4), dig out all the alternatives to
+// generate a single structure (reducing IR bloat).
+static void
+addOrPatternAlternatives(SmallVectorImpl<const ExprNode *> &alternatives,
+                         const ExprNode *node) {
+  if (auto *orNode = dyn_cast<BinOpNode>(node);
+      orNode && orNode->kind == ExprNode::kOr) {
+    addOrPatternAlternatives(alternatives, orNode->lhs);
+    addOrPatternAlternatives(alternatives, orNode->rhs);
+  } else if (auto *parenNode = dyn_cast<ParenNode>(node)) {
+    addOrPatternAlternatives(alternatives, parenNode->subExpr);
+  } else {
+    alternatives.push_back(node);
+  }
 }
 
 LogicalResult
@@ -310,60 +387,68 @@ BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
     return failure();
   }
 
+  // If this is the root of (1|2)|(3|4), dig out all the alternatives to
+  // generate a single structure (reducing IR bloat).
+  SmallVector<const ExprNode *, 2> alternatives;
+  addOrPatternAlternatives(alternatives, lhs);
+  addOrPatternAlternatives(alternatives, rhs);
+
   auto createBindingScope = [&](SMLoc scopeLoc) -> ASTDecl & {
     return emitter.getDeclResolver().addFullyResolvedDecl(
         /*declVal=*/nullptr, StringAttr(), scopeLoc, &emitter.declScope);
   };
 
-  // TODO: Look for other "or" patterns and merge them into a single match.
   Location loc = getLocation(emitter);
-  auto matchOp = HLCF::MatchOp::create(*emitter.builder, loc, TypeRange(),
-                                       /*caseRegionsCount=*/2);
-  matchOp.getElseRegion().emplaceBlock();
-  for (Region &region : matchOp.getCaseRegions())
-    region.emplaceBlock();
+  auto matchOp =
+      HLCF::MatchOp::create(*emitter.builder, loc, TypeRange(),
+                            /*caseRegionsCount=*/alternatives.size());
 
-  // Case 0: try the LHS alternative. `emitMatch` advances with `match.next`
-  // on failure; on success fall through and complete this nested match.
-  emitter.builder->setInsertionPointToStart(
-      &matchOp.getCaseRegions()[0].front());
-  ASTDecl &lhsScope = createBindingScope(lhs->getLoc());
-  IREmitter lhsEmitter(lhsScope, *emitter.builder);
-  SmallVector<BoundName, 4> lhsBindings;
-  if (failed(lhs->emitMatch(lhsEmitter, subject, patternKind, lhsBindings)))
-    return failure();
-  emitter.builder = lhsEmitter.builder;
-  HLCF::MatchCompleteOp::create(*emitter.builder, loc);
+  // This is a set of bindings that are shared by all alternatives and projected
+  // out to the enclosing match case.
+  SmallVector<BoundName, 4> aggregateBindings;
 
-  // Case 1: try the RHS alternative.
-  emitter.builder->setInsertionPointToStart(
-      &matchOp.getCaseRegions()[1].front());
-  ASTDecl *rhsScope = &createBindingScope(rhs->getLoc());
-  SmallVector<BoundName, 4> rhsBindings;
-  {
-    IREmitter rhsEmitter(*rhsScope, *emitter.builder);
-    if (failed(rhs->emitMatch(rhsEmitter, subject, patternKind, rhsBindings)))
+  // Emit each alternative as a nested match.
+  for (auto [idx, alternative] : llvm::enumerate(alternatives)) {
+    Block &block = matchOp.getCaseRegions()[idx].emplaceBlock();
+    emitter.builder->setInsertionPointToStart(&block);
+    ASTDecl &scope = createBindingScope(alternative->getLoc());
+    IREmitter caseEmitter(scope, *emitter.builder);
+    SmallVector<BoundName, 4> caseBindings;
+    if (failed(alternative->emitMatch(caseEmitter, subject, patternKind,
+                                      caseBindings)))
       return failure();
-    emitter.builder = rhsEmitter.builder;
+
+    // If this is the first alternative, set up the aggregate bindings.
+    if (idx == 0) {
+      if (failed(initOrBindings(emitter, matchOp, getLoc(), aggregateBindings,
+                                caseBindings)))
+        return failure();
+    }
+    // Emit code to store from the value into the aggregate binding. Use the
+    // case emitter so the copies land in this alternative's region.
+    if (failed(checkOrBindings(caseEmitter, alternative->getLoc(),
+                               aggregateBindings, caseBindings)))
+      return failure();
+
+    HLCF::MatchCompleteOp::create(*caseEmitter.builder, loc);
   }
-  HLCF::MatchCompleteOp::create(*emitter.builder, loc);
 
   // Both alternatives failed: advance the enclosing match case.
-  emitter.builder->setInsertionPointToStart(&matchOp.getElseRegion().front());
+  Block &elseBlock = matchOp.getElseRegion().emplaceBlock();
+  emitter.builder->setInsertionPointToStart(&elseBlock);
   HLCF::MatchNextOp::create(*emitter.builder, loc);
 
-  if (failed(mergeOrPatternBoundNames(emitter, getLoc(), lhsBindings,
-                                      rhsBindings, bindings)))
-    return failure();
+  emitter.builder->setInsertionPointAfter(matchOp);
 
-  if (!lhsBindings.empty()) {
-    // emit an error about unsupported.
-    emitter.emitError(
-        getLoc(), "or-pattern doesn't support bindings in alternatives yet");
-    return failure();
+  // Project aggregate slots outward. `var` temps are MRValues (owned memory);
+  // `ref`/`bind` temps are RLValues (borrowed).
+  for (const BoundName &bn : aggregateBindings) {
+    if (MLValue ml = bn.value.getIfMLValue())
+      bindings.push_back({bn.name, MRValue(ml), bn.patternKind});
+    else
+      bindings.push_back(bn);
   }
 
-  emitter.builder->setInsertionPointAfter(matchOp);
   return success();
 }
 
