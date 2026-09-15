@@ -67,6 +67,7 @@ class UnifiedMTPGlm5_2BatchProcessor(DeepseekV3BatchProcessor):
             replica_batches, kv_cache_inputs, return_n_logits
         )
 
+        speculative = self.runtime.pipeline_config.speculative
         return UnifiedMTPGlm5_2Inputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,
@@ -79,4 +80,8 @@ class UnifiedMTPGlm5_2BatchProcessor(DeepseekV3BatchProcessor):
             ep_inputs=base.ep_inputs,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
+            sampled_draft_proposal=(
+                speculative is not None
+                and speculative.draft_proposal == "sampled"
+            ),
         )

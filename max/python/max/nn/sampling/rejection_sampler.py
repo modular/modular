@@ -51,6 +51,13 @@ _SEED_DOMAIN_RECOVERY = 0xBF58476D1CE4E5B9
 # proposal inverted. See the commit message for the derivation and impact.
 _SEED_DOMAIN_VERDICT = 0x94D049BB133111EB
 
+# MurmurHash3 fmix64's second constant, tagging the bonus-token draw. In
+# sampled mode the bonus slot samples off the bare per-execute seed, which is
+# also the key a sampled draft proposal's step 0 draws with -- so without a tag
+# the committed bonus token and the very next proposal reselect the same
+# quantile off two near-identical distributions, and adjacent tokens correlate.
+_SEED_DOMAIN_BONUS = 0xC4CEB9FE1A85EC53
+
 # MurmurHash3 fmix64's first constant, tagging the synthetic sampler's
 # implicit RNG stream. Synthetic acceptance never reads the drafted token, so
 # nothing here can invert against it the way the sampled verdict's coin did --
@@ -1232,7 +1239,12 @@ def stochastic_acceptance_sampler(
             target_logits_3d[:, -1],
             shape=[Dim("batch_size"), Dim("vocab_size")],
         )
-        seed_per_batch = ops.broadcast_to(seed, [batch_size])
+        # Tag the draw so it cannot share a key with the next sampled draft
+        # proposal, whose step 0 uses the bare seed.
+        seed_per_batch = ops.broadcast_to(
+            seed + ops.constant(_SEED_DOMAIN_BONUS, DType.uint64, device),
+            [batch_size],
+        )
         bonus_token_tensor = topk_fused_sampling(
             logits=bonus_logits,
             top_k=top_k,
