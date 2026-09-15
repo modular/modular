@@ -39,6 +39,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_debug_config_integration.py",
     "test_device_graph_synthesis.py",
     "test_engine_device_graph.py",
+    "test_execution_spans.py",
     "test_graph_error_messages.py",
     "test_graph_pinned.py",
     "test_graph_telemetry.py",
@@ -804,6 +805,33 @@ modular_py_test(
         # subprocesses exceed the test's internal 60s timeout on slow macOS
         # BuildBuddy workers.
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_execution_spans",
+    size = "medium",
+    srcs = ["test_execution_spans.py"],
+    # The test spawns subprocesses that build and execute a graph; the parent
+    # file only references those modules inside the subprocess script string,
+    # so pydeps flags them as extra.
+    ignore_extra_deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
