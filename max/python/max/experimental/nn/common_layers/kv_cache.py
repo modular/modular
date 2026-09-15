@@ -15,37 +15,20 @@
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
+from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
 from max.nn.kv_cache.input_types import PagedCacheValues as _PagedCacheValues
 
 
 @dataclass
-class PagedCacheValues:
-    """Tensors holding the values for the allocated paged KV cache.
-
-    May be located on multiple devices.
-    """
-
-    kv_blocks: Tensor
-    cache_lengths: Tensor
-    lookup_table: Tensor
-    max_prompt_length: Tensor
-    max_cache_length: Tensor
-    # Page-to-page distance; mirrors upstream PagedCacheValues.
-    page_stride: Tensor
-    kv_scales: Tensor | None = None
-    scales_page_stride: Tensor | None = None
-    scales_lookup_table: Tensor | None = None
-    attention_dispatch_metadata: Tensor | None = None
-    # MLA capturable-graph scalar; mirrors upstream PagedCacheValues.
-    mla_num_partitions: Tensor | None = None
+class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
+    """Distributed view of KV cache inputs."""
 
     @classmethod
     def from_upstream(
@@ -121,21 +104,6 @@ class PagedCacheValues:
             attention_dispatch_metadata=attention_dispatch_metadata,
             mla_num_partitions=mla_num_partitions,
         )
-
-    def __tree_flatten__(
-        self,
-    ) -> tuple[tuple[Tensor | None, ...], tuple[str, ...]]:
-        """Exposes the Tensor leaves to the subgraph pytree machinery."""
-        names = tuple(f.name for f in dataclasses.fields(self))
-        children = tuple(getattr(self, name) for name in names)
-        return children, names
-
-    @classmethod
-    def __tree_unflatten__(
-        cls, aux: tuple[str, ...], children: Sequence[Any]
-    ) -> PagedCacheValues:
-        """Rebuilds a :class:`PagedCacheValues` from flattened leaves."""
-        return cls(**dict(zip(aux, children, strict=True)))
 
     @property
     def n_devices(self) -> int:
