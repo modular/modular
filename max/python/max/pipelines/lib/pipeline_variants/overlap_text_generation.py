@@ -1027,54 +1027,48 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     """Previous batch's ``next_draft_probs_full`` device tensor, paired with
     ``prev_generated_draft_tokens``."""
 
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        return [
-            self.curr_draft_tokens,
-            *(
-                (self.data_parallel_splits,)
-                if self.data_parallel_splits is not None
-                else ()
-            ),
-            *self.curr_cache_lengths,
-            *(self.signal_buffers if self.signal_buffers is not None else ()),
-            self.prev_generated_draft_tokens,
-            self.prev_draft_tokens,
-            self.prev_num_accepted_draft_tokens,
-            *(
-                (self.curr_draft_probs_full,)
-                if self.curr_draft_probs_full is not None
-                else ()
-            ),
-            *(
-                (self.prev_generated_draft_probs_full,)
-                if self.prev_generated_draft_probs_full is not None
-                else ()
-            ),
-        ]
+    def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
+        # Present-fields-only (absent optionals drop out of the leaf list),
+        # inserted in field order so the flattened leaves keep that order.
+        present: dict[str, Any] = {"curr_draft_tokens": self.curr_draft_tokens}
+        if self.data_parallel_splits is not None:
+            present["data_parallel_splits"] = self.data_parallel_splits
+        present["curr_cache_lengths"] = list(self.curr_cache_lengths)
+        if self.signal_buffers is not None:
+            present["signal_buffers"] = list(self.signal_buffers)
+        present["prev_generated_draft_tokens"] = (
+            self.prev_generated_draft_tokens
+        )
+        present["prev_draft_tokens"] = self.prev_draft_tokens
+        present["prev_num_accepted_draft_tokens"] = (
+            self.prev_num_accepted_draft_tokens
+        )
+        if self.curr_draft_probs_full is not None:
+            present["curr_draft_probs_full"] = self.curr_draft_probs_full
+        if self.prev_generated_draft_probs_full is not None:
+            present["prev_generated_draft_probs_full"] = (
+                self.prev_generated_draft_probs_full
+            )
+        return present, None
 
-    def unflatten(
-        self, it: Iterator[Any]
+    @classmethod
+    def __tree_unflatten__(
+        cls, meta: None, children: dict[str, Any]
     ) -> _RealizeFutureTokenSpecDecodeInputs[Any, Any]:
-        return _RealizeFutureTokenSpecDecodeInputs(
-            curr_draft_tokens=next(it),
-            data_parallel_splits=next(it)
-            if self.data_parallel_splits is not None
-            else None,
-            curr_cache_lengths=[
-                next(it) for _ in range(len(self.curr_cache_lengths))
+        return cls(
+            curr_draft_tokens=children["curr_draft_tokens"],
+            data_parallel_splits=children.get("data_parallel_splits"),
+            curr_cache_lengths=children["curr_cache_lengths"],
+            signal_buffers=children.get("signal_buffers"),
+            prev_generated_draft_tokens=children["prev_generated_draft_tokens"],
+            prev_draft_tokens=children["prev_draft_tokens"],
+            prev_num_accepted_draft_tokens=children[
+                "prev_num_accepted_draft_tokens"
             ],
-            signal_buffers=[next(it) for _ in range(len(self.signal_buffers))]
-            if self.signal_buffers is not None
-            else None,
-            prev_generated_draft_tokens=next(it),
-            prev_draft_tokens=next(it),
-            prev_num_accepted_draft_tokens=next(it),
-            curr_draft_probs_full=next(it)
-            if self.curr_draft_probs_full is not None
-            else None,
-            prev_generated_draft_probs_full=next(it)
-            if self.prev_generated_draft_probs_full is not None
-            else None,
+            curr_draft_probs_full=children.get("curr_draft_probs_full"),
+            prev_generated_draft_probs_full=children.get(
+                "prev_generated_draft_probs_full"
+            ),
         )
 
 
@@ -1090,32 +1084,30 @@ class _RealizeFutureTokenInputs(Generic[_Tensor, _Buffer]):
         _RealizeFutureTokenSpecDecodeInputs[_Tensor, _Buffer] | None
     ) = None
 
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        return [
-            self.prev_to_curr_map,
-            self.curr_to_prev_map,
-            self.curr_tokens,
-            self.curr_input_row_offsets,
-            self.prev_generated_tokens,
-            *(
-                self.spec_decode.flatten()
-                if self.spec_decode is not None
-                else ()
-            ),
-        ]
+    def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
+        present: dict[str, Any] = {
+            "prev_to_curr_map": self.prev_to_curr_map,
+            "curr_to_prev_map": self.curr_to_prev_map,
+            "curr_tokens": self.curr_tokens,
+            "curr_input_row_offsets": self.curr_input_row_offsets,
+            "prev_generated_tokens": self.prev_generated_tokens,
+        }
+        # A nested pytree node; its own leaves flatten in after the ones above.
+        if self.spec_decode is not None:
+            present["spec_decode"] = self.spec_decode
+        return present, None
 
-    def unflatten(
-        self, it: Iterator[Any]
+    @classmethod
+    def __tree_unflatten__(
+        cls, meta: None, children: dict[str, Any]
     ) -> _RealizeFutureTokenInputs[Any, Any]:
-        return _RealizeFutureTokenInputs(
-            prev_to_curr_map=next(it),
-            curr_to_prev_map=next(it),
-            curr_tokens=next(it),
-            curr_input_row_offsets=next(it),
-            prev_generated_tokens=next(it),
-            spec_decode=self.spec_decode.unflatten(it)
-            if self.spec_decode is not None
-            else None,
+        return cls(
+            prev_to_curr_map=children["prev_to_curr_map"],
+            curr_to_prev_map=children["curr_to_prev_map"],
+            curr_tokens=children["curr_tokens"],
+            curr_input_row_offsets=children["curr_input_row_offsets"],
+            prev_generated_tokens=children["prev_generated_tokens"],
+            spec_decode=children.get("spec_decode"),
         )
 
 
@@ -1259,12 +1251,12 @@ def build_realize_future_token_graph(
         ),
         spec_decode=spec_decode_input_types,
     )
+    flat_input_types, input_treedef = tree.flatten(input_types)
     with Graph(
         "realize_future_token_graph",
-        input_types=input_types.flatten(),
+        input_types=flat_input_types,
     ) as graph:
-        it = iter(graph.inputs)
-        input_values = input_types.unflatten(it)
+        input_values = tree.unflatten(input_treedef, graph.inputs)
 
         curr_to_prev_map = ops.unsqueeze(input_values.curr_to_prev_map, axis=-1)
         prev_to_curr_map = ops.unsqueeze(input_values.prev_to_curr_map, axis=-1)
@@ -1704,7 +1696,7 @@ class RealizeFutureTokenProcessor:
             spec_decode=spec_decode,
         )
 
-        out = self._graph.execute(*my_inputs.flatten())
+        out = self._graph.execute(*tree.leaves(my_inputs))
 
         # Execute the realize_future_tokens kernel.
         if my_inputs.spec_decode is not None:
