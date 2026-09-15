@@ -162,20 +162,6 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     comptime c_type = DType.bfloat16
     comptime N = type_of(b).static_shape[1]
 
-    # C is unused on the fused path: the epilogue writes results through
-    # `swiglu_out`, and the launcher + kernel comptime-gate out the C TMA
-    # encode, prefetch, and store when `fuse_swiglu`. We still pass a real BF16
-    # tensor so `grouped_matmul_block_scaled` can infer `c_type`/`N`/layout and
-    # satisfy the kernel ABI, but it is a fixed 1-row placeholder decoupled from
-    # `estimated_total_m` (which floors to 0 in low-concurrency EP decode and
-    # previously produced a zero-dim C TMA descriptor ->
-    # CUDA_ERROR_INVALID_VALUE). The buffer is never read or written. (Mojo's
-    # `UnsafePointer` is non-nullable, so this is a minimal 1xN allocation
-    # rather than a null view.)
-    var dummy_c_buffer = ctx.enqueue_create_buffer[c_type](N)
-    var dummy_c_shape = row_major(Coord(Idx[1], Idx[N]))
-    var dummy_c_tensor = TileTensor(dummy_c_buffer, dummy_c_shape)
-
     # Wrap the three real destinations in a RealSwiGLUOutput carrier.
     # c_packed shape: (M_total, D/2). Row stride = D/2 = N/4 (since N is
     # the matmul's N dim and D = N/2, so D/2 = N/4 bytes per row).
@@ -185,6 +171,13 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
     var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
         c_packed._storage
+    )
+
+    # The fused path never reads or writes C. It only carries `c_type` and `N`
+    # and fills the kernel ABI, so alias `c_packed` rather than allocate.
+    var dummy_c_tensor = TileTensor(
+        c_packed_ptr.bitcast[Scalar[c_type]](),
+        row_major(Coord(Idx[1], Idx[N])),
     )
     var c_swiglu_scales_ptr = rebind[
         UnsafePointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
@@ -233,5 +226,3 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
         ctx,
         swiglu_out,
     )
-
-    _ = dummy_c_buffer^
