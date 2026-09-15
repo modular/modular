@@ -14,10 +14,12 @@
 """One graph exercising several MAP fusers together, end to end.
 
 ``reshape(relu(reshape(matmul(A, transpose(B))) + broadcast(C))) + D``
-collapses into a single kernel under the legacy pipeline: matmul's own
-epilogue absorbs the transpose, both reshapes, the broadcast, and both
-adds. Not env-gated -- the new MAP-dialect system doesn't yet fuse this
-graph as aggressively; Commit 7's exclusion list will pick it up.
+collapses into a single kernel under both pipelines: the matmul epilogue
+absorbs the transpose, both reshapes, the broadcast, and both adds. The
+new MAP-dialect system reaches the same single-kernel fusion once
+`LoopInvariantViewMotion` hoists the broadcast view sitting atop the
+reshaped store index; the `graph-adv-fusion` target runs this under
+`MAX_GC_USE_ADV_FUSION`.
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ from __future__ import annotations
 import re
 
 import numpy as np
-from fusion_utils import xfail_under_adv_fusion
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -54,9 +55,6 @@ def _reference(
     return r2 + d
 
 
-@xfail_under_adv_fusion(
-    "correctness: the new fusion system does not fully fuse this graph yet"
-)
 def test_static_shapes(session: InferenceSession) -> None:
     with Graph(
         "canonical_fused_graph_static",
@@ -91,9 +89,6 @@ def test_static_shapes(session: InferenceSession) -> None:
     )
 
 
-@xfail_under_adv_fusion(
-    "correctness: the new fusion system does not fully fuse this graph yet"
-)
 def test_dynamic_shapes(session: InferenceSession) -> None:
     """Same graph, symbolic dims on `A`/`B`/`D` (`m`, `n`, `k`).
 
