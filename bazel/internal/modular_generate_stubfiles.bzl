@@ -78,13 +78,23 @@ def modular_generate_stubfiles(
         deps = [":{}.stubfile_generator_library".format(name)],
     )
 
+    outs = [("stubfiles/" + file) for file in pyi_srcs] + generated_pyi_srcs
+
+    # Walk up from one of our own declared outputs to find the directory to
+    # generate into. It cannot be derived from the generator's location: when
+    # host and target differ, `tools` takes a real exec transition, so the
+    # generator lands in a different output tree than these outputs.
+    output_dir = "$(location {})".format(outs[0])
+    for _ in range(outs[0].count("/") + 1):
+        output_dir = "$(dirname {})".format(output_dir)
+
     modular_genrule(
         name = name + ".stubfiles",
         srcs = ([pattern_file] if pattern_file else []) + [
             # To ensure our linting + formatting aligns with the rest of our project
             "//:pyproject.toml",
         ],
-        outs = [("stubfiles/" + file) for file in pyi_srcs] + generated_pyi_srcs,
+        outs = outs,
         cmd = """
         set -e
         # When profiling is enabled, it replaces the bound methods entirely, which causes weird things to
@@ -95,7 +105,7 @@ def modular_generate_stubfiles(
         # Do our best to disable asan since we don't care about it for this case
         export ASAN_OPTIONS=verify_asan_link_order=0,detect_leaks=0,symbolize=0,halt_on_error=0,log_path=/dev/null
 
-        export folder=$(dirname $(location {stubgen}))/stubfiles/{name}
+        export folder={output_dir}/stubfiles/{name}
         $(execpath {stubgen}) -r -m {full_name} -O $folder/.. {pattern_args} {include_private} --quiet
 
         # Add copyright headers
@@ -115,6 +125,7 @@ def modular_generate_stubfiles(
             name = name,
             full_name = full_name,
             header = header,
+            output_dir = output_dir,
             pattern_args = "-p $(location {})".format(pattern_file) if pattern_file else "",
             include_private = "--include-private" if include_private else "",
             ruff = "//bazel/lint:ruff_wrapper",
