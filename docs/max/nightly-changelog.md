@@ -85,6 +85,11 @@ This version is still a work in progress.
   approximated with a parametric shape like `N`/`U`/`LN`. The `:weight`
   suffix is optional per entry (uniform when omitted), and weights don't need
   to sum to 1.
+- Added `DeviceContext.wrap_host_memory()` (Mojo): makes a caller-owned host
+  range device-accessible for as long as the returned `DeviceBuffer` lives. It
+  grants access, not ownership, and the range must be addressed through that
+  buffer rather than through the pointer passed in. CUDA, HIP and Metal only;
+  Metal also requires a page-aligned base and a page-multiple length.
 
 ### Inference server
 
