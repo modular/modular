@@ -37,6 +37,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
+    packed_page_stride,
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
@@ -178,6 +179,7 @@ class Qwen3_5FullAttentionBlock(Module):
                     norm_xs[i],
                     PagedCacheValues(
                         kv_blocks=kv_blocks[i],
+                        page_stride=packed_page_stride(kv_blocks[i]),
                         cache_lengths=cache_lengths[i],
                         lookup_table=lookup_table[i],
                         max_prompt_length=max_prompt_length[i],

@@ -35,7 +35,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues, packed_page_stride
 
 # Must match PAGE_SIZE and SOFTMAX_SCALE_BASE_DIM in the Mojo kernel.
 _PAGE_SIZE = 128
@@ -203,6 +203,7 @@ def bench_max(
             lookup_table_g.tensor,
             max_prompt_length_g.tensor,
             max_cache_length_g.tensor,
+            page_stride=packed_page_stride(blocks_g.buffer),
         )
 
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())

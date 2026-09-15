@@ -11,6 +11,16 @@ max.tree
 
 .. currentmodule:: max.tree
 
+Declare a node
+--------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   dataclass
+
 Flatten and rebuild
 -------------------
 

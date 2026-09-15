@@ -168,6 +168,7 @@ def paged_kv_cache_inputs(
     )
     for batch_idx, req_blocks in enumerate(blocks):
         lookup_table[batch_idx, : len(req_blocks)] = req_blocks
+    lookup_table_buffer = Buffer.from_numpy(lookup_table).to(device)
 
     # The decode kernels pick their grid from the batch shape, and the packing
     # differs per attention flavor (MHA / MLA / MSA), so let the params pack it.
@@ -180,7 +181,7 @@ def paged_kv_cache_inputs(
         cache_lengths=Buffer.from_numpy(np.array(cache_lengths, np.uint32)).to(
             device
         ),
-        lookup_table=Buffer.from_numpy(lookup_table).to(device),
+        lookup_table=lookup_table_buffer,
         # Both length scalars are declared CPU-resident graph inputs.
         max_prompt_length=Buffer.from_numpy(
             np.array([max_prompt_length], np.uint32)
@@ -189,13 +190,16 @@ def paged_kv_cache_inputs(
             np.array([max_cache_length], np.uint32)
         ),
         # These buffers are packed, so the kernels take the sentinel.
-        page_stride_input=Buffer.from_numpy(
-            np.array([PACKED_PAGE_STRIDE], np.int64)
-        ),
-        scales_page_stride_input=(
+        page_stride=Buffer.from_numpy(np.array([PACKED_PAGE_STRIDE], np.int64)),
+        scales_page_stride=(
             Buffer.from_numpy(np.array([PACKED_PAGE_STRIDE], np.int64))
             if kv_scales is not None
             else None
+        ),
+        # Scales share the values' block-id space, so they reuse the lookup
+        # table. Present exactly when the scales are.
+        scales_lookup_table=(
+            lookup_table_buffer if kv_scales is not None else None
         ),
         kv_scales=kv_scales,
         attention_dispatch_metadata=attn_key.pack_into_buffer(

@@ -33,6 +33,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 
@@ -159,6 +160,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
 
         tester = FusedQKVRaggedMatmulScaledFloat4(kv_params, kv_collection, 32)

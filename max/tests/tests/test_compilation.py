@@ -754,6 +754,7 @@ class PagedSpec:
     lookup_table: TensorLayout
     max_prompt_length: TensorLayout
     max_cache_length: TensorLayout
+    page_stride: TensorLayout
     kv_scales: None = None
     attention_dispatch_metadata: TensorLayout | None = None
     mla_num_partitions: None = None
@@ -926,6 +927,7 @@ class TestModel:
             lookup_table=_spec_of(declared.lookup_table),
             max_prompt_length=_spec_of(declared.max_prompt_length),
             max_cache_length=_spec_of(declared.max_cache_length),
+            page_stride=_spec_of(declared.page_stride),
             attention_dispatch_metadata=_spec_of(
                 declared.attention_dispatch_metadata
             ),

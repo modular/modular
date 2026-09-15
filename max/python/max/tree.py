@@ -51,14 +51,18 @@ from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass as _std_dataclass
+from dataclasses import field, fields, is_dataclass
 from typing import Any, Protocol, TypeAlias, TypeVar, overload
+
+from typing_extensions import dataclass_transform
 
 __all__ = [
     "Selector",
     "Tree",
     "TreeDef",
     "as_predicate",
+    "dataclass",
     "extend_path",
     "flatten",
     "flatten_one_level",
@@ -163,6 +167,90 @@ def _place_child(node: Any, key: Any, value: Any) -> None:
             "positional child has no attribute name, so the node must declare "
             "__tree_setattr__(key, value) to say where it goes."
         )
+
+
+@overload
+@dataclass_transform(field_specifiers=(field,))
+def dataclass(cls: type[_T], /) -> type[_T]: ...
+
+
+@overload
+@dataclass_transform(field_specifiers=(field,))
+def dataclass(
+    cls: None = ..., /, **kwargs: Any
+) -> Callable[[type[_T]], type[_T]]: ...
+
+
+@dataclass_transform(field_specifiers=(field,))
+def dataclass(
+    cls: type[_T] | None = None, /, **kwargs: Any
+) -> type[_T] | Callable[[type[_T]], type[_T]]:
+    """Makes a dataclass a tree node.
+
+    Usable bare or with :func:`dataclasses.dataclass` arguments.
+
+    .. code-block:: python
+
+        from max import tree
+
+        @tree.dataclass
+        class AttentionInputs:
+            layer_idx: TensorValue
+            freqs_cis: TensorValue
+            indexer: TensorValue | None = None
+
+        @tree.dataclass(frozen=True)
+        class PLEInputs:
+            conv_pool: BufferValue
+            slot_idx: TensorValue
+
+    The generated ``__tree_flatten__`` includes fields that are not ``None`` at
+    flatten time, in declaration order. The generated ``__tree_unflatten__``
+    restores any absent field to ``None`` -- a field is dropped only when it is
+    ``None``, so a non-``None`` default is not reapplied.
+
+    Args:
+        cls: The class to decorate, or ``None`` when called with arguments.
+        kwargs: Passed to :func:`dataclasses.dataclass` when ``cls`` is not
+            already a dataclass.
+
+    Returns:
+        The decorated class, or a decorator when called with arguments.
+    """
+
+    def wrap(cls: type[_T]) -> type[_T]:
+        if not is_dataclass(cls):
+            cls = _std_dataclass(**kwargs)(cls)
+        typed_cls: type[Any] = cls
+        # The init fields, to fall back to None when absent at rebuild.
+        init_fields = tuple(f.name for f in fields(typed_cls) if f.init)
+
+        def __tree_flatten__(
+            self: Any,
+        ) -> tuple[tuple[Any, ...], tuple[str, ...]]:
+            present = [
+                (f.name, value)
+                for f in fields(self)
+                if (value := getattr(self, f.name)) is not None
+            ]
+            meta, children = zip(*present, strict=True) if present else ((), ())
+            return children, meta
+
+        def __tree_unflatten__(
+            cls_: type[_T], meta: tuple[str, ...], children: Sequence[Any]
+        ) -> _T:
+            values = dict(zip(meta, children, strict=True))
+            # Flatten drops a field only when it is None, so an absent field was
+            # None: restore that rather than a non-None default it never held.
+            for name in init_fields:
+                values.setdefault(name, None)
+            return cls_(**values)
+
+        typed_cls.__tree_flatten__ = __tree_flatten__
+        typed_cls.__tree_unflatten__ = classmethod(__tree_unflatten__)
+        return cls
+
+    return wrap if cls is None else wrap(cls)
 
 
 #: By exact type: another subclass is a leaf unless it declares the protocol.
@@ -276,7 +364,7 @@ def _mapping_meta(value: Any) -> tuple[type, tuple[Any, ...]] | None:
     return type(value), args
 
 
-@dataclass(frozen=True, eq=False)
+@_std_dataclass(frozen=True, eq=False)
 class TreeDef:
     """The shape of a tree, with its leaves abstracted away.
 
@@ -401,7 +489,7 @@ class TreeDef:
         ]
 
 
-@dataclass
+@_std_dataclass
 class _RefTracker:
     """The ``shared`` knob's memory, for one traversal."""
 

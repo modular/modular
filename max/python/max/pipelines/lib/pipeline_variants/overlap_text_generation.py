@@ -1011,12 +1011,12 @@ _Tensor = TypeVar("_Tensor")
 _Buffer = TypeVar("_Buffer")
 
 
-@dataclass
+@tree.dataclass(kw_only=True)
 class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     curr_draft_tokens: _Tensor
-    data_parallel_splits: _Tensor | None
+    data_parallel_splits: _Tensor | None = None
     curr_cache_lengths: Sequence[_Tensor]
-    signal_buffers: Sequence[_Buffer] | None
+    signal_buffers: Sequence[_Buffer] | None = None
     prev_generated_draft_tokens: _Tensor
     prev_draft_tokens: _Tensor
     prev_num_accepted_draft_tokens: _Tensor
@@ -1027,52 +1027,8 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     """Previous batch's ``next_draft_probs_full`` device tensor, paired with
     ``prev_generated_draft_tokens``."""
 
-    def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
-        # Present-fields-only (absent optionals drop out of the leaf list),
-        # inserted in field order so the flattened leaves keep that order.
-        present: dict[str, Any] = {"curr_draft_tokens": self.curr_draft_tokens}
-        if self.data_parallel_splits is not None:
-            present["data_parallel_splits"] = self.data_parallel_splits
-        present["curr_cache_lengths"] = list(self.curr_cache_lengths)
-        if self.signal_buffers is not None:
-            present["signal_buffers"] = list(self.signal_buffers)
-        present["prev_generated_draft_tokens"] = (
-            self.prev_generated_draft_tokens
-        )
-        present["prev_draft_tokens"] = self.prev_draft_tokens
-        present["prev_num_accepted_draft_tokens"] = (
-            self.prev_num_accepted_draft_tokens
-        )
-        if self.curr_draft_probs_full is not None:
-            present["curr_draft_probs_full"] = self.curr_draft_probs_full
-        if self.prev_generated_draft_probs_full is not None:
-            present["prev_generated_draft_probs_full"] = (
-                self.prev_generated_draft_probs_full
-            )
-        return present, None
 
-    @classmethod
-    def __tree_unflatten__(
-        cls, meta: None, children: dict[str, Any]
-    ) -> _RealizeFutureTokenSpecDecodeInputs[Any, Any]:
-        return cls(
-            curr_draft_tokens=children["curr_draft_tokens"],
-            data_parallel_splits=children.get("data_parallel_splits"),
-            curr_cache_lengths=children["curr_cache_lengths"],
-            signal_buffers=children.get("signal_buffers"),
-            prev_generated_draft_tokens=children["prev_generated_draft_tokens"],
-            prev_draft_tokens=children["prev_draft_tokens"],
-            prev_num_accepted_draft_tokens=children[
-                "prev_num_accepted_draft_tokens"
-            ],
-            curr_draft_probs_full=children.get("curr_draft_probs_full"),
-            prev_generated_draft_probs_full=children.get(
-                "prev_generated_draft_probs_full"
-            ),
-        )
-
-
-@dataclass
+@tree.dataclass
 class _RealizeFutureTokenInputs(Generic[_Tensor, _Buffer]):
     prev_to_curr_map: _Tensor
     curr_to_prev_map: _Tensor
@@ -1083,32 +1039,6 @@ class _RealizeFutureTokenInputs(Generic[_Tensor, _Buffer]):
     spec_decode: (
         _RealizeFutureTokenSpecDecodeInputs[_Tensor, _Buffer] | None
     ) = None
-
-    def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
-        present: dict[str, Any] = {
-            "prev_to_curr_map": self.prev_to_curr_map,
-            "curr_to_prev_map": self.curr_to_prev_map,
-            "curr_tokens": self.curr_tokens,
-            "curr_input_row_offsets": self.curr_input_row_offsets,
-            "prev_generated_tokens": self.prev_generated_tokens,
-        }
-        # A nested pytree node; its own leaves flatten in after the ones above.
-        if self.spec_decode is not None:
-            present["spec_decode"] = self.spec_decode
-        return present, None
-
-    @classmethod
-    def __tree_unflatten__(
-        cls, meta: None, children: dict[str, Any]
-    ) -> _RealizeFutureTokenInputs[Any, Any]:
-        return cls(
-            prev_to_curr_map=children["prev_to_curr_map"],
-            curr_to_prev_map=children["curr_to_prev_map"],
-            curr_tokens=children["curr_tokens"],
-            curr_input_row_offsets=children["curr_input_row_offsets"],
-            prev_generated_tokens=children["prev_generated_tokens"],
-            spec_decode=children.get("spec_decode"),
-        )
 
 
 def build_realize_future_token_graph(

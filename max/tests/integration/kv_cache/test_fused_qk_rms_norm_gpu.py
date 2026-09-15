@@ -179,7 +179,10 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
     unfused_inputs = KVCacheInputsPerDevice(
@@ -190,7 +193,10 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 

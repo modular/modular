@@ -124,7 +124,10 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
@@ -191,7 +194,10 @@ def test_partial_rms_norm_key_cache(
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
@@ -275,7 +281,10 @@ def test_rms_norm_new_key_cache(
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 
@@ -405,7 +414,10 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         lookup_table=graph_inputs.lookup_table,
         max_prompt_length=graph_inputs.max_prompt_length,
         max_cache_length=graph_inputs.max_cache_length,
+        page_stride=graph_inputs.page_stride,
         kv_scales=graph_inputs.kv_scales,
+        scales_page_stride=graph_inputs.scales_page_stride,
+        scales_lookup_table=graph_inputs.scales_lookup_table,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
 

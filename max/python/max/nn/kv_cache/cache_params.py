@@ -30,12 +30,14 @@ from max._kv_cache_ops import (
 )
 from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
+from max.experimental.sharding import TensorLayout
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
     TensorType,
     TensorValue,
+    ops,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
@@ -260,6 +262,19 @@ _SCALE_TMA_ALIGN_BYTES = 16
 
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel meaning the pages are packed."""
+
+
+def packed_page_stride(like: Any) -> Any:
+    """Returns the packed ``page_stride`` sentinel, typed to match ``like``."""
+    if isinstance(like, Buffer):
+        return Buffer.from_numpy(np.array([PACKED_PAGE_STRIDE], dtype=np.int64))
+    if isinstance(like, BufferType):
+        return TensorType(DType.int64, shape=[1], device=DeviceRef.CPU())
+    if isinstance(like, TensorLayout):
+        return TensorLayout(DType.int64, [1], DeviceRef.CPU())
+    return ops.constant(
+        [PACKED_PAGE_STRIDE], DType.int64, device=DeviceRef.CPU()
+    )
 
 
 def _page_stride_buffer(pages: Buffer) -> Buffer:
@@ -2140,11 +2155,21 @@ class MHAKVCacheParams(KVCacheParams):
                 device=device,
             )
 
+        def _lookup_table(device: DeviceRef) -> TensorType:
+            return TensorType(
+                DType.uint32,
+                shape=[
+                    prefix + "batch_size",
+                    prefix + page_namespace + "max_num_pages",
+                ],
+                device=device,
+            )
+
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=_kv_blocks(device),
                 # Read off the buffer's stride when the inputs are bound.
-                page_stride_input=TensorType(
+                page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 ),
                 cache_lengths=TensorType(
@@ -2152,14 +2177,7 @@ class MHAKVCacheParams(KVCacheParams):
                     shape=[prefix + "batch_size"],
                     device=device,
                 ),
-                lookup_table=TensorType(
-                    DType.uint32,
-                    shape=[
-                        prefix + "batch_size",
-                        prefix + page_namespace + "max_num_pages",
-                    ],
-                    device=device,
-                ),
+                lookup_table=_lookup_table(device),
                 max_prompt_length=TensorType(
                     DType.uint32,
                     shape=[1],
@@ -2187,9 +2205,14 @@ class MHAKVCacheParams(KVCacheParams):
                 if self.quantized_kv_cache
                 else None,
                 # Present exactly when the scales are.
-                scales_page_stride_input=TensorType(
+                scales_page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
+                if self.quantized_kv_cache
+                else None,
+                # Scales share the values' block-id space, so their lookup table
+                # matches ``lookup_table``. Present exactly when the scales are.
+                scales_lookup_table=_lookup_table(device)
                 if self.quantized_kv_cache
                 else None,
                 attention_dispatch_metadata=self._attn_metadata_buffer(device),
@@ -2225,13 +2248,13 @@ class MHAKVCacheParams(KVCacheParams):
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
-            page_stride_input=page_stride,
+            page_stride=page_stride,
             cache_lengths=cache_lengths,
             lookup_table=lookup_table,
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
-            scales_page_stride_input=scales_page_stride,
+            scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=target_key.pack_into_buffer(
                 device, max_cache_valid_length
@@ -2347,6 +2370,16 @@ class MLAKVCacheParams(KVCacheParams):
         # Sibling cache groups may size their page pools independently.
         page_dim = page_namespace + "total_num_pages"
 
+        def _lookup_table(device: DeviceRef) -> TensorType:
+            return TensorType(
+                DType.uint32,
+                shape=[
+                    prefix + "batch_size",
+                    prefix + page_namespace + "max_num_pages",
+                ],
+                device=device,
+            )
+
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=BufferType(
@@ -2355,7 +2388,7 @@ class MLAKVCacheParams(KVCacheParams):
                     device=device,
                 ),
                 # Read off the buffer's stride when the inputs are bound.
-                page_stride_input=TensorType(
+                page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 ),
                 cache_lengths=TensorType(
@@ -2363,14 +2396,7 @@ class MLAKVCacheParams(KVCacheParams):
                     shape=[prefix + "batch_size"],
                     device=device,
                 ),
-                lookup_table=TensorType(
-                    DType.uint32,
-                    shape=[
-                        prefix + "batch_size",
-                        prefix + page_namespace + "max_num_pages",
-                    ],
-                    device=device,
-                ),
+                lookup_table=_lookup_table(device),
                 max_prompt_length=TensorType(
                     DType.uint32,
                     shape=[1],
@@ -2389,9 +2415,14 @@ class MLAKVCacheParams(KVCacheParams):
                 if self.quantized_kv_cache
                 else None,
                 # Present exactly when the scales are.
-                scales_page_stride_input=TensorType(
+                scales_page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
+                if self.quantized_kv_cache
+                else None,
+                # Scales share the values' block-id space, so their lookup table
+                # matches ``lookup_table``. Present exactly when the scales are.
+                scales_lookup_table=_lookup_table(device)
                 if self.quantized_kv_cache
                 else None,
                 # MLA decode kernels read a 3-int dispatch buffer on the
@@ -2443,13 +2474,13 @@ class MLAKVCacheParams(KVCacheParams):
         assert draft_key is None or isinstance(draft_key, MLAAttnKey)
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
-            page_stride_input=page_stride,
+            page_stride=page_stride,
             cache_lengths=cache_lengths,
             lookup_table=lookup_table,
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
-            scales_page_stride_input=scales_page_stride,
+            scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=target_key.pack_into_buffer(
                 device, max_cache_valid_length

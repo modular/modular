@@ -139,6 +139,9 @@ modular_py_library(
 modular_py_library(
     name = "tree",
     srcs = ["tree.py"],
+    deps = [
+        requirement("typing-extensions"),
+    ],
 )
 
 alias(

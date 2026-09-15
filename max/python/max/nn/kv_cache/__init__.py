@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import (
+    PACKED_PAGE_STRIDE,
     BatchCharacteristics,
     CacheLeafParamInterface,
     KVCacheAssignments,
@@ -40,11 +41,11 @@ from .cache_params import (
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
+    packed_page_stride,
     recurrent_leaf,
     spec_decode_cache_slack,
 )
 from .input_types import (
-    PACKED_PAGE_STRIDE,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     PagedCacheValues,
@@ -104,6 +105,7 @@ __all__ = [
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "estimated_memory_size",
+    "packed_page_stride",
     "padded_lut_cols",
     "recurrent_leaf",
     "spec_decode_cache_slack",

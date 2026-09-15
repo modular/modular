@@ -41,6 +41,7 @@ from max.tree import (
     unflatten,
     update,
 )
+from max.tree import dataclass as tree_dataclass
 from max.tree import map as tree_map
 
 # ═══ Node fixtures: one per shape the protocol allows ═════════════════════════
@@ -823,6 +824,75 @@ def test_misbehaving_metadata_comparisons_are_absorbed() -> None:
     assert _struct({"n": payload}, leaf=Weight) == _struct(
         {"n": payload}, leaf=Weight
     )
+
+
+# ═══ dataclass ════════════════════════════════════════════════════════════════
+
+
+def test_dataclass_makes_a_dataclass_a_present_field_node() -> None:
+    @tree_dataclass
+    class Inner:
+        a: Any
+        b: Any = None
+
+    @tree_dataclass(frozen=True)
+    class Outer:
+        x: Any
+        inner: Inner
+        items: list[Any]
+        extra: Any = None
+
+    node = Outer(x=1, inner=Inner(a=2, b=3), items=[4, 5])
+    flat, treedef = flatten(node)
+    # Leaves are the present fields in declaration order, nested nodes recursed.
+    assert flat == [1, 2, 3, 4, 5]
+    assert unflatten(treedef, flat) == node
+    assert is_node(node)
+
+    # An unset optional is absent from the leaves, and falls back to its default
+    # on the way back -- at every nesting depth.
+    sparse = Outer(x=1, inner=Inner(a=2), items=[])
+    flat, treedef = flatten(sparse)
+    assert flat == [1, 2]
+    assert unflatten(treedef, flat) == sparse
+
+    # An already-decorated dataclass keeps its own configuration and only gains
+    # the protocol.
+    @tree_dataclass
+    @dataclass(frozen=True)
+    class Prebuilt:
+        p: Any
+
+    prebuilt = Prebuilt(7)
+    assert unflatten(*_flat(prebuilt)) == prebuilt
+
+
+def test_dataclass_restores_an_absent_field_to_none_not_its_default() -> None:
+    """A field is dropped only when it is None, so unflatten brings it back as
+    None rather than reapplying a non-None default it never held. Otherwise
+    setting a defaulted field to None would not survive the round trip."""
+
+    @tree_dataclass
+    class Foo:
+        x: Any = 5  # default is not None
+        y: Any = None
+
+    # Explicit None over a non-None default survives, and is not a leaf.
+    node = Foo(x=None, y=7)
+    flat, treedef = flatten(node)
+    assert flat == [7]
+    assert unflatten(treedef, flat) == Foo(x=None, y=7)
+
+    # A non-None default is present as a leaf, so it round-trips as itself.
+    assert unflatten(*_flat(Foo())) == Foo(x=5, y=None)
+
+    # A required field set to None is likewise restored, not a missing argument.
+    @tree_dataclass
+    class Bar:
+        a: Any
+        b: Any = None
+
+    assert unflatten(*_flat(Bar(a=None, b=2))) == Bar(a=None, b=2)
 
 
 # ═══ Errors from unflatten ════════════════════════════════════════════════════
