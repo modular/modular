@@ -20,7 +20,7 @@ rebuilds.
 
 .. code-block:: python
 
-    from max.experimental import tree_utils as tree
+    from max import tree
 
     class Linear:
         def __init__(self, weight, eps=1e-5):
@@ -112,7 +112,7 @@ def extend_path(path: str, key: Any) -> str:
 
     .. code-block:: python
 
-        from max.experimental import tree_utils as tree
+        from max import tree
 
         assert tree.extend_path("blocks.3", "bias") == "blocks.3.bias"
         assert tree.extend_path("", "blocks") == "blocks"

@@ -345,17 +345,6 @@
               "items": [
                 "__AUTOGEN:max.experimental.torch__"
               ]
-            },
-            {
-              "type": "category",
-              "label": "tree_utils",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.tree_utils"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.tree_utils__"
-              ]
             }
           ]
         },
@@ -911,6 +900,17 @@
           },
           "items": [
             "__AUTOGEN:max.support.image__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.tree",
+          "link": {
+            "type": "doc",
+            "id": "api/python/tree"
+          },
+          "items": [
+            "__AUTOGEN:max.tree__"
           ]
         }
       ]

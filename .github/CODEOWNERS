@@ -95,6 +95,7 @@
 /max/python/max/_core/ @modular/max-sdk @modular/runtime
 /max/python/max/_core_types/ @modular/runtime
 /max/python/max/_eager_policy.py @modular/max-sdk
+/max/python/max/tree.py @modular/max-sdk
 /max/python/max/_interpreter.py @modular/max-sdk
 /max/python/max/_interpreter_ops/ @modular/max-sdk
 /max/python/max/_kv_cache_ops/ @modular/max-serve @modular/max-sdk
@@ -170,7 +171,7 @@
 /max/tests/tests/test_session_read.py @modular/max-sdk
 /max/tests/tests/test_support.py @modular/max-sdk
 /max/tests/tests/test_tensor.py @modular/max-sdk
-/max/tests/tests/test_tree_utils.py @modular/max-sdk
+/max/tests/tests/test_tree.py @modular/max-sdk
 /max/tests/tests/mojo_runtime_foreign_thread_subprocess.py @modular/runtime
 /max/tests/tests/test_mojo_runtime_foreign_thread.py @modular/runtime
 /.github/ @modular/sdlc

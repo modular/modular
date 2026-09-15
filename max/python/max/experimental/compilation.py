@@ -69,9 +69,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Generic, ParamSpec, TypeVar
 
+from max import tree
 from max.driver import Accelerator, Buffer, Device, DLPackArray
 from max.engine import CompiledModel, Model
-from max.experimental import tree_utils as tree
 from max.experimental.realization_context import (
     GraphRealizationContext,
     _cached_signal_buffers,

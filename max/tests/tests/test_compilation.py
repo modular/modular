@@ -60,11 +60,11 @@ from max.experimental.sharding import (
     TensorLayout,
 )
 from max.experimental.tensor import Tensor
-from max.experimental.tree_utils import flatten as tree_flatten
-from max.experimental.tree_utils import paths as tree_paths
 from max.graph import BufferType, BufferValue, DeviceRef, TensorType
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import MHAKVCacheParams
+from max.tree import flatten as tree_flatten
+from max.tree import paths as tree_paths
 
 _F32 = DType.float32
 

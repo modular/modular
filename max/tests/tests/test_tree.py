@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.tree_utils.
+"""Tests for max.tree.
 
 One test per contract, with the facets of a contract as asserts inside it. The
 module is value-agnostic, so these use plain Python leaves and stand-in node
@@ -28,7 +28,7 @@ from types import MappingProxyType
 from typing import Any, NamedTuple
 
 import pytest
-from max.experimental.tree_utils import (
+from max.tree import (
     TreeDef,
     as_predicate,
     extend_path,
@@ -41,7 +41,7 @@ from max.experimental.tree_utils import (
     unflatten,
     update,
 )
-from max.experimental.tree_utils import map as tree_map
+from max.tree import map as tree_map
 
 # ═══ Node fixtures: one per shape the protocol allows ═════════════════════════
 
@@ -1078,7 +1078,7 @@ def test_a_models_structure_is_a_compilation_cache_key() -> None:
     )
 
 
-# The transforms tree_utils leaves unbuilt on purpose (listed at the foot of
-# tree_utils.py) have their contracts recorded in the design doc alongside the
+# The transforms max.tree leaves unbuilt on purpose (listed at the foot of
+# tree.py) have their contracts recorded in the design doc alongside the
 # behaviour they would pin, so the tests for one come from there if a caller
 # ever appears for it.

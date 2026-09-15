@@ -136,6 +136,11 @@ modular_py_library(
     srcs = ["_eager_policy.py"],
 )
 
+modular_py_library(
+    name = "tree",
+    srcs = ["tree.py"],
+)
+
 alias(
     name = "tensor",
     actual = "//max/python/max/experimental",
