@@ -954,11 +954,11 @@ def _reducescatter_p2p[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
+    var group_sigs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Pointer[
+            Signal, MutAnyOrigin
+        ]: rank_sigs[group_start + i]
     )
-    comptime for i in range(group_size):
-        group_sigs[i] = rank_sigs[group_start + i]
 
     # Relay path: with an even number of groups, adjacent groups pair off and
     # act as reduce nodes for each other over the inter-group links a grouped
@@ -1028,11 +1028,11 @@ def _reducescatter_p2p[
         ](pair_max_numel * size_of[dtype]())
 
         if pair_max_numel > 0 and recipe.relay_percent > 0:
-            var relay_sigs = Array[
-                UnsafePointer[Signal, MutAnyOrigin], 2 * group_size
-            ](uninitialized=True)
-            for i in range(2 * group_size):
-                relay_sigs[i] = rank_sigs[pair_base + i]
+            var relay_sigs = Array[_, 2 * group_size](
+                fill_with=lambda (i: Int) -> Pointer[
+                    Signal, MutAnyOrigin
+                ]: rank_sigs[pair_base + i]
+            )
 
             # A relay folds the DESTINATION's residual, so the peer group's
             # copies travel with its inputs. The kernel reads none of this

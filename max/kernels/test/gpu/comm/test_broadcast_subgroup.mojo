@@ -69,9 +69,6 @@ def broadcast_subgroup_test[
     var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     for i in range(ngpus):
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
@@ -88,12 +85,12 @@ def broadcast_subgroup_test[
             list_of_ctxs[i].create_buffer_sync[.uint8](signal_buf_size)
         )
         init_signal_buffer(signal_buffers[i], list_of_ctxs[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         list_of_ctxs[i].enqueue_memset(out_dev_list[i], 0)

@@ -272,12 +272,6 @@ def bench_fused_lamport_allreduce_rmsnorm[
     # interleaving the two paths on the same buffer would confuse the state.
     var sigs_ar = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # The 2-stage path may use trailing scratch; reserve it for the unfused
     # signal so `allreduce` works for any size the YAML sweeps to.
@@ -317,12 +311,17 @@ def bench_fused_lamport_allreduce_rmsnorm[
         )
         init_signal_buffer(sigs_ar[i], list_of_ctx[i])
         init_signal_buffer(sigs_fused[i], list_of_ctx[i])
-        rank_sigs_ar[i] = (
-            sigs_ar[i].unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
-        )
-        rank_sigs_fused[i] = (
-            sigs_fused[i].unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
-        )
+
+    var rank_sigs_ar = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_ar[i])
+    )
+    var rank_sigs_fused = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_fused[i])
+    )
 
     # Gamma (replicated across devices; benches read from each rank's copy).
     var gamma_dev = List[DeviceBuffer[dtype]](capacity=ngpus)

@@ -116,9 +116,6 @@ def bench_broadcast[
     var chunk_bytes = ceildiv(num_bytes, ngpus)
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # Multicast buffer for output (when use_multimem=True)
     var out_multicast_ptr = Optional[MutPointer[Scalar[dtype], MutAnyOrigin]]()
@@ -148,12 +145,6 @@ def bench_broadcast[
             list_of_ctx[gpu_idx].enqueue_memset[.uint8](
                 signal_buffers[gpu_idx], 0
             )
-            rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx]
-                .unsafe_ptr()
-                .bitcast[Signal]()
-                .as_unsafe_any_origin()
-            )
     else:
         comptime for gpu_idx in range(ngpus):
             # Create output buffer for this GPU
@@ -168,12 +159,12 @@ def bench_broadcast[
             list_of_ctx[gpu_idx].enqueue_memset[.uint8](
                 signal_buffers[gpu_idx], 0
             )
-            rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx]
-                .unsafe_ptr()
-                .bitcast[Signal]()
-                .as_unsafe_any_origin()
-            )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with_unrolled=lambda [i: Int]() {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create and initialize host buffer for root with position-based values
     var host_buffer = List(length=cb_in.alloc_size(), fill=Scalar[dtype](0))

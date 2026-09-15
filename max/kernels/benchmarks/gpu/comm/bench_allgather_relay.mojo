@@ -132,12 +132,6 @@ def main() raises:
     var signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var relay_signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var flag_bufs = List[DeviceBuffer[.int32]](capacity=WORLD)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
-        uninitialized=True
-    )
-    var relay_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
-        uninitialized=True
-    )
     var host_buffer = List[Scalar[dtype]](unsafe_uninit_length=max_length)
 
     for gpu_idx in range(WORLD):
@@ -153,22 +147,22 @@ def main() raises:
 
         signal_bufs.append(ctx.create_buffer_sync[.uint8](size_of[Signal]()))
         ctx.enqueue_memset[.uint8](signal_bufs[gpu_idx], 0)
-        rank_sigs[gpu_idx] = (
-            signal_bufs[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
         relay_signal_bufs.append(
             ctx.create_buffer_sync[.uint8](size_of[Signal]())
         )
         ctx.enqueue_memset[.uint8](relay_signal_bufs[gpu_idx], 0)
-        relay_rank_sigs[gpu_idx] = (
-            relay_signal_bufs[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, WORLD](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_bufs[i])
+    )
+    var relay_rank_sigs = Array[_, WORLD](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(relay_signal_bufs[i])
+    )
+
     for gpu_idx in range(WORLD):
         list_of_ctx[gpu_idx].synchronize()
 
@@ -212,18 +206,23 @@ def main() raises:
         # group, leaves the relay gate shut, and runs the plain path this is
         # the baseline for.
         var group_base = ualign_down(rank, GROUP)
-        var group_in = Array[InTileType, GROUP](uninitialized=True)
-        var group_out = Array[OutTileType, GROUP * GROUP](uninitialized=True)
-        var group_sigs = Array[MutPointer[Signal, MutAnyOrigin], GROUP](
-            uninitialized=True
+        var group_in = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> InTileType: in_tile(
+                group_base + i, length
+            )
         )
-        for i in range(GROUP):
-            group_in[i] = in_tile(group_base + i, length)
-            group_sigs[i] = rank_sigs[group_base + i]
-            for src_idx in range(GROUP):
-                group_out[i * GROUP + src_idx] = out_tile(
-                    group_base + i, src_idx, length
-                )
+        # Flattened as [dst * GROUP + src], matching `allgather`'s output
+        # layout.
+        var group_out = Array[_, GROUP * GROUP](
+            fill_with=lambda (i: Int) -> OutTileType: out_tile(
+                group_base + i // GROUP, i % GROUP, length
+            )
+        )
+        var group_sigs = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> MutPointer[
+                Signal, MutAnyOrigin
+            ]: rank_sigs[group_base + i]
+        )
 
         allgather[group_size=GROUP](
             group_in,
@@ -287,11 +286,11 @@ def main() raises:
                     MutPointer[Scalar[dtype], MutAnyOrigin]
                 ](out_tile(peer_base + dst_idx, src_idx, length).ptr)
 
-        var pair_sigs = Array[MutPointer[Signal, MutAnyOrigin], PAIR](
-            uninitialized=True
+        var pair_sigs = Array[_, PAIR](
+            fill_with=lambda (i: Int) -> MutPointer[
+                Signal, MutAnyOrigin
+            ]: relay_rank_sigs[pair_base + i]
         )
-        for i in range(PAIR):
-            pair_sigs[i] = relay_rank_sigs[pair_base + i]
 
         var recipe = override.or_else(table_recipe(length))
 

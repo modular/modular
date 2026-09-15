@@ -182,9 +182,6 @@ def _run_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -228,12 +225,12 @@ def _run_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -611,9 +608,6 @@ def _run_prod_oracle_case[
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -658,12 +652,12 @@ def _run_prod_oracle_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -961,9 +955,6 @@ def _run_interleaved_barrier_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -1008,12 +999,12 @@ def _run_interleaved_barrier_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # ONE init for the whole run: continuously advancing shared counters are
     # exactly what desyncs when both collectives sit in domain 0.
@@ -1223,9 +1214,6 @@ def _run_asymmetric_fuse_gate_case[
     var quant_dev = List[DeviceBuffer[.float8_e4m3fn]](capacity=ngpus)
     var scale_dev = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -1271,12 +1259,12 @@ def _run_asymmetric_fuse_gate_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -1506,9 +1494,6 @@ def _run_rank_validation_case[
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)
-    var sigs = Array[MutPointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
-    )
     for i in range(group_size):
         shard_dev.append(
             list_of_ctx[i].enqueue_create_buffer[in_dtype](
@@ -1518,12 +1503,13 @@ def _run_rank_validation_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var sigs = Array[_, group_size](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
     # Allocate the WORLD size so a deliberately over-sized view below still
     # points at real memory (nothing launches -- the raises fire first).

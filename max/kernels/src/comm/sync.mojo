@@ -248,6 +248,38 @@ struct Signal:
     barrier-based collectives on the same signal buffer.
     """
 
+    @staticmethod
+    @inline(.always)
+    def unsafe_ptr_from(
+        mut signal_buffer: DeviceBuffer[.uint8],
+    ) -> MutPointer[Signal, MutAnyOrigin]:
+        """Reinterprets a rank's signal buffer as a `Signal` pointer.
+
+        The collectives take their `rank_sigs` as `Signal` pointers while the
+        host allocates each rank's buffer as raw bytes, so every call site
+        assembling a `rank_sigs` array otherwise repeats this same cast.
+
+        The borrow is mutable because `DeviceBuffer.unsafe_ptr` ties the
+        returned pointer's mutability to it, and a collective writes through
+        `rank_sigs`.
+
+        Args:
+            signal_buffer: This rank's signal buffer, at least
+                `size_of[Signal]()` bytes and already passed through
+                `init_signal_buffer`.
+
+        Returns:
+            A pointer to the buffer's storage, typed as `Signal`.
+
+        Safety:
+            The returned pointer's origin is erased, so it does not keep
+            `signal_buffer` alive. The buffer must outlive every collective
+            launched against the pointer.
+        """
+        return (
+            signal_buffer.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
+        )
+
     @inline(.always)
     def lamport_state_ptr(
         mut self,

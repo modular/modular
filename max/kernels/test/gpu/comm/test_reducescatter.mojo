@@ -135,9 +135,6 @@ def reducescatter_test[
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for gpu_idx in range(ngpus):
         if not use_multimem:
@@ -165,12 +162,12 @@ def reducescatter_test[
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -469,9 +466,6 @@ def grouped_reducescatter_test[
     var host_res = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for gpu_idx in range(ngpus):
         var group_rows = rows_first if gpu_idx < group_size else rows_second
@@ -514,12 +508,12 @@ def grouped_reducescatter_test[
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()

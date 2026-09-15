@@ -96,9 +96,6 @@ def bench_reduce[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
@@ -153,12 +150,12 @@ def bench_reduce[
             )
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with_unrolled=lambda [i: Int]() {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create and initialize input and output buffers.
     comptime InTensorType = TileTensor[

@@ -2979,16 +2979,15 @@ struct BundledAllReduceSum:
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var out_buf = output.to_tile_tensor[.int64]()
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         @inline(.always)
@@ -3109,16 +3108,15 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         allreduce_residual_rmsnorm(

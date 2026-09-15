@@ -223,9 +223,6 @@ def test_fused_allreduce_rmsnorm_fp8[
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 
     for i in range(ngpus):
@@ -242,12 +239,12 @@ def test_fused_allreduce_rmsnorm_fp8[
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -431,9 +428,6 @@ def test_fused_allreduce_rmsnorm_noquant[
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     var temp_bytes = ngpus * size_of[dtype]() * length
 
     for i in range(ngpus):
@@ -450,12 +444,12 @@ def test_fused_allreduce_rmsnorm_noquant[
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -591,9 +585,6 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 
     for i in range(ngpus):
@@ -610,12 +601,12 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -862,9 +853,6 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     var temp_bytes = ngpus * size_of[dtype]() * length
 
     for i in range(ngpus):
@@ -881,12 +869,12 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[

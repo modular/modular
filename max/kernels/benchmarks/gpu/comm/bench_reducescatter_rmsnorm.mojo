@@ -534,9 +534,6 @@ def bench_reducescatter_rmsnorm[
     var fused_sum = List[DeviceBuffer[in_dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for i in range(ngpus):
         cb_inputs.append(
@@ -586,12 +583,12 @@ def bench_reducescatter_rmsnorm[
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Gamma weights (shared, read-only; GPU 0 is fine).
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
