@@ -20,6 +20,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from max import tree
 from max.driver import (
     Buffer,
     Device,
@@ -32,7 +33,6 @@ from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheGroupId,
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheParamInterface,
 )
 from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
@@ -708,12 +708,12 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests.
 
-        Returns a single ``KVCacheInputs`` leaf (or ``MultiKVCacheInputs``
-        tree for multi-cache models) whose leaves hold every
-        ``(DP replica, TP shard)`` device's inputs.
+        Returns the ``KVCacheInputs`` pytree (a tuple of per-device leaves,
+        or a dict of named subtrees for multi-cache models) whose leaves
+        each hold one ``(DP replica, TP shard)`` device's inputs.
 
         This method will raise a RuntimeError if any request has insufficient blocks
         already allocated to it.
@@ -752,22 +752,19 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputs[Buffer, Buffer]:
+    ) -> tuple[KVCacheInputsPerDevice, ...]:
         """Returns :meth:`runtime_inputs` narrowed to a single leaf cache.
 
         Convenience wrapper for single-cache (non-tree) models: it asserts the
-        result is a :class:`KVCacheInputs` leaf and returns it, so callers can
-        access ``.inputs`` directly without narrowing the
-        :class:`KVCacheInputsInterface` themselves. Raises ``AssertionError``
-        for tree (``MultiKVCacheInputs``) models.
+        result is a per-device shard tuple and returns it. Raises
+        ``AssertionError`` for multi-cache (dict) models.
         """
         inputs = self.runtime_inputs(
             batches,
             max_cache_length=max_cache_length,
             batch_characteristics=batch_characteristics,
         )
-        assert isinstance(inputs, KVCacheInputs)
-        return inputs
+        return tuple(tree.leaves(inputs, leaf=_KVCacheInputsPerDevice))
 
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """Claims a dummy request and maps it to the replica's null block."""

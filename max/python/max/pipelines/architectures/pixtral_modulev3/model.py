@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -160,7 +161,7 @@ class PixtralModel(
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(model_outputs) == 3:

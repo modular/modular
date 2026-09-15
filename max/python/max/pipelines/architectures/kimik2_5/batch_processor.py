@@ -26,7 +26,7 @@ from max.driver import Buffer
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_tensor_to
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessor,
@@ -83,7 +83,7 @@ class KimiK2_5BatchProcessor(DeepseekV3BatchProcessor):
     def prepare_initial_token_inputs(  # type: ignore[override]
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> KimiK2_5ModelInputs:
         """Prepare inputs for the first execution pass of KimiK2.5.

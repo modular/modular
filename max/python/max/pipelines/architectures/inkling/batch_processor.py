@@ -18,10 +18,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import Model
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -71,7 +72,7 @@ class InklingInputs(ModelInputs):
             self.image_embeddings,
             self.image_indices,
             *self.signal_buffers,
-            *self.kv_cache_inputs.flatten(),
+            *tree.leaves(self.kv_cache_inputs),
             *self.slot_idx,
             *self.has_initial_state,
             *self.conv_pools,
@@ -116,7 +117,7 @@ class InklingBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InklingInputs:
         context_batch = single_replica_context_batch(

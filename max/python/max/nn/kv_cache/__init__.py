@@ -46,17 +46,10 @@ from .cache_params import (
 from .input_types import (
     PACKED_PAGE_STRIDE,
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheInputsPerDevice,
-    MultiKVCacheInputs,
     PagedCacheValues,
     RecurrentLeafInputs,
-    RecurrentStateInputs,
     RecurrentStateInputsPerDevice,
-    flatten_kv_inputs_per_device,
-    flatten_recurrent_inputs_per_device,
-    unflatten_kv_inputs_per_device,
-    unflatten_recurrent_inputs_per_device,
 )
 from .metrics import KVCacheMetrics
 from .utils import (
@@ -80,7 +73,6 @@ __all__ = [
     "KVCacheBufferInterface",
     "KVCacheGroupId",
     "KVCacheInputs",
-    "KVCacheInputsInterface",
     "KVCacheInputsPerDevice",
     "KVCacheMemory",
     "KVCacheMetrics",
@@ -98,7 +90,6 @@ __all__ = [
     "MSAAttnKey",
     "MSAKVCacheParams",
     "MultiKVCacheBuffer",
-    "MultiKVCacheInputs",
     "MultiKVCacheParams",
     "NullKVConnectorConfig",
     "PagedCacheValues",
@@ -106,7 +97,6 @@ __all__ = [
     "RecurrentKVLeafRegion",
     "RecurrentLeafInputs",
     "RecurrentStateBuffer",
-    "RecurrentStateInputs",
     "RecurrentStateInputsPerDevice",
     "RecurrentStateParams",
     "RecurrentStateRegion",
@@ -114,11 +104,7 @@ __all__ = [
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "estimated_memory_size",
-    "flatten_kv_inputs_per_device",
-    "flatten_recurrent_inputs_per_device",
     "padded_lut_cols",
     "recurrent_leaf",
     "spec_decode_cache_slack",
-    "unflatten_kv_inputs_per_device",
-    "unflatten_recurrent_inputs_per_device",
 ]

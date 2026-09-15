@@ -33,12 +33,11 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheGroupId,
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
-    RecurrentStateInputs,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
     RecurrentStateRegion,
 )
@@ -147,7 +146,7 @@ def make_ctx(num_tokens: int) -> TextContext:
 
 
 def get_lut(
-    kv_inputs: KVCacheInputsInterface[Buffer, Buffer],
+    kv_inputs: KVCacheInputs[Buffer, Buffer],
     device_idx: int = 0,
 ) -> list[list[int]]:
     """Returns the assigned block ids in the runtime LUT, trimming the
@@ -158,8 +157,10 @@ def get_lut(
     ``device_idx`` indexes the ``(replica, TP shard)`` devices in
     replica-major order, so with one shard per replica it is the replica.
     """
-    assert isinstance(kv_inputs, KVCacheInputs)
-    raw = kv_inputs.inputs[device_idx].lookup_table.to_numpy().tolist()
+    assert isinstance(kv_inputs, tuple) and kv_inputs
+    device = kv_inputs[device_idx]
+    assert isinstance(device, KVCacheInputsPerDevice)
+    raw = device.lookup_table.to_numpy().tolist()
     return [[b for b in row if b != 0] for row in raw]
 
 
@@ -197,7 +198,11 @@ def test_runtime_inputs_lut_and_cache_lengths() -> None:
     mgr.alloc(ctx_b)
 
     kv_inputs = mgr.runtime_inputs([[ctx_a, ctx_b]])
-    assert isinstance(kv_inputs, KVCacheInputs)
+    assert (
+        isinstance(kv_inputs, tuple)
+        and kv_inputs
+        and isinstance(kv_inputs[0], KVCacheInputsPerDevice)
+    )
 
     # A single-leaf manager, so its one leaf names itself in the rows.
     (leaf_id,) = mgr.get_req_blocks_per_leaf(ctx_a)
@@ -205,7 +210,7 @@ def test_runtime_inputs_lut_and_cache_lengths() -> None:
         mgr.get_req_blocks_per_leaf(ctx_a)[leaf_id],
         mgr.get_req_blocks_per_leaf(ctx_b)[leaf_id],
     ]
-    cache_lengths = kv_inputs.inputs[0].cache_lengths.to_numpy().tolist()
+    cache_lengths = kv_inputs[0].cache_lengths.to_numpy().tolist()
     assert cache_lengths == [
         ctx_a.tokens.processed_length,
         ctx_b.tokens.processed_length,
@@ -333,7 +338,11 @@ def test_a_padding_dummy_runs_on_the_null_page() -> None:
 
     kv_inputs = mgr.runtime_inputs([[real], [dummy]])
 
-    assert isinstance(kv_inputs, KVCacheInputs)
+    assert (
+        isinstance(kv_inputs, tuple)
+        and kv_inputs
+        and isinstance(kv_inputs[0], KVCacheInputsPerDevice)
+    )
     # Trimmed of its zeros the dummy's row is empty: every column is the null
     # page, which is exactly page 0.
     assert get_lut(kv_inputs, device_idx=1) == [[]]
@@ -414,10 +423,11 @@ def test_a_forward_is_handed_state_rows_cut_to_its_own_batch() -> None:
     mgr.alloc(ctx)
 
     inputs = mgr.runtime_inputs([[ctx]])
-    assert isinstance(inputs, MultiKVCacheInputs)
-    state = inputs.children["state"]
-    assert isinstance(state, RecurrentStateInputs)
-    (device,) = state.inputs
+    assert isinstance(inputs, dict)
+    state = inputs["state"]
+    assert isinstance(state, tuple)
+    (device,) = state
+    assert isinstance(device, RecurrentStateInputsPerDevice)
     (leaf,) = device.leaves
 
     assert leaf.live_row_ids.shape == (1, 3), "one request, every layer"

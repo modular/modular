@@ -41,9 +41,7 @@ class PrintKVCacheModel:
         This contains both the print KV cache op and a "fetch" op to get a
         KVCacheCollection.
         """
-        kv_collection = self.kv_params.unflatten_kv_inputs(
-            iter(kv_inputs)
-        ).inputs[0]
+        kv_collection = self.kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
         page_size = self.kv_params.page_size
         if page_size is None:
             raise ValueError(

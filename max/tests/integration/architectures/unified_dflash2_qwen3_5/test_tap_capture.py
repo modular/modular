@@ -30,18 +30,18 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
-    RecurrentStateInputs,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -212,19 +212,23 @@ def _run(
         tokens, row_offsets, return_n_logits, *rest = graph.inputs
         it = iter(rest)
         signal_buffers = [next(it).buffer]
-        tree = kv_tree.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
-        leaf = tree.children[ATTN_CACHE_KEY]
-        assert isinstance(leaf, KVCacheInputs)
-        state = tree.children[STATE_CACHE_KEY]
-        assert isinstance(state, RecurrentStateInputs)
+        kv_inputs = kv_tree.unflatten_kv_inputs(it)
+        assert isinstance(kv_inputs, dict)
+        leaf = kv_inputs[ATTN_CACHE_KEY]
+        assert (
+            isinstance(leaf, tuple)
+            and leaf
+            and isinstance(leaf[0], KVCacheInputsPerDevice)
+        )
+        state = kv_inputs[STATE_CACHE_KEY]
+        assert isinstance(state, tuple)
         outputs = model(
             tokens.tensor,
-            list(leaf.inputs),
+            tree.leaves(leaf, leaf=KVCacheInputsPerDevice),
             return_n_logits.tensor,
             row_offsets.tensor,
             signal_buffers,
-            list(state.inputs),
+            tree.leaves(state, leaf=RecurrentStateInputsPerDevice),
         )
         graph.output(*outputs)
 
@@ -242,14 +246,13 @@ def _run(
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
     kv_runtime = kv_manager.runtime_inputs([[ctx]])
-    assert isinstance(kv_runtime, MultiKVCacheInputs)
 
     results = compiled.execute(
         buf(np.arange(SEQ_LEN, dtype=np.int64)),
         buf(np.array([0, SEQ_LEN], dtype=np.uint32)),
         Buffer.from_numpy(np.array([1], dtype=np.int64)),
         *Signals.allocate([device]),
-        *kv_runtime.flatten(),
+        *tree.leaves(kv_runtime),
     )
     # LAST_TOKEN logits, then one capture per tapped layer.
     return [np.array(r.to(CPU()).to_numpy()) for r in results[1:]]

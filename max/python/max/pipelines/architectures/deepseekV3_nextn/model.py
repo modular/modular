@@ -18,13 +18,14 @@ import logging
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -235,8 +236,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             ]
 
             kv_inputs = self.kv_params.unflatten_kv_inputs(graph_inputs_iter)
-            assert isinstance(kv_inputs, KVCacheInputs)
-            kv_caches_per_dev = list(kv_inputs.inputs)
+            kv_caches_per_dev = tree.leaves(
+                kv_inputs, leaf=KVCacheInputsPerDevice
+            )
 
             batch_context_lengths = [
                 next(graph_inputs_iter).tensor for _ in range(num_devices)
@@ -296,7 +298,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             model_inputs.return_n_logits,
             model_inputs.data_parallel_splits,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
             *model_inputs.batch_context_lengths,
             *ep_inputs,
         )

@@ -103,7 +103,7 @@ def test_blocks_and_scales_match_the_declared_graph_inputs() -> None:
         ),
     )
     inputs = paged_kv_cache_inputs(params, [1], total_num_pages=4)
-    symbolic = params.get_symbolic_inputs().inputs[0]
+    symbolic = params.get_symbolic_inputs()[0]
 
     assert inputs.kv_scales is not None
     assert symbolic.kv_scales is not None

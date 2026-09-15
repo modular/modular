@@ -193,6 +193,7 @@ modular_eager_py_test(
     ignore_extra_deps = [
         # lazy import
         "//max/python/max/_interpreter_ops",
+        "//max/python/max/nn",
     ],
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
@@ -204,6 +205,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],

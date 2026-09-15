@@ -18,28 +18,27 @@ from __future__ import annotations
 import math
 
 import pytest
+from max import tree
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheAssignments,
+    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
     MHAKVCacheParams,
     MultiKVCacheParams,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
     RecurrentStateRegion,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
     recurrent_leaf,
-)
-from max.nn.kv_cache.input_types import (
-    KVCacheInputs,
-    MultiKVCacheInputs,
-    RecurrentStateInputs,
 )
 from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.kv_cache.config import KVConnectorConfig
@@ -388,66 +387,90 @@ class TestDeepNestedKVCacheTree:
         root = _build_deep_tree()
         symbolic = root.get_symbolic_inputs()
 
-        assert isinstance(symbolic, MultiKVCacheInputs)
-        assert set(symbolic.children.keys()) == {"target", "draft"}
+        assert isinstance(symbolic, dict)
+        assert set(symbolic.keys()) == {"target", "draft"}
 
-        target_sym = symbolic.children["target"]
-        assert isinstance(target_sym, MultiKVCacheInputs)
-        assert set(target_sym.children.keys()) == {"a", "b"}
-        assert isinstance(target_sym.children["a"], KVCacheInputs)
-        assert isinstance(target_sym.children["b"], KVCacheInputs)
+        target_sym = symbolic["target"]
+        assert isinstance(target_sym, dict)
+        assert set(target_sym.keys()) == {"a", "b"}
+        assert (
+            isinstance(target_sym["a"], tuple)
+            and target_sym["a"]
+            and isinstance(target_sym["a"][0], KVCacheInputsPerDevice)
+        )
+        assert (
+            isinstance(target_sym["b"], tuple)
+            and target_sym["b"]
+            and isinstance(target_sym["b"][0], KVCacheInputsPerDevice)
+        )
 
-        draft_sym = symbolic.children["draft"]
-        assert isinstance(draft_sym, MultiKVCacheInputs)
-        assert set(draft_sym.children.keys()) == {"c"}
+        draft_sym = symbolic["draft"]
+        assert isinstance(draft_sym, dict)
+        assert set(draft_sym.keys()) == {"c"}
 
-        c_sym = draft_sym.children["c"]
-        assert isinstance(c_sym, MultiKVCacheInputs)
-        assert set(c_sym.children.keys()) == {"d", "e", "h"}
-        assert isinstance(c_sym.children["d"], KVCacheInputs)
-        assert isinstance(c_sym.children["h"], KVCacheInputs)
+        c_sym = draft_sym["c"]
+        assert isinstance(c_sym, dict)
+        assert set(c_sym.keys()) == {"d", "e", "h"}
+        assert (
+            isinstance(c_sym["d"], tuple)
+            and c_sym["d"]
+            and isinstance(c_sym["d"][0], KVCacheInputsPerDevice)
+        )
+        assert (
+            isinstance(c_sym["h"], tuple)
+            and c_sym["h"]
+            and isinstance(c_sym["h"][0], KVCacheInputsPerDevice)
+        )
 
-        e_sym = c_sym.children["e"]
-        assert isinstance(e_sym, MultiKVCacheInputs)
-        assert set(e_sym.children.keys()) == {"f", "g"}
-        assert isinstance(e_sym.children["f"], KVCacheInputs)
-        assert isinstance(e_sym.children["g"], KVCacheInputs)
+        e_sym = c_sym["e"]
+        assert isinstance(e_sym, dict)
+        assert set(e_sym.keys()) == {"f", "g"}
+        assert (
+            isinstance(e_sym["f"], tuple)
+            and e_sym["f"]
+            and isinstance(e_sym["f"][0], KVCacheInputsPerDevice)
+        )
+        assert (
+            isinstance(e_sym["g"], tuple)
+            and e_sym["g"]
+            and isinstance(e_sym["g"][0], KVCacheInputsPerDevice)
+        )
 
     def test_flatten_unflatten_roundtrip(self) -> None:
         """flatten then unflatten should reconstruct an equivalent tree."""
         root = _build_deep_tree()
         symbolic = root.get_symbolic_inputs()
 
-        flat = symbolic.flatten()
+        flat, treedef = tree.flatten(symbolic)
         # Each leaf (single GPU) contributes 7 tensors; 6 leaves → 42 total.
         assert len(flat) == 6 * 7
 
         it = iter(flat)
-        reconstructed = symbolic.unflatten(it)
+        reconstructed = tree.unflatten(treedef, it)
         assert list(it) == [], "unflatten left unconsumed elements"
 
-        assert isinstance(reconstructed, MultiKVCacheInputs)
-        assert set(reconstructed.children.keys()) == {"target", "draft"}
+        assert isinstance(reconstructed, dict)
+        assert set(reconstructed.keys()) == {"target", "draft"}
 
-        target_rec = reconstructed.children["target"]
-        assert isinstance(target_rec, MultiKVCacheInputs)
-        assert set(target_rec.children.keys()) == {"a", "b"}
+        target_rec = reconstructed["target"]
+        assert isinstance(target_rec, dict)
+        assert set(target_rec.keys()) == {"a", "b"}
 
-        draft_rec = reconstructed.children["draft"]
-        assert isinstance(draft_rec, MultiKVCacheInputs)
-        c_rec = draft_rec.children["c"]
-        assert isinstance(c_rec, MultiKVCacheInputs)
-        assert set(c_rec.children.keys()) == {"d", "e", "h"}
+        draft_rec = reconstructed["draft"]
+        assert isinstance(draft_rec, dict)
+        c_rec = draft_rec["c"]
+        assert isinstance(c_rec, dict)
+        assert set(c_rec.keys()) == {"d", "e", "h"}
 
-        e_rec = c_rec.children["e"]
-        assert isinstance(e_rec, MultiKVCacheInputs)
-        assert set(e_rec.children.keys()) == {"f", "g"}
+        e_rec = c_rec["e"]
+        assert isinstance(e_rec, dict)
+        assert set(e_rec.keys()) == {"f", "g"}
 
     def test_unflatten_basic_kv_tree_raises_on_nested_tree(self) -> None:
         """unflatten_basic_kv_tree must raise for trees deeper than height 1."""
         root = _build_deep_tree()
         symbolic = root.get_symbolic_inputs()
-        flat = symbolic.flatten()
+        flat = tree.leaves(symbolic)
         it = iter(flat)
         with pytest.raises(
             ValueError, match="Unable to flatten nested KV tree"
@@ -575,10 +598,14 @@ class TestDeepTreeParallelism:
         b = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         root = MultiKVCacheParams.from_params({"a": a, "b": b})
         symbolic = root.get_symbolic_inputs()
-        assert isinstance(symbolic, MultiKVCacheInputs)
-        for child in symbolic.children.values():
-            assert isinstance(child, KVCacheInputs)
-            assert len(child.inputs) == n_devices
+        assert isinstance(symbolic, dict)
+        for child in symbolic.values():
+            assert (
+                isinstance(child, tuple)
+                and child
+                and isinstance(child[0], KVCacheInputsPerDevice)
+            )
+            assert len(child) == n_devices
 
     def test_flatten_element_count(
         self, n_devices: int, dp_degree: int
@@ -586,10 +613,10 @@ class TestDeepTreeParallelism:
         """Flat list length == n_devices x n_leaves x 6 items per device."""
         a = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         b = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
-        flat = (
-            MultiKVCacheParams.from_params({"a": a, "b": b})
-            .get_symbolic_inputs()
-            .flatten()
+        flat = tree.leaves(
+            MultiKVCacheParams.from_params(
+                {"a": a, "b": b}
+            ).get_symbolic_inputs()
         )
         assert len(flat) == n_devices * 2 * 7
 
@@ -599,15 +626,15 @@ class TestDeepTreeParallelism:
         """Full 6-leaf nested tree should round-trip flatten/unflatten."""
         root = _build_deep_tree(n_devices=n_devices, dp_degree=dp_degree)
         symbolic = root.get_symbolic_inputs()
-        flat = symbolic.flatten()
+        flat, treedef = tree.flatten(symbolic)
         # 6 leaves x n_devices entries x 7 items per device
         assert len(flat) == 6 * n_devices * 7
 
         it = iter(flat)
-        reconstructed = symbolic.unflatten(it)
+        reconstructed = tree.unflatten(treedef, it)
         assert list(it) == [], "unflatten left unconsumed elements"
-        assert isinstance(reconstructed, MultiKVCacheInputs)
-        assert set(reconstructed.children.keys()) == {"target", "draft"}
+        assert isinstance(reconstructed, dict)
+        assert set(reconstructed.keys()) == {"target", "draft"}
 
 
 class TestParallelismValidation:
@@ -665,15 +692,15 @@ class TestPerLayerBuffers:
         """Off by default: no per-layer field and 7 flat items per device."""
         params = self._mha(num_layers=4, per_layer_buffers=False)
         symbolic = params.get_symbolic_inputs()
-        assert symbolic.inputs[0].kv_blocks_per_layer is None
-        assert len(symbolic.flatten()) == 7
+        assert symbolic[0].kv_blocks_per_layer is None
+        assert len(tree.leaves(symbolic)) == 7
 
     def test_per_layer_appends_num_layers_at_tail(self) -> None:
         """On: ``num_layers`` single-layer buffers appended after the 7 fields."""
         num_layers = 4
         params = self._mha(num_layers=num_layers, per_layer_buffers=True)
         symbolic = params.get_symbolic_inputs()
-        per_device = symbolic.inputs[0]
+        per_device = symbolic[0]
         assert per_device.kv_blocks_per_layer is not None
         assert len(per_device.kv_blocks_per_layer) == num_layers
         # kv_blocks matches a single-layer buffer (layer dim pinned to 1) so it
@@ -683,17 +710,20 @@ class TestPerLayerBuffers:
             == per_device.kv_blocks_per_layer[0].shape
         )
         assert int(per_device.kv_blocks.shape[2]) == 1
-        assert len(symbolic.flatten()) == 7 + num_layers
+        assert len(tree.leaves(symbolic)) == 7 + num_layers
 
     def test_per_layer_flatten_unflatten_roundtrip(self) -> None:
         """flatten -> unflatten fully consumes the iterator and rebuilds tail."""
         num_layers = 3
         params = self._mha(num_layers=num_layers, per_layer_buffers=True)
         symbolic = params.get_symbolic_inputs()
-        it = iter(symbolic.flatten())
-        reconstructed = symbolic.unflatten(it)
+        flat, treedef = tree.flatten(symbolic)
+        it = iter(flat)
+        reconstructed = tree.unflatten(treedef, it)
         assert list(it) == [], "unflatten left unconsumed elements"
-        rec = reconstructed.inputs[0]
+        assert isinstance(reconstructed, tuple) and reconstructed
+        rec = reconstructed[0]
+        assert isinstance(rec, KVCacheInputsPerDevice)
         assert rec.kv_blocks_per_layer is not None
         assert len(rec.kv_blocks_per_layer) == num_layers
 
@@ -705,7 +735,7 @@ class TestPerLayerBuffers:
             {"sliding": sliding, "full": full}
         )
         # sliding: 7 + 2 (per-layer tail); full: 7; one device each.
-        assert len(root.get_symbolic_inputs().flatten()) == (7 + 2) + 7
+        assert len(tree.leaves(root.get_symbolic_inputs())) == (7 + 2) + 7
 
     def test_allocate_zero_layers_raises(self) -> None:
         """``num_layers == 0`` fails fast with a clear error, not IndexError.
@@ -756,12 +786,18 @@ class TestPerLayerBuffers:
 
 def _page_dim(kv: KVCacheInputs[TensorType, BufferType]) -> str:
     """First (page-pool) symbolic dim name of a leaf's kv_blocks buffer."""
-    return str(kv.inputs[0].kv_blocks.shape[0])
+    assert isinstance(kv, tuple) and kv
+    leaf = kv[0]
+    assert isinstance(leaf, KVCacheInputsPerDevice)
+    return str(leaf.kv_blocks.shape[0])
 
 
 def _lookup_dims(kv: KVCacheInputs[TensorType, BufferType]) -> tuple[str, str]:
     """The (batch_size, max_num_pages) symbolic dim names of the lookup table."""
-    shape = kv.inputs[0].lookup_table.shape
+    assert isinstance(kv, tuple) and kv
+    leaf = kv[0]
+    assert isinstance(leaf, KVCacheInputsPerDevice)
+    shape = leaf.lookup_table.shape
     return str(shape[0]), str(shape[1])
 
 
@@ -779,11 +815,19 @@ class TestPagePoolSymbolicNamespace:
         b = create_leaf_params()
         root = MultiKVCacheParams.from_params({"global": a, "local": b})
         symbolic = root.get_symbolic_inputs()
-        assert isinstance(symbolic, MultiKVCacheInputs)
+        assert isinstance(symbolic, dict)
 
-        g = symbolic.children["global"]
-        loc = symbolic.children["local"]
-        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        g = symbolic["global"]
+        loc = symbolic["local"]
+        assert (
+            isinstance(g, tuple)
+            and g
+            and isinstance(g[0], KVCacheInputsPerDevice)
+        ) and (
+            isinstance(loc, tuple)
+            and loc
+            and isinstance(loc[0], KVCacheInputsPerDevice)
+        )
         assert _page_dim(g) == "global_total_num_pages"
         assert _page_dim(loc) == "local_total_num_pages"
         assert _page_dim(g) != _page_dim(loc)
@@ -796,10 +840,18 @@ class TestPagePoolSymbolicNamespace:
         b = create_leaf_params()
         root = MultiKVCacheParams.from_params({"global": a, "local": b})
         symbolic = root.get_symbolic_inputs()
-        assert isinstance(symbolic, MultiKVCacheInputs)
-        g = symbolic.children["global"]
-        loc = symbolic.children["local"]
-        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
+        assert isinstance(symbolic, dict)
+        g = symbolic["global"]
+        loc = symbolic["local"]
+        assert (
+            isinstance(g, tuple)
+            and g
+            and isinstance(g[0], KVCacheInputsPerDevice)
+        ) and (
+            isinstance(loc, tuple)
+            and loc
+            and isinstance(loc[0], KVCacheInputsPerDevice)
+        )
         g_batch, g_pages = _lookup_dims(g)
         loc_batch, loc_pages = _lookup_dims(loc)
         # batch_size is shared; max_num_pages is namespaced per group.
@@ -811,22 +863,30 @@ class TestPagePoolSymbolicNamespace:
     def test_nested_namespace_composes(self) -> None:
         root = _build_deep_tree()
         symbolic = root.get_symbolic_inputs()
-        assert isinstance(symbolic, MultiKVCacheInputs)
-        draft = symbolic.children["draft"]
-        assert isinstance(draft, MultiKVCacheInputs)
-        c = draft.children["c"]
-        assert isinstance(c, MultiKVCacheInputs)
-        e = c.children["e"]
-        assert isinstance(e, MultiKVCacheInputs)
-        f = e.children["f"]
-        assert isinstance(f, KVCacheInputs)
+        assert isinstance(symbolic, dict)
+        draft = symbolic["draft"]
+        assert isinstance(draft, dict)
+        c = draft["c"]
+        assert isinstance(c, dict)
+        e = c["e"]
+        assert isinstance(e, dict)
+        f = e["f"]
+        assert (
+            isinstance(f, tuple)
+            and f
+            and isinstance(f[0], KVCacheInputsPerDevice)
+        )
         assert _page_dim(f) == "draft_c_e_f_total_num_pages"
 
     def test_single_group_names_unchanged(self) -> None:
         """A plain leaf keeps byte-identical names (empty namespace)."""
         leaf = create_leaf_params()
         symbolic = leaf.get_symbolic_inputs()
-        assert isinstance(symbolic, KVCacheInputs)
+        assert (
+            isinstance(symbolic, tuple)
+            and symbolic
+            and isinstance(symbolic[0], KVCacheInputsPerDevice)
+        )
         assert _page_dim(symbolic) == "total_num_pages"
         assert _lookup_dims(symbolic) == (
             "replica_0_batch_size",
@@ -847,8 +907,12 @@ class TestPagePoolSymbolicNamespace:
             ),
         )
         symbolic = leaf.get_symbolic_inputs()
-        assert isinstance(symbolic, KVCacheInputs)
-        scales = symbolic.inputs[0].kv_scales
+        assert (
+            isinstance(symbolic, tuple)
+            and symbolic
+            and isinstance(symbolic[0], KVCacheInputsPerDevice)
+        )
+        scales = symbolic[0].kv_scales
         assert scales is not None
         assert str(scales.shape[0]) == "total_num_pages"
 
@@ -891,12 +955,20 @@ class TestPagePoolSymbolicNamespace:
             {"global": quant_leaf(), "local": quant_leaf()}
         )
         symbolic = root.get_symbolic_inputs()
-        assert isinstance(symbolic, MultiKVCacheInputs)
-        g = symbolic.children["global"]
-        loc = symbolic.children["local"]
-        assert isinstance(g, KVCacheInputs) and isinstance(loc, KVCacheInputs)
-        g_scales = g.inputs[0].kv_scales
-        loc_scales = loc.inputs[0].kv_scales
+        assert isinstance(symbolic, dict)
+        g = symbolic["global"]
+        loc = symbolic["local"]
+        assert (
+            isinstance(g, tuple)
+            and g
+            and isinstance(g[0], KVCacheInputsPerDevice)
+        ) and (
+            isinstance(loc, tuple)
+            and loc
+            and isinstance(loc[0], KVCacheInputsPerDevice)
+        )
+        g_scales = g[0].kv_scales
+        loc_scales = loc[0].kv_scales
         assert g_scales is not None and loc_scales is not None
         assert str(g_scales.shape[0]) == "global_total_num_pages"
         assert str(loc_scales.shape[0]) == "local_total_num_pages"
@@ -1075,11 +1147,12 @@ class TestRecurrentState:
         state = create_state_params(attn)
         root = MultiKVCacheParams.from_params({"attn": attn, "state": state})
         symbolic = root.get_symbolic_inputs()
-        assert isinstance(symbolic, MultiKVCacheInputs)
-        state_inputs = symbolic.children["state"]
-        assert isinstance(state_inputs, RecurrentStateInputs)
+        assert isinstance(symbolic, dict)
+        state_inputs = symbolic["state"]
+        assert isinstance(state_inputs, tuple)
+        assert isinstance(state_inputs[0], RecurrentStateInputsPerDevice)
         # Two pools, and the row tensor each one is addressed by.
-        assert len(state_inputs.flatten()) == 4
+        assert len(tree.leaves(state_inputs)) == 4
 
     def test_unflatten_basic_kv_tree_returns_attention_only(self) -> None:
         attn = create_kv_cache_params()
@@ -1088,7 +1161,7 @@ class TestRecurrentState:
         )
         flat = root.flattened_kv_inputs()
         (only,) = root.unflatten_basic_kv_tree(iter(flat))
-        assert len(only) == len(attn.get_symbolic_inputs().inputs)
+        assert len(only) == len(attn.get_symbolic_inputs())
 
 
 def _cpu_buffer(*shape: int, dtype: DType = DType.uint32) -> Buffer:
@@ -1133,11 +1206,15 @@ class TestRuntimeInputComposition:
             | {"state": create_state_params(attn)}
         )
         symbolic = root.get_symbolic_inputs()
-        assert list(symbolic.children) == [*keys, "state"]
-        state_inputs = symbolic.children["state"]
+        assert isinstance(symbolic, dict)
+        assert list(symbolic) == [*keys, "state"]
+        state_inputs = symbolic["state"]
+        assert isinstance(state_inputs, tuple)
+        assert isinstance(state_inputs[0], RecurrentStateInputsPerDevice)
 
-        tail = len(state_inputs.flatten())
-        assert symbolic.flatten()[-tail:] == state_inputs.flatten()
+        state_flat = tree.leaves(state_inputs)
+        tail = len(state_flat)
+        assert tree.leaves(symbolic)[-tail:] == state_flat
 
     def test_the_state_child_reads_only_its_assignment(self) -> None:
         """It takes no paged buffer: its pool is staged under the leaf."""
@@ -1146,8 +1223,8 @@ class TestRuntimeInputComposition:
         built = state.build_runtime_inputs(
             [_assignment(staged=staged)], buffers=[]
         )
-        assert isinstance(built, RecurrentStateInputs)
-        (device,) = built.inputs
+        assert isinstance(built, tuple)
+        (device,) = built
         for i, region in enumerate(state.regions):
             leaf = device.leaves[i]
             assert leaf.pool is staged[region.pool_key]

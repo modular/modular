@@ -34,18 +34,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
-    RecurrentStateInputs,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -294,19 +294,23 @@ def _max_taps(
         tokens, row_offsets, return_n_logits, *rest = graph.inputs
         it = iter(rest)
         signal_buffers = [next(it).buffer]
-        tree = config.kv_params.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
-        leaf = tree.children[ATTN_CACHE_KEY]
-        assert isinstance(leaf, KVCacheInputs)
-        state_inputs = tree.children[STATE_CACHE_KEY]
-        assert isinstance(state_inputs, RecurrentStateInputs)
+        kv_tree = config.kv_params.unflatten_kv_inputs(it)
+        assert isinstance(kv_tree, dict)
+        leaf = kv_tree[ATTN_CACHE_KEY]
+        assert (
+            isinstance(leaf, tuple)
+            and leaf
+            and isinstance(leaf[0], KVCacheInputsPerDevice)
+        )
+        state_inputs = kv_tree[STATE_CACHE_KEY]
+        assert isinstance(state_inputs, tuple)
         outputs = model(
             tokens.tensor,
-            list(leaf.inputs),
+            tree.leaves(leaf, leaf=KVCacheInputsPerDevice),
             return_n_logits.tensor,
             row_offsets.tensor,
             signal_buffers,
-            list(state_inputs.inputs),
+            tree.leaves(state_inputs, leaf=RecurrentStateInputsPerDevice),
         )
         graph.output(*outputs)
 
@@ -324,14 +328,13 @@ def _max_taps(
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
     kv_runtime = kv_manager.runtime_inputs([[ctx]])
-    assert isinstance(kv_runtime, MultiKVCacheInputs)
 
     results = compiled.execute(
         buf(TOKENS),
         buf(np.array([0, SEQ_LEN], dtype=np.uint32)),
         Buffer.from_numpy(np.array([1], dtype=np.int64)),
         *Signals.allocate([device]),
-        *kv_runtime.flatten(),
+        *tree.leaves(kv_runtime),
     )
     every = [np.array(r.to(CPU()).to_numpy()) for r in results]
     print(

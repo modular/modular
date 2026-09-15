@@ -354,6 +354,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("typing-extensions"),
         requirement("transformers"),
+        "//max/python/max:tree",
     ],
 )
 

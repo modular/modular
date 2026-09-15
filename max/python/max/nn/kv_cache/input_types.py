@@ -13,14 +13,11 @@
 
 from __future__ import annotations
 
-import itertools
-from abc import ABC, abstractmethod
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeAlias, TypeVar
 
 import numpy as np
-from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.experimental.tensor import Tensor
@@ -32,6 +29,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.tree import Tree
 from typing_extensions import Self
 
 PACKED_PAGE_STRIDE = -1
@@ -64,28 +62,6 @@ class _KVCacheInputsPerDeviceMeta:
     emit_draft_mla_num_partitions: bool
     num_kv_blocks_per_layer: int
     num_kv_scales_per_layer: int
-
-
-def flatten_kv_inputs_per_device(
-    inputs: KVCacheInputsPerDevice[Any, Any],
-) -> list[Any]:
-    """Returns graph-input leaves for one device's KV cache."""
-    return tree.flatten(inputs)[0]
-
-
-def unflatten_kv_inputs_per_device(
-    template: KVCacheInputsPerDevice[Any, Any],
-    it: Iterator[Any],
-) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
-    """Rebuilds per-device KV inputs using ``template``'s optional-field layout.
-
-    ``it`` is a shared graph-input iterator that carries values beyond this one
-    device's leaves, so unflatten stops at the structure rather than requiring
-    the iterator to be exhausted.
-    """
-    # TODO(SERVOPT-1505): redesign so that a .flatten() on a template is not required.
-    _, treedef = tree.flatten(template)
-    return tree.unflatten(treedef, it, exact=False)
 
 
 @dataclass
@@ -317,81 +293,6 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
 PagedCacheValues = KVCacheInputsPerDevice[TensorValue, BufferValue]
 
 
-class KVCacheInputsInterface(ABC, Generic[_Tensor, _Buffer]):
-    """Common interface for KV cache graph inputs (leaf or tree)."""
-
-    @abstractmethod
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        """Flattens this (sub)tree into a flattened buffer/tensor list."""
-        ...
-
-    @abstractmethod
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> KVCacheInputsInterface[TensorValue, BufferValue]:
-        """Rebuilds this (sub)tree by consuming values from ``it``."""
-        ...
-
-
-@dataclass
-class MultiKVCacheInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
-    """Symbolic graph input types for a tree of KV caches.
-
-    This class is used to represent a tree of KV caches. For example, hybrid models
-    like Gemma4 may have "sliding_window" and "full_attention" caches. Furthermore,
-    we can also have "target" and "draft" caches for speculative decoding.
-    """
-
-    children: dict[str, KVCacheInputsInterface[_Tensor, _Buffer]]
-
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        """Flattens this (sub)tree into a flattened buffer/tensor list."""
-        return list(
-            itertools.chain.from_iterable(
-                item.flatten() for item in self.children.values()
-            )
-        )
-
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> MultiKVCacheInputs[TensorValue, BufferValue]:
-        """Rebuilds this (sub)tree by consuming values from ``it``."""
-        return MultiKVCacheInputs(
-            children={
-                key: item.unflatten(it) for key, item in self.children.items()
-            },
-        )
-
-
-@dataclass
-class KVCacheInputs(
-    Generic[_Tensor, _Buffer], KVCacheInputsInterface[_Tensor, _Buffer]
-):
-    """Symbolic graph input types for a leaf KV cache.
-
-    This contains the KV cache inputs for all TP shards."""
-
-    inputs: Sequence[KVCacheInputsPerDevice[_Tensor, _Buffer]]
-
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        """Flattens this (sub)tree into a flattened buffer/tensor list."""
-        return list(
-            itertools.chain.from_iterable(
-                flatten_kv_inputs_per_device(item) for item in self.inputs
-            )
-        )
-
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> KVCacheInputs[TensorValue, BufferValue]:
-        """Rebuilds this (sub)tree by consuming values from ``it``."""
-        return KVCacheInputs(
-            inputs=[
-                unflatten_kv_inputs_per_device(item, it) for item in self.inputs
-            ]
-        )
-
-
 # ===--------------------------------------------------------------------=== #
 # Recurrent state
 # ===--------------------------------------------------------------------=== #
@@ -455,58 +356,7 @@ class RecurrentStateInputsPerDevice(Generic[_Tensor, _Buffer]):
         return cls(leaves=tuple(children))
 
 
-def flatten_recurrent_inputs_per_device(
-    inputs: RecurrentStateInputsPerDevice[Any, Any],
-) -> list[Any]:
-    """Returns graph-input leaves for one device's recurrent state."""
-    return tree.flatten(inputs)[0]
-
-
-def unflatten_recurrent_inputs_per_device(
-    template: RecurrentStateInputsPerDevice[Any, Any],
-    it: Iterator[Any],
-) -> RecurrentStateInputsPerDevice[TensorValue, BufferValue]:
-    """Rebuilds per-device recurrent inputs using ``template``'s leaf layout."""
-    _, treedef = tree.flatten(template)
-    return tree.unflatten(treedef, it, exact=False)
-
-
-@dataclass
-class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
-    """Graph inputs for a cache whose entry is a recurrent state."""
-
-    inputs: Sequence[RecurrentStateInputsPerDevice[_Tensor, _Buffer]]
-
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        """Flattens this (sub)tree into a flattened buffer/tensor list."""
-        return list(
-            itertools.chain.from_iterable(
-                flatten_recurrent_inputs_per_device(item)
-                for item in self.inputs
-            )
-        )
-
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> RecurrentStateInputs[TensorValue, BufferValue]:
-        """Rebuilds this (sub)tree by consuming values from ``it``."""
-        return RecurrentStateInputs(
-            inputs=[
-                unflatten_recurrent_inputs_per_device(item, it)
-                for item in self.inputs
-            ]
-        )
-
-    def __tree_flatten__(
-        self,
-    ) -> tuple[list[RecurrentStateInputsPerDevice[Any, Any]], None]:
-        return list(self.inputs), None
-
-    @classmethod
-    def __tree_unflatten__(
-        cls,
-        meta: Any,
-        children: Sequence[Any],
-        /,
-    ) -> RecurrentStateInputs[Any, Any]:
-        return cls(inputs=list(children))
+KVCacheInputs: TypeAlias = Tree[
+    KVCacheInputsPerDevice[_Tensor, _Buffer]
+    | RecurrentStateInputsPerDevice[_Tensor, _Buffer]
+]

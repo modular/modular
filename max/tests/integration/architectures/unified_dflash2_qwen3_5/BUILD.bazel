@@ -98,6 +98,7 @@ modular_py_test(
     shard_count = 3,
     tags = ["gpu"],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -125,6 +126,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

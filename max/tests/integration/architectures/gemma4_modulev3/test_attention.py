@@ -45,6 +45,7 @@ from conftest import (
     Gemma4RotaryEmbedding,
     Gemma4TextAttention,
 )
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -313,9 +314,7 @@ class AttentionHarness(Module[..., Tensor]):
         kv_mapping = PlacementMapping(
             self.mesh, (Replicated(),) * self.mesh.ndim
         )
-        kv_collection = PagedCacheValues.from_upstream(
-            kv_concrete.inputs, kv_mapping
-        )
+        kv_collection = PagedCacheValues.from_upstream(kv_concrete, kv_mapping)
         return self.attention(
             x, kv_collection, input_row_offsets=input_row_offsets
         )
@@ -416,7 +415,7 @@ def build_max_attention(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=DeviceRef.GPU()
     )
-    kv_types = kv_params.get_symbolic_inputs().flatten()
+    kv_types = kv_params.flattened_kv_inputs()
     compiled = harness.compile(
         input_type, input_row_offsets_type, *kv_types, weights=weights
     )
@@ -455,7 +454,7 @@ def execute_max_attention(
             Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
                 device
             ),
-            *kv_runtime_inputs.flatten(),
+            *tree.leaves(kv_runtime_inputs),
         ]
         output = compiled.execute_raw(*execute_args)[0]
     finally:

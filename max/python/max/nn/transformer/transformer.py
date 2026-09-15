@@ -157,7 +157,7 @@ def forward_sequential_layers(
                     weight_prefix=weight_prefix_for_layer(layer_idx),
                 )
 
-            flat_args = tree.flatten(values)[0]
+            flat_args = tree.leaves(values)
             call_results = ops.call(
                 group_idx_to_subgraph[group_idx],
                 *flat_args,

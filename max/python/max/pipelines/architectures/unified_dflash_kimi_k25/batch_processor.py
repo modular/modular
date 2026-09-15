@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 
 from ..kimik2_5.batch_processor import KimiK2_5BatchProcessor
 from ..kimik2_5.context import KimiK2_5TextAndVisionContext
@@ -52,7 +52,7 @@ class UnifiedDflashKimiK25BatchProcessor(KimiK2_5BatchProcessor):
     def prepare_initial_token_inputs(  # type: ignore[override]
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         **kwargs: Any,

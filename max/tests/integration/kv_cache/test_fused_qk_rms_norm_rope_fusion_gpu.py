@@ -32,12 +32,13 @@ from __future__ import annotations
 import ml_dtypes
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import fused_qk_rms_norm_rope_ragged
-from max.nn.kv_cache import MHAKVCacheParams, flatten_kv_inputs_per_device
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 pytestmark = pytest.mark.skipif(
@@ -159,9 +160,7 @@ def _build_graph(
             inp = inp[:, HEAD_DIM : HEAD_DIM + Q_WIDTH]
             inp = inp.reshape([inp.shape[0], NUM_Q_HEADS, HEAD_DIM])
 
-        kv_collection = kv_params.unflatten_kv_inputs(
-            iter(g.inputs[5:])
-        ).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[5:]))[0]
         q = fused_qk_rms_norm_rope_ragged(
             kv_params,
             inp,
@@ -237,7 +236,7 @@ def _run(
         _to_device(_rope_freqs(rope_dim), dtype, device),
         _to_device(gamma, dtype, device),  # q_gamma
         _to_device(gamma, dtype, device),  # k_gamma
-        *flatten_kv_inputs_per_device(kv_rt),
+        *tree.leaves(kv_rt),
     ]
     (result,) = model.execute(*inputs)
     assert isinstance(result, Buffer)

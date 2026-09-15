@@ -16,6 +16,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -25,7 +26,6 @@ from max.nn.kernels import sgmv_qkv_lora_kernel
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import (
     block_ids_for_batch,
@@ -295,7 +295,7 @@ def run_sgmv_qkv_lora_kernel(
         kv_params, seq_lens, total_num_pages=32
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs().inputs[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
 
     with Graph(
         "sgmv_qkv_lora_kernel_test",
@@ -318,7 +318,7 @@ def run_sgmv_qkv_lora_kernel(
             TensorType(DType.uint32, ["input_row_offsets"], device=device_ref),
             TensorType(DType.int64, ["lora_end"], device=DeviceRef.CPU()),
             TensorType(DType.int64, [1], device=DeviceRef.CPU()),
-            *flatten_kv_inputs_per_device(kv_symbolic_inputs),
+            *tree.leaves(kv_symbolic_inputs),
         ],
     ) as graph:
         (
@@ -335,7 +335,7 @@ def run_sgmv_qkv_lora_kernel(
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
 
         q_out = sgmv_qkv_lora_kernel(
             input=x.tensor,
@@ -374,7 +374,7 @@ def run_sgmv_qkv_lora_kernel(
         Buffer.from_numpy(input_row_offsets.astype(np.uint32)).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *flatten_kv_inputs_per_device(kv_runtime_inputs),
+        *tree.leaves(kv_runtime_inputs),
     )
 
     q_output = from_dlpack(result[0])

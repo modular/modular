@@ -43,5 +43,6 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
+        "//max/python/max:tree",
     ],
 )

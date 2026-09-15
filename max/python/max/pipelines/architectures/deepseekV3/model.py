@@ -18,12 +18,13 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     ModelInputs,
@@ -69,7 +70,11 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
@@ -298,8 +303,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             # Unmarshal the KV cache arguments.
             kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
-            assert isinstance(kv_inputs, KVCacheInputs)
-            kv_caches_per_dev = list(kv_inputs.inputs)
+            kv_caches_per_dev = tree.leaves(
+                kv_inputs, leaf=KVCacheInputsPerDevice
+            )
 
             # Unmarshal the batch context lengths
             batch_context_lengths = [

@@ -20,6 +20,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from max import tree
 from max.driver import (
     Buffer,
     Device,
@@ -31,7 +32,7 @@ from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheGroupId,
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
 from max.nn.kv_cache.cache_params import (
@@ -384,7 +385,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests."""
         if len(batches) != self.params.data_parallel_degree:
             raise ValueError(
@@ -732,15 +733,14 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputs[Buffer, Buffer]:
+    ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Returns :meth:`runtime_inputs` narrowed to a single leaf cache."""
         inputs = self.runtime_inputs(
             batches,
             max_cache_length=max_cache_length,
             batch_characteristics=batch_characteristics,
         )
-        assert isinstance(inputs, KVCacheInputs)
-        return inputs
+        return tuple(tree.leaves(inputs, leaf=KVCacheInputsPerDevice))
 
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the device buffer for the given replica."""

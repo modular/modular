@@ -36,6 +36,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -43,7 +44,6 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import fused_dual_qk_rms_norm_rope_ragged
 from max.nn.kv_cache import (
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
 from test_common.graph_utils import is_b100_b200
@@ -222,10 +222,10 @@ def _run_dual(
             iro_in.tensor,
             main_kv_params.unflatten_kv_inputs(
                 iter(kv_inputs[:num_main_kv_inputs])
-            ).inputs[0],
+            )[0],
             index_kv_params.unflatten_kv_inputs(
                 iter(kv_inputs[num_main_kv_inputs:])
-            ).inputs[0],
+            )[0],
             q_main_gamma=gamma_main_q_in.tensor,
             k_main_gamma=gamma_main_k_in.tensor,
             q_index_gamma=gamma_index_q_in.tensor,
@@ -278,8 +278,8 @@ def _run_dual(
         gamma_main_k_buf,
         gamma_index_q_buf,
         gamma_index_k_buf,
-        *flatten_kv_inputs_per_device(main_kv_rt),
-        *flatten_kv_inputs_per_device(index_kv_rt),
+        *tree.leaves(main_kv_rt),
+        *tree.leaves(index_kv_rt),
     )
 
     main_k_out = _extract_tokens(main_kv_rt, main_positions, _MAIN_KV_HEADS)

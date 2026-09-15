@@ -14,6 +14,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -23,7 +24,6 @@ from max.nn.kernels import kv_cache_ragged_radd
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -49,9 +49,9 @@ class KVCacheRaddModel:
         kv_cache_ragged_radd(
             kv_params=self.kv_params,
             a=a,
-            kv_collection=self.kv_params.unflatten_kv_inputs(
-                iter(kv_inputs)
-            ).inputs[0],
+            kv_collection=self.kv_params.unflatten_kv_inputs(iter(kv_inputs))[
+                0
+            ],
             input_row_offsets=input_row_offsets,
             batch_offset=batch_offset,
             layer_idx=self.layer_idx,
@@ -111,7 +111,7 @@ def test_kv_cache_radd_basic() -> None:
     # Compile and init the model
     model = session.load(graph)
 
-    kv_flat = flatten_kv_inputs_per_device(
+    kv_flat = tree.leaves(
         paged_kv_cache_inputs(kv_params, prompt_lens, total_num_pages=8)
     )
 

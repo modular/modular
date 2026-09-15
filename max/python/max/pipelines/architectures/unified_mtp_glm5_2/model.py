@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, fields, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
@@ -26,9 +27,8 @@ from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -289,23 +289,23 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             ]
 
             kv_tree = kv_params.unflatten_kv_inputs(variadic_args_iter)
-            assert isinstance(kv_tree, MultiKVCacheInputs)
-            target_tree = kv_tree.children["target"]
-            draft_tree = kv_tree.children["draft"]
-            assert isinstance(target_tree, MultiKVCacheInputs)
-            assert isinstance(draft_tree, MultiKVCacheInputs)
-            target_mla = target_tree.children["mla"]
-            target_indexer = target_tree.children["indexer"]
-            draft_mla = draft_tree.children["mla"]
-            draft_indexer = draft_tree.children["indexer"]
-            assert isinstance(target_mla, KVCacheInputs)
-            assert isinstance(target_indexer, KVCacheInputs)
-            assert isinstance(draft_mla, KVCacheInputs)
-            assert isinstance(draft_indexer, KVCacheInputs)
-            target_mla_kv = list(target_mla.inputs)
-            target_indexer_kv = list(target_indexer.inputs)
-            draft_mla_kv = list(draft_mla.inputs)
-            draft_indexer_kv = list(draft_indexer.inputs)
+            assert isinstance(kv_tree, dict)
+            target_tree = kv_tree["target"]
+            draft_tree = kv_tree["draft"]
+            assert isinstance(target_tree, dict)
+            assert isinstance(draft_tree, dict)
+            target_mla_kv = tree.leaves(
+                target_tree["mla"], leaf=KVCacheInputsPerDevice
+            )
+            target_indexer_kv = tree.leaves(
+                target_tree["indexer"], leaf=KVCacheInputsPerDevice
+            )
+            draft_mla_kv = tree.leaves(
+                draft_tree["mla"], leaf=KVCacheInputsPerDevice
+            )
+            draft_indexer_kv = tree.leaves(
+                draft_tree["indexer"], leaf=KVCacheInputsPerDevice
+            )
 
             batch_context_lengths = [
                 next(variadic_args_iter).tensor

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import (
     Buffer,
     Device,
@@ -43,7 +44,7 @@ from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -141,7 +142,7 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
             self.data_parallel_splits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -713,8 +714,9 @@ class KimiK2_5Model(
 
             # Unmarshal the KV cache arguments.
             kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
-            assert isinstance(kv_inputs, KVCacheInputs)
-            kv_caches_per_dev = list(kv_inputs.inputs)
+            kv_caches_per_dev = tree.leaves(
+                kv_inputs, leaf=KVCacheInputsPerDevice
+            )
 
             # Unmarshal the batch context lengths
             batch_context_lengths = [
@@ -829,7 +831,7 @@ class KimiK2_5Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> KimiK2_5ModelInputs:
         """Delegates to the batch processor; typed for Eagle subclasses."""

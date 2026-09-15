@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
@@ -155,7 +156,7 @@ class Olmo3Model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             input_row_offsets,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(

@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph
@@ -110,7 +111,7 @@ class MistralModel(GraphPipelineModelWithKVCache[TextContext]):
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)

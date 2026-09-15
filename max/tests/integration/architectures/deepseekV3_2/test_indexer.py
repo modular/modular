@@ -21,6 +21,7 @@ import conftest as _deepseek_v32_torch
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -38,7 +39,6 @@ from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -316,7 +316,7 @@ def run_max_indexer(
 
         indexer_k_collection = kv_params.unflatten_kv_inputs(
             iter(graph.inputs[3:])
-        ).inputs[0]
+        )[0]
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
@@ -354,7 +354,7 @@ def run_max_indexer(
         kv_manager.alloc(context)
         batch_contexts.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts])[0]
 
     # Prepare input tensors - flatten batch dimension for ragged format
     x_flat = x.view(-1, dim)
@@ -381,7 +381,7 @@ def run_max_indexer(
         x_device,
         qr_device,
         input_row_offsets_device,
-        *flatten_kv_inputs_per_device(kv_inputs),
+        *tree.leaves(kv_inputs),
     )
 
     # Verify output is not all zeros

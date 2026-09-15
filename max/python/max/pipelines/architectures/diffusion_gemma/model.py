@@ -30,12 +30,13 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.lib import CompilationTimer
 
@@ -222,7 +223,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             sc_enabled_type,
             temperature_type,
             *signals.input_types(),
-            *self.kv_params.get_symbolic_inputs().flatten(),
+            *self.kv_params.flattened_kv_inputs(),
         ]
 
     def _build_decoder_graph(
@@ -279,7 +280,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
         sc_logits: Buffer,
         sc_enabled: Buffer,
         temperature: Buffer,
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
+        kv_cache_inputs: tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...],
     ) -> tuple[Buffer, Buffer, Buffer, Buffer, Buffer]:
         """Runs one denoise step.
 
@@ -295,7 +296,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             sc_enabled,
             temperature,
             *self.signal_buffers,
-            *kv_cache_inputs.flatten(),
+            *tree.leaves(kv_cache_inputs),
         )
         sc_out, argmax, topk_probs, topk_idx, entropy = outputs[:5]
         # Populated only when the graph was built with DG_DUMP_HIDDEN=1

@@ -17,6 +17,7 @@ import copy
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -24,7 +25,6 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
-    flatten_kv_inputs_per_device,
 )
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
@@ -239,7 +239,7 @@ def generate_max_outputs(
         inputs, input_row_offsets, *kv_cache = graph.inputs
         kv_collection: PagedCacheValues = kv_params.unflatten_kv_inputs(
             iter(kv_cache)
-        ).inputs[0]
+        )[0]
 
         graph.output(
             attention(
@@ -255,7 +255,7 @@ def generate_max_outputs(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0])
     kv_manager.alloc(batch[0])
-    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch])[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(
@@ -263,7 +263,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        *flatten_kv_inputs_per_device(kv_runtime_inputs),
+        *tree.leaves(kv_runtime_inputs),
     )[0]
 
     return output

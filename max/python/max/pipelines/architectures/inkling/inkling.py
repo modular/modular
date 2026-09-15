@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -34,9 +35,8 @@ from max.graph import (
 from max.nn.comm import Signals
 from max.nn.embedding import Embedding, VocabParallelEmbedding
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
     PagedCacheValues,
 )
@@ -323,14 +323,13 @@ def _subgraph_layer_groups(
 
 
 def kv_collections_by_key(
-    tree: MultiKVCacheInputs[TensorValue, BufferValue],
+    kv_tree: Mapping[str, object],
 ) -> dict[str, list[PagedCacheValues]]:
     """Groups an unflattened KV tree by attention flavor, then by rank."""
-    collections: dict[str, list[PagedCacheValues]] = {}
-    for key, child in tree.children.items():
-        assert isinstance(child, KVCacheInputs)
-        collections[key] = list(child.inputs)
-    return collections
+    return {
+        key: tree.leaves(child, leaf=KVCacheInputsPerDevice)
+        for key, child in kv_tree.items()
+    }
 
 
 class Inkling(Module):

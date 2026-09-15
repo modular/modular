@@ -52,7 +52,7 @@ from __future__ import annotations
 from collections import OrderedDict, defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypeAlias, TypeVar
+from typing import Any, Protocol, TypeAlias, TypeVar, overload
 
 __all__ = [
     "Selector",
@@ -660,6 +660,24 @@ def unflatten(
 
 
 # ─── reads ──────────────────────────────────────────────────────────────────
+
+
+@overload
+def leaves(
+    tree: Any,
+    *,
+    leaf: type[_T] | tuple[type[_T], ...],
+    shared: bool = ...,
+) -> list[_T]: ...
+
+
+@overload
+def leaves(
+    tree: Any,
+    *,
+    leaf: Callable[[Any], bool] | None = ...,
+    shared: bool = ...,
+) -> list[Any]: ...
 
 
 def leaves(

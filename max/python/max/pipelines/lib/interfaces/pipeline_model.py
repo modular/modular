@@ -23,6 +23,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -32,7 +33,7 @@ from max.graph import DeviceRef, Graph, Module, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -191,10 +192,11 @@ class ModelInputs:
         assert inputs.input_row_offsets is input_row_offsets
     """
 
-    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
     """KV cache graph inputs holding every (DP replica x TP shard) device's
-    inputs: a ``KVCacheInputs`` leaf, or a ``MultiKVCacheInputs`` tree for
-    multi-cache models. ``flatten()`` yields the full positional input list."""
+    inputs: a ``KVCacheInputs`` pytree (a per-device tuple leaf, or a dict
+    of named subtrees for multi-cache models). ``max.tree.leaves``
+    yields the full positional input list."""
 
     lora_buffers: tuple[Buffer, ...] = ()
     """ModuleV3 LoRA graph inputs (routing triple + per-slot adapter stacks)
@@ -621,7 +623,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to ``execute()``.
@@ -647,7 +649,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def _prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         raise NotImplementedError(
@@ -868,8 +870,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         # This helper supports single-cache (leaf) models; multi-cache trees
         # are unflattened by the architecture itself.
         kv_inputs = self.kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
-        assert isinstance(kv_inputs, KVCacheInputs)
-        return list(kv_inputs.inputs)
+        return tree.leaves(kv_inputs, leaf=KVCacheInputsPerDevice)
 
     @classmethod
     def get_kv_params(

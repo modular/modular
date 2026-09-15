@@ -22,6 +22,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -79,6 +80,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -115,6 +117,7 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -141,6 +144,7 @@ modular_py_test(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -193,6 +197,7 @@ modular_py_test(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -216,6 +221,7 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -237,6 +243,7 @@ _LORA_TEST_DEPS = [
     "//max/python/max/experimental/torch",
     "//max/python/max/graph",
     "//max/python/max/nn",
+    "//max/python/max:tree",
     "//max/tests/integration/test_common:simple_kv_cache",
     requirement("hypothesis"),
     requirement("numpy"),

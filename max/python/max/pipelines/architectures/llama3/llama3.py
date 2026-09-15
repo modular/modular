@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable, Sequence
 
+from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
@@ -262,12 +263,12 @@ class Llama3(Transformer):
                 input_row_offsets_type,
                 return_n_logits_type,
                 hidden_states_type,
-                *kv_inputs.flatten(),
+                *tree.leaves(kv_inputs),
             )
 
         return (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
         )

@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -89,7 +90,7 @@ class NemotronHInputs(Llama3Inputs):
             self.input_row_offsets,
             self.return_n_logits,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),

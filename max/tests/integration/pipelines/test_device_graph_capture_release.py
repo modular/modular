@@ -26,7 +26,6 @@ from max.engine import Model
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     BatchCharacteristics,
-    KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAAttnKey,
@@ -136,9 +135,7 @@ def _warmup_model_inputs(
     yield MockModelInputs(
         active_batch_size=batch_size,
         eos_prob=0.0,
-        kv_cache_inputs=KVCacheInputs[Buffer, Buffer](
-            inputs=[_make_kv_per_device()]
-        ),
+        kv_cache_inputs=(_make_kv_per_device(),),
     )
 
 

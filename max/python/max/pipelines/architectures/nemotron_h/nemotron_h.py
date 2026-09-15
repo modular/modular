@@ -1064,7 +1064,7 @@ class NemotronH(Module):
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
-        kv_types = list(kv_params.get_symbolic_inputs().flatten())
+        kv_types = list(kv_params.flattened_kv_inputs())
 
         slot_idx_type = TensorType(
             DType.uint32, shape=["batch_size"], device=dev

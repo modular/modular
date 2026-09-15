@@ -14,6 +14,7 @@
 
 import numpy as np
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
@@ -30,7 +31,6 @@ from max.nn.attention.attention_with_rope import AttentionWithRope
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from max.nn.quant_config import WeightScaleSpec
 from max.nn.rotary_embedding import RotaryEmbedding
@@ -164,7 +164,7 @@ def _build_and_execute_attention_graph(
     graph_name: str,
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs().inputs[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
     dispatch_metadata_symbol = kv_symbolic_inputs.attention_dispatch_metadata
     assert dispatch_metadata_symbol is not None
 
@@ -194,7 +194,7 @@ def _build_and_execute_attention_graph(
                 shape=["row_offsets_length"],
                 device=DeviceRef.GPU(),
             ),
-            *flatten_kv_inputs_per_device(kv_symbolic_inputs),
+            *tree.leaves(kv_symbolic_inputs),
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -202,7 +202,7 @@ def _build_and_execute_attention_graph(
 
         x, input_row_offsets, *kv_inputs = graph.inputs
 
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
         output = attention(
             layer_idx=layer_idx.tensor,
             x=x.tensor,
@@ -231,7 +231,7 @@ def _build_and_execute_attention_graph(
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        *flatten_kv_inputs_per_device(kv_runtime_inputs),
+        *tree.leaves(kv_runtime_inputs),
     )[0]
 
     return torch.from_dlpack(result)

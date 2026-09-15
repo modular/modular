@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     ModuleV3SingleReplicaBatchProcessor,
@@ -35,7 +35,7 @@ class DeepseekV2ModuleV3BatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> DeepseekV2Inputs:
         return DeepseekV2Inputs(
             tokens=tokens,

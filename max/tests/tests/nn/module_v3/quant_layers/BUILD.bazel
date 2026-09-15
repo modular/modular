@@ -18,5 +18,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
         requirement("numpy"),
+        "//max/python/max:tree",
     ],
 )

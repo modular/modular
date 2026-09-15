@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -153,7 +154,7 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(language_outputs) == 3:

@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -84,7 +85,11 @@ class UnifiedDflashGemma4_31BInputs(UnifiedSpecDecodeInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
         return buffers + self._spec_decode_tail_buffers(
             include_in_thinking_phase=True

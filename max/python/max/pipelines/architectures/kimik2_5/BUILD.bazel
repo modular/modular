@@ -41,5 +41,6 @@ modular_py_library(
         "//max/python/max/profiler",
         "//max/python/max/support",
         "//max/python/max:_core",
+        "//max/python/max:tree",
     ],
 )

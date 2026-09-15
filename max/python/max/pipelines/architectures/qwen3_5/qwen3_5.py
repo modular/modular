@@ -18,6 +18,7 @@ import functools
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -693,7 +694,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         signal_buffer_types = signals.input_types()
 
         # Flatten KV types for all devices
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # The hidden state is replicated across devices, so the merge runs per
         # replica against a per-device copy of the same embeddings.

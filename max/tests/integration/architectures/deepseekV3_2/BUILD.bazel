@@ -52,6 +52,7 @@ modular_py_library(
     imports = ["."],
     deps = [
         ":mla_sparse_test_utils",
+        "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
@@ -116,6 +117,7 @@ modular_py_test(
     deps = [
         ":mla_sparse_test_utils",
         ":torch_reference",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -145,6 +147,7 @@ modular_py_test(
     }),
     deps = [
         ":mla_sparse_test_utils",
+        "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
@@ -210,9 +213,9 @@ modular_py_test(
     target_compatible_with = ["//:b200_gpu"],
     deps = [
         ":mla_sparse_graphs",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/engine",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:mef_precompile",

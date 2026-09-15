@@ -37,6 +37,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -56,7 +57,6 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     MLAKVCacheParams,
     PagedCacheValues,
-    flatten_kv_inputs_per_device,
 )
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -207,7 +207,7 @@ def _run_path(
     """Build, run one QKV path; return (Q output, KV cache blocks)."""
     hidden = a_np.shape[1]
     qkv_dim = wqkv_np.shape[0]
-    kv_symbolic = kv_params.get_symbolic_inputs().inputs[0]
+    kv_symbolic = kv_params.get_symbolic_inputs()[0]
 
     with Graph(
         f"qkv_{'mxfp8' if is_mxfp8 else 'bf16'}",
@@ -219,12 +219,12 @@ def _run_path(
             TensorType(
                 DType.bfloat16, shape=(qkv_dim, hidden), device=device_ref
             ),
-            *flatten_kv_inputs_per_device(kv_symbolic),
+            *tree.leaves(kv_symbolic),
         ],
     ) as graph:
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
         a, input_row_offsets, wqkv, *kv_inputs = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
         q_out = _build_qkv_value(
             is_mxfp8=is_mxfp8,
             a=a.tensor,
@@ -254,7 +254,7 @@ def _run_path(
         a_buf,
         row_offsets_buf,
         wqkv_buf,
-        *flatten_kv_inputs_per_device(kv_runtime),
+        *tree.leaves(kv_runtime),
     )
     q_out_np = torch.from_dlpack(out_buf).to(torch.float32).cpu().numpy()
     # The cache is bf16, which numpy can't represent, so read it through torch.
@@ -445,9 +445,9 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
             num_q_heads=num_index_heads,
         )
 
-        main_sym = main_params.get_symbolic_inputs().inputs[0]
-        index_sym = index_params.get_symbolic_inputs().inputs[0]
-        n_main = len(flatten_kv_inputs_per_device(main_sym))
+        main_sym = main_params.get_symbolic_inputs()[0]
+        index_sym = index_params.get_symbolic_inputs()[0]
+        n_main = len(tree.leaves(main_sym))
 
         with Graph(
             f"qkv_index_mxfp8_{main_dtype}_main_cache",
@@ -459,8 +459,8 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
                 TensorType(
                     DType.bfloat16, (n_total, hidden), device=device_ref
                 ),
-                *flatten_kv_inputs_per_device(main_sym),
-                *flatten_kv_inputs_per_device(index_sym),
+                *tree.leaves(main_sym),
+                *tree.leaves(index_sym),
             ],
         ) as graph:
             a, iro, wqkv, *rest = graph.inputs
@@ -478,10 +478,8 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
                 scales_type=DType.float8_e8m0fnu,
                 out_type=DType.float8_e4m3fn,
             )
-            main_kv = main_params.unflatten_kv_inputs(iter(main_in)).inputs[0]
-            index_kv = index_params.unflatten_kv_inputs(iter(index_in)).inputs[
-                0
-            ]
+            main_kv = main_params.unflatten_kv_inputs(iter(main_in))[0]
+            index_kv = index_params.unflatten_kv_inputs(iter(index_in))[0]
             q, index_q = _fused_qkv_index_ragged_matmul_scaled_mxfp8(
                 main_params,
                 index_params,
@@ -517,8 +515,8 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
             a_buf,
             iro_buf,
             wqkv_buf,
-            *flatten_kv_inputs_per_device(main_rt),
-            *flatten_kv_inputs_per_device(index_rt),
+            *tree.leaves(main_rt),
+            *tree.leaves(index_rt),
         )
         q_np = torch.from_dlpack(q_buf).to(torch.float32).cpu().numpy()
         iq_np = torch.from_dlpack(iq_buf).to(torch.float32).cpu().numpy()
@@ -615,9 +613,9 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
         `pre` is the `(fp8, e8m0)` pair a producer epilogue would hand the op:
         "same" is what the op would compute itself, "foreign" unrelated rows.
         """
-        main_sym = main_params.get_symbolic_inputs().inputs[0]
-        index_sym = index_params.get_symbolic_inputs().inputs[0]
-        n_main = len(flatten_kv_inputs_per_device(main_sym))
+        main_sym = main_params.get_symbolic_inputs()[0]
+        index_sym = index_params.get_symbolic_inputs()[0]
+        n_main = len(tree.leaves(main_sym))
 
         name = "stacked" if stacked else "separate"
         if pre is not None:
@@ -636,17 +634,15 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                 TensorType(
                     DType.bfloat16, (n_total, hidden), device=device_ref
                 ),
-                *flatten_kv_inputs_per_device(main_sym),
-                *flatten_kv_inputs_per_device(index_sym),
+                *tree.leaves(main_sym),
+                *tree.leaves(index_sym),
             ],
         ) as graph:
             a, iro, wqkv, *rest = graph.inputs
             main_in, index_in = rest[:n_main], rest[n_main:]
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
-            main_kv = main_params.unflatten_kv_inputs(iter(main_in)).inputs[0]
-            index_kv = index_params.unflatten_kv_inputs(iter(index_in)).inputs[
-                0
-            ]
+            main_kv = main_params.unflatten_kv_inputs(iter(main_in))[0]
+            index_kv = index_params.unflatten_kv_inputs(iter(index_in))[0]
             # On AMD this returns rank-2 [N, K // 32] E8M0 scales -- the
             # checkpoint layout, which the CDNA4 matmul consumes uninterleaved.
             w_q, w_scales = quantize_dynamic_block_scaled(
@@ -745,8 +741,8 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
             a_buf,
             iro_buf,
             wqkv_buf,
-            *flatten_kv_inputs_per_device(main_rt),
-            *flatten_kv_inputs_per_device(index_rt),
+            *tree.leaves(main_rt),
+            *tree.leaves(index_rt),
         )
 
         # The caches are bf16, which numpy can't represent, so read through torch.

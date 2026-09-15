@@ -13,6 +13,7 @@
 """Test pipelines MLA attention layer."""
 
 import numpy as np
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -21,7 +22,6 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flare_mla_prefill_ragged
 from max.nn.kv_cache import (
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -84,9 +84,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(g.inputs[4:])
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[4:]))[0]
             result = flare_mla_prefill_ragged(
                 kv_params,
                 input.tensor,
@@ -136,7 +134,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets.to(device),
         k_buffer_tensor.to(device),
         v_buffer_tensor.to(device),
-        *flatten_kv_inputs_per_device(kv_runtime_inputs),
+        *tree.leaves(kv_runtime_inputs),
     )[0]
     assert isinstance(result, Buffer)
 

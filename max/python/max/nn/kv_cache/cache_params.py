@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -22,6 +23,7 @@ from functools import cached_property
 from typing import Any, Literal, Protocol, TypeGuard, runtime_checkable
 
 import numpy as np
+from max import tree
 from max._kv_cache_ops import (
     mha_decode_num_partitions,
     mla_dispatch_args_scalar,
@@ -41,11 +43,8 @@ from max.support.math import ceildiv
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheInputsPerDevice,
-    MultiKVCacheInputs,
     RecurrentLeafInputs,
-    RecurrentStateInputs,
     RecurrentStateInputsPerDevice,
 )
 from .utils import (
@@ -1007,7 +1006,7 @@ class CacheLeafParamInterface(Protocol):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> KVCacheInputsInterface[TensorType, BufferType]:
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for this cache.
 
         Args:
@@ -1019,11 +1018,11 @@ class CacheLeafParamInterface(Protocol):
 
     def flattened_kv_inputs(self) -> list[TensorType | BufferType]:
         """Flattens the symbolic inputs for this cache."""
-        return self.get_symbolic_inputs().flatten()
+        return tree.leaves(self.get_symbolic_inputs())
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> KVCacheInputsInterface[TensorValue, BufferValue]:
+    ) -> KVCacheInputs[TensorValue, BufferValue]:
         """Unflattens the symbolic inputs for this cache."""
         ...
 
@@ -1032,13 +1031,13 @@ class CacheLeafParamInterface(Protocol):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime cache inputs spanning all replicas.
 
         ``assignments`` and ``buffers`` are indexed by data-parallel replica.
-        Returns a single :class:`KVCacheInputs` leaf (or a
-        :class:`MultiKVCacheInputs` tree) whose leaves each hold every
-        ``(replica, TP shard)`` device's inputs."""
+        Returns the :class:`KVCacheInputs` pytree (a tuple of per-device
+        leaves, or a dict of named subtrees for multi-cache models) whose
+        leaves each hold one ``(replica, TP shard)`` device's inputs."""
         ...
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
@@ -1601,7 +1600,7 @@ class KVCacheParams(KVCacheParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> KVCacheInputs[TensorType, BufferType]:
+    ) -> tuple[KVCacheInputsPerDevice[TensorType, BufferType], ...]:
         """Computes the symbolic inputs for the KV cache.
 
         Args:
@@ -1619,13 +1618,23 @@ class KVCacheParams(KVCacheParamInterface):
                 replica_idx, prefix, namespace
             )
             input_symbols.extend(symbols)
-        return KVCacheInputs(inputs=input_symbols)
+        return tuple(input_symbols)
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> KVCacheInputs[TensorValue, BufferValue]:
+    ) -> tuple[KVCacheInputsPerDevice[TensorValue, BufferValue], ...]:
         """Unflattens the KV cache inputs from a graph-input iterator."""
-        return self.get_symbolic_inputs().unflatten(it)
+        return tuple(
+            tree.leaves(
+                tree.unflatten(self._kv_symbolic_treedef, it, exact=False),
+                leaf=KVCacheInputsPerDevice,
+            )
+        )
 
     def allocate_buffers(
         self, total_num_pages: int, _prefix: str = ""
@@ -1774,7 +1783,7 @@ class KVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Builds the runtime KV-cache leaf spanning all replicas.
 
         ``assignments`` and ``buffers`` are indexed by data-parallel replica.
@@ -1854,7 +1863,7 @@ class KVCacheParams(KVCacheParamInterface):
                         scales_per_layer=scales_per_layer,
                     )
                 )
-        return KVCacheInputs(inputs=tp_shards)
+        return tuple(tp_shards)
 
     def unflatten_basic_kv_tree(
         self, it: Iterator[Any]
@@ -2608,7 +2617,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> RecurrentStateInputs[TensorType, BufferType]:
+    ) -> tuple[RecurrentStateInputsPerDevice[TensorType, BufferType], ...]:
         """Returns the symbolic inputs for the state leaves.
 
         ``namespace`` is unused: the region ids are already distinct.
@@ -2641,19 +2650,29 @@ class RecurrentStateParams(CacheLeafParamInterface):
                         ),
                     )
                 )
-        return RecurrentStateInputs(inputs=per_device)
+        return tuple(per_device)
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> RecurrentStateInputs[TensorValue, BufferValue]:
-        return self.get_symbolic_inputs().unflatten(it)
+    ) -> tuple[RecurrentStateInputsPerDevice[TensorValue, BufferValue], ...]:
+        return tuple(
+            tree.leaves(
+                tree.unflatten(self._kv_symbolic_treedef, it, exact=False),
+                leaf=RecurrentStateInputsPerDevice,
+            )
+        )
 
     def build_runtime_inputs(
         self,
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> RecurrentStateInputs[Buffer, Buffer]:
+    ) -> tuple[RecurrentStateInputsPerDevice[Buffer, Buffer], ...]:
         """Gathers this forward's state rows, replica-major.
 
         ``buffers`` is unused: a state's pool is staged in the assignment
@@ -2683,7 +2702,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
                 inputs.append(
                     RecurrentStateInputsPerDevice(leaves=tuple(leaves))
                 )
-        return RecurrentStateInputs(inputs=inputs)
+        return tuple(inputs)
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns one pool leaf per state leaf, each one state wide.
@@ -2978,24 +2997,32 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> MultiKVCacheInputs[TensorType, BufferType]:
+    ) -> dict[str, KVCacheInputs[TensorType, BufferType]]:
         """Returns the symbolic inputs for the KV cache tree.
 
         Each child inherits a distinct namespace so sibling groups' page-pool
         dims stay independent; nested subtrees compose the prefix.
         """
-        return MultiKVCacheInputs(
-            children={
-                k: p.get_symbolic_inputs(namespace=f"{namespace}{k}_")
-                for k, p in self.children.items()
-            },
+        # OrderedDict: the graph declares its inputs in child-declaration order
+        # (children, then state), and tree.flatten preserves an OrderedDict's
+        # order rather than sorting keys like a plain dict.
+        return OrderedDict(
+            (k, p.get_symbolic_inputs(namespace=f"{namespace}{k}_"))
+            for k, p in self.children.items()
         )
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> MultiKVCacheInputs[TensorValue, BufferValue]:
+    ) -> dict[str, KVCacheInputs[TensorValue, BufferValue]]:
         """Unflattens the KV cache inputs from a graph-input iterator."""
-        return self.get_symbolic_inputs().unflatten(it)
+        inputs = tree.unflatten(self._kv_symbolic_treedef, it, exact=False)
+        assert isinstance(inputs, dict)
+        return inputs
 
     def unflatten_basic_kv_tree(
         self, it: Iterator[Any]
@@ -3007,14 +3034,15 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
         Returns one entry per attention child, in declaration order.
         """
-        tree = self.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
+        kv_tree = self.unflatten_kv_inputs(it)
         out: list[list[KVCacheInputsPerDevice[TensorValue, BufferValue]]] = []
         for key in self._attention_children:
-            child = tree.children[key]
-            if not isinstance(child, KVCacheInputs):
+            child = kv_tree[key]
+            # A nested (height > 1) child unflattens to a dict subtree, not the
+            # flat per-device tuple this shortcut requires.
+            if not isinstance(child, tuple):
                 raise ValueError("Unable to flatten nested KV tree")
-            out.append(list(child.inputs))
+            out.append(tree.leaves(child, leaf=KVCacheInputsPerDevice))
         return tuple(out)
 
     @property
@@ -3085,7 +3113,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime KV-cache tree spanning all replicas.
 
         Each child builds itself from every replica's assignment plus that
@@ -3099,15 +3127,19 @@ class MultiKVCacheParams(KVCacheParamInterface):
         for buffer in buffers:
             assert isinstance(buffer, MultiKVCacheBuffer)
             multi_buffers.append(buffer)
-        return MultiKVCacheInputs(
-            children={
-                k: p.build_runtime_inputs(
+        # OrderedDict so the runtime tree flattens in the same
+        # child-declaration order the graph declared its inputs (see
+        # get_symbolic_inputs).
+        return OrderedDict(
+            (
+                k,
+                p.build_runtime_inputs(
                     assignments,
                     [b.children[k] for b in multi_buffers if k in b.children],
                     _prefix=_prefix + k + ".",
-                )
-                for k, p in self.children.items()
-            },
+                ),
+            )
+            for k, p in self.children.items()
         )
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:

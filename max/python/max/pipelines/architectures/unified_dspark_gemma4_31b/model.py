@@ -19,12 +19,16 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import cache_dtype_for_encoding
@@ -88,7 +92,11 @@ class UnifiedDSparkGemma4_31BInputs(UnifiedSpecDecodeInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
         return buffers + self._spec_decode_tail_buffers(
             include_in_thinking_phase=True

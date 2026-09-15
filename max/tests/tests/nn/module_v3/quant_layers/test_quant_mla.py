@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from unittest.mock import MagicMock
 
 import pytest
+from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -43,7 +44,6 @@ from max.graph import (
 from max.nn.kv_cache import (
     KVCacheParams,
     MLAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_mla import (
@@ -129,8 +129,8 @@ def _build_kv_collection(
         return result
 
     graph_values: list[BufferValue | TensorValue] = []
-    for per_device_types in kv_inputs.inputs:
-        for field_type in flatten_kv_inputs_per_device(per_device_types):
+    for per_device_types in kv_inputs:
+        for field_type in tree.leaves(per_device_types):
             t = Tensor.zeros(
                 resolve_shape(field_type.shape),
                 dtype=field_type.dtype,
@@ -141,11 +141,11 @@ def _build_kv_collection(
             else:
                 graph_values.append(TensorValue(t))
 
-    kv_concrete = kv_inputs.unflatten(iter(graph_values))
+    kv_concrete = kv_params.unflatten_kv_inputs(iter(graph_values))
     mapping = PlacementMapping(
         DeviceMesh(tuple(devices), (len(devices),), ("axis",)), (Replicated(),)
     )
-    return PagedCacheValues.from_upstream(kv_concrete.inputs, mapping)
+    return PagedCacheValues.from_upstream(kv_concrete, mapping)
 
 
 def _expected_parameters(

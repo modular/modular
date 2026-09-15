@@ -38,6 +38,7 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -45,9 +46,8 @@ from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
     PACKED_PAGE_STRIDE,
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
 )
 from max.pipelines.architectures.llama3.model_config import Llama3Config
@@ -205,11 +205,17 @@ def _build() -> Step:
         )
         it = iter(rest)
         sigs = [next(it).buffer]
-        tree = kvp.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
-        tleaf, dleaf = tree.children["target"], tree.children["draft"]
-        assert isinstance(tleaf, KVCacheInputs) and isinstance(
-            dleaf, KVCacheInputs
+        kv_tree = kvp.unflatten_kv_inputs(it)
+        assert isinstance(kv_tree, dict)
+        tleaf, dleaf = kv_tree["target"], kv_tree["draft"]
+        assert (
+            isinstance(tleaf, tuple)
+            and tleaf
+            and isinstance(tleaf[0], KVCacheInputsPerDevice)
+        ) and (
+            isinstance(dleaf, tuple)
+            and dleaf
+            and isinstance(dleaf[0], KVCacheInputsPerDevice)
         )
         next(it)  # batch_context_lengths
         dt = next(it).tensor
@@ -227,8 +233,8 @@ def _build() -> Step:
             input_row_offsets=row_offsets.tensor,
             draft_tokens=dt,
             signal_buffers=sigs,
-            target_kv=list(tleaf.inputs),
-            draft_kv=list(dleaf.inputs),
+            target_kv=tree.leaves(tleaf, leaf=KVCacheInputsPerDevice),
+            draft_kv=tree.leaves(dleaf, leaf=KVCacheInputsPerDevice),
             return_n_logits=ret_n.tensor,
             host_input_row_offsets=host_row_offsets.tensor,
             data_parallel_splits=dp_splits.tensor,

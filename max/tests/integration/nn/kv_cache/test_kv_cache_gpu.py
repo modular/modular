@@ -14,15 +14,14 @@
 import asyncio
 
 import numpy as np
+from max import tree
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheInputs,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -59,8 +58,12 @@ async def _test_kv_cache_gpu() -> None:
     kv_manager.alloc(context)
     batch = [context]
     kv_inputs = kv_manager.runtime_inputs([batch])
-    assert isinstance(kv_inputs, KVCacheInputs)
-    first_device_inputs = kv_inputs.inputs[0]
+    assert (
+        isinstance(kv_inputs, tuple)
+        and kv_inputs
+        and isinstance(kv_inputs[0], KVCacheInputsPerDevice)
+    )
+    first_device_inputs = kv_inputs[0]
     assert isinstance(first_device_inputs, KVCacheInputsPerDevice)
-    assert len(flatten_kv_inputs_per_device(first_device_inputs)) == 7
+    assert len(tree.leaves(first_device_inputs)) == 7
     assert first_device_inputs.attention_dispatch_metadata is not None

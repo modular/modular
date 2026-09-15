@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -219,7 +220,7 @@ class Gemma3MultiModalModelV3(
             model_inputs.input_row_offsets,
             image_embeddings,
             image_token_indices,
-            *kv_cache_inputs.flatten(),
+            *tree.leaves(kv_cache_inputs),
         )
 
         def _to_buffer(t: Tensor) -> Buffer:

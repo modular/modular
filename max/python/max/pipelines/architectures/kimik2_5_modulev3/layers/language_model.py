@@ -21,6 +21,7 @@ graph inputs are added here.
 
 from __future__ import annotations
 
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -37,7 +38,7 @@ from max.experimental.sharding import (
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 
 from ...deepseekV3_modulev3.deepseekV3 import (
@@ -100,8 +101,10 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             batch_context_length = batch_context_lengths[0]
 
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(kv_collections, KVCacheInputs)
+        kv_collections = tree.leaves(
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
+        )
 
         comm_buffers: EPCommBuffers | None = None
         if self.ep_batch_manager is not None:
@@ -112,7 +115,7 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
 
         kv_collection = PagedCacheValues.from_upstream(
-            kv_collections.inputs,
+            kv_collections,
             PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
         )
         return self._run_text_model(

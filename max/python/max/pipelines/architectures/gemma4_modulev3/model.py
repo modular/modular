@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -301,7 +302,7 @@ class Gemma4Model(
             model_inputs.input_row_offsets,
             model_inputs.vision_embeddings[0],
             model_inputs.vision_scatter_indices[0],
-            *kv_cache_inputs.flatten(),
+            *tree.leaves(kv_cache_inputs),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(

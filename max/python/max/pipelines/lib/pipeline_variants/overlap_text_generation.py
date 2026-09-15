@@ -77,6 +77,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import (
     CPU,
     Buffer,
@@ -108,10 +109,7 @@ from max.nn import kernels
 from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheInputsPerDevice,
-    MultiKVCacheInputs,
-    RecurrentStateInputs,
     spec_decode_cache_slack,
 )
 from max.nn.transformer import ReturnLogits
@@ -303,7 +301,7 @@ def _contiguous_prefix_3d(
 class _UnifiedSpecDecodeInputs(Protocol):
     tokens: Buffer
     input_row_offsets: Buffer
-    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer]
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer]
 
     draft_tokens: Buffer | None
     draft_probs_full: Buffer | None
@@ -1613,29 +1611,17 @@ class RealizeFutureTokenProcessor:
             "RealizeFutureTokenProcessor is None but there are tokens to scatter."
         )
 
-        # Traverse the KV tree and collect the KV cache inputs per device.
-        def _recurse_kv_tree(
-            kv: KVCacheInputsInterface[Any, Any],
-            kv_collections: list[KVCacheInputsPerDevice[Buffer, Buffer]],
-        ) -> None:
-            if isinstance(kv, KVCacheInputs):
-                kv_collections.extend(kv.inputs)
-            elif isinstance(kv, MultiKVCacheInputs):
-                for child in kv.children.values():
-                    _recurse_kv_tree(child, kv_collections)
-            elif isinstance(kv, RecurrentStateInputs):
-                # No cache length and no page for the scatter to address.
-                pass
-            else:
-                raise ValueError(f"Unexpected KV cache input type: {type(kv)}")
-
         kv_collections: list[KVCacheInputsPerDevice[Buffer, Buffer]] = []
 
         if self._num_speculative_tokens > 0:
             assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
             assert prev_batch.spec_decode is not None
             assert model_inputs.kv_cache_inputs is not None
-            _recurse_kv_tree(model_inputs.kv_cache_inputs, kv_collections)
+            kv_collections.extend(
+                tree.leaves(
+                    model_inputs.kv_cache_inputs, leaf=KVCacheInputsPerDevice
+                )
+            )
 
             cache_lengths = [
                 kv.cache_lengths for kv in kv_collections[: self._num_devices]

@@ -919,7 +919,7 @@ class TestModel:
             page_size=128,
             devices=[DeviceRef.CPU()],
         )
-        declared = kv_params.get_symbolic_inputs().inputs[0]
+        declared = kv_params.get_symbolic_inputs()[0]
         cache_spec = PagedSpec(
             kv_blocks=_spec_of(declared.kv_blocks),
             cache_lengths=_spec_of(declared.cache_lengths),

@@ -14,6 +14,7 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
@@ -23,7 +24,7 @@ from max.graph.weights import WeightData
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import MLAKVCacheParams, flatten_kv_inputs_per_device
+from max.nn.kv_cache import MLAKVCacheParams
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -300,11 +301,9 @@ def generate_max_outputs_fp8(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = (
-                kv_params.get_symbolic_inputs()
-                .unflatten(iter(graph.inputs[2:]))
-                .inputs[0]
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(graph.inputs[2:])
+            )[0]
 
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -340,7 +339,7 @@ def generate_max_outputs_fp8(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx)
-            kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+            kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -351,7 +350,7 @@ def generate_max_outputs_fp8(
             max_output = compiled.execute(
                 input_tensor_device,
                 input_row_offsets.to(device0),
-                *flatten_kv_inputs_per_device(kv_inputs),
+                *tree.leaves(kv_inputs),
             )
 
             for ctx in batch:
@@ -365,7 +364,7 @@ def generate_max_outputs_fp8(
 
     for ctx in batch:
         kv_manager.alloc(ctx)
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
@@ -374,7 +373,7 @@ def generate_max_outputs_fp8(
     max_output = compiled.execute(
         input_tensor_device,
         input_row_offsets.to(device0),
-        *flatten_kv_inputs_per_device(kv_inputs),
+        *tree.leaves(kv_inputs),
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

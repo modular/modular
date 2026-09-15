@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -33,7 +34,6 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from test_common.modular_graph_test import modular_graph_test
 from test_common.simple_kv_cache import (
@@ -138,9 +138,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             input, input_row_offsets, wqkv, *_kv_rest = g.inputs
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(g.inputs[3:])
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[3:]))[0]
             result = fused_qkv_ragged_matmul(
                 kv_params,
                 input.tensor,
@@ -182,9 +180,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             # `flatten` emits them.
             **{
                 3 + i: buf
-                for i, buf in enumerate(
-                    flatten_kv_inputs_per_device(kv_runtime_inputs)
-                )
+                for i, buf in enumerate(tree.leaves(kv_runtime_inputs))
             },
         },
     )
@@ -225,9 +221,9 @@ class MatmulKVRaggedModel:
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection=self.kv_params.unflatten_kv_inputs(
-                iter(kv_inputs)
-            ).inputs[0],
+            kv_collection=self.kv_params.unflatten_kv_inputs(iter(kv_inputs))[
+                0
+            ],
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
             ),
@@ -319,7 +315,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         hidden_states,
         input_row_offsets,
         wkv,
-        *flatten_kv_inputs_per_device(kv_inputs),
+        *tree.leaves(kv_inputs),
     )
 
     # Check that the matmul wrote output to the KV cache.
@@ -353,9 +349,9 @@ class MatmulKRaggedModel:
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection=self.kv_params.unflatten_kv_inputs(
-                iter(kv_inputs)
-            ).inputs[0],
+            kv_collection=self.kv_params.unflatten_kv_inputs(iter(kv_inputs))[
+                0
+            ],
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
             ),
@@ -435,7 +431,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         hidden_states,
         input_row_offsets,
         wk,
-        *flatten_kv_inputs_per_device(kv_inputs),
+        *tree.leaves(kv_inputs),
     )
 
     ref_results = hidden_states @ wk.T

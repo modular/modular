@@ -14,6 +14,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -24,7 +25,6 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
-    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -45,9 +45,9 @@ class FusedQKRMSNormModel:
         input_row_offsets: TensorValue,
         *graph_inputs: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
-        kv_collection = self.kv_params.unflatten_kv_inputs(
-            iter(graph_inputs)
-        ).inputs[0]
+        kv_collection = self.kv_params.unflatten_kv_inputs(iter(graph_inputs))[
+            0
+        ]
         layer_idx = ops.constant(
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
@@ -90,7 +90,7 @@ class UnfusedKeyRMSNormModel:
     ) -> None:
         rms_norm_key_cache(
             self.kv_params,
-            self.kv_params.unflatten_kv_inputs(iter(graph_inputs)).inputs[0],
+            self.kv_params.unflatten_kv_inputs(iter(graph_inputs))[0],
             gamma=k_gamma,
             epsilon=self.epsilon,
             layer_idx=ops.constant(
@@ -206,12 +206,12 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         q_gamma,
         k_gamma,
         input_row_offsets,
-        *flatten_kv_inputs_per_device(fused_inputs),
+        *tree.leaves(fused_inputs),
     )
     unfused_model(
         k_gamma,
         input_row_offsets,
-        *flatten_kv_inputs_per_device(unfused_inputs),
+        *tree.leaves(unfused_inputs),
     )
 
     np.testing.assert_allclose(

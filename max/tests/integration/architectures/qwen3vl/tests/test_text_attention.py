@@ -16,12 +16,13 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams, flatten_kv_inputs_per_device
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
@@ -303,7 +304,7 @@ def generate_qwen3_max_outputs(
     ) as graph:
         x, input_row_offsets_input, *kv_cache = graph.inputs
 
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
 
         output = attention(
             layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
@@ -324,13 +325,13 @@ def generate_qwen3_max_outputs(
         kv_manager.claim(context)
         kv_manager.alloc(context)
 
-    kv_cache_runtime = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_cache_runtime = kv_manager.runtime_inputs_for_leaf([batch])[0]
     assert kv_cache_runtime.attention_dispatch_metadata is not None
 
     result = compiled.execute(
         Buffer.from_dlpack(flat_input.to(torch_device)).to(device),
         Buffer.from_dlpack(input_row_offsets.to(torch_device)).to(device),
-        *flatten_kv_inputs_per_device(kv_cache_runtime),
+        *tree.leaves(kv_cache_runtime),
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

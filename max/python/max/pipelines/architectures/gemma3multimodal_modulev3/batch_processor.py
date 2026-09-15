@@ -22,7 +22,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -155,7 +155,7 @@ class Gemma3MultiModalModuleV3BatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Gemma3MultiModalModelInputs:
         if len(replica_batches) > 1:

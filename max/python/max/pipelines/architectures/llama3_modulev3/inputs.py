@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from max import tree
 from max.driver import Buffer
 from max.pipelines.lib import ModelInputs
 
@@ -42,7 +43,7 @@ class Llama3Inputs(ModelInputs):
             self.return_n_logits,
             input_row_offsets,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),

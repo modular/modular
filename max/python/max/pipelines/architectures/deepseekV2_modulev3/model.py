@@ -18,14 +18,13 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-)
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -99,7 +98,7 @@ class DeepseekV2Model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             model_inputs.input_row_offsets,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(

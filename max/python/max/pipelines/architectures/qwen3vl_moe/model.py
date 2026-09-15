@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -38,7 +39,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
@@ -84,9 +85,7 @@ class Qwen3VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] = field(
-        kw_only=True
-    )
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -479,7 +478,7 @@ class Qwen3VLModel(
         )
 
         # Flatten kv types for each device
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -572,7 +571,7 @@ class Qwen3VLModel(
 
             # Calculate how many KV cache inputs there are
             kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = kv_inputs.flatten()
+            flattened_kv_types = tree.leaves(kv_inputs)
             num_kv_inputs = len(flattened_kv_types)
 
             # Extract KV cache inputs (they come after signal buffers in the graph)
@@ -692,7 +691,7 @@ class Qwen3VLModel(
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
-        kv_cache_inputs_list = list(model_inputs.kv_cache_inputs.flatten())
+        kv_cache_inputs_list = list(tree.leaves(model_inputs.kv_cache_inputs))
 
         # Execute language model with text and image embeddings and deepstack features
         # deepstack_image_embeddings Structure: [layer0_device0, layer0_device1, ..., layer1_device0, layer1_device1, ...]

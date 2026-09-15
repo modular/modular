@@ -28,6 +28,7 @@ from collections.abc import Callable, Iterable, Sequence
 from enum import Enum, auto
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -947,7 +948,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
 
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # EP communication buffers are appended at the very end so the
         # graph-builder can split off ``len(ep_manager.input_types())``

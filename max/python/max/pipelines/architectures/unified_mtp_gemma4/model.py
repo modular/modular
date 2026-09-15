@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Module
@@ -104,7 +105,7 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *self.kv_cache_inputs.flatten(),
+            *tree.leaves(self.kv_cache_inputs),
             *self.batch_context_lengths,
         )
         return prefix + self._spec_decode_tail_buffers(

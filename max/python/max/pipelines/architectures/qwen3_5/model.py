@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -31,9 +32,8 @@ from max.graph import (
 from max.graph.buffer_utils import cast_tensors_to
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
-    KVCacheInputs,
-    MultiKVCacheInputs,
-    RecurrentStateInputs,
+    KVCacheInputsPerDevice,
+    RecurrentStateInputsPerDevice,
     recurrent_leaf,
 )
 from max.pipelines.context import ImageMetadata
@@ -83,7 +83,7 @@ class Qwen3_5Inputs(Llama3Inputs):
             self.return_n_logits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -566,11 +566,13 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             kv_cache_inputs = variadic_args[kv_start : kv_start + kv_count]
             kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_cache_inputs))
 
-            assert isinstance(kv_tree, MultiKVCacheInputs)
-            attn_inputs = kv_tree.children[ATTN_CACHE_KEY]
-            assert isinstance(attn_inputs, KVCacheInputs)
-            kv_collections = list(attn_inputs.inputs)
-            state = kv_tree.children[STATE_CACHE_KEY]
+            assert isinstance(kv_tree, dict)
+            kv_collections = tree.leaves(
+                kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
+            )
+            state = tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            )
 
             idx = kv_start + kv_count
 
@@ -591,7 +593,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 variadic_args[idx].tensor if position_ids_count else None
             )
 
-            assert isinstance(state, RecurrentStateInputs), (
+            assert state, (
                 "Qwen3.5 graph requires linear attention layers; the cache"
                 " declared no recurrent state child"
             )
@@ -601,7 +603,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 signal_buffers,
-                list(state.inputs),
+                list(state),
                 image_embeddings_g,
                 image_token_indices_g,
                 position_ids_g,

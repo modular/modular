@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import functools
 
+from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
@@ -33,7 +34,7 @@ from max.experimental.tensor import Tensor
 from max.graph import ops
 from max.nn.kernels import scatter_nd_skip_oob_indices as _scatter_nd
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -289,8 +290,9 @@ class Idefics3Language(Module[..., tuple[Tensor, ...]]):
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(
             iter(variadic_args)
         )
-        assert isinstance(symbolic_inputs, KVCacheInputs)
-        kv_collections = symbolic_inputs.inputs
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
+        )
 
         return self.language_model(
             tokens,

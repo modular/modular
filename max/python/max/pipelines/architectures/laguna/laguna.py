@@ -31,6 +31,7 @@ import functools
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -47,7 +48,10 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP as DenseMLP
 from max.nn.linear import ColumnParallelLinear, Linear
@@ -545,7 +549,7 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
 
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         ep_input_types: list[TensorType | BufferType] = []
         if self.ep_manager is not None:
