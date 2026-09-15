@@ -613,15 +613,14 @@ def test_map_structure_mismatch_names_the_paths() -> None:
         tree_map(lambda a, b: None, {"a": 1}, {"b": 1})
     message = str(excinfo.value)
     assert "tree argument 2" in message
-    assert "expected leaves at ['a']" in message
-    assert "got leaves at ['b']" in message
-    # When the paths agree, the structures are shown instead; the offending
-    # tree is named by position; a static payload is part of the structure.
-    with pytest.raises(ValueError, match="same paths"):
+    assert "expected keys ['a'], got ['b']" in message
+    # The first difference is named, wherever it sits; the offending tree is
+    # named by position; a static payload is part of the structure.
+    with pytest.raises(ValueError, match=r"'a': expected a tuple, got list"):
         tree_map(lambda a, b: None, {"a": (1,)}, {"a": [1]})
     with pytest.raises(ValueError, match="tree argument 3"):
         tree_map(lambda a, b, c: None, {"a": 1}, {"a": 2}, {"b": 3})
-    with pytest.raises(ValueError, match="same paths"):
+    with pytest.raises(ValueError, match=r"'n': expected 1, got 2"):
         tree_map(
             lambda a, b: None,
             {"w": Weight("w"), "n": 1},

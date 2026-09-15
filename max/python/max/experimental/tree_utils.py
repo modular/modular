@@ -135,8 +135,12 @@ def _path_or_root(path: str) -> str:
     return repr(path) if path else "<root>"
 
 
-def _meta_eq(a: Any, b: Any) -> bool:
-    """Compares two payloads without trusting their ``__eq__``."""
+def _equal(a: Any, b: Any) -> bool:
+    """Returns whether ``a == b`` is ``True``.
+
+    Returns ``False`` if the comparison raises or does not return a single
+    boolean, as it does for arrays.
+    """
     if a is b:
         return True
     try:
@@ -301,12 +305,71 @@ class TreeDef:
             return False
         if (self.kind, self.keys) != (other.kind, other.keys):
             return False
-        return (
-            _meta_eq(self.meta, other.meta) and self.children == other.children
-        )
+        return _equal(self.meta, other.meta) and self.children == other.children
 
     def __hash__(self) -> int:
         return hash((self.kind, self.children, self.keys))
+
+    def flatten_up_to(self, tree: Any, path: str = "") -> list[Any]:
+        """Flattens ``tree`` using this structure to locate the leaves.
+
+        The walk descends into ``tree`` wherever this structure has a
+        container and stops wherever it has a leaf, returning whatever
+        ``tree`` holds at that position. Use this to flatten a second tree the
+        same way as a first one, without a ``leaf`` predicate that might stop
+        at different positions.
+
+        The following example flattens a tree whose leaves are containers:
+
+        .. code-block:: python
+
+            from max.experimental import tree_utils as tree
+
+            _, treedef = tree.flatten({"a": 1, "b": [2, 3]}, leaf=int)
+            other = {"a": [0], "b": [[], {}]}
+            assert treedef.flatten_up_to(other) == [[0], [], {}]
+
+        Args:
+            tree: The value to flatten. It must have this structure, with
+                equal values at the positions of static values.
+            path: The path of ``tree``, used in error messages.
+
+        Returns:
+            The value at each leaf position, in order.
+
+        Raises:
+            ValueError: If ``tree`` does not have this structure.
+        """
+        where = _path_or_root(path)
+        if self.kind == "leaf":
+            return [tree]
+        if self.kind == "static" and not _equal(self.meta, tree):
+            raise ValueError(f"{where}: expected {self.meta!r}, got {tree!r}")
+        if self.kind in ("ref", "static"):
+            return []
+        if (kind := _node_kind(tree)) != self.kind:
+            raise ValueError(
+                f"{where}: expected a {self.kind}, got {type(tree).__name__}"
+            )
+        children, keys, meta = flatten_one_level(tree)
+        child_keys = keys or tuple(range(len(children)))
+        # Include the class in the metadata, as ``flatten`` does.
+        if kind == "node":
+            meta = (type(tree), meta)
+        if child_keys != self.child_keys:
+            raise ValueError(
+                f"{where}: expected keys {list(self.child_keys)}, got "
+                f"{list(child_keys)}"
+            )
+        if not _equal(meta, self.meta):
+            raise ValueError(f"{where}: expected {self.meta!r}, got {meta!r}")
+        return [
+            entry
+            for key, child, grand in zip(
+                child_keys, self.children, children, strict=True
+            )
+            for entry in child.flatten_up_to(grand, extend_path(path, key))
+        ]
 
 
 @dataclass
@@ -685,23 +748,14 @@ def map(
     flat, treedef = flatten(tree, leaf=leaf, shared=shared)
     columns = [flat]
     for index, other in enumerate(rest):
-        other_flat, other_def = flatten(other, leaf=leaf, shared=shared)
-        if other_def != treedef:
-            # Reported as leaf paths, which are what a caller can act on.
-            want, got = treedef.leaf_paths, other_def.leaf_paths
-            lines = [
+        # Use the first tree's structure so that all trees flatten the same way.
+        try:
+            columns.append(treedef.flatten_up_to(other))
+        except ValueError as e:
+            raise ValueError(
                 f"tree structure mismatch: tree argument {index + 2} does "
-                "not match the structure of tree argument 1.",
-                f"  expected leaves at {list(want)}",
-                f"  got leaves at {list(got)}",
-            ]
-            if want == got:
-                lines.append(
-                    "  same paths, so the structures differ: "
-                    f"{treedef} != {other_def}"
-                )
-            raise ValueError("\n".join(lines))
-        columns.append(other_flat)
+                f"not match the structure of tree argument 1, at {e}"
+            ) from None
     mapped = [f(*row) for row in zip(*columns, strict=True)]
     return unflatten(treedef, mapped)
 

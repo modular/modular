@@ -1029,41 +1029,6 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return None
 
-    def __tree_flatten__(
-        self,
-    ) -> tuple[tuple[GraphValue, ...], DeviceMapping | None]:
-        """Returns this tensor's per-device graph values and its mapping.
-
-        Implementing the tree protocol makes a tensor a container rather than a
-        leaf, so a tree of tensors flattens straight to the per-device value
-        list a graph boundary needs. Callers wanting a tensor treated as one
-        opaque leaf pass ``leaf=Tensor`` instead.
-
-        Realized tensors are sourced into the surrounding graph by
-        :attr:`graph_values`, so this is only meaningful while building a graph.
-        """
-        return self.graph_values, self._mapping
-
-    @classmethod
-    def __tree_unflatten__(
-        cls, mapping: DeviceMapping | None, children: Sequence[Any]
-    ) -> Tensor:
-        """Rebuilds a tensor from the pieces :meth:`__tree_flatten__` produced.
-
-        Args:
-            mapping: The distribution the tensor was flattened with.
-            children: One graph value or buffer per device.
-        """
-        if isinstance(children[0], driver.Buffer):
-            if mapping is None or mapping.mesh.num_devices == 1:
-                return cls(storage=children[0])
-            return cls._from_shards(
-                tuple(children), mapping.mesh, mapping.to_placements()
-            )
-        return current_realization_context().create_unrealized(
-            tuple(children), mapping=mapping
-        )
-
     def _as_constant_external(
         self,
         name: str,

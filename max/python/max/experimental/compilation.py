@@ -10,13 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""APIs to trace and compile callables.
+"""Traces and compiles Python functions over tensors.
 
-:func:`compile` turns a function over tensors into a compiled one in two
-calls: first pass a spec (dtype, shape, device) for each tensor argument,
-then call the result on real tensors. Arguments that are not tensors are
-fixed while tracing, so pass them the same way both times. :func:`stage`
-stops after tracing, for inspecting the graph.
+:func:`compile` takes a function that operates on
+:class:`~max.experimental.tensor.Tensor` values and returns a
+:class:`CompiledCallable` that runs it as a compiled graph. :func:`stage`
+performs the tracing step only and returns a :class:`StagedGraph`, which is
+useful for inspecting the generated MLIR.
+
+Both take the function first and its input types second. An input type
+describes one tensor argument: pass a :class:`~max.graph.TensorType` or a
+:class:`~max.experimental.sharding.TensorLayout` for an argument the function
+reads, or a :class:`~max.graph.BufferType` or
+:class:`~max.experimental.sharding.BufferLayout` for one it also writes to.
+Arguments that are not tensors, such as a Python ``float`` or ``bool``, are
+static: their values are fixed into the graph during tracing, so pass the
+same values when calling the compiled function.
+
+The following example compiles a function with one tensor argument and one
+static argument:
 
 .. code-block:: python
 
@@ -29,10 +41,10 @@ stops after tracing, for inspecting the graph.
     def step(x: Tensor, *, gain: float) -> Tensor:
         return x * gain
 
-    x_spec = TensorLayout(DType.float32, ["batch", 2], CPU())
+    x_type = TensorLayout(DType.float32, ["batch", 2], CPU())
 
-    run = compilation.compile(step)(x_spec, gain=3.0)
-    out = run(Tensor.ones([4, 2], device=CPU()), gain=3.0)  # "batch" accepts 4
+    run = compilation.compile(step)(x_type, gain=3.0)
+    out = run(Tensor.ones([4, 2], device=CPU()), gain=3.0)
 
 .. invisible-code-block: python
 
@@ -43,12 +55,18 @@ stops after tracing, for inspecting the graph.
 
 from __future__ import annotations
 
-import dataclasses
 import functools
 import itertools
 import re
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import (
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    Sequence,
+)
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Generic, ParamSpec, TypeVar
 
 from max.driver import Accelerator, Buffer, Device, DLPackArray
@@ -57,23 +75,29 @@ from max.experimental import tree_utils as tree
 from max.experimental.realization_context import (
     GraphRealizationContext,
     _cached_signal_buffers,
+    _signal_buffer_types,
     in_graph_context,
-    open_subgraph,
-    share_subgraph,
     subgraph_context,
 )
 from max.experimental.sharding import (
     BufferLayout,
+    DeviceMesh,
+    PlacementMapping,
     TensorLayout,
     as_layout,
 )
+from max.experimental.sharding.per_shard_dim import make_per_shard_dim
 from max.experimental.support import _session
-from max.experimental.tensor import Tensor, realization_context
-from max.experimental.tree_utils import TreeDef
+from max.experimental.tensor import (
+    Tensor,
+    current_realization_context,
+    realization_context,
+)
 from max.graph import (
     BufferType,
     BufferValue,
     Graph,
+    Shape,
     StaticDim,
     TensorType,
     TensorValue,
@@ -84,154 +108,125 @@ from max.graph import (
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
-# What may stand in for one tensor argument, and so the leaves of a spec tree.
-# A ``Tensor`` is a leaf so that ``as_layout`` can refuse it by name. Dropping
-# it here would instead have the walk descend into it as a pytree, which
-# contributes its pieces as separate inputs and says nothing.
+# ``Tensor`` is included so that ``as_layout`` reports a clear error when a
+# tensor is passed as an input type.
 _LAYOUT_TYPES: tuple[type, ...] = (
     TensorLayout,
     Tensor,
     TensorType,
     BufferType,
 )
-# The types a graph boundary carries, and so the leaves of a staged result.
-_GRAPH_VALUE_TYPES = (BufferValue, TensorValue)
+# Leaf types when flattening a traced function's return value.
+_VALUE_TYPES: tuple[type, ...] = (Tensor, BufferValue, TensorValue)
 
 
 def _sanitized_graph_name(fn: Callable[..., object]) -> str:
-    """Returns ``fn``'s name with non-identifier characters folded away."""
+    """Returns the name of ``fn`` with non-identifier characters replaced."""
     raw = getattr(fn, "__name__", None) or type(fn).__name__
     return re.sub(r"\W+", "_", raw).strip("_") or "fn"
 
 
-def _fills_one_slot(value: object) -> bool:
-    """Whether ``value`` fills one argument slot rather than nesting further."""
-    # Deferring to ``tree.is_node`` keeps this agreeing with ``_record_graph``'s walk.
-    return isinstance(value, _LAYOUT_TYPES) or not tree.is_node(value)
+def _declared_layouts(
+    args: tuple[Any, ...], kwargs: Mapping[str, Any]
+) -> tuple[list[TensorLayout], tree.TreeDef]:
+    """Extracts the layouts from the input types passed to ``stage``.
+
+    Returns the layouts in graph order and the tree structure of the
+    arguments, which records the position of each layout and the value of
+    each static argument. Raises ``TypeError`` if a tensor is passed where an
+    input type is expected.
+    """
+    input_types, treedef = tree.flatten(
+        (args, dict(kwargs)), leaf=_LAYOUT_TYPES
+    )
+    return [as_layout(t) for t in input_types], treedef
 
 
-@dataclasses.dataclass(frozen=True)
-class _Signature:
-    """How a flat graph boundary maps onto a Python call."""
+def _align_signature(
+    layouts: Sequence[TensorLayout],
+    treedef: tree.TreeDef,
+    args: tuple[Any, ...],
+    kwargs: Mapping[str, Any],
+    label: str = "",
+) -> list[tuple[str, TensorLayout, Any]]:
+    """Matches the arguments of a call to the layouts they were staged with.
 
-    # ``Any`` because a call carries whatever the caller passed, uninspected;
-    # no union closes it and ``object`` would not survive the round trip.
-    in_specs: Any
-    """One layout per tensor argument, nested as the staged call passed them."""
+    Returns one ``(name, layout, argument)`` triple per tensor argument, in
+    graph order. The name is the argument's position or keyword followed by
+    its path inside any container, for example ``"0"``, ``"1.a"`` or
+    ``"gain"``. Raises ``ValueError`` if the call does not have the staged
+    structure, or a static argument has a different value.
+    """
+    try:
+        given = treedef.flatten_up_to((args, dict(kwargs)))
+    except ValueError as e:
+        raise ValueError(f"{label}tree structure mismatch at {e}") from None
+    return [
+        (path.partition(".")[2], layout, arg)
+        for path, layout, arg in zip(
+            treedef.leaf_paths, layouts, given, strict=True
+        )
+    ]
 
-    out_structure: TreeDef
-    """How to rebuild the return value from the graph's flat results."""
 
-    def flatten(
-        self, args: tuple[Any, ...], kwargs: Mapping[str, Any]
-    ) -> list[Buffer]:
-        """Checks a call against the specs and flattens it into graph order.
+def _input_buffers(
+    layouts: Sequence[TensorLayout],
+    treedef: tree.TreeDef,
+    args: tuple[Any, ...],
+    kwargs: Mapping[str, Any],
+) -> list[Buffer]:
+    """Converts the tensor arguments of a call to buffers for the engine.
 
-        Args:
-            args: One :class:`~max.experimental.tensor.Tensor` per tensor
-                argument, nested as the staged call passed them.
-            kwargs: The staged signature's keyword arguments.
-
-        Returns:
-            One buffer per graph input, a distributed argument expanded into
-            one per shard.
-
-        Raises:
-            TypeError: If an argument is not a
-                :class:`~max.experimental.tensor.Tensor` where one belongs.
-            ValueError: If the arguments do not match what was staged.
-        """
-        # Arity first: the path mismatch below reports it only as an absence.
-        wanted_args, wanted_kwargs = self.in_specs
-        if len(args) != len(wanted_args) or set(kwargs) != set(wanted_kwargs):
-            raise ValueError(
-                f"expected {len(wanted_args)} positional argument(s), got "
-                f"{len(args)}, and keywords {sorted(wanted_kwargs)}, got "
-                f"{sorted(kwargs)}."
+    Each tensor is checked against its staged layout and contributes one
+    buffer per shard. Raises ``TypeError`` if an argument is not a tensor and
+    ``ValueError`` if a tensor does not match its layout.
+    """
+    buffers: list[Buffer] = []
+    for name, layout, arg in _align_signature(layouts, treedef, args, kwargs):
+        if not isinstance(arg, Tensor):
+            raise TypeError(
+                f"argument {name}: expected a Tensor, got "
+                f"{type(arg).__name__}; use execute_raw()"
             )
-
-        # A call boundary is positional, so a walk across it duplicates.
-        wanted = tree.paths(self.in_specs, leaf=_fills_one_slot)
-        given = tree.paths((args, dict(kwargs)), leaf=_fills_one_slot)
-        if list(wanted) != list(given):
-            raise ValueError(
-                f"tree structure mismatch: expected {list(wanted)}, "
-                f"got {list(given)}"
-            )
-
-        buffers: list[Buffer] = []
-        for path, layout in wanted.items():
-            arg, name = given[path], path.partition(".")[2]
-            if not isinstance(layout, _LAYOUT_TYPES):
-                # __eq__ may be elementwise, so only a clean True counts.
-                try:
-                    matches = arg is layout or bool(arg == layout)
-                except Exception:
-                    matches = False
-                if not matches:
-                    raise ValueError(
-                        f"tree structure mismatch: argument {name} staged as "
-                        f"{layout!r}, got {arg!r}"
-                    )
-                continue
-            if not isinstance(arg, Tensor):
-                raise TypeError(
-                    f"argument {name}: expected a Tensor, got "
-                    f"{type(arg).__name__}; use execute_raw()"
-                )
-            shards = arg.local_shards
-            if isinstance(layout, BufferLayout):
-                # Dtype and shard count only: extent is whatever was allocated.
-                expected = layout.mesh.num_devices
-                if len(shards) != expected or arg.dtype != layout.dtype:
-                    raise ValueError(
-                        f"argument {name}: expected {layout.dtype} across "
-                        f"{expected} device(s), got {arg.dtype} across "
-                        f"{len(shards)}"
-                    )
-                buffers.extend(shard.driver_tensor for shard in shards)
-                continue
-            # Staging put every spec through ``as_layout``, so what reaches
-            # here reads as a value.
-            assert isinstance(layout, TensorLayout)
-            devices = [shard.device for shard in shards]
-            # A symbolic dim was staged to accept any size, so only match statics.
-            if (
-                (arg.dtype, len(arg.shape)) != (layout.dtype, len(layout.shape))
-                or devices != list(layout.mesh.devices)
-                or any(
-                    isinstance(dim, StaticDim) and dim != size
-                    for dim, size in zip(layout.shape, arg.shape, strict=True)
-                )
+        shards = arg.local_shards
+        devices = [shard.device for shard in shards]
+        if isinstance(layout, BufferLayout):
+            # Buffers are checked by dtype and shard count only. Their extent
+            # is whatever was allocated.
+            if len(shards) != layout.mesh.num_devices or (
+                arg.dtype != layout.dtype
             ):
                 raise ValueError(
-                    f"argument {name}: expected {layout.dtype} shape "
-                    f"{list(layout.shape)} on {list(layout.mesh.devices)}, got "
-                    f"{arg.dtype} shape {list(arg.shape)} on {devices}"
+                    f"argument {name}: expected {layout.dtype} across "
+                    f"{layout.mesh.num_devices} device(s), got {arg.dtype} "
+                    f"across {len(shards)}"
                 )
-            buffers.extend(shard.driver_tensor for shard in shards)
-        return buffers
-
-    def unflatten(self, buffers: Sequence[Buffer]) -> Any:
-        """Rebuilds the staged callable's return value from flat results.
-
-        The counterpart of :meth:`flatten`, on the way back out.
-
-        Args:
-            buffers: The graph's results, flat and in graph order.
-
-        Returns:
-            The staged callable's return value, nested as it returned it.
-        """
-        return tree.unflatten(self.out_structure, list(buffers))
+        # Symbolic dims accept any size, so only static dims are compared.
+        elif (
+            (arg.dtype, len(arg.shape)) != (layout.dtype, len(layout.shape))
+            or devices != list(layout.mesh.devices)
+            or any(
+                isinstance(dim, StaticDim) and dim != size
+                for dim, size in zip(layout.shape, arg.shape, strict=True)
+            )
+        ):
+            raise ValueError(
+                f"argument {name}: expected {layout.dtype} shape "
+                f"{list(layout.shape)} on {list(layout.mesh.devices)}, got "
+                f"{arg.dtype} shape {list(arg.shape)} on {devices}"
+            )
+        buffers.extend(shard.driver_tensor for shard in shards)
+    return buffers
 
 
 class StagedGraph(Generic[_P, _R]):
-    """A traced graph, ready to inspect or compile.
+    """A traced graph that is ready to inspect or compile.
 
-    Returned by :func:`stage`. Printing one renders the MLIR of the whole
-    module, subgraph bodies included. Call :meth:`compile` to make it
-    runnable.
+    :func:`stage` returns one. Print it to see the MLIR of the whole module,
+    including any subgraphs. Pass it to :class:`CompiledCallable` to compile
+    it.
+
+    The following example stages a function and checks its MLIR:
 
     .. code-block:: python
 
@@ -244,75 +239,107 @@ class StagedGraph(Generic[_P, _R]):
         def scale(x: Tensor) -> Tensor:
             return x * 2
 
-        spec = TensorLayout(DType.float32, [4], CPU())
-        staged = compilation.stage(scale)(spec)
+        x_type = TensorLayout(DType.float32, [4], CPU())
+        staged = compilation.stage(scale)(x_type)
+        print(staged)
 
     .. invisible-code-block: python
 
         assert "mo.mul" in str(staged)
+
+    Args:
+        fn: The function to trace.
+        graph: The graph to trace into. Its inputs must be one per shard of
+            each layout, in order, followed by the signal buffers if any.
+        layouts: The layout of each tensor argument, in graph order.
+        treedef: The tree structure of the arguments, as returned by
+            ``_declared_layouts``.
+        signal_device_ids: The ids of the accelerators whose collectives need
+            signal buffers.
+        prefix: The name prefix that weights created inside ``fn`` are
+            relative to.
+        subgraph_cache: The table that :func:`as_subgraph` stores traced
+            bodies in. Pass ``None`` to inline every subgraph call.
     """
 
     graph: Graph
-    """The recorded graph."""
+    """The traced graph."""
 
-    # Internal state, and so kept out of a constructor: how a call crosses the
-    # graph's boundary, and the accelerators whose collectives need signals.
-    _signature: _Signature
+    in_layouts: list[TensorLayout]
+    """The layout of each tensor argument, in graph order."""
+
+    in_tree: tree.TreeDef
+    """The tree structure of the arguments, including static arguments."""
+
+    out_layouts: list[TensorLayout]
+    """The layout of each tensor result, in graph order."""
+
+    out_tree: tree.TreeDef
+    """The tree structure of the return value."""
+
     _signal_device_ids: tuple[int, ...]
 
-    @classmethod
-    def _new(
-        cls,
+    def __init__(
+        self,
+        fn: Callable[..., Any],
         graph: Graph,
-        signature: _Signature,
+        layouts: Sequence[TensorLayout],
+        treedef: tree.TreeDef,
         signal_device_ids: tuple[int, ...] = (),
-    ) -> StagedGraph[_P, _R]:
-        self = cls()
+        *,
+        prefix: str = "",
+        subgraph_cache: dict[Any, Any] | None = None,
+    ) -> None:
+        arity = sum(len(layout.local_types) for layout in layouts)
+        ctx = GraphRealizationContext(
+            graph,
+            signal_buffers=[i.buffer for i in graph.inputs[arity:]] or None,
+            prefix=prefix,
+        )
+        ctx.subgraph_cache = subgraph_cache
+        rest = iter(graph.inputs[:arity])
+        with realization_context(ctx), ctx:
+            in_args, in_kwargs = tree.unflatten(
+                treedef, [_argument_tensor(rest, layout) for layout in layouts]
+            )
+            # Flatten the rebuilt arguments rather than reuse ``treedef``: a
+            # container of input types may unflatten to a different class
+            # than the one passed at call time.
+            _, in_tree = tree.flatten((in_args, in_kwargs), leaf=Tensor)
+            # ``shared`` is off, so ``return x, x`` produces two results.
+            results, out_tree = tree.flatten(
+                fn(*in_args, **in_kwargs), leaf=_VALUE_TYPES
+            )
+            if not all(isinstance(r, Tensor) for r in results):
+                raise TypeError("a staged callable must return Tensors")
+            graph.output(*(v for r in results for v in r.graph_values))
         self.graph = graph
-        self._signature = signature
+        self.in_layouts, self.in_tree = list(layouts), in_tree
+        self.out_layouts = [r.layout for r in results]
+        self.out_tree = out_tree
         self._signal_device_ids = signal_device_ids
-        return self
 
     def __str__(self) -> str:
-        """Returns the whole module's MLIR, shared subgraph bodies included.
+        """Returns the MLIR of the whole module, including subgraphs."""
+        op = self.graph._mlir_op
+        # Print the module op rather than its Python wrapper, whose repr
+        # wraps the MLIR in ``ModuleOp(..)``.
+        return str(op.block.owner if getattr(op, "block", None) else op)
 
-        The graph's own op names the bodies it calls but does not contain
-        them; rendering only that would quietly weaken any check that an op
-        is absent.
-        """
-        return str(self.graph._module)
-
-    # The default repr would pass a test asserting an op is absent.
+    # The default repr does not include the MLIR, so a test asserting that an
+    # op is absent would pass trivially.
     __repr__ = __str__
-
-    def compile(
-        self, *, weights: Mapping[str, DLPackArray] | None = None
-    ) -> CompiledCallable[_P, _R]:
-        """Compiles the graph into a :class:`CompiledCallable`.
-
-        Args:
-            weights: Data for the external constants the graph declares, keyed
-                as the graph names them, one entry per shard of a distributed
-                weight.
-
-        Returns:
-            The compiled function, called on real tensors.
-        """
-        return CompiledCallable._new(
-            self._signature,
-            _session().compile(self.graph),
-            self._signal_device_ids,
-            dict(weights or {}),
-        )
 
 
 class CompiledCallable(Generic[_P, _R]):
-    """A compiled function over tensors.
+    """A compiled function that runs on tensors.
 
-    Returned by :func:`compile`. Call it like the original function, with a
-    real tensor in each spec's place. The first call also binds
-    :attr:`weights` and allocates device memory; :meth:`export_mef` needs
-    neither, so it works before any call.
+    :func:`compile` returns one. Call it with the same arguments as the
+    original function, passing a :class:`~max.experimental.tensor.Tensor`
+    for each input type. The weights and the signal buffers are bound when
+    the object is created, so the first call has no extra setup cost.
+
+    The following example compiles a function, exports it, and runs it:
 
     .. code-block:: python
 
@@ -325,146 +352,159 @@ class CompiledCallable(Generic[_P, _R]):
         def scale(x: Tensor) -> Tensor:
             return x * 2
 
-        spec = TensorLayout(DType.float32, [3], CPU())
+        x_type = TensorLayout(DType.float32, [3], CPU())
 
-        run = compilation.compile(scale)(spec)  # compiles here
-        run.export_mef("scale.mef")             # no weights, no device memory
-        out = run(Tensor.ones([3], device=CPU()))  # [2.0, 2.0, 2.0]
+        run = compilation.compile(scale)(x_type)
+        run.export_mef("scale.mef")
+        out = run(Tensor.ones([3], device=CPU()))
 
     .. invisible-code-block: python
 
         import numpy as np
 
         np.testing.assert_allclose(out.to_numpy(), [2.0, 2.0, 2.0])
+
+    Args:
+        staged: The traced graph to compile.
+        weights: The weight registry: a mapping from the name of each weight
+            the graph declares to its data, with one entry per shard for a
+            distributed weight.
     """
 
-    weights: Mapping[str, DLPackArray]
-    """Data for the external constants the graph declares, keyed as the graph
-    names them, one entry per shard of a distributed weight."""
+    #: See :attr:`StagedGraph.in_layouts`.
+    in_layouts: list[TensorLayout]
+    #: See :attr:`StagedGraph.in_tree`.
+    in_tree: tree.TreeDef
+    #: See :attr:`StagedGraph.out_layouts`.
+    out_layouts: list[TensorLayout]
+    #: See :attr:`StagedGraph.out_tree`.
+    out_tree: tree.TreeDef
 
-    # Internal state, and so kept out of a constructor: how a call crosses the
-    # graph's boundary, the compiled graph, and the accelerators whose
-    # collectives need signals.
-    _signature: _Signature
+    _weights: dict[str, DLPackArray]
     _artifact: CompiledModel
     _signal_device_ids: tuple[int, ...]
+    _engine_model: Model
+    _signal_buffers: list[Buffer]
 
-    @classmethod
-    def _new(
-        cls,
-        signature: _Signature,
-        artifact: CompiledModel,
-        signal_device_ids: tuple[int, ...] = (),
+    def __init__(
+        self,
+        staged: StagedGraph[_P, _R],
         weights: Mapping[str, DLPackArray] | None = None,
-    ) -> CompiledCallable[_P, _R]:
-        self = cls()
-        self._signature = signature
-        self._artifact = artifact
-        self._signal_device_ids = signal_device_ids
-        self.weights = dict(weights or {})
-        return self
-
-    @functools.cached_property
-    def _engine_model(self) -> Model:
-        """The initialized model this calls, with :attr:`weights` bound in."""
-        return _session().init(
-            self._artifact, weights_registry=dict(self.weights)
+    ) -> None:
+        self.in_layouts, self.in_tree = staged.in_layouts, staged.in_tree
+        self.out_layouts, self.out_tree = staged.out_layouts, staged.out_tree
+        self._signal_device_ids = staged._signal_device_ids
+        # Use the session's MEF cache. Plain ``compile`` bypasses it.
+        self._artifact = _session().compile_reusing_mefs(staged.graph)
+        self._weights = dict(weights or {})
+        # Bind the weights and allocate the signal buffers now rather than on
+        # the first call, so that the first call is not slower than the rest.
+        self._engine_model = _session().init(
+            self._artifact, weights_registry=dict(self._weights)
         )
+        ids = self._signal_device_ids
+        self._signal_buffers = _cached_signal_buffers(ids)[0] if ids else []
 
     @property
-    def _signal_buffers(self) -> list[Buffer]:
-        """Buffers for multi-device collectives, allocated once, not per call."""
-        ids = self._signal_device_ids
-        return _cached_signal_buffers(ids)[0] if ids else []
+    def weights(self) -> Mapping[str, DLPackArray]:
+        """Returns the weight registry this callable was compiled with.
+
+        The mapping is read-only. To run the same graph with different
+        weights, create a new :class:`CompiledCallable` from the same
+        :class:`StagedGraph`.
+        """
+        return MappingProxyType(self._weights)
+
+    @property
+    def engine_model(self) -> Model:
+        """Returns the underlying :class:`~max.engine.Model`.
+
+        Use it to drive the model directly, for example to capture and
+        replay it:
+
+        .. code-block:: text
+
+            run.engine_model.capture(key, *buffers, *run.signal_buffers)
+            run.engine_model.replay(key, *buffers, *run.signal_buffers)
+        """
+        return self._engine_model
+
+    @property
+    def signal_buffers(self) -> list[Buffer]:
+        """Returns the signal buffers for multi-device collectives.
+
+        The list is empty when the graph runs on a single device. The buffers
+        are allocated once per set of devices and shared by every compiled
+        callable that runs on them.
+        """
+        return self._signal_buffers
 
     def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-        """Runs the compiled function on real tensors.
+        """Runs the compiled function.
 
         Args:
-            args: One :class:`~max.experimental.tensor.Tensor` per tensor
-                argument of the staged signature, nested as it passed them.
-            kwargs: The staged signature's keyword arguments.
+            args: The positional arguments. Pass a
+                :class:`~max.experimental.tensor.Tensor` for each input type.
+            kwargs: The keyword arguments, likewise.
 
         Returns:
-            The staged callable's return value.
+            The return value of the original function, with a
+            :class:`~max.experimental.tensor.Tensor` in place of each result.
 
         Raises:
-            TypeError: If an argument is not a
-                :class:`~max.experimental.tensor.Tensor` where one belongs.
-            ValueError: If the arguments do not match what was staged.
+            TypeError: If an argument that was staged as a tensor is not a
+                :class:`~max.experimental.tensor.Tensor`.
+            ValueError: If an argument does not match the input types the
+                function was compiled with.
         """
-        buffers = self._signature.flatten(args, kwargs)
-        return self._signature.unflatten(self.execute_raw(*buffers))
+        rest = iter(
+            self.execute_raw(
+                *_input_buffers(self.in_layouts, self.in_tree, args, kwargs)
+            )
+        )
+        return tree.unflatten(
+            self.out_tree,
+            [
+                Tensor._from_shards(
+                    tuple(itertools.islice(rest, layout.mesh.num_devices)),
+                    layout.mesh,
+                    layout.placements,
+                )
+                for layout in self.out_layouts
+            ],
+        )
 
     def execute_raw(self, *buffers: Buffer) -> list[Buffer]:
-        """Executes the graph on raw buffers, appending the signal buffers.
+        """Runs the compiled graph on buffers, skipping the argument checks.
 
         Args:
-            buffers: One per graph input, a distributed argument expanded into
-                one per shard.
+            buffers: One buffer per graph input, in graph order. A distributed
+                argument takes one buffer per shard. Do not pass the signal
+                buffers; they are appended automatically.
 
         Returns:
-            The result buffers, flat and in graph order.
+            One buffer per graph output, in graph order.
         """
-        return list(self._engine_model(*buffers, *self._signal_buffers))
+        return list(self.engine_model(*buffers, *self.signal_buffers))
 
     def export_mef(self, path: str | Path) -> None:
-        """Writes the compiled graph to a MEF file at ``path``.
+        """Writes the compiled graph to a MEF file.
 
-        MEF is the binary format the runtime executes. Writing one serializes
-        the compiled graph directly, without binding :attr:`weights` or
-        allocating device memory. Read it back with :func:`max.engine.read` to
-        skip compiling again.
+        Load the file with :func:`max.engine.read` to skip compilation the
+        next time.
 
         Args:
-            path: Where to write the file.
+            path: The path of the file to write.
         """
         self._artifact.export_mef(path)
 
 
-def _signal_device_ids(
-    layouts: Sequence[TensorLayout], signal_devices: Iterable[Device]
-) -> tuple[int, ...]:
-    """The accelerators whose collectives need signal buffers.
-
-    Args:
-        layouts: The input layouts, whose meshes span devices of their own.
-        signal_devices: Devices taking part beyond what the inputs span.
-
-    Returns:
-        Their ids, or empty when fewer than two accelerators take part.
-    """
-    spanned = (
-        device
-        for layout in layouts
-        if layout.mesh.num_devices > 1
-        for device in layout.mesh.devices
-    )
-    ids = tuple(
-        dict.fromkeys(
-            device.id
-            for device in itertools.chain(spanned, signal_devices)
-            if isinstance(device, Accelerator)
-        )
-    )
-    return ids if len(ids) > 1 else ()
-
-
 def _argument_tensor(
-    ctx: GraphRealizationContext,
-    values: Iterator[Value[Any]],
-    layout: TensorLayout,
+    values: Iterator[Value[Any]], layout: TensorLayout
 ) -> Tensor:
-    """Rebuilds one staged argument from the graph inputs its layout claims.
+    """Creates the tensor for ``layout`` from the next values in ``values``.
 
-    Args:
-        ctx: The context the rebuilt tensor records into.
-        values: The graph's inputs, in layout order, drained by what
-            ``layout`` spans.
-        layout: What the argument was staged as.
-
-    Returns:
-        The tensor to pass ``fn`` in that argument's place.
+    Consumes one value per shard of the layout.
     """
     shards = itertools.islice(values, layout.mesh.num_devices)
     graph_values: tuple[BufferValue | TensorValue, ...] = (
@@ -472,7 +512,22 @@ def _argument_tensor(
         if isinstance(layout, BufferLayout)
         else tuple(value.tensor for value in shards)
     )
-    return ctx.create_unrealized(graph_values, mapping=layout.mapping)
+    return current_realization_context().create_unrealized(
+        graph_values, mapping=layout.mapping
+    )
+
+
+def _own_devices(fn: object) -> Iterator[Device]:
+    """Yields the devices of the distributed tensors held by ``fn``.
+
+    A model holds its weights as attributes rather than taking them as
+    arguments, so this is how :func:`stage` learns which devices a
+    tensor-parallel model needs signal buffers for.
+    """
+    # ``shared=True`` because a model may contain reference cycles.
+    for value in tree.leaves(fn, leaf=Tensor, shared=True):
+        if isinstance(value, Tensor) and value.is_distributed:
+            yield from value.mesh.devices
 
 
 def stage(
@@ -484,20 +539,14 @@ def stage(
     signal_devices: Iterable[Device] = (),
     is_device_graph: bool = False,
 ) -> Callable[..., StagedGraph[_P, _R]]:
-    """Traces ``fn`` into a graph, without compiling it.
+    """Traces a function into a graph without compiling it.
 
-    Call the returned function with one spec per tensor argument of ``fn``
-    to get the :class:`StagedGraph`, which prints as MLIR. Use
-    :func:`compile` to run ``fn`` instead.
+    Returns a function that takes the input types of ``fn`` and returns a
+    :class:`StagedGraph`. Use it to inspect the MLIR that :func:`compile`
+    would compile.
 
-    Tensor arguments are given as specs. A
-    :class:`~max.experimental.sharding.TensorLayout` is a layout, and an argument
-    given one is read-only; pass a
-    :class:`~max.experimental.sharding.BufferLayout` for a buffer the callable
-    may also store through. Only a layout may declare a boundary: a live
-    :class:`~max.experimental.tensor.Tensor` is refused, because its dims are
-    whatever it currently holds and taking them would fix every one. Pass
-    ``tensor.layout`` to do that on purpose.
+    The following example stages a function whose tensor arguments are
+    passed in a dictionary:
 
     .. code-block:: python
 
@@ -510,10 +559,9 @@ def stage(
         def combine(kv: dict[str, Tensor], alpha: float) -> Tensor:
             return (kv["a"] + kv["b"]) * alpha
 
-        spec = TensorLayout(DType.float32, [2], CPU())
+        x_type = TensorLayout(DType.float32, [2], CPU())
 
-        # Each tensor in the container is an input; alpha is baked in.
-        staged = compilation.stage(combine)({"a": spec, "b": spec}, 2.0)
+        staged = compilation.stage(combine)({"a": x_type, "b": x_type}, 2.0)
         print(staged)
 
     .. invisible-code-block: python
@@ -521,58 +569,61 @@ def stage(
         assert len(staged.graph.inputs) == 2
 
     Args:
-        fn: The callable to record, over
-            :class:`~max.experimental.tensor.Tensor` values or containers of
-            them.
-        name: The graph's name. Defaults to ``fn``'s own name.
+        fn: The function to trace. It takes and returns
+            :class:`~max.experimental.tensor.Tensor` values, possibly inside
+            lists, tuples or dictionaries.
+        name: The name of the graph. Defaults to the name of ``fn``.
         custom_extensions: Paths to custom Mojo kernel libraries.
-        allow_subgraphs: Whether :func:`as_subgraph` bodies become shared
-            subgraphs rather than inlining into the caller.
-        signal_devices: Devices taking part in collectives beyond what the
-            specs span.
-        is_device_graph: Whether to record a device graph.
+        allow_subgraphs: Whether calls made through :func:`as_subgraph` are
+            traced as subgraphs. If ``False``, they are inlined.
+        signal_devices: Additional accelerators to allocate signal buffers
+            for, beyond the devices of the input types and of the tensors
+            held by ``fn``.
+        is_device_graph: Whether to build a device graph.
 
     Returns:
-        A callable taking one spec per argument of ``fn``, as
-        :func:`~max.experimental.sharding.as_layout`
-        accepts them, and returning the :class:`StagedGraph`.
+        A function that takes one input type per tensor argument of ``fn``
+        and returns the :class:`StagedGraph`.
     """
 
     def record(*args: Any, **kwargs: Any) -> StagedGraph[_P, _R]:
-        # Positional, like _Signature.flatten: one graph input per argument slot.
-        in_specs = tree.map(as_layout, (args, dict(kwargs)), leaf=_LAYOUT_TYPES)
-        layouts, structure = tree.flatten(in_specs, leaf=_LAYOUT_TYPES)
-        types = [t for spec in layouts for t in spec.local_types]
-        ids = _signal_device_ids(layouts, signal_devices)
+        layouts, treedef = _declared_layouts(args, kwargs)
+        # Signal buffers are only needed when at least two accelerators take
+        # part in the graph.
+        ids = tuple(
+            dict.fromkeys(
+                device.id
+                for device in itertools.chain(
+                    (
+                        device
+                        for layout in layouts
+                        if layout.mesh.num_devices > 1
+                        for device in layout.mesh.devices
+                    ),
+                    _own_devices(fn),
+                    signal_devices,
+                )
+                if isinstance(device, Accelerator)
+            )
+        )
+        ids = ids if len(ids) > 1 else ()
         graph = Graph(
             name or _sanitized_graph_name(fn),
             input_types=[
-                *types,
-                *(_cached_signal_buffers(ids)[1] if ids else []),
+                *(t for layout in layouts for t in layout.local_types),
+                *_signal_buffer_types(ids),
             ],
             custom_extensions=custom_extensions,
             is_device_graph=is_device_graph,
         )
-        ctx = GraphRealizationContext(
+        return StagedGraph(
+            fn,
             graph,
-            signal_buffers=[i.buffer for i in graph.inputs[len(types) :]]
-            or None,
+            layouts,
+            treedef,
+            ids,
+            subgraph_cache={} if allow_subgraphs else None,
         )
-        if allow_subgraphs:
-            ctx.subgraph_cache = {}
-
-        values = iter(graph.inputs[: len(types)])
-        with realization_context(ctx), ctx:
-            in_args, in_kwargs = tree.unflatten(
-                structure,
-                [_argument_tensor(ctx, values, spec) for spec in layouts],
-            )
-            # Also positional on the way out: ``return x, x`` is two results.
-            flat, out_structure = tree.flatten(
-                fn(*in_args, **in_kwargs), leaf=_GRAPH_VALUE_TYPES
-            )
-            graph.output(*flat)
-        return StagedGraph._new(graph, _Signature(in_specs, out_structure), ids)
 
     return record
 
@@ -587,19 +638,17 @@ def compile(
     signal_devices: Iterable[Device] = (),
     is_device_graph: bool = False,
 ) -> Callable[..., CompiledCallable[_P, _R]]:
-    """Traces and compiles ``fn``.
+    """Traces and compiles a function.
 
-    Call the returned function with one spec per tensor argument of ``fn``
-    to get the :class:`CompiledCallable`; call that on real tensors.
+    Returns a function that takes the input types of ``fn`` and returns a
+    :class:`CompiledCallable`. Call that on tensors to run ``fn``.
 
-    Tensor arguments are given as specs. A
-    :class:`~max.experimental.sharding.TensorLayout` is a layout, and an argument
-    given one is read-only; pass a
-    :class:`~max.experimental.sharding.BufferLayout` for a buffer the callable
-    may also store through. Only a layout may declare a boundary: a live
-    :class:`~max.experimental.tensor.Tensor` is refused, because its dims are
-    whatever it currently holds and taking them would fix every one. Pass
-    ``tensor.layout`` to do that on purpose.
+    A :class:`~max.experimental.tensor.Tensor` is not accepted as an input
+    type, because its shape would fix every dimension of the graph to the
+    tensor's current size. Pass ``tensor.layout`` to do this deliberately.
+
+    The following example compiles a function that reads a weight, and
+    supplies the weight's value through ``weights``:
 
     .. code-block:: python
 
@@ -615,11 +664,11 @@ def compile(
         def layer(x: Tensor) -> Tensor:
             return x * F.constant_external("w", w_type)
 
-        x_spec = TensorLayout(DType.float32, ["batch", 2], CPU())
+        x_type = TensorLayout(DType.float32, ["batch", 2], CPU())
         w = Tensor.ones([2], device=CPU()) * 3
 
-        run = compilation.compile(layer, weights={"w": w})(x_spec)
-        out = run(Tensor.ones([4, 2], device=CPU()))  # 4 rows of 3.0
+        run = compilation.compile(layer, weights={"w": w})(x_type)
+        out = run(Tensor.ones([4, 2], device=CPU()))
 
     .. invisible-code-block: python
 
@@ -628,192 +677,249 @@ def compile(
         np.testing.assert_allclose(out.to_numpy(), np.full((4, 2), 3.0))
 
     Args:
-        fn: The callable to compile, over
-            :class:`~max.experimental.tensor.Tensor` values or containers of
-            them.
-        weights: Data for the external constants the graph declares, keyed as
-            the graph names them, one entry per shard of a distributed weight.
-        name: The graph's name. Defaults to ``fn``'s own name.
+        fn: The function to compile. It takes and returns
+            :class:`~max.experimental.tensor.Tensor` values, possibly inside
+            lists, tuples or dictionaries.
+        weights: The weight registry: a mapping from the name of each weight
+            the graph declares to its data, with one entry per shard for a
+            distributed weight.
+        name: The name of the graph. Defaults to the name of ``fn``.
         custom_extensions: Paths to custom Mojo kernel libraries.
-        allow_subgraphs: Whether :func:`as_subgraph` bodies become shared
-            subgraphs rather than inlining into the caller.
-        signal_devices: Devices taking part in collectives beyond what the
-            specs span.
-        is_device_graph: Whether to record a device graph.
+        allow_subgraphs: Whether calls made through :func:`as_subgraph` are
+            traced as subgraphs. If ``False``, they are inlined.
+        signal_devices: Additional accelerators to allocate signal buffers
+            for, beyond the devices of the input types and of the tensors
+            held by ``fn``.
+        is_device_graph: Whether to build a device graph.
 
     Returns:
-        A callable taking one spec per argument of ``fn`` and returning the
-        :class:`CompiledCallable`.
+        A function that takes one input type per tensor argument of ``fn``
+        and returns the :class:`CompiledCallable`.
     """
 
     def stage_and_compile(
         *args: Any, **kwargs: Any
     ) -> CompiledCallable[_P, _R]:
-        return stage(
+        staged = stage(
             fn,
             name=name,
             custom_extensions=custom_extensions,
             allow_subgraphs=allow_subgraphs,
             signal_devices=signal_devices,
             is_device_graph=is_device_graph,
-        )(*args, **kwargs).compile(weights=weights)
+        )(*args, **kwargs)
+        return CompiledCallable(staged, weights)
 
     return stage_and_compile
 
 
-class _InferKey:
-    """Sentinel for "no key given", which a caller's own ``None`` is not."""
+def _boundary_layout(tensor: Tensor) -> TensorLayout:
+    """Returns the layout of a tensor passed to a subgraph.
 
-    def __repr__(self) -> str:
-        return "<inferred>"
+    The layout is built from the tensor's graph values so that the subgraph's
+    input types match the call exactly: the devices are those of the values,
+    the dims are kept per shard, and a tensor backed by buffers gets a
+    ``BufferLayout`` so the subgraph can write to it.
+    """
+    values = tensor.graph_values
+    if not values:
+        return tensor.layout
+    mapping = tensor._mapping
+    devices = tuple(value.type.device.to_device() for value in values)
+    if tuple(mapping.mesh.devices) != devices:
+        # A tensor that was moved to the host keeps its original mesh. The
+        # graph values are on the devices it is actually on.
+        mapping = PlacementMapping(
+            DeviceMesh(
+                devices, mapping.mesh.mesh_shape, mapping.mesh.axis_names
+            ),
+            mapping.to_placements(),
+        )
+    shape = Shape(
+        make_per_shard_dim(cells, force_wrap=True)
+        for cells in zip(
+            *(tuple(value.type.shape) for value in values), strict=True
+        )
+    )
+    if all(isinstance(value, BufferValue) for value in values):
+        return BufferLayout(tensor.dtype, shape, mapping)
+    return TensorLayout(tensor.dtype, shape, mapping)
 
 
-# ``Any``-typed so ``key`` below renders as the ``str | None`` callers pass.
-_INFER_KEY: Any = _InferKey()
+def _stage_body(
+    ctx: GraphRealizationContext,
+    fn: Callable[..., Any],
+    symbol: str,
+    layouts: Sequence[TensorLayout],
+    treedef: tree.TreeDef,
+    prefix: str,
+) -> StagedGraph[..., Any]:
+    """Traces ``fn`` into a new subgraph of the graph ``ctx`` is building.
+
+    The subgraph is named ``symbol``, with a numeric suffix if that name is
+    already taken. The parent graph's own name counts as taken, because
+    ``mo.call`` resolves names against the parent.
+    """
+    taken = {*ctx.graph._subgraphs, ctx.graph.name}
+    sym, collisions = symbol, 0
+    while sym in taken:
+        collisions += 1
+        sym = f"{symbol}_{collisions}"
+    signals = ctx.signal_buffers or []
+    return StagedGraph(
+        fn,
+        ctx.graph.add_subgraph(
+            sym,
+            input_types=[
+                *(t for layout in layouts for t in layout.local_types),
+                *(buffer.type for buffer in signals),
+            ],
+            custom_extensions=ctx.graph.kernel_libraries_paths,
+            devices=list(ctx.graph.device_chains),
+        ),
+        layouts,
+        treedef,
+        prefix=prefix,
+    )
 
 
-def _inferred_key(fn: Callable[..., Any]) -> str | None:
-    """A dedup key for ``fn``, or ``None`` when it does not fix its body."""
-    if getattr(fn, "__closure__", None) is not None:
-        return None
-    if hasattr(fn, "__self__"):
-        return None
-    # A default is captured state the argument structure never sees.
-    if getattr(fn, "__defaults__", None) or getattr(fn, "__kwdefaults__", None):
-        return None
-    qualname = getattr(fn, "__qualname__", None)
-    if qualname is None:
-        return None
-    return f"{getattr(fn, '__module__', '?')}.{qualname}"
+def _position_of(fn: object) -> str:
+    """Returns the weight name prefix of ``fn`` within its model.
+
+    Weights are named by their path from the root of the model, so a weight
+    named ``layers.3.mlp.w`` that ``fn`` holds at ``mlp.w`` puts ``fn`` at
+    ``layers.3.``. Returns ``""`` if ``fn`` holds no named weight. Raises
+    ``TypeError`` if a weight's name does not end with its path in ``fn``.
+    """
+    for path, leaf in tree.paths(fn, leaf=Tensor, shared=True).items():
+        if not isinstance(leaf, Tensor) or (name := leaf.external_name) is None:
+            continue
+        if not name.endswith(path):
+            raise TypeError(
+                f"weight {name!r} is stored at {path!r} in this callable, "
+                "but its name does not end with that path."
+            )
+        return name[: len(name) - len(path)]
+    return ""
 
 
 def as_subgraph(
-    fn: Callable[_P, _R],
-    *,
-    name: str | None = None,
-    prefix: str = "",
-    key: str | None = _INFER_KEY,
+    fn: Callable[_P, _R], *, name: str | None = None, prefix: str | None = None
 ) -> Callable[_P, _R]:
-    """Lowers ``fn`` to one shared subgraph body per distinct stage.
+    """Traces a function into a subgraph once and calls it from every call site.
 
-    Usable as a decorator or at the call site.
+    Use this for a block of computation that repeats, such as a transformer
+    layer, so that the compiler processes the definition once instead of
+    once per repetition. The subgraph's input types are taken from the
+    arguments of the first call, so there is nothing to declare besides
+    ``fn``. Outside a trace, or when the graph was staged with
+    ``allow_subgraphs=False``, the returned function simply calls ``fn``.
 
-    .. code-block:: python
-
-        from max.dtype import DType
-        from max.experimental import compilation
-        from max.experimental.tensor import Tensor
-        from max.graph import DeviceRef, TensorType
-
-        @compilation.as_subgraph
-        def block(x: Tensor) -> Tensor:
-            return x * 2
-
-        spec = TensorType(DType.float32, [4], device=DeviceRef.CPU())
-        staged = compilation.stage(lambda x: block(block(block(x))))(spec)
-
-    .. invisible-code-block: python
-
-        # One body definition, called three times.
-        assert str(staged).count("mo.graph @block") == 1
-        assert str(staged).count("mo.call @block") == 3
-
-    A shared body also shares the weights it declares. At the call site,
-    ``prefix`` gives each site its own weights out of the one body:
+    Usable as a decorator or at the call site. The following example shares
+    one subgraph between three calls:
 
     .. code-block:: python
 
         from max.driver import CPU
         from max.dtype import DType
         from max.experimental import compilation
-        from max.experimental import functional as F
         from max.experimental.sharding import TensorLayout
         from max.experimental.tensor import Tensor
 
-        w_type = TensorLayout(DType.float32, [1], CPU())
-
+        @compilation.as_subgraph
         def block(x: Tensor) -> Tensor:
-            return x * F.constant_external("w", w_type, is_placeholder=True)
+            return x * 2
 
-        def model(x: Tensor) -> Tensor:
-            for layer in ("layers.0.", "layers.1."):
-                x = compilation.as_subgraph(block, prefix=layer)(x)
-            return x
-
-        one = Tensor.ones([1], device=CPU())
-        weights = {"layers.0.w": one * 2, "layers.1.w": one * 10}
-
-        run = compilation.compile(model, weights=weights)(w_type)
-        out = run(one)  # [20.0]
+        x_type = TensorLayout(DType.float32, [4], CPU())
+        staged = compilation.stage(lambda x: block(block(block(x))))(x_type)
 
     .. invisible-code-block: python
 
-        import numpy as np
+        assert str(staged).count("mo.graph @block") == 1
+        assert str(staged).count("mo.call @block") == 3
 
-        np.testing.assert_allclose(out.to_numpy(), [20.0])
+    Each distinct callable gets its own subgraph, so two closures over
+    different values are traced separately. The layers of a model are
+    distinct objects that differ only in their weights. To share one
+    subgraph between them, give every call site the same ``name``; each call
+    then resolves its own weights under its ``prefix``, which defaults to the
+    layer's position in the model:
+
+    .. skip: next
+
+    .. code-block:: python
+
+        # Illustrative: ``layers`` holds modules whose weights are named
+        # ``layers.<i>.<...>``, as ``Module.compile`` names them.
+        def transformer(x: Tensor, layers: list[Module]) -> Tensor:
+            for layer in layers:
+                x = compilation.as_subgraph(layer, name="layer")(x)
+            return x
 
     Args:
-        fn: The callable to lower.
-        name: The subgraph's name. Defaults to ``fn``'s own name.
-        prefix: Prepended to the relative weight names the body declares, so
-            each call site resolves its own weights from a shared body.
-        key: What identifies this body beyond its arguments, completed here
-            with the argument structure and operand types. Pass :obj:`None` to
-            compare the staged IR instead. Omitted, a key is derived from
-            ``fn`` where that is sound.
+        fn: The function to trace.
+        name: The name of the subgraph. Defaults to the name of ``fn``.
+        prefix: The name prefix that weights used inside ``fn`` are relative
+            to. Defaults to the position of ``fn`` in its model, read from
+            the names of the weights it holds, or ``""`` if it holds none.
 
     Returns:
-        A callable with ``fn``'s signature that emits a call to the shared body.
-
-    Raises:
-        TypeError: If called outside a capture. Call ``fn`` directly to run
-            eagerly.
+        A function with the signature of ``fn`` that emits one call to the
+        subgraph each time it is called.
     """
-    name = name or _sanitized_graph_name(fn)
-    if key is _INFER_KEY:
-        key = _inferred_key(fn)
+    symbol = name or _sanitized_graph_name(fn)
+    # Read once. The weights are already named when ``fn`` is wrapped.
+    at = _position_of(fn) if prefix is None else prefix
 
     @functools.wraps(fn)
     def emit_subgraph_call(*args: _P.args, **kwargs: _P.kwargs) -> Any:
-        if not in_graph_context():
-            raise TypeError(
-                f"as_subgraph({name}) needs a capture (compile() / stage() / "
-                "F.lazy()); call it directly to run eagerly"
-            )
-        ctx = subgraph_context()
+        # Outside a trace, or with subgraphs disabled, call ``fn`` directly.
+        ctx = subgraph_context() if in_graph_context() else None
         if ctx is None:
             return fn(*args, **kwargs)
-        # Positional, like _Signature.flatten: one operand per argument slot.
-        operands, structure = tree.flatten(
-            (args, kwargs), leaf=_GRAPH_VALUE_TYPES
-        )
-        # Completed here, where the operands are flat and the prefix is known.
-        types = [operand.type for operand in operands]
-        full_key = (
-            None
-            if key is None
-            else f"{key}|{name}|{structure}|{types}|{bool(prefix)}"
-        )
+        # A lazy context has no graph yet to add a subgraph to.
+        assert isinstance(ctx, GraphRealizationContext)
+
+        values, treedef = tree.flatten((args, dict(kwargs)), leaf=Tensor)
+        layouts = [_boundary_layout(value) for value in values]
+        # The cache key identifies the body by the callable, so two closures
+        # over different values get two subgraphs. A named body with a
+        # prefix is identified by its name instead, so that call sites that
+        # differ only in their weights share one subgraph. Layouts contain
+        # unhashable shapes, so the key holds their graph types.
+        types = tuple(t for layout in layouts for t in layout.local_types)
+        identity = symbol if (name is not None and at) else id(fn)
+        key = (identity, symbol, str(treedef), types, bool(at))
 
         cache = ctx.subgraph_cache
-        assert cache is not None, "subgraph_context() returns armed contexts"
-        # A None key is never stored: share_subgraph hashes the IR instead.
-        if (found := cache.get(full_key)) is None:
-            with open_subgraph(ctx, name, types, prefix=prefix) as body:
-                in_args, in_kwargs = tree.unflatten(
-                    structure, body.inputs[: len(operands)]
-                )
-                # Also positional out: ``return x, x`` is two results.
-                outputs, out_structure = tree.flatten(
-                    fn(*in_args, **in_kwargs), leaf=_GRAPH_VALUE_TYPES
-                )
-                body.output(*outputs)
-            found = share_subgraph(ctx, body, out_structure, key=full_key)
-
-        subgraph, out_structure = found
-        results = ops.call(
-            subgraph, *operands, *(ctx.signal_buffers or []), prefix=prefix
+        assert cache is not None, (
+            "subgraph_context() only returns contexts with a cache"
         )
-        return tree.unflatten(out_structure, list(results))
+        if (entry := cache.get(key)) is None:
+            # Keep ``fn`` alive so that its id is not reused while the key
+            # depends on it.
+            cache[key] = entry = (
+                fn,
+                _stage_body(ctx, fn, symbol, layouts, treedef, at),
+            )
+        body = entry[1]
+
+        operands = [
+            value
+            for _, _, arg in _align_signature(
+                body.in_layouts, body.in_tree, args, kwargs, f"{symbol} "
+            )
+            for value in (
+                arg.graph_values if isinstance(arg, Tensor) else (arg,)
+            )
+        ]
+        results = ops.call(
+            body.graph, *operands, *(ctx.signal_buffers or []), prefix=at
+        )
+        rest = iter(results)
+        return tree.unflatten(
+            body.out_tree,
+            [_argument_tensor(rest, layout) for layout in body.out_layouts],
+        )
 
     return emit_subgraph_call

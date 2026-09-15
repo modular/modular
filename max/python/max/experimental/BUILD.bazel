@@ -44,6 +44,8 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max:interpreter",
     ],
+    # Imported late in realization_context.py; declaring it would be a cycle.
+    ignore_unresolved_imports = ["max.nn.comm.allreduce.Signals"],
     test_docstring_examples = True,
     deps = [
         "//max/python/max:_core",
