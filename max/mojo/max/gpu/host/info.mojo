@@ -20,19 +20,30 @@ memory specifications, thread organization, and performance characteristics.
 
 @__doc_inline
 from std._gpu.host.info import (
+    AcceleratorArchitectureFamily,
+    GPUInfo,
+    NoGPU,
+    get_gpu_target,
+    is_accelerator,
+    is_cpu,
+    is_gpu,
+    is_valid_target,
+)
+
+
+@__doc_inline
+from std._gpu.host._builtin_targets import (
     A10,
     A100,
     AMDCDNA2Family,
     AMDCDNA3Family,
     AMDCDNA4Family,
     AMDRDNAFamily,
-    AcceleratorArchitectureFamily,
     AppleMetalFamily,
     B100,
     B200,
     B300,
     DGXSpark,
-    GPUInfo,
     GTX1060,
     GTX1080Ti,
     GTX970,
@@ -53,7 +64,6 @@ from std._gpu.host.info import (
     MetalM4Metal4,
     MetalM5,
     MetalM5Metal4,
-    NoGPU,
     NvidiaAdaFamily,
     NvidiaAmpereDatacenterFamily,
     NvidiaAmpereEmbeddedFamily,
@@ -82,16 +92,12 @@ from std._gpu.host.info import (
     Radeon9070,
     SteamDeck,
     TeslaP100,
-    get_gpu_target,
-    is_accelerator,
-    is_cpu,
-    is_gpu,
-    is_valid_target,
 )
 
-from std._gpu.host.info import (
+from std._gpu.host.info import _empty_target
+
+from std._gpu.host._builtin_targets import (
     _a100_target,
-    _empty_target,
     _h100_target,
     _metal_m1_target,
     _metal_m2_target,
