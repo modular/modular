@@ -10,8 +10,8 @@ endpoint](https://max.modular.com/rest-api/) for large language models
 few commands, check out our [quickstart
 guide](https://max.modular.com/get-started).
 
-The inference server is built in Python and the source is available
-in [our GitHub repo](https://github.com/modular/modular/tree/main/max/serve),
+The inference server is built in Python and the source is available in
+[our GitHub repo](https://github.com/modular/modular/tree/main/max/python/max/serve),
 but we're currently not accepting contributions to the serving library.
 
 ## License
