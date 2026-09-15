@@ -141,22 +141,6 @@ class _PersistentKVDeviceInputBuffers:
         return views
 
 
-def _pool_group(
-    leaf: KVLeafRegion, is_kv_connector_enabled: bool
-) -> KVCacheGroupId:
-    """Returns the group the pool evicts by and the coordinator bounds hits by.
-
-    Only a leaf the connector can serve is flattened to ``full``.
-
-    TODO(SERVOPT-1525): add proper Jenga + KVConnector support for sliding
-    window groups. Until then a connector treats sliding window as full
-    attention.
-    """
-    if is_kv_connector_enabled and not leaf.group_id.is_recurrent():
-        return KVCacheGroupId.full()
-    return leaf.group_id
-
-
 class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     """Paged KV cache manager backed by a single fungible memory slab.
 
@@ -217,10 +201,6 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 "Recurrent KV cache group is incompatible with KVConnector."
                 " Please disable KVConnector"
             )
-        group_ids = {
-            leaf_id: _pool_group(leaf, is_kv_connector_enabled)
-            for leaf_id, leaf in leaves.items()
-        }
         # Pads each page up to a divisor of a searched huge block when exact
         # tiling is too coarse to allocate.
         geometry = plan_jenga_geometry(
@@ -235,8 +215,8 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 "Set MODULAR_USE_LEGACY_KV_CACHE=1 if DKV KVConnector is required."
             )
         leaf_infos = {
-            leaf_id: KVLeafInfo(ratio=ratios[leaf_id], group_id=group_id)
-            for leaf_id, group_id in group_ids.items()
+            leaf_id: KVLeafInfo(ratio=ratios[leaf_id], group_id=leaf.group_id)
+            for leaf_id, leaf in leaves.items()
         }
 
         logger.info(

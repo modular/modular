@@ -50,6 +50,7 @@ from max.nn.kv_cache.input_types import RecurrentStateRegion
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.config import KVConnectorConfig
+from max.pipelines.kv_cache.connectors import NullConnector
 from max.pipelines.kv_cache.paged_kv_cache import (
     jenga_cache_manager as jenga_mod,
 )
@@ -433,6 +434,39 @@ def test_a_batch_past_the_staged_capacity_is_refused() -> None:
 
     with pytest.raises(ValueError, match="exceeds preallocated"):
         mgr.runtime_inputs([batch])
+
+
+def test_a_connector_keeps_the_sliding_window_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tiered connector serves windowed groups, so the pool keeps them.
+
+    Flattening them to full would make the windowed leaf hold a page for every
+    token of the request, which is the whole cost the window exists to avoid.
+    """
+    monkeypatch.setattr(
+        jenga_mod, "create_connector", lambda **kwargs: NullConnector()
+    )
+    connector_config = KVConnectorConfig(
+        type=KVConnectorType.rust_tiered, host_offload_max_gb=1.0
+    )
+    leaves = {
+        SLIDING: make_leaf(n_kv_heads=1, window_size=4),
+        FULL: make_leaf(n_kv_heads=3),
+    }
+    for leaf in leaves.values():
+        leaf.enable_prefix_caching = True
+        leaf.kv_connector_config = connector_config
+    mgr = create_manager(
+        MultiKVCacheParams.from_params(leaves),
+        num_huge_blocks=16,
+        max_batch_size=4,
+    )
+
+    assert set(mgr.groups) == {
+        KVCacheGroupId("sliding_window", 4),
+        KVCacheGroupId.full(),
+    }
 
 
 def test_a_connector_beside_a_state_is_refused() -> None:
