@@ -51,13 +51,6 @@ struct PatternCommandList;
 /// are never run.
 class ExprNode {
 public:
-  /// A name bound by a match pattern.
-  struct BoundName {
-    llvm::StringRef name;
-    CValue value;
-    PatternDeclKind patternKind;
-  };
-
   // This indicates the subclass.
   enum Kind {
     kSynthetic,            // There is no source corresponding to the IR.
@@ -217,31 +210,13 @@ public:
   virtual llvm::LogicalResult emitDestructuringPValue(PValue value,
                                                       IREmitter &emitter) const;
 
-  /// Emit this expression as a match pattern against `subject`.
-  ///
-  /// On a runtime mismatch, emits `hlcf.match.next` (typically via
-  /// `hlcf.elif`) so the enclosing match case advances; on success, falls
-  /// through so subsequent pattern tests / the case body can run. Returns
-  /// failure if IR emission fails. Binding sites append to `bindings` but do
-  /// not declare `VarDecl`s — the caller materializes those after the pattern
-  /// (and before any guard) so names are in scope for the guard and body.
-  /// The default implementation rejects the expression as an invalid pattern.
-  ///
-  /// `patternKind` is the enclosing `var`/`ref` binding mode for this pattern
-  /// (or `kNone` when none applies). Unary `var`/`ref` patterns update it and
-  /// pass it down to their subpattern; binding sites such as identifiers
-  /// consume it to decide how to declare.
-  virtual LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const;
-
   /// Lower this expression into a command-list program against `path` (the
   /// uniqued access path for the current subject). Commands cover equality /
   /// enum-tag tests, nested or-alternatives, and bind steps. `subject` carries
   /// the typed value at that path so enum-vs-struct and MValue decisions match
-  /// `emitMatch`. Comptime lookups use `builder.getParamEmitter()`; the
-  /// current `var`/`ref` binding mode lives on `builder`. Does not emit match
-  /// IR; failure is for type / pattern errors only. Guards are not part of the
+  /// emission. Comptime lookups use `builder.getParamEmitter()`; the current
+  /// `var`/`ref` binding mode lives on `builder`. Does not emit match IR;
+  /// failure is for type / pattern errors only. Guards are not part of the
   /// list.
   virtual LogicalResult buildCheckList(PatternMatchBuilder &builder,
                                        CValue subject, const PatternPath *path,

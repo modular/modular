@@ -13,8 +13,7 @@
 //
 // Command-list / access-path IR for `match` pattern preprocessing. Each case
 // lowers to a straight-line sequence of commands (equality / enum-tag / or /
-// bind). Or-alternative binding invariants are checked when the state machine
-// is emitted, not while building the list.
+// bind).
 //
 //===----------------------------------------------------------------------===//
 
@@ -71,9 +70,23 @@ struct PatternCommand {
   PatternDeclKind declKind = PatternDeclKind::kNone;
 };
 
+/// Name bound by a successful pattern; materialized by the match statement.
+struct PatternBoundName {
+  StringRef name;
+  CValue value;
+  PatternDeclKind bindingKind;
+};
+
 /// Mutable case program (stack-owned; not bump-allocated).
 struct PatternCommandList {
   SmallVector<const PatternCommand *, 8> commands;
+
+  /// Emit HLCF match tests for this case against `subject` at `rootPath`.
+  /// On mismatch emits `hlcf.match.next`; on success falls through. Appends
+  /// bindings for the caller to materialize (before any guard / body).
+  LogicalResult emit(IREmitter &emitter, CValue subject,
+                     const PatternPath *rootPath,
+                     SmallVectorImpl<PatternBoundName> &bindings) const;
 };
 
 /// Bump storage, path uniquing, and binding-mode state for one `__match`.

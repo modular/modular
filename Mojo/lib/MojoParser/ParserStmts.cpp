@@ -1686,20 +1686,14 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     IREmitter emitter = getEmitter();
     auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
 
-    // FIXME: Drive case emission / decision-tree clustering from `commandList`
-    // instead of calling `emitMatch` below. Or-alternative binding invariants
-    // are checked when the command list is emitted.
+    // Build the command list, then emit it.
     PatternCommandList commandList;
     if (failed(caseEntry.patternExpr->buildCheckList(
             checkListBuilder, subjectBVal, rootPath, commandList)))
       continue;
 
-    // Emit the pattern; failable patterns fail by invoking hlcf.match.next.
-    // On emission failure, still parse the case body so later diagnostics in
-    // this function can fire (same recovery as other statement forms).
-    SmallVector<ExprNode::BoundName> bindings;
-    if (failed(caseEntry.patternExpr->emitMatch(
-            emitter, subjectBVal, PatternDeclKind::kBind, bindings)))
+    SmallVector<PatternBoundName> bindings;
+    if (failed(commandList.emit(emitter, subjectBVal, rootPath, bindings)))
       continue;
 
     // Materialize pattern bindings before the guard so guards can refer to
@@ -1708,11 +1702,11 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     // On failure, treat like a pattern emission error so later cases/statements
     // still parse (recovery), rather than aborting the whole match.
     bool hadFailure = false;
-    for (const ExprNode::BoundName &bn : bindings) {
+    for (const PatternBoundName &bn : bindings) {
       auto *name = shared.allocPersistent<DeclRefNode>(bn.name);
       ExprDest declDest(LValueInitializerType{bn.value.getRValueType()},
                         EC_VarInit);
-      declDest.setPatternDeclKind(bn.patternKind);
+      declDest.setPatternDeclKind(bn.bindingKind);
       LValue bindingLV = emitter.emitExprLValue(name, declDest);
       if (!bindingLV) {
         hadFailure = true;
