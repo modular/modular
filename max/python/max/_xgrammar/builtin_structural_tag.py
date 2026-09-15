@@ -2181,7 +2181,7 @@ def get_minimax_m3_structural_tag(
                 json_schema=parameters,
                 style="minimax_m3_xml",
                 xml_tag_prefix=TAG_PREFIX,
-                reject_unsupported=True,
+                reject_unsupported=False,
                 max_whitespace_cnt=1,
                 strict_mode=False,
                 require_object_root=True,
