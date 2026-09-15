@@ -449,6 +449,13 @@ def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
 def M_DeviceRefArrayAttr : TypedArrayAttrBase<M_DeviceRefAttr, "A list of devicerefs">;
 
 //===----------------------------------------------------------------------===//
+// DeviceRefsAttr
+//===----------------------------------------------------------------------===//
+
+def M_DeviceRefsAttr
+    : ArrayOfAttr<MDialect, "DeviceRefs", "devices", "DeviceRefAttr">;
+
+//===----------------------------------------------------------------------===//
 // DeviceInfoAttr
 //===----------------------------------------------------------------------===//
 
