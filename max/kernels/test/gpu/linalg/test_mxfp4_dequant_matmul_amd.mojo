@@ -27,7 +27,7 @@ from std.random import random_float64, random_ui64
 from std.sys.info import _accelerator_arch
 from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import E2M1_TO_FLOAT32
 from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
@@ -111,13 +111,13 @@ def test_mxfp4_matmul[
 
     # Step 3: Run vendor BLAS on the same shared FP8 data
     var c_ref_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
-    var c_ref_lt = LayoutTensor[.bfloat16, Layout.row_major(M, N)](c_ref_device)
+    var c_ref_tt = TileTensor(c_ref_device, row_major((M, Idx[N])))
 
     vendor_blas.matmul(
         ctx,
-        c_ref_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -231,13 +231,13 @@ def test_mxfp4_matmul_e2e[
     ctx.synchronize()
 
     var c_ref_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
-    var c_ref_lt = LayoutTensor[.bfloat16, Layout.row_major(M, N)](c_ref_device)
+    var c_ref_tt = TileTensor(c_ref_device, row_major((M, Idx[N])))
 
     vendor_blas.matmul(
         ctx,
-        c_ref_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -442,12 +442,12 @@ def test_fp8_kernel_vs_blas[
 
     # Path 2: vendor BLAS
     var c_blas = ctx.enqueue_create_buffer[.bfloat16](M * N)
-    var c_blas_lt = LayoutTensor[.bfloat16, Layout.row_major(M, N)](c_blas)
+    var c_blas_tt = TileTensor(c_blas, row_major((M, Idx[N])))
     vendor_blas.matmul(
         ctx,
-        c_blas_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_blas_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )

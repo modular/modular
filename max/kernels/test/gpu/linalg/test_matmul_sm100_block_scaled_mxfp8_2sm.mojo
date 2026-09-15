@@ -158,13 +158,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    # LayoutTensors for reference matmul (vendor_blas)
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     # Initialize matmul operands
     if simple_init():
         for m in range(Int(m.value())):
@@ -260,11 +253,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt.as_unsafe_any_origin(),
-        a_lt,
-        b_lt,
-        a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
-        b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales=a_scales_tensor,
+        b_scales=b_scales_tensor,
         transpose_b=transpose_b,
         c_row_major=True,
     )
