@@ -33,6 +33,7 @@ from max.gpu.host.info import is_cpu
 from max.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
 from std.memory import AddressSpace
+from std.reflection import reflect
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import strided_load, strided_store
@@ -264,8 +265,28 @@ def _get_unknown_tensor_spec[
 # ===----------------------------------------------------------------------=== #
 
 
-trait InputFusion(TrivialRegisterPassable):
-    """Trait for input fusion structs that provide custom load behavior."""
+trait InputFusion(DevicePassable, TrivialRegisterPassable):
+    """Trait for input fusion structs that provide custom load behavior.
+
+    Conformers are `DevicePassable` so a GPU kernel callback can capture the
+    functor. Encoding walks fields via `encode_fields`, translating host
+    `Pointer`s. `ManagedTensorSlice.device_type` is `LayoutTensor` and drops
+    `in_fusion`; capture the fusion value, not the slice.
+    """
+
+    # Default DevicePassable so graph-compiler FusionStruct types and
+    # `_NoFusionIn` need not restate it. The device type is the functor
+    # itself; encoding recurses into its fields.
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return String(reflect[Self].name())
 
     def load[
         dtype: DType,

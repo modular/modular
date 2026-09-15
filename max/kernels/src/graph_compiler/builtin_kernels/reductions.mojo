@@ -58,9 +58,7 @@ from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
     rms_norm_fused_residual,
 )
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from extensibility import (
-    InputFusion,
     InputTensor,
     OutputTensor,
     Tensor,
@@ -1775,29 +1773,6 @@ def composite_rms_norm_fused_residual_add_shape[
     )
 
 
-@fieldwise_init
-struct _EncodedInputFusion[F: InputFusion](
-    DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
-):
-    """DevicePassable wrapper so an `InputFusion` functor is encoded as a
-    closure capture. `ManagedTensorSlice.device_type` is `LayoutTensor` and
-    drops `in_fusion`; capturing the fusion through this wrapper puts its
-    pointer fields in the launch payload.
-    """
-
-    comptime device_type: AnyType = Self
-    var fusion: Self.F
-
-    def _to_device_type(
-        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
-    ):
-        encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "_EncodedInputFusion"
-
-
 @extensibility.register("mo.composite.rms_norm_residual_add")
 struct RMSNormResidualAdd:
     """Fused single-norm residual-add + RMSNorm.
@@ -1834,10 +1809,8 @@ struct RMSNormResidualAdd:
             raise Error("Input and residual input buffers are not same shape")
 
         comptime if is_gpu[target]():
-            var input_fusion = _EncodedInputFusion(input.in_fusion)
-            var residual_input_fusion = _EncodedInputFusion(
-                residual_input.in_fusion
-            )
+            var input_fusion = input.in_fusion
+            var residual_input_fusion = residual_input.in_fusion
 
             @inline(.always)
             def input_fn[
@@ -1845,7 +1818,7 @@ struct RMSNormResidualAdd:
             ](coords: IndexList[_rank]) {var input_fusion} -> SIMD[
                 dtype, width
             ]:
-                return input_fusion.fusion.load[dtype, rank, width, width](
+                return input_fusion.load[dtype, rank, width, width](
                     rebind[IndexList[rank]](coords)
                 )
 
@@ -1855,7 +1828,7 @@ struct RMSNormResidualAdd:
             ](coords: IndexList[_rank]) {var residual_input_fusion} -> SIMD[
                 dtype, width
             ]:
-                return residual_input_fusion.fusion.load[dtype, rank, width](
+                return residual_input_fusion.load[dtype, rank, width](
                     rebind[IndexList[rank]](coords)
                 )
 
