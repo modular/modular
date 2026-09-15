@@ -44,6 +44,10 @@ class ParserBase;
 // Argument and Parameter List Parsing
 //===----------------------------------------------------------------------===//
 
+/// TODO(MOCO-4625): remove once the parametric closure trait is the only
+/// implementation.
+bool useParametricClosureTrait();
+
 /// This specifies the handling of keyword arguments in a list.
 enum class KWArgHandling {
   kInferred,            //< before a standalone '//'
@@ -272,7 +276,6 @@ public:
   /// Tracks the Mojo-only `thin` effect on function types.
   bool isThin = false;
 
-  bool isExperimentalParamTrait = false;
   /// True if an explicit `abi(...)` effect was written on this function.
   /// Distinguishes `abi("Mojo")` (no-op on the type, but explicit) from the
   /// absence of any abi annotation.
@@ -289,9 +292,8 @@ public:
 
   /// Returns true when a function type should be interpreted as a closure
   /// trait rather than a thin function pointer or legacy capturing function.
-  bool isClosureFunctionType() const {
-    return !effects.isCapturing() && !isThin;
-  }
+  bool isParsingClosure = false;
+  bool isClosureTrait() const { return isParsingClosure; }
 };
 
 /// This is all the state built up when parsing a capture signature.

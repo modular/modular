@@ -39,10 +39,20 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+bool LIT::useParametricClosureTrait() {
+  static const bool enabled = [] {
+    std::optional<std::string> value =
+        llvm::sys::Process::GetEnv("MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT");
+    return value && *value != "0" && !value->empty();
+  }();
+  return enabled;
+}
 
 TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
                                       SMLoc loc, SharedState &shared) {
@@ -1574,10 +1584,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     return spelling == "raises" || spelling == "capturing" ||
            spelling == "escaping" || spelling == "thin" ||
            spelling == "register_passable" || spelling == "abi" ||
-           spelling == "where" ||
-           // TODO: remove this after the parametric closure trait become
-           // default.
-           spelling == "__param_trait__";
+           spelling == "where";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1653,11 +1660,6 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
                          "the duplicate");
       }
       isThin = true;
-    } else if (spelling == "__param_trait__") {
-      assert((kind == ArgListKind::kFnTypeArgList ||
-              kind == ArgListKind::kArgList) &&
-             "__param_trait__ must only be used on function types");
-      isExperimentalParamTrait = true;
     } else if (spelling == "register_passable") {
       p.emitWarning(loc)
           << "the 'register_passable' function effect is no longer supported; "
@@ -2146,7 +2148,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     // For parametric closure traits, we don't care about register passability.
     // All arguments will be parsed as if they are mem type, such that we can
     // match `def (T)` with both `def (Int)` and `def (MemType)`.
-    if (tcSignature.argList.isExperimentalParamTrait)
+    if (tcSignature.argList.isClosureTrait() && useParametricClosureTrait())
       break;
 
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);

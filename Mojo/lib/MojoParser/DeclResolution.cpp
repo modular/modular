@@ -1974,6 +1974,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   argList.resultArg = node->resultArg;
   argList.effects = node->effects;
   argList.thrownTypeExpr = const_cast<ExprNode *>(node->thrownTypeExpr);
+  argList.isParsingClosure = true;
 
   TypeCheckedFnSignature tcSignature(paramList, argList, /*originExpr=*/nullptr,
                                      &decl, baseName);
@@ -2083,7 +2084,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
 
   MLValue instance =
       emitClosureInstance(bodyCaptures.values, decl, shared,
-                          bodyCaptures.paramRefs, /*useParametricTrait=*/false);
+                          bodyCaptures.paramRefs, useParametricClosureTrait());
   if (!instance)
     return {};
 
@@ -2243,6 +2244,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     fnSignature.effects.setCapturing();
   bool isNonlegacyClosure =
       funcOp->getParentOfType<FnOp>() && !fnSignature.effects.isCapturing();
+  fnSignature.isParsingClosure = isNonlegacyClosure;
 
   // Keep the provisional FnOp signature in sync with early effect decisions so
   // signature typechecking for nested defs classifies the current function
@@ -2468,7 +2470,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (isNonlegacyClosure)
     return constructClosure(shared, decl, funcOp, captures, paramCaptures,
                             captureSignature, closureExternalRefConstraints,
-                            signature, fnSignature.isExperimentalParamTrait);
+                            signature, useParametricClosureTrait());
 
   if (captures.empty() && captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {

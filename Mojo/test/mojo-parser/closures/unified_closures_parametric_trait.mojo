@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values -split-input-file | FileCheck %s
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %parse-mojo-isolated %s \
+# RUN:   --kgen-print-inline-type-values -split-input-file | FileCheck %s
 
 # A closure trait declares its call method as a function generator type builder
 # whose four components - parameter declarations, argument types, result type
@@ -38,12 +39,12 @@
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable *(0,1)>>, imm *[0,1]>>],
 # CHECK-SAME:     :type #kgen.quote<!NoneType>,
 # CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, imm_mem], "none", #lit.fn_meta_origin_data<2>>
-comptime ClosureTraitP = def[T: Copyable](List[T]) __param_trait__ -> NoneType
+comptime ClosureTraitP = def[T: Copyable](List[T]) -> NoneType
 
 
 # Should be able to verify and build conformance table.
 # CHECK-LABEL: lit.struct.decl @Foo
-struct Foo[T: AnyType](def(T) __param_trait__):
+struct Foo[T: AnyType](def(T)):
     # CHECK:      kgen.conformance @"##__mojo_closure__##"
     # CHECK-NEXT:   kgen.witness "__call__" : {{.*}} @unified_closures_parametric_trait::@Foo::@"__call__(unified_closures_parametric_trait::Foo[$0],$0)"<:!AnyType T>)
     def __call__(mut self, arg: Self.T):
@@ -59,8 +60,8 @@ struct Foo[T: AnyType](def(T) __param_trait__):
 # CHECK-SAME:     #kgen.quote<!kgen.param<:!AnyType *(1,1)>>
 comptime NestedClosure = def[
     T: AnyType,
-    InnerClosure: def[T]() __param_trait__,
-](t: InnerClosure) __param_trait__
+    InnerClosure: def[T](),
+](t: InnerClosure)
 
 
 # // -----
@@ -71,17 +72,17 @@ struct MemOnly:
 
 
 @fieldwise_init
-struct Foo[T: AnyType](def(T) __param_trait__):
+struct Foo[T: AnyType](def(T)):
     def __call__(mut self, arg: Self.T):
         pass
 
 
-def call_int[T: def(Int) __param_trait__](closure: T):
+def call_int[T: def(Int)](closure: T):
     # TODO: closure.__call__(1)
     pass
 
 
-def call_mem_only[T: def(MemOnly) __param_trait__](closure: T):
+def call_mem_only[T: def(MemOnly)](closure: T):
     pass
 
 
@@ -122,12 +123,12 @@ struct Runner(Movable):
     ](
         self,
         var strategy: StrategyType,
-        f: Some[def(var StrategyType.Value) __param_trait__],
+        f: Some[def(var StrategyType.Value)],
     ):
         pass
 
 
-def foo[C: def(var Int) __param_trait__](c: C):
+def foo[C: def(var Int)](c: C):
     # Parametric trait enables matching between foldable expression during
     # binding: `StrategyType.Value` folds to `Int` once `StrategyType` is bound,
     # and quoting canonicalizes it, so the member-alias sugar is gone.
