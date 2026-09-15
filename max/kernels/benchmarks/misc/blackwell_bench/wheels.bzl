@@ -1,9 +1,3 @@
-# ===----------------------------------------------------------------------=== #
-#
-# This file is Modular Inc proprietary.
-#
-# ===----------------------------------------------------------------------=== #
-
 """Blackwell benchmark wheel library targets.
 
 These targets wrap pre-built SM100 wheels for external benchmark baselines
