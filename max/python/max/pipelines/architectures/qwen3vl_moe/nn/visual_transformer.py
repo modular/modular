@@ -22,6 +22,7 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Dim,
+    DimLike,
     ShardingStrategy,
     TensorValue,
     Value,
@@ -194,16 +195,20 @@ class BilinearInterpolationPositionEmbedding(Module):
         idxs: TensorValue,
         weights: TensorValue,
         grid_thw: TensorValue,
+        out_rows: DimLike,
     ) -> TensorValue:
         """
         Args:
-            idxs: tensor of shape (4, total_n_patches)
-            weights: tensor of shape (4, total_n_patches)
+            idxs: tensor of shape (4, sum(h * w))
+            weights: tensor of shape (4, sum(h * w), 1)
             grid_thw: tensor of shape (n_images, 3)
-            signal_buffers: sequence of buffers for peer-to-peer communication in allreduce
+            out_rows: patch-row count of the result, ``sum(t * h * w)``. The
+                position grid is interpolated once per frame but consumed once
+                per temporal patch, so it exceeds ``idxs``' length whenever a
+                grid item is a clip.
 
         Returns:
-            tensor of shape (total_n_patches, hidden_size)
+            tensor of shape (out_rows, hidden_size)
         """
         weights = weights.cast(self.embedding.weight.dtype)
         # pos_embeds_[i].shape: (total_n_patches, hidden_size)
@@ -243,6 +248,7 @@ class BilinearInterpolationPositionEmbedding(Module):
             grid_thw=grid_thw,
             hidden_size=self.dim,
             merge_size=self.spatial_merge_size,
+            out_rows=out_rows,
         )
         return weighted_embeds
 
@@ -860,7 +866,10 @@ class VisionTransformer(Module):
 
         # compute position embeddings for the grid of image and video patches.
         pos_embeds = self.pos_embed(
-            idxs=idxs[0], weights=weights[0], grid_thw=grid_thw[0]
+            idxs=idxs[0],
+            weights=weights[0],
+            grid_thw=grid_thw[0],
+            out_rows=seq_len,
         )
         hs = [h + pos_embeds.to(h.device) for h in hs]
 

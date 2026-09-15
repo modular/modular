@@ -10,6 +10,17 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added video input to the Qwen3.5 and Qwen3-VL architectures, which
+  previously rejected any request carrying a video part. Clips are sampled at
+  2 fps, sized against a whole-clip pixel budget rather than a per-frame one,
+  and patchified so that each patch row spans two consecutive frames. A clip
+  becomes one vision encoder grid item but several placeholder runs in the
+  prompt, each preceded by a `<T seconds>` timestamp label, so the model reads
+  the temporal ordering from the prompt text. Send the clip's bytes in
+  `videos` with a `video` content part in `messages`. An OpenAI-compatible
+  request may instead carry a `video_url` part, which the server resolves and
+  rewrites into that form.
+
 ## MAX framework
 
 - `max serve` gained a `--cascade` flag that routes the request to the

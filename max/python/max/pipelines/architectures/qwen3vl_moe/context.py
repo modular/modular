@@ -28,7 +28,19 @@ class VisionEncodingData:
 
     # Grid and temporal parameters
     image_grid_thw: npt.NDArray[np.int32]
+    """The vision encoder's ``(t, h, w)`` grid, one row per media item.
+
+    Despite the name this covers clips as well as images, in PROMPT order:
+    every other field here is a concatenation over these rows, and
+    ``ctx.images`` is 1:1 with them. A clip's row has ``t > 1``.
+    """
+
     video_grid_thw: npt.NDArray[np.int32] | None
+    """Per-clip ``(grid_t, h, w)``, for M-RoPE rather than for the encoder.
+
+    ``get_rope_index`` expands each row into ``grid_t`` rows of ``(1, h, w)``,
+    one per placeholder run. ``None`` when the request carries no clips.
+    """
 
     # Vision-specific rotary position embeddings parameters
     vision_position_ids: npt.NDArray[np.int32]

@@ -810,6 +810,24 @@ class ImageMetadata:
             raise ValueError(
                 "Images must have a valid start and end index containing at least one <vision_token_id>"
             )
+        if self.num_embedding_rows is not None:
+            # An override outside (0, span] is not a smaller number, it is a
+            # corrupt one: the block pool sizes a reservation from this and the
+            # scatter still writes at the span's positions, so a zero would
+            # reserve nothing and write anyway. Caught here because every
+            # consumer downstream trusts it.
+            if self.num_embedding_rows <= 0:
+                raise ValueError(
+                    "num_embedding_rows must be positive; an entry that emits "
+                    f"no rows should not exist (got {self.num_embedding_rows})"
+                )
+            if self.num_embedding_rows > self.end_idx - self.start_idx:
+                raise ValueError(
+                    f"num_embedding_rows ({self.num_embedding_rows}) exceeds "
+                    f"the span it annotates ({self.end_idx - self.start_idx}); "
+                    "the override exists to record FEWER rows than the span, "
+                    "for a span that interleaves placeholder runs with text"
+                )
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"

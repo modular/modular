@@ -28,6 +28,7 @@ from max.graph import (
     DeviceKind,
     DeviceRef,
     Dim,
+    DimLike,
     Graph,
     StaticDim,
     TensorType,
@@ -10494,14 +10495,22 @@ def spatial_merge(
     grid_thw: TensorValue,
     hidden_size: int,
     merge_size: int,
+    *,
+    out_rows: DimLike,
 ) -> TensorValue:
     """Performs spatial merge operation on ragged input tensors.
 
     This operation merges spatial dimensions of input patches according to
-    the grid dimensions specified in grid_thw.
+    the grid dimensions specified in grid_thw, replicating each grid item's
+    spatial rows across its ``t`` temporal slices.
+
+    Input and output row counts differ whenever any ``t > 1``: the kernel
+    consumes ``sum(h * w)`` rows and emits ``sum(t * h * w)``, so ``out_rows``
+    cannot be derived from ``input.shape``. They coincide only at ``t == 1``,
+    which is why the two are separate arguments.
 
     Args:
-        input: Input tensor of shape [total_patches_in_grid, hidden_size]
+        input: Input tensor of shape [sum(h * w), hidden_size]
         grid_thw: Grid dimensions tensor of shape [batch_size, 3] containing
             [t, h, w] for each batch item, where:
             - t: temporal/frame dimension
@@ -10509,9 +10518,11 @@ def spatial_merge(
             - w: width dimension
         hidden_size: Hidden dimension size
         merge_size: Size of spatial merge blocks (typically 2)
+        out_rows: Row count of the output, ``sum(t * h * w)``. Usually the
+            patch-row dimension of the caller's ``pixel_values``.
 
     Returns:
-        Output tensor of shape [total_patches_in_grid, hidden_size]
+        Output tensor of shape [out_rows, hidden_size]
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -10545,7 +10556,7 @@ def spatial_merge(
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=[input.shape[0], hidden_size],
+                shape=[out_rows, hidden_size],
                 device=input.device,
             )
         ],

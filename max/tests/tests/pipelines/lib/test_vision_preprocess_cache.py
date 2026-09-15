@@ -19,6 +19,7 @@ import gc
 import pickle
 import threading
 import weakref
+from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
@@ -581,5 +582,56 @@ class TestReclaimOnIdle:
         cache.put(2, "two", 20)
 
         assert cache.clear() == 30
+        assert len(cache) == 0
+        assert cache.total_bytes == 0
+
+
+class TestDataclassPayloads:
+    """A payload that groups its arrays in a dataclass rather than a tuple.
+
+    The qwen3vl video path caches one of these, so a walk that stops at
+    tuples, lists and dicts would charge every clip zero bytes and leave its
+    pixels writable -- the byte budget and the immutability guarantee both
+    lost, and silently.
+    """
+
+    @dataclass(frozen=True)
+    class _Payload:
+        pixels: npt.NDArray[np.float32]
+        grid: tuple[int, int, int]
+
+    def _payload(self, fill: float) -> TestDataclassPayloads._Payload:
+        return TestDataclassPayloads._Payload(
+            pixels=np.full((4, 8), fill, dtype=np.float32), grid=(1, 2, 2)
+        )
+
+    def test_arrays_in_a_dataclass_are_charged_to_the_budget(self) -> None:
+        cache: VisionPreprocessCache[TestDataclassPayloads._Payload] = (
+            VisionPreprocessCache(1 << 20)
+        )
+        cache.get_or_preprocess(1, lambda: self._payload(1.0))
+
+        assert cache.total_bytes == 4 * 8 * 4, (
+            "a dataclass payload must be charged its arrays' bytes, not zero"
+        )
+
+    def test_arrays_in_a_dataclass_are_frozen(self) -> None:
+        cache: VisionPreprocessCache[TestDataclassPayloads._Payload] = (
+            VisionPreprocessCache(1 << 20)
+        )
+        got = cache.get_or_preprocess(1, lambda: self._payload(1.0))
+
+        # frozen=True stops the FIELD being rebound; it says nothing about the
+        # array it points at, which every reusing request shares.
+        with pytest.raises(ValueError):
+            got.pixels[0][0] = 2.0
+
+    def test_a_dataclass_over_budget_is_dropped_not_cached(self) -> None:
+        """The budget can only reject what it can see."""
+        cache: VisionPreprocessCache[TestDataclassPayloads._Payload] = (
+            VisionPreprocessCache(16)
+        )
+        cache.get_or_preprocess(1, lambda: self._payload(1.0))
+
         assert len(cache) == 0
         assert cache.total_bytes == 0

@@ -123,7 +123,12 @@ def generate_max_outputs(
         input_types=(idx_type, weights_type, grid_thw_type),
     ) as graph:
         idx, weights, grid = graph.inputs
-        output = patch_embed_module(idx.tensor, weights.tensor, grid.tensor)
+        # Every grid this test builds is a still image (t == 1), the one case
+        # where the patch rows the module emits, sum(t * h * w), equal the
+        # spatial rows it interpolates, sum(h * w).
+        output = patch_embed_module(
+            idx.tensor, weights.tensor, grid.tensor, total_patches
+        )
         graph.output(output)
 
     compiled = session.load(

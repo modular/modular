@@ -282,11 +282,13 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         devices: list[Device],
         packed: Qwen3_5VisionInputs | None,
     ) -> VisionEncodeResult:
-        """Run the vision encoder on the images ``pack_vision_inputs`` packed.
+        """Run the vision encoder on the media ``pack_vision_inputs`` packed.
 
-        Returns embeddings only; the pipeline derives per-image token counts
-        from its selection, which match because the tokenizer emits exactly
-        one placeholder per merged patch.
+        Returns explicit per-item token counts rather than letting the driver
+        derive them from placeholder spans. A clip's span covers ``grid_t``
+        placeholder runs AND the timestamp text between them, so its width
+        exceeds the rows the encoder emits; an image's span happens to match,
+        which is why the derived counts were correct until now.
         """
         if packed is None:
             return VisionEncodeResult(
@@ -312,7 +314,12 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # The hidden state is replicated across devices, so every replica
         # merges the same embeddings.
         return VisionEncodeResult(
-            embeddings=[embeddings.to(device) for device in devices]
+            embeddings=[embeddings.to(device) for device in devices],
+            per_image_token_counts=[
+                img.embedding_rows
+                for _ctx, miss_images in selection
+                for img in miss_images
+            ],
         )
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
@@ -352,10 +359,15 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
             for device in self.devices
         ]
+        # The bilinear position grid is interpolated once per FRAME while
+        # pixels and rotary ids carry one row per temporal PATCH, so these two
+        # are sum(h * w) long against pixel_values' sum(t * h * w). Binding
+        # them to `vision_seq_len` would be an over-constraint that only holds
+        # for still images (t == 1) and rejects every clip.
         weights_types = [
             TensorType(
                 DType.float32,
-                shape=[4, "vision_seq_len", 1],
+                shape=[4, "vision_pos_len", 1],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -363,7 +375,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         indices_types = [
             TensorType(
                 DType.int64,
-                shape=[4, "vision_seq_len"],
+                shape=[4, "vision_pos_len"],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
