@@ -12,6 +12,7 @@
 /BUILD.bazel @modular/sdlc
 /bazel/public-patches/llvm-elf-extractor-local-copy.patch @modular/sdlc
 /bazel/public-patches/llvm-machinefunction-sti-ref-to-ptr.patch @modular/sdlc
+/bazel/public-patches/llvm-revert-lldb-elf-section-name-string.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-glibc-rseq.patch @modular/sdlc
