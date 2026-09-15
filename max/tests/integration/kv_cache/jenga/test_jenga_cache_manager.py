@@ -40,13 +40,13 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateInputs,
     RecurrentStateParams,
+    RecurrentStateRegion,
 )
 from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVConnectorType,
     SpeculativeMethod,
 )
-from max.nn.kv_cache.input_types import RecurrentStateRegion
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.config import KVConnectorConfig
@@ -418,7 +418,7 @@ def test_a_forward_is_handed_state_rows_cut_to_its_own_batch() -> None:
     state = inputs.children["state"]
     assert isinstance(state, RecurrentStateInputs)
     (device,) = state.inputs
-    leaf = device.by_leaf(STATE_LEAF)
+    (leaf,) = device.leaves
 
     assert leaf.live_row_ids.shape == (1, 3), "one request, every layer"
     assert leaf.pool.shape[0] > 3, "the whole slab, in rows"

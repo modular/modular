@@ -27,7 +27,6 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
-    Value,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -49,6 +48,7 @@ from max.nn.transformer.distributed_transformer import (
 )
 from max.nn.transformer.transformer import forward_sharded_layers
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tree import Tree
 
 from .layers.attention import Qwen3_5Attention
 from .layers.gated_deltanet import GatedDeltaNet, GatedDeltaReplayInputs
@@ -56,7 +56,6 @@ from .layers.text_rotary import Qwen3_5TextRotaryEmbedding
 from .layers.visual_transformer import VisionTransformer
 from .model_config import Qwen3_5Config
 from .quantization import storage_dtype
-from .state_cache import CONV_LEAF_ID, RECURRENT_LEAF_ID
 
 
 def _shard_mlp_and_norms(
@@ -222,9 +221,12 @@ class Qwen3_5LinearAttentionBlock(Module):
         linear_cls: Callable[..., Linear],
         attn_quant_config: QuantConfig | None = None,
         mlp_quant_config: QuantConfig | None = None,
+        *,
+        linear_layer_idx: int = 0,
     ) -> None:
         super().__init__()
         compute_dtype = config.compute_dtype
+        self.linear_layer_idx = linear_layer_idx
         self.linear_attn = GatedDeltaNet(
             hidden_size=config.hidden_size,
             num_key_heads=config.linear_num_key_heads,
@@ -271,23 +273,23 @@ class Qwen3_5LinearAttentionBlock(Module):
         self,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        conv_pools: list[BufferValue],
-        conv_row_ids: list[TensorValue],
-        recurrent_pools: list[BufferValue],
-        recurrent_row_ids: list[TensorValue],
+        state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
+        layer = self.linear_layer_idx
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # Each device owns a slice of the value heads, so `out_proj` emits a
-        # partial sum over the full hidden dim.
+        # partial sum over the full hidden dim. ``state[i].leaves`` carries
+        # the conv (0) and recurrent (1) leaves in declaration order; the
+        # per-layer row ids are sliced here from the full ``live_row_ids``.
         attn_outs = self.allreduce(
             [
                 shard(
                     norm_xs[i],
-                    conv_pool=conv_pools[i],
-                    conv_row_id=conv_row_ids[i],
-                    recurrent_pool=recurrent_pools[i],
-                    recurrent_row_id=recurrent_row_ids[i],
+                    conv_pool=state[i].leaves[0].pool,
+                    conv_row_id=state[i].leaves[0].live_row_id(layer),
+                    recurrent_pool=state[i].leaves[1].pool,
+                    recurrent_row_id=state[i].leaves[1].live_row_id(layer),
                     input_row_offsets=input_row_offsets[i],
                     replay_capture=(
                         None
@@ -406,6 +408,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         ]
 
         layers: list[Module] = []
+        linear_state_idx = 0
         for i, lt in enumerate(config.layer_types):
             attn_quant_config = scheme.attn_config(i) if scheme else None
             mlp_quant_config = scheme.mlp_config(i) if scheme else None
@@ -429,8 +432,10 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                         linear_cls=linear_cls,
                         attn_quant_config=attn_quant_config,
                         mlp_quant_config=mlp_quant_config,
+                        linear_layer_idx=linear_state_idx,
                     )
                 )
+                linear_state_idx += 1
         self.layers = LayerList(layers)
 
         # Final norm (replicated across devices)
@@ -569,12 +574,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             )
             assert kv_collection.attention_dispatch_metadata is not None
         kv_cache_idx = 0
-        linear_state_idx = 0
 
         def inputs_for_layer(
             idx: int, hs: list[TensorValue]
-        ) -> list[Value[Any] | Sequence[Value[Any]]]:
-            nonlocal kv_cache_idx, linear_state_idx
+        ) -> list[Tree[Any]]:
+            nonlocal kv_cache_idx
             if self.layer_types[idx] == "full_attention":
                 # ``layer_idx`` is the sequential index within the KV cache
                 # (0-based across full-attention layers only), distinct from
@@ -587,7 +591,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 # ``forward_sequential_layers`` only introspects ``Value`` and
                 # sequences of them, so the per-device dataclasses are
                 # unpacked field by field.
-                full_attn_inputs: list[Value[Any] | Sequence[Value[Any]]] = [
+                full_attn_inputs: list[Tree[Any]] = [
                     hs,
                     layer_idx_tensor,
                     signal_buffers,
@@ -607,22 +611,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 if freq_row_ids is not None:
                     full_attn_inputs.append(freq_row_ids)
                 return full_attn_inputs
-            # Subgraph inputs, so every entry must be a graph value. The ids
-            # arrive already folded; this only picks out this layer's column.
-            conv = [device.by_leaf(CONV_LEAF_ID) for device in state]
-            rec = [device.by_leaf(RECURRENT_LEAF_ID) for device in state]
-            layer = linear_state_idx
-            vals: list[Value[Any] | Sequence[Value[Any]]] = [
-                hs,
-                signal_buffers,
-                [leaf.pool for leaf in conv],
-                [leaf.live_row_id(layer) for leaf in conv],
-                [leaf.pool for leaf in rec],
-                [leaf.live_row_id(layer) for leaf in rec],
-                row_offsets,
-            ]
-            linear_state_idx += 1
-            return vals
+            # The block slices ``live_row_ids`` against the per-layer index it
+            # was stamped with at construction, so ``state`` goes through
+            # undeflated; ``forward_sequential_layers`` walks it via the pytree
+            # protocol declared on ``RecurrentStateInputsPerDevice``.
+            return [hs, signal_buffers, state, row_offsets]
 
         full_attn_indices = [
             i for i, lt in enumerate(self.layer_types) if lt == "full_attention"

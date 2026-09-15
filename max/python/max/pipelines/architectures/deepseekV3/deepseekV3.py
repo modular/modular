@@ -45,7 +45,7 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -64,6 +64,7 @@ from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
@@ -895,10 +896,8 @@ class DeepseekV3(Module):
                 self.config.eagle_aux_hidden_state_layer_ids
             )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,

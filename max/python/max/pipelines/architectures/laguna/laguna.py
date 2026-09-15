@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable, Sequence
+from typing import Any
 
 from max.dtype import DType
 from max.graph import (
@@ -47,7 +48,7 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP as DenseMLP
 from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized, forward_moe_sharded_layers
@@ -61,6 +62,7 @@ from max.nn.transformer.distributed_transformer import (
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
+from max.tree import Tree
 
 from .layers.attention import LagunaAttention
 from .layers.moe_gate import LagunaTopKRouter
@@ -460,10 +462,8 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
                 data_parallel_splits,
             )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,

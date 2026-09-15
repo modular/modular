@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import TypeVar
+from typing import Any, TypeVar
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -25,6 +26,7 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
+from max.tree import Tree
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -32,8 +34,6 @@ from ..layer import (
     Layer,
     LayerList,
     Module,
-    SubgraphInput,
-    _flatten_graph_inputs,
 )
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
@@ -63,7 +63,7 @@ def forward_sharded_layers(
 
 def _call_layer_directly(
     layer: Module,
-    values: Sequence[SubgraphInput],
+    values: Sequence[Tree[Any]],
 ) -> list[TensorValue]:
     result = layer(*values)
     if isinstance(result, tuple):
@@ -76,7 +76,7 @@ def forward_sequential_layers(
     *,
     inputs_for_layer: Callable[
         [int, list[TensorValue]],
-        Sequence[SubgraphInput],
+        Sequence[Tree[Any]],
     ],
     initial_hidden_states: list[TensorValue],
     on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
@@ -157,9 +157,7 @@ def forward_sequential_layers(
                     weight_prefix=weight_prefix_for_layer(layer_idx),
                 )
 
-            flat_args = [
-                leaf for v in values for leaf in _flatten_graph_inputs(v)
-            ]
+            flat_args = tree.flatten(values)[0]
             call_results = ops.call(
                 group_idx_to_subgraph[group_idx],
                 *flat_args,

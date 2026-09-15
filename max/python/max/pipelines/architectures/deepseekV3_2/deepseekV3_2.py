@@ -41,7 +41,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear
 from max.nn.moe import MoE
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -55,6 +55,7 @@ from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
 from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
@@ -785,9 +786,7 @@ class DeepseekV3_2(Module):
                 ]
             )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
             # Layout of ``h``:
             # - carry_next_input_norm, idx==0: residual only (embeddings);
             #   norm comes from ``apply_initial_input_layernorm`` above
@@ -834,7 +833,7 @@ class DeepseekV3_2(Module):
                 hidden_norm = apply_input_layernorm_at_layer_entry(
                     layers_list[idx], hidden_raw
                 )
-            values: list[SubgraphInput] = [
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 hidden_raw,
                 hidden_norm,

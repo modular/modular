@@ -36,6 +36,7 @@ from .cache_params import (
     RecurrentKVLeafRegion,
     RecurrentStateBuffer,
     RecurrentStateParams,
+    RecurrentStateRegion,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
@@ -52,7 +53,6 @@ from .input_types import (
     RecurrentLeafInputs,
     RecurrentStateInputs,
     RecurrentStateInputsPerDevice,
-    RecurrentStateRegion,
 )
 from .metrics import KVCacheMetrics
 from .utils import (

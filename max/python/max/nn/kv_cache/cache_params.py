@@ -47,7 +47,6 @@ from .input_types import (
     RecurrentLeafInputs,
     RecurrentStateInputs,
     RecurrentStateInputsPerDevice,
-    RecurrentStateRegion,
 )
 from .utils import (
     AttnKeyInterface,
@@ -901,6 +900,42 @@ class PagedKVLeafRegion(KVLeafRegion):
         table.fill(0)
         for batch_idx, blocks in enumerate(plans):
             table[batch_idx, : len(blocks)] = blocks
+
+
+@dataclass(frozen=True)
+class RecurrentStateRegion:
+    """Shape and dtype of one kind of recurrent state, for one pool leaf."""
+
+    leaf_id: str
+    num_layers: int
+    row_shape: tuple[int, ...]
+    """Shape of one layer's state, per device."""
+    dtype: DType
+
+    @property
+    def rows_dim(self) -> str:
+        """Symbolic dim naming this leaf's row count."""
+        return f"{self.leaf_id.replace('/', '_')}_rows"
+
+    @property
+    def row_elements(self) -> int:
+        """Elements in one layer's state."""
+        return math.prod(self.row_shape)
+
+    @property
+    def pool_key(self) -> str:
+        """Key the leaf's flat pool view is staged under."""
+        return f"{self.leaf_id}/pool"
+
+    @property
+    def bytes_per_state(self) -> int:
+        """Bytes one request's state of this kind occupies on one device."""
+        return self.num_layers * self.row_elements * self.dtype.size_in_bytes
+
+    def rows_of(self, page: int) -> range:
+        """Returns the rows a page's layers occupy, layer ``l`` at index ``l``."""
+        base = page * self.num_layers
+        return range(base, base + self.num_layers)
 
 
 @dataclass(frozen=True)
@@ -2578,9 +2613,35 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
         ``namespace`` is unused: the region ids are already distinct.
         """
-        return RecurrentStateInputs.symbolic(
-            self.regions, self.devices_per_replica
-        )
+
+        def leaf(
+            region: RecurrentStateRegion, device: DeviceRef, batch_dim: str
+        ) -> RecurrentLeafInputs[TensorType, BufferType]:
+            pool_shape: list[str | int] = [region.rows_dim]
+            pool_shape.extend(region.row_shape)
+            rows_shape: list[str | int] = [batch_dim, region.num_layers]
+            return RecurrentLeafInputs(
+                pool=BufferType(region.dtype, shape=pool_shape, device=device),
+                live_row_ids=TensorType(
+                    DType.uint32, shape=rows_shape, device=device
+                ),
+            )
+
+        per_device: list[
+            RecurrentStateInputsPerDevice[TensorType, BufferType]
+        ] = []
+        for replica_idx, devices in enumerate(self.devices_per_replica):
+            batch_dim = f"replica_{replica_idx}_batch_size"
+            for device in devices:
+                per_device.append(
+                    RecurrentStateInputsPerDevice(
+                        leaves=tuple(
+                            leaf(region, device, batch_dim)
+                            for region in self.regions
+                        ),
+                    )
+                )
+        return RecurrentStateInputs(inputs=per_device)
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
@@ -2615,7 +2676,6 @@ class RecurrentStateParams(CacheLeafParamInterface):
                         )
                     leaves.append(
                         RecurrentLeafInputs(
-                            region=region,
                             pool=staged[region.pool_key],
                             live_row_ids=staged[region.leaf_id],
                         )

@@ -52,7 +52,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import MoE, make_concatenated_gated_activation_fn
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -66,6 +66,7 @@ from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from .layers.attention import Step3p5Attention
 from .layers.moe_gate import Step3p5MoEGate
@@ -810,7 +811,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
 
         def inputs_for_layer(
             idx: int, hs: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        ) -> list[Tree[Any]]:
             layer = self.layers[idx]
             assert isinstance(layer, Step3p5TransformerBlock)
             kv_collections = (
@@ -818,7 +819,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                 if layer.is_sliding
                 else global_kv_collections
             )
-            values: list[SubgraphInput] = [
+            values: list[Tree[Any]] = [
                 ops.constant(
                     layer.self_attn.layer_idx,
                     DType.uint32,

@@ -35,6 +35,9 @@ This version is still a work in progress.
   `0.0.0.0`, matching `max serve`, instead of the Cascade entrypoint's
   `localhost` default.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
+- Added the public `Tree` type alias in `max.tree` for nested pytree values.
+  Layer subgraph inputs are annotated with `Tree[Any]` instead of the
+  removed `SubgraphInput` alias.
 - Hardened decoding of client-supplied images. `Image.open` is now restricted
   to an explicit format allowlist (PNG, JPEG, WEBP, GIF, BMP, PPM, TIFF, TGA,
   and AVIF where the platform provides it), shrinking the native-decoder attack

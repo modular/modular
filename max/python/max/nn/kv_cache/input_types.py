@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import itertools
-import math
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -39,6 +38,9 @@ to the next is the product of the dimensions inside a page."""
 
 _Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
 _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
+
+# TODO(SERVOPT-1505): remove after aligning on pytree protocol.
+_FlattenLayout = tuple[bool, bool, bool, bool, bool, int, int]
 
 
 def _verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:
@@ -150,6 +152,30 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             return self.scales_page_stride_input
         return self._packed_page_stride()
 
+    def __tree_flatten__(self) -> tuple[Sequence[Any], Any]:
+        return self.flatten(), self._optional_layout()
+
+    @classmethod
+    def __tree_unflatten__(
+        cls,
+        meta: Any,
+        children: Sequence[Any],
+        /,
+    ) -> KVCacheInputsPerDevice[Any, Any]:
+        return cls._unflatten_from_layout(meta, iter(children))
+
+    def _optional_layout(self) -> _FlattenLayout:
+        # TODO(SERVOPT-1505): remove after aligning on pytree protocol.
+        return (
+            bool(self.kv_scales),
+            bool(self.attention_dispatch_metadata),
+            bool(self.draft_attention_dispatch_metadata),
+            bool(self.mla_num_partitions),
+            bool(self.draft_mla_num_partitions),
+            len(self.kv_blocks_per_layer or ()),
+            len(self.kv_scales_per_layer or ()),
+        )
+
     def flatten(self) -> list[_Tensor | _Buffer]:
         """Serialize fields into a flat list for graph input binding."""
         return [
@@ -223,6 +249,22 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
         Consumes ``next(it)`` in the same order ``flatten`` emits elements;
         the two methods must stay in lock-step.
         """
+        return self._unflatten_from_layout(self._optional_layout(), it)
+
+    @staticmethod
+    def _unflatten_from_layout(
+        layout: _FlattenLayout, it: Iterator[Any]
+    ) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
+        # TODO(SERVOPT-1505): remove after aligning on pytree protocol.
+        (
+            has_kv_scales,
+            has_attention_dispatch_metadata,
+            has_draft_attention_dispatch_metadata,
+            has_mla_num_partitions,
+            has_draft_mla_num_partitions,
+            num_kv_blocks_per_layer,
+            num_kv_scales_per_layer,
+        ) = layout
         return KVCacheInputsPerDevice(
             kv_blocks=next(it),
             page_stride_input=next(it),
@@ -230,30 +272,28 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             lookup_table=next(it),
             max_prompt_length=next(it),
             max_cache_length=next(it),
-            kv_scales=next(it) if self.kv_scales else None,
-            scales_page_stride_input=next(it) if self.kv_scales else None,
-            scales_lookup_table=next(it) if self.kv_scales else None,
+            kv_scales=next(it) if has_kv_scales else None,
+            scales_page_stride_input=next(it) if has_kv_scales else None,
+            scales_lookup_table=next(it) if has_kv_scales else None,
             attention_dispatch_metadata=next(it)
-            if self.attention_dispatch_metadata
+            if has_attention_dispatch_metadata
             else None,
             draft_attention_dispatch_metadata=next(it)
-            if self.draft_attention_dispatch_metadata
+            if has_draft_attention_dispatch_metadata
             else None,
-            mla_num_partitions=next(it) if self.mla_num_partitions else None,
+            mla_num_partitions=next(it) if has_mla_num_partitions else None,
             draft_mla_num_partitions=next(it)
-            if self.draft_mla_num_partitions
+            if has_draft_mla_num_partitions
             else None,
-            # Consumed last, matching the tail append in ``flatten``
-            # (kv_blocks_per_layer, then kv_scales_per_layer).
             kv_blocks_per_layer=[
-                next(it) for _ in range(len(self.kv_blocks_per_layer))
+                next(it) for _ in range(num_kv_blocks_per_layer)
             ]
-            if self.kv_blocks_per_layer
+            if num_kv_blocks_per_layer
             else None,
             kv_scales_per_layer=[
-                next(it) for _ in range(len(self.kv_scales_per_layer))
+                next(it) for _ in range(num_kv_scales_per_layer)
             ]
-            if self.kv_scales_per_layer
+            if num_kv_scales_per_layer
             else None,
         )
 
@@ -340,46 +380,8 @@ class KVCacheInputs(
 
 
 @dataclass(frozen=True)
-class RecurrentStateRegion:
-    """Shape and dtype of one kind of recurrent state, for one pool leaf."""
-
-    leaf_id: str
-    num_layers: int
-    row_shape: tuple[int, ...]
-    """Shape of one layer's state, per device."""
-    dtype: DType
-
-    @property
-    def rows_dim(self) -> str:
-        """Symbolic dim naming this leaf's row count."""
-        return f"{self.leaf_id.replace('/', '_')}_rows"
-
-    @property
-    def row_elements(self) -> int:
-        """Elements in one layer's state."""
-        return math.prod(self.row_shape)
-
-    @property
-    def pool_key(self) -> str:
-        """Key the leaf's flat pool view is staged under."""
-        return f"{self.leaf_id}/pool"
-
-    @property
-    def bytes_per_state(self) -> int:
-        """Bytes one request's state of this kind occupies on one device."""
-        return self.num_layers * self.row_elements * self.dtype.size_in_bytes
-
-    def rows_of(self, page: int) -> range:
-        """Returns the rows a page's layers occupy, layer ``l`` at index ``l``."""
-        base = page * self.num_layers
-        return range(base, base + self.num_layers)
-
-
-@dataclass(frozen=True)
 class RecurrentLeafInputs(Generic[_Tensor, _Buffer]):
     """One state leaf's graph inputs on one device."""
-
-    region: RecurrentStateRegion
 
     pool: _Buffer
     live_row_ids: _Tensor
@@ -387,6 +389,21 @@ class RecurrentLeafInputs(Generic[_Tensor, _Buffer]):
     def live_row_id(self, layer: int) -> TensorValue:
         """Returns the ``[batch_size]`` pool row this layer runs in."""
         return _layer_row_ids(self.live_row_ids, layer)
+
+    def __tree_flatten__(
+        self,
+    ) -> tuple[tuple[_Buffer, _Tensor], None]:
+        return (self.pool, self.live_row_ids), None
+
+    @classmethod
+    def __tree_unflatten__(
+        cls,
+        meta: Any,
+        children: Sequence[Any],
+        /,
+    ) -> RecurrentLeafInputs[Any, Any]:
+        pool, live_row_ids = children
+        return cls(pool=pool, live_row_ids=live_row_ids)
 
 
 def _layer_row_ids(ids: Any, layer: int) -> TensorValue:
@@ -404,16 +421,6 @@ class RecurrentStateInputsPerDevice(Generic[_Tensor, _Buffer]):
 
     leaves: tuple[RecurrentLeafInputs[_Tensor, _Buffer], ...]
     """In the order the regions were declared."""
-
-    def by_leaf(self, leaf_id: str) -> RecurrentLeafInputs[_Tensor, _Buffer]:
-        """Returns the named leaf's inputs."""
-        for leaf in self.leaves:
-            if leaf.region.leaf_id == leaf_id:
-                return leaf
-        raise KeyError(
-            f"no recurrent state leaf {leaf_id!r}; this cache holds "
-            f"{[leaf.region.leaf_id for leaf in self.leaves]}"
-        )
 
     def flatten(self) -> list[_Tensor | _Buffer]:
         """Serializes to a flat list for graph input binding.
@@ -433,16 +440,24 @@ class RecurrentStateInputsPerDevice(Generic[_Tensor, _Buffer]):
         live = [next(it) for _ in self.leaves]
         return RecurrentStateInputsPerDevice(
             leaves=tuple(
-                RecurrentLeafInputs(
-                    region=leaf.region,
-                    pool=pool,
-                    live_row_ids=live_row_ids,
-                )
-                for leaf, pool, live_row_ids in zip(
-                    self.leaves, pools, live, strict=True
-                )
+                RecurrentLeafInputs(pool=pool, live_row_ids=live_row_ids)
+                for pool, live_row_ids in zip(pools, live, strict=True)
             ),
         )
+
+    def __tree_flatten__(
+        self,
+    ) -> tuple[list[RecurrentLeafInputs[Any, Any]], None]:
+        return list(self.leaves), None
+
+    @classmethod
+    def __tree_unflatten__(
+        cls,
+        meta: Any,
+        children: Sequence[Any],
+        /,
+    ) -> RecurrentStateInputsPerDevice[Any, Any]:
+        return cls(leaves=tuple(children))
 
 
 @dataclass
@@ -450,48 +465,6 @@ class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
     """Graph inputs for a cache whose entry is a recurrent state."""
 
     inputs: Sequence[RecurrentStateInputsPerDevice[_Tensor, _Buffer]]
-
-    @classmethod
-    def symbolic(
-        cls,
-        regions: Sequence[RecurrentStateRegion],
-        devices_per_replica: Sequence[Sequence[DeviceRef]],
-    ) -> RecurrentStateInputs[TensorType, BufferType]:
-        """Builds the symbolic types a graph declares for these regions.
-
-        Replica-major, one entry per device, each replica with its own batch
-        dim.
-        """
-
-        def leaf(
-            region: RecurrentStateRegion, device: DeviceRef, batch_dim: str
-        ) -> RecurrentLeafInputs[TensorType, BufferType]:
-            pool_shape: list[str | int] = [region.rows_dim]
-            pool_shape.extend(region.row_shape)
-            rows_shape: list[str | int] = [batch_dim, region.num_layers]
-            return RecurrentLeafInputs(
-                region=region,
-                pool=BufferType(region.dtype, shape=pool_shape, device=device),
-                live_row_ids=TensorType(
-                    DType.uint32, shape=rows_shape, device=device
-                ),
-            )
-
-        per_device: list[
-            RecurrentStateInputsPerDevice[TensorType, BufferType]
-        ] = []
-        for replica_idx, devices in enumerate(devices_per_replica):
-            batch_dim = f"replica_{replica_idx}_batch_size"
-            for device in devices:
-                per_device.append(
-                    RecurrentStateInputsPerDevice(
-                        leaves=tuple(
-                            leaf(region, device, batch_dim)
-                            for region in regions
-                        ),
-                    )
-                )
-        return RecurrentStateInputs(inputs=per_device)
 
     def flatten(self) -> list[_Tensor | _Buffer]:
         """Flattens this (sub)tree into a flattened buffer/tensor list."""
@@ -508,3 +481,17 @@ class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
         return RecurrentStateInputs(
             inputs=[item.unflatten(it) for item in self.inputs]
         )
+
+    def __tree_flatten__(
+        self,
+    ) -> tuple[list[RecurrentStateInputsPerDevice[Any, Any]], None]:
+        return list(self.inputs), None
+
+    @classmethod
+    def __tree_unflatten__(
+        cls,
+        meta: Any,
+        children: Sequence[Any],
+        /,
+    ) -> RecurrentStateInputs[Any, Any]:
+        return cls(inputs=list(children))

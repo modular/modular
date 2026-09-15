@@ -30,6 +30,7 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
+    RecurrentStateRegion,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
@@ -39,7 +40,6 @@ from max.nn.kv_cache.input_types import (
     KVCacheInputs,
     MultiKVCacheInputs,
     RecurrentStateInputs,
-    RecurrentStateRegion,
 )
 from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.kv_cache.config import KVConnectorConfig
@@ -1148,8 +1148,8 @@ class TestRuntimeInputComposition:
         )
         assert isinstance(built, RecurrentStateInputs)
         (device,) = built.inputs
-        for region in state.regions:
-            leaf = device.by_leaf(region.leaf_id)
+        for i, region in enumerate(state.regions):
+            leaf = device.leaves[i]
             assert leaf.pool is staged[region.pool_key]
             assert leaf.live_row_ids is staged[region.leaf_id]
 

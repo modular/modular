@@ -50,12 +50,13 @@ a value reachable by two paths is one object or two.
 from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeAlias, TypeVar
 
 __all__ = [
     "Selector",
+    "Tree",
     "TreeDef",
     "as_predicate",
     "extend_path",
@@ -71,6 +72,7 @@ __all__ = [
 ]
 
 _T = TypeVar("_T")
+_T_co = TypeVar("_T_co", covariant=True)
 
 #: What ``leaf`` accepts: a type, a tuple of types, or a predicate.
 Selector = type | tuple[type, ...] | Callable[[Any], bool]
@@ -171,6 +173,33 @@ _BUILTIN_KINDS: dict[type, str] = {
     OrderedDict: "dict",
     defaultdict: "dict",
 }
+
+
+class _Flattenable(Protocol[_T_co]):
+    def __tree_flatten__(
+        self,
+    ) -> tuple[
+        Sequence[Tree[_T_co]] | Mapping[Any, Tree[_T_co]],
+        Any,
+    ]: ...
+
+
+class _NamedTuple(Protocol[_T_co]):
+    _fields: tuple[str, ...]
+
+    def __iter__(self) -> Iterator[_T_co]: ...
+
+
+Tree: TypeAlias = (
+    _T_co
+    | list["Tree[_T_co]"]
+    | tuple["Tree[_T_co]", ...]
+    | dict[Any, "Tree[_T_co]"]
+    | OrderedDict[Any, "Tree[_T_co]"]
+    | defaultdict[Any, "Tree[_T_co]"]
+    | _NamedTuple["Tree[_T_co]"]
+    | _Flattenable[_T_co]
+)
 
 
 def _node_kind(value: Any) -> str | None:

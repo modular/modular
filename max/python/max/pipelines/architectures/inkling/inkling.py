@@ -40,7 +40,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import make_interleaved_gated_activation_fn
 from max.nn.norm import RMSNorm
@@ -56,6 +56,7 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tree import Tree
 
 from .layers.attention import InklingAttention, log_scaling_tau
 from .layers.moe import InklingGate, InklingMoE
@@ -493,7 +494,7 @@ class Inkling(Module):
 
         def inputs_for_layer(
             layer_idx: int, previous: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        ) -> list[Tree[Any]]:
             return [
                 previous,
                 kv_collections[self.layer_kv_keys[layer_idx]],
