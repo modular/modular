@@ -146,28 +146,35 @@ _FILECHECK_EXTRA_DEPS = {
             "test_tensor_core_amd_utils.mojo",  # Imported source, not a test
             "matmul_kernels.mojo",  # Imported source, not a test
             "tensor_core_kernels.mojo",  # Imported source, not a test
-            # Depends only on `layout` + `std`; given a dedicated minimal-deps
-            # target below so it is not coupled to `nn`/`linalg`.
+            # Depend only on `layout` + `std`; given dedicated minimal-deps
+            # targets below so they are not coupled to `nn`/`linalg`.
             "test_device_pointer_tile_storage_kernel.mojo",
+            "test_optional_device_pointer_tile.mojo",
         ],
     )
 ]
 
-# `DevicePointerEngine` probe. It only imports `layout` and `std`, so it gets
-# a dedicated target with minimal dependencies rather than the heavy
+# `DevicePointerEngine` probes. They only import `layout` and `std`, so they
+# get dedicated targets with minimal dependencies rather than the heavy
 # `nn`/`linalg`/`kv_cache` set the glob above attaches to every other test.
-mojo_test(
-    name = "test_device_pointer_tile_storage_kernel.mojo.test",
-    size = "large",
-    srcs = ["test_device_pointer_tile_storage_kernel.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"],
-    deps = [
-        "//max:layout",
-        "@mojo//:std",
-    ],
-)
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "//max:layout",
+            "@mojo//:std",
+        ],
+    )
+    for src in [
+        "test_device_pointer_tile_storage_kernel.mojo",
+        "test_optional_device_pointer_tile.mojo",
+    ]
+]
 
 [
     mojo_filecheck_test(

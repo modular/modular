@@ -170,7 +170,13 @@ struct Optional[T: AnyType](
     comptime Element = Self.T
     """The element type of this optional."""
 
-    comptime device_type: AnyType = Self
+    comptime _DevicePayloadType: AnyType = Self.T.device_type if conforms_to(
+        Self.T, DevicePassable
+    ) else Self.T
+    """The device-side payload type: the payload's `device_type` when it is
+    `DevicePassable`, otherwise the payload type itself."""
+
+    comptime device_type: AnyType = Optional[Self._DevicePayloadType]
     """The device-side type for this optional."""
 
     comptime _type = Variant[_NoneType, Self.T]
@@ -543,7 +549,16 @@ struct Optional[T: AnyType](
             encoder: Target specific device type encoder.
             target: The target pointer to store the device type.
         """
-        encoder.encode(self, target)
+        comptime DevT = Self._DevicePayloadType
+        comptime DevStorage = Variant[_NoneType, DevT]
+        ref dev = target.unsafe_bitcast[DevStorage]()[]
+        if self:
+            self._unsafe_unchecked_value()._to_device_type(
+                encoder, dev._unsafe_ptr[DevT]().unsafe_bitcast[NoneType]()
+            )
+            dev._unsafe_set_active[DevT]()
+        else:
+            dev._unsafe_set_active[_NoneType]()
 
     @staticmethod
     def get_type_name() -> (
@@ -1148,13 +1163,37 @@ struct OptionalReg[T: TrivialRegisterPassable](
     comptime _Storage = _OptionalRegStorageFor[Self.T]
     var _value: Self._Storage
 
-    comptime device_type: AnyType = Self
+    comptime _DevicePayloadType: TrivialRegisterPassable = downcast[
+        Self.T.device_type, TrivialRegisterPassable
+    ] if conforms_to(Self.T, DevicePassable) else Self.T
+    """The payload's `device_type`, or the payload type itself."""
+
+    comptime device_type: AnyType = OptionalReg[Self._DevicePayloadType]
     """The device-side type for this optional register."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        """Convert to device type and store at the target address.
+
+        Args:
+            encoder: Target specific device type encoder.
+            target: The target pointer to store the device type.
+        """
+        comptime DevT = Self._DevicePayloadType
+        comptime if conforms_to(Self.T, DevicePassable):
+            var dev: OptionalReg[DevT]
+            if self:
+                var payload = MaybeUninit[DevT]()
+                self.value()._to_device_type(
+                    encoder, payload.unsafe_ptr().unsafe_bitcast[NoneType]()
+                )
+                dev = OptionalReg[DevT](payload.unsafe_ptr()[])
+            else:
+                dev = OptionalReg[DevT]()
+            target.unsafe_bitcast[OptionalReg[DevT]]().unsafe_write(dev)
+        else:
+            encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
