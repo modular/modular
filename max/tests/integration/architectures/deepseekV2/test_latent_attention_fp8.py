@@ -23,7 +23,7 @@ from max.graph.weights import WeightData
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, flatten_kv_inputs_per_device
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -351,7 +351,7 @@ def generate_max_outputs_fp8(
             max_output = compiled.execute(
                 input_tensor_device,
                 input_row_offsets.to(device0),
-                *kv_inputs.flatten(),
+                *flatten_kv_inputs_per_device(kv_inputs),
             )
 
             for ctx in batch:
@@ -372,7 +372,9 @@ def generate_max_outputs_fp8(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
+        input_tensor_device,
+        input_row_offsets.to(device0),
+        *flatten_kv_inputs_per_device(kv_inputs),
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

@@ -44,6 +44,7 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
     MultiKVCacheInputs,
     MultiKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -171,7 +172,9 @@ def test_mla_decode_graph_sparse_smoke() -> None:
     topk_len_type = TensorType(DType.int32, ["batch"], DeviceRef.GPU())
     sink_type = TensorType(DType.float32, ["batch"], DeviceRef.GPU())
 
-    kv_sym = kv_params.get_symbolic_inputs().inputs[0].flatten()
+    kv_sym = flatten_kv_inputs_per_device(
+        kv_params.get_symbolic_inputs().inputs[0]
+    )
 
     def construct() -> Graph:
         with Graph(
@@ -326,7 +329,9 @@ def test_mla_decode_graph_sparse_bf16_smoke() -> None:
     topk_len_type = TensorType(DType.int32, ["batch"], DeviceRef.GPU())
     sink_type = TensorType(DType.float32, ["batch"], DeviceRef.GPU())
 
-    kv_sym = kv_params.get_symbolic_inputs().inputs[0].flatten()
+    kv_sym = flatten_kv_inputs_per_device(
+        kv_params.get_symbolic_inputs().inputs[0]
+    )
 
     def construct() -> Graph:
         with Graph(
@@ -511,9 +516,15 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
         max_batch_size=32,
     )
 
-    len_mla_kv = len(mla_kv_params.get_symbolic_inputs().inputs[0].flatten())
+    len_mla_kv = len(
+        flatten_kv_inputs_per_device(
+            mla_kv_params.get_symbolic_inputs().inputs[0]
+        )
+    )
     len_indexer_kv = len(
-        indexer_kv_params.get_symbolic_inputs().inputs[0].flatten()
+        flatten_kv_inputs_per_device(
+            indexer_kv_params.get_symbolic_inputs().inputs[0]
+        )
     )
     kv_sym = list(multi_kv.flattened_kv_inputs())
     hidden_type = TensorType(

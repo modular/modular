@@ -56,6 +56,7 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     MLAKVCacheParams,
     PagedCacheValues,
+    flatten_kv_inputs_per_device,
 )
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -218,7 +219,7 @@ def _run_path(
             TensorType(
                 DType.bfloat16, shape=(qkv_dim, hidden), device=device_ref
             ),
-            *kv_symbolic.flatten(),
+            *flatten_kv_inputs_per_device(kv_symbolic),
         ],
     ) as graph:
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -250,7 +251,10 @@ def _run_path(
     ).to(device)
 
     (out_buf,) = model.execute(
-        a_buf, row_offsets_buf, wqkv_buf, *kv_runtime.flatten()
+        a_buf,
+        row_offsets_buf,
+        wqkv_buf,
+        *flatten_kv_inputs_per_device(kv_runtime),
     )
     q_out_np = torch.from_dlpack(out_buf).to(torch.float32).cpu().numpy()
     # The cache is bf16, which numpy can't represent, so read it through torch.
@@ -443,7 +447,7 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
 
         main_sym = main_params.get_symbolic_inputs().inputs[0]
         index_sym = index_params.get_symbolic_inputs().inputs[0]
-        n_main = len(main_sym.flatten())
+        n_main = len(flatten_kv_inputs_per_device(main_sym))
 
         with Graph(
             f"qkv_index_mxfp8_{main_dtype}_main_cache",
@@ -455,8 +459,8 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
                 TensorType(
                     DType.bfloat16, (n_total, hidden), device=device_ref
                 ),
-                *main_sym.flatten(),
-                *index_sym.flatten(),
+                *flatten_kv_inputs_per_device(main_sym),
+                *flatten_kv_inputs_per_device(index_sym),
             ],
         ) as graph:
             a, iro, wqkv, *rest = graph.inputs
@@ -510,7 +514,11 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
         ).to(device)
 
         q_buf, iq_buf = model.execute(
-            a_buf, iro_buf, wqkv_buf, *main_rt.flatten(), *index_rt.flatten()
+            a_buf,
+            iro_buf,
+            wqkv_buf,
+            *flatten_kv_inputs_per_device(main_rt),
+            *flatten_kv_inputs_per_device(index_rt),
         )
         q_np = torch.from_dlpack(q_buf).to(torch.float32).cpu().numpy()
         iq_np = torch.from_dlpack(iq_buf).to(torch.float32).cpu().numpy()
@@ -609,7 +617,7 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
         """
         main_sym = main_params.get_symbolic_inputs().inputs[0]
         index_sym = index_params.get_symbolic_inputs().inputs[0]
-        n_main = len(main_sym.flatten())
+        n_main = len(flatten_kv_inputs_per_device(main_sym))
 
         name = "stacked" if stacked else "separate"
         if pre is not None:
@@ -628,8 +636,8 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                 TensorType(
                     DType.bfloat16, (n_total, hidden), device=device_ref
                 ),
-                *main_sym.flatten(),
-                *index_sym.flatten(),
+                *flatten_kv_inputs_per_device(main_sym),
+                *flatten_kv_inputs_per_device(index_sym),
             ],
         ) as graph:
             a, iro, wqkv, *rest = graph.inputs
@@ -734,7 +742,11 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
         ).to(device)
 
         q_buf, iq_buf = model.execute(
-            a_buf, iro_buf, wqkv_buf, *main_rt.flatten(), *index_rt.flatten()
+            a_buf,
+            iro_buf,
+            wqkv_buf,
+            *flatten_kv_inputs_per_device(main_rt),
+            *flatten_kv_inputs_per_device(index_rt),
         )
 
         # The caches are bf16, which numpy can't represent, so read through torch.

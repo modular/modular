@@ -24,6 +24,7 @@ from max.nn.kernels import kv_cache_ragged_2m_iadd
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import (
     block_ids_for_batch,
@@ -195,7 +196,7 @@ def run_kv_cache_2m_iadd(
         Buffer.from_numpy(input_row_offsets).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_runtime_inputs),
     )
 
     k_caches = dump_kv_cache_to_torch(

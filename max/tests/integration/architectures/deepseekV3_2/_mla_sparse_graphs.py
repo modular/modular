@@ -41,6 +41,7 @@ from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -277,9 +278,15 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
     multi_kv = MultiKVCacheParams.from_params(
         {"mla": mla_kv_params, "indexer": indexer_kv_params}
     )
-    len_mla_kv = len(mla_kv_params.get_symbolic_inputs().inputs[0].flatten())
+    len_mla_kv = len(
+        flatten_kv_inputs_per_device(
+            mla_kv_params.get_symbolic_inputs().inputs[0]
+        )
+    )
     len_indexer_kv = len(
-        indexer_kv_params.get_symbolic_inputs().inputs[0].flatten()
+        flatten_kv_inputs_per_device(
+            indexer_kv_params.get_symbolic_inputs().inputs[0]
+        )
     )
     kv_sym = list(multi_kv.flattened_kv_inputs())
     hidden_type = TensorType(

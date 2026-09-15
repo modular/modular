@@ -24,7 +24,7 @@ from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import masked_flash_attention_gpu
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, flatten_kv_inputs_per_device
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
@@ -210,7 +210,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        *kv_runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_runtime_inputs),
     )[0]
 
     return output

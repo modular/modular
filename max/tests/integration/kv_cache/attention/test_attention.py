@@ -25,7 +25,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, flatten_kv_inputs_per_device
 from test_common.modular_graph_test import modular_graph_test
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -129,7 +129,12 @@ def test_kv_cache_ragged_attention(
         provided_inputs={
             1: input_row_offsets,
             # The KV tail starts at slot 2; let its own order place the rest.
-            **{2 + i: buf for i, buf in enumerate(kv_runtime_inputs.flatten())},
+            **{
+                2 + i: buf
+                for i, buf in enumerate(
+                    flatten_kv_inputs_per_device(kv_runtime_inputs)
+                )
+            },
         },
     )
     def test_runs_without_nan(

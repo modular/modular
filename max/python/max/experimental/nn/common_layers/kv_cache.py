@@ -23,14 +23,11 @@ from typing import Any, cast
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.kv_cache.input_types import (
-    KVCacheInputsPerDevice,
-)
 from max.nn.kv_cache.input_types import PagedCacheValues as _PagedCacheValues
 
 
 @dataclass
-class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
+class PagedCacheValues:
     """Tensors holding the values for the allocated paged KV cache.
 
     May be located on multiple devices.

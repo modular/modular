@@ -25,6 +25,7 @@ from max.nn.kernels import sgmv_qkv_lora_kernel
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import (
     block_ids_for_batch,
@@ -317,7 +318,7 @@ def run_sgmv_qkv_lora_kernel(
             TensorType(DType.uint32, ["input_row_offsets"], device=device_ref),
             TensorType(DType.int64, ["lora_end"], device=DeviceRef.CPU()),
             TensorType(DType.int64, [1], device=DeviceRef.CPU()),
-            *kv_symbolic_inputs.flatten(),
+            *flatten_kv_inputs_per_device(kv_symbolic_inputs),
         ],
     ) as graph:
         (
@@ -373,7 +374,7 @@ def run_sgmv_qkv_lora_kernel(
         Buffer.from_numpy(input_row_offsets.astype(np.uint32)).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_runtime_inputs),
     )
 
     q_output = from_dlpack(result[0])

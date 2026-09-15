@@ -22,6 +22,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -61,5 +62,5 @@ async def _test_kv_cache_gpu() -> None:
     assert isinstance(kv_inputs, KVCacheInputs)
     first_device_inputs = kv_inputs.inputs[0]
     assert isinstance(first_device_inputs, KVCacheInputsPerDevice)
-    assert len(first_device_inputs.flatten()) == 7
+    assert len(flatten_kv_inputs_per_device(first_device_inputs)) == 7
     assert first_device_inputs.attention_dispatch_metadata is not None

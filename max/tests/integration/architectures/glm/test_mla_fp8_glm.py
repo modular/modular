@@ -36,7 +36,11 @@ from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MLAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -289,7 +293,9 @@ def _run_layer(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_dev, row_offsets_buf.to(device0), *kv_inputs.flatten()
+        input_dev,
+        row_offsets_buf.to(device0),
+        *flatten_kv_inputs_per_device(kv_inputs),
     )
     return from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
 

@@ -20,7 +20,11 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.nn.kernels import kv_cache_ragged_radd
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
@@ -107,9 +111,9 @@ def test_kv_cache_radd_basic() -> None:
     # Compile and init the model
     model = session.load(graph)
 
-    kv_inputs = paged_kv_cache_inputs(
-        kv_params, prompt_lens, total_num_pages=8
-    ).flatten()
+    kv_flat = flatten_kv_inputs_per_device(
+        paged_kv_cache_inputs(kv_params, prompt_lens, total_num_pages=8)
+    )
 
     a_np = np.ones(
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),
@@ -118,7 +122,7 @@ def test_kv_cache_radd_basic() -> None:
     a_data = cast_tensor_to(Buffer.from_numpy(a_np), dtype).to(device)
     input_row_offsets_data = Buffer.from_numpy(input_row_offsets_np).to(device)
 
-    output = model(a_data, input_row_offsets_data, batch_offset, *kv_inputs)
+    output = model(a_data, input_row_offsets_data, batch_offset, *kv_flat)
 
     # simple smoke test, we do more thorough testing in the test_lora_gpu.py test
     assert output is not None

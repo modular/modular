@@ -30,7 +30,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import latent_sparse_attention_ragged
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, flatten_kv_inputs_per_device
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 HEAD_DIM = 512
@@ -210,8 +210,8 @@ def test_latent_sparse_attention_matches_numpy(
         Buffer.from_numpy(row_offsets).to(device),
         Buffer.from_numpy(comp_idx).to(device),
         Buffer.from_numpy(sink).to(device),
-        *swa_inputs.flatten(),
-        *comp_inputs.flatten(),
+        *flatten_kv_inputs_per_device(swa_inputs),
+        *flatten_kv_inputs_per_device(comp_inputs),
     )
     got = result.to_numpy()
 

@@ -24,6 +24,7 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -205,9 +206,13 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         q_gamma,
         k_gamma,
         input_row_offsets,
-        *fused_inputs.flatten(),
+        *flatten_kv_inputs_per_device(fused_inputs),
     )
-    unfused_model(k_gamma, input_row_offsets, *unfused_inputs.flatten())
+    unfused_model(
+        k_gamma,
+        input_row_offsets,
+        *flatten_kv_inputs_per_device(unfused_inputs),
+    )
 
     np.testing.assert_allclose(
         q_fused.to_numpy(), q_ref.to_numpy(), rtol=1e-2, atol=1e-2

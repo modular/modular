@@ -42,7 +42,11 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MLAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 
 # Small model dimensions for fast graph-trace tests.
 _N_HEADS = 8
@@ -113,7 +117,7 @@ def _build_kv_collection(
 
     graph_values: list[BufferValue | TensorValue] = []
     for per_device_types in kv_inputs.inputs:
-        for field_type in per_device_types.flatten():
+        for field_type in flatten_kv_inputs_per_device(per_device_types):
             t = Tensor.zeros(
                 resolve_shape(field_type.shape),
                 dtype=field_type.dtype,

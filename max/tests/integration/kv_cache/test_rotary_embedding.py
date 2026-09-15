@@ -37,7 +37,7 @@ from max.nn.kernels import (
     rope_ragged_with_position_ids,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, flatten_kv_inputs_per_device
 from test_common.modular_graph_test import (
     are_all_tensor_values,
     modular_graph_test,
@@ -664,7 +664,9 @@ def test_kv_cache_ragged_rope(
         # The KV inputs follow, in the order `flatten` emits them.
         **{
             3 + offset + i: buf
-            for i, buf in enumerate(kv_runtime_inputs.flatten())
+            for i, buf in enumerate(
+                flatten_kv_inputs_per_device(kv_runtime_inputs)
+            )
         },
     }
 
@@ -807,7 +809,9 @@ def test_rope_split_store_ragged(
         # The KV inputs follow, in the order `flatten` emits them.
         **{
             3 + offset + i: buf
-            for i, buf in enumerate(kv_runtime_inputs.flatten())
+            for i, buf in enumerate(
+                flatten_kv_inputs_per_device(kv_runtime_inputs)
+            )
         },
     }
 

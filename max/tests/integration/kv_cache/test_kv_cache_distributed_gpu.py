@@ -18,7 +18,11 @@ from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
@@ -52,7 +56,7 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         for i in range(num_devices):
             kv_inputs_per_device = kv_inputs.inputs[i]
-            assert len(kv_inputs_per_device.flatten()) == 7
+            assert len(flatten_kv_inputs_per_device(kv_inputs_per_device)) == 7
             assert kv_inputs_per_device.attention_dispatch_metadata is not None
 
 

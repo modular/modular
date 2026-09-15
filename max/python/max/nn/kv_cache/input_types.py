@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 import numpy as np
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.experimental.tensor import Tensor
@@ -31,6 +32,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from typing_extensions import Self
 
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel: the pages are packed, so the distance from one page
@@ -38,9 +40,6 @@ to the next is the product of the dimensions inside a page."""
 
 _Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
 _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
-
-# TODO(SERVOPT-1505): remove after aligning on pytree protocol.
-_FlattenLayout = tuple[bool, bool, bool, bool, bool, int, int]
 
 
 def _verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:
@@ -52,6 +51,41 @@ def _verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:
         )
     if t.rank != 1:
         raise ValueError(f"Expected rank 1, got {t.rank} for tensor {t}")
+
+
+@dataclass(frozen=True)
+class _KVCacheInputsPerDeviceMeta:
+    """Metadata for trees over :class:`KVCacheInputsPerDevice`."""
+
+    emit_kv_scales: bool
+    emit_attention_dispatch_metadata: bool
+    emit_draft_attention_dispatch_metadata: bool
+    emit_mla_num_partitions: bool
+    emit_draft_mla_num_partitions: bool
+    num_kv_blocks_per_layer: int
+    num_kv_scales_per_layer: int
+
+
+def flatten_kv_inputs_per_device(
+    inputs: KVCacheInputsPerDevice[Any, Any],
+) -> list[Any]:
+    """Returns graph-input leaves for one device's KV cache."""
+    return tree.flatten(inputs)[0]
+
+
+def unflatten_kv_inputs_per_device(
+    template: KVCacheInputsPerDevice[Any, Any],
+    it: Iterator[Any],
+) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
+    """Rebuilds per-device KV inputs using ``template``'s optional-field layout.
+
+    ``it`` is a shared graph-input iterator that carries values beyond this one
+    device's leaves, so unflatten stops at the structure rather than requiring
+    the iterator to be exhausted.
+    """
+    # TODO(SERVOPT-1505): redesign so that a .flatten() on a template is not required.
+    _, treedef = tree.flatten(template)
+    return tree.unflatten(treedef, it, exact=False)
 
 
 @dataclass
@@ -123,6 +157,10 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
         _verify_rank1_int64_tensor(
             "draft_mla_num_partitions", self.draft_mla_num_partitions
         )
+        if self.scales_lookup_table is not None and self.kv_scales is None:
+            raise ValueError(
+                "kv_scales must be provided when scales_lookup_table is provided"
+            )
 
     def _packed_page_stride(self) -> Any:
         """Returns the packed sentinel, typed like the rest of this collection.
@@ -152,33 +190,10 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             return self.scales_page_stride_input
         return self._packed_page_stride()
 
-    def __tree_flatten__(self) -> tuple[Sequence[Any], Any]:
-        return self.flatten(), self._optional_layout()
-
-    @classmethod
-    def __tree_unflatten__(
-        cls,
-        meta: Any,
-        children: Sequence[Any],
-        /,
-    ) -> KVCacheInputsPerDevice[Any, Any]:
-        return cls._unflatten_from_layout(meta, iter(children))
-
-    def _optional_layout(self) -> _FlattenLayout:
-        # TODO(SERVOPT-1505): remove after aligning on pytree protocol.
-        return (
-            bool(self.kv_scales),
-            bool(self.attention_dispatch_metadata),
-            bool(self.draft_attention_dispatch_metadata),
-            bool(self.mla_num_partitions),
-            bool(self.draft_mla_num_partitions),
-            len(self.kv_blocks_per_layer or ()),
-            len(self.kv_scales_per_layer or ()),
-        )
-
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        """Serialize fields into a flat list for graph input binding."""
-        return [
+    def __tree_flatten__(
+        self,
+    ) -> tuple[tuple[Any, ...], _KVCacheInputsPerDeviceMeta]:
+        parts: list[Any] = [
             self.kv_blocks,
             # Each stride follows the buffer it describes.
             self.values_page_stride(),
@@ -186,34 +201,91 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.lookup_table,
             self.max_prompt_length,
             self.max_cache_length,
-            *((self.kv_scales,) if self.kv_scales else ()),
-            *((self.scales_page_stride(),) if self.kv_scales else ()),
-            *(
-                (self.scales_lookup_table or self.lookup_table,)
-                if self.kv_scales
-                else ()
-            ),
-            *(
-                (self.attention_dispatch_metadata,)
-                if self.attention_dispatch_metadata
-                else ()
-            ),
-            *(
-                (self.draft_attention_dispatch_metadata,)
-                if self.draft_attention_dispatch_metadata
-                else ()
-            ),
-            *((self.mla_num_partitions,) if self.mla_num_partitions else ()),
-            *(
-                (self.draft_mla_num_partitions,)
-                if self.draft_mla_num_partitions
-                else ()
-            ),
-            # Per-layer buffers are appended at the tail so the leading fields
-            # stay byte-identical for every non-per-layer cache (``None`` -> ()).
-            *(self.kv_blocks_per_layer or ()),
-            *(self.kv_scales_per_layer or ()),
         ]
+        emit_kv_scales = bool(self.kv_scales)
+        if emit_kv_scales:
+            assert self.kv_scales is not None
+            parts.append(self.kv_scales)
+            # The scales stride follows the scales buffer it describes.
+            parts.append(self.scales_page_stride())
+            parts.append(self.scales_lookup_table or self.lookup_table)
+        if self.attention_dispatch_metadata is not None:
+            parts.append(self.attention_dispatch_metadata)
+        if self.draft_attention_dispatch_metadata is not None:
+            parts.append(self.draft_attention_dispatch_metadata)
+        if self.mla_num_partitions is not None:
+            parts.append(self.mla_num_partitions)
+        if self.draft_mla_num_partitions is not None:
+            parts.append(self.draft_mla_num_partitions)
+        parts.extend(self.kv_blocks_per_layer or ())
+        parts.extend(self.kv_scales_per_layer or ())
+        meta = _KVCacheInputsPerDeviceMeta(
+            emit_kv_scales=emit_kv_scales,
+            emit_attention_dispatch_metadata=self.attention_dispatch_metadata
+            is not None,
+            emit_draft_attention_dispatch_metadata=self.draft_attention_dispatch_metadata
+            is not None,
+            emit_mla_num_partitions=self.mla_num_partitions is not None,
+            emit_draft_mla_num_partitions=self.draft_mla_num_partitions
+            is not None,
+            num_kv_blocks_per_layer=len(self.kv_blocks_per_layer or ()),
+            num_kv_scales_per_layer=len(self.kv_scales_per_layer or ()),
+        )
+        return (tuple(parts), meta)
+
+    @classmethod
+    def __tree_unflatten__(
+        cls,
+        meta: _KVCacheInputsPerDeviceMeta,
+        children: tuple[Any, ...],
+    ) -> Self:
+        it = iter(children)
+        kv_blocks = next(it)
+        page_stride_input = next(it)
+        cache_lengths = next(it)
+        lookup_table = next(it)
+        max_prompt_length = next(it)
+        max_cache_length = next(it)
+        kv_scales = next(it) if meta.emit_kv_scales else None
+        scales_page_stride_input = next(it) if meta.emit_kv_scales else None
+        scales_lookup_table = next(it) if meta.emit_kv_scales else None
+        attention_dispatch_metadata = (
+            next(it) if meta.emit_attention_dispatch_metadata else None
+        )
+        draft_attention_dispatch_metadata = (
+            next(it) if meta.emit_draft_attention_dispatch_metadata else None
+        )
+        mla_num_partitions = next(it) if meta.emit_mla_num_partitions else None
+        draft_mla_num_partitions = (
+            next(it) if meta.emit_draft_mla_num_partitions else None
+        )
+        kv_blocks_per_layer = (
+            [next(it) for _ in range(meta.num_kv_blocks_per_layer)]
+            if meta.num_kv_blocks_per_layer
+            else None
+        )
+        kv_scales_per_layer = (
+            [next(it) for _ in range(meta.num_kv_scales_per_layer)]
+            if meta.num_kv_scales_per_layer
+            else None
+        )
+        return cls(
+            kv_blocks=kv_blocks,
+            page_stride_input=page_stride_input,
+            cache_lengths=cache_lengths,
+            lookup_table=lookup_table,
+            max_prompt_length=max_prompt_length,
+            max_cache_length=max_cache_length,
+            kv_scales=kv_scales,
+            scales_page_stride_input=scales_page_stride_input,
+            scales_lookup_table=scales_lookup_table,
+            attention_dispatch_metadata=attention_dispatch_metadata,
+            draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
+            mla_num_partitions=mla_num_partitions,
+            draft_mla_num_partitions=draft_mla_num_partitions,
+            kv_blocks_per_layer=kv_blocks_per_layer,
+            kv_scales_per_layer=kv_scales_per_layer,
+        )
 
     # TODO: FIX THIS HACK!!!
     def flatten_without_attention_dispatch_metadata(
@@ -240,62 +312,6 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             *(self.kv_blocks_per_layer or ()),
             *(self.kv_scales_per_layer or ()),
         ]
-
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
-        """Reconstruct from a flat iterator produced by ``flatten``.
-
-        Consumes ``next(it)`` in the same order ``flatten`` emits elements;
-        the two methods must stay in lock-step.
-        """
-        return self._unflatten_from_layout(self._optional_layout(), it)
-
-    @staticmethod
-    def _unflatten_from_layout(
-        layout: _FlattenLayout, it: Iterator[Any]
-    ) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
-        # TODO(SERVOPT-1505): remove after aligning on pytree protocol.
-        (
-            has_kv_scales,
-            has_attention_dispatch_metadata,
-            has_draft_attention_dispatch_metadata,
-            has_mla_num_partitions,
-            has_draft_mla_num_partitions,
-            num_kv_blocks_per_layer,
-            num_kv_scales_per_layer,
-        ) = layout
-        return KVCacheInputsPerDevice(
-            kv_blocks=next(it),
-            page_stride_input=next(it),
-            cache_lengths=next(it),
-            lookup_table=next(it),
-            max_prompt_length=next(it),
-            max_cache_length=next(it),
-            kv_scales=next(it) if has_kv_scales else None,
-            scales_page_stride_input=next(it) if has_kv_scales else None,
-            scales_lookup_table=next(it) if has_kv_scales else None,
-            attention_dispatch_metadata=next(it)
-            if has_attention_dispatch_metadata
-            else None,
-            draft_attention_dispatch_metadata=next(it)
-            if has_draft_attention_dispatch_metadata
-            else None,
-            mla_num_partitions=next(it) if has_mla_num_partitions else None,
-            draft_mla_num_partitions=next(it)
-            if has_draft_mla_num_partitions
-            else None,
-            kv_blocks_per_layer=[
-                next(it) for _ in range(num_kv_blocks_per_layer)
-            ]
-            if num_kv_blocks_per_layer
-            else None,
-            kv_scales_per_layer=[
-                next(it) for _ in range(num_kv_scales_per_layer)
-            ]
-            if num_kv_scales_per_layer
-            else None,
-        )
 
 
 PagedCacheValues = KVCacheInputsPerDevice[TensorValue, BufferValue]
@@ -361,7 +377,7 @@ class KVCacheInputs(
         """Flattens this (sub)tree into a flattened buffer/tensor list."""
         return list(
             itertools.chain.from_iterable(
-                item.flatten() for item in self.inputs
+                flatten_kv_inputs_per_device(item) for item in self.inputs
             )
         )
 
@@ -370,7 +386,9 @@ class KVCacheInputs(
     ) -> KVCacheInputs[TensorValue, BufferValue]:
         """Rebuilds this (sub)tree by consuming values from ``it``."""
         return KVCacheInputs(
-            inputs=[item.unflatten(it) for item in self.inputs]
+            inputs=[
+                unflatten_kv_inputs_per_device(item, it) for item in self.inputs
+            ]
         )
 
 
@@ -422,29 +440,6 @@ class RecurrentStateInputsPerDevice(Generic[_Tensor, _Buffer]):
     leaves: tuple[RecurrentLeafInputs[_Tensor, _Buffer], ...]
     """In the order the regions were declared."""
 
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        """Serializes to a flat list for graph input binding.
-
-        Field-major: every pool, then every live row id tensor.
-        """
-        flat: list[_Tensor | _Buffer] = []
-        flat.extend(leaf.pool for leaf in self.leaves)
-        flat.extend(leaf.live_row_ids for leaf in self.leaves)
-        return flat
-
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> RecurrentStateInputsPerDevice[TensorValue, BufferValue]:
-        """Rebuilds by consuming values in the order ``flatten`` wrote them."""
-        pools = [next(it) for _ in self.leaves]
-        live = [next(it) for _ in self.leaves]
-        return RecurrentStateInputsPerDevice(
-            leaves=tuple(
-                RecurrentLeafInputs(pool=pool, live_row_ids=live_row_ids)
-                for pool, live_row_ids in zip(pools, live, strict=True)
-            ),
-        )
-
     def __tree_flatten__(
         self,
     ) -> tuple[list[RecurrentLeafInputs[Any, Any]], None]:
@@ -460,6 +455,22 @@ class RecurrentStateInputsPerDevice(Generic[_Tensor, _Buffer]):
         return cls(leaves=tuple(children))
 
 
+def flatten_recurrent_inputs_per_device(
+    inputs: RecurrentStateInputsPerDevice[Any, Any],
+) -> list[Any]:
+    """Returns graph-input leaves for one device's recurrent state."""
+    return tree.flatten(inputs)[0]
+
+
+def unflatten_recurrent_inputs_per_device(
+    template: RecurrentStateInputsPerDevice[Any, Any],
+    it: Iterator[Any],
+) -> RecurrentStateInputsPerDevice[TensorValue, BufferValue]:
+    """Rebuilds per-device recurrent inputs using ``template``'s leaf layout."""
+    _, treedef = tree.flatten(template)
+    return tree.unflatten(treedef, it, exact=False)
+
+
 @dataclass
 class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
     """Graph inputs for a cache whose entry is a recurrent state."""
@@ -470,7 +481,8 @@ class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
         """Flattens this (sub)tree into a flattened buffer/tensor list."""
         return list(
             itertools.chain.from_iterable(
-                item.flatten() for item in self.inputs
+                flatten_recurrent_inputs_per_device(item)
+                for item in self.inputs
             )
         )
 
@@ -479,7 +491,10 @@ class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
     ) -> RecurrentStateInputs[TensorValue, BufferValue]:
         """Rebuilds this (sub)tree by consuming values from ``it``."""
         return RecurrentStateInputs(
-            inputs=[item.unflatten(it) for item in self.inputs]
+            inputs=[
+                unflatten_recurrent_inputs_per_device(item, it)
+                for item in self.inputs
+            ]
         )
 
     def __tree_flatten__(

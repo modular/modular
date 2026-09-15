@@ -37,7 +37,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import fused_qk_rms_norm_rope_ragged
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, flatten_kv_inputs_per_device
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 pytestmark = pytest.mark.skipif(
@@ -237,7 +237,7 @@ def _run(
         _to_device(_rope_freqs(rope_dim), dtype, device),
         _to_device(gamma, dtype, device),  # q_gamma
         _to_device(gamma, dtype, device),  # k_gamma
-        *kv_rt.flatten(),
+        *flatten_kv_inputs_per_device(kv_rt),
     ]
     (result,) = model.execute(*inputs)
     assert isinstance(result, Buffer)

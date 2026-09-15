@@ -33,6 +33,7 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from test_common.modular_graph_test import modular_graph_test
 from test_common.simple_kv_cache import (
@@ -179,7 +180,12 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             1: input_row_offsets,
             # The KV inputs follow the three leading operands, in the order
             # `flatten` emits them.
-            **{3 + i: buf for i, buf in enumerate(kv_runtime_inputs.flatten())},
+            **{
+                3 + i: buf
+                for i, buf in enumerate(
+                    flatten_kv_inputs_per_device(kv_runtime_inputs)
+                )
+            },
         },
     )
     def test_runs_without_nan(
@@ -309,7 +315,12 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=torch_dtype,
     )
     wkv = torch.randn(size=wkv_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wkv, *kv_inputs.flatten())
+    model(
+        hidden_states,
+        input_row_offsets,
+        wkv,
+        *flatten_kv_inputs_per_device(kv_inputs),
+    )
 
     # Check that the matmul wrote output to the KV cache.
     assert kv_blocks.to_numpy().any()
@@ -420,7 +431,12 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=torch_dtype,
     )
     wk = torch.randn(size=wk_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wk, *kv_inputs.flatten())
+    model(
+        hidden_states,
+        input_row_offsets,
+        wk,
+        *flatten_kv_inputs_per_device(kv_inputs),
+    )
 
     ref_results = hidden_states @ wk.T
 

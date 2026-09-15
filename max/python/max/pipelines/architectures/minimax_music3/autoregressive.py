@@ -52,7 +52,11 @@ from max.experimental.nn import CompiledModel
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn.kv_cache import KVCacheInputs, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 
@@ -280,7 +284,10 @@ class LanguageModelStage:
         ).to(self.device)
         cache_inputs = self.cache.runtime_inputs_for_leaf([self.contexts])
         outputs = self.model(
-            embeds, offsets, seed, *cache_inputs.inputs[0].flatten()
+            embeds,
+            offsets,
+            seed,
+            *flatten_kv_inputs_per_device(cache_inputs.inputs[0]),
         )
         for context in self.contexts:
             # Marks this step's positions processed and queues one more, which is

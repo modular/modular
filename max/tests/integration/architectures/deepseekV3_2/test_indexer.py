@@ -35,7 +35,11 @@ from max.nn import (
     WeightScaleSpec,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import KVCacheQuantizationConfig, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheQuantizationConfig,
+    MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -377,7 +381,7 @@ def run_max_indexer(
         x_device,
         qr_device,
         input_row_offsets_device,
-        *kv_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_inputs),
     )
 
     # Verify output is not all zeros

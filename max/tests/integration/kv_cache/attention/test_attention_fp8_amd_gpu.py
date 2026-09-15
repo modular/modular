@@ -27,7 +27,11 @@ from max.nn import (
     ScaleOrigin,
 )
 from max.nn.attention.attention_with_rope import AttentionWithRope
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from max.nn.quant_config import WeightScaleSpec
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.simple_kv_cache import paged_kv_cache_inputs
@@ -190,7 +194,7 @@ def _build_and_execute_attention_graph(
                 shape=["row_offsets_length"],
                 device=DeviceRef.GPU(),
             ),
-            *kv_symbolic_inputs.flatten(),
+            *flatten_kv_inputs_per_device(kv_symbolic_inputs),
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -227,7 +231,7 @@ def _build_and_execute_attention_graph(
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        *kv_runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_runtime_inputs),
     )[0]
 
     return torch.from_dlpack(result)

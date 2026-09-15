@@ -26,6 +26,7 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -103,7 +104,7 @@ def test_kv_cache_store_ragged_executes() -> None:
     model(
         x_cache_data,
         offsets_data,
-        *runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(runtime_inputs),
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -166,7 +167,7 @@ def test_kv_cache_store_padded_executes() -> None:
     model(
         x_cache_data,
         lengths_data,
-        *runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(runtime_inputs),
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -214,14 +215,14 @@ def test_store_k_scale_cache_executes() -> None:
         device=DeviceRef.GPU(),
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs().inputs[0]
 
     with Graph(
         "store_k_scale_cache",
         input_types=[
             x_k_scale_type,
             offsets_type,
-            *kv_symbolic_inputs.flatten(),
+            *flatten_kv_inputs_per_device(kv_symbolic_inputs),
         ],
     ) as graph:
         x_k_scale_in = graph.inputs[0].tensor
@@ -264,7 +265,7 @@ def test_store_k_scale_cache_executes() -> None:
     model(
         x_k_scale_data,
         offsets_data,
-        *runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(runtime_inputs),
     )
 
     assert runtime_inputs.kv_scales.to_numpy().any()

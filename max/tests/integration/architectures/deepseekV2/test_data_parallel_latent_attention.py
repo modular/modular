@@ -24,7 +24,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, flatten_kv_inputs_per_device
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -170,7 +170,7 @@ def generate_latent_attention_max_outputs_dp(
             max_output = compiled.execute(
                 input_tensor_device,
                 input_row_offsets.to(device0),
-                *kv_inputs.flatten(),
+                *flatten_kv_inputs_per_device(kv_inputs),
             )
 
             for ctx in batch:
@@ -191,7 +191,9 @@ def generate_latent_attention_max_outputs_dp(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
+        input_tensor_device,
+        input_row_offsets.to(device0),
+        *flatten_kv_inputs_per_device(kv_inputs),
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

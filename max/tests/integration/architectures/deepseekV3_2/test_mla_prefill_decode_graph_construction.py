@@ -31,7 +31,7 @@ from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
 from max.nn.kernels import mla_prefill_decode_graph
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams, flatten_kv_inputs_per_device
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -146,7 +146,9 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
         DType.int32, ["buf_len_chunks"], DeviceRef.GPU()
     )
 
-    kv_sym = kv_params.get_symbolic_inputs().inputs[0].flatten()
+    kv_sym = flatten_kv_inputs_per_device(
+        kv_params.get_symbolic_inputs().inputs[0]
+    )
 
     def construct() -> Graph:
         with Graph(

@@ -21,7 +21,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, flatten_kv_inputs_per_device
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
@@ -330,7 +330,7 @@ def generate_qwen3_max_outputs(
     result = compiled.execute(
         Buffer.from_dlpack(flat_input.to(torch_device)).to(device),
         Buffer.from_dlpack(input_row_offsets.to(torch_device)).to(device),
-        *kv_cache_runtime.flatten(),
+        *flatten_kv_inputs_per_device(kv_cache_runtime),
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

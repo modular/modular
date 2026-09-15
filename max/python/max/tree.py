@@ -529,14 +529,20 @@ def flatten(
     return flat, walk(tree, "")
 
 
-def unflatten(treedef: TreeDef, leaves: Iterable[Any]) -> Any:
+def unflatten(
+    treedef: TreeDef, leaves: Iterable[Any], *, exact: bool = True
+) -> Any:
     """Rebuilds a tree from a structure and its leaves.
 
     The inverse of :func:`flatten`, always building a fresh tree.
 
     Args:
         treedef: The structure, as :func:`flatten` reported it.
-        leaves: Exactly one value per leaf slot, left to right.
+        leaves: One value per leaf slot, left to right; with ``exact``,
+            any trailing values are left unconsumed.
+        exact: When ``False``, stop after the structure's leaves and leave
+            trailing values (e.g. a shared iterator's later items) in place
+            instead of raising. Too few leaves is always an error.
 
     Returns:
         The rebuilt tree.
@@ -544,8 +550,9 @@ def unflatten(treedef: TreeDef, leaves: Iterable[Any]) -> Any:
     Raises:
         TypeError: If a cycle closes through a node whose class declares no
             ``__tree_empty__``.
-        ValueError: If the leaf count does not match the structure, or if
-            ``treedef`` did not come from :func:`flatten`.
+        ValueError: If there are too few leaves for the structure (or too many
+            when ``exact`` is ``True``), or if ``treedef`` did not come
+            from :func:`flatten`.
     """
     remaining = iter(leaves)
     filled: list[Any] = []
@@ -644,7 +651,7 @@ def unflatten(treedef: TreeDef, leaves: Iterable[Any]) -> Any:
         return value
 
     result = build(treedef)
-    if next(remaining, _MISSING) is not _MISSING:
+    if exact and next(remaining, _MISSING) is not _MISSING:
         raise ValueError(
             f"too many leaves: the structure has {treedef.num_leaves} leaf "
             "slots."

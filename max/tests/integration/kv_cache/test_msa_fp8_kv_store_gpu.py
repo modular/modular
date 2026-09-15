@@ -39,7 +39,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import rope_split_store_ragged
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -128,7 +131,9 @@ def _run_store(
     qkv_buf = Buffer.from_dlpack(qkv).to(device)
     iro_buf = Buffer.from_dlpack(torch.from_numpy(offsets)).to(device)
     freqs_buf = Buffer.from_dlpack(freqs_cis).to(device)
-    model.execute(qkv_buf, iro_buf, freqs_buf, *kv_inputs.flatten())
+    model.execute(
+        qkv_buf, iro_buf, freqs_buf, *flatten_kv_inputs_per_device(kv_inputs)
+    )
 
     return torch.from_dlpack(kv_inputs.kv_blocks).to(torch.float32).cpu()
 

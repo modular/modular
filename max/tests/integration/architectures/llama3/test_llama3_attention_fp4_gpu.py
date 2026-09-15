@@ -31,6 +31,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
+    flatten_kv_inputs_per_device,
 )
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
@@ -294,7 +295,7 @@ def generate_max_outputs_fp4(
     out = compiled.execute(
         Buffer.from_dlpack(input_tensor_flat).to(device),
         Buffer.from_numpy(input_row_offsets_input).to(device),
-        *kv_runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_runtime_inputs),
     )[0]
     return from_dlpack(out).to(torch.bfloat16)
 

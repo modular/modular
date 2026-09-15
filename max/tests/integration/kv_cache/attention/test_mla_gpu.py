@@ -20,7 +20,11 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
-from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 from torch.utils.dlpack import from_dlpack
 
@@ -92,7 +96,9 @@ def test_mla_prefill_plan() -> None:
 
     kv_inputs = paged_kv_cache_inputs(kv_params, prompt_lens, total_num_pages=8)
 
-    results = model.execute(input_row_offsets.to(device0), *kv_inputs.flatten())
+    results = model.execute(
+        input_row_offsets.to(device0), *flatten_kv_inputs_per_device(kv_inputs)
+    )
 
     # Hardcoded reference for:
     # page_size = 128, buffer_tok_size = 256, prompt_lens = [160, 200]
@@ -229,7 +235,7 @@ def test_mla_decompress_k_cache() -> None:
     results = model.execute(
         input_row_offsets.to(device0),
         Buffer.from_numpy(weight.numpy()).to(device0),
-        *kv_runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_runtime_inputs),
     )
 
     # With page-aligned spans and 256-token chunks, chunk 0 covers request 0 and 1.

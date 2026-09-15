@@ -19,7 +19,10 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flare_mla_prefill_ragged
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    flatten_kv_inputs_per_device,
+)
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
@@ -133,7 +136,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets.to(device),
         k_buffer_tensor.to(device),
         v_buffer_tensor.to(device),
-        *kv_runtime_inputs.flatten(),
+        *flatten_kv_inputs_per_device(kv_runtime_inputs),
     )[0]
     assert isinstance(result, Buffer)
 
