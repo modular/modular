@@ -36,11 +36,6 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-// Defined in ExprNodes.cpp; used to project tuple elements for matching.
-AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
-                                ArrayRef<Operand> exprOperands, ExprDest &dest,
-                                IREmitter &emitter);
-
 //===----------------------------------------------------------------------===//
 // PatternMatchBuilder
 //===----------------------------------------------------------------------===//
@@ -63,6 +58,120 @@ MojoInflightDiag PatternMatchBuilder::emitWarning(SMLoc loc,
                                                   const Twine &message) {
   return shared.emitWarning(loc, message);
 }
+
+//===----------------------------------------------------------------------===//
+// Pattern command-list dumping
+//===----------------------------------------------------------------------===//
+
+static StringRef stringifyPatternDeclKind(PatternDeclKind kind) {
+  switch (kind) {
+  case PatternDeclKind::kNone:
+    return "none";
+  case PatternDeclKind::kVar:
+    return "var";
+  case PatternDeclKind::kRef:
+    return "ref";
+  case PatternDeclKind::kBind:
+    return "bind";
+  }
+  llvm_unreachable("unknown PatternDeclKind");
+}
+
+void PatternPath::print(raw_ostream &os) const {
+  SmallVector<const PatternPath *, 4> chain;
+  for (const PatternPath *p = this; p; p = p->parent)
+    chain.push_back(p);
+  std::reverse(chain.begin(), chain.end());
+
+  for (const PatternPath *p : chain) {
+    switch (p->kind) {
+    case Root:
+      os << "$";
+      break;
+    case TupleElement:
+      os << "[" << p->index << "]";
+      break;
+    case StructField:
+      os << "." << p->fieldName.getValue();
+      break;
+    case EnumPayload:
+      os << "#payload(" << p->index << ")";
+      break;
+    }
+  }
+  os << " : " << type;
+}
+
+void PatternPath::dump() const {
+  print(llvm::errs());
+  llvm::errs() << "\n";
+}
+
+void PatternCommand::print(raw_ostream &os, unsigned indent) const {
+  os.indent(indent);
+  switch (kind) {
+  case Equal:
+    os << "equal ";
+    if (path)
+      path->print(os);
+    else
+      os << "<null-path>";
+    break;
+  case EnumTag:
+    os << "enum_tag ";
+    if (path)
+      path->print(os);
+    else
+      os << "<null-path>";
+    os << " case=" << enumCaseIndex;
+    break;
+  case Bind:
+    os << "bind " << stringifyPatternDeclKind(declKind) << " " << bindName
+       << " at ";
+    if (path)
+      path->print(os);
+    else
+      os << "<null-path>";
+    break;
+  case Or:
+    os << "or ";
+    if (path)
+      path->print(os);
+    else
+      os << "<null-path>";
+    os << " {\n";
+    for (auto [altIdx, alt] : llvm::enumerate(orAlternatives)) {
+      os.indent(indent + 2) << "alt #" << altIdx << ":\n";
+      alt.print(os, indent + 4);
+    }
+    os.indent(indent) << "}";
+    break;
+  }
+  os << "\n";
+}
+
+void PatternCommand::dump() const { print(llvm::errs()); }
+
+void PatternCommandListRef::print(raw_ostream &os, unsigned indent) const {
+  if (commands.empty()) {
+    os.indent(indent) << "<empty>\n";
+    return;
+  }
+  for (const PatternCommand *cmd : commands) {
+    if (cmd)
+      cmd->print(os, indent);
+    else
+      os.indent(indent) << "<null-command>\n";
+  }
+}
+
+void PatternCommandListRef::dump() const { print(llvm::errs()); }
+
+void PatternCommandList::print(raw_ostream &os, unsigned indent) const {
+  PatternCommandListRef{commands}.print(os, indent);
+}
+
+void PatternCommandList::dump() const { print(llvm::errs()); }
 
 //===----------------------------------------------------------------------===//
 // Per-ExprNode Support for Matching.
@@ -710,61 +819,28 @@ CValue PatternEmitState::getPathValue(const PatternPath *path,
   case PatternPath::Root:
     llvm_unreachable("handled above");
   case PatternPath::TupleElement: {
-    BValue parentB = emitter.emitBValue({parent, expr}, EC_MatchSubject);
-    if (!parentB)
-      return {};
-    ExprDest eltDest(path->type, EC_TupleElement);
+    // Emit `parent[idx]` as a subscript expression.
     TypedAttr indexAttr =
         IntegerAttr::get(IndexType::get(emitter.getContext()), path->index);
-    CValue intIndexCValue =
-        emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), expr},
-                        ExprContext::EC_CallParamValue);
-    if (!intIndexCValue)
+    CValue intIndex = emitter.emitInt(
+        ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
+    if (!intIndex)
       return {};
-    PValue intIndex = intIndexCValue.getIfPValue();
-    assert(intIndex && "Int must be PValue when constructed from int attr");
-
-    SyntheticNode indexExpr(expr->getLoc(), intIndex);
-    Operand exprOperand(&indexExpr, expr->getLoc(),
-                        ArgUnpackStyle::kPositional);
-    // Base of the synthesized subscript is unused by emitGetterSetterAccess;
-    // pass `expr` as a stand-in for location.
-    SubscriptNode subscript(expr, expr->getLoc(), {}, expr->getLoc());
-    AnyValue elem = emitGetterSetterAccess(&subscript, {parentB, expr},
-                                           exprOperand, eltDest, emitter);
-    if (!elem) {
-      eltDest.resetForError(emitter);
-      return {};
-    }
-    CValue elt = emitter.emitCValue({elem, expr}, EC_TupleElement);
-    if (!elt)
-      return {};
+    SyntheticNode baseNode(expr->getLoc(), parent);
+    SyntheticNode indexNode(expr->getLoc(), intIndex);
+    Operand indexOperand(&indexNode, expr->getLoc(),
+                         ArgUnpackStyle::kPositional);
+    SubscriptNode subscript(&baseNode, expr->getLoc(), indexOperand,
+                            expr->getLoc());
+    CValue elt = emitter.emitExprCValue(&subscript, EC_TupleElement);
     return pathValues[path] = elt;
   }
   case PatternPath::StructField: {
-    ASTDecl *typeDecl = path->parent->type.getDecl(emitter.shared);
-    if (!typeDecl) {
-      emitter.emitError(expr->getLoc(), "cannot match fields of ")
-          << path->parent->type << expr->getRange();
-      return {};
-    }
-    LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-        path->fieldName.getValue(), expr->getLoc(), *typeDecl,
-        /*searchParentScopes=*/false);
-    if (lookup.isErroneous() || !lookup.isSuccess() ||
-        lookup.getIfSuccess().size() != 1)
-      return {};
-    auto fieldOp = dyn_cast_or_null<StructFieldOp>(
-        lookup.getIfSuccess().front()->getIfOperation());
-    if (!fieldOp)
-      return {};
-
-    BValue parentB = emitter.emitBValue({parent, expr}, EC_MatchSubject);
-    if (!parentB)
-      return {};
-    ExprDest fieldDest(path->type, EC_AttributeRefBase);
-    CValue fieldVal = AttributeRefNode::emitStoredFieldRef(
-        {parentB, expr}, fieldOp, expr, fieldDest, emitter);
+    // Synthesize `parent.field` and emit it as a normal attribute reference.
+    SyntheticNode baseNode(expr->getLoc(), parent);
+    AttributeRefNode fieldRef(&baseNode, expr->getLoc(),
+                              path->fieldName.getValue());
+    CValue fieldVal = emitter.emitExprCValue(&fieldRef, EC_AttributeRefBase);
     if (!fieldVal)
       return {};
     return pathValues[path] = fieldVal;

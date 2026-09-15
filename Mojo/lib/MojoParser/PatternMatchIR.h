@@ -26,10 +26,16 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Support/Compiler.h"
 
 #include <cstring>
 
+namespace llvm {
+class raw_ostream;
+} // namespace llvm
+
 namespace M::KGEN::LIT {
+using llvm::raw_ostream;
 class ASTDecl;
 class ExprNode;
 class IREmitter;
@@ -43,6 +49,9 @@ struct PatternPath {
   ASTType type;
   size_t index = 0;     ///< TupleElement / EnumPayload.
   StringAttr fieldName; ///< StructField.
+
+  void print(raw_ostream &os) const;
+  LLVM_DUMP_METHOD void dump() const;
 };
 
 struct PatternCommand;
@@ -50,6 +59,9 @@ struct PatternCommand;
 /// Immutable command-list view for bump-stored Or alternatives.
 struct PatternCommandListRef {
   ArrayRef<const PatternCommand *> commands;
+
+  void print(raw_ostream &os, unsigned indent = 0) const;
+  LLVM_DUMP_METHOD void dump() const;
 };
 
 /// One step in a case program: test the subject at `path`, nest alternatives,
@@ -68,6 +80,9 @@ struct PatternCommand {
   // Bind.
   StringRef bindName;
   PatternDeclKind declKind = PatternDeclKind::kNone;
+
+  void print(raw_ostream &os, unsigned indent = 0) const;
+  LLVM_DUMP_METHOD void dump() const;
 };
 
 /// Name bound by a successful pattern; materialized by the match statement.
@@ -87,6 +102,9 @@ struct PatternCommandList {
   LogicalResult emit(IREmitter &emitter, CValue subject,
                      const PatternPath *rootPath,
                      SmallVectorImpl<PatternBoundName> &bindings) const;
+
+  void print(raw_ostream &os, unsigned indent = 0) const;
+  LLVM_DUMP_METHOD void dump() const;
 };
 
 /// Bump storage, path uniquing, and binding-mode state for one `__match`.
