@@ -36,6 +36,7 @@ glm5_1_arch = SupportedArchitecture(
         "zai-org/GLM-5.2",
         "zai-org/GLM-5.2-FP8",
         "zai-org/GLM-5",
+        "zai-org/GLM-5.3",
     ],
     default_encoding=Glm5_1Config.DEFAULT_ENCODING,
     supported_encodings=Glm5_1Config.SUPPORTED_ENCODINGS,
