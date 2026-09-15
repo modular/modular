@@ -209,11 +209,6 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         num_huge_blocks = geometry.num_huge_blocks
         huge_page_bytes = geometry.huge_page_bytes
         ratios = geometry.ratios
-        if params.kv_connector_config.type.value == "dkv":
-            raise ValueError(
-                "DKV KVConnector is not supported with Jenga KV cache. "
-                "Set MODULAR_USE_LEGACY_KV_CACHE=1 if DKV KVConnector is required."
-            )
         leaf_infos = {
             leaf_id: KVLeafInfo(ratio=ratios[leaf_id], group_id=leaf.group_id)
             for leaf_id, leaf in leaves.items()

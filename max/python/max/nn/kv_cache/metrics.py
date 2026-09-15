@@ -99,11 +99,29 @@ class KVCacheMetrics:
     # counter read live from the connector rather than per-batch transfer
     # deltas, so they export as gauges and reset_metrics does not clear them.
     dkv_connected_clients: int = 0
-    """Number of dKV connector clients currently connected to the external tier."""
+    """Number of dKV data-parallel replicas fully connected to the external tier.
+
+    Per REPLICA, not per client. A replica owns one connector client per KV
+    cache leaf, and counts as connected only when EVERY one of them is up,
+    because one dead leaf cannot serve a block. A four-leaf replica with one
+    leaf down reports 0 here against 1 in ``dkv_total_clients``.
+    """
     dkv_total_clients: int = 0
-    """Total number of dKV connector clients, one per data-parallel replica."""
+    """Number of dKV data-parallel replicas, regardless of connection state.
+
+    The denominator for ``dkv_connected_clients``. Named "clients" from when a
+    replica owned exactly one; it counts replicas, not the per-leaf clients a
+    replica now holds.
+    """
     dkv_reconnect_attempts: int = 0
-    """Cumulative dKV reconnect attempts across all clients over the process lifetime."""
+    """Cumulative dKV reconnect attempts per replica, summed over replicas.
+
+    Per REPLICA, not per client: a replica owns one client per KV cache leaf and
+    they share a server and a network path, so they lose and recover it
+    together. The connector reports the max over a replica's leaf clients, which
+    keeps this on the same denominator as ``dkv_total_clients`` -- summing over
+    leaves would multiply a four-leaf deployment's reading by four.
+    """
 
     # Cross-node pull. Per-window deltas like nixl_read_blocks and the latency
     # pairs, so they sum and reset_metrics clears them, unlike the three dKV

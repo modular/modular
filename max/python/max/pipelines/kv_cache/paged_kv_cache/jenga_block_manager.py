@@ -359,7 +359,17 @@ class JengaBlockManager:
 
     @traced
     def step(self, ctx: TextContext) -> None:
-        """Records what the forward just wrote, and slides every window."""
+        """Settles the last forward's offloads before recording this one.
+
+        Records what the forward just wrote and slides every window.
+
+        A synchronous connector publishes an offload's blocks in
+        ``wait_for_offloads``, so the barrier has to run or those blocks stay
+        unreadable and no later load can hit them. An asynchronous connector
+        settles through ``poll_transfers`` instead, so this is a no-op for it.
+        """
+        if self._connector is not None:
+            self._connector.wait_for_offloads()
         replica_idx = self._replica_of(ctx)
         if self._enable_prefix_caching:
             self._commit_blocks_into_prefix_cache(ctx, replica_idx)
@@ -996,6 +1006,19 @@ class JengaBlockManager:
             )
         )
         num_reused = num_hit_blocks + num_loaded
+
+        # Refresh the connector's recency over everything this request reuses,
+        # committed + device + connector-loaded, which is the run BlockManager
+        # touches on the legacy path. Gating on the device hit alone would skip
+        # the touch entirely under
+        # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, where the device tier
+        # never reports one -- so the path would go unexercised in exactly the
+        # configuration that leans on the connector hardest.
+        if self._connector is not None and committed_blocks + num_reused:
+            self._connector.touch(
+                self._state_of(ctx).hashes[: committed_blocks + num_reused],
+                replica_idx=replica_idx,
+            )
 
         self._metrics.device_blocks_served += num_hit_blocks
         self._metrics.cache_tokens += num_reused * self._block_size
