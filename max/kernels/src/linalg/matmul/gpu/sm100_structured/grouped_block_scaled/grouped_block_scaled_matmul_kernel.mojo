@@ -34,8 +34,8 @@ Key differences from block_scaled_matmul_kernel.mojo:
 """
 
 from std.collections import Optional
-from std.math import ceildiv
-from std.math.uutils import ufloordiv
+from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv, umod
 from std.memory import UnsafePointer, Pointer
 from std.sys import size_of
 
@@ -795,10 +795,18 @@ struct GroupedBlockScaledMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
+    # `_copy_sf_to_tmem_tt` writes a whole scale-factor atom whatever MMA_N
+    # is, so SMEM, TMA and TMEM all use the aligned width and `mma` offsets
+    # into the atom. Only `grouped_block_scaled_matmul`'s MMA_N constraint
+    # keeps a sub-atom tile out of this kernel today.
+    comptime SFB_N_ALIGNED = align_up(Self.MMA_N, SF_MN_GROUP_SIZE)
+
     # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
-    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
+    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (
+        Self.SFB_N_ALIGNED // 32
+    )
     comptime stage_stride_cols = Self.MMA_N
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
@@ -914,7 +922,7 @@ struct GroupedBlockScaledMatmulKernel[
     ]()
 
     comptime sfb_smem_layout = tile_sf_layout_k_major[
-        Self.MMA_N,
+        Self.SFB_N_ALIGNED,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
     ]()
@@ -1004,6 +1012,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.num_pipeline_stages,
         cta_group=Self.cta_group,
         num_sf_k_tiles=Self.config.num_sf_k_tiles,
+        SFB_N=Self.SFB_N_ALIGNED,
     ]
 
     comptime OutputPipeline = OutputTilePipeline[Self.opc]
@@ -1144,7 +1153,7 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFBTileLayout = RowMajorLayout[
         *_IntToComptimeInt[
             1,
-            Self.MMA_N // SF_MN_GROUP_SIZE,
+            Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
             SF_ATOM_M[0],
             SF_ATOM_M[1] * SF_ATOM_K,
@@ -1153,7 +1162,7 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFBDescLayout = tma_desc_layout_5d[
         Self.sfb_dtype,
         1,
-        Self.MMA_N // SF_MN_GROUP_SIZE,
+        Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
         Self.config.num_sf_k_tiles,
         SF_ATOM_M[0],
         TensorMapSwizzle.SWIZZLE_NONE,
@@ -1660,6 +1669,7 @@ struct GroupedBlockScaledMatmulKernel[
                                             tmem_region,
                                             UInt32(k_tile),
                                             0,  # k_start = 0 for each group
+                                            Int(current.n),
                                         )
                                     # Peek for next iteration (CuteDSL style):
                                     # Reset to ready, then conditionally peek.
@@ -1861,7 +1871,7 @@ struct GroupedBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        work_tile_coord[1] * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        (work_tile_coord[1] * Self.MMA_N) // SF_MN_GROUP_SIZE,
                         batch_coord,
                     ),
                 )
@@ -1885,6 +1895,7 @@ struct GroupedBlockScaledMatmulKernel[
         tmem_region: Self.TmemRegion,
         iter_idx: UInt32,
         k_start: UInt32,
+        work_tile_n: Int,
     ):
         """Execute MMA operations using ConsumerTiles.
 
@@ -1905,7 +1916,21 @@ struct GroupedBlockScaledMatmulKernel[
                 loop.
             k_start: K-tile index where accumulation begins for the current
                 group; the first iteration initializes the accumulator.
+            work_tile_n: N-axis tile index, used to pick this tile's part of
+                a shared scale-factor atom.
         """
+        # Same numerator as the SFB source coordinate in `load_input_tiles`.
+        var sfb_tmem_adj: UInt32
+        comptime if Self.MMA_N in (64, 192):
+            sfb_tmem_adj = UInt32(
+                ufloordiv(
+                    umod(work_tile_n * Self.MMA_N, SF_MN_GROUP_SIZE),
+                    SF_ATOM_M[0],
+                )
+            )
+        else:
+            sfb_tmem_adj = UInt32(0)
+
         if elect_one_sync():
             comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
@@ -1937,6 +1962,7 @@ struct GroupedBlockScaledMatmulKernel[
                     sfa_tmem_offset,
                     sfb_tmem_offset,
                     init_c=is_first_k,
+                    sfb_tmem_adj=sfb_tmem_adj,
                 )
 
             mma_op.commit(tiles.mbar())
@@ -2333,6 +2359,7 @@ struct GroupedBlockScaledMatmulKernel[
                                             tmem_region,
                                             UInt32(k_tile),
                                             0,
+                                            Int(current.n),
                                         )
                                     # Peek for next iteration (CuteDSL style):
                                     # Reset to ready, then conditionally peek.

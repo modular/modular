@@ -297,6 +297,28 @@ def main() raises:
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
+        comptime for bn in [64, 192]:
+            comptime block_tile_shape = Index(128, bn, BK)
+            comptime umma_shape = Index(128, bn, MMA_K)
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape,
+                umma_shape,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=cta_group,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+            ](
+                ctx,
+                Int(128),
+                Idx[512],
+                Idx[128],
+            )
+
         comptime for bm in [128]:
             comptime for bn in [128, 256]:
                 comptime block_tile_shape = Index(bm, bn, BK)
