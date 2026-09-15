@@ -509,9 +509,15 @@ def fa_prefill_apple_core[
     var q_layout_val = TileLayout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
-    var q_tile = TileTensor[q_type, type_of(q_layout_val), ImmutAnyOrigin](
-        ptr=q.ptr + q_offset + q_load_row0 * q_row_stride,
-        layout=q_layout_val,
+    # Offsetting through the engine keeps `q`'s engine on the view; the `ptr=`
+    # constructor would pin this tile to `DefaultEngine`.
+    var q_tile = q.OffsetViewType[
+        TypeList.of[Scalar[q.linear_idx_type]](), type_of(q_layout_val)
+    ](
+        q._offset_storage(
+            Scalar[q.linear_idx_type](q_offset + q_load_row0 * q_row_stride)
+        ),
+        q_layout_val,
     )
 
     # KV token stride (within a page): difference of two consecutive key
@@ -654,18 +660,18 @@ def fa_prefill_apple_core[
             comptime k_align = align_of[Scalar[k_t.dtype]]()
             comptime if DEPTH_MMAS % 2 == 0:
                 comptime for sp in range(DEPTH_MMAS // 2):
-                    var qlo = (
-                        q_tile.ptr + rb * q_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=q_align]()
-                    var qhi = (
-                        q_tile.ptr + (rb + 8) * q_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=q_align]()
-                    var klo = (
-                        k_tile.ptr + rb * kv_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=k_align]()
-                    var khi = (
-                        k_tile.ptr + (rb + 8) * kv_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=k_align]()
+                    var qlo = q_tile.raw_load[width=8, alignment=q_align](
+                        rb * q_row_stride + 32 * sp + 2 * cb
+                    )
+                    var qhi = q_tile.raw_load[width=8, alignment=q_align](
+                        (rb + 8) * q_row_stride + 32 * sp + 2 * cb
+                    )
+                    var klo = k_tile.raw_load[width=8, alignment=k_align](
+                        rb * kv_row_stride + 32 * sp + 2 * cb
+                    )
+                    var khi = k_tile.raw_load[width=8, alignment=k_align](
+                        (rb + 8) * kv_row_stride + 32 * sp + 2 * cb
+                    )
                     _mma_apple_transposable(
                         score_col[0],
                         qlo.slice[4, offset=0]().join(qhi.slice[4, offset=0]()),
@@ -844,11 +850,13 @@ def fa_prefill_apple_core[
     var out_layout_val = TileLayout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
-    var out_tile = TileTensor[
-        output_type, type_of(out_layout_val), MutAnyOrigin
+    var out_tile = output.OffsetViewType[
+        TypeList.of[Scalar[output.linear_idx_type]](), type_of(out_layout_val)
     ](
-        ptr=output.ptr + out_offset + q_row0 * q_row_stride,
-        layout=out_layout_val,
+        output._offset_storage(
+            Scalar[output.linear_idx_type](out_offset + q_row0 * q_row_stride)
+        ),
+        out_layout_val,
     )
     # Vectorized store: the lane owns two contiguous width-4 depth runs (rows `rb`
     # and `rb+8`), so store each row-half in one `width=4` cast-and-store instead
@@ -864,12 +872,12 @@ def fa_prefill_apple_core[
         comptime assert o_sub.flat_rank == 2, "output sub-tile must be 2D"
         var frag = output_accum[ni]
         if lo_ok:
-            (o_sub.ptr + off_lo).store(
-                frag.slice[4, offset=0]().cast[output_type]()
+            o_sub.raw_store(
+                off_lo, frag.slice[4, offset=0]().cast[output_type]()
             )
         if hi_ok:
-            (o_sub.ptr + off_hi).store(
-                frag.slice[4, offset=4]().cast[output_type]()
+            o_sub.raw_store(
+                off_hi, frag.slice[4, offset=4]().cast[output_type]()
             )
 
 

@@ -58,7 +58,6 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    DefaultEngine,
     TensorEngine,
     TileTensor,
 )
@@ -158,12 +157,12 @@ def naive_fa_decode_apple_core[
     *,
     Depth: Int,
     SplitSize: Int,
-    OPartialEngine: TensorEngine = DefaultEngine[element_width=1],
-    MPartialEngine: TensorEngine = DefaultEngine[element_width=1],
-    LPartialEngine: TensorEngine = DefaultEngine[element_width=1],
-    QEngine: TensorEngine = DefaultEngine[element_width=1],
-    VLEngine: TensorEngine = DefaultEngine[element_width=1],
-    SinkEngine: TensorEngine = DefaultEngine[element_width=1],
+    OPartialEngine: TensorEngine,
+    MPartialEngine: TensorEngine,
+    LPartialEngine: TensorEngine,
+    QEngine: TensorEngine,
+    VLEngine: TensorEngine,
+    SinkEngine: TensorEngine,
 ](
     o_partial: TileTensor[
         p_type, p_layout, MutAnyOrigin, Engine=OPartialEngine
@@ -473,11 +472,11 @@ def naive_fa_decode_apple_stitch[
     _is_cache_length_accurate: Bool = False,
     *,
     SplitSize: Int,
-    OutEngine: TensorEngine = DefaultEngine[element_width=1],
-    OPartialEngine: TensorEngine = DefaultEngine[element_width=1],
-    MPartialEngine: TensorEngine = DefaultEngine[element_width=1],
-    LPartialEngine: TensorEngine = DefaultEngine[element_width=1],
-    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine,
+    OPartialEngine: TensorEngine,
+    MPartialEngine: TensorEngine,
+    LPartialEngine: TensorEngine,
+    VLEngine: TensorEngine,
 ](
     output: TileTensor[
         output_type, output_layout, MutAnyOrigin, Engine=OutEngine
