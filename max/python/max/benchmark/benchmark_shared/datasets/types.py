@@ -126,8 +126,11 @@ class PixelGenerationSampledRequest(SampledRequest):
 
 MessageSource = Literal["user", "assistant", "system"]
 
-# Which user turn(s) of a multi-turn session get images.
-ImageTurn = Literal["first", "last", "every"]
+# Which user turn(s) of a multi-turn session an augmentation may act on.
+TurnSelector = Literal["first", "last", "every"]
+
+# Alias kept so the image-mixing call sites don't churn in this change.
+ImageTurn = TurnSelector
 
 
 @dataclass

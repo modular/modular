@@ -69,6 +69,14 @@ This version is still a work in progress.
   satisfied, and generating past that point makes the server drop enforcement
   for the remainder of the request. A chat session's running prompt length now
   charges what each turn actually generated rather than the length it drew.
+- `max benchmark`'s `--response-format` now applies to a share of traffic rather
+  than all of it: `--response-format-fraction` (default 1.0) sets the fraction
+  of requests, or of eligible user turns, that are constrained, and
+  `--response-format-turn` (`every`, `first`, `last`) chooses which turns of a
+  chat session are eligible. The fraction is drawn per request and per turn, so
+  at the default `every` it lands directly on the share of requests that set
+  `response_format`; `first` and `last` narrow eligibility to one turn per
+  session, so the realized request share is correspondingly lower.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an

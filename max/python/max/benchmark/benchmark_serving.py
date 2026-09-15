@@ -69,6 +69,9 @@ from max.benchmark.benchmark_shared.datasets.chat_judge import (
 from max.benchmark.benchmark_shared.datasets.image_augmentation import (
     augment_samples_with_images,
 )
+from max.benchmark.benchmark_shared.datasets.response_format_augmentation import (
+    augment_samples_with_response_format,
+)
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
     ChatSession,
@@ -1220,42 +1223,14 @@ def _sample_for_seed(
         chat=chat,
     )
 
-    # Inject response_format into all sampled requests if specified
     if args.response_format is not None:
-        response_format = parse_response_format(args.response_format)
-        if isinstance(samples, RequestSamples):
-            for request in samples.requests:
-                request.response_format = response_format
-                # A constrained response ends at its schema; pinning it to a
-                # drawn length only forces generation past that point.
-                request.ignore_eos = False
-            logger.info(
-                f"Injected response_format into {len(samples.requests)} "
-                "requests; cleared ignore_eos, so drawn output lengths now "
-                "cap rather than pin"
-            )
-        elif isinstance(samples, ChatJudgeChatSamples):
-            # chat_judge_session_driver builds its own requests and never reads
-            # the per-turn field, so accepting the flag here would constrain
-            # nothing without saying so.
-            logger.warning(
-                "response_format is not supported for chat-judge benchmarks, "
-                "ignoring"
-            )
-        else:
-            constrained_turns = 0
-            for chat_session in samples.chat_sessions:
-                for message in chat_session.messages:
-                    if message.source != "user":
-                        continue
-                    message.response_format = response_format
-                    constrained_turns += 1
-            logger.info(
-                f"Marked {constrained_turns} user turns across "
-                f"{len(samples.chat_sessions)} chat sessions; a marked turn "
-                "runs without ignore_eos, so its drawn output length caps "
-                "rather than pins"
-            )
+        augment_samples_with_response_format(
+            samples,
+            response_format=parse_response_format(args.response_format),
+            fraction=args.response_format_fraction,
+            turn=args.response_format_turn,
+            seed=seed,
+        )
 
     if args.image_fraction > 0:
         augment_samples_with_images(
