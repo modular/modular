@@ -1100,10 +1100,6 @@ def _run_decode[
             UInt32(1),  # beta    [t, HV]
             UInt32(K),
             UInt32(1),  # dt_bias [HV, K]
-            UInt32(STATE_TILE),
-            UInt32(STATE_HEAD),
-            UInt32(V),
-            UInt32(1),  # state V_FIRST
             UInt32(HVV),
             UInt32(V),
             UInt32(1),  # out     [t, HV, V]

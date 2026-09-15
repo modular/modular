@@ -239,18 +239,11 @@ struct KdaDecode:
         var raw_gate_strides = raw_gate.strides()
         var beta_logits_strides = beta_logits.strides()
         var dt_bias_strides = dt_bias.strides()
-        var state_pool_strides = state_pool.strides()
         var output_strides = output.strides()
 
         var gpu_ctx = ctx
         # One CTA per (batch_item, value_head); block has value_head_dim threads.
         var num_blocks = batch_size * num_value_heads
-
-        # The kernel addresses the pool as dim1=outer / dim2=inner regardless
-        # of which physical axis is outer; the caller picks which by building
-        # the pool with the layout matching `state_layout`.
-        var state_dim1_stride = UInt32(state_pool_strides[2])
-        var state_dim2_stride = UInt32(state_pool_strides[3])
 
         # Head-dim instantiations of the SAME kernel body: every use of the pair
         # below is a compile-time parameter, so a new geometry costs one entry
@@ -323,11 +316,6 @@ struct KdaDecode:
                     # dt_bias strides
                     UInt32(dt_bias_strides[0]),
                     UInt32(dt_bias_strides[1]),
-                    # state_pool strides
-                    UInt32(state_pool_strides[0]),
-                    UInt32(state_pool_strides[1]),
-                    state_dim1_stride,
-                    state_dim2_stride,
                     # output strides
                     UInt32(output_strides[1]),
                     UInt32(output_strides[2]),
