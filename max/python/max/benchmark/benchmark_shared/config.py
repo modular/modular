@@ -571,7 +571,11 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description=(
             "JSON response format for structured output. Can be a JSON string "
             "or '@path/to/schema.json' to load from file. "
-            'Example: \'{"type": "json_schema", "json_schema": {...}}\''
+            'Example: \'{"type": "json_schema", "json_schema": {...}}\'. '
+            "Applies to every request, and to every user turn of a "
+            "multi-turn workload except chat-judge, whose driver builds its "
+            "own requests. Constrained requests run without ignore_eos, so a "
+            "drawn output length caps them rather than pinning them."
         ),
         json_schema_extra={"group": "Output Control"},
     )

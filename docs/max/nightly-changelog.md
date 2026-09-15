@@ -63,6 +63,12 @@ This version is still a work in progress.
   image-count distribution table (and a decoded image-long-side-pixel table)
   when a workload has images. See the
   [image mixing quick-start guide](https://github.com/modular/modular/blob/main/max/python/max/benchmark/benchmarking_mixed_images.md).
+- `max benchmark`'s `--response-format` now reaches multi-turn workloads, which
+  previously logged a warning and dropped it. A constrained request or turn runs
+  without `ignore_eos`: a schema-shaped response ends where its schema is
+  satisfied, and generating past that point makes the server drop enforcement
+  for the remainder of the request. A chat session's running prompt length now
+  charges what each turn actually generated rather than the length it drew.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an

@@ -141,6 +141,10 @@ class SessionMessage:
     # Any image tokens are already counted in `num_tokens`, so consumers
     # must not add them again.
     images: list[OpenAIImage] = field(default_factory=list)
+    # Constrains this turn's response when set. Only a "user" message carries
+    # one; an assistant message is replayed history and asks the server for
+    # nothing.
+    response_format: ResponseFormat | None = None
 
 
 @dataclass

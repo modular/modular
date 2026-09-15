@@ -1234,10 +1234,27 @@ def _sample_for_seed(
                 "requests; cleared ignore_eos, so drawn output lengths now "
                 "cap rather than pin"
             )
-        else:
+        elif isinstance(samples, ChatJudgeChatSamples):
+            # chat_judge_session_driver builds its own requests and never reads
+            # the per-turn field, so accepting the flag here would constrain
+            # nothing without saying so.
             logger.warning(
-                "response_format is only supported for single-turn benchmarks, "
-                "ignoring for multi-turn chat sessions"
+                "response_format is not supported for chat-judge benchmarks, "
+                "ignoring"
+            )
+        else:
+            constrained_turns = 0
+            for chat_session in samples.chat_sessions:
+                for message in chat_session.messages:
+                    if message.source != "user":
+                        continue
+                    message.response_format = response_format
+                    constrained_turns += 1
+            logger.info(
+                f"Marked {constrained_turns} user turns across "
+                f"{len(samples.chat_sessions)} chat sessions; a marked turn "
+                "runs without ignore_eos, so its drawn output length caps "
+                "rather than pins"
             )
 
     if args.image_fraction > 0:

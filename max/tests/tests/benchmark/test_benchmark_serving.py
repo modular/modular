@@ -25,8 +25,12 @@ from max.benchmark.benchmark_serving import (
     parse_args,
 )
 from max.benchmark.benchmark_shared.datasets.types import (
+    ChatSamples,
+    ChatSession,
     RequestSamples,
+    ResponseFormat,
     SampledRequest,
+    SessionMessage,
 )
 
 
@@ -169,3 +173,58 @@ def test_ignore_eos_survives_without_a_response_format() -> None:
 
     assert request.response_format is None
     assert request.ignore_eos
+
+
+def _one_chat_sample() -> tuple[ChatSession, ChatSamples]:
+    session = ChatSession(
+        id=0,
+        messages=[
+            SessionMessage(source="user", content="hi", num_tokens=1),
+            SessionMessage(source="assistant", content="ok", num_tokens=1),
+            SessionMessage(source="user", content="again", num_tokens=1),
+            SessionMessage(source="assistant", content="ok", num_tokens=1),
+        ],
+    )
+    return session, ChatSamples(chat_sessions=[session], shared_contexts=[])
+
+
+def test_response_format_injection_marks_every_user_turn() -> None:
+    """The mark lands on the user turns, which are the ones that carry a
+    request; an assistant message is replayed history and never asks the
+    server for anything."""
+    session, samples = _one_chat_sample()
+    args = parse_args(
+        [
+            "--model",
+            "myorg/model",
+            "--response-format",
+            '{"type": "json_object"}',
+        ]
+    )
+
+    with patch(
+        "max.benchmark.benchmark_serving.sample_requests", return_value=samples
+    ):
+        _sample_for_seed(args, "text-generation", None, True, 0)
+
+    by_source: dict[str, list[ResponseFormat | None]] = {
+        "user": [],
+        "assistant": [],
+    }
+    for message in session.messages:
+        by_source[message.source].append(message.response_format)
+    assert all(rf is not None for rf in by_source["user"])
+    assert all(rf is None for rf in by_source["assistant"])
+
+
+def test_chat_turns_unmarked_without_a_response_format() -> None:
+    """Control: no flag, no constrained turns."""
+    session, samples = _one_chat_sample()
+    args = parse_args(["--model", "myorg/model"])
+
+    with patch(
+        "max.benchmark.benchmark_serving.sample_requests", return_value=samples
+    ):
+        _sample_for_seed(args, "text-generation", None, True, 0)
+
+    assert all(m.response_format is None for m in session.messages)
