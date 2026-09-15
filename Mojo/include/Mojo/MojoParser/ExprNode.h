@@ -38,6 +38,9 @@ class AnyValue;
 class ASTType;
 class IREmitter;
 class ExprDest;
+class PatternMatchBuilder;
+struct PatternPath;
+struct PatternCommandList;
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -231,6 +234,18 @@ public:
   virtual LogicalResult
   emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
             llvm::SmallVectorImpl<BoundName> &bindings) const;
+
+  /// Lower this expression into a command-list program against `path` (the
+  /// uniqued access path for the current subject). Commands cover equality /
+  /// enum-tag tests, nested or-alternatives, and bind steps. `subject` carries
+  /// the typed value at that path so enum-vs-struct and MValue decisions match
+  /// `emitMatch`. Comptime lookups use `builder.getParamEmitter()`; the
+  /// current `var`/`ref` binding mode lives on `builder`. Does not emit match
+  /// IR; failure is for type / pattern errors only. Guards are not part of the
+  /// list.
+  virtual LogicalResult buildCheckList(PatternMatchBuilder &builder,
+                                       CValue subject, const PatternPath *path,
+                                       PatternCommandList &out) const;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// ExprDest indicates information about where to emit the expression result

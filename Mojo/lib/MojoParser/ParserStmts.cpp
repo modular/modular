@@ -24,6 +24,7 @@
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParserBase.h"
+#include "PatternMatchIR.h"
 #include "Support/Compiler/OperationUtils.h"
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
@@ -1668,6 +1669,12 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
                                        /*caseRegionsCount=*/caseEntries.size());
   matchOp.getElseRegion().emplaceBlock();
 
+  // Preprocess each case into a command list with shared path uniquing across
+  // the match. Paths are keyed by the subject rvalue type at the root.
+  PatternMatchBuilder checkListBuilder(*curDeclScope, EC_Type);
+  const PatternPath *rootPath =
+      checkListBuilder.getRootPath(subjectBVal.getRValueType());
+
   for (auto [idx, caseEntry] : llvm::enumerate(caseEntries)) {
     auto &region = matchOp.getCaseRegions()[idx];
     builder.setInsertionPointToStart(&region.emplaceBlock());
@@ -1678,6 +1685,14 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
 
     IREmitter emitter = getEmitter();
     auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
+
+    // FIXME: Drive case emission / decision-tree clustering from `commandList`
+    // instead of calling `emitMatch` below. Or-alternative binding invariants
+    // are checked when the command list is emitted.
+    PatternCommandList commandList;
+    if (failed(caseEntry.patternExpr->buildCheckList(
+            checkListBuilder, subjectBVal, rootPath, commandList)))
+      continue;
 
     // Emit the pattern; failable patterns fail by invoking hlcf.match.next.
     // On emission failure, still parse the case body so later diagnostics in

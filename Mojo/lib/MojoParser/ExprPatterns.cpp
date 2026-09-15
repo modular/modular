@@ -11,8 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// This file implements `emitMatch` for expression nodes used as match
-// patterns.
+// This file implements match-pattern lowering: a command-list / access-path IR
+// (`buildCheckList`) and the current direct `emitMatch` emission path.
 //
 //===----------------------------------------------------------------------===//
 
@@ -25,10 +25,12 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
+#include "PatternMatchIR.h"
 
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -44,6 +46,29 @@ static LogicalResult emitEnumCaseNameMatch(IREmitter &emitter, CValue subject,
                                            const ExprNode *typeBase);
 
 //===----------------------------------------------------------------------===//
+// PatternMatchBuilder
+//===----------------------------------------------------------------------===//
+
+PatternMatchBuilder::PatternMatchBuilder(ASTDecl &declScope,
+                                         ExprContext paramContext)
+    : declScope(declScope), paramContext(paramContext),
+      shared(declScope.getShared()) {}
+
+IREmitter PatternMatchBuilder::getParamEmitter() {
+  return IREmitter(declScope, paramContext);
+}
+
+MojoInflightDiag PatternMatchBuilder::emitError(SMLoc loc,
+                                                const Twine &message) {
+  return shared.emitError(loc, message);
+}
+
+MojoInflightDiag PatternMatchBuilder::emitWarning(SMLoc loc,
+                                                  const Twine &message) {
+  return shared.emitWarning(loc, message);
+}
+
+//===----------------------------------------------------------------------===//
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
 
@@ -51,6 +76,13 @@ LogicalResult ExprNode::emitMatch(IREmitter &emitter, CValue subject,
                                   PatternDeclKind patternKind,
                                   SmallVectorImpl<BoundName> &bindings) const {
   emitter.emitError(getLoc(), "expression is not a valid match pattern");
+  return failure();
+}
+
+LogicalResult ExprNode::buildCheckList(PatternMatchBuilder &builder,
+                                       CValue subject, const PatternPath *path,
+                                       PatternCommandList &out) const {
+  builder.emitError(getLoc(), "expression is not a valid match pattern");
   return failure();
 }
 
@@ -136,11 +168,29 @@ SimpleLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
   return ExprNode::emitMatch(emitter, subject, patternKind, bindings);
 }
 
+LogicalResult SimpleLiteralNode::buildCheckList(PatternMatchBuilder &builder,
+                                                CValue subject,
+                                                const PatternPath *path,
+                                                PatternCommandList &out) const {
+  // `_` is irrefutable: no check, no binding.
+  if (kind == kDiscardLiteral)
+    return success();
+  return ExprNode::buildCheckList(builder, subject, path, out);
+}
+
 LogicalResult
 BoolLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
                            PatternDeclKind patternKind,
                            SmallVectorImpl<BoundName> &bindings) const {
   return emitMatchAgainstValue(this, emitter, subject);
+}
+
+LogicalResult BoolLiteralNode::buildCheckList(PatternMatchBuilder &builder,
+                                              CValue subject,
+                                              const PatternPath *path,
+                                              PatternCommandList &out) const {
+  out.commands.push_back(builder.createEqual(path, this));
+  return success();
 }
 
 LogicalResult
@@ -150,6 +200,14 @@ IntLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
+LogicalResult IntLiteralNode::buildCheckList(PatternMatchBuilder &builder,
+                                             CValue subject,
+                                             const PatternPath *path,
+                                             PatternCommandList &out) const {
+  out.commands.push_back(builder.createEqual(path, this));
+  return success();
+}
+
 LogicalResult
 FloatLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
                             PatternDeclKind patternKind,
@@ -157,11 +215,27 @@ FloatLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
   return emitMatchAgainstValue(this, emitter, subject);
 }
 
+LogicalResult FloatLiteralNode::buildCheckList(PatternMatchBuilder &builder,
+                                               CValue subject,
+                                               const PatternPath *path,
+                                               PatternCommandList &out) const {
+  out.commands.push_back(builder.createEqual(path, this));
+  return success();
+}
+
 LogicalResult
 StringLiteralNode::emitMatch(IREmitter &emitter, CValue subject,
                              PatternDeclKind patternKind,
                              SmallVectorImpl<BoundName> &bindings) const {
   return emitMatchAgainstValue(this, emitter, subject);
+}
+
+LogicalResult StringLiteralNode::buildCheckList(PatternMatchBuilder &builder,
+                                                CValue subject,
+                                                const PatternPath *path,
+                                                PatternCommandList &out) const {
+  out.commands.push_back(builder.createEqual(path, this));
+  return success();
 }
 
 LogicalResult
@@ -181,6 +255,21 @@ DeclRefNode::emitMatch(IREmitter &emitter, CValue subject,
   // Binding patterns are irrefutable: record the name and subject value for
   // the caller to declare after the full pattern (and before any guard).
   bindings.push_back({spelling, subject, patternKind});
+  return success();
+}
+
+LogicalResult DeclRefNode::buildCheckList(PatternMatchBuilder &builder,
+                                          CValue subject,
+                                          const PatternPath *path,
+                                          PatternCommandList &out) const {
+  PatternDeclKind patternKind = builder.getPatternKind();
+  if (patternKind == PatternDeclKind::kNone) {
+    builder.emitError(getLoc(), "bare identifier '")
+        << spelling << "' is not a valid match pattern; use 'var " << spelling
+        << "' or 'ref " << spelling << "' to bind a name";
+    return failure();
+  }
+  out.commands.push_back(builder.createBind(path, this, spelling, patternKind));
   return success();
 }
 
@@ -215,6 +304,12 @@ LogicalResult ParenNode::emitMatch(IREmitter &emitter, CValue subject,
                                    PatternDeclKind patternKind,
                                    SmallVectorImpl<BoundName> &bindings) const {
   return subExpr->emitMatch(emitter, subject, patternKind, bindings);
+}
+
+LogicalResult ParenNode::buildCheckList(PatternMatchBuilder &builder,
+                                        CValue subject, const PatternPath *path,
+                                        PatternCommandList &out) const {
+  return subExpr->buildCheckList(builder, subject, path, out);
 }
 
 LogicalResult BinOpNode::emitMatch(IREmitter &emitter, CValue subject,
@@ -388,8 +483,7 @@ BinOpNode::emitOrMatch(IREmitter &emitter, CValue subject,
   // If this is the root of (1|2)|(3|4), dig out all the alternatives to
   // generate a single structure (reducing IR bloat).
   SmallVector<const ExprNode *, 2> alternatives;
-  addOrPatternAlternatives(alternatives, lhs);
-  addOrPatternAlternatives(alternatives, rhs);
+  addOrPatternAlternatives(alternatives, this);
 
   auto createBindingScope = [&](SMLoc scopeLoc) -> ASTDecl & {
     return emitter.getDeclResolver().addFullyResolvedDecl(
@@ -477,6 +571,61 @@ BinOpNode::emitAsMatch(IREmitter &emitter, CValue subject,
   return lhs->emitMatch(emitter, subject, patternKind, bindings);
 }
 
+LogicalResult BinOpNode::buildCheckList(PatternMatchBuilder &builder,
+                                        CValue subject, const PatternPath *path,
+                                        PatternCommandList &out) const {
+  if (kind == kOr)
+    return buildOrCheckList(builder, subject, path, out);
+  if (kind == kAsPat)
+    return buildAsCheckList(builder, subject, path, out);
+  return ExprNode::buildCheckList(builder, subject, path, out);
+}
+
+LogicalResult BinOpNode::buildOrCheckList(PatternMatchBuilder &builder,
+                                          CValue subject,
+                                          const PatternPath *path,
+                                          PatternCommandList &out) const {
+  SmallVector<const ExprNode *, 2> alternatives;
+  addOrPatternAlternatives(alternatives, this);
+
+  // Each alternative is its own command list (including Bind steps). Binding
+  // agreement across arms is verified when the or is emitted, not here.
+  SmallVector<PatternCommandListRef, 2> altRefs;
+  altRefs.reserve(alternatives.size());
+  for (const ExprNode *alternative : alternatives) {
+    PatternCommandList altOut;
+    if (failed(alternative->buildCheckList(builder, subject, path, altOut)))
+      return failure();
+    altRefs.push_back(builder.internCommandList(altOut));
+  }
+
+  out.commands.push_back(builder.createOr(path, this, altRefs));
+  return success();
+}
+
+LogicalResult BinOpNode::buildAsCheckList(PatternMatchBuilder &builder,
+                                          CValue subject,
+                                          const PatternPath *path,
+                                          PatternCommandList &out) const {
+  auto *name = dyn_cast<DeclRefNode>(rhs);
+  if (!name) {
+    builder.emitError(rhs->getLoc(), "expected a name after 'as'");
+    return failure();
+  }
+
+  PatternDeclKind bindKind = PatternDeclKind::kRef;
+  if (subject)
+    bindKind =
+        subject.isMValue() ? PatternDeclKind::kRef : PatternDeclKind::kBind;
+  {
+    llvm::SaveAndRestore restoreKind(builder.patternKindRef());
+    builder.setPatternKind(bindKind);
+    if (failed(name->buildCheckList(builder, subject, path, out)))
+      return failure();
+  }
+  return lhs->buildCheckList(builder, subject, path, out);
+}
+
 LogicalResult
 UnaryOpNode::emitMatch(IREmitter &emitter, CValue subject,
                        PatternDeclKind patternKind,
@@ -497,6 +646,25 @@ UnaryOpNode::emitMatch(IREmitter &emitter, CValue subject,
   PatternDeclKind subKind =
       kind == kVarPat ? PatternDeclKind::kVar : PatternDeclKind::kRef;
   return subExpr->emitMatch(emitter, subject, subKind, bindings);
+}
+
+LogicalResult UnaryOpNode::buildCheckList(PatternMatchBuilder &builder,
+                                          CValue subject,
+                                          const PatternPath *path,
+                                          PatternCommandList &out) const {
+  if (kind != kVarPat && kind != kRefPat)
+    return ExprNode::buildCheckList(builder, subject, path, out);
+
+  if (builder.getPatternKind() != PatternDeclKind::kNone &&
+      builder.getPatternKind() != PatternDeclKind::kBind) {
+    builder.emitWarning(getLoc()) << "nested 'var' or 'ref' patterns are "
+                                     "redundant, remove the outer pattern";
+  }
+
+  llvm::SaveAndRestore restoreKind(builder.patternKindRef());
+  builder.setPatternKind(kind == kVarPat ? PatternDeclKind::kVar
+                                         : PatternDeclKind::kRef);
+  return subExpr->buildCheckList(builder, subject, path, out);
 }
 
 LogicalResult TupleNode::emitMatch(IREmitter &emitter, CValue subject,
@@ -566,6 +734,44 @@ LogicalResult TupleNode::emitMatch(IREmitter &emitter, CValue subject,
     if (!eltVal)
       return failure();
     if (failed(exprs[i]->emitMatch(emitter, eltVal, patternKind, bindings)))
+      return failure();
+  }
+  return success();
+}
+
+LogicalResult TupleNode::buildCheckList(PatternMatchBuilder &builder,
+                                        CValue subject, const PatternPath *path,
+                                        PatternCommandList &out) const {
+  ASTType subjectType = path->type;
+  ASTType tupleType =
+      builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc());
+
+  if (!tupleType.isEqualCanon(
+          subjectType.getWithoutParameters(builder.shared))) {
+    builder.emitError(getLoc(), "expected a tuple type to match against, got ")
+        << subjectType << getRange();
+    return failure();
+  }
+
+  assert(subjectType.getParamBindings().size() == 2 &&
+         "Tuple has two parameters");
+  auto vaAttr = sugarCast<ParamListAttr>(subjectType.getParamBindings()[0]);
+  if (vaAttr.getValues().size() != exprs.size()) {
+    builder.emitError(getLoc(), "cannot match value of ")
+        << subjectType << " of " << vaAttr.getValues().size() << " element"
+        << plural(vaAttr.getValues().size()) << " against a pattern with "
+        << exprs.size() << " element" << plural(exprs.size()) << getRange();
+    return failure();
+  }
+
+  if (exprs.empty())
+    return success();
+
+  for (unsigned i = 0, e = exprs.size(); i != e; ++i) {
+    ASTType eltType = ASTType(vaAttr.getValues()[i]);
+    const PatternPath *eltPath = builder.getTupleElement(path, i, eltType);
+    // Nested subjects are not projected yet; subpatterns use path types.
+    if (failed(exprs[i]->buildCheckList(builder, CValue(), eltPath, out)))
       return failure();
   }
   return success();
@@ -685,6 +891,100 @@ LogicalResult CallNode::emitMatch(IREmitter &emitter, CValue subject,
       return failure();
     if (failed(fp.operand->expr->emitMatch(emitter, fieldVal, patternKind,
                                            bindings)))
+      return failure();
+  }
+  return success();
+}
+
+LogicalResult CallNode::buildCheckList(PatternMatchBuilder &builder,
+                                       CValue subject, const PatternPath *path,
+                                       PatternCommandList &out) const {
+  ASTType subjectType = path->type;
+
+  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
+                                               builder.shared, {}))
+    return buildEnumCheckList(builder, subject, path, out);
+
+  IREmitter emitter = builder.getParamEmitter();
+  ASTType patternType = emitter.emitExprType(callee);
+  if (!patternType)
+    return failure();
+
+  if (!patternType.isEqualCanon(subjectType)) {
+    builder.emitError(getLoc(), "cannot match value of type ")
+        << subjectType << " against pattern type " << patternType << getRange();
+    return failure();
+  }
+
+  auto structType =
+      dyn_cast<StructType>(SugarAttr::strip(subjectType.mlirType));
+  if (!structType) {
+    builder.emitError(getLoc(), "expected a struct type to match against, got ")
+        << subjectType << getRange();
+    return failure();
+  }
+
+  ASTDecl *typeDecl = subjectType.getDecl(builder.shared);
+  if (!typeDecl) {
+    builder.emitError(getLoc(), "cannot match fields of ")
+        << subjectType << getRange();
+    return failure();
+  }
+
+  struct FieldPattern {
+    const Operand *operand;
+    StructFieldOp fieldOp;
+  };
+  SmallVector<FieldPattern, 8> fieldPatterns;
+  llvm::SmallPtrSet<Attribute, 8> seenFields;
+
+  for (const Operand &operand : operands) {
+    if (!operand.isKeyword()) {
+      builder.emitError(
+          operand.getLoc(),
+          "struct patterns do not support positional or unpacked arguments")
+          << operand.expr->getRange();
+      return failure();
+    }
+
+    StringAttr fieldName = operand.name;
+    LookupResult lookup = builder.shared.lookupAndResolveDecl(
+        fieldName.getValue(), operand.getLoc(), *typeDecl,
+        /*searchParentScopes=*/false);
+    if (lookup.isErroneous())
+      return failure();
+    if (!lookup.isSuccess() || lookup.getIfSuccess().size() != 1) {
+      builder.emitError(operand.getLoc(), "'")
+          << fieldName.getValue() << "' is not a field of " << subjectType
+          << operand.expr->getRange();
+      return failure();
+    }
+    auto fieldOp = dyn_cast_or_null<StructFieldOp>(
+        lookup.getIfSuccess().front()->getIfOperation());
+    if (!fieldOp) {
+      builder.emitError(operand.getLoc(), "'")
+          << fieldName.getValue() << "' is not a stored field of "
+          << subjectType << operand.expr->getRange();
+      return failure();
+    }
+
+    if (!seenFields.insert(fieldName).second) {
+      builder.emitError(operand.getLoc(), "duplicate field '")
+          << fieldName.getValue() << "' in struct pattern"
+          << operand.expr->getRange();
+      return failure();
+    }
+    fieldPatterns.push_back({&operand, fieldOp});
+  }
+
+  for (const FieldPattern &fp : fieldPatterns) {
+    StructFieldOp fieldOp = fp.fieldOp;
+    ASTType fieldType = fieldOp.getReboundType(
+        structType, &builder.shared.getEvaluationContext());
+    const PatternPath *fieldPath =
+        builder.getStructField(path, fp.operand->name, fieldType);
+    if (failed(fp.operand->expr->buildCheckList(builder, CValue(), fieldPath,
+                                                out)))
       return failure();
   }
   return success();
@@ -940,4 +1240,113 @@ CallNode::emitEnumMatch(IREmitter &emitter, CValue subject,
     return failure();
 
   return operands[0].expr->emitMatch(emitter, payload, patternKind, bindings);
+}
+
+LogicalResult CallNode::buildEnumCheckList(PatternMatchBuilder &builder,
+                                           CValue subject,
+                                           const PatternPath *path,
+                                           PatternCommandList &out) const {
+  IREmitter emitter = builder.getParamEmitter();
+  StringRef caseName;
+  if (auto *attr = dyn_cast<AttributeRefNode>(callee)) {
+    caseName = attr->spelling;
+    if (subject &&
+        failed(checkEnumCaseTypeBase(emitter, subject, attr->base, this)))
+      return failure();
+  } else if (auto *inferred = dyn_cast<InferredAttributeRefNode>(callee)) {
+    caseName = inferred->spelling;
+  } else {
+    builder.emitError(getLoc(),
+                      "enum case pattern must be written as 'Type.Case(...)' "
+                      "or '.Case(...)'")
+        << callee->getRange();
+    return failure();
+  }
+
+  ASTType subjectType = path->type;
+  auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, caseName, this);
+  if (!caseIndex)
+    return failure();
+  ASTType payloadType =
+      getEnumCasePayloadType(emitter, subjectType, *caseIndex, this);
+  if (!payloadType)
+    return failure();
+
+  if (isEnumCaseWithoutPayload(emitter, payloadType, this)) {
+    builder.emitError(getLoc(), "enum case '")
+        << caseName << "' has no associated value" << getParenRange();
+    return failure();
+  }
+
+  if (operands.empty()) {
+    builder.emitError(getLoc(), "enum case '")
+        << caseName << "' requires a payload pattern inside the parentheses"
+        << getParenRange();
+    return failure();
+  }
+
+  for (const Operand &operand : operands) {
+    if (operand.unpackStyle == ArgUnpackStyle::kKeyword) {
+      builder.emitError(operand.getLoc(),
+                        "enum case patterns do not support keyword arguments")
+          << operand.expr->getRange();
+      return failure();
+    }
+    if (operand.unpackStyle != ArgUnpackStyle::kPositional) {
+      builder.emitError(operand.getLoc(),
+                        "enum case patterns do not support unpacked arguments")
+          << operand.expr->getRange();
+      return failure();
+    }
+  }
+
+  if (operands.size() != 1) {
+    builder.emitError(operands[1].getLoc(),
+                      "enum case patterns currently support at most one "
+                      "payload subpattern")
+        << operands[1].expr->getRange();
+    return failure();
+  }
+
+  out.commands.push_back(builder.createEnumTag(path, this, *caseIndex));
+  const PatternPath *payloadPath =
+      builder.getEnumPayload(path, *caseIndex, payloadType);
+  return operands[0].expr->buildCheckList(builder, CValue(), payloadPath, out);
+}
+
+LogicalResult AttributeRefNode::buildCheckList(PatternMatchBuilder &builder,
+                                               CValue subject,
+                                               const PatternPath *path,
+                                               PatternCommandList &out) const {
+  ASTType subjectType = path->type;
+  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
+                                               builder.shared, {})) {
+    IREmitter emitter = builder.getParamEmitter();
+    if (subject && failed(checkEnumCaseTypeBase(emitter, subject, base, this)))
+      return failure();
+    auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, spelling, this);
+    if (!caseIndex)
+      return failure();
+    out.commands.push_back(builder.createEnumTag(path, this, *caseIndex));
+    return success();
+  }
+  out.commands.push_back(builder.createEqual(path, this));
+  return success();
+}
+
+LogicalResult InferredAttributeRefNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    PatternCommandList &out) const {
+  ASTType subjectType = path->type;
+  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
+                                               builder.shared, {})) {
+    IREmitter emitter = builder.getParamEmitter();
+    auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, spelling, this);
+    if (!caseIndex)
+      return failure();
+    out.commands.push_back(builder.createEnumTag(path, this, *caseIndex));
+    return success();
+  }
+  out.commands.push_back(builder.createEqual(path, this));
+  return success();
 }
