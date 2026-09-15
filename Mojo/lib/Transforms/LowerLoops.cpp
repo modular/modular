@@ -60,7 +60,8 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
 
   // Create HLCF::LoopOp.
   auto loop = LoopOp::create(rewriter, forLoop->getLoc(),
-                             forLoop->getResultTypes(), forLoop.getIterArgs());
+                             forLoop->getResultTypes(), forLoop.getIterArgs(),
+                             /*label=*/StringAttr{});
 
   // Create the block for the new LoopOp.
   Block *loopBlock = rewriter.createBlock(&loop.getBody());
@@ -144,7 +145,8 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
 
   // Create `hlcf.continue` with the reordered operands.
   auto cont = HLCF::ContinueOp::create(rewriter, y.getLoc(),
-                                       y->getResultTypes(), y.getOperands());
+                                       y->getResultTypes(), y.getOperands(),
+                                       /*label=*/StringAttr{});
 
   // Replace `hlcf.for.yield with `hlcf.continue`.
   rewriter.replaceOp(y, cont);

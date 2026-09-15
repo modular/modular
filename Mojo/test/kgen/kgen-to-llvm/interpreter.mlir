@@ -21,7 +21,7 @@ kgen.func @heap() -> !kgen.pointer<i16> {
   // CHECK: %[[BASE:.*]] = llvm.bitcast %[[ALLOC_LLVM]] : !llvm.ptr to !llvm.ptr
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[CST_EFBE:.*]] = llvm.mlir.constant(#M.dense_array<-17, -66> : vector<2xi8>)
-  // CHECK: llvm.store %[[CST_EFBE]], %[[P0]] {alignment = 32 :
+  // CHECK: llvm.store %[[CST_EFBE]], %[[P0]] <alignment = 32>
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
   %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<{[(#mem_heap, heap, [], [])], []}, 0, 0>>

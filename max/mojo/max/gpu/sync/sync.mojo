@@ -588,8 +588,9 @@ def mbarrier_init[
     """
 
     comptime if is_nvidia_gpu():
-        llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
-            shared_mem, num_threads
+        # Layout 0 is the default in-memory layout.
+        llvm_intrinsic["llvm.nvvm.mbarrier.init", NoneType](
+            shared_mem, num_threads, Int32(0)
         )
     else:
         CompilationTarget.unsupported_target_error[

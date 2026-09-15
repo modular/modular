@@ -7,7 +7,7 @@ kgen.func @masked_load_with_alignment(
     %ptr: !kgen.pointer<scalar<f32>>,
     %mask: !kgen.simd<4, bool>,
     %passthrough: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
-  // CHECK: llvm.intr.masked.load {{.*}} {alignment = 16 : i32}
+  // CHECK: llvm.intr.masked.load({{.*}}), alignment(16)
   %align_builtin = llvm.mlir.constant(16 : i32) : i32
   %align = pop.cast_from_builtin %align_builtin : i32 to !kgen.scalar<si32>
   %0 = pop.call_llvm_intrinsic "llvm.masked.load", (%ptr, %align, %mask, %passthrough) :
@@ -20,7 +20,7 @@ kgen.func @masked_store_with_alignment(
     %value: !kgen.simd<4, f32>,
     %ptr: !kgen.pointer<scalar<f32>>,
     %mask: !kgen.simd<4, bool>) {
-  // CHECK: llvm.intr.masked.store {{.*}} {alignment = 16 : i32}
+  // CHECK: llvm.intr.masked.store({{.*}}), alignment(16)
   %align_builtin = llvm.mlir.constant(16 : i32) : i32
   %align = pop.cast_from_builtin %align_builtin : i32 to !kgen.scalar<si32>
   pop.call_llvm_intrinsic "llvm.masked.store", (%value, %ptr, %align, %mask) :

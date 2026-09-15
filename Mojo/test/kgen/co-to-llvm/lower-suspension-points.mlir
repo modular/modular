@@ -290,17 +290,17 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:  }
 llvm.func internal @exec_async_closure_0_resume(%arg0: !llvm.ptr) attributes {coroutineType = !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>} {
   %2 = llvm.getelementptr %arg0[0, 9] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>
-  %3 = llvm.load %2 {alignment = 4 : i64} : !llvm.ptr -> i1
+  %3 = llvm.load %2 <alignment = 4> : !llvm.ptr -> i1
   co.suspend {
     llvm.cond_br %3, ^bb1, ^bb2
   ^bb1:  // pred: ^bb0
     %21 = llvm.getelementptr %arg0[0, 8] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>
-    %22 = llvm.load %21 {alignment = 8 : i64} : !llvm.ptr -> f32
+    %22 = llvm.load %21 <alignment = 8> : !llvm.ptr -> f32
     llvm.call @print(%22) : (f32) -> ()
     llvm.br ^bb3
   ^bb2:  // pred: ^bb0
     %23 = llvm.getelementptr %arg0[0, 7] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, ptr, ptr, ptr, ptr, ptr, struct<(i1)>, f32, f32, i1)>
-    %24 = llvm.load %23 {alignment = 8 : i64} : !llvm.ptr -> f32
+    %24 = llvm.load %23 <alignment = 8> : !llvm.ptr -> f32
     llvm.call @print(%24) : (f32) -> ()
     llvm.br ^bb3
   ^bb3:  // 2 preds: ^bb1, ^bb2

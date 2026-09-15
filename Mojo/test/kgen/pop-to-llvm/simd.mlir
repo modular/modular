@@ -15,7 +15,7 @@ kgen.func @trivial_conversions(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>, %
   %3 = pop.mul %a, %b : !kgen.simd<4, f32>
   // CHECK: llvm.intr.fma
   %4 = pop.fma %a, %b, %c : !kgen.simd<4, f32>
-  // CHECK: llvm.intr.fma{{.*}} {fastmathFlags = #llvm.fastmath<nsz>}
+  // CHECK: llvm.intr.fma{{.*}} fastmath<nsz>
   %5 = pop.fma %a, %b, %c {fastmathFlags = #pop.fmf<nsz>} : !kgen.simd<4, f32>
   // CHECK: llvm.select
   %6 = pop.simd.select %d, %a, %b : !kgen.simd<4, f32>
@@ -134,14 +134,14 @@ kgen.func @fmul_simd(%arg0: !kgen.simd<4, f32>, %arg1: !kgen.simd<4, f32>) -> !k
 // CHECK-LABEL: @fmul_simd_default_contract
 kgen.func @fmul_simd_default_contract(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // Default behavior should attach contract fastmath flags.
-  // CHECK: llvm.fmul {{.*}}{fastmathFlags = #llvm.fastmath<contract>} : vector<4xf32>
+  // CHECK: llvm.fmul {{.*}} fastmath<contract> : vector<4xf32>
   %0 = pop.mul %a, %b : !kgen.simd<4, f32>
   kgen.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @fmul_simd_with_reassoc
 kgen.func @fmul_simd_with_reassoc(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
-  // CHECK: llvm.fmul {{.*}} {fastmathFlags = #llvm.fastmath<reassoc>} : vector<4xf32>
+  // CHECK: llvm.fmul {{.*}} fastmath<reassoc> : vector<4xf32>
   %0 = pop.mul %a, %b {fastmathFlags = #pop.fmf<reassoc>} : !kgen.simd<4, f32>
   kgen.return %0 : !kgen.simd<4, f32>
 }

@@ -78,7 +78,7 @@ func.func @foo() {
   // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 {alignment = 1 : i64} : (i32) -> !llvm.ptr
   // CHECK: %[[V0:.*]] = llvm.mlir.constant(2 : i32) : i32
   // CHECK: %[[V1:.*]] = llvm.mlir.constant(3 : i32) : i32
-  // CHECK: llvm.store volatile %[[V0]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // CHECK: llvm.store volatile %[[V0]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]]
   debuginfo.value #local_variable #trivial_expr = %v0 : i32
   // COM: This will get removed as LLVM does not support implicit pointer yet.

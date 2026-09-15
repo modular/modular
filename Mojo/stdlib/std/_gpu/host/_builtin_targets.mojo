@@ -1187,11 +1187,11 @@ comptime RTX2060 = GPUInfo.from_family(
 
 comptime _mi250x_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu9.0a-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx90a", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1219,11 +1219,11 @@ comptime MI250X = GPUInfo.from_family(
 
 comptime _mi300x_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu9.42-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx942", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1251,11 +1251,11 @@ comptime MI300X = GPUInfo.from_family(
 
 comptime _mi300a_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu9.42-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx942", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1290,11 +1290,11 @@ supercomputer.
 
 comptime _mi355x_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu9.50-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx950", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1322,11 +1322,11 @@ comptime MI355X = GPUInfo.from_family(
 
 comptime _9070_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu12.01-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1201", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1337,11 +1337,11 @@ comptime _9070_target = CompilationTarget[
 
 comptime _9060_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu12.00-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1200", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1352,11 +1352,11 @@ comptime _9060_target = CompilationTarget[
 
 comptime _7900_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu11.00-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1100", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1367,11 +1367,11 @@ comptime _7900_target = CompilationTarget[
 
 comptime _7800_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu11.01-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1101", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1382,11 +1382,11 @@ comptime _7800_target = CompilationTarget[
 
 comptime _7600_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu11.02-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1102", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1397,11 +1397,11 @@ comptime _7600_target = CompilationTarget[
 
 comptime _6900_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu10.30-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1030", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1412,11 +1412,11 @@ comptime _6900_target = CompilationTarget[
 
 comptime _780m_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu11.03-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1103", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1427,11 +1427,11 @@ comptime _780m_target = CompilationTarget[
 
 comptime _880m_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu11.50-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1150", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1442,11 +1442,11 @@ comptime _880m_target = CompilationTarget[
 
 comptime _8060s_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu11.51-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1151", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1457,11 +1457,11 @@ comptime _8060s_target = CompilationTarget[
 
 comptime _860m_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu11.52-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1152", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1472,11 +1472,11 @@ comptime _860m_target = CompilationTarget[
 
 comptime _steamdeck_target = CompilationTarget[
     _mlir_value=__mlir_attr[
-        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `#kgen.target<triple = "amdgpu10.33-amd-amdhsa", `,
         `stdlib_plugin = "hip", `,
         `arch = "gfx1033", `,
         `features = "", `,
-        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,

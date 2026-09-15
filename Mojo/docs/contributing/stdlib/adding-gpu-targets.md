@@ -16,7 +16,8 @@ the components of the MLIR target configuration, with special focus on the
 Each GPU target function returns an MLIR `kgen.target` attribute with these
 fields:
 
-- **triple**: Target triple (e.g., "nvptx64-nvidia-cuda", "amdgcn-amd-amdhsa").
+- **triple**: Target triple (e.g., "nvptx64-nvidia-cuda",
+  "amdgpu9.42-amd-amdhsa").
 - **arch**: Architecture name (e.g., "sm_80", "gfx942", "apple-m4").
 - **features**: Target-specific features (e.g., "+ptx81,+sm_80").
 - **tune_cpu**: Optimization target (usually same as arch, can differ for
@@ -231,7 +232,7 @@ clang -S test.ll -o - | grep datalayout
 For AMD GPUs:
 
 ```bash
-echo 'target triple = "amdgcn-amd-amdhsa"' > test.ll
+echo 'target triple = "amdgpu9.42-amd-amdhsa"' > test.ll
 clang -S -emit-llvm test.ll -o - | grep datalayout
 ```
 
@@ -283,7 +284,8 @@ spaces in GPU kernels.
 The target triple identifies the architecture, vendor, and operating system:
 
 - **NVIDIA**: `nvptx64-nvidia-cuda` (64-bit) or `nvptx-nvidia-cuda` (32-bit).
-- **AMD**: `amdgcn-amd-amdhsa` (HSA runtime).
+- **AMD**: `amdgpu<major>.<minor>-amd-amdhsa` (HSA runtime), where the version
+  names the subarch (e.g. `gfx942` is `amdgpu9.42-amd-amdhsa`).
 - **Apple**: `air64-apple-macosx` (Metal on macOS).
 
 ### Arch
