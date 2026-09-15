@@ -1894,6 +1894,67 @@ async def _run_stream_with_kimi_tool_parser(
     ]
 
 
+@pytest.mark.asyncio
+async def test_stream_emits_content_withheld_as_a_partial_marker(
+    patch_openai_metrics: None,
+) -> None:
+    """A reply ending in the marker's first byte is never truncated.
+
+    The parser withholds that byte while a later token could still complete
+    the marker. Nothing can complete it once generation is done, so the
+    router flushes it on the terminal chunk rather than dropping a character
+    the model wrote.
+    """
+    lead = str.__str__(KimiToolParser().SECTION_BEGIN)[0]
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="answer",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens=lead,
+            token_count=1,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream_with_kimi_tool_parser(chunks)
+    content = "".join(r.choices[0].delta.content or "" for r in responses)
+
+    assert content == f"answer{lead}"
+
+
+@pytest.mark.asyncio
+async def test_stream_does_not_flush_tool_call_markup_as_content(
+    patch_openai_metrics: None,
+) -> None:
+    """The terminal flush must never turn tool-call structure into content."""
+    # The complete SECTION_BEGIN marker, not a prefix of it, so the parser
+    # enters the tool-call region and the flush must stay silent.
+    section = str.__str__(KimiToolParser().SECTION_BEGIN)
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="answer",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens=section,
+            token_count=1,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream_with_kimi_tool_parser(chunks)
+    content = "".join(r.choices[0].delta.content or "" for r in responses)
+
+    assert content == "answer"
+    assert section not in content
+
+
 _STREAM_REASONING_CHUNKS = [
     TokenGeneratorOutput(
         status=GenerationStatus.ACTIVE,

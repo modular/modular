@@ -58,12 +58,13 @@ from max.pipelines.context.exceptions import InputError
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
-from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
+    StructuralTagToolParser,
     maybe_name_from_tool,
     name_from_tool,
     names_from_tools,
 )
+from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -791,6 +792,23 @@ class OpenAIChatResponseGenerator(
                         # merged_stream_content is non-None and prevents
                         # chunk.decoded_tokens from being used as content.
                         merged_stream_content = "".join(stream_content_parts)
+
+                # The parser withholds a trailing partial match for its
+                # start marker while more tokens could complete it. Nothing
+                # can complete the marker once generation is done, so release
+                # it as content rather than dropping characters the model
+                # generated. Keyed off ``is_done`` rather than the block
+                # above, whose final chunk may carry no decoded tokens.
+                if (
+                    self.parse_tool_calls
+                    and chunk.status.is_done
+                    and isinstance(self.parser, StructuralTagToolParser)
+                ):
+                    withheld = self.parser.flush()
+                    if withheld:
+                        merged_stream_content = (
+                            merged_stream_content or ""
+                        ) + withheld
 
                 if (
                     self.parse_tool_calls

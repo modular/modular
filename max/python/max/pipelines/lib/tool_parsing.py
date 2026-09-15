@@ -510,6 +510,39 @@ class StructuralTagToolParser(ABC):
             return content
         return None
 
+    def flush(self) -> str | None:
+        """Releases content withheld as a possible start-marker prefix.
+
+        :meth:`_extract_content_delta` withholds a trailing run of the buffer
+        that matches a prefix of the start marker, because the next token may
+        complete it and leaking marker bytes as assistant content is the worse
+        failure. That speculation is only sound while tokens are still
+        arriving. Once the stream is over nothing can complete the marker, so
+        the withheld run is ordinary text, and keeping it back drops
+        characters the model generated.
+
+        Callers invoke this once the generation is done. It matches
+        :meth:`parse_complete`, which returns the whole response as content
+        when no marker is found, so a truncated marker reads the same way in
+        both modes.
+
+        Returns:
+            The withheld text, or ``None`` when nothing was held back or the
+            buffer reached the tool-call region, where the remaining bytes are
+            structure rather than content.
+        """
+        # The marker completed, so everything past it is a tool call.
+        if self._start_marker in self._buffer:
+            return None
+        # The cursor already reached the end, so nothing was held.
+        if len(self._buffer) <= self._state.sent_content_idx:
+            return None
+        # The cursor lags only when the tail matched a marker prefix that no
+        # later token completed, which is now everything left in the buffer.
+        content = self._buffer[self._state.sent_content_idx :]
+        self._state.sent_content_idx = len(self._buffer)
+        return content
+
     def _extract_tool_call_bodies(
         self, marker_pos: int
     ) -> list[tuple[str, bool]]:
