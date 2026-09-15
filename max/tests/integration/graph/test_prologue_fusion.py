@@ -256,15 +256,37 @@ def test_no_fuse_multi_use(
     np.testing.assert_allclose(data_out, data_ref, rtol=1e-5, atol=1e-5)
 
 
-# NOTE: `prologue_fusion.mlir`'s `no_fuse_plain_input` (matmul never gains a
-# prologue capture) is deliberately not ported here either: ANY `mo.matmul`
-# -- regardless of whether anything fuses into it at all -- currently fails
-# to compile under `MAX_GC_USE_ADV_FUSION=1` (a separate, already-tracked
-# compute-lambda gap; see `test_view_fusion.py`'s
-# `test_broadcast_fuses_into_existing_epilogue` docstring), so there is no
-# real-op graph involving `ops.matmul` this suite can exercise today.
-#
-# `prologue_fusion.mlir`'s `two_fused_inputs`, `partial_fused_inputs`,
+def test_matmul_gains_no_prologue_capture(
+    session: InferenceSession, adv_fusion_enabled: None
+) -> None:
+    """`matmul(add(x, y), z)` -- the add stays its own elementwise kernel; the
+    matmul takes its result as a plain input and gains no prologue capture.
+    Mirrors `no_fuse_plain_input`.
+    """
+    with Graph(
+        "matmul_gains_no_prologue_capture",
+        input_types=[
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, y, z = (v.tensor for v in graph.inputs)
+        graph.output(ops.matmul(x + y, z))
+
+    x_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    z_np = np.random.randn(8, 8).astype(np.float32)
+    (out,) = run_and_verify_fusion(session, graph, x_np, y_np, z_np)
+    # The matmul never absorbs the add: no single kernel carries both.
+    model = session.load(graph)
+    assert not any(
+        "mo.matmul" in s and "mo.add" in s for s in model.kernel_summaries
+    )
+    np.testing.assert_allclose(out, (x_np + y_np) @ z_np, rtol=1e-5, atol=1e-5)
+
+
+# NOTE: `prologue_fusion.mlir`'s `two_fused_inputs`, `partial_fused_inputs`,
 # and `no_fuse_same_producer_twice` cases are deliberately not ported here.
 # Each exercises a signature-only, no-computation test kernel
 # (`map_lower_two_fused_inputs` / `map_lower_partial_fused_inputs`) that

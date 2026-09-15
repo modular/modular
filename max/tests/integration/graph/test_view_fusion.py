@@ -242,9 +242,8 @@ def test_broadcast_fuses_into_existing_epilogue(
 
     Uses `ops.max` rather than `ops.matmul` deliberately: a matmul-fused
     epilogue binds through `_bind_to_fused_compute_output` (a "compute
-    lambda"), a separate, unrelated code path with its own currently-open gap
-    in `EmitMojo`'s io_spec handling -- `ops.max`'s epilogue binds through the
-    plain `_bind_to_fused_output` ("store lambda") path this fix actually
+    lambda"), a separate code path, while `ops.max`'s epilogue binds through
+    the plain `_bind_to_fused_output` ("store lambda") path this fix actually
     covers, keeping this test isolated to what `ViewFuser`'s generalization is
     responsible for.
     """
