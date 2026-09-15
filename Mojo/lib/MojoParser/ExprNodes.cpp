@@ -5220,7 +5220,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
 
   // If we have a concrete struct type and a concrete index, use the direct path
   auto structType = sugarDynCast<LIT::StructType>(elementType);
-  ErrorOr<int64_t> indexValueOr = POP::getScalarIndexValue(indexAttr);
+  ErrorOr<int64_t> indexValueOr = getScalarIndexValue(indexAttr);
   if (structType && succeeded(indexValueOr)) {
     // RefStructGEROp requires the base to be a StructType: rebind away sugar.
     if (!isa<LIT::StructType>(structRef.getRValueType())) {

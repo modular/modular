@@ -746,6 +746,38 @@ void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
   }
 }
 
+/// Pick the entry for `fieldIndex` out of a per-field array attribute, or the
+/// struct's own attribute when the index is negative.
+static Attribute selectAnnotationAttr(Attribute own, ArrayAttr perField,
+                                      int64_t fieldIndex) {
+  if (fieldIndex < 0)
+    return own;
+  if (perField && fieldIndex < static_cast<int64_t>(perField.size()))
+    return perField[fieldIndex];
+  return {};
+}
+
+void StructGeneratorOp::getAnnotationValues(SmallVectorImpl<TypedAttr> &values,
+                                            int64_t fieldIndex) {
+  auto annotations =
+      dyn_cast_if_present<ParameterExprArrayAttr>(selectAnnotationAttr(
+          getAnnotationsAttr(), getFieldAnnotationsAttr(), fieldIndex));
+  if (annotations)
+    llvm::append_range(values, annotations.getValue());
+}
+
+void StructGeneratorOp::getAnnotationTypes(SmallVectorImpl<TypedAttr> &types,
+                                           Type metaType, int64_t fieldIndex) {
+  auto recorded =
+      dyn_cast_if_present<ParameterExprArrayAttr>(selectAnnotationAttr(
+          getAnnotationTypesAttr(), getFieldAnnotationTypesAttr(), fieldIndex));
+  if (!recorded)
+    return;
+  // Convert from !kgen.type to the requested metatype, as getFieldTypes does.
+  for (TypedAttr typeValue : recorded.getValue())
+    types.push_back(ParamOperatorAttr::getRebind(typeValue, metaType));
+}
+
 //===----------------------------------------------------------------------===//
 // StructInstanceOp
 //===----------------------------------------------------------------------===//

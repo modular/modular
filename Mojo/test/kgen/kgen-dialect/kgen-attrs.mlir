@@ -696,3 +696,31 @@ kgen.generator @get_target_plugin_folds() {
       : !kgen.target> : !kgen.param_list<!kgen.type>>
   kgen.return
 }
+
+// `@__annotation` values are attached to a struct generator and read back by
+// index. `struct_annotation`'s own type is derived -- the `index`th element of
+// `struct_annotation_types` for the same struct and field -- so it is absent
+// from the syntax and reappears on the way out.
+// CHECK: kgen.struct.generator @Annotated
+// CHECK-SAME: annotationTypes = #kgen<exprs[#kgen.type<index> : !kgen.type]>
+// CHECK-SAME: annotations = #kgen<exprs[7 : index]>
+kgen.struct.generator @Annotated = struct_inst<"Annotated"(value: index)> attributes {
+  annotationTypes = #kgen<exprs[#kgen.type<index> : !kgen.type]>,
+  annotations = #kgen<exprs[7 : index]>
+}
+
+"some.op"() {
+  // CHECK: a = #kgen.struct_annotation_types<[typevalue<#kgen.genref<@Annotated>>, struct<(index)>], -1> : !kgen.param_list<index>
+  a = #kgen.struct_annotation_types<
+        #kgen.type<typevalue<:type #kgen.genref<@Annotated>>, struct<(index)>> : !kgen.type,
+        -1> : !kgen.param_list<index>,
+  // CHECK-SAME: b = #kgen.struct_annotation<{{.*}}, -1, 0, <index>> : !kgen.param<:index #kgen.param_list.get<:param_list<index> #kgen.struct_annotation_types<{{.*}}, -1>, 0>>
+  b = #kgen.struct_annotation<
+        #kgen.type<typevalue<:type #kgen.genref<@Annotated>>, struct<(index)>> : !kgen.type,
+        -1, 0, !kgen.param_list<index>>,
+  // A non-negative field index selects that field's annotations instead.
+  // CHECK-SAME: c = #kgen.struct_annotation_types<{{.*}}, 0> : !kgen.param_list<index>
+  c = #kgen.struct_annotation_types<
+        #kgen.type<typevalue<:type #kgen.genref<@Annotated>>, struct<(index)>> : !kgen.type,
+        0> : !kgen.param_list<index>
+} : () -> ()

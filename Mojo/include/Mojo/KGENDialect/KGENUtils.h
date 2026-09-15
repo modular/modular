@@ -429,6 +429,11 @@ void printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
 ParseResult parseOptionalInline(OpAsmParser &parser, Attribute &attr);
 void printOptionalInline(AsmPrinter &p, Attribute attr);
 
+/// Get the value of a scalar index-like parameter value.
+/// This is a temporary helper utility during the Int->SIMD unification project.
+/// After it's done, we should remove the IntegerAttr case.
+ErrorOr<int64_t> getScalarIndexValue(TypedAttr value);
+
 /// The integer `spec` holds, in either the plain or the `InlineLevel` form.
 std::optional<int64_t> inlineLevelValueOf(TypedAttr spec);
 

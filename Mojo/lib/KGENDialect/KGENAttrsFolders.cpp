@@ -408,6 +408,130 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
   return result;
 }
 
+/// Read the `@__annotation` entries selected by `typeValue` and `fieldIndex`,
+/// rebound against the parameter values of the instantiation being queried.
+/// Yields their types, expressed in `typeMetaType`, when that is set, and
+/// their values otherwise. A returned type is the annotation's source-level
+/// type, as a type value; after lowering that is not the value's own
+/// `getType()`, which by then is the flattened storage type.
+///
+/// One or the other, never both: a value can be an unevaluated constructor
+/// apply that rebinding alone cannot fold, so resolving values for a caller
+/// that only wants types would defer a query that could have been answered.
+///
+/// Returns failure while any operand is still parametric. That leaves the
+/// attribute as written so it can be evaluated again once the parameters are
+/// bound -- a null success would instead tell callers to defer the whole
+/// enclosing evaluation, which drops the attribute (see
+/// ParameterEvaluator::doReplace).
+static FailureOr<SmallVector<TypedAttr>>
+resolveAnnotations(StringRef attrName, TypedAttr typeValue,
+                   TypedAttr fieldIndexAttr, Type typeMetaType,
+                   ParameterEvaluationContext &context) {
+  // A still-parametric index means the query is not answerable yet.
+  ErrorOr<int64_t> fieldIndex = getScalarIndexValue(fieldIndexAttr);
+  if (failed(fieldIndex))
+    return failure();
+
+  // Annotations live on the struct *generator*, so the generator alone answers
+  // this; `acceptAsync=false` asks for it rather than waiting on the concrete
+  // instance, as struct field reflection does. Waiting would make the result
+  // depend on elaboration order -- a query raised before its struct
+  // concretizes would fail and never be retried.
+  //
+  // Since the generator answers, a failure means the operand does not name a
+  // struct at all rather than one that is not ready. In a context that is not
+  // yet materializing, the error is dropped and the attribute is left to be
+  // evaluated again once its parameters are bound.
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(typeValue, /*acceptAsync=*/false);
+  if (failed(resolvedOr)) {
+    context.emitMaterializationError(attrName + " requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+
+  // -1 selects the struct's own annotations; anything else has to name a real
+  // field. Without this an out-of-range index reads as an empty list and any
+  // other negative index silently aliases the -1 sentinel.
+  if (*fieldIndex < -1) {
+    context.emitMaterializationError("field index " + Twine(*fieldIndex) +
+                                     " is negative; only -1 selects the "
+                                     "struct's own annotations");
+    return failure();
+  }
+  if (*fieldIndex >= 0) {
+    SmallVector<StringAttr> fieldNames;
+    resolved.decl.getFieldNames(fieldNames);
+    if (*fieldIndex >= static_cast<int64_t>(fieldNames.size())) {
+      context.emitMaterializationError(
+          "field index " + Twine(*fieldIndex) + " is out of bounds; there " +
+          (fieldNames.size() == 1 ? "is " : "are ") + Twine(fieldNames.size()) +
+          (fieldNames.size() == 1 ? " field" : " fields"));
+      return failure();
+    }
+  }
+
+  SmallVector<TypedAttr> stored;
+  if (typeMetaType)
+    resolved.decl.getAnnotationTypes(stored, typeMetaType, *fieldIndex);
+  else
+    resolved.decl.getAnnotationValues(stored, *fieldIndex);
+
+  // Annotations are written in the struct's own scope, so they can mention
+  // its parameters; substitute the queried instantiation's values.
+  SmallVector<TypedAttr> result;
+  bool retry = false;
+  context.withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                        [&](ParameterEvaluator &evaluator) {
+                          for (TypedAttr entry : stored) {
+                            TypedAttr rebound =
+                                evaluator.getReboundAttribute(entry);
+                            if (!rebound) {
+                              retry = true;
+                              return;
+                            }
+                            result.push_back(rebound);
+                          }
+                        });
+  if (retry)
+    return failure();
+  return result;
+}
+
+FailureOr<TypedAttr> StructAnnotationTypesAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  Type resultElemType = getType().getElementType();
+  FailureOr<SmallVector<TypedAttr>> types =
+      resolveAnnotations("struct_annotation_types", getTypeValue(),
+                         getFieldIndex(), resultElemType, context);
+  if (failed(types))
+    return failure();
+  return cast<TypedAttr>(ParamListAttr::get(*types, getType()));
+}
+
+FailureOr<TypedAttr> StructAnnotationAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  ErrorOr<int64_t> index = getScalarIndexValue(getIndex());
+  if (failed(index))
+    return failure();
+
+  FailureOr<SmallVector<TypedAttr>> values =
+      resolveAnnotations("struct_annotation", getTypeValue(), getFieldIndex(),
+                         /*typeMetaType=*/{}, context);
+  if (failed(values))
+    return failure();
+
+  if (*index < 0 || *index >= static_cast<int64_t>(values->size())) {
+    context.emitMaterializationError(
+        "annotation index " + Twine(*index) + " is out of bounds; there " +
+        (values->size() == 1 ? "is " : "are ") + Twine(values->size()) +
+        (values->size() == 1 ? " annotation" : " annotations"));
+    return failure();
+  }
+  return (*values)[*index];
+}
+
 FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
   FailureOr<ResolvedStructHandle> resolvedOr =

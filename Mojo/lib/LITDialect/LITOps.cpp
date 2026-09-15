@@ -1375,6 +1375,34 @@ void StructDeclOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
     types.push_back(TypeParamAttr::get(field.getType(), metaType));
 }
 
+/// The annotations selected by `fieldIndex`: the struct's own when negative,
+/// otherwise those on the field at that index.
+ParameterExprArrayAttr
+StructDeclOp::getSelectedAnnotations(int64_t fieldIndex) {
+  if (fieldIndex < 0)
+    return getAnnotationsAttr();
+  int64_t index = 0;
+  for (StructFieldOp field : getFieldDecls())
+    if (index++ == fieldIndex)
+      return field.getAnnotationsAttr();
+  return {};
+}
+
+void StructDeclOp::getAnnotationValues(SmallVectorImpl<TypedAttr> &values,
+                                       int64_t fieldIndex) {
+  if (ParameterExprArrayAttr annotations = getSelectedAnnotations(fieldIndex))
+    llvm::append_range(values, annotations.getValue());
+}
+
+void StructDeclOp::getAnnotationTypes(SmallVectorImpl<TypedAttr> &types,
+                                      Type metaType, int64_t fieldIndex) {
+  // Nothing has been lowered yet here, so each value still carries its
+  // nominal type.
+  if (ParameterExprArrayAttr annotations = getSelectedAnnotations(fieldIndex))
+    for (TypedAttr value : annotations.getValue())
+      types.push_back(TypeParamAttr::get(value.getType(), metaType));
+}
+
 /// Verify the debuginfo scope of an op that must be a top-level declaration.
 static LogicalResult verifyTopLevelLocScope(Operation *op) {
   Location loc = op->getLoc();
@@ -1439,7 +1467,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*docString=*/{}, /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
         /*minAlignment=*/{}, /*convention=*/{}, /*definesClosure=*/{},
-        /*registerPassableConstraint=*/{});
+        /*registerPassableConstraint=*/{}, /*annotations=*/{});
   result.regions[0]->push_back(new Block());
 }
 
@@ -1475,7 +1503,7 @@ Type StructFieldOp::getReboundType(StructType structSelfType,
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
                           StringAttr name, Type type) {
   build(builder, odsState, name, type, /*docString=*/{}, /*isDocHidden=*/false,
-        /*allowLegacyAnyOrigin=*/false);
+        /*allowLegacyAnyOrigin=*/false, /*annotations=*/{});
 }
 
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,

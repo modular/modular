@@ -1014,6 +1014,28 @@ bool StructFieldTypesAttr::isConstant() const { return false; }
 bool StructFieldNamesAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// StructAnnotationTypesAttr
+//===----------------------------------------------------------------------===//
+
+bool StructAnnotationTypesAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
+// StructAnnotationAttr
+//===----------------------------------------------------------------------===//
+
+bool StructAnnotationAttr::isConstant() const { return false; }
+
+Type StructAnnotationAttr::getType() const {
+  // Derived, not stored: an annotation's type is the matching element of the
+  // struct's annotation type list. Deriving it keeps the type out of the
+  // attribute's syntax, which is what lets the standard library spell this
+  // reader as an `__mlir_attr`.
+  auto types = StructAnnotationTypesAttr::get(
+      getContext(), getTypeValue(), getFieldIndex(), getAnnotationListType());
+  return ParamType::get(ParamListGetAttr::get(types, getIndex()));
+}
+
+//===----------------------------------------------------------------------===//
 // StructFieldIndexByNameAttr
 //===----------------------------------------------------------------------===//
 

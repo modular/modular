@@ -2766,7 +2766,7 @@ static ErrorTreeOrSuccess interpretMalloc(ExternalCallOp op,
                                   "expected 1 operand and 1 result");
   }
   ErrorOr<int64_t> sizeOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.front()));
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.front()));
   if (sizeOr.isError()) {
     return ErrorTree(op->getLoc(), "Unable to interpret call to 'malloc', "
                                    "could not interpret size.");
@@ -2801,7 +2801,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer result type");
   ErrorOr<int64_t> fdOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[0]));
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[0]));
   if (fdOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed first operand");
@@ -2812,7 +2812,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
                                   "expected pointer typed second operand");
 
   ErrorOr<int64_t> nbytesOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[2]));
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[2]));
   if (nbytesOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed third operand");

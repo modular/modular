@@ -2233,6 +2233,20 @@ static std::optional<InlineLevel> inlineLevelFromValue(int64_t value,
   }
 }
 
+ErrorOr<int64_t> KGEN::getScalarIndexValue(TypedAttr value) {
+  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(value))
+    return intAttr.getInt();
+  if (auto simdAttr = dyn_cast_if_present<SIMDAttr>(value)) {
+    ArrayRef<DTypeValue> values = simdAttr.getValues();
+    if (values.size() != 1)
+      return Error("expected a scalar SIMD value");
+    if (!values.front().getDType().isIndex())
+      return Error("expected an index-typed SIMD value");
+    return values.front().getIndexVal();
+  }
+  return Error("expected an integer or scalar SIMD");
+}
+
 std::optional<int64_t> KGEN::inlineLevelValueOf(TypedAttr spec) {
   if (auto intAttr = sugarDynCastIfPresent<IntegerAttr>(spec))
     return intAttr.getInt();
