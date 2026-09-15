@@ -19,6 +19,7 @@ Cache configuration
    :toctree: generated
    :template: autosummary/class.rst
 
+   CacheLeafParamInterface
    KVCacheBuffer
    KVCacheParamInterface
    KVCacheParams
@@ -43,6 +44,23 @@ Cache inputs
    BatchCharacteristics
    PagedCacheValues
 
+Recurrent state
+---------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   PagedKVLeafRegion
+   RecurrentKVLeafRegion
+   RecurrentLeafInputs
+   RecurrentStateBuffer
+   RecurrentStateInputs
+   RecurrentStateInputsPerDevice
+   RecurrentStateParams
+   RecurrentStateRegion
+
 Attention dispatch
 ------------------
 
@@ -66,6 +84,16 @@ Metrics
 
    KVCacheMetrics
 
+Constants
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   PACKED_PAGE_STRIDE
+
 Functions
 ---------
 
@@ -78,4 +106,6 @@ Functions
    compute_max_seq_len_fitting_in_cache
    compute_num_device_blocks
    estimated_memory_size
+   padded_lut_cols
+   recurrent_leaf
    spec_decode_cache_slack

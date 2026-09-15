@@ -57,41 +57,55 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     """Symbolic graph input types for a single device's paged KV cache."""
 
     kv_blocks: _Buffer
+    """The device's paged KV cache blocks."""
     cache_lengths: _Tensor
+    """Per-request cache lengths, one rank-1 entry per request."""
     lookup_table: _Tensor
+    """Per-request page lookup table, each row holding the block ids its
+    request reads."""
     max_prompt_length: _Tensor
+    """The batch's maximum prompt length, as a scalar tensor."""
     max_cache_length: _Tensor
-    kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
-    # Page-to-page distance for ``kv_blocks``, as a rank-1 int64 tensor.
-    # ``None`` means packed; read it through :meth:`values_page_stride`.
+    """The batch's maximum cache length, as a scalar tensor."""
+    kv_scales: _Buffer | None = None
+    """KV scales for FP8 quantization."""
     page_stride_input: _Tensor | None = None
-    # The same, for ``kv_scales``.
+    """Page-to-page distance for ``kv_blocks``, as a rank-1 int64 tensor.
+
+    ``None`` means packed; read it through :meth:`values_page_stride`.
+    """
     scales_page_stride_input: _Tensor | None = None
-    # Page lookup table for ``kv_scales``, present when the scales are paged
-    # independently of the values so a request's scale pages carry their own
-    # ids. ``None`` means the two share one block-id space and ``lookup_table``
-    # resolves both, which is what every non-pooled cache does.
+    """Page-to-page distance for ``kv_scales``; ``None`` means packed."""
     scales_lookup_table: _Tensor | None = None
+    """Page lookup table for ``kv_scales``, present when the scales are paged
+    independently of the values so a request's scale pages carry their own
+    ids. ``None`` means the two share one block-id space and ``lookup_table``
+    resolves both, which is what every non-pooled cache does."""
     attention_dispatch_metadata: _Tensor | None = None
+    """The device's attention dispatch metadata, as a rank-1 int64 tensor."""
     draft_attention_dispatch_metadata: _Tensor | None = None
-    # Capturable-graph scalars: when present, the SM100 MLA dispatcher uses
-    # these to align grid-time partition decisions with the kernel's divmod.
-    # Populated only for MLA paths; ``None`` otherwise.
+    """The draft cache's attention dispatch metadata, as a rank-1 int64
+    tensor."""
     mla_num_partitions: _Tensor | None = None
+    """Capturable-graph scalar the SM100 MLA dispatcher uses to align
+    grid-time partition decisions with the kernel's divmod. Populated only
+    for MLA paths; ``None`` otherwise."""
     draft_mla_num_partitions: _Tensor | None = None
-    # One single-layer KV buffer per layer, used when the backing pool
-    # allocates a standalone buffer per layer (``KVCacheParams.per_layer_buffers``)
-    # instead of one multi-layer buffer. ``kv_blocks`` aliases
-    # ``kv_blocks_per_layer[0]`` so single-buffer consumers stay valid; a
-    # per-layer attention dispatch picks ``kv_blocks_per_layer[layer_idx]``.
-    # ``None`` (the default) for every non-per-layer cache.
+    """The draft cache's analog of :attr:`mla_num_partitions`."""
     kv_blocks_per_layer: list[_Buffer] | None = None
-    # One single-layer scale buffer per layer, the quantized-scale analog of
-    # ``kv_blocks_per_layer`` (used with ``per_layer_buffers`` + a quantized KV
-    # cache). ``kv_scales`` aliases ``kv_scales_per_layer[0]``; a per-layer
-    # attention dispatch picks ``kv_scales_per_layer[layer_idx]``. ``None`` for
-    # every non-per-layer / unquantized cache.
+    """One single-layer KV buffer per layer, used when the backing pool
+    allocates a standalone buffer per layer
+    (``KVCacheParams.per_layer_buffers``) instead of one multi-layer buffer.
+    ``kv_blocks`` aliases ``kv_blocks_per_layer[0]`` so single-buffer
+    consumers stay valid; a per-layer attention dispatch picks
+    ``kv_blocks_per_layer[layer_idx]``. ``None`` (the default) for every
+    non-per-layer cache."""
     kv_scales_per_layer: list[_Buffer] | None = None
+    """One single-layer scale buffer per layer, the quantized-scale analog of
+    ``kv_blocks_per_layer`` (used with ``per_layer_buffers`` + a quantized
+    KV cache). ``kv_scales`` aliases ``kv_scales_per_layer[0]``; a per-layer
+    attention dispatch picks ``kv_scales_per_layer[layer_idx]``. ``None``
+    for every non-per-layer / unquantized cache."""
 
     def __post_init__(self) -> None:
         _verify_rank1_int64_tensor(
@@ -179,6 +193,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     def flatten_without_attention_dispatch_metadata(
         self,
     ) -> list[_Tensor | _Buffer]:
+        """Serializes fields into a flat list, minus the attention dispatch
+        metadata fields."""
         return [
             self.kv_blocks,
             self.values_page_stride(),
@@ -273,6 +289,7 @@ class MultiKVCacheInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
     children: dict[str, KVCacheInputsInterface[_Tensor, _Buffer]]
 
     def flatten(self) -> list[_Tensor | _Buffer]:
+        """Flattens this (sub)tree into a flattened buffer/tensor list."""
         return list(
             itertools.chain.from_iterable(
                 item.flatten() for item in self.children.values()
@@ -282,6 +299,7 @@ class MultiKVCacheInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
     def unflatten(
         self, it: Iterator[Any]
     ) -> MultiKVCacheInputs[TensorValue, BufferValue]:
+        """Rebuilds this (sub)tree by consuming values from ``it``."""
         return MultiKVCacheInputs(
             children={
                 key: item.unflatten(it) for key, item in self.children.items()
@@ -300,6 +318,7 @@ class KVCacheInputs(
     inputs: Sequence[KVCacheInputsPerDevice[_Tensor, _Buffer]]
 
     def flatten(self) -> list[_Tensor | _Buffer]:
+        """Flattens this (sub)tree into a flattened buffer/tensor list."""
         return list(
             itertools.chain.from_iterable(
                 item.flatten() for item in self.inputs
@@ -309,6 +328,7 @@ class KVCacheInputs(
     def unflatten(
         self, it: Iterator[Any]
     ) -> KVCacheInputs[TensorValue, BufferValue]:
+        """Rebuilds this (sub)tree by consuming values from ``it``."""
         return KVCacheInputs(
             inputs=[item.unflatten(it) for item in self.inputs]
         )
@@ -474,6 +494,7 @@ class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
         return RecurrentStateInputs(inputs=per_device)
 
     def flatten(self) -> list[_Tensor | _Buffer]:
+        """Flattens this (sub)tree into a flattened buffer/tensor list."""
         return list(
             itertools.chain.from_iterable(
                 item.flatten() for item in self.inputs
@@ -483,6 +504,7 @@ class RecurrentStateInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
     def unflatten(
         self, it: Iterator[Any]
     ) -> RecurrentStateInputs[TensorValue, BufferValue]:
+        """Rebuilds this (sub)tree by consuming values from ``it``."""
         return RecurrentStateInputs(
             inputs=[item.unflatten(it) for item in self.inputs]
         )

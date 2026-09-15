@@ -56,7 +56,10 @@ class KVGroupCoordinatorInterface:
     """
 
     pools: Sequence[JengaBlockPool]
+    """The block pools this group draws from, one per data-parallel
+    replica."""
     leaf_ids: Sequence[str]
+    """The pool leaves whose blocks this group manages in lockstep."""
     group_id: KVCacheGroupId
 
     rows: dict[RequestID, dict[str, list[LittleKVCacheBlock]]] = field(
@@ -408,7 +411,9 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
     """A group that needs ``blocks_in_window`` consecutive blocks for a hit."""
 
     window_size: int
+    """The sliding window's width in tokens."""
     page_size: int
+    """Tokens per page, which turns the window width into a block count."""
 
     @property
     def _blocks_in_window(self) -> int:
@@ -429,18 +434,20 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
 
         For a concrete example:
 
-        [X]: Token is in Prefix Cache
-         . : Token is not in Prefix Cache
-         ^ : Eligible Prefix Cache hit
+        .. code-block:: text
 
-          Tokens [A]  [B]   .   [D]  [E]  [F]   .    .   [I]  [J]  [K]  [L]  [M]
-        w_size=1  ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^
-        w_size=2  ^    ^         ^    ^    ^              ^    ^    ^    ^    ^
-        w_size=3  ^    ^              ^    ^                   ^    ^    ^    ^
-        w_size=4  ^    ^                   ^                        ^    ^    ^
-        w_size=5  ^    ^                                                 ^    ^
-        w_size=6  ^    ^                                                      ^
-        w_size=7  ^    ^
+            [X]: Token is in Prefix Cache
+             . : Token is not in Prefix Cache
+             ^ : Eligible Prefix Cache hit
+
+              Tokens [A]  [B]   .   [D]  [E]  [F]   .    .   [I]  [J]  [K]  [L]  [M]
+            w_size=1  ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^
+            w_size=2  ^    ^         ^    ^    ^              ^    ^    ^    ^    ^
+            w_size=3  ^    ^              ^    ^                   ^    ^    ^    ^
+            w_size=4  ^    ^                   ^                        ^    ^    ^
+            w_size=5  ^    ^                                                 ^    ^
+            w_size=6  ^    ^                                                      ^
+            w_size=7  ^    ^
 
         Notice that as window_size increases, the number of indices eligible for
         a cache hit decreases. Additionally, we can count consecutive runs of

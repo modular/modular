@@ -39,7 +39,7 @@ class AttnKey(AttnKeyInterface):
 
     The resolved ``num_partitions`` (the kernel grid) plus the batch and prompt
     dimensions. The runtime ``max_cache_valid_length`` is supplied to
-    :meth:`pack_into_buffer` rather than stored, so dispatches that differ only
+    ``pack_into_buffer`` rather than stored, so dispatches that differ only
     in cache length share one identity. Concrete subclasses
     (:class:`MHAAttnKey`, :class:`MLAAttnKey`)
     implement the kernel-specific buffer layout.
@@ -57,6 +57,8 @@ class MHAAttnKey(AttnKey):
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
     ) -> Buffer:
+        """Returns the CPU dispatch buffer MHA decode kernels read, holding
+        batch size, prompt width, partition count, and cache length."""
         # MHA decode kernels read a 4-int dispatch buffer on the host (CPU).
         # ``device`` is intentionally ignored: the MHA dispatch-metadata graph
         # input is declared CPU-resident.
@@ -80,6 +82,8 @@ class MLAAttnKey(AttnKey):
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
     ) -> Buffer:
+        """Returns the accelerator dispatch buffer MLA decode kernels read,
+        holding batch size, prompt width, and partition count."""
         # MLA decode kernels read a 3-int dispatch buffer on the accelerator.
         # ``max_cache_valid_length`` is not part of the MLA dispatch buffer (it
         # is carried separately in ``max_cache_length``), so it is ignored here.
@@ -103,6 +107,8 @@ class MSAAttnKey(AttnKeyInterface):
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
     ) -> Buffer:
+        """Returns a single sentinel int as a placeholder, since MSA kernels
+        do not consume dispatch metadata."""
         return Buffer.from_numpy(np.array([42], dtype=np.int64))
 
 

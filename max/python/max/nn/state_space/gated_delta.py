@@ -33,10 +33,14 @@ design — kernel does pointer arithmetic ``state_ptr += slot * stride``
 into a long-lived pool, no per-step pool allocation.
 
 
-Usage
------
-::
+**Usage:**
 
+.. skip: next
+
+.. code-block:: python
+
+    # Illustrative fragment: the pools and projected tensors come from a
+    # live gated-deltanet layer, so it isn't runnable standalone.
     from max.nn.state_space import (
         gated_delta_conv1d_fwd,
         gated_delta_recurrence_fwd,

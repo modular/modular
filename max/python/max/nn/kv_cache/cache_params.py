@@ -533,9 +533,11 @@ class KVCacheBuffer(KVCacheBufferInterface):
     Model execution rejects a non-contiguous buffer, so a padded leaf cannot be
     bound as its strided view. These cover the same allocation packed, and are
     deliberately *shorter* than the span their stride reaches -- see
-    :func:`contiguous_page_view_and_stride`. ``None`` when nothing was padded,
+    ``contiguous_page_view_and_stride``. ``None`` when nothing was padded,
     in which case :attr:`values` is already contiguous."""
     scales: list[Buffer] | None = None
+    """Per-TP-shard scale buffers for a quantized cache; ``None`` when
+    unquantized."""
     scales_packed: list[Buffer] | None = None
     """Contiguous aliases of :attr:`scales`; see :attr:`values_packed`."""
     values_per_layer: list[list[Buffer]] | None = None
@@ -747,7 +749,8 @@ class BatchCharacteristics:
     Captures the ``(batch_size, max_prompt_length, max_cache_valid_length)`` a
     decode forward should prepare its attention dispatch metadata *for*, which
     may exceed the batch's real per-request values.
-    :meth:`PagedKVCacheManager.runtime_inputs` uses it to resolve the dispatch
+
+    ``PagedKVCacheManager.runtime_inputs`` uses it to resolve the dispatch
     key once: e.g. for graph-capture replay, ``max_cache_valid_length`` is
     aligned up to a cache length recorded during capture and every data-parallel
     replica must run the identical captured graph. The batch's real values must
@@ -755,8 +758,11 @@ class BatchCharacteristics:
     """
 
     batch_size: int
+    """Upper bound on requests in the decode batch."""
     max_prompt_length: int
+    """Upper bound on the batch's prompt length."""
     max_cache_valid_length: int
+    """Upper bound on the batch's valid cache length."""
 
 
 @dataclass
@@ -865,6 +871,7 @@ class PagedKVLeafRegion(KVLeafRegion):
     """A leaf the graph reaches through a per-forward page table."""
 
     page_size: int
+    """Number of tokens per page."""
 
     def blocks_to_reserve(self, num_blocks: int) -> int:
         """Returns ``num_blocks``, capped by the window when the leaf has one."""
@@ -901,6 +908,7 @@ class RecurrentKVLeafRegion(KVLeafRegion):
     """A leaf addressed by row: one block holds one request's whole state."""
 
     region: RecurrentStateRegion
+    """The state region that names this leaf and sizes its rows."""
 
     def blocks_to_reserve(self, num_blocks: int) -> int:
         """Returns two: the live block, and at most one checkpoint behind it."""
@@ -953,7 +961,9 @@ class CacheLeafParamInterface(Protocol):
     """
 
     data_parallel_degree: int
+    """Degree of data parallelism."""
     devices: Sequence[DeviceRef]
+    """Devices to use for the cache."""
 
     @property
     def n_devices(self) -> int:
@@ -1060,7 +1070,9 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
     """
 
     page_size: int
+    """Number of tokens per page (block)."""
     kv_connector_config: KVConnectorConfigInterface
+    """The KV connector's type and settings."""
     speculative_method: SpeculativeMethod | None = None
     num_draft_tokens: int = 0
 
@@ -1101,7 +1113,8 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
 
     @property
     def kv_hash_seed(self) -> bytes | None:
-        """Resolved 32-byte cluster seed for sha256/sha256_64. None for ahash64."""
+        """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``.
+        ``None`` for ``ahash64``."""
         ...
 
     @property
@@ -1122,8 +1135,8 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
     ) -> AttnKeyInterface:
         """Resolves the decode dispatch shape for the given shape.
 
-        Returns a :class:`AttnKeyInterface` for a single cache, or a
-        :class:`MultiAttnKey` tree mirroring the cache tree.
+        Returns an ``AttnKeyInterface`` for a single cache, or a
+        ``MultiAttnKey`` tree mirroring the cache tree.
         """
         ...
 
@@ -1188,7 +1201,8 @@ class KVCacheParams(KVCacheParamInterface):
     """Hash algorithm used for KV-cache block identity."""
 
     kv_hash_seed: bytes | None = None
-    """Resolved 32-byte cluster seed for sha256/sha256_64. None for ahash64.
+    """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``. ``None``
+    for ``ahash64``.
 
     Set by ``KVCacheConfig.to_params`` via ``resolve_kv_hash_seed``.
     """
@@ -1196,8 +1210,8 @@ class KVCacheParams(KVCacheParamInterface):
     kv_connector_config: KVConnectorConfigInterface = field(
         default_factory=NullKVConnectorConfig
     )
-    """Connector configuration: the connector type and its settings. The
-    default is a ``null`` connector (no external caching)."""
+    """Holds the connector type and its settings. The default is a ``null``
+    connector (no external caching)."""
 
     page_size: int = 128
     """Number of tokens per page (block).
@@ -1233,7 +1247,7 @@ class KVCacheParams(KVCacheParamInterface):
 
     speculative_method: SpeculativeMethod | None = None
     """Speculative decoding method propagated from
-    SpeculativeConfig"""
+    ``SpeculativeConfig``."""
 
     num_draft_tokens: int = 0
     """Total draft tokens generated per speculative iteration.
@@ -1416,10 +1430,12 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def kv_dim(self) -> int:
+        """Returns the number of key/value tensors each cache slot holds."""
         raise NotImplementedError
 
     @property
     def n_kv_heads_per_device(self) -> int:
+        """Returns the number of KV attention heads on one device."""
         raise NotImplementedError
 
     @property
@@ -1819,6 +1835,8 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def group_id(self) -> KVCacheGroupId:
+        """Returns the group id this cache pools under: ``sliding_window``
+        with the window size when one is set, else ``full``."""
         if self.window_size is not None:
             return KVCacheGroupId(
                 type="sliding_window", window_size=self.window_size
@@ -1927,12 +1945,14 @@ class KVCacheParams(KVCacheParamInterface):
 
 @dataclass(kw_only=True)
 class MHAKVCacheParams(KVCacheParams):
+    """KV cache parameters for multi-head attention (MHA)."""
+
     n_kv_heads: int
     """Total number of key-value attention heads across all devices."""
 
     allow_kv_head_replication: bool = False
-    """Allow TP wider than ``n_kv_heads``: when set and ``n_devices`` is a
-    multiple of ``n_kv_heads``, replicate each KV head across a group of
+    """Allows TP wider than ``n_kv_heads``. When set and ``n_devices`` is a
+    multiple of ``n_kv_heads``, each KV head is replicated across a group of
     devices (``n_kv_heads_per_device == 1``)."""
 
     def __post_init__(self) -> None:
@@ -1950,10 +1970,13 @@ class MHAKVCacheParams(KVCacheParams):
 
     @property
     def kv_dim(self) -> int:
+        """Returns two: each slot holds a key and a value tensor."""
         return 2
 
     @property
     def n_kv_heads_per_device(self) -> int:
+        """Returns the KV heads on one device, or ``1`` per device group when
+        heads are replicated (``allow_kv_head_replication``)."""
         tp_degree = self.tensor_parallel_degree
         if self.n_kv_heads % tp_degree == 0:
             return max(self.n_kv_heads // tp_degree, 1)
@@ -1980,7 +2003,7 @@ class MHAKVCacheParams(KVCacheParams):
             max_cache_valid_length: Maximum valid cache length in the batch.
 
         Returns:
-            The resolved :class:`~max.nn.kv_cache.AttnKeyInterface`
+            The resolved ``AttnKeyInterface``
         """
         device = self._primary_device
         if batch_size <= 0 or device is None:
@@ -2181,6 +2204,8 @@ class MHAKVCacheParams(KVCacheParams):
 
 @dataclass(kw_only=True)
 class MLAKVCacheParams(KVCacheParams):
+    """KV cache parameters for multi-latent attention (MLA)."""
+
     num_q_heads: int
     """Number of query attention heads, required so the MLA decode kernel can
     resolve its dispatch metadata."""
@@ -2197,6 +2222,7 @@ class MLAKVCacheParams(KVCacheParams):
 
     @property
     def kv_dim(self) -> int:
+        """Returns one, the single latent tensor each cache slot holds."""
         return 1
 
     @property
@@ -2206,10 +2232,12 @@ class MLAKVCacheParams(KVCacheParams):
 
     @property
     def n_kv_heads_per_device(self) -> int:
+        """Returns one, the single latent head every device holds."""
         return 1
 
     @property
     def num_q_heads_per_device(self) -> int:
+        """Returns the query attention heads on one device."""
         return max(self.num_q_heads // self.tensor_parallel_degree, 1)
 
     def resolve_attn_key(
@@ -2227,7 +2255,7 @@ class MLAKVCacheParams(KVCacheParams):
             max_cache_valid_length: Maximum valid cache length in the batch.
 
         Returns:
-            The resolved :class:`~max.nn.kv_cache.AttnKeyInterface`
+            The resolved ``AttnKeyInterface``
         """
         device = self._primary_device
         if batch_size <= 0 or device is None:
@@ -2400,6 +2428,8 @@ class MLAKVCacheParams(KVCacheParams):
 
 @dataclass(kw_only=True)
 class MSAKVCacheParams(MHAKVCacheParams):
+    """KV cache parameters for multi-step attention (MSA)."""
+
     # TODO(SERVOPT-1502): MSA does not actually consume attention dispatch
     # metadata in its kernel. Once the indexer graph is migrated to a dedicated
     # MSA input record, drop ``attention_dispatch_metadata`` from the symbolic
@@ -2441,8 +2471,10 @@ class RecurrentStateParams(CacheLeafParamInterface):
     """The state leaves one request occupies, in flatten order."""
 
     devices: Sequence[DeviceRef]
+    """Devices to use for the cache."""
 
     data_parallel_degree: int = 1
+    """Degree of data parallelism."""
 
     def __post_init__(self) -> None:
         if not self.regions:
@@ -2506,7 +2538,8 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     @property
     def bytes_per_block(self) -> int:
-        """Zero: a state's page is a per-request cost, not a cost per token."""
+        """Returns zero because a state's page is a per-request cost, not a
+        cost per token."""
         return 0
 
     def allocate_buffers(
@@ -2662,7 +2695,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     A :class:`RecurrentStateParams` is a child like any other, but answers
     fewer questions, so attention-only aggregates run over
-    :attr:`_attention_children`.
+    ``_attention_children``.
     """
 
     children: dict[str, CacheLeafParamInterface]
@@ -2671,11 +2704,18 @@ class MultiKVCacheParams(KVCacheParamInterface):
     nested :class:`MultiKVCacheParams` trees."""
 
     page_size: int
+    """Number of tokens per page, a value every child cache must share."""
     data_parallel_degree: int
+    """Degree of data parallelism, a value every child cache must share."""
     devices: Sequence[DeviceRef]
+    """Devices to use for the KV caches."""
     kv_connector_config: KVConnectorConfigInterface
+    """The KV connector's type and settings, a value every child must
+    share."""
     speculative_method: SpeculativeMethod | None = None
+    """Speculative decoding method propagated from ``SpeculativeConfig``."""
     num_draft_tokens: int = 0
+    """Total draft tokens generated per speculative iteration."""
 
     @classmethod
     def from_params(
@@ -2863,7 +2903,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     @property
     def kv_hash_seed(self) -> bytes | None:
-        """Resolved 32-byte cluster seed for sha256/sha256_64. None for ahash64."""
+        """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``.
+        ``None`` for ``ahash64``."""
         return self._first.kv_hash_seed
 
     @property
@@ -3241,7 +3282,7 @@ def compute_max_seq_len_fitting_in_cache(
 
     Args:
         available_cache_memory: The amount of cache memory available across
-        all devices.
+            all devices.
         include_null_block: Whether to include room for the null block.
 
     Returns:
