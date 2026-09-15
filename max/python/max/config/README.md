@@ -132,7 +132,7 @@ def run(model_config: ModelConfig | None = None) -> None:
 
 # config.yaml:
 # model: llama-2-7b
-# 
+#
 # Run: python my_cli.py --config-file config.yaml
 ```
 
