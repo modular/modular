@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from max.driver import Buffer, batch_inplace_copy
@@ -90,12 +90,7 @@ def compute_block_hashes(
     # We do not compute the hash for the last token because it is ineligible
     # for prefix caching. This is because 100% prefix cache hit is illegal
     # and will result in a 0 input tokens for the request. Hence the minus 1.
-    # When the request carries pending future-token placeholders, all of
-    # them are excluded instead: a placeholder value must never be hashed
-    # into a block key, or the committed block's content would desync from
-    # its key. (With one placeholder pending, this coincides with the
-    # classic minus 1.)
-    num_hashable_tokens = len(ctx.tokens) - max(1, ctx.pending_future_count)
+    num_hashable_tokens = len(ctx.tokens) - 1
     num_unhashed_tokens = num_hashable_tokens - num_hashed_tokens
     if num_unhashed_tokens < block_size:
         return []
@@ -168,11 +163,9 @@ def _compute_seq_len(
     #   2 * num_draft_tokens          : drafts to verify *next* batch
     #                                   + drafts written *during* that batch
     #   1                             : one regular decode step
-    #   -max(1, pending_future_count) : the trailing tokens with no KV entry:
-    #                                   the pending future-token placeholders
-    #                                   (each is a not-yet-run forward's input),
-    #                                   or, with none pending, the last
-    #                                   generated token
+    #   -1                            : the last generated token has no KV
+    #                                   entry yet (overlap's in-flight
+    #                                   placeholder, or the just-sampled token)
     #
     # Block-draft correction (DFlash): the draft model's ``forward_block``
     # writes ``num_draft_tokens_per_step + 1`` positions in a single batched
@@ -202,7 +195,7 @@ def _compute_seq_len(
         + 2 * num_draft_tokens
         + 1
         + block_draft_extra
-        - max(1, ctx.pending_future_count)
+        - 1
     )
     return seq_len
 
@@ -292,7 +285,7 @@ class BlockManager:
         num_replicas: int = 1,
         kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
-        replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None,
+        replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]] | None = None,
         enable_dp_cross_replica_prefix_copy: bool = True,
     ) -> None:
         if num_replicas < 1:
@@ -314,13 +307,12 @@ class BlockManager:
         # to select the device endpoint.
         self.connector = connector
 
-        # Per-replica offload-ready device memory units, used to copy committed
-        # prefix blocks device-to-device between replicas. Required (non-None)
-        # when ``num_replicas > 1`` and prefix caching is on.
-        self._replica_kv_memory: list[list[KVCacheMemory]] | None = (
-            [list(units) for units in replica_kv_memory]
-            if replica_kv_memory is not None
-            else None
+        # Per-replica offload-ready device memory units, keyed by leaf id,
+        # used to copy committed prefix blocks device-to-device between
+        # replicas. Required (non-None) when ``num_replicas > 1`` and prefix
+        # caching is on.
+        self._replica_kv_memory: list[Mapping[str, KVCacheMemory]] | None = (
+            list(replica_kv_memory) if replica_kv_memory is not None else None
         )
 
         # Whether a cross-replica device prefix-cache hit may be served by a
@@ -707,7 +699,8 @@ class BlockManager:
 
         dst_pages: list[Buffer] = []
         src_pages: list[Buffer] = []
-        for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
+        for leaf_id, src_unit in src_units.items():
+            dst_unit = dst_units[leaf_id]
             # Every shard is fanned out with an independent point-to-point copy
             # (no broadcast collective).
             for src_buf, dst_buf in zip(
@@ -729,6 +722,8 @@ class BlockManager:
         self,
         desired_hashes: Sequence[bytes],
         replica_idx: int = 0,
+        *,
+        hint: bytes | None,
     ) -> tuple[list[KVCacheBlock], KVConnectorTransfer]:
         """Onloads device blocks with the desired hashes from the connector.
 
@@ -744,6 +739,9 @@ class BlockManager:
         separate copy engine: the destination blocks are pinned and their
         prefix-cache commit is deferred until the copy lands (``poll_transfers``)
         so a concurrent request in the same batch cannot read them early.
+
+        ``hint`` is the request's raw ``dkv_cache_hint``, passed through to the
+        connector; see :meth:`KVConnector.load`.
 
         Returns:
             ``(loaded_blocks, event)``; ``event`` is an already-complete
@@ -769,6 +767,7 @@ class BlockManager:
             {leaf_id: block_ids for leaf_id in connector.leaves},
             desired_hashes,
             replica_idx=replica_idx,
+            hint=hint,
         )
 
         # The connector may load fewer blocks than requested; its event reports
@@ -903,7 +902,7 @@ class BlockManager:
 
         # query the host prefix cache for full blocks via connector
         host_blocks, load_event = self._get_full_blocks_from_host_prefix_cache(
-            uncommitted_hashes, replica_idx
+            uncommitted_hashes, replica_idx, hint=ctx.dkv_cache_hint
         )
 
         # refresh the lru status of all hit hashes associated with the request.
@@ -936,16 +935,8 @@ class BlockManager:
         )
 
         # Count the number of tokens for which we know the values of and align
-        # to the block size. Trailing future-token placeholders count as
-        # processed positions once a later forward is enqueued behind them,
-        # but their host token values are unrealized (-999), so they are not
-        # committable: committing one would poison a prefix block (and there
-        # is no hash for it — compute_hashes_for_request excludes them).
-        num_realized_tokens = len(ctx.tokens) - ctx.pending_future_count
-        num_computed_blocks = (
-            min(ctx.tokens.processed_length, num_realized_tokens)
-            // self.block_size
-        )
+        # to the block size.
+        num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
         # Commit blocks into the prefix cache.
         for block_idx in range(num_committed_blocks, num_computed_blocks):
@@ -1247,6 +1238,24 @@ class BlockManager:
             ctx.tokens.rewind_processing(delta)
         elif delta < 0:
             ctx.tokens.skip_processing(-delta)
+
+    def rollback_prefix_reuse(self, ctx: TextContext, num_tokens: int) -> None:
+        """Undoes a ``reuse_blocks_from_prefix_cache`` splice of ``num_tokens``.
+
+        For an allocation that fails after the splice, so the request is left
+        as consistent as it was found: the spliced blocks go back to the pool
+        (an in-flight onload keeps its own pin until it lands), the token
+        window is rewound over them, and a first admission's cached-prefix
+        attribution is cleared.
+        """
+        if num_tokens == 0:
+            return
+        self.req_to_committed_idx[ctx.request_id] -= num_tokens
+        self.release_uncommitted_blocks(ctx)
+        self._metrics.cache_tokens -= num_tokens
+        if ctx.tokens.processed_length == 0:
+            ctx.cached_prefix_length = 0
+            ctx.cached_prefix_external_length = 0
 
     def register_dummy_request(self, ctx: TextContext) -> None:
         """Maps a dummy request to the replica pool's reserved null block."""

@@ -76,7 +76,7 @@ from std.math import ceildiv
 import max.gpu.primitives.warp as warp
 from std.utils import IndexList
 
-from layout import Coord, TileTensor, TensorLayout
+from layout import Coord, TensorEngine, TileTensor, TensorLayout
 from layout.tile_layout import row_major
 
 from linalg.matmul.gpu.apple.matmul_8x8 import gemm_kernel_apple_8x8
@@ -120,10 +120,12 @@ struct Fp8WeightLoader[
     # `Fp8WeightLoader.from_kernel_args`.
     var weight: TileTensor[.float8_e4m3fn, Self.w_layout, ImmUntrackedOrigin]
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def from_kernel_args(
-        weight: TileTensor[.float8_e4m3fn, Self.w_layout, ImmutAnyOrigin],
+        weight: TileTensor[
+            .float8_e4m3fn, Self.w_layout, ImmutAnyOrigin, Engine=_
+        ],
     ) -> Self:
         """Build the loader from the kernel's `AnyOrigin` weight arg.
 
@@ -137,7 +139,7 @@ struct Fp8WeightLoader[
             )
         )
 
-    @always_inline
+    @inline(.always)
     def load_col_chunk[
         width: Int
     ](self, n: Int, k0: Int) -> SIMD[.float32, width]:
@@ -169,10 +171,17 @@ def fp8_gemv_kernel[
     a_layout: TensorLayout,
     w_layout: TensorLayout,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    w_engine: TensorEngine,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],  # [1, N]
-    a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
-    weight: TileTensor[.float8_e4m3fn, w_layout, ImmutAnyOrigin],  # [N, K]
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],  # [1, N]
+    a: TileTensor[
+        .bfloat16, a_layout, ImmutAnyOrigin, Engine=a_engine
+    ],  # [1, K]
+    weight: TileTensor[
+        .float8_e4m3fn, w_layout, ImmutAnyOrigin, Engine=w_engine
+    ],  # [N, K]
     n_arg: Int32,
     k_arg: Int32,
 ):
@@ -230,7 +239,7 @@ def fp8_gemv_kernel[
             c.store(Coord(0, n_idx), y)
 
 
-@always_inline
+@inline(.always)
 def enqueue_apple_fp8_gemv[
     c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -264,6 +273,9 @@ def enqueue_apple_fp8_gemv[
         type_of(a).LayoutType,
         type_of(weight).LayoutType,
         elementwise_lambda_fn,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(weight).Engine,
     ]
     ctx.enqueue_function[kernel](
         c,
@@ -281,9 +293,13 @@ def fp8_materialize_kernel[
     out_type: DType,
     w_layout: TensorLayout,
     out_layout: TensorLayout,
+    out_engine: TensorEngine,
+    w_engine: TensorEngine,
 ](
-    out_w: TileTensor[out_type, out_layout, MutAnyOrigin],
-    weight: TileTensor[.float8_e4m3fn, w_layout, ImmutAnyOrigin],
+    out_w: TileTensor[out_type, out_layout, MutAnyOrigin, Engine=out_engine],
+    weight: TileTensor[
+        .float8_e4m3fn, w_layout, ImmutAnyOrigin, Engine=w_engine
+    ],
 ):
     """Materializes the FP8 weight into a dense `[N, K]` `out_type` buffer.
 
@@ -314,7 +330,7 @@ def fp8_materialize_kernel[
     out_w[n, k] = rebind[out_w.ElementType](wv.cast[out_type]())
 
 
-@always_inline
+@inline(.always)
 def enqueue_fp8_materialize[
     out_type: DType
 ](
@@ -336,6 +352,8 @@ def enqueue_fp8_materialize[
         out_type,
         type_of(weight).LayoutType,
         type_of(out_w).LayoutType,
+        type_of(out_w).Engine,
+        type_of(weight).Engine,
     ]
     ctx.enqueue_function[kernel](
         out_w,
@@ -345,7 +363,7 @@ def enqueue_fp8_materialize[
     )
 
 
-@always_inline
+@inline(.always)
 def _enqueue_apple_fp8_materialize_dense[
     c_type: DType,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
@@ -423,7 +441,7 @@ def _enqueue_apple_fp8_materialize_dense[
     _ = wdense_dev^
 
 
-@always_inline
+@inline(.always)
 def enqueue_apple_fp8_matmul[
     c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,

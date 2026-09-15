@@ -67,6 +67,7 @@ from layout import (
     CoordLike,
     Layout,
     RowMajorLayout,
+    TensorEngine,
     TileTensor,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -129,6 +130,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     MaskType: MHAMask,
     config: MLA_SM100_Decode_Config,
     ValidLengthType: OptionalPointer,
+    Engine: TensorEngine,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
     # Layout G handles BOTH fold (fold_q==True, q_len_fold > 1) and non-fold
@@ -162,6 +164,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             stage counts, head counts, and TMEM/SMEM layout.
         ValidLengthType: `OptionalPointer` type for the per-sequence valid
             length buffer consumed under ragged batching.
+        Engine: Engine policy of the `scalar_args` tile operand.
         _is_cache_length_accurate: Whether the supplied cache length is
             exact rather than `cache_length + seq_len` (defaults to `False`).
         ragged: Whether the batch contains variable-length sequences,
@@ -250,7 +253,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     #   local_lo  = max(global_lo - kv_start_row, 0)
     #   tile_skip = local_lo // BN_QK
     @staticmethod
-    @always_inline
+    @inline(.always)
     def sliding_window_tile_skip(
         offset_position: OffsetPosition[
             Self.config,
@@ -277,7 +280,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # Each lane owns one row x (BN_QK/4) cols register-resident; per-row
     # max/sum reduces in registers, then cross-warp via SMEM exchange.
     @staticmethod
-    @always_inline
+    @inline(.always)
     def Softmax_Layout_G[
         num_sp_stages: Int,
     ](
@@ -518,7 +521,13 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             var new_max: Scalar[Self.AccumType] = max(mi, current_max)
             var diff = sub_ftz(rebind[Float32](mi), rebind[Float32](new_max))
             var scale_for_old_max: Scalar[Self.AccumType]
-            if _vote_nvidia_helper(diff < rescale_threshold) != 0:
+            # Per-lane predicate, not a warp vote: under `fold_q`, `row =
+            # lane_in_warp` packs `q_len_fold` distinct (never-committed
+            # draft included) query tokens into one warp -- ALL of Layout
+            # G's 32 rows share the same single warp (BM=32), so an OR
+            # here leaks EVERY sibling token's rescale trajectory into
+            # every other one's.
+            if diff < rescale_threshold:
                 scale_for_old_max = rebind[Scalar[Self.AccumType]](exp2(diff))
             else:
                 scale_for_old_max = 1.0
@@ -747,7 +756,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     #   col = mma_round * BN_PV + slot * (BN_PV // 2) + half_idx * BK_PV
     # Layout G's per-warp stripes are contiguous (vs. interleaved in E).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def Output_Store_Layout_G(
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
@@ -880,7 +889,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # across the WG because all 4 warps see the same scale_value after
     # the softmax 4-way SMEM exchange.
     @staticmethod
-    @always_inline
+    @inline(.always)
     def Correction_Layout_G(
         tmem_addr: UInt32,
         o_bars: DecodeSM100MiscMBars[
@@ -1061,7 +1070,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         ],
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
+            Engine=Self.Engine,
         ],
     ):
         comptime assert Self.config.decode_layout_g, (
@@ -1084,7 +1096,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = mla_decode_pack.num_partitions
+        var num_partitions = Int(mla_decode_pack.num_partitions)
 
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
@@ -1392,7 +1404,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # Load: TMA Q (FP8) and TMA KV (FP8). Cloned from the Layout E sibling;
     # TMA descriptors are config-driven so the BM=32 shapes flow through.
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load(
         q_tma: QOTMATile[
             dtype=Self.kv_type,
@@ -1527,7 +1539,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
 
     # MMA QK: Q(FP8) x K(FP8) -> S(TMEM). M=32, N=64, K=576 (18 K-mmas).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaQK(
         tmem_addr: UInt32,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -1607,7 +1619,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
 
     # MMA PV: P(FP8) x V(FP8) -> O(TMEM). M=32, N=256, K=64 (2 K-mmas).
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaPV(
         tmem_addr: UInt32,
         kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],

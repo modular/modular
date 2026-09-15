@@ -177,6 +177,16 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    cascade: bool = Field(
+        default=False,
+        description=(
+            "Route ``max serve`` to the experimental Cascade server "
+            "(:func:`max.experimental.cascade.serve.main.serve`) "
+            "instead of the standard API server + model worker path. The "
+            "constructed ``PipelineArgs`` is forwarded verbatim."
+        ),
+    )
+
     # ------------------------------------------------------------------ #
     # Fields from MAXModelConfig
     # ------------------------------------------------------------------ #
@@ -567,11 +577,14 @@ class PipelineArgs(ConfigFileModel):
                 **{**draft_model_kwarg, **component_overrides.get("draft", {})}
             )
 
-        # Detect multi-component (e.g. diffusion) models, whose per-component
-        # configs cannot be represented by the flat model fields. Single-model
-        # ("main") manifests are dropped -- the flat fields carry the same
-        # information and remain the canonical source for from_args().
-        if manifest is None and model_kwarg is None:
+        # TODO(SERVSYS-1325): skipped under ``--cascade`` because the
+        # Cascade entrypoint re-resolves the model via ``from_args`` and accepts
+        # Cascade-reserved paths (``echo:``, ``dummy_*``) the HF probe rejects.
+        # This drops multi-component manifest detection for cascade -- harmless
+        # today (no cascade diffusion factory), but fix by moving the probe out
+        # of ``from_flat_kwargs`` to a caller that knows the serving mode.
+        cascade = bool(kwargs.get("cascade"))
+        if manifest is None and model_kwarg is None and not cascade:
             model_path = kwargs.get("model_path")
             if model_path:
                 # KV-cache CLI flags are excluded from the probe, matching

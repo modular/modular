@@ -88,6 +88,7 @@ from layout import (
     CoordLike,
     Layout,
     RowMajorLayout,
+    TensorEngine,
     TileTensor,
     row_major,
 )
@@ -142,6 +143,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     MaskType: MHAMask,
     config: MLA_SM100_Decode_Config,
     ValidLengthType: OptionalPointer,
+    Engine: TensorEngine,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
     has_per_token_scales: Bool = False,
@@ -173,6 +175,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             counts, head counts, and TMEM layout for the kernel.
         ValidLengthType: The optional pointer type for the
             per-request valid sequence length buffer.
+        Engine: Engine policy of the `scalar_args` tile operand.
         _is_cache_length_accurate: Whether the cache length used for
             offset computation is accurate (defaults to `False`).
         ragged: Whether ragged (variable-length) sequences are used,
@@ -352,7 +355,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Null pointer means no Q scale (sigma_Q = 1.0).
         q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
         scalar_args: TileTensor[
-            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
+            Engine=Self.Engine,
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
@@ -369,7 +375,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = mla_decode_pack.num_partitions
+        var num_partitions = Int(mla_decode_pack.num_partitions)
 
         # Register allocation for 3 WGs (Softmax, Correction, MMA+Load+Store).
         #
@@ -691,7 +697,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # Load: TMA Q_nope (FP8) + Q_rope (BF16), TMA K_content (FP8) + K_rope (BF16)
     # --------------------------------------------------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load(
         q_nope_tma: QOTMATile[
             dtype=Self.fp8_type,
@@ -936,7 +942,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # MMA QK: Q_nope(FP8) × K_nope(FP8) + Q_rope(BF16) × K_rope(BF16) → S(TMEM)
     # --------------------------------------------------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaQK(
         tmem_addr: UInt32,
         q_nope_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -1037,7 +1043,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # V is content-only (512 dims FP8), stored in kv_content_smem.
     # --------------------------------------------------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaPV(
         tmem_addr: UInt32,
         kv_content_smem: SharedMemPointer[Scalar[Self.fp8_type]],

@@ -283,18 +283,19 @@ def test_exp2() raises:
     assert_equal(exp2(Float32(0)), 1.0)
     assert_equal(exp2(Float32(-1)), 0.5)
     assert_equal(exp2(Float32(2)), 4.0)
-    assert_almost_equal(exp2(Float32(-125)), 2.3509887e-38)
-    assert_almost_equal(exp2(Float32(125)), 4.2535296e37)
+    assert_equal(exp2(Float32(-125)), 2.3509887e-38)
+    assert_equal(exp2(Float32(125)), 4.2535296e37)
 
     assert_equal(exp2(Float64(1)), 2.0)
     assert_almost_equal(exp2(Float64(0.2)), 1.148696)
     assert_equal(exp2(Float64(0)), 1.0)
     assert_equal(exp2(Float64(-1)), 0.5)
     assert_equal(exp2(Float64(2)), 4.0)
-    assert_almost_equal(exp2(Float64(-127)), 5.877471754111438e-39)
-    assert_almost_equal(exp2(Float64(127)), 1.7014118346046923e38)
-    assert_almost_equal(exp2(Float64(-1023)), 1.1125369292536007e-308)
-    assert_almost_equal(exp2(Float64(1023)), 8.98846567431158e307)
+    assert_equal(exp2(Float64(-127)), 5.877471754111438e-39)
+    assert_equal(exp2(Float64(127)), 1.7014118346046923e38)
+    assert_equal(exp2(Float64(-1023)), 1.1125369292536007e-308)
+    assert_equal(exp2(Float64(1023)), 8.98846567431158e307)
+    assert_equal(exp2(Float64(-1022)), 2.2250738585072014e-308)
 
 
 def test_iota() raises:
@@ -655,6 +656,16 @@ def test_ulp() raises:
     assert_equal(ulp(Float64.MAX_FINITE), 1.99584030953472e292)
     assert_equal(ulp(Float64(5)), 8.881784197001252e-16)
     assert_equal(ulp(Float64(-5)), 8.881784197001252e-16)
+
+
+def test_ulp_at_comptime() raises:
+    # `ulp` reaches `nextafter`, which used to fail in the comptime interpreter.
+    comptime u1 = ulp(Float32(1.0))
+    assert_equal(u1, ulp(Float32(1.0)))
+    comptime u5 = ulp(Float64(5))
+    assert_equal(u5, 8.881784197001252e-16)
+    comptime u_max = ulp(Float64.MAX_FINITE)
+    assert_equal(u_max, 1.99584030953472e292)
 
 
 def test_ceildiv() raises:

@@ -102,7 +102,6 @@ from .allreduce import (
 from .device_query import get_sm_version, dispatch_select_comm_config
 from .reducescatter import _target_address_space
 from .sync import (
-    MAX_GPUS,
     Signal,
     _multi_gpu_barrier,
     is_p2p_enabled,
@@ -152,7 +151,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     rows: Int32,
     cols: Int32,
     scale_ub: Float32,
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int32,
     residual: _ComptimeConditionalTileTensor[
         in_dtype,
@@ -343,7 +342,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     rows: Int32,
     cols: Int32,
     scale_ub: Float32,
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int32,
     residual: _ComptimeConditionalTileTensor[
         in_dtype,
@@ -695,7 +694,7 @@ def _allreduce_rmsnorm_fp8_launch[
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int,
     ctx: DeviceContext,
     residual: _ComptimeConditionalTileTensor[
@@ -727,7 +726,7 @@ def _allreduce_rmsnorm_fp8_launch[
     # Provide evidence that flat_rank >= 2 for output.store(Coord(..., ...)).
     comptime assert output.flat_rank >= 2
 
-    @always_inline
+    @inline(.always)
     @__parameter
     @__copy_capture(output)
     def output_fn[
@@ -790,7 +789,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     my_rank: Int,
     ctx: DeviceContext,
     residual: _ComptimeConditionalTileTensor[
@@ -886,7 +885,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     # Provide evidence that flat_rank >= 2 for output.store(Coord(..., ...)).
     comptime assert output.flat_rank >= 2
 
-    @always_inline
+    @inline(.always)
     @__parameter
     @__copy_capture(output)
     def output_fn[
@@ -949,7 +948,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output_1d: TileTensor[mut=True, scales_dtype, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     residual: TileTensor[mut=False, in_dtype, ...],
     residual_output: TileTensor[mut=True, in_dtype, ...],
@@ -973,7 +972,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
 
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
     @__copy_capture(residual_output, _cols)
-    @always_inline
+    @inline(.always)
     @__parameter
     def input_fn[
         width: Int, _rank: Int
@@ -1005,7 +1004,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
 
     # Step 1: Allreduce with add epilogue → residual_output.
     @__copy_capture(residual, residual_output, _cols)
-    @always_inline
+    @inline(.always)
     @__parameter
     def add_epilogue[
         _dtype: DType,
@@ -1066,7 +1065,7 @@ def _dispatch_fused_kernel[
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output_1d: TileTensor[mut=True, scales_dtype, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     residual: _ComptimeConditionalTileTensor[
         in_dtype, engaged=has_residual, ...
@@ -1359,7 +1358,7 @@ def allreduce_rmsnorm[
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
 ) raises:
     """Fused allreduce + RMSNorm with optional FP8 quantization.
@@ -1486,7 +1485,7 @@ def allreduce_residual_rmsnorm[
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
 ) raises:
     """Fused allreduce + residual add + RMSNorm with optional FP8 quantization.

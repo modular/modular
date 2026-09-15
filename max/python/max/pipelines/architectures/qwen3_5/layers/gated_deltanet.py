@@ -50,7 +50,7 @@ gather/scatter loop.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import NamedTuple
 
 from max.dtype import DType
@@ -106,6 +106,20 @@ def _projection(stack: StackedLinear, name: str) -> Linear:
     return child
 
 
+_OUTPUT_GATE_ACTIVATIONS: dict[str, Callable[[TensorValue], TensorValue]] = {
+    "swish": ops.silu,
+    "silu": ops.silu,
+    "sigmoid": ops.sigmoid,
+}
+"""Activations `output_gate_type` can name.
+
+Qwen3.5 says `swish`, which is `silu`, so a hardcoded `silu` was accidentally
+right; Qwen3.8-Flash-Next says `sigmoid`, where it is silently wrong -- the
+model runs and answers plausibly. Hence the config read and the rejection of
+an unknown value.
+"""
+
+
 class GatedDeltaNet(Module, Shardable):
     """Gated DeltaNet linear attention layer.
 
@@ -146,6 +160,7 @@ class GatedDeltaNet(Module, Shardable):
         ssm_dtype: DType = DType.float32,
         proj_dtype: DType | None = None,
         quant_config: QuantConfig | None = None,
+        output_gate_type: str = "swish",
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -159,6 +174,12 @@ class GatedDeltaNet(Module, Shardable):
         self.ssm_dtype = ssm_dtype
         self.rms_norm_eps = rms_norm_eps
         self.quant_config = quant_config
+        if output_gate_type not in _OUTPUT_GATE_ACTIVATIONS:
+            raise ValueError(
+                f"unsupported output_gate_type {output_gate_type!r}; expected "
+                f"one of {sorted(_OUTPUT_GATE_ACTIVATIONS)}"
+            )
+        self.output_gate_type = output_gate_type
         self._sharding_strategy: ShardingStrategy | None = None
         # Only in_proj_qkv, in_proj_z and out_proj are quantized; conv1d, the
         # b/a gates, the norm and every activation stay at `dtype`.
@@ -393,6 +414,7 @@ class GatedDeltaNet(Module, Shardable):
                 ssm_dtype=self.ssm_dtype,
                 proj_dtype=self.proj_dtype,
                 quant_config=self.quant_config,
+                output_gate_type=self.output_gate_type,
             )
             shard.in_proj = in_proj_shards[i]
             if ba_shards is not None:
@@ -409,26 +431,25 @@ class GatedDeltaNet(Module, Shardable):
         self,
         x: TensorValue,
         conv_pool: BufferValue,
+        conv_row_id: TensorValue,
         recurrent_pool: BufferValue,
-        slot_idx: TensorValue,
+        recurrent_row_id: TensorValue,
         input_row_offsets: TensorValue,
         replay_capture: list[GatedDeltaReplayInputs] | None = None,
     ) -> TensorValue:
         """Forward pass through the Gated DeltaNet layer.
 
-        The conv and recurrent state pools live in graph-input buffers that
-        the slot-indexed SSM kernels mutate in place at slot
-        ``slot_idx[batch_item]``; there are no graph outputs for the new
-        state. This matches vLLM's ``selective_state_update`` design and
-        avoids per-decode pool allocation.
+        The kernels mutate the pools in place; the new state is not a graph
+        output.
 
         Args:
             x: Input hidden states ``[total_seq_len, hidden_size]``.
-            conv_pool: Per-layer conv pool (mutable),
-                ``[max_slots, conv_dim, kernel_size - 1]``.
-            recurrent_pool: Per-layer recurrent pool (mutable),
-                ``[max_slots, num_v_heads, key_head_dim, value_head_dim]``.
-            slot_idx: ``[batch_size]`` uint32 slot indices into the pools.
+            conv_pool: The conv leaf's pool, flat over pages and layers.
+            conv_row_id: ``[batch_size]`` row of ``conv_pool`` this layer
+                reads and writes. Already folded, so the layer never sees
+                the layout.
+            recurrent_pool: The recurrent leaf's pool.
+            recurrent_row_id: Its row for this layer.
             input_row_offsets: Row offsets ``[batch_size + 1]`` (uint32).
             replay_capture: When given, this call's
                 :class:`GatedDeltaReplayInputs` are appended to it so a
@@ -490,7 +511,8 @@ class GatedDeltaNet(Module, Shardable):
         # (typically bf16); the kernels cast on read/write so the per-token
         # working tensors stay at fp32.
         offsets_uint32 = ops.cast(input_row_offsets, DType.uint32)
-        slot_idx_uint32 = ops.cast(slot_idx, DType.uint32)
+        conv_slot_uint32 = ops.cast(conv_row_id, DType.uint32)
+        rec_slot_uint32 = ops.cast(recurrent_row_id, DType.uint32)
 
         if replay_capture is not None:
             replay_capture.append(
@@ -506,7 +528,7 @@ class GatedDeltaNet(Module, Shardable):
             qkv_input_ragged=qkv_f32,
             conv_weight=conv_weight_flat,
             conv_state=conv_pool,
-            slot_idx=slot_idx_uint32,
+            slot_idx=conv_slot_uint32,
             input_row_offsets=offsets_uint32,
         )
         conv_output_ragged = ops.silu(conv_output_ragged)
@@ -516,7 +538,7 @@ class GatedDeltaNet(Module, Shardable):
             decay_per_token=decay,
             beta_per_token=beta,
             recurrent_state=recurrent_pool,
-            slot_idx=slot_idx_uint32,
+            slot_idx=rec_slot_uint32,
             input_row_offsets=offsets_uint32,
         )
 
@@ -534,7 +556,9 @@ class GatedDeltaNet(Module, Shardable):
         output_normed = self.norm(output_3d)  # [N, nv, vd]
 
         z_reshaped = ops.reshape(z, [-1, nv, vd])
-        z_gate = ops.silu(ops.cast(z_reshaped, DType.float32))
+        z_gate = _OUTPUT_GATE_ACTIVATIONS[self.output_gate_type](
+            ops.cast(z_reshaped, DType.float32)
+        )
         output_gated = ops.cast(output_normed, DType.float32) * z_gate
         output_gated = ops.cast(output_gated, x.dtype)
 

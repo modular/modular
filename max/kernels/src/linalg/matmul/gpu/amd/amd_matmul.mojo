@@ -42,7 +42,7 @@ from max.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from layout import TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
@@ -164,10 +164,13 @@ struct AMDMatmul[
         c_layout: TensorLayout,
         a_layout: TensorLayout,
         b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
-        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin],
-        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     ):
         """TileTensor GEMM matching original kernel config exactly.
 
@@ -178,6 +181,9 @@ struct AMDMatmul[
             c_layout: Tensor layout of the output C tile.
             a_layout: Tensor layout of the input A tile.
             b_layout: Tensor layout of the input B tile.
+            c_engine: Engine of the output C tile.
+            a_engine: Engine of the input A tile.
+            b_engine: Engine of the input B tile.
 
         Args:
             c: Output tile of shape `[M, N]` accumulating the matmul
@@ -272,7 +278,7 @@ struct AMDMatmul[
         # === Helpers ===
         var k_counter = 0
 
-        @always_inline
+        @inline(.always)
         @__parameter
         def load_tiles_from_dram():
             var a_block = a_blockrow.tile[BM, BK](0, k_counter)
@@ -281,7 +287,7 @@ struct AMDMatmul[
             b_loader.load(b_load_reg, b_block.vectorize[1, simd_width]())
             k_counter += 1
 
-        @always_inline
+        @inline(.always)
         @__parameter
         def copy_tiles_to_smem():
             comptime thread_layout = row_major[
@@ -322,7 +328,7 @@ struct AMDMatmul[
         ]()
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def _bind[entry: ScheduleEntry]():
             comptime if entry.op.tag == LOAD_DRAM:
                 load_tiles_from_dram()

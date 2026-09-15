@@ -98,9 +98,12 @@ def create_connector(
             "Creating DKVConnector: endpoint=%s",
             cfg.block_store_endpoint,
         )
-        # list[dict] -> list[list]
+        # The Rust block store addresses units by position, so fix the order
+        # from the declared leaves rather than from however the mapping
+        # happens to iterate.
         replica_kv_memory_list = [
-            list(memory.values()) for memory in replica_kv_memory
+            [memory[leaf_id] for leaf_id in leaves]
+            for memory in replica_kv_memory
         ]
         return DKVConnector(
             replica_kv_memory=replica_kv_memory_list,

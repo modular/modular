@@ -47,7 +47,9 @@ Weight loading
    :toctree: generated
    :template: autosummary/function.rst
 
+   apply_fused_kernel_flags
    auto_cast_weights_from_env
+   build_modelopt_nvfp4_config
    gptq_quant_config
    parse_quant_config
    resolve_hf_quant_config

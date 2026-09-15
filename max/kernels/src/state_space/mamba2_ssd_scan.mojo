@@ -592,6 +592,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     query_start_loc_LT: TensorLayout,
     has_initial_state_LT: TensorLayout,
     cache_indices_LT: TensorLayout,
+    Engine: TensorEngine,
     DSTATE_SPLIT: Int = 1,
 ](
     nheads_dev: Int32,
@@ -600,20 +601,28 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     nheads_ngroups_ratio_dev: Int32,
     batch_dev: Int32,
     dt_softplus: Int8,
-    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
-    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin],
-    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
-    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
-    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
-    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
-    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
-    y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin],
-    ssm_pool: TileTensor[.float32, ssm_pool_LT, MutUntrackedOrigin],
-    query_start_loc: TileTensor[.int32, query_start_loc_LT, MutUntrackedOrigin],
-    has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, MutUntrackedOrigin
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin, Engine=Engine],
+    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin, Engine=Engine],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin, Engine=Engine],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin, Engine=Engine],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin, Engine=Engine],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin, Engine=Engine],
+    dt_bias: TileTensor[
+        kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    cache_indices: TileTensor[.uint32, cache_indices_LT, MutUntrackedOrigin],
+    y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin, Engine=Engine],
+    ssm_pool: TileTensor[
+        .float32, ssm_pool_LT, MutUntrackedOrigin, Engine=Engine
+    ],
+    query_start_loc: TileTensor[
+        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
+    ],
+    has_initial_state: TileTensor[
+        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
+    ],
+    cache_indices: TileTensor[
+        .uint32, cache_indices_LT, MutUntrackedOrigin, Engine=Engine
+    ],
     x_strides: Strides3D,
     dt_strides: Strides2D,
     A_strides: Strides1D,
@@ -916,7 +925,7 @@ struct DStateVecLoader[
     ``contig`` parameter: the caller hoists the runtime ``bc_contig`` branch
     ONCE outside the chunk loop, keeping the fast path a straight-line unrolled
     vec-load loop (a per-chunk runtime branch measured ~18% slower on M5). Every
-    method is ``@always_inline``. The vectorized fast path (unit innermost
+    method is ``@inline(.always)``. The vectorized fast path (unit innermost
     stride) serves every row-major caller; a non-unit stride selects the exact
     v1 scalar gather/scatter, so the result is bit-identical for any layout.
 
@@ -985,7 +994,7 @@ struct DStateVecLoader[
         self.pool_contig = pool_dstate_stride == 1
         self.bc_contig = (b_dstate_stride == 1) and (c_dstate_stride == 1)
 
-    @always_inline
+    @inline(.always)
     def load_state(
         self,
         mut state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],
@@ -1012,7 +1021,7 @@ struct DStateVecLoader[
                     ).cast[.float32]()
                 state[c] = chunk
 
-    @always_inline
+    @inline(.always)
     def load_bc[
         c: Int, contig: Bool
     ](
@@ -1050,7 +1059,7 @@ struct DStateVecLoader[
                     self.C.raw_load(c_base + UInt32(n * self.c_dstate_stride))
                 ).cast[.float32]()
 
-    @always_inline
+    @inline(.always)
     def store_state(
         self,
         state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],

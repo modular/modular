@@ -24,7 +24,7 @@ comptime MULTIPLE = 6364136223846793005
 comptime ROT = 23
 
 
-@always_inline
+@inline(.always)
 def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
     """A fast function to emulate a folded multiply of two 64 bit uints.
 
@@ -42,7 +42,7 @@ def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
     return res[0] ^ res[1]
 
 
-@always_inline
+@inline(.always)
 def _read_small(data: ImmPointer[UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
@@ -127,7 +127,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         self.pad = pi_key[1]
         self.extra_keys = U128(pi_key[2], pi_key[3])
 
-    @always_inline
+    @inline(.always)
     def _update(mut self, new_data: UInt64):
         """Update the buffer value with new data.
 
@@ -136,7 +136,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         """
         self.buffer = _folded_multiply(new_data ^ self.buffer, MULTIPLE)
 
-    @always_inline
+    @inline(.always)
     def _large_update(mut self, new_data: U128):
         """Update the buffer value with new data.
 
@@ -147,7 +147,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         var combined = _folded_multiply(xored[0], xored[1])
         self.buffer = rotate_bits_left[ROT]((self.buffer + self.pad) ^ combined)
 
-    def _update_with_bytes(mut self, data: Span[Byte, _]):
+    def update(mut self, data: ImmSpan[Byte, _]):
         """Consume provided data to update the internal buffer.
 
         Args:
@@ -222,15 +222,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
                     ).cast[.uint64]()
                     self._large_update(U128(u64_1, u64_2))
 
-    def update(mut self, value: Some[Hashable]):
-        """Update the buffer value with new hashable value.
-
-        Args:
-            value: Value used for update.
-        """
-        value.__hash__(self)
-
-    @always_inline
+    @inline(.always)
     def finish(var self) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
@@ -258,7 +250,7 @@ def hash_seeded_bytes(data: ImmPointer[UInt8, _], n: Int, seed: U256) -> UInt64:
         A 64-bit integer hash value.
     """
     var hasher = AHasher[U256(0)](seed)
-    hasher._update_with_bytes(Span(unsafe_ptr=data, length=n))
+    hasher.update(Span(unsafe_ptr=data, length=n))
     var value = hasher^.finish()
     return value
 
@@ -281,6 +273,6 @@ def hash_seeded[T: Hashable](value: T, seed: U256) -> UInt64:
         A 64-bit integer hash value.
     """
     var hasher = AHasher[U256(0)](seed)
-    hasher.update(value)
+    value.__hash__(hasher)
     var result = hasher^.finish()
     return result

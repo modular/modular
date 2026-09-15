@@ -20,7 +20,13 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass, field
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -51,6 +57,7 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
     maybe_name_from_tool,
@@ -67,6 +74,7 @@ from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelineTask,
     PipelineTokenizer,
+    PreprocessedImageProbe,
     RequestID,
     TextContentPart,
     TextGenerationRequest,
@@ -101,6 +109,7 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.router._image_resolution import (
     MediaRef,
+    _request_media_budget,
     decode_and_validate_images,
     make_media_ref,
     resolve_image_from_url,
@@ -140,7 +149,7 @@ from max.serve.schemas.openai import (
 )
 from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
-from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import RequestQueueFull
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDeltaToolCall,
@@ -1449,18 +1458,103 @@ def _normalize_openai_role(role: str) -> Any:
     return "system" if role == "developer" else role
 
 
+_PreprocessedImageMask = Callable[
+    [list[bytes], list[TextGenerationRequestMessage]], Sequence[bool]
+]
+
+
+def _preprocessed_image_probe(
+    tokenizer: object,
+) -> _PreprocessedImageMask | None:
+    """The tokenizer's preprocessed-image probe, if it offers a usable one.
+
+    Opt-in: an architecture with no preprocessed-image cache does not
+    implement :class:`PreprocessedImageProbe`, and every image is decoded as
+    before. Callability is checked on top of ``isinstance`` because a
+    runtime-checkable protocol only proves the attribute exists -- an
+    architecture that defined it as a property or a list would otherwise reach
+    the call below and fail there, turning every image request for that model
+    into a misleading 400 about the request body.
+    """
+    if not isinstance(tokenizer, PreprocessedImageProbe):
+        return None
+    probe = tokenizer.preprocessed_image_mask
+    if not callable(probe):
+        logger.warning(
+            "%s declares preprocessed_image_mask but it is not callable;"
+            " decoding every image.",
+            type(tokenizer).__name__,
+        )
+        return None
+    return probe
+
+
+def _skip_decode_mask(
+    probe: _PreprocessedImageMask | None,
+    images: list[bytes],
+    messages: list[TextGenerationRequestMessage],
+) -> list[bool] | None:
+    """Which images the tokenizer already holds preprocessed, or ``None``.
+
+    ``None`` means "decode everything", which is both the no-probe case and
+    the fallback for a probe whose answer does not line up with the images it
+    was asked about: the mask is positional, and a hint that cannot be trusted
+    should cost the optimization rather than the request.
+    """
+    if probe is None:
+        return None
+    mask = list(probe(images, messages))
+    if len(mask) == len(images):
+        return mask
+    logger.warning(
+        "preprocessed_image_mask returned %d entries for %d image(s);"
+        " decoding every image.",
+        len(mask),
+        len(images),
+    )
+    return None
+
+
+def _resolve_and_decode_images(
+    images: list[bytes],
+    max_decoded_bytes: int | None,
+    probe: _PreprocessedImageMask | None,
+    messages: list[TextGenerationRequestMessage],
+) -> tuple[list[Image.Image | None], list[bool] | None]:
+    """Decide what to decode and decode it, in one worker-thread hop.
+
+    Both halves are CPU-bound and the first decides what the second may skip,
+    so they share the hop the decode already needed. A second
+    ``asyncio.to_thread`` for the probe would add a scheduling bounce to move
+    work measured in tens of microseconds -- a request of 16 typical
+    screenshots hashes in 0.084ms, against the ~14ms per image the decode it
+    avoids costs.
+
+    Returns:
+        The decoded images (``None`` where the pixel decode was skipped) and
+        the mask that produced them, which only this call knows.
+    """
+    skip_decode = _skip_decode_mask(probe, images, messages)
+    return (
+        decode_and_validate_images(images, max_decoded_bytes, skip_decode),
+        skip_decode,
+    )
+
+
 class _ParsedChatRequest(NamedTuple):
     """The parsed pieces of a chat-completion request.
 
     ``decoded_images`` are the validated, decoded images (decoded once); they
     are carried on the request so the tokenizer does not decode the same bytes
-    a second time. See :func:`decode_and_validate_images`.
+    a second time. An entry is ``None`` where the decode was skipped because
+    the tokenizer already holds that image's preprocessed tensor. See
+    :func:`decode_and_validate_images`.
     """
 
     messages: list[TextGenerationRequestMessage]
     images: list[bytes]
     videos: list[bytes]
-    decoded_images: list[Image.Image]
+    decoded_images: list[Image.Image | None]
 
 
 def _coerce_positive_int(value: Any) -> int | None:
@@ -1561,10 +1655,9 @@ async def openai_parse_chat_completion_request(
     wrap_content: bool,
     settings: Settings,
     max_images_per_request: int | None = None,
-    max_image_bytes: int | None = None,
     max_videos_per_request: int | None = None,
-    max_video_bytes: int | None = None,
     allowed_roles: frozenset[str] | None = None,
+    preprocessed_image_mask: _PreprocessedImageMask | None = None,
 ) -> _ParsedChatRequest:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
@@ -1572,16 +1665,23 @@ async def openai_parse_chat_completion_request(
     can be downloaded and bundled alongside the request for preprocessing by
     pipelines.
 
-    ``max_images_per_request``/``max_image_bytes`` and
-    ``max_videos_per_request``/``max_video_bytes`` are model-specific media
-    limits supplied by the caller (read off the tokenizer); ``None`` means the
-    corresponding limit is not enforced. The per-item byte caps are enforced
-    while resolving each reference, so an oversized image/video is rejected
-    before its bytes are fully downloaded or decoded.
+    ``max_images_per_request``/``max_videos_per_request`` are model-specific
+    per-request count limits supplied by the caller (read off the tokenizer);
+    ``None`` means the corresponding limit is not enforced. Media *size* is not
+    limited per item: a single :class:`_MediaByteBudget` seeded from
+    :attr:`Settings.max_media_bytes` is shared across every image and video, so
+    the request is rejected once the total fetched and decoded media crosses
+    that aggregate limit. That limit is separate from the body-size
+    middleware's ``max_request_bytes``, which bounds only the request body.
 
     ``allowed_roles`` is the set of message roles the model accepts; ``None``
     skips role validation (vendor roles are only allowed for models that
     declare them via ``extra_chat_roles``).
+
+    ``preprocessed_image_mask`` is the tokenizer's optional
+    :class:`PreprocessedImageProbe`, reporting which images it can already
+    serve preprocessed. The pixel decode is skipped for those: nothing
+    downstream will look at their pixels.
     """
     _validate_tool_message_consistency(completion_request.messages)
     if allowed_roles is not None:
@@ -1734,12 +1834,15 @@ async def openai_parse_chat_completion_request(
             f"{max_videos_per_request} videos per request"
         )
 
-    # Resolve each reference into bytes, enforcing the per-item byte cap during
-    # the download/decode so an oversized item is rejected before it is fully
-    # materialized (CENG-640).
+    # Resolve every reference into bytes under a single per-request media
+    # budget shared across all images and videos, so the total fetched and
+    # decoded media for the request stays within ``max_media_bytes`` (rather
+    # than each item being capped independently). An over-budget download is
+    # aborted before it is fully materialized (CENG-640).
+    budget = _request_media_budget(settings)
     resolve_image_tasks = [
         resolve_image_from_url(
-            image_url, settings, max_bytes=max_image_bytes, media_kind="image"
+            image_url, settings, budget=budget, media_kind="image"
         )
         for image_url in image_refs
     ]
@@ -1750,13 +1853,35 @@ async def openai_parse_chat_completion_request(
     # codecs release the GIL during decode, so this is genuinely concurrent.
     # The decoded images are carried on the request and reused by the tokenizer
     # (decode-once), so this is the only place a request's images are decoded.
-    decoded_images = await asyncio.to_thread(
-        decode_and_validate_images, request_images, max_image_bytes
-    )
+    # The same ``max_media_bytes`` knob bounds decoded memory: no single image
+    # may decode to more than the request budget, rejected from its header
+    # before ``load()`` allocates the pixel buffer. That check, and the format
+    # allowlist, run for every image including the ones whose pixel decode is
+    # skipped.
+    #
+    # A multi-turn vision conversation resends every earlier screenshot, so
+    # most images in most requests are ones the tokenizer has already
+    # preprocessed and whose pixels nothing will read. Asking it which happens
+    # inside this same hop, because its answer is what decides what the decode
+    # can skip.
+    decoded_images: list[Image.Image | None] = []
+    if request_images:
+        with record_ms(METRICS.image_admission_decode_time):
+            decoded_images, skip_decode = await asyncio.to_thread(
+                _resolve_and_decode_images,
+                request_images,
+                budget.limit,
+                preprocessed_image_mask,
+                messages,
+            )
+        if skip_decode is not None:
+            cached = sum(skip_decode)
+            METRICS.vision_preprocess_cache_hits(cached)
+            METRICS.vision_preprocess_cache_misses(len(skip_decode) - cached)
 
     resolve_video_tasks = [
         resolve_image_from_url(
-            video_url, settings, max_bytes=max_video_bytes, media_kind="video"
+            video_url, settings, budget=budget, media_kind="video"
         )
         for video_url in video_refs
     ]
@@ -1990,13 +2115,12 @@ async def openai_create_chat_completion(
             max_images_per_request=getattr(
                 tokenizer, "max_images_per_request", None
             ),
-            max_image_bytes=getattr(tokenizer, "max_image_bytes", None),
             max_videos_per_request=getattr(
                 tokenizer, "max_videos_per_request", None
             ),
-            max_video_bytes=getattr(tokenizer, "max_video_bytes", None),
             allowed_roles=_STANDARD_CHAT_ROLES
             | getattr(tokenizer, "extra_chat_roles", frozenset()),
+            preprocessed_image_mask=_preprocessed_image_probe(tokenizer),
         )
 
         pipeline_config = get_app_pipeline_config(request.app)
@@ -2185,6 +2309,7 @@ async def openai_create_chat_completion(
                 if completion_request.top_logprobs is not None
                 else 1
             )
+            _validate_logprobs_count(logprobs_count, "top_logprobs")
 
         runtime_cfg = pipeline_config.runtime
         if logprobs_count != 0 and runtime_cfg.enable_overlap_scheduler:
@@ -2312,6 +2437,27 @@ def _convert_chat_completion_tools_to_token_generator_tools(
         token_generator_tools.append(token_generator_tool)
 
     return token_generator_tools
+
+
+def _validate_logprobs_count(count: int, field_name: str) -> None:
+    """Validate a requested top-k logprobs count against the graph's ceiling.
+
+    The count reaches the model worker untouched and the logprobs graph raises
+    on one it cannot answer, which kills the worker and takes the whole server
+    with it -- so an out-of-range value has to be rejected here.
+
+    Args:
+        count: The requested number of top log probabilities per token.
+        field_name: Request field the count came from, named in the error.
+
+    Raises:
+        InputError: If ``count`` is negative or above
+            ``_MAX_TOP_LOGPROBS``.
+    """
+    if not 0 <= count <= _MAX_TOP_LOGPROBS:
+        raise InputError(
+            f"`{field_name}` must be in [0, {_MAX_TOP_LOGPROBS}], was {count}."
+        )
 
 
 def _validate_tool_function_name(
@@ -3212,6 +3358,9 @@ async def openai_create_completion(
         )
 
         pipeline_config = get_app_pipeline_config(request.app)
+
+        if completion_request.logprobs is not None:
+            _validate_logprobs_count(completion_request.logprobs, "logprobs")
 
         if (
             completion_request.logprobs is not None

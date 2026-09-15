@@ -559,7 +559,12 @@ BreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool YieldOp::isParentNode(Operation *op) {
-  return isa<IfOp, SwitchOp, ElifOp>(op);
+  if (isa<IfOp, SwitchOp, ElifOp>(op))
+    return true;
+  // Yield in a match targets only the else region; case regions use
+  // match.next / match.complete instead.
+  auto match = dyn_cast<MatchOp>(op);
+  return match && !match.containsInCaseRegion(*this);
 }
 
 void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
@@ -660,49 +665,50 @@ LogicalResult ForYieldOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseElif(OpAsmParser &parser,
+parseElif(OpAsmParser &parser, Region &thenRegion,
           SmallVectorImpl<std::unique_ptr<Region>> &elifRegionsRegions,
           Region &elseRegion) {
-  unsigned i = 0;
-  do {
-    // Parse condition region.
-    SmallVector<OpAsmParser::Argument> conditionArgs;
-    if (i > 0) {
+  // First then region (condition is an SSA operand parsed by ODS).
+  if (failed(parser.parseRegion(thenRegion)))
+    return failure();
+
+  // Each subsequent arm is introduced by `else`. If `then` follows the
+  // region, it is an additional (cond, then) pair; otherwise it is the final
+  // else region.
+  while (true) {
+    if (failed(parser.parseKeyword("else")))
+      return failure();
+
+    SmallVector<OpAsmParser::Argument> regionArgs;
+    if (failed(parser.parseArgumentList(
+            regionArgs, AsmParser::Delimiter::OptionalParen, true, false)))
+      return failure();
+
+    auto region = std::make_unique<Region>();
+    if (failed(parser.parseRegion(*region, regionArgs)))
+      return failure();
+
+    if (succeeded(parser.parseOptionalKeyword("then"))) {
+      elifRegionsRegions.push_back(std::move(region));
+
+      SmallVector<OpAsmParser::Argument> thenArgs;
       if (failed(parser.parseArgumentList(
-              conditionArgs, AsmParser::Delimiter::OptionalParen, true, false)))
+              thenArgs, AsmParser::Delimiter::OptionalParen, true, false)))
         return failure();
+      if (failed(parser.parseRegion(
+              *elifRegionsRegions.emplace_back(std::make_unique<Region>()),
+              thenArgs)))
+        return failure();
+      continue;
     }
 
-    if (parser
-            .parseRegion(
-                *elifRegionsRegions.emplace_back(std::make_unique<Region>()),
-                conditionArgs)
-            .failed())
-      return failure();
-
-    // Parse result region.
-    if (failed(parser.parseKeyword("then")))
-      return failure();
-    SmallVector<OpAsmParser::Argument> thenArgs;
-    if (failed(parser.parseArgumentList(
-            thenArgs, AsmParser::Delimiter::OptionalParen, true, false)))
-      return failure();
-    if (failed(parser.parseRegion(
-            *elifRegionsRegions.emplace_back(std::make_unique<Region>()),
-            thenArgs)))
-      return failure();
-    ++i;
-  } while (failed(parser.parseOptionalKeyword("else")));
-  SmallVector<OpAsmParser::Argument> elseArgs;
-  if (failed(parser.parseArgumentList(
-          elseArgs, AsmParser::Delimiter::OptionalParen, true, false)))
-    return failure();
-  if (failed(parser.parseRegion(elseRegion, elseArgs)))
-    return failure();
-  return success();
+    elseRegion.takeBody(*region);
+    return success();
+  }
 }
 
 static void printElif(OpAsmPrinter &printer, Operation *elifOp,
+                      Region &thenRegion,
                       MutableArrayRef<Region> conditionalRegions,
                       Region &elseRegion) {
   auto printArgumentList = [&](ArrayRef<BlockArgument> args) {
@@ -716,19 +722,20 @@ static void printElif(OpAsmPrinter &printer, Operation *elifOp,
     }
     printer << ")";
   };
-  unsigned i = 0;
+
+  printer.printRegion(thenRegion);
+
   assert(conditionalRegions.size() % 2 == 0);
-  unsigned conditionCount = conditionalRegions.size() / 2;
-  for (unsigned r = 0; r < conditionCount; ++r) {
-    if (i > 0)
-      printArgumentList(conditionalRegions[i].getArguments());
-    printer.printRegion(conditionalRegions[i++], /*printEntryBlockArgs=*/false);
-    printer << " then ";
+  for (unsigned i = 0, e = conditionalRegions.size(); i != e; i += 2) {
+    printer << " else ";
     printArgumentList(conditionalRegions[i].getArguments());
-    printer.printRegion(conditionalRegions[i++], /*printEntryBlockArgs=*/false);
-    printer << " ";
+    printer.printRegion(conditionalRegions[i], /*printEntryBlockArgs=*/false);
+    printer << " then ";
+    printArgumentList(conditionalRegions[i + 1].getArguments());
+    printer.printRegion(conditionalRegions[i + 1],
+                        /*printEntryBlockArgs=*/false);
   }
-  printer << "else ";
+  printer << " else ";
   printArgumentList(elseRegion.getArguments());
   printer.printRegion(elseRegion, /*printEntryBlockArgs=*/false);
 }
@@ -744,8 +751,15 @@ LogicalResult ElifOp::verify() {
 void ElifOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.empty());
-  targets.push_back(std::optional<unsigned>(1));
+  assert(operands.size() == 1);
+  // Region layout: 0 = then, 1 = else, 2+ = additional (cond, then) pairs.
+  unsigned nextOnFalse = getElifRegions().empty() ? 1 : 2;
+  if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands.front())) {
+    targets.emplace_back(cond.getAsBool() ? 0 : nextOnFalse);
+  } else {
+    targets.emplace_back(0);
+    targets.emplace_back(nextOnFalse);
+  }
 }
 
 ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
@@ -757,13 +771,60 @@ ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
 
 ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
-  return state.transferControlFlowTo(getElifRegions()[0], operands);
+  auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0]);
+  if (!cond)
+    return ErrorTree(getLoc(), "non-constant condition");
+
+  if (cond.getAsBool())
+    return state.transferControlFlowTo(getThenRegion(), {});
+  if (!getElifRegions().empty())
+    return state.transferControlFlowTo(getElifRegions()[0], {});
+  return state.transferControlFlowTo(getElseRegion(), {});
 }
 
 ErrorTreeOrSuccess
 ElifOp::parametric_interpret(ArrayRef<Attribute> operands,
                              ParametricInterpreterState &state) {
   return interpret(operands, state);
+}
+
+ElifOp ElifOp::create(OpBuilder &builder, Location loc, TypeRange resultTypes,
+                      Value cond, function_ref<LogicalResult()> emitThen,
+                      function_ref<LogicalResult()> emitElse) {
+  ElifOp elifOp = ElifOp::create(builder, loc, resultTypes, cond);
+
+  builder.setInsertionPointToStart(&elifOp.getThenRegion().emplaceBlock());
+  if (failed(emitThen()))
+    return {};
+
+  builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
+  if (failed(emitElse()))
+    return {};
+
+  builder.setInsertionPointAfter(elifOp);
+  return elifOp;
+}
+
+OpBuilder ElifOp::getThenBodyBuilder() {
+  assert(!getThenRegion().empty() && "Need a then block");
+  return OpBuilder::atBlockEnd(&getThenRegion().front());
+}
+
+OpBuilder ElifOp::getElseBodyBuilder() {
+  assert(!getElseRegion().empty() && "Need an else block");
+  return OpBuilder::atBlockEnd(&getElseRegion().front());
+}
+
+Block &ElifOp::getThenBlock() { return getThenRegion().front(); }
+
+Block &ElifOp::getElseBlock() { return getElseRegion().front(); }
+
+Operation *ElifOp::getThenTerminator() {
+  return getThenBlock().getTerminator();
+}
+
+Operation *ElifOp::getElseTerminator() {
+  return getElseBlock().getTerminator();
 }
 
 //===----------------------------------------------------------------------===//
@@ -779,13 +840,16 @@ void ElifYieldOp::getBranchTargets(
   // stack values that were promoted to register values and thus now rely on
   // block arguments.
   assert(!operands.empty());
+  // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
   unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber();
+  assert(myIndex >= 2 && "elif.yield only belongs in additional cond regions");
   unsigned nextValueRegion = myIndex + 1;
-  unsigned nextConditionRegion = nextValueRegion + 1;
+  unsigned nextConditionRegion = myIndex + 2;
   unsigned numRegions =
       getOperation()->getParentRegion()->getParentOp()->getNumRegions();
+  // Fall to else (region 1) when there is no next condition region.
   unsigned nextConditionRegionOrElse =
-      nextConditionRegion == numRegions ? 0 : nextConditionRegion;
+      nextConditionRegion >= numRegions ? 1 : nextConditionRegion;
   ValueRange carryOver(getOperands().drop_front(1));
   if (auto constantResult =
           dyn_cast_if_present<KGEN::SIMDAttr>(operands.front())) {
@@ -802,22 +866,23 @@ void ElifYieldOp::getBranchTargets(
 ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
   auto parent = cast<ElifOp>(getOperation()->getParentOp());
-  unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber() - 1;
+  // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
+  unsigned myRegionNumber =
+      getOperation()->getParentRegion()->getRegionNumber();
+  assert(myRegionNumber >= 2);
+  unsigned myElifIndex = myRegionNumber - 2;
   ArrayRef<Attribute> blockArguments = operands.slice(1);
   if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0])) {
     if (cond.getAsBool()) {
-      return state.transferControlFlowTo(parent.getElifRegions()[myIndex + 1],
-                                         blockArguments);
+      return state.transferControlFlowTo(
+          parent.getElifRegions()[myElifIndex + 1], blockArguments);
     }
-    unsigned nextIndex = myIndex + 2;
+    unsigned nextIndex = myElifIndex + 2;
     if (nextIndex < parent.getElifRegions().size()) {
-      return state.transferControlFlowTo(parent.getElifRegions()[myIndex + 2],
-                                         blockArguments);
-    } else {
-      return state.transferControlFlowTo(parent.getElseRegion(),
+      return state.transferControlFlowTo(parent.getElifRegions()[nextIndex],
                                          blockArguments);
     }
-    return success();
+    return state.transferControlFlowTo(parent.getElseRegion(), blockArguments);
   }
   return ErrorTree(getLoc(), "non-constant condition in elif chain.");
 }
@@ -825,6 +890,162 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ElifYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// MatchOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseMatch(OpAsmParser &parser,
+           SmallVectorImpl<std::unique_ptr<Region>> &caseRegions,
+           Region &elseRegion) {
+  // First case region (required).
+  if (failed(parser.parseRegion(
+          *caseRegions.emplace_back(std::make_unique<Region>()))))
+    return failure();
+
+  // Additional case regions.
+  while (succeeded(parser.parseOptionalKeyword("case"))) {
+    if (failed(parser.parseRegion(
+            *caseRegions.emplace_back(std::make_unique<Region>()))))
+      return failure();
+  }
+
+  if (failed(parser.parseKeyword("else")) ||
+      failed(parser.parseRegion(elseRegion)))
+    return failure();
+  return success();
+}
+
+static void printMatch(OpAsmPrinter &printer, Operation *op,
+                       MutableArrayRef<Region> caseRegions,
+                       Region &elseRegion) {
+  assert(!caseRegions.empty() && "match requires at least one case region");
+  printer.printRegion(caseRegions.front());
+  for (Region &region : caseRegions.drop_front()) {
+    printer.printNewline();
+    printer << "case ";
+    printer.printRegion(region);
+  }
+  printer << " else ";
+  printer.printRegion(elseRegion);
+}
+
+bool MatchOp::containsInCaseRegion(Operation *op) {
+  return getCaseRegionIndexContaining(op).has_value();
+}
+
+std::optional<unsigned> MatchOp::getCaseRegionIndexContaining(Operation *op) {
+  Region *elseRegion = &getElseRegion();
+  for (Region *r = op->getParentRegion(); r; r = r->getParentRegion()) {
+    if (r == elseRegion)
+      return std::nullopt;
+    if (r->getParentOp() == getOperation()) {
+      // Region 0 is else; case regions start at 1.
+      assert(r->getRegionNumber() >= 1 && "expected a case region");
+      return r->getRegionNumber() - 1;
+    }
+  }
+  return std::nullopt;
+}
+
+LogicalResult MatchOp::verify() {
+  if (getCaseRegions().empty())
+    return emitOpError("requires at least one case region");
+  return success();
+}
+
+void MatchOp::getEntryTargets(ArrayRef<Attribute> operands,
+                              SmallVectorImpl<ControlFlowTarget> &targets) {
+  (void)operands;
+  // Begin in the first case region (region #1; #0 is else).
+  targets.emplace_back(1);
+}
+
+ValueRange MatchOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target < getNumRegions());
+  return getRegion(*target).getArguments();
+}
+
+ErrorTreeOrSuccess MatchOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  (void)operands;
+  return state.transferControlFlowTo(getCaseRegions().front(), {});
+}
+
+ErrorTreeOrSuccess
+MatchOp::parametric_interpret(ArrayRef<Attribute> operands,
+                              ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// MatchNextOp
+//===----------------------------------------------------------------------===//
+
+bool MatchNextOp::isParentNode(Operation *op) {
+  auto match = dyn_cast<MatchOp>(op);
+  return match && match.containsInCaseRegion(*this);
+}
+
+void MatchNextOp::getBranchTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  auto match = cast<MatchOp>(getParentNode(*this));
+  std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
+  assert(caseIdx && "match.next must be nested in a case region");
+  if (*caseIdx + 1 < match.getCaseRegions().size())
+    // Next case region number is caseIdx+1 + 1 (else is region 0).
+    targets.emplace_back(*caseIdx + 2, getOperands());
+  else
+    targets.emplace_back(0, getOperands()); // else region
+}
+
+ErrorTreeOrSuccess MatchNextOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  auto match = cast<MatchOp>(getParentNode(*this));
+  std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
+  assert(caseIdx && "match.next must be nested in a case region");
+  if (*caseIdx + 1 < match.getCaseRegions().size())
+    return state.transferControlFlowTo(match.getCaseRegions()[*caseIdx + 1],
+                                       operands);
+  return state.transferControlFlowTo(match.getElseRegion(), operands);
+}
+
+ErrorTreeOrSuccess
+MatchNextOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// MatchCompleteOp
+//===----------------------------------------------------------------------===//
+
+bool MatchCompleteOp::isParentNode(Operation *op) {
+  auto match = dyn_cast<MatchOp>(op);
+  return match && match.containsInCaseRegion(*this);
+}
+
+void MatchCompleteOp::getBranchTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+ErrorTreeOrSuccess MatchCompleteOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  auto match = cast<MatchOp>(getParentNode(*this));
+  return state.transferControlFlowTo(match, operands);
+}
+
+ErrorTreeOrSuccess
+MatchCompleteOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
   return interpret(operands, state);
 }
 

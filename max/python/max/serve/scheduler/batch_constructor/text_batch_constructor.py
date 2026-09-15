@@ -530,6 +530,10 @@ class TextBatchConstructor:
         self._prev_dp_padding: DPPaddingInfo | None = None
         self._current_dp_padding: DPPaddingInfo | None = None
 
+        # Per-replica count of consecutive TG steps that held pending fresh
+        # prefills below ``prefill_coalesce_min_pending``.
+        self._prefill_coalesce_held_steps: list[int] = [0] * self.num_replicas
+
     def _create_new_token_budget(
         self, ce_capacity: int | None = None
     ) -> TokenBudgetCollection:
@@ -543,6 +547,7 @@ class TextBatchConstructor:
                 allow_chunking=self.scheduler_config.enable_chunked_prefill,
                 applicable_types=RequestType.all(),
                 min_chunk_tokens=self.scheduler_config.chunked_prefill_min_chunk_size,
+                align_tokens=self.kv_cache.chunk_alignment_tokens,
             )
         ]
 
@@ -592,6 +597,48 @@ class TextBatchConstructor:
             ),
         )
         return replica_idx
+
+    @property
+    def structured_output_enabled(self) -> bool:
+        """Whether constrained decoding can fire at all for this process:
+        ``--enable-structured-output`` (user-supplied JSON schemas) or
+        ``--enable-tool-call-constrained-decode`` with a grammar-capable
+        tool parser (server-generated tool-call grammars).
+
+        Mirrors ``PipelineConfig.needs_bitmask_constraints`` -- the same
+        signal that gates whether the bitmask-aware sampler graph and
+        pinned D2H buffer were even compiled/allocated for this process.
+        """
+        pipeline_config = getattr(self.pipeline, "pipeline_config", None)
+        return (
+            pipeline_config is not None
+            and pipeline_config.needs_bitmask_constraints
+        )
+
+    def submit_grammar_build(self, ctx: TextContext) -> None:
+        """Starts a request's off-thread grammar-matcher build, if needed.
+
+        Exposed so a caller admitting a request before it ever reaches
+        ``enqueue_new_request`` (DI's decode scheduler, at initial
+        admission) can overlap the build with prefill's round trip instead
+        of stacking it sequentially onto TTFT. ``AsyncGrammarGate.submit``
+        is idempotent, so ``enqueue_new_request``'s own submit call later is
+        a no-op re-check, not a duplicate compile.
+        """
+        if self._grammar_gate is not None:
+            self._grammar_gate.submit(ctx)
+
+    def release_grammar_build(self, request_id: RequestID) -> None:
+        """Drops a request's outstanding grammar build, if any.
+
+        Exposed for callers that remove a request before it ever reaches
+        ``enqueue_new_request``/``release_request`` (DI's decode scheduler,
+        on cancellation, TTL eviction, or prefill rejection) but may have
+        already started its build via ``submit_grammar_build``. Safe to call
+        unconditionally: a no-op when nothing was submitted.
+        """
+        if self._grammar_gate is not None:
+            self._grammar_gate.release(request_id)
 
     def enqueue_new_request(
         self, ctx: TextContext, replica_idx: int | None = None
@@ -1258,6 +1305,39 @@ class TextBatchConstructor:
                     raise ValueError(f"Unexpected budget status: {status}")
 
     @traced
+    def _should_backfill_ce(self, replica_idx: int) -> bool:
+        """Whether this TG step should mix pending CE work into the batch.
+
+        Every mixed step runs eagerly (device graph capture replays only
+        pure-decode shapes), so admitting prefills the moment a slot frees
+        converts most decode steps to eager execution.
+
+        This decision is per replica. However, capture depends on the whole
+        DP group. One fresh prefill on any rank runs that step eagerly
+        everywhere, so at DP > 1 the threshold buys little.
+
+        TODO(MXSERV-497): decide admission once per step for the group
+        and split the threshold from the decode-step deadline it also
+        serves.
+        """
+        threshold = self.scheduler_config.prefill_coalesce_min_pending
+        if threshold <= 0:
+            return True
+        ce_reqs = self.replicas[replica_idx].ce_reqs
+        if not ce_reqs:
+            self._prefill_coalesce_held_steps[replica_idx] = 0
+            return True
+        head = next(iter(ce_reqs.values()))
+        if (
+            head.tokens.processed_length > 0
+            or len(ce_reqs) >= threshold
+            or self._prefill_coalesce_held_steps[replica_idx] >= threshold
+        ):
+            self._prefill_coalesce_held_steps[replica_idx] = 0
+            return True
+        self._prefill_coalesce_held_steps[replica_idx] += 1
+        return False
+
     def _construct_replica_batch(
         self, replica_idx: int, priority_override: RequestType | None = None
     ) -> ReplicaBatch:
@@ -1300,6 +1380,19 @@ class TextBatchConstructor:
 
                 if len(batch) == 0 and priority_override is None:
                     self._add_tg_requests(batch, replica_idx)
+                else:
+                    # This iteration is CE-only: the TG fallback above didn't
+                    # fire, so any pending TG requests get zero progress this
+                    # iteration (see _add_tg_requests, only reached from the
+                    # branch above). Pair with this batch's own execution
+                    # duration to estimate the TPOT cost of the stolen
+                    # iteration.
+                    pending_tg_count = len(self.replicas[replica_idx].tg_reqs)
+                    if len(batch) > 0 and pending_tg_count > 0:
+                        METRICS.di_ce_preempted_tg_iteration_count()
+                        METRICS.di_ce_preempted_tg_pending_count(
+                            pending_tg_count
+                        )
 
             case RequestType.TG:
                 self._add_tg_requests(batch, replica_idx)
@@ -1308,6 +1401,7 @@ class TextBatchConstructor:
                     self.scheduler_config.enable_in_flight_batching
                     and len(batch) > 0
                     and priority_override is None
+                    and self._should_backfill_ce(replica_idx)
                 ):
                     self._add_ce_requests(batch, replica_idx)
 

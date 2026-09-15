@@ -51,6 +51,7 @@ def _cpu_buf(
 def _kv(
     elts_per_page: int,
     *,
+    leaf_id: str = "full_group",
     tp: int = 2,
     num_pages: int = 8,
     replicated: bool = False,
@@ -62,6 +63,7 @@ def _kv(
     Pass ``scale_elts`` to attach a float32 scales tensor (quantized cache).
     """
     return KVCacheBuffer(
+        leaf_id=leaf_id,
         values=[_cpu_buf(num_pages, elts_per_page, dtype) for _ in range(tp)],
         scales=(
             [_cpu_buf(num_pages, scale_elts, DType.float32) for _ in range(tp)]
@@ -81,8 +83,12 @@ def _hetero_multi(*, num_pages: int = 8, tp: int = 2) -> MultiKVCacheBuffer:
     """
     return MultiKVCacheBuffer(
         children={
-            "target": _kv(61 * 8, tp=tp, num_pages=num_pages),
-            "draft": _kv(8, tp=tp, num_pages=num_pages),
+            "target": _kv(
+                61 * 8, leaf_id="target.full_group", tp=tp, num_pages=num_pages
+            ),
+            "draft": _kv(
+                8, leaf_id="draft.full_group", tp=tp, num_pages=num_pages
+            ),
         }
     )
 
@@ -95,27 +101,27 @@ def _hetero_multi(*, num_pages: int = 8, tp: int = 2) -> MultiKVCacheBuffer:
 def test_to_memory_sharded() -> None:
     """Non-replicated single cache: one group holding all TP shards."""
     groups = _kv(64).to_memory()
-    assert len(groups) == 1
-    assert not groups[0].replicated
-    assert len(groups[0].buffers) == 2  # 2 TP shards
+    assert list(groups) == ["full_group"]
+    assert not groups["full_group"].replicated
+    assert len(groups["full_group"].buffers) == 2  # 2 TP shards
     # bfloat16: 64 elts/page * 2 bytes = 128 bytes/page.
-    assert groups[0].bytes_per_page == 128
-    assert groups[0].total_num_pages == 8
+    assert groups["full_group"].bytes_per_page == 128
+    assert groups["full_group"].total_num_pages == 8
 
 
 def test_to_memory_replicated() -> None:
     """Replicated cache: one group carrying every TP shard."""
     groups = _kv(64, tp=3, replicated=True).to_memory()
-    assert len(groups) == 1
-    assert groups[0].replicated
-    assert len(groups[0].buffers) == 3  # one view per TP shard
+    assert list(groups) == ["full_group"]
+    assert groups["full_group"].replicated
+    assert len(groups["full_group"].buffers) == 3  # one view per TP shard
 
 
 def test_to_memory_quantized() -> None:
     """Quantized cache: values and scales become separate NIXL groups."""
     groups = _kv(64, dtype=DType.uint8, scale_elts=4).to_memory()
-    assert len(groups) == 2  # values group + scales group
-    values, scales = groups
+    assert list(groups) == ["full_group", "full_group/scales"]
+    values, scales = groups["full_group"], groups["full_group/scales"]
     assert len(values.buffers) == 2 and len(scales.buffers) == 2
     # uint8 values: 64 bytes/page; float32 scales: 4 elts * 4 bytes = 16.
     assert values.bytes_per_page == 64
@@ -125,10 +131,11 @@ def test_to_memory_quantized() -> None:
 def test_to_memory_multi_child_heterogeneous() -> None:
     """Multi-child cache with different shapes: one group per child."""
     groups = _hetero_multi().to_memory()
-    assert len(groups) == 2  # one group per child
-    assert len(groups[0].buffers) == 2 and len(groups[1].buffers) == 2
+    assert list(groups) == ["target.full_group", "draft.full_group"]
+    target, draft = groups["target.full_group"], groups["draft.full_group"]
+    assert len(target.buffers) == 2 and len(draft.buffers) == 2
     # Different per-page byte sizes -> kept in separate groups.
-    assert groups[0].bytes_per_page != groups[1].bytes_per_page
+    assert target.bytes_per_page != draft.bytes_per_page
 
 
 def test_to_memory_nested_quantized_child_count() -> None:
@@ -136,18 +143,24 @@ def test_to_memory_nested_quantized_child_count() -> None:
 
     Mirrors the DISTINF-383 nested-tree case authored-side: a quantized
     ``target`` (values + scales) beside a non-quantized ``draft`` (values only)
-    produces three groups, in child-major then kind order.
+    produces three groups, each named for the leaf it holds.
     """
     tree = MultiKVCacheBuffer(
         children={
-            "target": _kv(64, dtype=DType.uint8, scale_elts=4),
-            "draft": _kv(8),
+            "target": _kv(
+                64, leaf_id="target.full_group", dtype=DType.uint8, scale_elts=4
+            ),
+            "draft": _kv(8, leaf_id="draft.full_group"),
         }
     )
     groups = tree.to_memory()
-    assert len(groups) == 3  # target values, target scales, draft values
-    assert [g.bytes_per_page for g in groups] == [64, 16, 16]
-    assert all(not g.replicated for g in groups)
+    assert list(groups) == [
+        "target.full_group",
+        "target.full_group/scales",
+        "draft.full_group",
+    ]
+    assert [g.bytes_per_page for g in groups.values()] == [64, 16, 16]
+    assert all(not g.replicated for g in groups.values())
 
 
 # ---------------------------------------------------------------------------
@@ -169,10 +182,13 @@ def test_per_replica_groups_keep_children_separate() -> None:
     ]
 
     assert len(memory) == 2
-    assert all(isinstance(g, KVCacheMemory) for g in memory[0])
+    assert all(isinstance(g, KVCacheMemory) for g in memory[0].values())
     # Children stay in separate groups with different bytes_per_page.
-    assert len(memory[0]) == 2
-    assert memory[0][0].bytes_per_page != memory[0][1].bytes_per_page
+    assert list(memory[0]) == ["target.full_group", "draft.full_group"]
+    assert (
+        memory[0]["target.full_group"].bytes_per_page
+        != memory[0]["draft.full_group"].bytes_per_page
+    )
 
 
 # ---------------------------------------------------------------------------

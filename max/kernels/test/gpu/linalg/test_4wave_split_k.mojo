@@ -73,9 +73,9 @@ def test_4wave_split_k[
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -170,9 +170,9 @@ def test_4wave_split_k_epilogue[
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -180,7 +180,7 @@ def test_4wave_split_k_epilogue[
     ctx.enqueue_memset(device_out, 0)
 
     @__parameter
-    @always_inline
+    @inline(.always)
     @__copy_capture(out_tt)
     def epilogue_fn[
         _dtype: DType,

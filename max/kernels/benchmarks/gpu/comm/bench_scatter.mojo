@@ -38,14 +38,14 @@ from max.benchmark import (
 from comm.sync import enable_p2p
 from comm.scatter import scatter
 from layout import Idx, TileTensor, row_major
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 
 from std.testing import assert_true
 
 
-@always_inline
+@inline(.always)
 @__parameter
 def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
@@ -138,7 +138,7 @@ def bench_scatter[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -174,11 +174,11 @@ def bench_scatter[
         )
         list_of_ctx[gpu_idx].synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut tt_in_bufs, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut tt_in_bufs, imm}:

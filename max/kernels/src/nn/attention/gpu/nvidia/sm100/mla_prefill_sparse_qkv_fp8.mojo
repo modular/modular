@@ -396,7 +396,7 @@ struct MLAPrefillSparseQKVFP8[
     # writes one whole, independently-swizzled PV_BK-wide half-tile -- the
     # SAME physical layout `_mma`'s per-K-half BK=PV_BK descriptor reads.
     # ------------------------------------------------------------------
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _write_p_fp8[
         n: Int
@@ -435,7 +435,7 @@ struct MLAPrefillSparseQKVFP8[
     # KV producer (WG1): compute physical gather rows, gather4 the FP8 SW64 KV
     # tile (K and V share it), signal kv_ready.  No dequant, no staging.
     # ------------------------------------------------------------------
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _load_kv_fp8(
         kv_tma_op: TMATensorTile[
@@ -523,7 +523,7 @@ struct MLAPrefillSparseQKVFP8[
     # (it shares the KV buffer); at cg2 K@base0 and full-V@base0 collide, so V
     # is separate.  Cross-ref dequant `load_v_fp8_tma` for the depth-split math.
     # ------------------------------------------------------------------
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _load_v_fp8(
         kv_tma_op: TMATensorTile[
@@ -629,7 +629,7 @@ struct MLAPrefillSparseQKVFP8[
     # sub-copy lands at the PADDED stride the BMN=64 QK descriptor reads.
     # Mirrors `MLAPrefillSparseCommon._load_q_prologue` at SW64/FP8.
     # ------------------------------------------------------------------
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _load_q_fp8(
         q_smem: UnsafePointer[
@@ -1052,7 +1052,7 @@ struct MLAPrefillSparseQKVFP8[
     # ------------------------------------------------------------------
     # MMA warp (WG3 warp 12, single elected lane): QK^T(k) then PV(k-1).
     # ------------------------------------------------------------------
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _mma(
         q_ptr: UnsafePointer[
@@ -1217,7 +1217,7 @@ struct MLAPrefillSparseQKVFP8[
     # ------------------------------------------------------------------
     # Softmax + FP8 P write + O rescale + epilogue (WG0, warps 0-3).
     # ------------------------------------------------------------------
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _softmax_epilogue(
         p_ptr: UnsafePointer[
@@ -1338,9 +1338,13 @@ struct MLAPrefillSparseQKVFP8[
             )
             real_mi = max(real_mi, cur_pi_max)
 
-            var should_scale_o = warp.vote[.uint32](
-                cur_pi_max - mi > Float32(-Self.RESCALE_THRESHOLD)
-            ) != UInt32(0)
+            # Per-lane decision for the STATE update (new_max/mi/li):
+            # `idx_in_wg` packs one independent head-row's softmax state
+            # per lane, so an OR here would leak a sibling head's rescale
+            # trajectory into this one's.
+            var should_scale_o = cur_pi_max - mi > Float32(
+                -Self.RESCALE_THRESHOLD
+            )
 
             var new_max: Float32
             var scale_for_old: Float32
@@ -1352,6 +1356,17 @@ struct MLAPrefillSparseQKVFP8[
                 scale_for_old = exp2(mi - new_max)
             mi = new_max
             li = mul_ftz(li, scale_for_old)
+
+            # The O-rescale WALK below touches TMEM via tcgen05_ld/st,
+            # which are warp-collective ops (datapaths=32) requiring every
+            # lane to participate uniformly -- a per-lane branch here would
+            # diverge the warp on those ops and hang. Vote ANY (not the
+            # state above): any lane needing a rescale pulls every lane
+            # through the walk, but each lane applies its OWN
+            # `scale_for_old` (exactly 1.0 for a lane that didn't need
+            # it), so a coerced lane's contribution is an exact no-op
+            # multiply, not a value substitution.
+            var any_rescale = warp.vote[.uint32](should_scale_o) != UInt32(0)
 
             var nums = Array[Float32, P_PER_THREAD](uninitialized=True)
             # +P_FP8_BIAS lifts P out of the e4m3 subnormal floor; it scales
@@ -1375,7 +1390,7 @@ struct MLAPrefillSparseQKVFP8[
             var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
                 uninitialized=True
             )
-            if k > 0 and should_scale_o:
+            if k > 0 and any_rescale:
                 tcgen05_fence_after()
                 o_chunk_prefetch = tcgen05_ld[
                     datapaths=32,
@@ -1395,7 +1410,7 @@ struct MLAPrefillSparseQKVFP8[
                 key_base,
             )
 
-            if k > 0 and should_scale_o:
+            if k > 0 and any_rescale:
                 tcgen05_load_wait()
                 var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
                     fill_with_unrolled=lambda [j: Int]() -> Float32: (
@@ -1554,7 +1569,7 @@ struct MLAPrefillSparseQKVFP8[
             )
 
 
-@always_inline
+@inline(.always)
 def mla_prefill_sparse_qkv_fp8[
     output_dtype: DType,
     q_type: DType,

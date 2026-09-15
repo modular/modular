@@ -41,7 +41,7 @@ from std.utils.index import Index
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import Coord, TileTensor, row_major
 
-from comm import MAX_GPUS, Signal, group_end, group_start
+from comm import Signal, group_end, group_start
 from comm.allgather_rmsnorm import (
     _dispatch_ag_norm_quant,
     allgather_rmsnorm,
@@ -102,15 +102,16 @@ def _run_case[
     var scales_ref = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var scales_fused = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
-    var gamma_host = List(length=num_cols, fill=Scalar[in_dtype](0))
-    for c in range(num_cols):
-        gamma_host[c] = (Float64(c + num_cols) / Float64(num_cols)).cast[
-            in_dtype
-        ]()
+    var gamma_host = List(
+        length=num_cols,
+        fill_with=lambda (c: Int) -> Scalar[in_dtype]: (
+            Float64(c + num_cols) / Float64(num_cols)
+        ).cast[in_dtype](),
+    )
 
     for i in range(ngpus):
         var shard_rows = config.rank_units(i)
@@ -200,14 +201,14 @@ def _run_case[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
 
-    var in_shards = Array[ShardType, ngpus](uninitialized=True)
-    comptime for i in range(ngpus):
-        in_shards[i] = ShardType(
+    var in_shards = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> ShardType: ShardType(
             rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 shard_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
+    )
 
     # --- Arm A: the shipping two-kernel chain. ---
     group_start()
@@ -296,7 +297,7 @@ def _run_case[
         # device as host-stack pointers and the stores land out of bounds.
         @__copy_capture(quant_view, scale_view)
         @__parameter
-        @always_inline
+        @inline(.always)
         def mx_epilogue[
             width: Int
         ](row: Int, col: Int, val: SIMD[in_dtype, width]):
@@ -330,7 +331,7 @@ def _run_case[
         # This branch owes the SAME outputs as the fused one; dropping the
         # `quantize_mx_amd` leaves them stale and arm A catches it (verified).
         @__parameter
-        @always_inline
+        @inline(.always)
         def two_launch_with_quant() raises:
             comptime if not route_two_launch:
                 # Poison: `threshold = full_bytes` forces the fused branch, so

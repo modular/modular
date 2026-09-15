@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -40,10 +40,11 @@ from max.nn.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVCacheMemory,
+    recurrent_leaf,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import build_max_lengths_tensors
+from max.nn.kv_cache.utils import build_max_lengths_tensors, padded_lut_cols
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
@@ -61,20 +62,12 @@ from .block_manager import (
     _compute_seq_len,
     compute_block_hashes,
 )
+from .block_utils import InsufficientBlocksError
 from .cache_manager_interface import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
 
 KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
-
-
-#: Padding added to every LUT inner dim (columns per batch row). The SIMD
-#: ``populate`` in ``PagedKVCache`` reads up to 16 consecutive ``uint32``
-#: entries past ``base_kv_row / page_size``; this buffer keeps those reads
-#: in-bounds of the allocation for partial-tile tails. The value is also
-#: a multiple of 8 so the inner-dim stride stays 32-byte aligned for the
-#: ``ld.global.v{N}.u32`` vector loads.
-_LUT_TAIL_PAD = 16
 
 
 def _does_req_need_more_blocks(
@@ -123,18 +116,6 @@ def cache_valid_length_for_context(
     )
 
 
-def _padded_lut_cols(cols: int) -> int:
-    """Round an LUT inner dim up to a multiple of 8 plus a SIMD tail pad.
-
-    Kept in lockstep with the invariant asserted in
-    ``max/kernels/src/kv_cache/types.mojo`` (``PagedKVCache.populate``):
-    ``lookup_table.dim[1]`` is a multiple of 8 and is at least
-    ``logical_cols + 15`` so a 16-wide SIMD lookup load from any valid
-    ``first_lut_idx`` stays in-bounds.
-    """
-    return ((cols + 7) // 8) * 8 + _LUT_TAIL_PAD
-
-
 def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
     """Returns a contiguous 2D prefix view of ``buffer``.
 
@@ -175,7 +156,7 @@ class _PersistentKVDeviceInputBuffers:
         # Pad the inner dim so the SIMD ``populate`` in ``PagedKVCache``
         # can always load up to 16 consecutive uint32s past any valid
         # ``first_lut_idx`` without going OOB of this backing allocation.
-        padded_inner = _padded_lut_cols(max_total_num_pages)
+        padded_inner = padded_lut_cols(max_total_num_pages)
         for device in devices:
             self.lut_table_by_device.append(
                 Buffer(
@@ -307,6 +288,14 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
+        if recurrent_leaf(params) is not None:
+            # A state is drawn from a slab, and this pool hands out flat pages
+            # of one size. ``load_kv_manager`` routes such a cache to Jenga, so
+            # reaching here means a caller built this manager directly.
+            raise ValueError(
+                "PagedKVCacheManager cannot hold a recurrent state leaf; use"
+                " JengaKVCacheManager, whose slab the state shares."
+            )
 
         self.params = params
 
@@ -325,16 +314,9 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             params.allocate_buffers(total_num_pages + 1)
         )
 
-        # Per-replica offload-ready KV memory, keyed by leaf id (each buffer's
-        # `to_memory()` emits one unit per leaf in `params.leaves()` order).
+        # Per-replica offload-ready KV memory, keyed by leaf id.
         replica_kv_memory = [
-            dict(
-                zip(
-                    params.leaves(),
-                    self._kv_buffers[replica_idx].to_memory(),
-                    strict=True,
-                )
-            )
+            self._kv_buffers[replica_idx].to_memory()
             for replica_idx in range(num_replicas)
         ]
 
@@ -364,11 +346,11 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         # request admitted on one replica can reuse a prefix block resident on
         # another replica's GPU via a device-to-device copy (SERVOPT-1500). The
         # block manager needs each replica's device memory to perform the copy.
-        cross_replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None
+        cross_replica_kv_memory: (
+            Sequence[Mapping[str, KVCacheMemory]] | None
+        ) = None
         if num_replicas > 1 and params.enable_prefix_caching:
-            cross_replica_kv_memory = [
-                list(memories.values()) for memories in replica_kv_memory
-            ]
+            cross_replica_kv_memory = replica_kv_memory
 
         # A single block manager owns every replica's device block pool and the
         # single shared connector.
@@ -407,7 +389,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         Computes the request's block hashes once and queries every replica's
         block manager read-only, without claiming the request or mutating any
         per-request state. Intended for prefix-aware data-parallel routing:
-        callers can compare replicas' hit depths (across the device, host,
+        callers can compare replicas' hit num_blocks (across the device, host,
         and disk tiers) before deciding which replica should serve the
         request.
 
@@ -458,18 +440,28 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
-            satisfy the allocation.
+            satisfy the allocation. The request is left as it was before the
+            call, so the caller can release or retry it.
         """
         # Drain completed async KV transfers first to release any g0 blocks of
         # completed transfers.
         self._block_manager.poll_transfers()
 
-        _, load_event = self._block_manager.reuse_blocks_from_prefix_cache(ctx)
-        self._block_manager.allocate_new_blocks(
-            ctx,
-            self.params.num_draft_tokens,
-            self.params.num_draft_tokens_per_step,
+        skip_amount, load_event = (
+            self._block_manager.reuse_blocks_from_prefix_cache(ctx)
         )
+        try:
+            self._block_manager.allocate_new_blocks(
+                ctx,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
+            )
+        except InsufficientBlocksError:
+            # The splice already advanced the token window past the reused
+            # blocks; undo it, or a caller that releases and retries walks
+            # into the next alloc claiming tokens it holds no blocks for.
+            self._block_manager.rollback_prefix_reuse(ctx, skip_amount)
+            raise
         return load_event
 
     @traced
@@ -561,7 +553,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         # ``PagedKVCache`` can safely over-read past any valid
         # ``first_lut_idx``. [0, total_num_pages) are the valid block ids
         # and total_num_pages denotes an unassigned block.
-        padded_lut_num_pages = _padded_lut_cols(lut_num_pages)
+        padded_lut_num_pages = padded_lut_cols(lut_num_pages)
         shape = (batch_size, padded_lut_num_pages)
         dtype = DType.uint32
         device = device0
@@ -700,7 +692,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
 
         return KVCacheAssignments(
             cache_lengths_by_device=cache_lengths_by_device,
-            lookup_table_by_device=lut_table_by_device_by_leaf,
+            staged_by_device=lut_table_by_device_by_leaf,
             max_prompt_length=max_prompt_length_host,
             max_cache_length=max_cache_length_host,
             batch_characteristics=BatchCharacteristics(

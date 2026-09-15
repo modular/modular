@@ -240,7 +240,7 @@ def flash_attention[
         sink_weights: Optional sink-token weight tensor for attention sinks.
     """
 
-    @always_inline
+    @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -305,7 +305,7 @@ def flash_attention[
 comptime _MHA_DECODE_FOLD_MAX_S = 9
 
 
-@always_inline
+@inline(.always)
 def _mha_decode_fold_ok[
     dtype: DType,
     depth: Int,
@@ -486,7 +486,7 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
     var max_cache_valid_length: Int
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def from_runtime_values[
         num_heads: Int,
         group: Int,
@@ -577,7 +577,7 @@ def depth_supported_by_gpu[
 
 
 # Entry point for flash_attention with batch_size > 1.
-@always_inline
+@inline(.always)
 def flash_attention[
     cache_t: KVCacheT,
     mask_t: MHAMask,
@@ -706,7 +706,7 @@ def flash_attention[
     )
 
     # TODO docstring
-    @always_inline
+    @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -814,7 +814,7 @@ def flash_attention[
         )
 
 
-@always_inline
+@inline(.always)
 def q_num_matrix_view_rows[
     dtype: DType, //
 ](q: LayoutTensor[mut=False, dtype, ...]) -> Int:
@@ -843,7 +843,7 @@ def q_num_matrix_view_rows[
     return num_rows
 
 
-@always_inline
+@inline(.always)
 def q_num_matrix_view_rows[
     dtype: DType, //
 ](q: TileTensor[mut=False, dtype, ...]) -> Int:
@@ -863,7 +863,7 @@ def _apple_fa_prefill_enabled() -> Bool:
     return getenv("MODULAR_ENABLE_APPLE_FA_PREFILL", "1") != "0"
 
 
-@always_inline
+@inline(.always)
 def flash_attention_dispatch[
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1129,11 +1129,11 @@ def flash_attention_dispatch[
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
                         scale,
-                        kv_input_row_offsets,
+                        _optional_lt_to_tt(kv_input_row_offsets),
                         batch_size,
                         NoPartition[get_accum_type[q.dtype]()](),
                         ctx,
-                        sink_weights,
+                        _optional_lt_to_tt(sink_weights),
                     )
                 else:
                     comptime assert is_sm100
@@ -1813,11 +1813,11 @@ def flash_attention_dispatch[
                                     StaticInt[1](),
                                     max_cache_valid_length_value,
                                     scale,
-                                    kv_input_row_offsets,
+                                    _optional_lt_to_tt(kv_input_row_offsets),
                                     batch_size,
                                     NoPartition[accum_type](),
                                     ctx,
-                                    sink_weights,
+                                    _optional_lt_to_tt(sink_weights),
                                 )
                         else:
                             var nullptr_device = DeviceBuffer[accum_type].empty(
@@ -1935,7 +1935,7 @@ def flash_attention_dispatch[
                                     StaticInt[1](),
                                     max_cache_valid_length_value,
                                     scale,
-                                    kv_input_row_offsets,
+                                    _optional_lt_to_tt(kv_input_row_offsets),
                                     batch_size,
                                     SplitKPartition(
                                         exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
@@ -1944,7 +1944,7 @@ def flash_attention_dispatch[
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
-                                    sink_weights,
+                                    _optional_lt_to_tt(sink_weights),
                                 )
                         else:
                             # Same ladder, on the intermediate dtype and writing
@@ -2703,7 +2703,7 @@ def mha[
     var mask_tensor_col = _num_keys_arg
     var start_pos: UInt32 = 0
 
-    @always_inline
+    @inline(.always)
     def q_block_idx() -> Int:
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
@@ -2868,7 +2868,7 @@ def mha[
         Int32(config.num_threads())
     )
 )
-@always_inline
+@inline(.always)
 @__name(
     t"mha_single_batch_depth{config.depth}_{q_type}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
 )
@@ -3186,7 +3186,7 @@ def mha_single_batch[
     #       loop_over_kvcache[tile_size, True]
     #   ```
     # Only the last iteration is doing boundary check.
-    @always_inline
+    @inline(.always)
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int) {
@@ -3261,7 +3261,7 @@ def mha_single_batch[
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
 
-        @always_inline
+        @inline(.always)
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ) {imm}:
@@ -3627,7 +3627,7 @@ def mha_single_batch[
         Int32(config.num_threads())
     )
 )
-@always_inline
+@inline(.always)
 @__name(
     t"mha_single_batch_pipelined_depth{config.depth}_{q_type}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
 )
@@ -3915,7 +3915,7 @@ def mha_single_batch_pipelined[
     #       loop_over_kvcache[tile_size, True]
     #   ```
     # Only the last iteration is doing boundary check.
-    @always_inline
+    @inline(.always)
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int) {
@@ -4705,7 +4705,7 @@ def mha_decoding[
         ]()
 
 
-@always_inline
+@inline(.always)
 def scale_and_mask_helper[
     p_type: DType,
     p_layout: Layout,
@@ -5107,7 +5107,7 @@ def mha_decoding_single_batch[
         BK // simd_size,
     )
 
-    @always_inline
+    @inline(.always)
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int
     ) {imm} -> type_of(tensor):
@@ -5141,7 +5141,7 @@ def mha_decoding_single_batch[
         * log2e
     )
 
-    @always_inline
+    @inline(.always)
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int) {mut k_smem_iter, mut v_smem_iter, imm}:
@@ -5830,7 +5830,7 @@ def mha_decoding_single_batch_pipelined[
         * log2e
     )
 
-    @always_inline
+    @inline(.always)
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, seq_len: Int) {
@@ -6426,7 +6426,7 @@ def mha_gpu_naive[
     _ = p_device^
 
 
-@always_inline
+@inline(.always)
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
 @__name(t"mha_bmm0_{q_type}_{p_type}_{ragged}")
 def _bmm0_bs[
@@ -6565,7 +6565,7 @@ def _bmm0_bs[
         p[y * padded_num_keys + x] = min_or_neg_inf[p_type]()
 
 
-@always_inline
+@inline(.always)
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
 @__name(t"mha_bmm1_{output_type}_{p_type}_{ragged}")
 def _bmm1_bs[
@@ -7131,28 +7131,16 @@ def _naive_attention_with_transpose[
     )
 
     # BSHD -> BHSD
-    var q_perm_stack = Array[Int, 4](uninitialized=True)
+    var q_perm_stack: Array[Int, 4] = [0, 2, 1, 3]
     var q_perm = TileTensor(q_perm_stack, row_major[4]())
-    q_perm[0] = 0
-    q_perm[1] = 2
-    q_perm[2] = 1
-    q_perm[3] = 3
 
     # BSHD -> BHDS
-    var k_perm_stack = Array[Int, 4](uninitialized=True)
+    var k_perm_stack: Array[Int, 4] = [0, 2, 3, 1]
     var k_perm = TileTensor(k_perm_stack, row_major[4]())
-    k_perm[0] = 0
-    k_perm[1] = 2
-    k_perm[2] = 3
-    k_perm[3] = 1
 
     # BHSD -> BSHD
-    var o_perm_stack = Array[Int, 4](uninitialized=True)
+    var o_perm_stack: Array[Int, 4] = [0, 2, 1, 3]
     var o_perm = TileTensor(o_perm_stack, row_major[4]())
-    o_perm[0] = 0
-    o_perm[1] = 2
-    o_perm[2] = 1
-    o_perm[3] = 3
 
     var q_tt = TileTensor(
         q.ptr,
@@ -7275,7 +7263,7 @@ def _naive_attention[
     )
     batched_matmul[transpose_b=transpose_k](score, q_tt, k_tt)
 
-    @always_inline
+    @inline(.always)
     def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord) {var}:
         var score_idx = coord_to_index_list(coords)
         var vec = score.load_linear[width, alignment=alignment](score_idx)

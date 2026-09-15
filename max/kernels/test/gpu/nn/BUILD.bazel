@@ -20,6 +20,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # Exercises both `topk_topp_masked_probs` and the `emit_dist` search path,
+    # neither of which builds on Apple.
+    "test_topk_topp_p_one_vacuous.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # `from_probs` refuses to build on Apple (`_block_reduce_topk` caps its
     # storage at WARP_SIZE there while the kernel launches full-sized blocks),
     # so the test cannot run on that target either.
@@ -101,6 +107,12 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # Native FP8 MLA decode MTP-fold cross-row leak canary: drives
+    # `flare_mla_decoding`'s SM100 Layout-G/Layout-E fold kernels. SM100-only.
+    "test_mla_decode_fold_garbage_row_canary.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
@@ -132,6 +144,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_sparse.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_prefill_sparse_garbage_head_canary.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -332,6 +348,10 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "attention/test_mha_sm100_d512_fuse_gqa_crossrow_canary.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # TEMPORARY (sub_rows gate): restored from a3b3414cd32^.
     "attention/test_mha_sm100_qkv_bf16_fp16_d256_d512_decode.mojo": select({
         "//:b200_gpu": [],
@@ -474,8 +494,6 @@ _FILECHECK_TESTS = [
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
             "//:amd_gpu": src not in [
-                "test_flash_attention.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
-                "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_mha_sink_weights.mojo",  # KERN-2751: sink kernel triggers OOB on AMD
             ],
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
@@ -485,7 +503,6 @@ _FILECHECK_TESTS = [
             # The OOB is functionally benign (masked out by _kernel_mask).
             "//conditions:default": src not in [
                 "test_mla.mojo",
-                "test_mha_chunked_causal_mask.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions (amdgpu)
             ],
         }),
         exec_properties = {
@@ -1303,14 +1320,6 @@ _MLA_DECODE_PAGED_CONFIGS = [
             "-D",
             "page_size={}".format(page_size),
         ],
-        # The gfx950 backend crashes compiling the warp-local MLA-decode fold
-        # kernel with assertions enabled (machine scheduler emits illegal MIR
-        # -> "Found N machine code errors"); the no-assert / JIT build is fine.
-        # Mirrors test_flash_attention_amd.mojo (MSTDL-2240). NVIDIA keeps asserts.
-        enable_assertions = select({
-            "//:amd_gpu": False,
-            "//conditions:default": True,
-        }),
         exec_properties = {
             "test.resources:gpu-memory": "6",
         },

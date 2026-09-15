@@ -14,19 +14,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from max.driver import Buffer
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaEmbeddingBatchProcessor,
 )
 
-if TYPE_CHECKING:
-    from .model import Qwen3EmbeddingInputs
+from .inputs import Qwen3EmbeddingInputs
 
 
 class Qwen3EmbeddingModuleV3BatchProcessor(
-    SingleReplicaEmbeddingBatchProcessor["Qwen3EmbeddingInputs"]
+    SingleReplicaEmbeddingBatchProcessor[Qwen3EmbeddingInputs]
 ):
     """Ragged batching for Qwen3 Embedding ModuleV3 models (no KV cache, no signals)."""
 
@@ -37,8 +34,6 @@ class Qwen3EmbeddingModuleV3BatchProcessor(
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
     ) -> Qwen3EmbeddingInputs:
-        from .model import Qwen3EmbeddingInputs
-
         return Qwen3EmbeddingInputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,

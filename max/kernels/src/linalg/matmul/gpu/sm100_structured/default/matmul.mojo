@@ -22,7 +22,7 @@ All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
@@ -358,7 +358,10 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # This is wrapped in an Array to match reduce-scatter friendly kernel interface
     var c_tma_ops: Array[type_of(c_tma_op), 1] = [c_tma_op]
     var rank_sigs: Optional[
-        Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+        Array[
+            UnsafePointer[Signal, MutAnyOrigin],
+            KernelType.num_c_tma_descriptors,
+        ]
     ] = None
 
     ctx.enqueue_function[kernel](
@@ -644,7 +647,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # Reduction TileTensor layout: shape = (UNKNOWN, BM, MMA_N),
     # strides = (BM*MMA_N, MMA_N, 1) -- all strides are static.
     comptime ReductionTTLayout = type_of(reduction_tensor).LayoutType
-    comptime kernel = matmul_kernel.run_splitk[ReductionTTLayout]
+    comptime kernel = matmul_kernel.run_splitk[
+        ReductionTTLayout, type_of(reduction_tensor).Engine
+    ]
 
     var grid_dim = (
         align_up(ceildiv(M_maybe_swapped, BM), cluster_shape[0]),
@@ -942,6 +947,7 @@ def matmul_sm100_fallback[
         b_type,
         c_type,
         type_of(c).LayoutType,
+        type_of(c).Engine,
         block_tile_shape,
         umma_shape,
         transpose_b=True,

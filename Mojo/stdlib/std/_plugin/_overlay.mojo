@@ -17,6 +17,13 @@ from .cuda import CUDAPlugin
 from .hip import HIPPlugin
 from .metal import MetalPlugin
 
+from std._gpu.host.info import (
+    TargetAcceleratorCollection,
+    EmptyTargetCollection,
+)
+
 comptime STD_PLUGINS = PluginSelector[
     DefaultPlugin, MetalPlugin, CUDAPlugin, HIPPlugin
 ]
+
+comptime ADDITIONAL_TARGETS: TargetAcceleratorCollection = EmptyTargetCollection

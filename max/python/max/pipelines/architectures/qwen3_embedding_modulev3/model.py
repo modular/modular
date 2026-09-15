@@ -18,7 +18,6 @@ import functools
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device
@@ -42,6 +41,7 @@ from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
 from .batch_processor import Qwen3EmbeddingModuleV3BatchProcessor
+from .inputs import Qwen3EmbeddingInputs
 from .layers import (
     Qwen3AttentionNoCache,
     Qwen3Embedding,
@@ -51,20 +51,6 @@ from .layers import (
 from .model_config import Qwen3EmbeddingConfig
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class Qwen3EmbeddingInputs(ModelInputs):
-    """Input structure for Qwen3 embedding models."""
-
-    tokens: Buffer
-    """Input token IDs [total_seq_len]"""
-
-    input_row_offsets: Buffer
-    """Row offsets for ragged tensors [batch_size + 1]"""
-
-    return_n_logits: Buffer
-    """Number of logits to return (kept for interface compatibility)"""
 
 
 class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):

@@ -37,13 +37,12 @@ from max.nn.kernels import (
     rope_ragged_with_position_ids,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.modular_graph_test import (
     are_all_tensor_values,
     modular_graph_test,
 )
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 MAX_SEQ_LEN = 2**14
 ACCURACY_RTOL = 1e-2
@@ -594,13 +593,6 @@ def test_kv_cache_ragged_rope(
             device=DeviceRef.CPU(),
         )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     mrope_section = [16, 24, 24]
 
     def construct() -> Graph:
@@ -627,24 +619,11 @@ def test_kv_cache_ragged_rope(
             freqs_cis = g.inputs[2]
 
             kv_start = 4 if use_position_ids else 3
-            (
-                blocks,
-                cache_lengths,
-                lookup_table,
-                max_prompt_length,
-                max_cache_length,
-                _attention_dispatch_metadata,
-            ) = g.inputs[kv_start:]
-
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup_table.tensor,
-                max_prompt_length.tensor,
-                max_cache_length.tensor,
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(g.inputs[kv_start:])
+            ).inputs[0]
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
 
@@ -663,16 +642,6 @@ def test_kv_cache_ragged_rope(
 
     g = construct()
 
-    batch = [
-        create_text_context(np.empty(prompt_lens[i], dtype=np.int64))
-        for i in range(batch_size)
-    ]
-
-    for context in batch:
-        kv_manager.claim(context)
-        assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context)
-
     input_row_offsets = Buffer(
         DType.uint32,
         [batch_size + 1],
@@ -683,19 +652,20 @@ def test_kv_cache_ragged_rope(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
+    )
 
     # Build provided_inputs with correct indices based on use_position_ids
     offset = 1 if use_position_ids else 0
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
-        3 + offset: kv_runtime_inputs.kv_blocks,
-        4 + offset: kv_runtime_inputs.cache_lengths,
-        5 + offset: kv_runtime_inputs.lookup_table,
-        6 + offset: kv_runtime_inputs.max_prompt_length,
-        7 + offset: kv_runtime_inputs.max_cache_length,
-        8 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+        # The KV inputs follow, in the order `flatten` emits them.
+        **{
+            3 + offset + i: buf
+            for i, buf in enumerate(kv_runtime_inputs.flatten())
+        },
     }
 
     if use_position_ids:
@@ -768,13 +738,6 @@ def test_rope_split_store_ragged(
             device=DeviceRef.CPU(),
         )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     def construct() -> Graph:
         input_types = [
             qkv_type,
@@ -799,24 +762,11 @@ def test_rope_split_store_ragged(
             freqs_cis = g.inputs[2]
 
             kv_start = 4 if use_position_ids else 3
-            (
-                blocks,
-                cache_lengths,
-                lookup_table,
-                max_prompt_length,
-                max_cache_length,
-                _attention_dispatch_metadata,
-            ) = g.inputs[kv_start:]
-
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup_table.tensor,
-                max_prompt_length.tensor,
-                max_cache_length.tensor,
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(g.inputs[kv_start:])
+            ).inputs[0]
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
 
@@ -836,16 +786,6 @@ def test_rope_split_store_ragged(
 
     g = construct()
 
-    batch = [
-        create_text_context(np.empty(prompt_lens[i], dtype=np.int64))
-        for i in range(batch_size)
-    ]
-
-    for context in batch:
-        kv_manager.claim(context)
-        assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context)
-
     input_row_offsets = Buffer(
         DType.uint32,
         [batch_size + 1],
@@ -856,18 +796,19 @@ def test_rope_split_store_ragged(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
+    )
 
     offset = 1 if use_position_ids else 0
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
-        3 + offset: kv_runtime_inputs.kv_blocks,
-        4 + offset: kv_runtime_inputs.cache_lengths,
-        5 + offset: kv_runtime_inputs.lookup_table,
-        6 + offset: kv_runtime_inputs.max_prompt_length,
-        7 + offset: kv_runtime_inputs.max_cache_length,
-        8 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+        # The KV inputs follow, in the order `flatten` emits them.
+        **{
+            3 + offset + i: buf
+            for i, buf in enumerate(kv_runtime_inputs.flatten())
+        },
     }
 
     if use_position_ids:

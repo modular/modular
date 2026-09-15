@@ -39,10 +39,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import rope_split_store_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.graph_utils import is_b100_b200
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 _NUM_Q_HEADS = 64
 _N_KV_HEADS = 8
@@ -94,13 +93,6 @@ def _run_store(
         DType.float32, [freqs_cis.shape[0], _HEAD_DIM], device=DeviceRef.GPU()
     )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     with Graph(
         f"rope_store_{cache_dtype}",
         input_types=[
@@ -110,29 +102,15 @@ def _run_store(
             *kv_params.flattened_kv_inputs(),
         ],
     ) as graph:
-        (
-            qkv_in,
-            iro_in,
-            freqs_in,
-            blocks,
-            cache_lengths,
-            lookup,
-            max_p,
-            max_c,
-            *_,
-        ) = graph.inputs
+        qkv_in, iro_in, freqs_in, *_kv_rest = graph.inputs
         roped_q = rope_split_store_ragged(
             kv_params,
             qkv_in.tensor,
             iro_in.tensor,
             freqs_in.tensor,
-            kv_collection=PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup.tensor,
-                max_p.tensor,
-                max_c.tensor,
-            ),
+            kv_collection=kv_params.unflatten_kv_inputs(
+                iter(graph.inputs[3:])
+            ).inputs[0],
             layer_idx=ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             n_heads=_NUM_Q_HEADS,
             interleaved=True,
@@ -141,16 +119,11 @@ def _run_store(
 
     model = session.load(graph)
 
-    batch = []
-    for length in _PROMPT_LENS:
-        ctx = create_text_context(np.empty(length))
-        kv_manager.claim(ctx)
-        kv_manager.alloc(ctx)
-        batch.append(ctx)
-
     offsets = np.zeros(len(_PROMPT_LENS) + 1, dtype=np.uint32)
     offsets[1:] = np.cumsum(_PROMPT_LENS)
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_inputs = paged_kv_cache_inputs(
+        kv_params, _PROMPT_LENS, total_num_pages=8
+    )
 
     qkv_buf = Buffer.from_dlpack(qkv).to(device)
     iro_buf = Buffer.from_dlpack(torch.from_numpy(offsets)).to(device)

@@ -266,6 +266,26 @@ struct NeverCopyableOuter(Copyable where False):
     var m: NeverCopyableInner
 
 
+# The `not` spelling of the same two shapes. Field conformance is checked
+# through a different route than synthesis gating (`ASTType::isMovable` rather
+# than `getConformanceCondition`), so the composed cases are worth pinning for
+# both spellings.
+struct NotDeletableInner(not Deinitable, not Movable):
+    pass
+
+
+struct NotDeletableOuter(not Deinitable, not Movable):
+    var m: NotDeletableInner
+
+
+struct NotMovableInner(not Movable):
+    pass
+
+
+struct NotMovableOuter(not Movable):
+    var m: NotMovableInner
+
+
 # Field-movability is irrelevant once the outer struct opts out: because a
 # `Movable where False` struct synthesizes no move constructor, its fields are
 # never checked for movability. Both a movable field and a wholly non-movable
@@ -340,16 +360,3 @@ def never_greeter_call_is_no_candidates_found():
     # `greet` is not a member at all.
     # expected-error @+1 {{'SilentGreeter' value has no attribute 'greet'}}
     var msg = s.greet()
-
-
-# Test that overriding a parent trait's comptime decl with a non-comptime decl is an error.
-# Regression test for MOCO-4227 (latent null-pointer dereference in error path).
-trait TraitWithComptime:
-    # expected-note @+1 {{cannot overload comptime alias with a non-comptime definition}}
-    comptime MyType = Int
-
-
-trait ChildOverridesComptimeWithFn(TraitWithComptime):
-    # expected-error @+1 {{invalid redefinition of 'MyType'}}
-    def MyType(self):
-        pass

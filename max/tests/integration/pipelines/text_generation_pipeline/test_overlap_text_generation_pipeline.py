@@ -20,9 +20,9 @@ import numpy as np
 import pytest
 from llguidance import LLMatcher
 from max.pipelines.context import (
-    EOSTracker,
-    GenerationStatus,
+    ImageMetadata,
     StructuredOutputRegionDelimiters,
+    TextAndVisionContext,
     TextContext,
     TokenBuffer,
 )
@@ -40,11 +40,11 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     MAGIC_DRAFT_TOKEN_ID,
     AsyncBatch,
     _host_mirror_realized_drafts,
+    _should_verify_drafts,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     _count_token_subsequence,
-    update_context_and_prepare_responses,
 )
 from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import (
@@ -165,7 +165,6 @@ def test_forward_launched_before_sampling_processor_build() -> None:
     pipeline._spec_decode_state = None
     pipeline._prev_batch = None
     pipeline._disable_overlap = False
-    pipeline._max_pending_futures = 1
     pipeline._kv_manager = MagicMock()
 
     call_order: list[str] = []
@@ -251,7 +250,6 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager.effective_max_seq_length = 100 * 128
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
-    pipeline._fold_sampler_into_graph = False
 
     with patch(
         "max.pipelines.lib.pipeline_variants.overlap_text_generation"
@@ -363,7 +361,6 @@ def test_effective_max_cache_length_covers_compute_seq_len(
     tokens.skip_processing(max_seq_len)
     boundary_ctx = SimpleNamespace(
         tokens=tokens,
-        pending_future_count=1,
         spec_decoding_state=SimpleNamespace(
             maybe_accepted_draft_tokens=[0] * num_draft_tokens
         ),
@@ -427,6 +424,95 @@ def test_prefill_and_decode_gets_overlap_pipeline() -> None:
     assert result is OverlapTextGenerationPipeline[TextContext]
 
 
+def _prefill_ctx(json_schema: str | None = None) -> TextContext:
+    return TextContext(
+        request_id=RequestID(),
+        max_length=1000,
+        tokens=TokenBuffer(np.array([1, 2, 3])),
+        json_schema=json_schema,
+    )
+
+
+def _decode_ctx() -> TextContext:
+    ctx = _prefill_ctx()
+    ctx.update(7)
+    assert ctx.tokens.generated_length == 1
+    return ctx
+
+
+def _inputs(*contexts: TextContext) -> TextGenerationInputs[TextContext]:
+    """One replica's batch, so ``batch_type`` is derived the way it is in
+    production rather than restated by the test."""
+    return TextGenerationInputs(batches=[list(contexts)])
+
+
+def _vision_prefill_ctx() -> TextAndVisionContext:
+    tokens = np.array([51, 52, 53, 54, 98, 98, 98, 98, 59, 60], dtype=np.int64)
+    ctx = TextAndVisionContext(
+        request_id=RequestID(),
+        max_length=1000,
+        tokens=TokenBuffer(tokens),
+        images=[
+            ImageMetadata(
+                start_idx=4,
+                end_idx=8,
+                pixel_values=np.zeros((4, 3), dtype=np.float32),
+            )
+        ],
+        vision_token_ids=[98],
+    )
+    assert ctx.needs_vision_encoding
+    return ctx
+
+
+class TestShouldVerifyDrafts:
+    """Batch-level draft-verification gate for the spec-decode path."""
+
+    def test_pure_decode_batch_always_verifies(self) -> None:
+        batch = _inputs(_decode_ctx(), _decode_ctx())
+        assert _should_verify_drafts(batch, allow_mixed_batches=False)
+        assert _should_verify_drafts(batch, allow_mixed_batches=True)
+
+    def test_pure_prefill_batch_never_verifies(self) -> None:
+        batch = _inputs(_prefill_ctx(), _prefill_ctx())
+        assert not _should_verify_drafts(batch, allow_mixed_batches=False)
+        assert not _should_verify_drafts(batch, allow_mixed_batches=True)
+
+    def test_mixed_batch_verifies_only_when_allowed(self) -> None:
+        batch = _inputs(_prefill_ctx(), _decode_ctx())
+        assert not _should_verify_drafts(batch, allow_mixed_batches=False)
+        assert _should_verify_drafts(batch, allow_mixed_batches=True)
+
+    def test_mixed_batch_with_constrained_row_falls_back(self) -> None:
+        # Grammar-constrained rows force the all-or-nothing path even when
+        # mixed batches are allowed; the async bitmask machinery has no
+        # mixed-verify fill ownership.
+        constrained = _prefill_ctx(json_schema='{"type": "object"}')
+        batch = _inputs(constrained, _decode_ctx())
+        assert not _should_verify_drafts(batch, allow_mixed_batches=True)
+        # The same batch without the constraint verifies.
+        assert _should_verify_drafts(
+            _inputs(_prefill_ctx(), _decode_ctx()), allow_mixed_batches=True
+        )
+
+    def test_mixed_batch_with_vision_row_falls_back(self) -> None:
+        # Vision scatter indices are computed against the unmerged token
+        # layout (compute_windowed_merge_indices); a K>0 merge shifts row
+        # starts by +i*K, so a batch with an unencoded-image row keeps the
+        # all-or-nothing path.
+        batch = _inputs(_vision_prefill_ctx(), _decode_ctx())
+        assert not _should_verify_drafts(batch, allow_mixed_batches=True)
+        # A pure decode batch is unaffected by the vision history of its
+        # requests once every image is encoded.
+        assert _should_verify_drafts(
+            _inputs(_decode_ctx(), _decode_ctx()), allow_mixed_batches=True
+        )
+
+    def test_empty_batch_matches_all_decode_convention(self) -> None:
+        # An empty batch leaves batch_type at its TG default; keep parity.
+        assert _should_verify_drafts(_inputs(), allow_mixed_batches=False)
+
+
 def test_async_batch_sync_with_single_step_tokens() -> None:
     """AsyncBatch.sync_and_process_outputs handles single-step token shapes."""
 
@@ -486,112 +572,6 @@ def test_async_batch_sync_with_single_step_tokens() -> None:
 
         # Check keyword args (overlap path always uses single-step [batch, 1] tokens)
         assert call_args[1]["overwrite_future"] is True
-
-
-def test_update_context_depth2_fifo_realize_and_eos_lag() -> None:
-    """Depth-2 sync path: FIFO realize with a live second placeholder.
-
-    Simulates schedule-ahead with two forwards in flight: both placeholders
-    are appended before the first sync. Each
-    ``update_context_and_prepare_responses`` call (the overlap sync path)
-    realizes only the OLDEST placeholder; the response it builds must exclude
-    the still-unrealized newer one. When the older step realizes EOS, the
-    context must be done at exactly that token even though the speculative
-    step ran past it; the extra token surfaces one sync later and is dropped
-    at the scheduler layer (released-request filtering), matching the depth-1
-    extra-token-after-EOS reconciliation.
-    """
-    ctx = TextContext(
-        request_id=RequestID("req-depth2"),
-        max_length=1000,
-        tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
-        eos_tracker=EOSTracker(eos_token_ids={42}),
-    )
-
-    # Two forwards enqueued back-to-back before any sync.
-    ctx.update_with_future_token(max_pending_futures=2)
-    ctx.update_with_future_token(max_pending_futures=2)
-    assert ctx.pending_future_count == 2
-
-    # Sync 1: step n's token realizes; step n+1's placeholder stays pending
-    # and must not leak into the response.
-    outputs = update_context_and_prepare_responses(
-        np.array([[10]], dtype=np.int32), [ctx], overwrite_future=True
-    )
-    assert outputs[ctx.request_id].tokens == [10]
-    assert ctx.pending_future_count == 1
-    assert ctx.tokens.all.tolist() == [1, 2, 3, 10, FUTURE_TOKEN]
-
-    # The scheduler enqueues forward n+2 before sync 2 (steady state depth 2).
-    ctx.update_with_future_token(max_pending_futures=2)
-    assert ctx.pending_future_count == 2
-
-    # Sync 2 realizes EOS on the older step: the context is done at that
-    # token, evaluated on the realized prefix only.
-    outputs = update_context_and_prepare_responses(
-        np.array([[42]], dtype=np.int32), [ctx], overwrite_future=True
-    )
-    assert outputs[ctx.request_id].tokens == [42]
-    assert outputs[ctx.request_id].final_status == (
-        GenerationStatus.END_OF_SEQUENCE
-    )
-    assert outputs[ctx.request_id].is_done
-    assert ctx.pending_future_count == 1
-
-    # Sync 3: the speculative step's token still realizes (its forward ran).
-    # The pipeline surfaces it, and the serving scheduler drops it because
-    # the request was released on sync 2 (text_generation_scheduler filters
-    # responses for requests no longer in the batch constructor).
-    outputs = update_context_and_prepare_responses(
-        np.array([[7]], dtype=np.int32), [ctx], overwrite_future=True
-    )
-    assert ctx.pending_future_count == 0
-    assert ctx.status == GenerationStatus.END_OF_SEQUENCE
-
-
-def test_depth2_max_length_status_lags_until_final_realize() -> None:
-    """MAXIMUM_LENGTH must not be reported while wanted tokens are in flight.
-
-    At depth 2, appending the placeholder for the FINAL in-bounds position
-    sets ``ctx.status = MAXIMUM_LENGTH`` while the previous position's token
-    is still unrealized. If a response reported that status immediately, the
-    serving scheduler would release the request and the final in-flight
-    token would be dropped (token loss at the max-length boundary). The
-    reported status must stay ACTIVE until the realized prefix actually
-    reaches ``max_length``.
-    """
-    # Prompt of 4, max_length 6 -> exactly 2 generated tokens are wanted.
-    ctx = TextContext(
-        request_id=RequestID("req-depth2-maxlen"),
-        max_length=6,
-        tokens=TokenBuffer(np.array([1, 2, 3, 4], dtype=np.int64)),
-    )
-
-    # Two forwards enqueued back-to-back (schedule-ahead): the second
-    # placeholder append reaches max_length and sets the sticky status.
-    ctx.update_with_future_token(max_pending_futures=2)
-    ctx.update_with_future_token(max_pending_futures=2)
-    assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
-
-    # Sync 1 realizes the FIRST wanted token. The realized prefix (5) is
-    # still below max_length (6), so the response must NOT be done — the
-    # final token is still in flight.
-    outputs = update_context_and_prepare_responses(
-        np.array([[10]], dtype=np.int32), [ctx], overwrite_future=True
-    )
-    assert outputs[ctx.request_id].tokens == [10]
-    assert outputs[ctx.request_id].final_status == GenerationStatus.ACTIVE
-    assert not outputs[ctx.request_id].is_done
-
-    # Sync 2 realizes the final wanted token: now the response is done.
-    outputs = update_context_and_prepare_responses(
-        np.array([[11]], dtype=np.int32), [ctx], overwrite_future=True
-    )
-    assert outputs[ctx.request_id].tokens == [11]
-    assert outputs[ctx.request_id].final_status == (
-        GenerationStatus.MAXIMUM_LENGTH
-    )
-    assert outputs[ctx.request_id].is_done
 
 
 class TestUpdateWithFutureTokenStructuredOutput:
@@ -920,6 +900,7 @@ class TestAdvanceFsmAndComputeBitmasks:
         mock_matcher.deep_copy.return_value.try_consume_tokens = MagicMock(
             return_value=ret
         )
+        mock_matcher.deep_copy.return_value.is_stopped.return_value = False
         ctx._matcher = mock_matcher
         return ctx, mock_matcher
 
@@ -1235,15 +1216,17 @@ class TestBuildBitmaskCallback:
 
         callback()
 
-        mock_so.advance_fsm_and_compute_bitmasks.assert_called_once_with(
-            context_batch=[ctx],
-            accepted_draft_tokens=draft_np,
-            num_accepted=num_acc_np,
-            bonus_tokens=bonus_np,
-            next_draft_tokens=next_draft_np,
-            bitmask_out=bitmask_np,
-            output_context_batch=[ctx],
-        )
+        mock_so.advance_fsm_and_compute_bitmasks.assert_called_once()
+        kwargs = mock_so.advance_fsm_and_compute_bitmasks.call_args.kwargs
+        assert kwargs["context_batch"] == [ctx]
+        assert kwargs["output_context_batch"] == [ctx]
+        assert kwargs["accepted_draft_tokens"] is draft_np
+        assert kwargs["num_accepted"] is num_acc_np
+        assert kwargs["bonus_tokens"] is bonus_np
+        assert kwargs["next_draft_tokens"] is next_draft_np
+        assert kwargs["bitmask_out"] is bitmask_np
+        # The builder captures the snapshots itself, one per producing row.
+        assert len(kwargs["committed_span_snapshots"]) == 1
 
     def test_callback_logs_error_on_exception(self) -> None:
         """Callback catches exceptions and logs them instead of propagating."""
@@ -1378,6 +1361,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[],
+            curr_verify_width=0,
         )
 
         assert result is False
@@ -1390,6 +1374,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[],
+            curr_verify_width=0,
         )
 
         assert result is False
@@ -1404,6 +1389,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[],
+            curr_verify_width=0,
         )
 
         assert result is False
@@ -1415,7 +1401,7 @@ class TestEnqueuePrevBitmaskCallback:
         for name in (
             "persistent_bonus_tokens_pinned",
             "persistent_num_accepted_pinned",
-            "persistent_accepted_draft_tokens_pinned",
+            "accepted_token_pinned",
             "persistent_next_draft_tokens_pinned",
         ):
             setattr(mock_spec_state, name, MagicMock())
@@ -1424,6 +1410,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[],
+            curr_verify_width=0,
         )
 
         assert result is False
@@ -1435,7 +1422,7 @@ class TestEnqueuePrevBitmaskCallback:
         for name in (
             "persistent_bonus_tokens_pinned",
             "persistent_num_accepted_pinned",
-            "persistent_accepted_draft_tokens_pinned",
+            "accepted_token_pinned",
             "persistent_next_draft_tokens_pinned",
         ):
             setattr(mock_spec_state, name, MagicMock())
@@ -1446,6 +1433,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[],
+            curr_verify_width=0,
         )
 
         assert result is False
@@ -1457,7 +1445,7 @@ class TestEnqueuePrevBitmaskCallback:
         for name in (
             "persistent_bonus_tokens_pinned",
             "persistent_num_accepted_pinned",
-            "persistent_accepted_draft_tokens_pinned",
+            "accepted_token_pinned",
             "persistent_next_draft_tokens_pinned",
         ):
             setattr(mock_spec_state, name, MagicMock())
@@ -1468,6 +1456,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[],
+            curr_verify_width=0,
         )
 
         assert result is False
@@ -1485,7 +1474,7 @@ class TestEnqueuePrevBitmaskCallback:
         for name in (
             "persistent_bonus_tokens_pinned",
             "persistent_num_accepted_pinned",
-            "persistent_accepted_draft_tokens_pinned",
+            "accepted_token_pinned",
             "persistent_next_draft_tokens_pinned",
         ):
             setattr(mock_spec_state, name, MagicMock())
@@ -1504,6 +1493,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[curr_ctx],
+            curr_verify_width=0,
         )
 
         assert result is False
@@ -1537,9 +1527,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
         mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
-        mock_spec_state.persistent_accepted_draft_tokens_pinned = (
-            accepted_draft_tokens_pinned
-        )
+        mock_spec_state.accepted_token_pinned = accepted_draft_tokens_pinned
         mock_spec_state.persistent_next_draft_tokens_pinned = (
             next_draft_tokens_pinned
         )
@@ -1586,6 +1574,7 @@ class TestEnqueuePrevBitmaskCallback:
         ):
             result = pipeline._enqueue_prev_bitmask_callback(
                 curr_context_batch=[curr_ctx],
+                curr_verify_width=num_draft,
             )
 
         assert result is True
@@ -1629,9 +1618,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
         mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
-        mock_spec_state.persistent_accepted_draft_tokens_pinned = (
-            accepted_draft_tokens_pinned
-        )
+        mock_spec_state.accepted_token_pinned = accepted_draft_tokens_pinned
         mock_spec_state.persistent_next_draft_tokens_pinned = (
             next_draft_tokens_pinned
         )
@@ -1688,6 +1675,7 @@ class TestEnqueuePrevBitmaskCallback:
         ):
             result = pipeline._enqueue_prev_bitmask_callback(
                 curr_context_batch=[curr_ctx],
+                curr_verify_width=num_draft,
             )
 
         assert result is True
@@ -1731,9 +1719,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
         mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
-        mock_spec_state.persistent_accepted_draft_tokens_pinned = (
-            accepted_draft_tokens_pinned
-        )
+        mock_spec_state.accepted_token_pinned = accepted_draft_tokens_pinned
         mock_spec_state.persistent_next_draft_tokens_pinned = (
             next_draft_tokens_pinned
         )
@@ -1818,6 +1804,7 @@ class TestEnqueuePrevBitmaskCallback:
 
         result = pipeline._enqueue_prev_bitmask_callback(
             curr_context_batch=[producer, transferred],
+            curr_verify_width=2,
         )
 
         assert result is False
@@ -1861,6 +1848,7 @@ class TestEnqueuePrevBitmaskCallback:
         ):
             result = pipeline._enqueue_prev_bitmask_callback(
                 curr_context_batch=[ctx_a, ctx_b],
+                curr_verify_width=2,
             )
 
         assert result is True
@@ -1894,6 +1882,7 @@ class TestEnqueuePrevBitmaskCallback:
         ):
             result = pipeline._enqueue_prev_bitmask_callback(
                 curr_context_batch=[producer, padding],
+                curr_verify_width=2,
             )
 
         assert result is True

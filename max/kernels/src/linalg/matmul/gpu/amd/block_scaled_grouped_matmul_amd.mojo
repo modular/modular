@@ -40,7 +40,7 @@ from .block_scaled_matmul_amd import BlockScaledMatmulAMD
 from .block_scaled_matmul_amd_preb import BlockScaledMatmulAMD_PreB
 
 
-@always_inline
+@inline(.always)
 def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
     # `amdgpu-waves-per-eu` "1,MAX" cap (avoids EU over-subscription); 0 => "1,8"
     # (CDNA4 max waves/SIMD) = non-binding default. Literal per branch: the LLVM
@@ -114,7 +114,7 @@ struct PreShuffledBGroupedGEMM[
         Self.wg_per_xcd if Self.xcd_stripe == 0 else Self.xcd_stripe
     )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def to_swizzled_idx(linear_idx: Int) -> Int:
         comptime assert (
@@ -1513,13 +1513,13 @@ def block_scaled_grouped_matmul_amd_preb[
         else:
             return run_kernel[
                 128,
-                128,
+                256,
                 256,
                 64,
-                False,
+                True,
                 cluster_drain_sched=True,
-                scale_group=4,
                 b_addr_split=True,
+                wg_per_cu=1,
             ]()
 
     comptime if LB == 32 and N == 6144 and packed_K == 3072:  # down, K=3072
@@ -1546,8 +1546,16 @@ def block_scaled_grouped_matmul_amd_preb[
             # 6.9%-23.3% win over the prior tile here.
             return run_kernel[64, 64, 256, 16, False]()
         else:
-            # Direct dispatch beats the prior persistent-grid tile here.
-            return run_kernel[128, 128, 256, 64, False, waves_per_eu=2]()
+            return run_kernel[
+                128,
+                256,
+                256,
+                64,
+                True,
+                cluster_drain_sched=True,
+                b_addr_split=True,
+                wg_per_cu=1,
+            ]()
 
     comptime if LB == 24 and N == 4096 and K_LOGICAL == 7168:  # gate+up
         if etm <= 20:
@@ -1573,7 +1581,14 @@ def block_scaled_grouped_matmul_amd_preb[
             ]()
         if etm <= 3:
             return run_kernel[
-                16, 64, 512, 16, False, cluster_drain_sched=True, mfma_cluster=2
+                16,
+                64,
+                512,
+                16,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+                b_addr_split=True,
             ]()
         elif etm <= 7:
             return run_kernel[
@@ -1584,10 +1599,18 @@ def block_scaled_grouped_matmul_amd_preb[
                 False,
                 cluster_drain_sched=True,
                 mfma_cluster=2,
+                b_addr_split=True,
             ]()
         elif etm <= 31:
             return run_kernel[
-                16, 64, 256, 16, False, cluster_drain_sched=True, mfma_cluster=2
+                16,
+                64,
+                256,
+                16,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+                b_addr_split=True,
             ]()
         elif etm <= 255:
             return run_kernel[
@@ -1598,8 +1621,9 @@ def block_scaled_grouped_matmul_amd_preb[
                 False,
                 cluster_drain_sched=True,
                 mfma_cluster=2,
+                b_addr_split=True,
             ]()
-        else:
+        elif etm <= 1023:
             return run_kernel[
                 32,
                 128,
@@ -1608,6 +1632,18 @@ def block_scaled_grouped_matmul_amd_preb[
                 False,
                 cluster_drain_sched=True,
                 mfma_cluster=2,
+                b_addr_split=True,
+            ]()
+        else:
+            return run_kernel[
+                128,
+                128,
+                256,
+                64,
+                True,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+                b_addr_split=True,
             ]()
 
     comptime if LB == 24 and N == 6144 and K_LOGICAL == 3072:  # M3 down
@@ -1624,7 +1660,14 @@ def block_scaled_grouped_matmul_amd_preb[
             ]()
         if etm <= 3:
             return run_kernel[
-                16, 64, 512, 16, False, cluster_drain_sched=True, mfma_cluster=2
+                16,
+                64,
+                512,
+                16,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+                b_addr_split=True,
             ]()
         elif etm <= 7:
             return run_kernel[
@@ -1635,10 +1678,18 @@ def block_scaled_grouped_matmul_amd_preb[
                 False,
                 cluster_drain_sched=True,
                 mfma_cluster=2,
+                b_addr_split=True,
             ]()
         elif etm <= 31:
             return run_kernel[
-                16, 64, 256, 16, False, cluster_drain_sched=True, mfma_cluster=2
+                16,
+                64,
+                256,
+                16,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+                b_addr_split=True,
             ]()
         elif etm <= 255:
             return run_kernel[
@@ -1649,8 +1700,9 @@ def block_scaled_grouped_matmul_amd_preb[
                 False,
                 cluster_drain_sched=True,
                 mfma_cluster=2,
+                b_addr_split=True,
             ]()
-        else:
+        elif etm <= 1023:
             return run_kernel[
                 32,
                 128,
@@ -1659,6 +1711,18 @@ def block_scaled_grouped_matmul_amd_preb[
                 False,
                 cluster_drain_sched=True,
                 mfma_cluster=2,
+                b_addr_split=True,
+            ]()
+        else:
+            return run_kernel[
+                128,
+                128,
+                256,
+                64,
+                True,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+                b_addr_split=True,
             ]()
 
     comptime if LB == 24:

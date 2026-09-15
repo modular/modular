@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device
@@ -41,6 +40,7 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3MultiModalModuleV3BatchProcessor
+from .inputs import Gemma3MultiModalModelInputs
 from .model_config import Gemma3ForConditionalGenerationConfig
 from .vision_model.gemma3multimodal import (
     Gemma3LanguageModel,
@@ -52,21 +52,6 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class Gemma3MultiModalModelInputs(ModelInputs):
-    """Inputs for the Gemma3 multimodal model (V3)."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-    pixel_values: Buffer | None = None
-    image_token_indices: Buffer | None = None
-
-    @property
-    def has_vision_inputs(self) -> bool:
-        return self.pixel_values is not None
 
 
 class Gemma3MultiModalModelV3(

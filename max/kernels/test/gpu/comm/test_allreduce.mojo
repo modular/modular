@@ -16,7 +16,7 @@ from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from std.itertools import product
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import (
     _allreduce_naive_single,
@@ -84,7 +84,7 @@ def allreduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -155,9 +155,13 @@ def allreduce_test[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
+    var out_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) {
+            mut out_dev, imm
+        } -> OutTensorType: TileTensor(
+            out_dev[i], row_major(length)
+        ).as_unsafe_any_origin()
+    )
 
     # One-time init of the signal buffers: zero the barrier counters / state,
     # then set the embedded Lamport region to the -0.0 sentinel. Synchronize so
@@ -173,7 +177,7 @@ def allreduce_test[
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
     # Custom epilogue that negates values to distinguish from default
-    @always_inline
+    @inline(.always)
     @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[
@@ -220,16 +224,17 @@ def allreduce_test[
             comptime OutVendorTileType = TileTensor[
                 dtype, type_of(row_major(length)), MutAnyOrigin
             ]
-            var out_tensors_vendor = Array[OutVendorTileType, ngpus](
-                uninitialized=True
-            )
             for i in range(ngpus):
                 out_dev_vendor.append(
                     list_of_ctx[i].enqueue_create_buffer[dtype](length)
                 )
-                out_tensors_vendor[i] = TileTensor(
+            var out_tensors_vendor = Array[_, ngpus](
+                fill_with=lambda (i: Int) {
+                    mut out_dev_vendor, imm
+                } -> OutVendorTileType: TileTensor(
                     out_dev_vendor[i], row_major(length)
-                )
+                ).as_unsafe_any_origin()
+            )
 
             # Test RCCL.
             with vendor_ccl.group():
@@ -331,26 +336,30 @@ def allreduce_naive_test() raises -> None:
     comptime InTensorType = TileTensor[
         .float32, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tensors[i] = TileTensor(
+    var in_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTensorType: TileTensor(
             rebind[ImmPointer[Float32, ImmutAnyOrigin]](in_dev[i].unsafe_ptr()),
             row_major(length),
         )
+    )
 
     comptime OutTensorType = TileTensor[
         .float32, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
+    var out_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) {
+            mut out_dev, imm
+        } -> OutTensorType: TileTensor(
+            out_dev[i], row_major(length)
+        ).as_unsafe_any_origin()
+    )
 
     # Prepare an output lambda that writes into the correct device's out buffer.
     var out_tensors_capture = StaticTuple[OutTensorType, ngpus]()
     for i in range(ngpus):
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
-    @always_inline
+    @inline(.always)
     @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[

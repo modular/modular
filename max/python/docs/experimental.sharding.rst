@@ -44,16 +44,37 @@ Placements
    Sharded
    Collective
 
-Distributed types
------------------
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   P
+   R
+
+Layouts
+-------
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   DistributedTensorType
+   BufferLayout
    TensorLayout
+   PerShardDim
+
+Tensor-to-mesh mappings
+-----------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   DeviceMapping
+   NamedMapping
+   PlacementMapping
 
 Per-op decisions
 ----------------
@@ -90,6 +111,7 @@ Exceptions
    :toctree: generated
    :template: autosummary/class.rst
 
+   ConversionError
    ShardingError
 
 Functions
@@ -100,6 +122,9 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   as_device_mapping
+   as_layout
    build_action_set
    force_replicated_action_set
+   isolated_solver
    mode

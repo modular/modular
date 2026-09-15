@@ -129,6 +129,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:minimax-m3"],
         description="MiniMax M3 model-specific tests",
     ),
+    "smollm": ModelProfile(
+        name="smollm",
+        default_port=8500,
+        tags=["model:smollm"],
+        description="SmolLM model-specific tests",
+    ),
 }
 
 

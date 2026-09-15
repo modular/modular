@@ -7,6 +7,7 @@ load("@rules_cc//cc/toolchains/args:sysroot.bzl", "cc_sysroot")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//bazel/internal/cc-toolchain/features:features.bzl", "MARKER_FEATURES")  # buildifier: disable=bzl-visibility
 load("//bazel/internal/cc-toolchain/tools:tools.bzl", "PLATFORMS")  # buildifier: disable=bzl-visibility
+load(":sysroot_subset.bzl", "sysroot_subset")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,14 +33,81 @@ cc_sysroot(
     sysroot = "@sysroot-jammy-x86_64//sysroot:root",
 )
 
-cc_sysroot(
-    name = "macos_sysroot",
-    actions = [
-        "@rules_cc//cc/toolchains/actions:compile_actions",
-        "@rules_cc//cc/toolchains/actions:link_actions",
+# The sysroot repository publishes its tree as a single opaque source
+# directory, so an action that lists it as data gets all 37k files in the SDK.
+# Locally that is one symlink; under remote execution every file lands in the
+# action's input tree, on every action. Match what each action class reads
+# instead.
+#
+# The framework list is derived, not curated: it is the closure of every
+# framework any first-party or external-repo source includes, followed through
+# the SDK headers' own cross-framework includes. Both halves matter -- glfw
+# reaches Carbon and metal-cpp reaches IOSurface, neither of which appears in
+# our sources, and Carbon in turn pulls a dozen more. A missing entry surfaces
+# as a file-not-found deep in an SDK header with nothing pointing back here, so
+# regenerate the closure rather than appending whatever the last break named.
+# A framework reaches every header three times -- Foo.framework/Headers,
+# Versions/Current/Headers and Versions/A/Headers are one file behind a symlink
+# chain -- and a remote action's input tree materializes each path separately.
+# A compile reads headers through the top-level alias, so the Versions copies
+# are dead weight there; a link needs them, because ld64 resolves a .tbd's
+# re-exports by install name (Foundation re-exports
+# .../CoreFoundation.framework/Versions/A/CoreFoundation) and looks that path
+# up under the sysroot.
+sysroot_subset(
+    name = "macos_sysroot_compile_files",
+    include = [
+        "System/Library/Frameworks/**",
+        "usr/include/**",
+        "usr/lib/**",
     ],
+    exclude = ["System/Library/Frameworks/**/Versions/**"],
+    sysroot = "@sysroot-macos//sysroot:root",
+)
+
+# Library stubs only: a link resolves -l and -framework against these, and the
+# headers are the bulk of the compile set.
+sysroot_subset(
+    name = "macos_sysroot_link_files",
+    include = [
+        "System/Library/Frameworks/**/*.tbd",
+        "usr/lib/**",
+    ],
+    sysroot = "@sysroot-macos//sysroot:root",
+)
+
+# The two halves, as plain file sets, for consumers that need to reason about
+# them outside the toolchain -- see mojo_test_environment, which stages what a
+# test reads when it links Mojo at runtime. Empty off macOS, where the sysroot
+# is a single directory that is not split.
+filegroup(
+    name = "sysroot_compile_files",
+    srcs = select({
+        "@platforms//os:macos": [":macos_sysroot_compile_files"],
+        "//conditions:default": [],
+    }),
+)
+
+filegroup(
+    name = "sysroot_link_files",
+    srcs = select({
+        "@platforms//os:macos": [":macos_sysroot_link_files"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_sysroot(
+    name = "macos_sysroot_compile",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
     allowlist_include_directories = ["@sysroot-macos//sysroot:root"],
-    data = ["@sysroot-macos//sysroot:directory"],
+    data = [":macos_sysroot_compile_files"],
+    sysroot = "@sysroot-macos//sysroot:root",
+)
+
+cc_sysroot(
+    name = "macos_sysroot_link",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    data = [":macos_sysroot_link_files"],
     sysroot = "@sysroot-macos//sysroot:root",
 )
 
@@ -49,7 +117,10 @@ cc_sysroot(
         args = select({
             "//:linux_x86_64": [":linux_sysroot_x86_64"],
             "//:linux_aarch64": [":linux_sysroot_aarch64"],
-            "@platforms//os:macos": [":macos_sysroot"],
+            "@platforms//os:macos": [
+                ":macos_sysroot_compile",
+                ":macos_sysroot_link",
+            ],
         }) + [
             "//bazel/internal/cc-toolchain/args:resource_dir_args",
             "//bazel/internal/cc-toolchain/args:compile_and_link_args",

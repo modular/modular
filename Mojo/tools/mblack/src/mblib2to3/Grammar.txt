@@ -29,9 +29,9 @@ eval_input: testlist NEWLINE* ENDMARKER
 
 decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
-decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt NEWLINE | alias_stmt NEWLINE | comptime_stmt | import_stmt)
+decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt NEWLINE | comptime_stmt | import_stmt)
 async_funcdef: ASYNC funcdef
-where_clause: WHERE top_test
+where_clause: WHERE top_test ['else' test]
 # Mojo terms: metaparams [..] = parameter list; parameters (..) = argument list;
 # captures {..} = capture list (production names kept from black's Python grammar).
 funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* ':' suite
@@ -107,8 +107,7 @@ vfplist: vfpdef (',' vfpdef)* [',']
 stmt: simple_stmt | compound_stmt
 simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | flow_stmt |
-             import_stmt | global_stmt | exec_stmt | assert_stmt |
-             old_comptime_assert_stmt | alias_stmt)
+             import_stmt | global_stmt | exec_stmt | assert_stmt)
 expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
 top_expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -141,7 +140,6 @@ dotted_name: NAME ('.' NAME)*
 global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
-old_comptime_assert_stmt: '__comptime_assert' test [',' test]
 var_stmt: (VAR|REF) top_expr_stmt
 alias_target: NAME | '(' alias_target_list ')'
 alias_target_list: alias_target (',' alias_target)*
@@ -152,7 +150,6 @@ alias_stmt_body: alias_target_list [metaparams] (
     ':' test (where_clause)* ['=' (yield_expr|testlist_star_expr)] |
     (where_clause)* '=' (yield_expr|testlist_star_expr)
 )
-alias_stmt: ALIAS alias_stmt_body
 comptime_assert_stmt_body: 'assert' test [',' test]
 comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt)
 
@@ -197,7 +194,7 @@ namedexpr_test: asexpr_test [':=' asexpr_test]
 asexpr_test: test ['as' test]
 
 test: functype | generatortype | top_test
-top_test: [ALIAS|COMPTIME] if_else_test
+top_test: [COMPTIME] if_else_test
 if_else_test: or_test ['if' or_test 'else' test] | lambdef
 or_test: and_test ('or' and_test)*
 and_test: not_test ('and' not_test)*
@@ -205,7 +202,12 @@ not_test: 'not' not_test | comparison
 comparison: expr (comp_op expr)*
 comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr
-expr: (VAR exprlist) | (REF exprlist) | or_expr
+# `var`/`ref` bind a single subexpression (not an exprlist). Using
+# exprlist here made `Point(x=var x, y=0)` greedily consume `, y=0`
+# into the binding and then fail on `=`. Comma-separated bindings like
+# `for var x, z in ys` still work: each element of the outer exprlist
+# is its own expr, so only `x` is under `var`.
+expr: (VAR expr) | (REF expr) | or_expr
 or_expr: xor_expr ('|' xor_expr)*
 xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor] (('*'|'@'|'/'|'%'|'//') factor)* (('+' | '-') term)* (('<<' | '>>') arith_expr)* ('&' shift_expr)*])*
 and_expr: shift_expr ('&' shift_expr)*
@@ -279,7 +281,7 @@ arglist: argument (',' argument)* [',']
 # Illegal combinations and orderings are blocked in ast.c:
 # multiple (test comp_for) arguments are blocked; keyword unpackings
 # that precede iterable unpackings are blocked; etc.
-argument: ( test [comp_for] (where_clause)* |
+argument: ( test [comp_for] (where_clause)* ['else' test] |
             test ':=' test [comp_for] |
             test 'as' test |
             test '=' asexpr_test |
@@ -319,6 +321,13 @@ yield_arg: 'from' test | testlist_star_expr
 
 
 # 3.10 match statement definition
+#
+# Soft keywords use double quotes ("match", "case", "__match").
+#
+# Two layouts are accepted after the subject colon:
+#   1. Python style: NEWLINE INDENT case_block+ DEDENT
+#   2. Mojo style:   NEWLINE case_block+   (cases share the match indent)
+# Mojo mode formatting always emits layout (2).
 
 # PS: normally the grammar is much much more restricted, but
 # at this moment for not trying to bother much with encoding the
@@ -332,7 +341,7 @@ yield_arg: 'from' test | testlist_star_expr
 # expressions, but who cares. If we can parse them, that is enough
 # to reformat them.
 
-match_stmt: "match" subject_expr ':' NEWLINE INDENT case_block+ DEDENT
+match_stmt: ("match" | "__match") subject_expr ':' NEWLINE (INDENT case_block+ DEDENT | case_block+)
 
 # This is more permissive than the actual version. For example it
 # accepts `match *something:`, even though single-item starred expressions

@@ -308,6 +308,8 @@ def run_mla_prefill_v2[
             _o0.dtype,
             _q0.LayoutType,
             _o0.LayoutType,
+            _q0.Engine,
+            _o0.Engine,
             ragged=False,
         ]
         comptime _DUMP_ASM: StaticString = get_defined_string["dump_asm", ""]()
@@ -352,7 +354,7 @@ def run_mla_prefill_v2[
         var work_info_ptr = dev_work_info.unsafe_ptr()
         var num_works = md.num_works
 
-        @always_inline
+        @inline(.always)
         def bench_func(
             mut b: Bencher,
         ) raises {
@@ -368,7 +370,7 @@ def run_mla_prefill_v2[
             var num_cu,
             imm,
         }:
-            @always_inline
+            @inline(.always)
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
                     Scalar[qkv_type]

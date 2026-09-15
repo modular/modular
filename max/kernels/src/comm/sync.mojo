@@ -105,7 +105,7 @@ saturate NVLink bandwidth.
 """
 
 
-@always_inline
+@inline(.always)
 def circular_add[n: Int](x: Int, y: Int) -> Int:
     """Addition modulo n, assuming 0 <= x < n and 0 <= y < n.
 
@@ -248,7 +248,7 @@ struct Signal:
     barrier-based collectives on the same signal buffer.
     """
 
-    @always_inline
+    @inline(.always)
     def lamport_state_ptr(
         mut self,
     ) -> MutPointer[Scalar[Self.flag_t], MutAnyOrigin]:
@@ -264,7 +264,7 @@ struct Signal:
             .as_unsafe_any_origin()
         )
 
-    @always_inline
+    @inline(.always)
     def lamport_region_ptr[
         dtype: DType
     ](mut self) -> MutPointer[Scalar[dtype], MutAnyOrigin]:
@@ -332,7 +332,7 @@ def init_signal_buffer(
     _lamport_init(signal_buffer, ctx)
 
 
-@always_inline
+@inline(.always)
 def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
@@ -342,7 +342,7 @@ def _multi_gpu_barrier[
     named_barrier_id: Int = 1,
     domain_id: Int = 0,
 ](
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     self_sg: MutPointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):
@@ -367,7 +367,8 @@ def _multi_gpu_barrier[
             full-world bank on a shared `Signal` buffer.
 
     Args:
-        rank_sigs: Signal pointers for all GPUs.
+        rank_sigs: Signal pointers for the `ngpus` ranks in this barrier's
+            domain, indexed by domain-local rank.
         self_sg: Signal pointer for current GPU.
         my_rank: Current GPU rank.
 

@@ -77,7 +77,7 @@ struct Ordering(
     comptime SEQUENTIAL = Self(6)
     """Sequentially consistent."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, value: UInt8):
         """Constructs a new Ordering object.
 
@@ -98,7 +98,7 @@ struct Ordering(
         """
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         """Compares two Ordering objects for inequality.
 
@@ -151,7 +151,7 @@ struct Ordering(
         """
         writer.write_string(self.as_string_slice())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
         """Returns the MLIR attribute representation of the Ordering object.
 
@@ -159,19 +159,19 @@ struct Ordering(
             The MLIR attribute representation of the Ordering object.
         """
         if self == Self.NOT_ATOMIC:
-            return __mlir_attr.`#pop<atomic_ordering not_atomic>`
+            return __mlir_attr.`#pop.atomic_ordering<not_atomic>`
         if self == Self.UNORDERED:
-            return __mlir_attr.`#pop<atomic_ordering unordered>`
+            return __mlir_attr.`#pop.atomic_ordering<unordered>`
         if self == Self.RELAXED:
-            return __mlir_attr.`#pop<atomic_ordering monotonic>`
+            return __mlir_attr.`#pop.atomic_ordering<monotonic>`
         if self == Self.ACQUIRE:
-            return __mlir_attr.`#pop<atomic_ordering acquire>`
+            return __mlir_attr.`#pop.atomic_ordering<acquire>`
         if self == Self.RELEASE:
-            return __mlir_attr.`#pop<atomic_ordering release>`
+            return __mlir_attr.`#pop.atomic_ordering<release>`
         if self == Self.ACQUIRE_RELEASE:
-            return __mlir_attr.`#pop<atomic_ordering acq_rel>`
+            return __mlir_attr.`#pop.atomic_ordering<acq_rel>`
         if self == Self.SEQUENTIAL:
-            return __mlir_attr.`#pop<atomic_ordering seq_cst>`
+            return __mlir_attr.`#pop.atomic_ordering<seq_cst>`
 
         abort()
 
@@ -181,7 +181,7 @@ struct Ordering(
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def fence[
     ordering: Ordering = _DEFAULT_MEMORY_ORDERING,
     *,
@@ -231,7 +231,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
     occur through atomic primitive operations.
     """
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, var value: Self.T):
         """Constructs a new atomic value.
 
@@ -241,7 +241,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         self._value = value^
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def load[
         dtype: DType,
         //,
@@ -277,7 +277,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return result
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def load[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](self: Atomic[Scalar[dtype], scope=_]) -> Scalar[dtype]:
@@ -292,7 +292,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return type_of(self).load[ordering=ordering](Pointer(to=self._value))
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def fetch_add[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](
@@ -324,7 +324,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
             return res
 
         var res = __mlir_op.`pop.atomic.rmw`[
-            bin_op=__mlir_attr.`#pop<bin_op add>`,
+            bin_op=__mlir_attr.`#pop.bin_op<add>`,
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[dtype]._mlir_type,
@@ -335,7 +335,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return Scalar[dtype](mlir_value=res)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _xchg[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](
@@ -364,7 +364,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
             return res
 
         var res = __mlir_op.`pop.atomic.rmw`[
-            bin_op=__mlir_attr.`#pop<bin_op xchg>`,
+            bin_op=__mlir_attr.`#pop.bin_op<xchg>`,
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[dtype]._mlir_type,
@@ -375,7 +375,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return Scalar[dtype](mlir_value=res)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def store[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](
@@ -404,7 +404,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         ](value._mlir_value, ptr._get_kgen_pointer())
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def store[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], value: Scalar[dtype]):
@@ -420,7 +420,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         type_of(self).store[ordering=ordering](value_addr, value)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def fetch_add[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]) -> Scalar[
@@ -447,7 +447,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return type_of(self).fetch_add[ordering=ordering](value_addr, rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def __iadd__[
         dtype: DType, //
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]):
@@ -465,7 +465,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _ = self.fetch_add(rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def fetch_sub[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]) -> Scalar[
@@ -496,7 +496,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
 
         var value_addr = Pointer(to=self._value._mlir_value)
         var res = __mlir_op.`pop.atomic.rmw`[
-            bin_op=__mlir_attr.`#pop<bin_op sub>`,
+            bin_op=__mlir_attr.`#pop.bin_op<sub>`,
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[dtype]._mlir_type,
@@ -504,7 +504,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return Scalar[dtype](mlir_value=res)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def __isub__[
         dtype: DType,
         //,
@@ -523,7 +523,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _ = self.fetch_sub(rhs)
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def compare_exchange[
         dtype: DType,
         *,
@@ -593,7 +593,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
 
     @__allow_legacy_custom_self_type
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def compare_exchange[
         dtype: DType,
         //,
@@ -632,7 +632,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         ](Pointer(to=self._value), expected, desired)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def max[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
@@ -661,7 +661,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _max_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def max[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]):
@@ -685,7 +685,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         type_of(self).max[ordering=ordering](Pointer(to=self._value), rhs)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def min[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
@@ -714,7 +714,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _min_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def min[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]):
@@ -745,7 +745,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _compare_exchange_integral_impl[
     dtype: DType,
     //,
@@ -818,33 +818,33 @@ def _compare_exchange_integral_impl[
     return success
 
 
-@always_inline
+@inline(.always)
 def _max_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Ordering
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.unsafe_bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
-        bin_op=__mlir_attr.`#pop<bin_op max>`,
+        bin_op=__mlir_attr.`#pop.bin_op<max>`,
         ordering=ordering.__mlir_attr(),
         syncscope=_get_kgen_string[scope](),
         _type=Scalar[dtype]._mlir_type,
     ](value_addr._get_kgen_pointer(), rhs._mlir_value)
 
 
-@always_inline
+@inline(.always)
 def _min_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Ordering
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.unsafe_bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
-        bin_op=__mlir_attr.`#pop<bin_op min>`,
+        bin_op=__mlir_attr.`#pop.bin_op<min>`,
         ordering=ordering.__mlir_attr(),
         syncscope=_get_kgen_string[scope](),
         _type=Scalar[dtype]._mlir_type,
     ](value_addr._get_kgen_pointer(), rhs._mlir_value)
 
 
-@always_inline
+@inline(.always)
 def _max_impl[
     dtype: DType,
     //,
@@ -870,7 +870,7 @@ def _max_impl[
     _max_impl_base[scope=scope, ordering=ordering](ptr, rhs)
 
 
-@always_inline
+@inline(.always)
 def _min_impl[
     dtype: DType,
     //,

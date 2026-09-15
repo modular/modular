@@ -38,6 +38,7 @@ __author__ = "Guido van Rossum <guido@python.org>"
 __all__ = ["Driver", "load_grammar"]
 
 # Python imports
+import hashlib
 import io
 import logging
 import os
@@ -669,11 +670,20 @@ class Driver:
         return "".join(lines), current_line
 
 
-def _generate_pickle_name(gt: Path, cache_dir: Path | None = None) -> str:
+def _generate_pickle_name(
+    gt: Path, cache_dir: Path | None = None, content_hash: str | None = None
+) -> str:
     head, tail = os.path.splitext(gt)
     if tail == ".txt":
         tail = ""
-    name = head + tail + ".".join(map(str, sys.version_info)) + ".pickle"
+    hash_part = f".{content_hash}" if content_hash else ""
+    name = (
+        head
+        + tail
+        + ".".join(map(str, sys.version_info))
+        + hash_part
+        + ".pickle"
+    )
     if cache_dir:
         return os.path.join(cache_dir, os.path.basename(name))
     else:
@@ -735,25 +745,16 @@ def load_packaged_grammar(
 
     """
     if os.path.isfile(grammar_source):
+        # Hash the grammar content so different Mojo versions with different
+        # grammars never collide on the same cached pickle file.
+        with open(grammar_source, "rb") as f:
+            content_hash = hashlib.sha256(f.read()).hexdigest()[:12]
         gp = (
-            _generate_pickle_name(grammar_source, cache_dir)
+            _generate_pickle_name(grammar_source, cache_dir, content_hash)
             if cache_dir
             else None
         )
-        # Fix MOTO-1264: Force grammar regeneration to prevent stale cache issues
-        # Always force regeneration when no cache directory is specified (development mode)
-        force_regen = gp is None
-
-        # Clean up any existing pickle files in source directory to force regeneration
-        if gp is None:
-            default_pickle = _generate_pickle_name(grammar_source)
-            if os.path.exists(default_pickle):
-                try:
-                    os.remove(default_pickle)
-                except OSError:
-                    pass  # Ignore errors if we can't remove it
-
-        return load_grammar(grammar_source, gp=gp, force=force_regen)
+        return load_grammar(grammar_source, gp=gp)
     pickled_name = _generate_pickle_name(
         os.path.basename(grammar_source), cache_dir
     )

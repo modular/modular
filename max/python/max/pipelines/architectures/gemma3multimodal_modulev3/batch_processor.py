@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -38,14 +38,12 @@ from max.pipelines.lib.vision_batching import (
     create_empty_image_token_indices_single,
 )
 
+from .inputs import Gemma3MultiModalModelInputs
 from .model_config import Gemma3ForConditionalGenerationConfig
-
-if TYPE_CHECKING:
-    from .model import Gemma3MultiModalModelInputs
 
 
 class Gemma3MultiModalModuleV3BatchProcessor(
-    BatchProcessor[TextAndVisionContext, "Gemma3MultiModalModelInputs"]
+    BatchProcessor[TextAndVisionContext, Gemma3MultiModalModelInputs]
 ):
     """Ragged batching with vision support for Gemma3 multimodal ModuleV3 models."""
 
@@ -160,8 +158,6 @@ class Gemma3MultiModalModuleV3BatchProcessor(
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Gemma3MultiModalModelInputs:
-        from .model import Gemma3MultiModalModelInputs
-
         if len(replica_batches) > 1:
             raise ValueError(
                 "Gemma3MultiModalModuleV3BatchProcessor does not support DP>1"

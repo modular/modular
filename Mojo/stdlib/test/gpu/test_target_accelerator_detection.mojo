@@ -24,11 +24,17 @@
 # (for example arm64-apple-darwin) executable on the x86 Linux test host fails
 # at `ld.lld`, unrelated to what is under test.
 
-# AMD: bare arch, bare alias, and both vendor prefixes must all be AMD.
-# RUN: %mojo-build --emit object --target-accelerator gfx950       -D EXPECT=amd    %s -o %t
-# RUN: %mojo-build --emit object --target-accelerator mi300x       -D EXPECT=amd    %s -o %t
-# RUN: %mojo-build --emit object --target-accelerator amdgpu:gfx950 -D EXPECT=amd   %s -o %t
-# RUN: %mojo-build --emit object --target-accelerator amd:gfx950   -D EXPECT=amd    %s -o %t
+# AMD: canonical values, finite model aliases, and vendor prefixes must all be
+# AMD. Prefix patterns are tested separately because they are not finite values
+# in the target-list synchronization test.
+# RUN: %mojo-build --emit object --target-accelerator gfx950          -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator mi250x          -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator mi300x          -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator mi355x          -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator amdgpu:gfx950   -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator amd:gfx950      -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator amdgpu:mi300x   -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator amd:mi355x      -D EXPECT=amd %s -o %t
 
 # NVIDIA: bare arch, vendor prefix, and the generic "cuda" target must all be
 # NVIDIA.

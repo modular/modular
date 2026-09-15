@@ -308,6 +308,45 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "the DI dispatch latency breakdown."
         ),
     ),  # type: ignore
+    "maxserve.di.early_sync_time": _meter.create_histogram(
+        "maxserve.di.early_sync_time",
+        unit="ms",
+        description=(
+            "Duration of the early-sync guard's blocking commit of the "
+            "previous batch's structured-output FSM state, when it fired "
+            "(see '_should_early_sync_prev_batch')."
+        ),
+    ),  # type: ignore
+    "maxserve.di.ce_preempted_tg_iteration_count": _meter.create_counter(
+        "maxserve.di.ce_preempted_tg_iteration_count",
+        description=(
+            "Counter: incremented once per scheduling iteration in which a "
+            "CE batch was admitted while TG requests were pending, so those "
+            "TG requests got zero progress this iteration -- how often this "
+            "preemption pattern occurs."
+        ),
+    ),  # type: ignore
+    "maxserve.di.ce_preempted_tg_pending_count": _meter.create_histogram(
+        "maxserve.di.ce_preempted_tg_pending_count",
+        description=(
+            "Histogram: the number of TG requests pending at the moment of "
+            "one such preemption (paired with "
+            "'maxserve.di.ce_preempted_tg_iteration_count', which counts how "
+            "often it happens; this measures how large each occurrence is)."
+        ),
+    ),  # type: ignore
+    "maxserve.di.handoff_to_first_token_time": _meter.create_histogram(
+        "maxserve.di.handoff_to_first_token_time",
+        unit="ms",
+        description=(
+            "Wall-clock time from a prefill-to-decode handoff landing (its "
+            "token discarded, re-queued as a one-token chunked-CE "
+            "continuation) to decode's own re-forward actually sending "
+            "token 1 to the API process. A TTFT contribution specific to "
+            "the handoff path; the ordinary path's token already arrives "
+            "with the 'PrefillResponse', so it has no equivalent wait."
+        ),
+    ),  # type: ignore
     "maxserve.cache.num_used_blocks": _meter.create_gauge(
         "maxserve.cache.num_used_blocks",
         unit="blocks",
@@ -369,6 +408,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="NIXL READ transfer latency",
     ),  # type: ignore
+    "maxserve.dkv.nixl_read_latency_max": _meter.create_histogram(
+        "maxserve.dkv.nixl_read_latency_max",
+        unit="ms",
+        description="Slowest single NIXL READ transfer in a batch's window",
+    ),  # type: ignore
     "maxserve.dkv.nixl_write_latency": _meter.create_histogram(
         "maxserve.dkv.nixl_write_latency",
         unit="ms",
@@ -403,6 +447,41 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.dkv.reconnect_attempts",
         unit="attempts",
         description="Cumulative dKV reconnect attempts across all clients, reported as a gauge of the current lifetime total.",
+    ),  # type: ignore
+    # Cross-node pull. Counters, not gauges: reset_metrics clears these every
+    # batch, so each publish carries that window's delta. Mach exports the same
+    # set under dkv.connector.peer_attach_count, peer_drop_count,
+    # peer_load_count and hint_rejected_count, splitting success from failure
+    # by an outcome tag rather than by metric name.
+    "maxserve.dkv.peer_attaches": _meter.create_counter(
+        "maxserve.dkv.peer_attaches",
+        unit="attaches",
+        description="Remote dKV peers attached from a cache hint. An attach is cached per peer, so a stable peer set leaves this at zero while cross-node pulls keep succeeding; maxserve.dkv.peer_loads is the steady-state signal.",
+    ),  # type: ignore
+    "maxserve.dkv.peer_attach_failures": _meter.create_counter(
+        "maxserve.dkv.peer_attach_failures",
+        unit="attaches",
+        description="Peer attaches that failed at dial, probe, handshake, or the attach timeout.",
+    ),  # type: ignore
+    "maxserve.dkv.peers_dropped": _meter.create_counter(
+        "maxserve.dkv.peers_dropped",
+        unit="peers",
+        description="Remote dKV peers dropped, whether replaced after a peer restart, evicted over the peer table's cap, or torn down by the caller. Read against maxserve.dkv.peer_attaches to tell a churning peer table from a stable one.",
+    ),  # type: ignore
+    "maxserve.dkv.peer_loads": _meter.create_counter(
+        "maxserve.dkv.peer_loads",
+        unit="loads",
+        description="Loads served from the dKV peer a cache hint named. Counted per batch on the fused load path and per hinted lookup on the two-phase path, so it is not a request count.",
+    ),  # type: ignore
+    "maxserve.dkv.peer_load_failures": _meter.create_counter(
+        "maxserve.dkv.peer_load_failures",
+        unit="loads",
+        description="Hinted peer loads that fell through to the next source or to the co-located dKV. Memo-capped rather than per-request: a failed source suppresses further attempts against the same instance and epoch for a fixed window, so one dead peer charges roughly one failure per window however many requests it affects.",
+    ),  # type: ignore
+    "maxserve.dkv.hints_rejected": _meter.create_counter(
+        "maxserve.dkv.hints_rejected",
+        unit="hints",
+        description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that does not describe the request, or no entry for the requested group. Counted per entry on the two-phase load path and per call on the fused one.",
     ),  # type: ignore
     "maxserve.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
         "maxserve.spec_decode.acceptance_rate_per_position",
@@ -598,6 +677,21 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="percent",
         description="Per-batch vision encoder cache hit rate (0-100%).",
     ),  # type: ignore
+    "maxserve.vision.preprocess_cache_hits": _meter.create_counter(
+        "maxserve.vision.preprocess_cache_hits",
+        unit="images",
+        description="Cumulative images already preprocessed at admission, whose decode and preprocessing are both skipped.",
+    ),  # type: ignore
+    "maxserve.vision.preprocess_cache_misses": _meter.create_counter(
+        "maxserve.vision.preprocess_cache_misses",
+        unit="images",
+        description="Cumulative images not yet preprocessed at admission, which the API server must decode and preprocess.",
+    ),  # type: ignore
+    "maxserve.vision.image_admission_decode_time": _meter.create_histogram(
+        "maxserve.vision.image_admission_decode_time",
+        unit="ms",
+        description="Per-request wall-clock time of the admission image work: deciding which images are already preprocessed, then decoding and validating the rest.",
+    ),  # type: ignore
     "maxserve.video.clips_encoded": _meter.create_counter(
         "maxserve.video.clips_encoded",
         unit="clips",
@@ -634,6 +728,18 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Count of structured-output requests rejected at admission "
             "(HTTP 400) because the active grammar backend could not compile "
             "the schema, split by the 'kind' tag (tool_grammar, json_schema)."
+        ),
+    ),  # type: ignore
+    "maxserve.structured_output.grammar_build_time": _meter.create_histogram(
+        "maxserve.structured_output.grammar_build_time",
+        unit="ms",
+        description=(
+            "Wall-clock time of an off-thread grammar-matcher build in "
+            "AsyncGrammarGate, from the start of the backend's compile/create "
+            "call to its completion. For a DI handoff, this build overlaps "
+            "prefill's round trip when submitted at admission time; a build "
+            "that outlasts that round trip can still gate the handoff's "
+            "chunked-CE continuation."
         ),
     ),  # type: ignore
     "maxserve.response_format.conformance_errors": _meter.create_counter(
@@ -1154,6 +1260,54 @@ class _AsyncMetrics:
             ),
         )
 
+    def di_early_sync_time(self, ms: float) -> None:
+        """Duration of the early-sync guard's blocking commit of the
+        previous batch's structured-output FSM state, when it fired (see
+        ``_should_early_sync_prev_batch``)."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.early_sync_time", ms, self.extra_attributes
+            ),
+        )
+
+    def di_ce_preempted_tg_iteration_count(self) -> None:
+        """Counter: how often a CE batch admits work while TG requests are
+        pending, giving those TG requests zero progress that iteration."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.ce_preempted_tg_iteration_count",
+                1,
+                self.extra_attributes,
+            ),
+        )
+
+    def di_ce_preempted_tg_pending_count(self, count: int) -> None:
+        """Histogram: how large each such preemption was -- the number of TG
+        requests pending at the moment (paired with
+        ``di_ce_preempted_tg_iteration_count``, which counts how often)."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.ce_preempted_tg_pending_count",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def di_handoff_to_first_token_time(self, ms: float) -> None:
+        """Wall-clock time from a prefill-to-decode handoff landing (its
+        token discarded, re-queued as a one-token chunked-CE continuation)
+        to decode's own re-forward actually sending token 1 to the API
+        process. A TTFT contribution specific to the handoff path; the
+        ordinary path's token already arrives with the ``PrefillResponse``,
+        so it has no equivalent wait."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.handoff_to_first_token_time",
+                ms,
+                self.extra_attributes,
+            ),
+        )
+
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -1253,6 +1407,33 @@ class _AsyncMetrics:
             ),
         )
 
+    def vision_preprocess_cache_hits(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.preprocess_cache_hits",
+                images,
+                self.extra_attributes,
+            ),
+        )
+
+    def vision_preprocess_cache_misses(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.preprocess_cache_misses",
+                images,
+                self.extra_attributes,
+            ),
+        )
+
+    def image_admission_decode_time(self, value: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.image_admission_decode_time",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
     def vision_cache_hit_rate(self, hit_rate: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -1325,6 +1506,15 @@ class _AsyncMetrics:
             ),
         )
 
+    def dkv_nixl_read_latency_max(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.nixl_read_latency_max",
+                latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
     def dkv_nixl_write_latency(self, latency_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -1374,6 +1564,60 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.dkv.reconnect_attempts",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_attaches(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peer_attaches",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_attach_failures(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peer_attach_failures",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peers_dropped(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peers_dropped",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_loads(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peer_loads",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_load_failures(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.peer_load_failures",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hints_rejected(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.hints_rejected",
                 value,
                 self.extra_attributes,
             ),
@@ -1634,6 +1878,16 @@ class _AsyncMetrics:
                 "maxserve.structured_output.grammar_rejections",
                 1,
                 {**self.extra_attributes, "kind": kind},
+            ),
+        )
+
+    def structured_output_grammar_build_time(self, ms: float) -> None:
+        """Wall-clock time of an off-thread grammar-matcher build."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.structured_output.grammar_build_time",
+                ms,
+                self.extra_attributes,
             ),
         )
 

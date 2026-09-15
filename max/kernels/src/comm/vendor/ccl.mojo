@@ -122,7 +122,7 @@ def _init_ccl_dylib() -> OwnedDLHandle:
 comptime CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
 
 
-@always_inline
+@inline(.always)
 def _get_ccl_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -189,7 +189,7 @@ def ncclCommInitAll(
     ]()(comms, ndev, devlist)
 
 
-@always_inline
+@inline(.always)
 def _ccl_allreduce(
     sendbuff: OpaquePointer,
     recvbuff: OpaquePointer,
@@ -215,7 +215,7 @@ def _ccl_allreduce(
 
 
 # === AllGather binding (unified) ===
-@always_inline
+@inline(.always)
 def _ccl_allgather(
     sendbuff: OpaquePointer,
     recvbuff: OpaquePointer,
@@ -239,7 +239,7 @@ def _ccl_allgather(
 
 
 # === Broadcast binding (unified) ===
-@always_inline
+@inline(.always)
 def _ccl_broadcast(
     sendbuff: OpaquePointer,
     recvbuff: OpaquePointer,
@@ -272,7 +272,7 @@ def _ccl_broadcast(
     )
 
 
-@always_inline
+@inline(.always)
 def _ccl_stream_ptr(
     ctx: DeviceContext,
 ) raises -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
@@ -314,7 +314,7 @@ def _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
     raise Error("vendor_ccl: dtype not supported: ", dtype)
 
 
-@always_inline
+@inline(.always)
 def _check_ccl_ok(status: ncclResult_t) raises:
     if status != ncclResult_t.ncclSuccess:
         raise Error("CCL call failed with status ", Int(status._value))
@@ -390,7 +390,7 @@ def allreduce[
         TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: Array[MutPointer[Signal, rank_sigs_origin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, rank_sigs_origin], ngpus],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
@@ -605,7 +605,7 @@ def broadcast[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,

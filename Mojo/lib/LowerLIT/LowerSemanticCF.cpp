@@ -81,14 +81,38 @@ struct LowerSemanticCF {
   void run();
 
 private:
-  void lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
-                  bool &doesFallThrough);
-  bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
-                    bool &enclosingBlockDoesBreak);
-  void lowerParamFor(ParamForOp paramFor, bool &enclosingBlockDoesRaise,
-                     bool &enclosingBlockDoesBreak);
-  void lowerElif(HLCF::ElifOp elifOp, bool &doesRaise, bool &doesBreak,
-                 bool &doesFallThrough);
+  /// This captures the control flow effects for a region of code.
+  struct CodeEffects {
+    bool doesRaise = false;
+    bool doesBreak = false;
+    bool doesFallThrough = false;
+    /// True when this region executes `hlcf.match.next` on some path. For a
+    /// match case, that means a later case (or the else) may run. For a match
+    /// else, the next targets an enclosing match.
+    bool hasMatchNext = false;
+    /// True when this region executes `hlcf.match.complete` on some path. For a
+    /// match case, that means the match may exit to the code after it. For a
+    /// match else, the complete targets an enclosing match.
+    bool hasMatchComplete = false;
+
+    /// Merge raise/break/match-terminator effects from a nested region.
+    void mergeControlEffects(const CodeEffects &other) {
+      doesRaise |= other.doesRaise;
+      doesBreak |= other.doesBreak;
+      hasMatchNext |= other.hasMatchNext;
+      hasMatchComplete |= other.hasMatchComplete;
+    }
+  };
+
+  void lowerBlock(Block &block, CodeEffects &effects);
+  bool lowerLITLoop(LIT::LoopOp loopOp, CodeEffects &effects);
+  void lowerParamFor(ParamForOp paramFor, CodeEffects &effects);
+  /// Lower an `HLCF::ElifOp`, including constant-condition dead-arm cleanup.
+  /// Returns true when the elif does not fall through (caller should stop).
+  bool lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects);
+  /// Pass through an `HLCF::MatchOp`, rewriting nested regions.
+  /// Returns true when the match does not fall through (caller should stop).
+  bool lowerMatchOp(HLCF::MatchOp matchOp, CodeEffects &effects);
   bool checkSelfRecursion(Block &block, bool isConditional);
 };
 } // end anonymous namespace
@@ -236,8 +260,8 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
                                                        StringRef stmtKind) {
   // Warn about dead code after the semantic terminator.
   Operation *nextOp = op.getNextNode();
-  // We do report an error on `parameter if` since `parameter if` serves as a
-  // if preprocessor in Mojo.
+  // We do not report an error on `parameter if` since `parameter if` serves as
+  // a "preprocessor" in Mojo.
   if (!isa<ParamIfOp>(op) && !nextOp->hasTrait<OpTrait::IsTerminator>()) {
     // Don't complain if the location is the same as the enclosing function,
     // it is automatically synthesized.
@@ -253,37 +277,179 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
                               std::next(Block::iterator(&op)));
 }
 
-void LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp, bool &doesRaise,
-                                bool &doesBreak, bool &doesFallThrough) {
-  bool elifFallsThrough = false;
-  for (auto &region : elifOp->getRegions()) {
-    if (region.empty())
-      continue;
-    bool blockRaises = false, blockBreaks = false, blockFallThroughs = false;
-    lowerBlock(region.front(), blockRaises, blockBreaks, blockFallThroughs);
-    doesRaise |= blockRaises;
-    doesBreak |= blockBreaks;
-    // Condition regions are odd indexed regions and always fallthrough to elif
-    // contained regions.
-    if (region.getRegionNumber() % 2 == 1)
-      continue;
-    elifFallsThrough |= blockFallThroughs;
+/// Mark a constant-condition arm as unreachable. Warn about interesting
+/// dead code when `warn` is set (used for runtime `if` / `elif`, not
+/// `comptime if`).
+static void markRegionDeadDueToConstantCond(Region &region,
+                                            const char *warningMessage,
+                                            Location loc) {
+  if (region.empty())
+    return;
+  Block &deadBlock = region.front();
+  Operation *firstDeadOp = &deadBlock.front();
+  if (isa<UnreachableOp>(firstDeadOp))
+    return; // Already marked as dead.
+
+  // Warn about unreachable code in an 'if', but not in a 'comptime if'.
+  // It serves the function of ifdef's, and conditions are often
+  // known-statically true/false.
+  if (warningMessage && !firstDeadOp->hasTrait<OpTrait::IsTerminator>())
+    emitWarning(firstDeadOp->getLoc(), "unreachable code after ")
+        << warningMessage;
+  eraseOpToEndOfBlock(firstDeadOp);
+  auto b = OpBuilder::atBlockBegin(&deadBlock);
+  UnreachableOp::create(b, loc);
+}
+
+/// Lower an `HLCF::ElifOp`: prune constant-dead arms, then rewrite regions.
+/// Returns true when the elif does not fall through so the enclosing block
+/// should stop.
+bool LowerSemanticCF::lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects) {
+  // Determine whether the elif as a whole can fall through.
+  bool doesFallThrough = false;
+
+  // This keeps track of whether the next "else" is reachable.
+  bool nextElseLive = true;
+
+  // Process the first condition and the 'then' block.
+  SIMDAttr elifCond;
+  if (mlir::matchPattern(elifOp.getCond(), m_Constant(&elifCond))) {
+    if (elifCond.getAsBool()) {
+      // The 'then' region is live and is the only thing going on here.
+      CodeEffects thenEffects;
+      lowerBlock(elifOp.getThenRegion().front(), thenEffects);
+      effects.mergeControlEffects(thenEffects);
+      doesFallThrough |= thenEffects.doesFallThrough;
+
+      // Nothing else is reachable.
+      nextElseLive = false;
+    } else {
+      // First 'then' is dead; later arms / else remain live.
+      markRegionDeadDueToConstantCond(elifOp.getThenRegion(), "'if False'",
+                                      elifOp.getLoc());
+    }
+  } else {
+    // The 'then' region is live.
+    CodeEffects thenEffects;
+    lowerBlock(elifOp.getThenRegion().front(), thenEffects);
+    effects.mergeControlEffects(thenEffects);
+    doesFallThrough |= thenEffects.doesFallThrough;
   }
-  doesFallThrough = elifFallsThrough;
-  if (!doesFallThrough) {
-    auto b = handleSemanticTerminatorOp(
-        *elifOp.getOperation(),
-        "if statement with then/else that do not fall through");
-    UnreachableOp::create(b, elifOp.getLoc());
+
+  // Okay, charge through any "elif" blocks if they're live.
+  for (size_t i = 0; i < elifOp.getElifRegions().size(); i += 2) {
+    // If this condition is unreachable mark it and the 'then' as dead.
+    if (!nextElseLive) {
+      markRegionDeadDueToConstantCond(elifOp.getElifRegions()[i], "'if True'",
+                                      elifOp.getLoc());
+      markRegionDeadDueToConstantCond(elifOp.getElifRegions()[i + 1],
+                                      /*message=*/nullptr, elifOp.getLoc());
+      continue;
+    }
+    // This condition is reachable, so process the block.
+    CodeEffects condEffects;
+    lowerBlock(elifOp.getElifRegions()[i].front(), condEffects);
+    effects.mergeControlEffects(condEffects);
+
+    // Check to see if the cond ended in a true/false constant.
+    auto yieldOp =
+        dyn_cast<HLCF::ElifYieldOp>(elifOp.getElifRegions()[i].front().back());
+    if (yieldOp &&
+        mlir::matchPattern(yieldOp.getCond(), m_Constant(&elifCond))) {
+      // A false condition would mean the corresponding 'then' block isn't
+      // reachable but the next cond/else still is.
+      if (!elifCond.getAsBool()) {
+        markRegionDeadDueToConstantCond(elifOp.getElifRegions()[i + 1],
+                                        "'if False'", elifOp.getLoc());
+        continue;
+      }
+      // A true condition would mean the corresponding 'then' block is
+      // reachable but the next cond/else isn't.
+      nextElseLive = false;
+    }
+
+    // Okay, the 'then' block is reachable, so lower it.
+    CodeEffects thenEffects;
+    lowerBlock(elifOp.getElifRegions()[i + 1].front(), thenEffects);
+    effects.mergeControlEffects(thenEffects);
+    doesFallThrough |= thenEffects.doesFallThrough;
   }
+
+  // Handle the 'else' block if reachable.
+  if (nextElseLive) {
+    CodeEffects elseEffects;
+    lowerBlock(elifOp.getElseRegion().front(), elseEffects);
+    effects.mergeControlEffects(elseEffects);
+    doesFallThrough |= elseEffects.doesFallThrough;
+  } else {
+    markRegionDeadDueToConstantCond(elifOp.getElseRegion(), "'if True'",
+                                    elifOp.getLoc());
+  }
+
+  return !doesFallThrough;
+}
+
+/// Pass through an `HLCF::MatchOp`: rewrite each case and the else region.
+/// Returns true when the match does not fall through so the enclosing block
+/// should stop.
+///
+/// A later case (or the else) is reachable only when some prior case can
+/// execute `hlcf.match.next`. Code after the match is reachable when a
+/// reachable case executes `hlcf.match.complete`, or when the else is
+/// reachable and falls through.
+bool LowerSemanticCF::lowerMatchOp(HLCF::MatchOp matchOp,
+                                   CodeEffects &effects) {
+  bool doesFallThrough = false;
+  // The first case is always entered.
+  bool nextCaseLive = true;
+
+  for (Region &caseRegion : matchOp.getCaseRegions()) {
+    // If the previous case always completed, mark the current case and else as
+    // dead, identifying any dead code.
+    if (!nextCaseLive) {
+      markRegionDeadDueToConstantCond(
+          caseRegion, "match case that always completes", matchOp.getLoc());
+      continue;
+    }
+
+    // Otherwise, process the case.
+    CodeEffects caseEffects;
+    lowerBlock(caseRegion.front(), caseEffects);
+
+    // Completing a case exits the match to the following code.
+    if (caseEffects.hasMatchComplete)
+      doesFallThrough = true;
+
+    // Only `match.next` advances to a later case / the else.
+    nextCaseLive = caseEffects.hasMatchNext;
+
+    // This match handles the hlcf.match.next/hlcf.match.complete effects, don't
+    // propagate to the enclosing block.
+    caseEffects.hasMatchComplete = false;
+    caseEffects.hasMatchNext = false;
+    effects.mergeControlEffects(caseEffects);
+  }
+
+  // If the 'else' is unreachable, identify dead code.
+  if (!nextCaseLive) {
+    markRegionDeadDueToConstantCond(matchOp.getElseRegion(),
+                                    "match that always completes",
+                                    matchOp.getLoc());
+  } else { // Otherwise, handle a reachable 'else'.
+    CodeEffects elseEffects;
+    lowerBlock(matchOp.getElseRegion().front(), elseEffects);
+    // hlcf.match.next/.complete in the else target an enclosing match, not this
+    // one.
+    effects.mergeControlEffects(elseEffects);
+    doesFallThrough |= elseEffects.doesFallThrough;
+  }
+  return !doesFallThrough;
 }
 
 /// Lower a LIT::LoopOp to HLCF::LoopOp.  Return true if the lowering should
 /// stop traversing the rest of the operations because this is an infinite loop
 /// that doesn't fall through.
-bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
-                                   bool &enclosingBlockDoesRaise,
-                                   bool &enclosingBlockDoesBreak) {
+bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp, CodeEffects &effects) {
   // Lower loop conditions.
   Block &bodyBlock = loopOp.getBodyRegion().front();
   Block &elseBlock = loopOp.getElseRegion().front();
@@ -303,16 +469,15 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // NOT inside the loop even though it is nested under it in the HLCF AST. The
   // 'currentLoop' loop is set to the parent loop so any break or continue from
   // the 'else' logic will go to the right place.
-  bool blockRaises = false, blockBreaks = false, elseBlockFallThroughs = false;
-  lowerBlock(elseBlock, blockRaises, blockBreaks, elseBlockFallThroughs);
-  enclosingBlockDoesRaise |= blockRaises;
-  enclosingBlockDoesBreak |= blockBreaks;
+  CodeEffects elseEffects;
+  lowerBlock(elseBlock, elseEffects);
+  effects.mergeControlEffects(elseEffects);
 
   // Now that we know how the exit block works, we can look at its terminator.
   // If it fell through, it will end with lit.loop.yield: we replace it
   // with a break from this loop.  Other exits like return/break/continue in the
   // else block will already be rewritten if they are present.
-  if (elseBlockFallThroughs) {
+  if (elseEffects.doesFallThrough) {
     assert(isa<LIT::LoopYieldOp>(elseBlock.getTerminator()));
     elseBlock.getTerminator()->erase();
     builder.setInsertionPointToEnd(&elseBlock);
@@ -324,44 +489,46 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // loop so that breaks and continues get wired up to it.
   llvm::SaveAndRestore<Operation *> currentLoopSaver(currentLoop, newLoop);
   llvm::SaveAndRestore currentBreakElseLoopSaver(currentBreakElseLoop, loopOp);
-  blockRaises = blockBreaks = false;
-  bool blockFallThroughs = false;
-  lowerBlock(*newBody, blockRaises, blockBreaks, blockFallThroughs);
-  enclosingBlockDoesRaise |= blockRaises;
+  CodeEffects bodyEffects;
+  lowerBlock(*newBody, bodyEffects);
+
+  // The break effect is handled locally.
+  bool bodyBreaks = bodyEffects.doesBreak;
+  bodyEffects.doesBreak = false;
+  effects.mergeControlEffects(bodyEffects);
 
   // If the else block fell through, and if something actually used it (i.e. the
   // lit.loop.break.else was reachable) then the loop will exit with its break.
-  if (elseBlockFallThroughs && elseBlock.empty())
-    blockBreaks = true;
+  if (elseEffects.doesFallThrough && elseBlock.empty())
+    bodyBreaks = true;
 
   // If the loop body never breaks, then the code after it is unreachable.
-  if (!blockBreaks) {
+  if (!bodyBreaks) {
     auto b = handleSemanticTerminatorOp(*newLoop, "infinite loop");
     UnreachableOp::create(b, loopOp.getLoc());
   }
 
   // Erase the lit.loop, and return true if it was an infinite loop.
   loopOp.erase();
-  return !blockBreaks;
+  return !bodyBreaks;
 }
 
-void LowerSemanticCF::lowerParamFor(ParamForOp paramFor,
-                                    bool &enclosingBlockDoesRaise,
-                                    bool &enclosingBlockDoesBreak) {
+void LowerSemanticCF::lowerParamFor(ParamForOp paramFor, CodeEffects &effects) {
   // The 'else' region is not inside the loop. It is transparent to raises
   // and breaks.
-  bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
-  lowerBlock(paramFor.getElseRegion().front(), elseRaises, elseBreaks,
-             elseFallsThrough);
-  enclosingBlockDoesRaise |= elseRaises;
-  enclosingBlockDoesBreak |= elseBreaks;
+  CodeEffects elseEffects;
+  lowerBlock(paramFor.getElseRegion().front(), elseEffects);
+  effects.mergeControlEffects(elseEffects);
 
-  // The loop is only transparent to raises.
-  bool loopRaises = false, loopBreaks = false, loopFallsThrough = false;
+  // The loop is only transparent to raises / match terminators, not breaks.
+  CodeEffects loopEffects;
   llvm::SaveAndRestore<Operation *> currentLoopSaver(currentLoop, paramFor);
-  lowerBlock(paramFor.getBody().front(), loopRaises, loopBreaks,
-             loopFallsThrough);
-  enclosingBlockDoesRaise |= loopRaises;
+  lowerBlock(paramFor.getBody().front(), loopEffects);
+
+  // The break effect is handled locally.
+  // TODO: Is this handling lack of breaks correctly?
+  loopEffects.doesBreak = false;
+  effects.mergeControlEffects(loopEffects);
 
   // Now that we've lowered the body and else logic to bind any nested breaks
   // or continues, we can re-parent the 'else' block into the body of the loop.
@@ -476,9 +643,7 @@ static Operation *addErrorRegions(Operation &op, FuncType sig,
 ///      hlcf.break.
 ///   2) It removes dead code after that and reports errors.
 ///   3) It computes properties about the block and enclosing context.
-void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
-                                 bool &doesFallThrough) {
-  doesRaise = doesBreak = doesFallThrough = false;
+void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
 
   for (Operation &op : llvm::make_early_inc_range(block)) {
     // Look for semantic terminators and turn them into real terminators.
@@ -486,16 +651,16 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       auto b = handleSemanticTerminatorOp(op, "return statement");
       KGEN::ReturnOp::create(b, returnOp.getOperands());
       op.erase();
-      doesFallThrough = false;
+      effects.doesFallThrough = false;
       return;
     }
 
     if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
-      doesRaise = true;
+      effects.doesRaise = true;
       auto b = handleSemanticTerminatorOp(op, "raise statement");
       emitRaise(b);
       op.erase();
-      doesFallThrough = false;
+      effects.doesFallThrough = false;
       return;
     }
 
@@ -507,7 +672,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
         continue;
       }
 
-      doesBreak = true;
+      effects.doesBreak = true;
       auto b = handleSemanticTerminatorOp(op, "break statement");
       if (auto hlcfLoop = dyn_cast<HLCF::LoopOp>(currentLoop))
         HLCF::BreakOp::create(b, ValueRange{}, hlcfLoop.getLabelAttr());
@@ -570,7 +735,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     // of a kgen.param.for.  It is generated syntactically by the parser so it
     // is always valid and does not fall through (though the else block can).
     if (isa<ParamForGotoElseOp>(op)) {
-      doesBreak = true;
+      effects.doesBreak = true;
       return;
     }
 
@@ -586,7 +751,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       if (calleeType.isThrows()) {
         opAfterCall = addErrorRegions(op, calleeType.getBody(),
                                       LIT::getCalleeArguments(&op));
-        doesRaise |= (opAfterCall != &op);
+        effects.doesRaise |= (opAfterCall != &op);
       }
 
       // If the function returns NeverType, then it can never return.
@@ -622,9 +787,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Coroutine await regions are fallthrough only.
     if (auto await = dyn_cast<CO::SuspendOp>(op)) {
-      bool awaitRaises = false, awaitBreaks = false, awaitFallsThrough = false;
-      lowerBlock(await.getBody().front(), awaitRaises, awaitBreaks,
-                 awaitFallsThrough);
+      CodeEffects awaitEffects;
+      lowerBlock(await.getBody().front(), awaitEffects);
       // The verifier will catch any invalid control-flow structure.
       continue;
     }
@@ -644,11 +808,12 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       tryOp.setLabelAttr(
           StringAttr::get(tryOp->getContext(), "try" + Twine(tryCounter++)));
 
-      bool tryBodyRaises = false, tryBodyBreaks = false,
-           tryBodyFallsThrough = false;
-      lowerBlock(tryOp.getTryRegion().front(), tryBodyRaises, tryBodyBreaks,
-                 tryBodyFallsThrough);
-      doesBreak |= tryBodyBreaks;
+      CodeEffects tryBodyEffects;
+      lowerBlock(tryOp.getTryRegion().front(), tryBodyEffects);
+      // The raise effect is handled locally.
+      bool tryBodyRaises = tryBodyEffects.doesRaise;
+      tryBodyEffects.doesRaise = false;
+      effects.mergeControlEffects(tryBodyEffects);
 
       // The try falls through if the except block is reachable and falls
       // through, or if the body falls through and so does the else.
@@ -676,16 +841,15 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
         eraseOpToEndOfBlock(firstExceptOp);
       } else {
         // The except and else blocks execute without protection from the try.
-        bool exceptRaises = false, exceptBreaks = false;
-        lowerBlock(tryOp.getExceptRegion().front(), exceptRaises, exceptBreaks,
-                   tryFallsThrough);
-        doesRaise |= exceptRaises;
-        doesBreak |= exceptBreaks;
+        CodeEffects exceptEffects;
+        lowerBlock(tryOp.getExceptRegion().front(), exceptEffects);
+        effects.mergeControlEffects(exceptEffects);
+        tryFallsThrough |= exceptEffects.doesFallThrough;
       }
 
       // If there is an 'else' block that is unreachable, complain and remove
       // it, otherwise process it.
-      if (!tryBodyFallsThrough) {
+      if (!tryBodyEffects.doesFallThrough) {
         Operation *firstElseOp = &tryOp.getElseRegion().front().front();
         auto builder = OpBuilder(firstElseOp);
         UnreachableOp::create(builder, firstElseOp->getLoc());
@@ -694,26 +858,21 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
                       "'else' logic in 'try' is unreachable");
         eraseOpToEndOfBlock(firstElseOp);
       } else {
-        bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
-        lowerBlock(tryOp.getElseRegion().front(), elseRaises, elseBreaks,
-                   elseFallsThrough);
-        doesRaise |= elseRaises;
-        doesBreak |= elseBreaks;
-        tryFallsThrough |= elseFallsThrough;
+        CodeEffects elseEffects;
+        lowerBlock(tryOp.getElseRegion().front(), elseEffects);
+        effects.mergeControlEffects(elseEffects);
+        tryFallsThrough |= elseEffects.doesFallThrough;
       }
 
       // The 'finally' block must fallthrough for the try to fallthrough. Also,
       // it is transparent to raises and breaks.
-      bool finallyFallsThrough = false, finallyRaises = false,
-           finallyBreaks = false;
+      CodeEffects finallyEffects;
       // Lower finally block in the context of the current tryOp s.t. the raise
       // label inside (if any) will be set correctly. The finally region will
       // then be pasted to other places with the correct label inferred.
-      lowerBlock(tryOp.getFinallyRegion().front(), finallyRaises, finallyBreaks,
-                 finallyFallsThrough);
-      doesRaise |= finallyRaises;
-      doesBreak |= finallyBreaks;
-      tryFallsThrough &= finallyFallsThrough;
+      lowerBlock(tryOp.getFinallyRegion().front(), finallyEffects);
+      effects.mergeControlEffects(finallyEffects);
+      tryFallsThrough &= finallyEffects.doesFallThrough;
 
       // Modify the body of the try to implement 'finally' logic.
       tryOp->setOperands({});
@@ -731,86 +890,69 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Process a LIT::LoopOp.
     if (auto loopOp = dyn_cast<LIT::LoopOp>(op)) {
-      if (lowerLITLoop(loopOp, doesRaise, doesBreak))
+      if (lowerLITLoop(loopOp, effects))
         return;
       continue;
     }
 
     // Process a ParamForOp
     if (auto paramFor = dyn_cast<ParamForOp>(op)) {
-      lowerParamFor(paramFor, doesRaise, doesBreak);
+      lowerParamFor(paramFor, effects);
       continue;
     }
 
-    // Process a HLCF::ElifOp
+    // Process a HLCF::ElifOp / HLCF::IfOp / ParamIfOp with a known-constant
+    // condition: mark the unreachable arm(s) so we don't consider them live.
     if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
-      bool elifFallsThrough = false;
-      lowerElif(elifOp, doesRaise, doesBreak, elifFallsThrough);
-      if (elifFallsThrough) {
-        // Continue on and process the rest of the current containing `block`.
-        // We don't assign doesFallThrough = true because this scope's
-        // doesFallThrough is talking about what happens at the end of this
-        // current containing `block`, and is only known when this
-        // `LowerSemanticCF::lowerBlock` call returns.
-        continue;
-      } else {
-        // The elif doesn't fall through, which means everything after here is
-        // dead code, so return.
-        doesFallThrough = false;
+      if (lowerElIfOp(elifOp, effects)) {
+        // If the elif does not fall through, cut off the code after it.
+        auto b = handleSemanticTerminatorOp(
+            op, "if statement with then/else that do not fall through");
+        UnreachableOp::create(b, op.getLoc());
         return;
       }
+      continue;
     }
 
-    // Otherwise we must have an if operation.
+    // Process a HLCF::MatchOp: pass through cases and else.
+    if (auto matchOp = dyn_cast<HLCF::MatchOp>(op)) {
+      if (lowerMatchOp(matchOp, effects)) {
+        auto b = handleSemanticTerminatorOp(
+            op, "match statement that does not fall through");
+        UnreachableOp::create(b, op.getLoc());
+        return;
+      }
+      continue;
+    }
+
+    // Otherwise we must have an if / comptime if.
     assert((isa<HLCF::IfOp, ParamIfOp>(op)) &&
            "Unknown operation with regions");
 
-    // If this is a dynamic `if False:` or @parameter if on known condition,
-    // mark the unreachable block as unreachable so we don't consider it live.
-    Region *deadRegion = nullptr;
-    bool constantCondValue = false;
     if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
       SIMDAttr cond;
       if (mlir::matchPattern(ifOp.getCond(), m_Constant(&cond))) {
-        constantCondValue = cond.getAsBool();
-        deadRegion =
-            &(constantCondValue ? ifOp.getElseRegion() : ifOp.getThenRegion());
+        Region *deadRegion =
+            &(cond.getAsBool() ? ifOp.getElseRegion() : ifOp.getThenRegion());
+        const char *message = cond.getAsBool() ? "'if True'" : "'if False'";
+        markRegionDeadDueToConstantCond(*deadRegion, message, op.getLoc());
       }
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
       if (auto cond = sugarDynCast<SIMDAttr>(ifOp.getCond())) {
-        constantCondValue = cond.getAsBool();
-        deadRegion =
-            &(constantCondValue ? ifOp.getElseRegion() : ifOp.getThenRegion());
+        Region *deadRegion =
+            &(cond.getAsBool() ? ifOp.getElseRegion() : ifOp.getThenRegion());
+        // Don't warn about "comptime if".
+        markRegionDeadDueToConstantCond(*deadRegion, /*message=*/nullptr,
+                                        op.getLoc());
       }
-    }
-
-    // If either branch of the if is unreachable, diagnose any live code there
-    // as unreachable and replace it with a kgen.unreachable so we don't think
-    // about it for liveness' sake.
-    if (deadRegion) {
-      Block &deadBlock = deadRegion->front();
-      Operation *firstDeadOp = &deadBlock.front();
-      // Warn about unreachable code in an 'if', but not in a '@parameter if'.
-      // It serves the function of ifdef's, and conditions are often
-      // known-statically true/false.
-      if (!isa<ParamIfOp>(op) &&
-          !firstDeadOp->hasTrait<OpTrait::IsTerminator>())
-        emitWarning(firstDeadOp->getLoc(), "unreachable code after 'if ")
-            << (constantCondValue ? "True'" : "False'");
-      eraseOpToEndOfBlock(&deadBlock.front());
-      auto builder = OpBuilder::atBlockBegin(&deadBlock);
-      UnreachableOp::create(builder, op.getLoc());
     }
 
     bool ifOpFallsThrough = false;
     for (auto &region : op.getRegions()) {
-      bool regionRaises = false, regionBreaks = false,
-           regionFallsThrough = false;
-      lowerBlock(region.front(), regionRaises, regionBreaks,
-                 regionFallsThrough);
-      doesRaise |= regionRaises;
-      doesBreak |= regionBreaks;
-      ifOpFallsThrough |= regionFallsThrough;
+      CodeEffects regionEffects;
+      lowerBlock(region.front(), regionEffects);
+      effects.mergeControlEffects(regionEffects);
+      ifOpFallsThrough |= regionEffects.doesFallThrough;
     }
 
     // If the operation doesn't fall through, cut off the code after it.
@@ -824,7 +966,17 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
   auto *terminator = &block.back();
   if (isa<HLCF::BreakOp, ParamForBreakOp>(terminator)) {
-    doesBreak = true;
+    effects.doesBreak = true;
+    return;
+  }
+
+  if (isa<HLCF::MatchNextOp>(terminator)) {
+    effects.hasMatchNext = true;
+    return;
+  }
+
+  if (isa<HLCF::MatchCompleteOp>(terminator)) {
+    effects.hasMatchComplete = true;
     return;
   }
 
@@ -836,7 +988,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
               LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopYieldOp>(block.back())));
-  doesFallThrough = true;
+  effects.doesFallThrough = true;
 }
 
 /// This function is called to check to see if the function has any
@@ -877,7 +1029,8 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
-        isConditional || isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp>(op);
+        isConditional ||
+        isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp, HLCF::MatchOp>(op);
     // Handle things like if statements, HLCF::Loop, try, etc.
     for (auto &region : op.getRegions()) {
       if (checkSelfRecursion(region.front(), isSubregionConditional))
@@ -891,8 +1044,8 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
 
 /// Lower all lexical terminators in the function and remove dead code.
 void LowerSemanticCF::run() {
-  bool doesRaise = false, doesBreak = false, doesFallThrough = false;
-  lowerBlock(*theFunc.getBody(), doesRaise, doesBreak, doesFallThrough);
+  CodeEffects bodyEffects;
+  lowerBlock(*theFunc.getBody(), bodyEffects);
 
   // If we had an error already, don't diagnose more semantic issues.
   if (hadError)

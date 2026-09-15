@@ -91,10 +91,10 @@ def test_graph_construction() -> None:
     # Verify input types include draft_tokens and draft_cache_lengths.
     input_types = model.input_types()
     # Expected: tokens, input_row_offsets, return_n_logits,
-    #           + target KV (7 fields) + draft KV (7 fields) + draft_tokens,
+    #           + target KV (8 fields) + draft KV (8 fields) + draft_tokens,
     #           + rng seed, + sampling params (temperature, top_k, max_k, top_p, min_top_p)
-    assert len(input_types) == 24, (
-        f"Expected 24 input types, got {len(input_types)}"
+    assert len(input_types) == 26, (
+        f"Expected 26 input types, got {len(input_types)}"
     )
 
     # Smoke test that graph construction (not compilation) works
@@ -105,6 +105,17 @@ def test_graph_construction() -> None:
         outputs = model(inputs)
         assert len(outputs) == 3, f"Expected 3 outputs, got {len(outputs)}"
         graph.output(*outputs)
+
+    # Verify profile_scope labels and colors are present in the built IR.
+    asm = graph._mlir_op.get_asm(enable_debug_info=True)
+    for needle in (
+        'profile_scope<"target_forward"',
+        'profile_scope<"verify_and_sample"',
+        'profile_scope<"draft_forward"',
+        'profile_scope<"draft_step_0"',
+        'color = "orange"',
+    ):
+        assert needle in asm, f"missing profile scope marker: {needle}"
 
 
 def test_input_types_with_structured_output() -> None:
@@ -121,10 +132,10 @@ def test_input_types_with_structured_output() -> None:
     # Verify input types include the bitmask triple when structured
     # output is enabled.
     input_types = model.input_types()
-    # Expected: 24 mandatory inputs + 3 bitmask (pinned, wait_payload,
-    # device_bitmask_scratch) = 27 total
-    assert len(input_types) == 27, (
-        f"Expected 27 input types (with bitmask triple), got {len(input_types)}"
+    # Expected: 26 mandatory inputs + 3 bitmask (pinned, wait_payload,
+    # device_bitmask_scratch) = 29 total
+    assert len(input_types) == 29, (
+        f"Expected 29 input types (with bitmask triple), got {len(input_types)}"
     )
 
     # The trailing three inputs are pinned_bitmask (packed int32 tensor),

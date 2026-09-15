@@ -42,10 +42,13 @@ class UnifiedMTPInklingMemoryPlanner(InklingMemoryPlanner):
         spec = pipeline_config.speculative
         assert spec is not None
         n_depths = mtp.num_depths_for(spec)
+        tp_size = len(config.devices)
         layout = InklingConvStateLayout.from_local_flags(
-            config.text_config, mtp.local_flags(n_depths)
+            config.text_config, mtp.local_flags(n_depths), tp_size=tp_size
         )
         max_batch_size = (
             pipeline_config.runtime.max_batch_size or _DEFAULT_BATCH_SIZE
         )
-        return target_bytes + max_batch_size * layout.bytes_per_request()
+        return (
+            target_bytes + tp_size * max_batch_size * layout.bytes_per_request()
+        )

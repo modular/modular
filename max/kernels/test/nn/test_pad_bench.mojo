@@ -73,7 +73,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime d_post = 7
     comptime d = d_pre + d_post
 
-    @always_inline
+    @inline(.always)
     def get_in_out_shapes[rank: Int = 1]() -> Array[IndexList[rank], 2]:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
@@ -107,7 +107,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = Array[Int, 2 * rank](uninitialized=True)
+    var paddings_stack = Array[Int, 2 * rank](fill={})
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
     comptime for i in range(rank):
@@ -142,7 +142,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime d_post = 7
     comptime d = d_pre + d_post
 
-    @always_inline
+    @inline(.always)
     def get_in_out_shapes[rank: Int = 1]() -> Array[IndexList[rank], 2]:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
@@ -176,7 +176,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = Array[Int, 2 * rank](uninitialized=True)
+    var paddings_stack = Array[Int, 2 * rank](fill={})
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
     comptime for i in range(rank):

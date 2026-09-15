@@ -412,6 +412,11 @@ def derive_counts_from_spans(
     under chunked prefill, where ``ctx.images`` would include already-processed
     images the encoder did not emit rows for).
 
+    Counts come from ``embedding_rows`` rather than the span width, which
+    differ for an entry whose span interleaves placeholder runs with other
+    tokens -- a clip's timestamp text sits inside its span but produces no
+    encoder row. The two are equal for a still image.
+
     Args:
         selection: The ``(context, miss-images)`` pairs to encode this step.
 
@@ -419,7 +424,7 @@ def derive_counts_from_spans(
         One token count per encoded image, in row order.
     """
     return [
-        img.end_idx - img.start_idx
+        img.embedding_rows
         for _ctx, miss_images in selection
         for img in miss_images
     ]
@@ -864,7 +869,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         if self._pool is None:
             return 0
         return sum(
-            self._pool.blocks_for(img.end_idx - img.start_idx)
+            self._pool.blocks_for(img.embedding_rows)
             for img in images
             if img.image_hash is None or img.image_hash not in self._cache
         )
@@ -964,7 +969,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
                     metrics.num_patches_encoded += int(
                         img.pixel_values.shape[0]
                     )
-                    metrics.num_tokens_encoded += img.end_idx - img.start_idx
+                    metrics.num_tokens_encoded += img.embedding_rows
             self._batch_metrics = metrics
         else:
             self._batch_metrics = None

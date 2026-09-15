@@ -32,7 +32,7 @@ from internal_utils.fp8_utils import cast_saturating
 
 from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.device_collective import _launch_device_collective
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from extensibility import StaticTensorSpec
 from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
@@ -171,7 +171,7 @@ from nn.tpool_patch_merger import (
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def reduce_shape(
     input_buf: Some[Tensor], axis: Int
 ) raises -> IndexList[type_of(input_buf).rank]:
@@ -195,7 +195,7 @@ def reduce_shape(
     return output_shape
 
 
-@always_inline
+@inline(.always)
 def _unsafe_str_to_coord[
     str_slice: StaticString
 ]() -> DynamicCoord[.int64, len(str_slice.split("_"))]:
@@ -253,7 +253,7 @@ struct Range:
         step: Scalar[dtype],
         ctx: DeviceContext,
     ) capturing raises:
-        @always_inline
+        @inline(.always)
         def func[
             width: Int, element_alignment: Int
         ](idx: IndexList[1]) {var start, var step} -> SIMD[dtype, width]:
@@ -309,7 +309,7 @@ struct Copy:
         ctx: DeviceContext,
     ) capturing raises:
         @__parameter
-        @always_inline
+        @inline(.always)
         def func[
             width: Int, element_alignment: Int
         ](idx: IndexList[rank]) -> SIMD[dtype, width]:
@@ -819,7 +819,7 @@ struct RandomNormal:
         seed_value: InputTensor[dtype=.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @always_inline
+        @inline(.always)
         def output_fn[
             _width: SIMDLength,
             _rank: Int,
@@ -896,7 +896,7 @@ struct RandomUniform:
         seed_value: InputTensor[dtype=.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @always_inline
+        @inline(.always)
         def output_fn[
             _width: SIMDLength,
             _rank: Int,
@@ -991,7 +991,7 @@ def concat_shape_impl[
     var axis = normalize_neg_index(axis0, rank)
 
     @__parameter
-    @always_inline
+    @inline(.always)
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
     ) -> Bool:
@@ -1049,7 +1049,7 @@ def concat_from_list_shape_impl[
     var axis = normalize_neg_index(axis0, rank)
 
     @__parameter
-    @always_inline
+    @inline(.always)
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
     ) -> Bool:
@@ -1266,7 +1266,7 @@ struct IRFFT:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     dtype: DType,
     weight_type: DType,
@@ -1330,7 +1330,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     )
 
 
-@always_inline
+@inline(.always)
 def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     dtype: DType,
     weight_type: DType,
@@ -1399,7 +1399,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     )
 
 
-@always_inline
+@inline(.always)
 def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
     dtype: DType,
     target: StaticString,
@@ -1462,7 +1462,7 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
             imag) as in safetensors.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         out_dtype: DType,
@@ -1477,6 +1477,7 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1486,6 +1487,7 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1517,7 +1519,7 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
             imag) as in safetensors.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         out_dtype: DType,
@@ -1533,6 +1535,7 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1543,6 +1546,7 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1587,7 +1591,7 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     dtype: DType,
     freq_dtype: DType,
@@ -1685,7 +1689,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
             than the other way around.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         out_dtype: DType,
@@ -1701,7 +1705,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @always_inline
+        @inline(.always)
         @__parameter
         def description_fn() -> String:
             return String(";").join(
@@ -1721,7 +1725,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
                 )
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
@@ -1763,7 +1767,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             imag) as in safetensors.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1779,7 +1783,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         position_ids: InputTensor[dtype=.uint32, rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @always_inline
+        @inline(.always)
         @__parameter
         def description_fn() -> String:
             return String(";").join(
@@ -1799,7 +1803,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
                 )
             )
 
-        @always_inline
+        @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
@@ -1840,7 +1844,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _unmarshal_mha_decode_dispatch_metadata(
     mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
 ) -> MHADecodeDispatchMetadata:
@@ -1852,7 +1856,7 @@ def _unmarshal_mha_decode_dispatch_metadata(
     )
 
 
-@always_inline
+@inline(.always)
 def _execute_mha_ragged_paged_scalar_args[
     q_dtype: DType,
     //,
@@ -1867,6 +1871,7 @@ def _execute_mha_ragged_paged_scalar_args[
     q: InputTensor[dtype=q_dtype, rank=3, ...],
     input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    page_stride: InputTensor[dtype=.int64, rank=1, ...],
     cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
     kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
     max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1884,6 +1889,7 @@ def _execute_mha_ragged_paged_scalar_args[
     )
     var kv_collection = generic_get_paged_cache(
         kv_blocks,
+        page_stride,
         cache_lengths,
         kv_lookup_table,
         max_prompt_length,
@@ -1928,7 +1934,7 @@ def _execute_mha_ragged_paged_scalar_args[
         )
 
 
-@always_inline
+@inline(.always)
 def _execute_mha_ragged_paged_rel_logits[
     q_dtype: DType,
     //,
@@ -1941,6 +1947,7 @@ def _execute_mha_ragged_paged_rel_logits[
     q: InputTensor[dtype=q_dtype, rank=3, ...],
     input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    page_stride: InputTensor[dtype=.int64, rank=1, ...],
     cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
     kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
     max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1956,6 +1963,7 @@ def _execute_mha_ragged_paged_rel_logits[
     )
     var kv_collection = generic_get_paged_cache(
         kv_blocks,
+        page_stride,
         cache_lengths,
         kv_lookup_table,
         max_prompt_length,
@@ -2028,7 +2036,7 @@ struct Struct_moe_create_indices:
     """Registers the `mo.moe.create.indices` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         target: StaticString,
@@ -2057,7 +2065,7 @@ struct Struct_moe_router_group_limited:
     """Registers the `mo.moe.router.group.limited` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2079,7 +2087,7 @@ struct Struct_moe_router_group_limited:
         context: DeviceContext,
     ) raises:
         @__parameter
-        @always_inline
+        @inline(.always)
         def scores_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[scores_type, width]:
@@ -2112,7 +2120,7 @@ struct Struct_moe_create_indices_with_scales_offset:
     """Registers the `mo.moe.create.indices.with.scales.offset` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         target: StaticString,
@@ -2143,7 +2151,7 @@ struct Struct_moe_single_group_router_eplb:
     """Registers the `mo.moe.single.group.router.eplb` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2170,7 +2178,7 @@ struct Struct_moe_single_group_router_eplb:
         context: DeviceContext,
     ) raises:
         @__parameter
-        @always_inline
+        @inline(.always)
         def scores_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[scores_type, width]:
@@ -2208,7 +2216,7 @@ struct Struct_moe_single_group_router:
     """Registers the `mo.moe.single.group.router` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2228,7 +2236,7 @@ struct Struct_moe_single_group_router:
         context: DeviceContext,
     ) raises:
         @__parameter
-        @always_inline
+        @inline(.always)
         def scores_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[scores_type, width]:
@@ -2259,7 +2267,7 @@ struct Struct_moe_sink_gate_router:
     """Registers the `mo.moe.sink.gate.router` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2301,7 +2309,7 @@ struct Struct_moe_sink_gate_router:
 struct Struct_moe_eplb_remap:
     """Registers the `mo.moe.eplb.remap` graph op with the graph compiler."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2386,7 +2394,7 @@ struct PackConvTransposeFilterShape:
     """Registers the `pack_conv_transpose_filter_shape` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         rank: Int,
@@ -2562,7 +2570,7 @@ struct Struct_fused_token_sampling:
     """Registers the `sampler.fused_token_sampling` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2646,7 +2654,7 @@ struct Struct_fused_token_sampling_with_dist:
     `sampler.fused_token_sampling` rather than an optional output on it.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2702,7 +2710,7 @@ struct Struct_topk_topp_masked_probs:
     tensor, so nothing is sorted and no distribution is rebuilt in-graph.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2747,7 +2755,7 @@ struct Struct_gumbel_argmax_from_probs:
     draft positions share one noise row.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         target: StaticString,
@@ -2775,7 +2783,7 @@ struct Struct_gumbel_argmax_from_probs:
 struct Struct_min_p_sampling:
     """Registers the `min_p_sampling` graph op with the graph compiler."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2814,7 +2822,7 @@ struct Struct_sampler_apply_penalties:
     """Registers the `sampler.apply_penalties` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         logit_type: DType,
@@ -2849,7 +2857,7 @@ struct Struct_sampler_update_frequency_data:
     """Registers the `sampler.update_frequency_data` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         token_type: DType,
@@ -2879,7 +2887,7 @@ struct Struct_sampler_update_frequency_data:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _check_signal_buffer_size(
     signal_buffer_size: Int, input_size_bytes: Int
 ) raises:
@@ -2971,7 +2979,7 @@ struct BundledAllReduceSum:
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var out_buf = output.to_tile_tensor[.int64]()
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
 
@@ -2983,7 +2991,7 @@ struct BundledAllReduceSum:
                 signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
-        @always_inline
+        @inline(.always)
         @__parameter
         def output_lambda[
             _dtype: DType,
@@ -3101,7 +3109,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
             uninitialized=True
         )
 
@@ -3142,7 +3150,7 @@ struct EaglePrefillShiftTokens:
     """Registers the `mo.eagle_prefill_shift_tokens` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -3175,7 +3183,7 @@ struct Learnable2DInterpPosEmb:
     """Registers the `learnable_2d_interp_pos_emb` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -3207,7 +3215,7 @@ struct Learnable2DInterpPosEmb:
 struct SpatialMerge:
     """Registers the `mo.spatial_merge` graph op with the graph compiler."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -3237,7 +3245,7 @@ struct SpatialMerge:
 struct TPoolPatchMerger:
     """Registers the `tpool_patch_merger` graph op with the graph compiler."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -3449,6 +3457,7 @@ struct GatedDeltaConv1dFwd:
                     slot_idx_tt.LayoutType,
                     input_row_offsets_tt.LayoutType,
                     conv_output_ragged_tt.LayoutType,
+                    qkv_input_ragged_tt.Engine,
                 ]
             ](
                 Int32(batch_size),
@@ -3697,6 +3706,7 @@ struct GatedDeltaRecurrenceFwd:
                     recurrent_state_tt.LayoutType,
                     slot_idx_tt.LayoutType,
                     input_row_offsets_tt.LayoutType,
+                    recurrence_output_tt.Engine,
                 ]
             ](
                 Int32(batch_size),
@@ -3926,7 +3936,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def launch_cpu[DSTATE_VAL: Int]() raises:
             mamba2_ssd_chunk_scan_varlen_fwd_cpu[dtype, DSTATE_VAL](
                 nheads,
@@ -3961,7 +3971,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def launch_gpu[DSTATE_VAL: Int]() raises:
             comptime BLOCK_SIZE = 64
             var num_p_blocks = ceildiv(head_dim, BLOCK_SIZE)
@@ -4230,7 +4240,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def launch_cpu[DSTATE_VAL: Int]() raises:
             # The CPU kernel stores fp32 state only; bf16 state is wired on
             # the Apple GPU kernel alone. The `comptime if` keeps the bf16
@@ -4281,7 +4291,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def launch_gpu[DSTATE_VAL: Int]() raises:
             # NVIDIA B200 (sm_100) gets the cooperative DSTATE-split
             # decode-occupancy variant (r7); every other device (AMD MI355
@@ -4345,6 +4355,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt.LayoutType,
                     has_initial_state_tt.LayoutType,
                     cache_indices_tt.LayoutType,
+                    x_tt.Engine,
                     DSTATE_SPLIT,
                 ]
                 var compiled = ctx.compile_function[kernel]()
@@ -4593,7 +4604,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
 
 @extensibility.register("causal_conv1d_varlen_fwd")
 struct CausalConv1DVarlenFwd[
-    activation: StaticString, channels_last: Bool = False
+    activation: StaticString,
+    channels_last: Bool = False,
+    use_residual: Bool = False,
 ]:
     """Varlen causal 1D convolution forward pass.
 
@@ -4601,23 +4614,15 @@ struct CausalConv1DVarlenFwd[
     concatenated together. Uses cumulative sequence lengths to identify
     sequence boundaries.
 
-    The registration lives here in the built-in kernel library (mirroring the
-    `gated_delta_conv1d_fwd` precedent) so the graph compiler / serve path can
-    resolve the op with no out-of-tree `custom_extensions`. The kernel math
-    lives in `state_space.varlen_causal_conv1d`.
-
-    The underlying kernels index `x`/`output` purely through runtime
-    dim/seqlen strides, so the token-axis memory layout is a free parameter.
-    With `channels_last=True` the op consumes and produces tokens-major
-    `(total_seqlen, dim)` tensors — the layout the surrounding graph
-    naturally carries — eliminating the materialized `(dim, total_seqlen)`
-    transposes on both sides of the op. Only the stride/extent bookkeeping
-    below changes; the per-element compute is identical in both layouts.
+    `channels_last=True` lets a tokens-major caller skip the transposes on
+    both sides of the op.
 
     Parameters:
         activation: Activation function - "none" or "silu".
         channels_last: If True, `x` and `output` are tokens-major
             (total_seqlen, dim) instead of (dim, total_seqlen).
+        use_residual: If True, adds `x[d, s]` to the convolution sum at each
+            output position, before `activation`.
 
     Tensor Shapes:
         - output: (dim, total_seqlen) - Output tensor
@@ -4635,19 +4640,15 @@ struct CausalConv1DVarlenFwd[
     @staticmethod
     def execute[
         dtype: DType,
+        conv_states_dtype: DType,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        # `conv_states` is a slot-indexed in/out pool of shape
-        # [max_slots, dim, width - 1], read+written in place at slot
-        # `cache_indices[b]`. It must be a `MutableInputTensor` (not an
-        # `OutputTensor`) so the graph binds the caller's persistent pool
-        # buffer rather than treating it as a freshly-produced output --
-        # mirroring the `gated_delta_conv1d_fwd` precedent above.
-        conv_states: MutableInputTensor[dtype=dtype, rank=3, ...],
+        # The caller owns this pool and the kernel writes it in place.
+        conv_states: MutableInputTensor[dtype=conv_states_dtype, rank=3, ...],
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
         cache_indices: InputTensor[dtype=.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
@@ -4715,6 +4716,7 @@ struct CausalConv1DVarlenFwd[
                 cache_indices_tt.dtype,
                 has_initial_state_tt.dtype,
                 conv_states_tt.dtype,
+                use_residual=Self.use_residual,
             ](
                 dim,
                 total_seqlen,
@@ -4757,7 +4759,7 @@ struct CausalConv1DVarlenFwd[
             var silu_activation_int8 = Int8(silu_activation)
 
             @__parameter
-            @always_inline
+            @inline(.always)
             def launch_gpu[kWidth: Int]() raises:
                 # Prefill/mixed segments (at least one sequence has >1
                 # token) route to the grid-z sequence-tiled kernel; pure
@@ -4795,6 +4797,7 @@ struct CausalConv1DVarlenFwd[
                             has_initial_state_tt.Engine,
                             conv_states_tt.Engine,
                             output_tt.Engine,
+                            use_residual=Self.use_residual,
                         ]
                     ]()
                     # Host-side safe upper bound on the per-sequence tile
@@ -4872,6 +4875,7 @@ struct CausalConv1DVarlenFwd[
                         has_initial_state_tt.Engine,
                         conv_states_tt.Engine,
                         output_tt.Engine,
+                        use_residual=Self.use_residual,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -4928,11 +4932,8 @@ def causal_conv1d_varlen_fwd_shape(
     x: Some[Tensor],
     weight: Some[Tensor],
     bias: Some[Tensor],
-    # Must mirror the execute function's input-tensor list (incl. the in/out
-    # `conv_states` pool) or the MOGG kernel-library validator rejects the op
-    # ("Execute and shape functions do not have the same input tensors").
-    # Bound as a role-less tensor trait here (the shape fn does not mutate),
-    # matching the SSD-inplace `ssm_pool` shape-fn convention.
+    # The shape function must take the same tensors as execute, or the op
+    # is rejected.
     conv_states: Some[Tensor],
     query_start_loc: Some[Tensor],
     cache_indices: Some[Tensor],
@@ -4960,8 +4961,7 @@ def causal_conv1d_varlen_fwd_shape(
     comptime assert (
         type_of(weight).dtype == type_of(x).dtype
         and type_of(bias).dtype == type_of(x).dtype
-        and type_of(conv_states).dtype == type_of(x).dtype
-    ), "x, weight, bias, and conv_states must share a dtype"
+    ), "x, weight, and bias must share a dtype"
     comptime assert (
         type_of(query_start_loc).rank == 1
     ), "query_start_loc must be rank 1"
@@ -5252,12 +5252,13 @@ struct WaitHostValue:
     - `payload[1]`: the 64-bit value to wait for (the int64 element is
       reinterpreted as a u64).
 
-    Captures cleanly into a CUDA graph as a wait-value / batch-mem-op
+    Records into a captured device graph as a wait-value / batch-mem-op
     node, so this op can sit inside a captured forward graph just before
     the sampling kernel to gate the sampler on the bitmask compute
-    finishing while the rest of the forward body runs concurrently.
-    Currently only CUDA streams support stream memory ops; non-CUDA
-    backends raise at runtime.
+    finishing while the rest of the forward body runs concurrently. On
+    HIP that node is recorded explicitly by the driver layer, because
+    ROCm's stream capture does not record `hipStreamWaitValue64` itself.
+    Supported on CUDA and HIP streams; other backends raise at runtime.
     """
 
     @staticmethod

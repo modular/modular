@@ -72,7 +72,7 @@ from .amd import AMDMatmul
 from ...structuring import SMemTile
 
 
-@always_inline
+@inline(.always)
 def distance[
     dtype: DType, //
 ](
@@ -90,7 +90,7 @@ comptime WarpSplitKReductionSMem[
 ]
 
 
-@always_inline
+@inline(.always)
 def warp_split_k_reduction[
     c_type: DType,
     c_layout: Layout,
@@ -148,7 +148,7 @@ def warp_split_k_reduction[
         i_red //= 2
 
 
-@always_inline
+@inline(.always)
 def warp_split_k_reduction[
     c_type: DType,
     c_layout: Layout,
@@ -176,7 +176,7 @@ def warp_split_k_reduction[
     ](warp_k_part_id, c_reg_tile, smem)
 
 
-@always_inline
+@inline(.always)
 def multistage_mma[
     c_type: DType,
     c_layout: Layout,
@@ -288,7 +288,7 @@ def multistage_mma[
         transpose_b or b_type.is_half_float()
     ) and is_nvidia_gpu()
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
@@ -306,7 +306,7 @@ def multistage_mma[
             ),
         }
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
@@ -909,10 +909,10 @@ def multistage_gemm_kernel[
     var warp_col = Int(block_idx_swizzle[0]) * BN + Int(warp_x) * WN
     comptime store_vec_rows = 1 if is_nvidia_gpu() else 4
     var c_tile_in_range = (
-        warp_row < M and warp_col + WN <= N and M % store_vec_rows == 0
+        warp_row + WM <= M and warp_col + WN <= N and M % store_vec_rows == 0
     )
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def apply_epilogue():
         # This block is identical to the one used for f32 case
@@ -965,7 +965,7 @@ def multistage_gemm_kernel[
                                 (m + j, n), vec[j].cast[c_type]()
                             )
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def store_c_scalar():
         """Writes C one element at a time, bounded by the real (row, col).
@@ -1241,7 +1241,16 @@ def multistage_gemm_split_k_kernel[
             work_space_type,
             transpose_b,
             k_partition_config,
-        ].run(ws_tt, a_amd, b_amd)
+        ].run[
+            type_of(ws_tt).LayoutType,
+            type_of(a_amd).LayoutType,
+            type_of(b_amd).LayoutType,
+            type_of(ws_tt).Engine,
+            type_of(a_amd).Engine,
+            type_of(b_amd).Engine,
+        ](
+            ws_tt, a_amd, b_amd
+        )
 
     else:
         # If K is not divisible by num_partitions, the first

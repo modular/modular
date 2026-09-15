@@ -39,7 +39,13 @@ from max.gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import ComptimeInt, CoordLike, RowMajorLayout, TileTensor
+from layout import (
+    ComptimeInt,
+    CoordLike,
+    RowMajorLayout,
+    TensorEngine,
+    TileTensor,
+)
 from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
 )
@@ -88,6 +94,7 @@ struct MLA_SM100_Decode_KV_BF16[
     MaskType: MHAMask,
     config: MLA_SM100_Decode_Config,
     ValidLengthType: OptionalPointer,
+    Engine: TensorEngine,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
 ](TrivialRegisterPassable):
@@ -106,6 +113,7 @@ struct MLA_SM100_Decode_KV_BF16[
             TMEM/SMEM layout.
         ValidLengthType: `OptionalPointer` type wrapping the per-batch
             valid-sequence-length tensor.
+        Engine: Engine policy of the `scalar_args` tile operand.
         _is_cache_length_accurate: When `False`, the kernel adds the local
             sequence length to the cache length to compute the total key
             count (defaults to `False`).
@@ -237,7 +245,10 @@ struct MLA_SM100_Decode_KV_BF16[
         ],
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
+            Engine=Self.Engine,
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
@@ -255,7 +266,7 @@ struct MLA_SM100_Decode_KV_BF16[
         comptime num_reg_other = 112
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = mla_decode_pack.num_partitions
+        var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
         var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
@@ -535,7 +546,7 @@ struct MLA_SM100_Decode_KV_BF16[
     # MLA decoding load_q and load_kv function
     # --------------------------------------------------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load(
         q_tma: QOTMATile[
             dtype=Self.q_type,
@@ -711,7 +722,7 @@ struct MLA_SM100_Decode_KV_BF16[
     # |__T0__|__T1__|__T2__|__T3__|
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaQK(
         tmem_addr: UInt32,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -783,7 +794,7 @@ struct MLA_SM100_Decode_KV_BF16[
             tile_idx += 1
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaPV(
         tmem_addr: UInt32,
         kv_smem: SharedMemPointer[Scalar[Self.q_type]],

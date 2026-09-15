@@ -20,7 +20,15 @@ synchronization across CTAs that contribute to the same output tile.
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from std.math import align_up, ceildiv
 from layout.tma_async import SharedMemBarrier, PipelineState
 from std.utils.static_tuple import StaticTuple
@@ -60,12 +68,12 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
     comptime INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         """Returns whether this work tile is in bounds."""
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         """Returns whether this split covers the final K tiles of the output tile.
 
@@ -74,7 +82,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         """
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """Writes a parenthesized summary of this work info to the given writer.
 
@@ -112,7 +120,7 @@ struct WaitAndAdvanceContextSplitK[
     var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
     var next_work: WorkInfo
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         work_info_ptr: Pointer[WorkInfo, Self.work_origin],
@@ -121,11 +129,11 @@ struct WaitAndAdvanceContextSplitK[
         self.work_info_ptr = work_info_ptr
         self.next_work = next_work
 
-    @always_inline
+    @inline(.always)
     def __enter__(self) -> WorkInfo:
         return self.work_info_ptr[]
 
-    @always_inline
+    @inline(.always)
     def __exit__(mut self):
         self.work_info_ptr[] = self.next_work
 
@@ -182,7 +190,7 @@ struct WorkIteratorSplitK[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
         """Create work iterator with initial work_info.
 
@@ -195,11 +203,11 @@ struct WorkIteratorSplitK[
         self.consumer_state = PipelineState[Self.num_stages]()
         self.needs_fetch = False
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> WorkInfo:
         """Return current work item, deferring fetch to next call.
 
@@ -274,7 +282,7 @@ struct SchedulerWorkIteratorSplitK[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
         """Create scheduler iterator. Throttle pipeline from scheduler.
 
@@ -289,11 +297,11 @@ struct SchedulerWorkIteratorSplitK[
         self.throttle_pipeline = scheduler.throttle_pipeline
         self.needs_fetch = False
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> WorkInfo:
         """Return current work item, deferring fetch to next call.
 
@@ -310,7 +318,7 @@ struct SchedulerWorkIteratorSplitK[
         self.needs_fetch = True
         return self.work_info
 
-    @always_inline
+    @inline(.always)
     def signal_and_advance(mut self):
         """Signal CLC throttle consumer and advance to next work request."""
         self.throttle_pipeline.consumer_signal_and_step()
@@ -318,7 +326,7 @@ struct SchedulerWorkIteratorSplitK[
             self.producer_state
         )
 
-    @always_inline
+    @inline(.always)
     def drain(mut self):
         """Drain all pending CLC requests before kernel exit."""
 
@@ -405,7 +413,7 @@ struct TileScheduler[
             storage_ptr, producer_arv_count, consumer_arv_count
         )
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
@@ -447,7 +455,7 @@ struct TileScheduler[
         self.locks_ptr = locks_ptr.bitcast[Int32]()
         self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
-    @always_inline
+    @inline(.always)
     def convert_to_splitk_work_info(self, work_info: B200WorkInfo) -> WorkInfo:
         var current_k_start = work_info.k_start * self.k_tiles_per_split
         var remaining_k_tiles = self.total_k_tiles - current_k_start
@@ -459,20 +467,20 @@ struct TileScheduler[
             work_info.is_valid_tile,
         )
 
-    @always_inline
+    @inline(.always)
     def initial_work_info(self) -> WorkInfo:
         return self.convert_to_splitk_work_info(
             self.scheduler.initial_work_info()
         )
 
-    @always_inline
+    @inline(.always)
     def advance_to_next_work(
         self,
         mut clc_state: PipelineState[Self.num_stages],
     ) -> PipelineState[Self.num_stages]:
         return self.scheduler.advance_to_next_work(clc_state)
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work(
         self,
         work_info: WorkInfo,
@@ -489,7 +497,7 @@ struct TileScheduler[
     # CLC Throttle (Producer Side)
     # =========================================================================
 
-    @always_inline
+    @inline(.always)
     def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
         """Signal CLC throttle if this is the first CTA in cluster.
 
@@ -503,7 +511,7 @@ struct TileScheduler[
     # Work Iteration Context Managers
     # =========================================================================
 
-    @always_inline
+    @inline(.always)
     def wait_and_advance_work[
         work_origin: MutOrigin, //
     ](
@@ -534,7 +542,7 @@ struct TileScheduler[
         consumer_state.step()
         return WaitAndAdvanceContextSplitK(Pointer(to=work_info), next)
 
-    @always_inline
+    @inline(.always)
     def work_iterator(
         self,
     ) -> WorkIteratorSplitK[
@@ -550,7 +558,7 @@ struct TileScheduler[
         """
         return WorkIteratorSplitK(self, self.initial_work_info())
 
-    @always_inline
+    @inline(.always)
     def scheduler_iterator(
         self,
     ) -> SchedulerWorkIteratorSplitK[
@@ -566,40 +574,50 @@ struct TileScheduler[
         """
         return SchedulerWorkIteratorSplitK(self, self.initial_work_info())
 
-    @always_inline
+    @inline(.always)
     def is_last_split(self, work_tile_info: WorkInfo) -> Bool:
         return work_tile_info.is_valid() and work_tile_info.is_final_split(
             self.total_k_tiles
         )
 
-    @always_inline
+    @inline(.always)
     def output_tile_index(self, work_info: WorkInfo) -> UInt32:
         return work_info.m * UInt32(grid_dim.y) + work_info.n
 
     comptime WorkspaceTileLayout = static_row_major[Self.BM, Self.MMA_N]
 
-    @always_inline
+    @inline(.always)
     def _get_workspace_tile[
-        accum_type: DType, workspace_layout: TensorLayout
+        accum_type: DType,
+        workspace_layout: TensorLayout,
+        workspace_engine: TensorEngine,
     ](
         self,
         reduction_workspace: TileTensor[
-            accum_type, workspace_layout, MutAnyOrigin
+            accum_type,
+            workspace_layout,
+            MutAnyOrigin,
+            Engine=workspace_engine,
         ],
         reduction_tile_idx: UInt32,
-    ) -> TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin]:
+    ) -> TileTensor[
+        accum_type,
+        Self.WorkspaceTileLayout,
+        MutAnyOrigin,
+        Engine=workspace_engine.OffsetResultType[TypeList.of[Int]()],
+    ]:
         var offset = reduction_tile_idx * UInt32(Self.BM) * UInt32(Self.MMA_N)
-        return TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin](
-            reduction_workspace._storage + Int(offset),
+        return {
+            reduction_workspace._offset_storage(Int(offset)),
             row_major[Self.BM, Self.MMA_N](),
-        )
+        }
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _get_max_width_per_stage[max_width: Int]() -> Int:
         return min(max_width, Self.ROW_SIZE & -Self.ROW_SIZE)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _get_widths_per_stage[max_width: Int]() -> Tuple[Array[Int, 4], Int]:
         """helper functions to decompose MMA_N into widths that are powers of two
@@ -619,17 +637,20 @@ struct TileScheduler[
 
         return (arr^, i)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _to_next_subtile[
         accum_type: DType,
         tile_layout: TensorLayout,
+        tile_engine: TensorEngine,
         /,
         *,
         widths: Array[Int, 4],
         curr_stage: Int,
     ](
-        tensor: TileTensor[accum_type, tile_layout, MutAnyOrigin],
+        tensor: TileTensor[
+            accum_type, tile_layout, MutAnyOrigin, Engine=tile_engine
+        ],
     ) -> TileTensor[
         accum_type,
         # Shape narrows to [height, stage_width], but stride is preserved
@@ -641,6 +662,7 @@ struct TileScheduler[
             tile_layout.static_stride[0],
         ],
         MutAnyOrigin,
+        Engine=tile_engine.OffsetResultType[TypeList.of[Int]()],
     ]:
         @__parameter
         def _get_current_width(widths: Array[Int, 4], curr_stage: Int) -> Int:
@@ -651,27 +673,20 @@ struct TileScheduler[
 
         comptime current_width = _get_current_width(widths, curr_stage)
 
-        return TileTensor[
-            accum_type,
-            _StridedLayout[
-                tile_layout.static_shape[0],
-                widths[curr_stage],
-                tile_layout.static_stride[0],
-            ],
-            MutAnyOrigin,
-        ](
-            tensor._storage + current_width,
+        return {
+            tensor._offset_storage(current_width),
             _strided_layout[
                 tile_layout.static_shape[0],
                 widths[curr_stage],
                 tile_layout.static_stride[0],
             ](),
-        )
+        }
 
-    @always_inline
+    @inline(.always)
     def store_to_workspace[
         accum_type: DType,
         workspace_layout: TensorLayout,
+        workspace_engine: TensorEngine,
         /,
         *,
         do_reduction: Bool = False,
@@ -680,7 +695,10 @@ struct TileScheduler[
         self,
         tmem: TmemAddress,
         reduction_workspace: TileTensor[
-            accum_type, workspace_layout, MutAnyOrigin
+            accum_type,
+            workspace_layout,
+            MutAnyOrigin,
+            Engine=workspace_engine,
         ],
         epilogue_thread_idx: Int,
         reduction_tile_idx: UInt32,
@@ -784,14 +802,18 @@ struct TileScheduler[
 
             stage_addr = stage_addr + stage_width
 
-    @always_inline
+    @inline(.always)
     def reduction[
         accum_type: DType,
         workspace_layout: TensorLayout,
+        workspace_engine: TensorEngine,
     ](
         self,
         reduction_workspace: TileTensor[
-            accum_type, workspace_layout, MutAnyOrigin
+            accum_type,
+            workspace_layout,
+            MutAnyOrigin,
+            Engine=workspace_engine,
         ],
         tmem: TmemAddress,
         epilogue_thread_idx: Int,
@@ -854,7 +876,7 @@ struct TileScheduler[
 
             return True
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def wait_eq(
         lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
@@ -869,7 +891,7 @@ struct TileScheduler[
         sema.wait_eq(barrier_id, Int32(val))
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def wait_lt(
         lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
@@ -880,7 +902,7 @@ struct TileScheduler[
         pass
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def arrive_set(
         lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
@@ -894,7 +916,7 @@ struct TileScheduler[
         sema.arrive_set(barrier_id, Int32(val))
 
 
-@always_inline
+@inline(.always)
 def get_num_tiles(
     problem_shape: IndexList[3],
     block_tile_shape: IndexList[3],
@@ -919,7 +941,7 @@ def get_num_tiles(
     return Index(problem_blocks_m, problem_blocks_n)
 
 
-@always_inline
+@inline(.always)
 def get_required_locks_buffer_size_bytes[
     accum_type: DType
 ](

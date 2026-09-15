@@ -200,7 +200,7 @@ def generate_max_outputs(
         dtype=dtype,
         devices=[device_ref],
         layer_idx=layer_idx,
-        sliding_window_pattern=text_config.sliding_window_pattern,
+        is_sliding=bool((layer_idx + 1) % text_config.sliding_window_pattern),
     )
     attention.load_state_dict(state_dict)
 
@@ -259,12 +259,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        kv_runtime_inputs.kv_blocks.to(device),
-        kv_runtime_inputs.cache_lengths.to(device),
-        kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_prompt_length,
-        kv_runtime_inputs.max_cache_length,
-        kv_runtime_inputs.attention_dispatch_metadata,
+        *kv_runtime_inputs.flatten(),
     )[0]
 
     return output

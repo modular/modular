@@ -20,7 +20,6 @@ import io
 import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -34,7 +33,7 @@ from max.pipelines.context import (
     TextContext,
     TokenBuffer,
 )
-from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
@@ -42,7 +41,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
 )
 from max.support.image import find_contiguous_ranges, hash_image
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from transformers import (
     AutoProcessor,
     AutoTokenizer,
@@ -52,6 +51,51 @@ from typing_extensions import ParamSpec
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
+
+
+# Formats we are willing to decode. Passing this to ``Image.open`` means the
+# decoder is chosen from this set rather than from every registered PIL plugin
+# by magic bytes, which shrinks the native-decoder attack surface. Most
+# importantly it keeps attacker-controlled bytes away from PIL's EPS plugin,
+# which shells out to Ghostscript (``subprocess.check_call`` with no timeout) --
+# a repeat CVE target and an unbounded-runtime DoS vector reachable from an
+# unauthenticated-shaped request. "JPEG" also covers MPO (multi-picture JPEG),
+# which PIL opens through the JPEG factory.
+#
+# The set is the common web formats a vision client sends plus a few
+# semi-popular ones. HEIC/HEIF are deliberately absent: base Pillow cannot
+# decode them without the optional ``pillow-heif`` plugin (not a dependency),
+# and JPEG2000/EPS-style exotic decoders are left out to keep the surface small.
+_DESIRED_IMAGE_FORMATS = (
+    "PNG",
+    "JPEG",
+    "WEBP",
+    "GIF",
+    "BMP",
+    "PPM",
+    "TIFF",
+    "TGA",
+    "AVIF",
+)
+
+# Register every PIL plugin now, then keep only the formats this build actually
+# provides. Intersecting is what makes it safe to list an *optional* codec such
+# as AVIF: on a platform whose Pillow wheel ships without libavif the name is
+# simply dropped here, instead of turning every non-first-format image into an
+# uncaught ``KeyError`` inside ``Image.open`` (which looks up ``OPEN[name]``
+# after a one-shot ``init()``). ``init()`` is idempotent and runs once at import.
+Image.init()
+ALLOWED_IMAGE_FORMATS = tuple(
+    fmt for fmt in _DESIRED_IMAGE_FORMATS if fmt in Image.OPEN
+)
+"""Image formats ``Image.open`` may select a decoder from.
+
+Defined here, beside :func:`open_image`, because both places that open
+client-supplied image bytes must apply it: the API server's admission decode
+and this module's per-image fallback. ``max.serve.router._image_resolution``
+imports it from here -- the serve router already depends on this package, and
+the reverse direction is not available.
+"""
 
 
 def open_image(image: bytes | Image.Image) -> Image.Image:
@@ -64,15 +108,36 @@ def open_image(image: bytes | Image.Image) -> Image.Image:
     Routing both through this helper lets a tokenizer reuse the pre-decoded
     image instead of decoding the same bytes a second time.
 
+    Bytes are opened against :data:`ALLOWED_IMAGE_FORMATS`, decoded eagerly
+    (``load()`` rather than PIL's lazy header parse), and any failure becomes
+    an :class:`InputError` -- a clean 400. Both matter because this is the
+    second place client bytes can be opened: the API server skips its own
+    admission decode for an image whose preprocessed tensor is already cached,
+    and offline callers never had one.
+
     Args:
         image: Raw encoded image bytes, or an already-decoded ``PIL.Image``.
 
     Returns:
         The decoded ``PIL.Image``.
+
+    Raises:
+        InputError: If ``image`` is bytes that do not decode to an image.
     """
     if isinstance(image, Image.Image):
         return image
-    return Image.open(io.BytesIO(image))
+    try:
+        decoded = Image.open(io.BytesIO(image), formats=ALLOWED_IMAGE_FORMATS)
+        decoded.load()
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        SyntaxError,
+        Image.DecompressionBombError,
+    ) as e:
+        raise InputError("invalid or unreadable image content") from e
+    return decoded
 
 
 async def convert_token_to_id(
@@ -116,118 +181,33 @@ def resolve_single_special_token(delegate: Any, token: str) -> int:
 
 logger = logging.getLogger("max.pipelines")
 
-_UINT64_MASK = (1 << 64) - 1
 
-# The only ``dkv_cache_hint`` schema version this parser understands. Version 2
-# moves the source instance from the top level onto each block so one hint can
-# name several source dKV instances, which this shape cannot represent, so a
-# version this parser does not recognize is ignored rather than misread. See
-# ``dkv/docs/cache-hint.md``.
-_SUPPORTED_DKV_HINT_VERSION = 1
+def encode_dkv_cache_hint(hint: dict[str, Any] | None) -> bytes | None:
+    """Re-serializes a request's ``dkv_cache_hint`` to the bytes dKV parses.
 
+    The hint arrives as a decoded JSON object and the dKV connector parses it
+    in Rust, so MAX only has to hand back its wire form. Nothing here reads the
+    contents: the version gate, the instance table, and every routing decision
+    live in ``dkv-connector`` (see ``dkv/docs/cache-hint.md``), which is what
+    lets the Orchestrator adopt a new hint schema without redeploying MAX.
 
-@dataclass(frozen=True, slots=True)
-class _HintBlock:
-    """A single block descriptor from the Orchestrator's dkv_cache_hint."""
-
-    hash: int
-
-
-# Hint schema versions already warned about, so an orchestrator that emits a
-# newer version than this build understands logs once per process per version
-# rather than once per request. Once the orchestrator adopts version 2 the
-# unrecognized-version path becomes the steady state for every hinted request
-# until this parser catches up, and a per-request warning there is pure noise.
-# Keyed on the observed version so a second, genuinely unexpected version still
-# gets its own line.
-_warned_dkv_hint_versions: set[object] = set()
-
-
-@dataclass(frozen=True, slots=True)
-class _DkvCacheHint:
-    """Typed representation of a dkv_cache_hint payload from the Orchestrator."""
-
-    instance_name: str
-    blocks: list[_HintBlock]
-
-
-@dataclass(frozen=True, slots=True)
-class _ParsedDkvCacheHint:
-    """Parsed dkv_cache_hint, ready to attach to a TextContext.
-
-    ``external_block_metadata`` becomes ``ctx.external_block_metadata`` —
-    a set-like dict the connector iterates in lookup().
-    ``instance_name`` becomes ``ctx.dkv_hint_instance_name`` — the
-    connector compares it to its own dKV instance name to short-circuit
-    fetches when the cache source is local.
+    Returns ``None`` when the field is absent, empty, or not encodable, all of
+    which the connector serves as an unhinted load. A hint never fails a
+    request: an HTTP caller cannot reach the unencodable case, because the
+    field is typed ``dict[str, Any]`` and filled from a parsed JSON body, but
+    a caller building a request in Python can, and a cache is not worth a
+    failed request.
     """
-
-    instance_name: str
-    external_block_metadata: dict[int, Any]
-
-
-def _parse_dkv_cache_hint(
-    hint: dict[str, Any] | None,
-) -> _ParsedDkvCacheHint | None:
-    """Convert a ``dkv_cache_hint`` JSON payload into the form the DKVConnector reads.
-
-    The Orchestrator injects a ``dkv_cache_hint`` field into the request
-    body (see SERVOPT-1143). Returns ``None`` when no hint is present, when
-    the hint carries a schema version this parser does not understand, or
-    when the hint carries no blocks.
-
-    An unrecognized version is ignored rather than treated as an error,
-    because dKV is an external cache and proceeding without a hint costs a
-    cache miss, whereas raising would fail a request the cache was only
-    supposed to accelerate. That is what lets the Orchestrator adopt a newer
-    hint schema without waiting for every engine to be redeployed first.
-
-    Raises ``TypeError`` or ``KeyError`` if a hint of a recognized version
-    is malformed.
-    """
-    if hint is None:
+    if not hint:
         return None
-
-    # An absent version means the hint is v1. That is a permanent fact of the
-    # v1 wire format, distinct from which version this build supports, so the
-    # literal stays 1 even when _SUPPORTED_DKV_HINT_VERSION moves.
-    version = hint.get("version", 1)
-    if version != _SUPPORTED_DKV_HINT_VERSION:
-        if version not in _warned_dkv_hint_versions:
-            _warned_dkv_hint_versions.add(version)
-            logger.warning(
-                "Ignoring dkv_cache_hint with unsupported version %s (this "
-                "build understands version %s); serving as though the cache "
-                "missed. Logged once per process per version.",
-                version,
-                _SUPPORTED_DKV_HINT_VERSION,
-            )
-        return None
-
-    parsed = _DkvCacheHint(
-        instance_name=hint["instance_name"],
-        blocks=[_HintBlock(**b) for b in hint.get("blocks", [])],
-    )
-
-    if not parsed.blocks:
-        return None
-
-    # Lazy import to avoid pulling dkv deps when dKV is not configured.
-    from max.pipelines.kv_cache.connectors.dkv.connector import (
-        DKVExternalBlockMetadata,
-    )
-
-    external_block_metadata: dict[int, DKVExternalBlockMetadata] = {}
-    for block in parsed.blocks:
-        block_hash = block.hash & _UINT64_MASK
-        external_block_metadata[block_hash] = DKVExternalBlockMetadata(
-            seq_hash=block_hash
+    try:
+        return json.dumps(hint, separators=(",", ":")).encode()
+    except (TypeError, ValueError):
+        logger.warning(
+            "Dropping an unencodable dkv_cache_hint; serving as though the "
+            "cache missed."
         )
-
-    return _ParsedDkvCacheHint(
-        instance_name=parsed.instance_name,
-        external_block_metadata=external_block_metadata,
-    )
+        return None
 
 
 TokenGeneratorContext = TypeVar("TokenGeneratorContext")
@@ -600,12 +580,12 @@ class TextTokenizer(
                 add_special_tokens,
             )
 
-            if self.max_length and len(encoded_prompt) > self.max_length:
-                raise PromptTooLongError(len(encoded_prompt), self.max_length)
-
             encoded_prompt = np.array(encoded_prompt)
         else:
             encoded_prompt = np.array(list(prompt))
+
+        if self.max_length and len(encoded_prompt) > self.max_length:
+            raise PromptTooLongError(len(encoded_prompt), self.max_length)
 
         return encoded_prompt
 
@@ -728,7 +708,6 @@ class TextTokenizer(
             array=token_ids.astype(np.int64, copy=False),
         )
 
-        parsed_hint = _parse_dkv_cache_hint(request.dkv_cache_hint)
         context = TextContext(
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
@@ -745,12 +724,7 @@ class TextTokenizer(
             sampling_params=request.sampling_params,
             model_name=request.model_name,
             target_endpoint=request.target_endpoint,
-            external_block_metadata=(
-                parsed_hint.external_block_metadata if parsed_hint else None
-            ),
-            dkv_hint_instance_name=(
-                parsed_hint.instance_name if parsed_hint else ""
-            ),
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             cache_salt=request.cache_salt,
         )
 
@@ -1097,7 +1071,6 @@ class TextAndVisionTokenizer(
             array=encoded_prompt.astype(np.int64, copy=False),
         )
 
-        parsed_hint = _parse_dkv_cache_hint(request.dkv_cache_hint)
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
@@ -1113,12 +1086,7 @@ class TextAndVisionTokenizer(
             grammar=grammar,
             grammar_state=grammar_state,
             sampling_params=request.sampling_params,
-            external_block_metadata=(
-                parsed_hint.external_block_metadata if parsed_hint else None
-            ),
-            dkv_hint_instance_name=(
-                parsed_hint.instance_name if parsed_hint else ""
-            ),
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             images=[
                 ImageMetadata(
                     start_idx=start_idx,

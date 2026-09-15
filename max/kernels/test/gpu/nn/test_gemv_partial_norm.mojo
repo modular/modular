@@ -136,9 +136,9 @@ def test_gemv_partial_norm[
 
     vendor_blas.matmul(
         ctx,
-        y_ref_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
+        y_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

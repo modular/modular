@@ -378,6 +378,177 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
     assert "miss)" not in formatted
 
 
+def test_dkv_clause_reports_the_size_and_the_peak_of_the_read() -> None:
+    """The dKV clause has to carry how much was read, not only how fast.
+
+    The console line that opened CLIN-1844 printed a read latency and a
+    GiB/s and no block count at all, so a 1-block read and a 100-block one
+    looked identical. The byte count was not recoverable from it either:
+    the GiB/s divides by the transfer-time total, the line reports the
+    average, and nothing publishes the count that bridges them. The peak
+    matters for the same reason: the average hides a single slow read
+    inside a batch of fast ones.
+    """
+    metrics = _make_metrics(
+        dkv_read_blocks=100,
+        dkv_read_bytes=512 * 1024 * 1024,
+        nixl_read_latency_avg_ms=0.2,
+        nixl_read_latency_max_ms=16.4,
+        nixl_read_gib_per_s=97.0,
+    )
+
+    assert (
+        "dKV: read 100 blocks (512.00 MiB) in 0.2ms avg / 16.4ms max "
+        "(97.00 GiB/s)"
+    ) in metrics.pretty_format()
+
+    extra = metrics.to_log_extra()
+    assert extra["dkv_read_blocks"] == 100
+    assert extra["dkv_read_bytes"] == 512 * 1024 * 1024
+    assert extra["nixl_read_latency_max_ms"] == 16.4
+
+
+def test_dkv_clause_shows_a_read_whose_latency_sample_was_dropped() -> None:
+    """A batch that landed blocks shows the dKV clause regardless.
+
+    The clause used to be gated on the latency averages alone, so a read
+    whose timing sample never landed printed no dKV clause at all and its
+    block count vanished from the line entirely. What replaces it is the
+    counts without the timings, not the counts beside a row of zeros:
+    ``0.0ms avg / 0.0ms max (0.00 GiB/s)`` reads as an instant read where
+    the truth is an unmeasured one.
+    """
+    metrics = _make_metrics(dkv_read_blocks=7, dkv_read_bytes=14336)
+
+    formatted = metrics.pretty_format()
+    assert "dKV: read 7 blocks (14.00 KiB), write 0.0ms" in formatted
+    assert "ms avg" not in formatted
+    assert "ms max" not in formatted
+
+    # The structured log keeps its zeros: a consumer reads the value beside
+    # the block count, and a dropped key breaks a dashboard series where a
+    # zero does not.
+    extra = metrics.to_log_extra()
+    assert extra["dkv_read_blocks"] == 7
+    assert extra["nixl_read_latency_max_ms"] == 0.0
+
+
+def test_dkv_read_counts_follow_the_console_clause_on_a_write_only_batch() -> (
+    None
+):
+    """A batch that only offloaded reports its zero reads in both places.
+
+    The console clause and the structured log share one predicate, so the
+    line cannot print a read count the log then omits. Zero is the honest
+    answer for a write-only batch, and a zero is a state an operator can
+    read where a missing key is not.
+    """
+    metrics = _make_metrics(
+        dkv_read_blocks=0,
+        dkv_read_bytes=0,
+        nixl_read_latency_avg_ms=0.0,
+        nixl_write_latency_avg_ms=3.0,
+    )
+
+    assert "dKV: read 0 blocks (0.00 KiB)" in metrics.pretty_format()
+    extra = metrics.to_log_extra()
+    assert extra["dkv_read_blocks"] == 0
+    assert extra["dkv_read_bytes"] == 0
+
+
+def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
+    """An attached tier that pulled from no peer still reports all five zeros.
+
+    This is the whole point of the counters: a flat zero says no cache hint
+    reached the connector, which is a different fault from hints arriving and
+    being rejected, and a missing series distinguishes neither.
+    """
+    metrics = _make_metrics(dkv_connected_clients=1, dkv_total_clients=1)
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_attaches.assert_called_once_with(0)
+    mock_metrics.dkv_peer_attach_failures.assert_called_once_with(0)
+    mock_metrics.dkv_peers_dropped.assert_called_once_with(0)
+    mock_metrics.dkv_peer_loads.assert_called_once_with(0)
+    mock_metrics.dkv_peer_load_failures.assert_called_once_with(0)
+    mock_metrics.dkv_hints_rejected.assert_called_once_with(0)
+
+    extra = metrics.to_log_extra()
+    assert extra["dkv_peer_loads"] == 0
+    assert extra["dkv_hints_rejected"] == 0
+
+    # the console line stays quiet, since there is nothing to say about peers
+    assert "dKV peers" not in metrics.pretty_format()
+
+
+def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
+    """No dKV tier attached publishes nothing and logs nothing."""
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_attaches.assert_not_called()
+    mock_metrics.dkv_peer_loads.assert_not_called()
+    mock_metrics.dkv_hints_rejected.assert_not_called()
+
+    extra = metrics.to_log_extra()
+    assert "dkv_peer_loads" not in extra
+    assert "dkv_hints_rejected" not in extra
+
+
+def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
+    """A batch that pulled cross-node reports it on the line, log, and counters."""
+    metrics = _make_metrics(
+        dkv_connected_clients=2,
+        dkv_total_clients=2,
+        dkv_peer_attaches=1,
+        dkv_peer_attach_failures=2,
+        dkv_peers_dropped=6,
+        dkv_peer_loads=3,
+        dkv_peer_load_failures=4,
+        dkv_hints_rejected=5,
+    )
+
+    assert (
+        "dKV peers: 3 loads (4 failed), 1 attaches (2 failed, 6 dropped), "
+        "5 hints rejected" in metrics.pretty_format()
+    )
+
+    extra = metrics.to_log_extra()
+    assert extra["dkv_peer_attaches"] == 1
+    assert extra["dkv_peer_attach_failures"] == 2
+    assert extra["dkv_peers_dropped"] == 6
+    assert extra["dkv_peer_loads"] == 3
+    assert extra["dkv_peer_load_failures"] == 4
+    assert extra["dkv_hints_rejected"] == 5
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_attaches.assert_called_once_with(1)
+    mock_metrics.dkv_peer_attach_failures.assert_called_once_with(2)
+    mock_metrics.dkv_peers_dropped.assert_called_once_with(6)
+    mock_metrics.dkv_peer_loads.assert_called_once_with(3)
+    mock_metrics.dkv_peer_load_failures.assert_called_once_with(4)
+    mock_metrics.dkv_hints_rejected.assert_called_once_with(5)
+
+
+def test_dkv_peer_clause_appears_on_rejected_hints_alone() -> None:
+    """Rejected hints with no successful pull still print the clause.
+
+    The gate is any peer activity, not a successful one: a batch whose every
+    hint was rejected is exactly the batch an operator needs the line for.
+    """
+    metrics = _make_metrics(
+        dkv_connected_clients=1, dkv_total_clients=1, dkv_hints_rejected=7
+    )
+
+    assert "7 hints rejected" in metrics.pretty_format()
+
+
 def test_to_log_extra_required_fields() -> None:
     extra = _make_metrics().to_log_extra()
 
@@ -619,6 +790,7 @@ def test_publish_metrics_default_path() -> None:
     mock_metrics.spec_decode_avg_acceptance_length.assert_not_called()
     mock_metrics.spec_decode_acceptance_rate_per_position.assert_not_called()
     mock_metrics.dkv_nixl_read_latency.assert_not_called()
+    mock_metrics.dkv_nixl_read_latency_max.assert_not_called()
     mock_metrics.dkv_nixl_read_gib_per_s.assert_not_called()
     mock_metrics.dkv_nixl_write_latency.assert_not_called()
     mock_metrics.dkv_nixl_write_gib_per_s.assert_not_called()
@@ -652,6 +824,7 @@ def test_publish_metrics_subsystem_gating() -> None:
         max_acceptance_length=3,
         acceptance_rate_per_position=[0.9, 0.5],
         nixl_read_latency_avg_ms=4.0,
+        nixl_read_latency_max_ms=16.4,
         nixl_write_latency_avg_ms=5.0,
         nixl_read_gib_per_s=1.5,
         nixl_write_gib_per_s=2.5,
@@ -679,6 +852,9 @@ def test_publish_metrics_subsystem_gating() -> None:
     assert mock_metrics.spec_decode_acceptance_rate_per_position.call_count == 2
     # dKV NIXL active (latency + GiB/s emitted as paired values under one guard).
     mock_metrics.dkv_nixl_read_latency.assert_called_once_with(4.0)
+    # The peak publishes beside the average, not instead of it: a dashboard
+    # that only had the average could not see the 16.4ms read at all.
+    mock_metrics.dkv_nixl_read_latency_max.assert_called_once_with(16.4)
     mock_metrics.dkv_nixl_read_gib_per_s.assert_called_once_with(1.5)
     mock_metrics.dkv_nixl_write_latency.assert_called_once_with(5.0)
     mock_metrics.dkv_nixl_write_gib_per_s.assert_called_once_with(2.5)
@@ -970,10 +1146,15 @@ def test_batch_metrics_create_tg_with_spec_decode() -> None:
     )
 
 
-def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
-    None
-):
-    """CE batch uses standard throughput formula even when stale spec_metrics leak from a previous TG batch."""
+def test_batch_metrics_create_ce_reports_verified_spec_metrics() -> None:
+    """A CE-labeled iteration reports spec metrics that carry verifications.
+
+    Under the overlap pipeline the spec metrics describe the previously
+    synced batch, not this iteration's batch. Gating on the current batch's
+    type dropped every verify observation followed by a CE iteration, and
+    mixed prefill+decode batches (labeled CE) that verified drafts were
+    never counted at all.
+    """
     inputs = _mock_inputs(batch_size=2, batch_type=BatchType.CE)
     spec_metrics = _make_spec_metrics(
         num_speculative_tokens=3,
@@ -991,12 +1172,35 @@ def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
         total_preemption_count=0,
         batch_spec_decode_metrics=spec_metrics,
     )
-    assert metrics.generation_throughput == 2 * 1 / 0.1
+    # output_tokens = 8 accepted + 4 bonus = 12
+    assert metrics.generation_throughput == 12 / 0.1
+    assert metrics.draft_tokens_generated == spec_metrics.draft_tokens_generated
+    assert metrics.draft_tokens_accepted == spec_metrics.draft_tokens_accepted
+    assert metrics.avg_acceptance_length == spec_metrics.avg_acceptance_length
+    assert metrics.max_acceptance_length == 3
 
-    # Acceptance metrics describe the decode/verify step, so a CE batch must
-    # not report them even when stale spec_metrics leak from a previous TG
-    # batch. The zeroed draft fields make every downstream consumer drop the
-    # spec-decode info.
+
+def test_batch_metrics_create_unverified_spec_metrics_stay_zeroed() -> None:
+    """Metrics without verifications (pure-prefill producing batch) stay
+    zeroed even on a TG iteration, and throughput falls back to batch_size."""
+    inputs = _mock_inputs(batch_size=2, batch_type=BatchType.TG)
+    spec_metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[0, 0, 0],
+        num_verifications=0,
+    )
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        batch_spec_decode_metrics=spec_metrics,
+    )
+    assert metrics.generation_throughput == 2 * 1 / 0.1
     assert metrics.draft_tokens_generated == 0
     assert metrics.draft_tokens_accepted == 0
     assert metrics.avg_acceptance_length == 0.0
@@ -1171,6 +1375,7 @@ def test_publish_completed_batch_metrics_ce() -> None:
     mock_metrics.batch_terminated_reqs.assert_called_once_with(
         3, batch_type="CE"
     )
+    mock_metrics.di_early_sync_time.assert_not_called()
 
 
 def test_publish_completed_batch_metrics_tg_spec_decode() -> None:
@@ -1208,6 +1413,15 @@ def test_publish_completed_batch_metrics_zero_duration_skipped() -> None:
     mock_metrics.batch_prompt_throughput.assert_not_called()
     mock_metrics.batch_generation_throughput.assert_not_called()
     mock_metrics.batch_terminated_reqs.assert_not_called()
+
+
+def test_publish_completed_batch_metrics_emits_early_sync_time() -> None:
+    """When the early-sync guard fired for the completed batch, its
+    duration is published as a di_* metric."""
+    stats = _make_completed_stats(early_sync_duration_s=0.012)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats, 3)
+    mock_metrics.di_early_sync_time.assert_called_once_with(12.0)
 
 
 def test_log_metrics_overlap_coalesces_completed_batch_into_transaction() -> (

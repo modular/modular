@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device, is_virtual_device_mode
@@ -43,43 +42,12 @@ from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import override
 
-from ..deepseekV2_modulev3.model import DeepseekV2Inputs, DeepseekV2Model
+from ..deepseekV2_modulev3.model import DeepseekV2Model
 from .batch_processor import DeepseekV3ModuleV3BatchProcessor
 from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class DeepseekV3Inputs(DeepseekV2Inputs):
-    batch_context_lengths: list[Buffer] = field(kw_only=True)
-    """Host (CPU) page-aligned KV context length, one per DP replica.
-
-    Substituted for the planner's device-resident ``buffer_lengths`` so the
-    per-layer ``.to(CPU())`` stays host-to-host and the graph is capturable.
-    """
-
-    data_parallel_splits: Buffer | None = field(default=None, kw_only=True)
-    input_row_offsets_i64: Buffer | None = field(default=None, kw_only=True)
-    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        """Flat graph inputs in compile ABI order."""
-        dp_inputs: tuple[Buffer, ...] = ()
-        if self.data_parallel_splits is not None:
-            assert self.input_row_offsets_i64 is not None
-            dp_inputs = (self.data_parallel_splits, self.input_row_offsets_i64)
-        return (
-            self.tokens,
-            self.return_n_logits,
-            self.input_row_offsets,
-            *self.batch_context_lengths,
-            *dp_inputs,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
-            *self.ep_inputs,
-        )
 
 
 class DeepseekV3Model(DeepseekV2Model):

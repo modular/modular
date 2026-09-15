@@ -53,7 +53,7 @@ struct SIMDLength(
         """
         self._mlir_value = value.__mlir_index__()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __init__[T: Indexer](out self, value: T):
         """Construct a SIMDLength from the given Indexer.
 
@@ -89,7 +89,7 @@ struct SIMDLength(
         """
         return Bool(
             value=__mlir_op.`index.cmp`[
-                pred=__mlir_attr.`#index<cmp_predicate eq>`
+                pred=__mlir_attr.`#index.cmp_predicate<eq>`
             ](self._mlir_value, rhs._mlir_value)
         )
 
@@ -104,7 +104,7 @@ struct SIMDLength(
             True if this Int is non-equal to the RHS Int and False otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate ne>`
+            pred=__mlir_attr.`#index.cmp_predicate<ne>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -148,7 +148,7 @@ struct SIMDLength(
         """
         return Bool(
             value=__mlir_op.`index.cmp`[
-                pred=__mlir_attr.`#index<cmp_predicate sle>`
+                pred=__mlir_attr.`#index.cmp_predicate<sle>`
             ](self._mlir_value, rhs._mlir_value)
         )
 
@@ -163,7 +163,7 @@ struct SIMDLength(
             True if this SIMDLength is greater than the RHS SIMDLength and False otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sgt>`
+            pred=__mlir_attr.`#index.cmp_predicate<sgt>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -177,7 +177,7 @@ struct SIMDLength(
             True if this SIMDLength is less-than the RHS SIMDLength and False otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate slt>`
+            pred=__mlir_attr.`#index.cmp_predicate<slt>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -192,7 +192,7 @@ struct SIMDLength(
             otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sge>`
+            pred=__mlir_attr.`#index.cmp_predicate<sge>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -248,7 +248,7 @@ struct SIMDLength(
             mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __imul__(mut self, rhs: Self):
         """Compute self*rhs and save the result in self.
 
@@ -277,7 +277,7 @@ struct SIMDLength(
             ),
         )
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __irshift__(mut self, rhs: Self):
         """Compute `self >> rhs` and save the result in self.
 
@@ -286,7 +286,7 @@ struct SIMDLength(
         """
         self = self >> rhs
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __pow__(self, exp: Self) -> Self:
         """Return the value raised to the power of the given exponent.
 

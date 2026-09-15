@@ -84,7 +84,7 @@ comptime DISPATCH_HIT = 1
 comptime logger = Logger()
 
 
-@always_inline
+@inline(.always)
 def small_MN_gemms[
     config: TuningConfigSmallMNGemms,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -192,7 +192,7 @@ def small_MN_gemms[
         )
 
 
-@always_inline
+@inline(.always)
 def dispatch_gemv[
     c_type: DType,
     a_type: DType,
@@ -276,7 +276,7 @@ def dispatch_gemv[
     ](c, a, b, ctx)
 
 
-@always_inline
+@inline(.always)
 def matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
@@ -338,6 +338,9 @@ def matmul_dispatch_sm100[
     var m = Int(c.dim[0]())
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[1]
+
+    # When N is dynamic, static_N will be set to -1.
+    comptime has_static_N = static_N > -1
 
     comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         comptime BM = get_defined_int["TUNE_BM", 128]()
@@ -414,7 +417,7 @@ def matmul_dispatch_sm100[
         a_type == .float32
         and c_type == .float32
         and transpose_b
-        and static_N > -1
+        and has_static_N
         and static_N <= 256
         and static_K >= 2048
         and static_K % simd_width_of[a_type, target=get_gpu_target()]() == 0
@@ -455,6 +458,58 @@ def matmul_dispatch_sm100[
         elif m <= 64 or not use_tf32:
             _dispatch_split_k[4]()
             return
+
+    # C's row stride is not 16-byte aligned, so no TMA descriptor can
+    # describe C.
+    comptime has_unaligned_n_alt_dispatch = (
+        a_type in (DType.bfloat16, DType.float8_e4m3fn)
+        and c_type == .bfloat16
+        and transpose_b
+        and has_static_N
+        and static_N * size_of[c_type]() % 16 != 0
+    )
+
+    comptime if has_unaligned_n_alt_dispatch:
+        comptime has_split_k_band = (
+            static_N <= 642
+            and static_K >= 128
+            and static_K % simd_width_of[a_type, target=get_gpu_target()]() == 0
+        )
+
+        comptime if has_split_k_band:
+
+            @__parameter
+            def _dispatch_unaligned_n_split_k[tile_m: Int]() raises:
+                logger.info(
+                    (
+                        "------ Dispatching to SM100 unaligned-N split-K GEMV"
+                        " (tile_m="
+                    ),
+                    tile_m,
+                    ") ------ Problem Shape: MNK=[",
+                    m,
+                    ", ",
+                    static_N,
+                    ", ",
+                    static_K,
+                    "]",
+                )
+                gemv_gpu_dispatch[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                    pdl_level=pdl_level,
+                    tile_m=tile_m,
+                ](GEMVAlgorithm.GEMV_SPLIT_K, c, a, b, ctx)
+
+            if m <= 6:
+                _dispatch_unaligned_n_split_k[1]()
+                return
+            elif m <= 12:
+                _dispatch_unaligned_n_split_k[2]()
+                return
+            elif m <= 64:
+                _dispatch_unaligned_n_split_k[4]()
+                return
 
     comptime if _vendor_blas_fallback_disabled():
         comptime if (
@@ -577,7 +632,7 @@ def matmul_dispatch_sm100[
     ](c, a, b, ctx)
 
 
-@always_inline
+@inline(.always)
 # NOTE:
 # 1. SM100 matmul supports compute lambdas, so we should use normal and
 #    compute lambdas.
@@ -651,7 +706,7 @@ def matmul_dispatch_sm100_fp8[
         return DISPATCH_HIT
 
     @__parameter
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def _dispatch[entry: TuningConfigSM100]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
@@ -668,7 +723,7 @@ def matmul_dispatch_sm100_fp8[
         ](c, a, b, ctx)
 
     @__parameter
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def _search[
         T: Table[TuningConfigSM100],
         domain: List[Int] = List[Int](),
@@ -758,7 +813,7 @@ def _sm100_outlier_configs[
     `mma_k` into its tile shapes -- is never instantiated for bf16/fp32.
     """
 
-    @always_inline
+    @inline(.always)
     def rule(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
@@ -963,7 +1018,7 @@ def heuristic_and_outliers_dispatch[
             (defaults to `None`).
     """
 
-    @always_inline
+    @inline(.always)
     def launch_callback[
         config: MatmulConfig[...]
     ](
@@ -1189,7 +1244,7 @@ def matmul_dispatch_sm100_fp32[
 # NOTE: Vendor BLAS, naive matmul, and multistage GEMM do not support compute
 # lambdas, so we wrap them in a lambda function.
 # If there is no compute lambda, this wrapper is a simple elementwise lambda.
-@always_inline
+@inline(.always)
 def _vendor_blas_matmul_sm100[
     c_type: DType,
     a_type: DType,
@@ -1249,6 +1304,9 @@ def _vendor_blas_matmul_sm100[
                 BLOCK_DIM,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
+                c_engine=type_of(c).Engine,
+                a_engine=type_of(a).Engine,
+                b_engine=type_of(b).Engine,
             ]
 
             ctx.enqueue_function[kernel](
@@ -1427,7 +1485,7 @@ def _sm100_batched_outlier_configs[
     dtype's list is only instantiated for its own dtype.
     """
 
-    @always_inline
+    @inline(.always)
     def rule(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
@@ -1448,7 +1506,7 @@ def _sm100_batched_outlier_configs[
         ).find(rule=rule)
 
 
-@always_inline
+@inline(.always)
 def dispatch_sm100_batched_matmul[
     c_type: DType,
     a_type: DType,
@@ -1633,7 +1691,7 @@ def sm100_heuristic_and_outliers_dispatch[
             (defaults to `None`).
     """
 
-    @always_inline
+    @inline(.always)
     def launch_callback[
         config: MatmulConfig[...]
     ](

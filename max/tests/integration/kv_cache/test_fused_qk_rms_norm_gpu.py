@@ -24,10 +24,8 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
 @dataclass(frozen=True)
@@ -46,13 +44,9 @@ class FusedQKRMSNormModel:
         input_row_offsets: TensorValue,
         *graph_inputs: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
-        kv_collection = PagedCacheValues(
-            kv_blocks=graph_inputs[0].buffer,
-            cache_lengths=graph_inputs[1].tensor,
-            lookup_table=graph_inputs[2].tensor,
-            max_prompt_length=graph_inputs[3].tensor,
-            max_cache_length=graph_inputs[4].tensor,
-        )
+        kv_collection = self.kv_params.unflatten_kv_inputs(
+            iter(graph_inputs)
+        ).inputs[0]
         layer_idx = ops.constant(
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
@@ -95,13 +89,7 @@ class UnfusedKeyRMSNormModel:
     ) -> None:
         rms_norm_key_cache(
             self.kv_params,
-            PagedCacheValues(
-                kv_blocks=graph_inputs[0].buffer,
-                cache_lengths=graph_inputs[1].tensor,
-                lookup_table=graph_inputs[2].tensor,
-                max_prompt_length=graph_inputs[3].tensor,
-                max_cache_length=graph_inputs[4].tensor,
-            ),
+            self.kv_params.unflatten_kv_inputs(iter(graph_inputs)).inputs[0],
             gamma=k_gamma,
             epsilon=self.epsilon,
             layer_idx=ops.constant(
@@ -168,17 +156,9 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
     )
     unfused_model = session.load(unfused_graph)
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=4,
-        session=session,
-        max_batch_size=4,
+    graph_inputs = paged_kv_cache_inputs(
+        kv_params, [seq_len], total_num_pages=4
     )
-    context = create_text_context(np.empty(seq_len))
-    kv_manager.claim(context)
-    kv_manager.alloc(context)
-    batch = [context]
-    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
     rng = np.random.default_rng(0)
     q_np = rng.standard_normal(

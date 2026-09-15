@@ -41,12 +41,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import fused_dual_qk_rms_norm_rope_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
-from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 _KVRuntimeInputs = KVCacheInputsPerDevice[Buffer, Buffer]
 
@@ -87,16 +85,6 @@ def _kv_params(dtype: DType, n_kv_heads: int) -> MHAKVCacheParams:
         page_size=_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
     )
-
-
-def _alloc_batch(kv_manager: PagedKVCacheManager) -> list[TextContext]:
-    batch: list[TextContext] = []
-    for length in _PROMPT_LENS:
-        ctx = create_text_context(np.empty(length))
-        kv_manager.claim(ctx)
-        kv_manager.alloc(ctx)
-        batch.append(ctx)
-    return batch
 
 
 def _token_positions(
@@ -222,22 +210,6 @@ def _run_dual(
         ) = graph.inputs
 
         num_main_kv_inputs = len(main_kv_params.flattened_kv_inputs())
-        (
-            main_blocks,
-            main_cache_lengths,
-            main_lookup,
-            main_max_p,
-            main_max_c,
-            *_main_rest,
-        ) = kv_inputs[:num_main_kv_inputs]
-        (
-            index_blocks,
-            index_cache_lengths,
-            index_lookup,
-            index_max_p,
-            index_max_c,
-            *_index_rest,
-        ) = kv_inputs[num_main_kv_inputs:]
 
         q_main_out, q_index_out = fused_dual_qk_rms_norm_rope_ragged(
             main_kv_params,
@@ -245,20 +217,12 @@ def _run_dual(
             q_main_in.tensor,
             q_index_in.tensor,
             iro_in.tensor,
-            PagedCacheValues(
-                main_blocks.buffer,
-                main_cache_lengths.tensor,
-                main_lookup.tensor,
-                main_max_p.tensor,
-                main_max_c.tensor,
-            ),
-            PagedCacheValues(
-                index_blocks.buffer,
-                index_cache_lengths.tensor,
-                index_lookup.tensor,
-                index_max_p.tensor,
-                index_max_c.tensor,
-            ),
+            main_kv_params.unflatten_kv_inputs(
+                iter(kv_inputs[:num_main_kv_inputs])
+            ).inputs[0],
+            index_kv_params.unflatten_kv_inputs(
+                iter(kv_inputs[num_main_kv_inputs:])
+            ).inputs[0],
             q_main_gamma=gamma_main_q_in.tensor,
             k_main_gamma=gamma_main_k_in.tensor,
             q_index_gamma=gamma_index_q_in.tensor,
@@ -276,22 +240,12 @@ def _run_dual(
 
     model = session.load(graph)
 
-    main_kv_manager = PagedKVCacheManager(
-        main_kv_params, total_num_pages=8, session=session, max_batch_size=128
+    main_kv_rt = paged_kv_cache_inputs(
+        main_kv_params, _PROMPT_LENS, total_num_pages=8
     )
-    index_kv_manager = PagedKVCacheManager(
-        index_kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
+    index_kv_rt = paged_kv_cache_inputs(
+        index_kv_params, _PROMPT_LENS, total_num_pages=8
     )
-    main_batch = _alloc_batch(main_kv_manager)
-    index_batch = _alloc_batch(index_kv_manager)
-
-    main_kv_rt = main_kv_manager.runtime_inputs_for_leaf([main_batch]).inputs[0]
-    index_kv_rt = index_kv_manager.runtime_inputs_for_leaf(
-        [index_batch]
-    ).inputs[0]
 
     main_positions = _seed_raw_k(
         main_kv_rt, main_cache_dtype, _MAIN_KV_HEADS, raw_main_k, device

@@ -77,7 +77,8 @@ class UnifiedMTPGlm5_2Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         return super().buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=True
+            include_in_thinking_phase=True,
+            include_draft_probs_full=self.sampled_draft_proposal,
         )
 
 
@@ -320,6 +321,13 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
 
             draft_tokens = next(variadic_args_iter).tensor
 
+            # draft_probs_full rides immediately after draft_tokens in the
+            # canonical spec-decode ordering; a miss here silently shifts every
+            # downstream input.
+            draft_probs_full_graph: TensorValue | None = None
+            if nn_model.sampled_draft_proposal:
+                draft_probs_full_graph = next(variadic_args_iter).tensor
+
             seed = next(variadic_args_iter).tensor
             temperature = next(variadic_args_iter).tensor
             top_k = next(variadic_args_iter).tensor
@@ -360,6 +368,7 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 pinned_bitmask=pinned_bitmask_graph,
                 wait_payload=wait_payload_graph,
                 device_bitmask_scratch=device_bitmask_scratch_graph,
+                draft_probs_full=draft_probs_full_graph,
             )
 
             graph.output(*outputs)

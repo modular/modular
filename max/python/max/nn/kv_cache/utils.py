@@ -39,7 +39,7 @@ class AttnKey(AttnKeyInterface):
 
     The resolved ``num_partitions`` (the kernel grid) plus the batch and prompt
     dimensions. The runtime ``max_cache_valid_length`` is supplied to
-    :meth:`pack_into_buffer` rather than stored, so dispatches that differ only
+    ``pack_into_buffer`` rather than stored, so dispatches that differ only
     in cache length share one identity. Concrete subclasses
     (:class:`MHAAttnKey`, :class:`MLAAttnKey`)
     implement the kernel-specific buffer layout.
@@ -57,6 +57,8 @@ class MHAAttnKey(AttnKey):
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
     ) -> Buffer:
+        """Returns the CPU dispatch buffer MHA decode kernels read, holding
+        batch size, prompt width, partition count, and cache length."""
         # MHA decode kernels read a 4-int dispatch buffer on the host (CPU).
         # ``device`` is intentionally ignored: the MHA dispatch-metadata graph
         # input is declared CPU-resident.
@@ -80,6 +82,8 @@ class MLAAttnKey(AttnKey):
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
     ) -> Buffer:
+        """Returns the accelerator dispatch buffer MLA decode kernels read,
+        holding batch size, prompt width, and partition count."""
         # MLA decode kernels read a 3-int dispatch buffer on the accelerator.
         # ``max_cache_valid_length`` is not part of the MLA dispatch buffer (it
         # is carried separately in ``max_cache_length``), so it is ignored here.
@@ -103,6 +107,8 @@ class MSAAttnKey(AttnKeyInterface):
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
     ) -> Buffer:
+        """Returns a single sentinel int as a placeholder, since MSA kernels
+        do not consume dispatch metadata."""
         return Buffer.from_numpy(np.array([42], dtype=np.int64))
 
 
@@ -121,6 +127,33 @@ class MultiAttnKey(AttnKeyInterface):
     def from_dict(cls, children: dict[str, AttnKeyInterface]) -> MultiAttnKey:
         """Builds a :class:`MultiAttnKey` from a name -> key mapping."""
         return cls(children=tuple(children.items()))
+
+
+#: Padding added to every LUT inner dim (columns per batch row). The SIMD
+#: ``populate`` in ``PagedKVCache`` reads up to 16 consecutive ``uint32``
+#: entries past ``base_kv_row / page_size``; this buffer keeps those reads
+#: in-bounds of the allocation for partial-tile tails. The value is also
+#: a multiple of 8 so the inner-dim stride stays 32-byte aligned for the
+#: ``ld.global.v{N}.u32`` vector loads.
+_LUT_TAIL_PAD = 16
+
+
+def padded_lut_cols(cols: int) -> int:
+    """Rounds a page lookup-table inner dim up to a kernel-safe width.
+
+    Kept in lockstep with the invariant asserted in
+    ``max/kernels/src/kv_cache/types.mojo`` (``PagedKVCache.populate``):
+    ``lookup_table.dim[1]`` is a multiple of 8 and is at least
+    ``logical_cols + 15`` so a 16-wide SIMD lookup load from any valid
+    ``first_lut_idx`` stays in-bounds.
+
+    Args:
+        cols: The number of logical page columns per batch row.
+
+    Returns:
+        The allocated inner dim to use for the lookup table.
+    """
+    return ((cols + 7) // 8) * 8 + _LUT_TAIL_PAD
 
 
 def build_max_lengths_tensors(

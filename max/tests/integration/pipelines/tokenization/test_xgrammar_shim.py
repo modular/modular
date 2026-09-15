@@ -220,6 +220,33 @@ def test_property_name_escapes_cannot_forge_a_cache_key() -> None:
     )
 
 
+def test_property_key_with_embedded_quote_enforces_value_type() -> None:
+    key = 'foo"bar'
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "properties": {key: {"$ref": "#/definitions/foo%22bar"}},
+                "definitions": {key: {"type": "number"}},
+            }
+        )
+    )
+    assert _accepts(compiled, json.dumps({key: 1}))
+    assert not _accepts(compiled, json.dumps({key: "1"}))
+
+
+def test_property_key_with_embedded_backslash_enforces_value_type() -> None:
+    key = "a\\b"
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "properties": {key: {"type": "number"}},
+            }
+        )
+    )
+    assert _accepts(compiled, json.dumps({key: 1}))
+    assert not _accepts(compiled, json.dumps({key: "1"}))
+
+
 # Rejection of unenforceable keywords is opt-in: it happens only when the caller
 # passes reject_unsupported=True. The default (exercised by the guard tests below)
 # falls back to best-effort decoding instead.
@@ -904,6 +931,28 @@ def test_oneof_const_disjoint_compiles_and_enforces() -> None:
     assert _accepts(compiled, '"a"')
     assert _accepts(compiled, '"b"')
     assert not _accepts(compiled, '"ab"')
+
+
+def test_const_enum_control_char_string_is_escaped() -> None:
+    # A const/enum string value with a control char must render as its escaped
+    # JSON form; the grammar must reject the raw control byte (invalid JSON).
+    nl = _compiler().compile_json_schema(
+        json.dumps({"const": "a\nb"}), reject_unsupported=True
+    )
+    assert _accepts(nl, '"a\\nb"')  # escaped newline -> valid JSON, accepted
+    assert not _accepts(nl, '"a\nb"')  # raw newline -> invalid JSON, rejected
+
+    en = _compiler().compile_json_schema(
+        json.dumps({"enum": ["a\nb"]}), reject_unsupported=True
+    )
+    assert _accepts(en, '"a\\nb"')
+    assert not _accepts(en, '"a\nb"')
+
+    nul = _compiler().compile_json_schema(
+        json.dumps({"const": "x\x00y"}), reject_unsupported=True
+    )
+    assert _accepts(nul, '"x\\u0000y"')  # escaped NUL -> valid, accepted
+    assert not _accepts(nul, '"x\x00y"')  # raw NUL -> invalid, rejected
 
 
 def test_oneof_enum_disjoint_compiles_and_enforces() -> None:
@@ -3171,6 +3220,81 @@ def test_cache_key_distinguishes_property_names_default_type() -> None:
     assert not _accepts(compiled, '{"b": 1, "a": {1: 1}}')
 
 
+def test_property_names_non_string_shape_rejected() -> None:
+    for property_names in (
+        {"type": ["integer", "string"]},
+        {"type": ["string"]},
+        {"anyOf": [{"type": "string"}, {"type": ["integer"]}]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": property_names,
+        }
+        with pytest.raises(Exception, match="non-string"):
+            _gemma_compile(schema)
+        with pytest.raises(Exception, match="non-string"):
+            _compiler().compile_json_schema(json.dumps(schema))
+
+
+def test_property_names_non_string_const_enum_rejected() -> None:
+    for property_names in (
+        {"const": 42},
+        {"const": True},
+        {"const": None},
+        {"enum": [1, 2]},
+        {"enum": ["a", 2]},
+        {"enum": [None]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": property_names,
+        }
+        with pytest.raises(Exception, match="non-string"):
+            _gemma_compile(schema)
+        with pytest.raises(Exception, match="non-string"):
+            _compiler().compile_json_schema(json.dumps(schema))
+
+
+def test_property_names_string_const_enum_accepted() -> None:
+    for property_names in ({"const": "foo"}, {"enum": ["a", "b"]}):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": property_names,
+        }
+        _gemma_compile(schema)
+        _compiler().compile_json_schema(json.dumps(schema))
+
+
+def test_property_names_allof_folds_to_string_shape() -> None:
+    for accepted in (
+        {"allOf": [{"type": "string"}]},
+        {"allOf": [{"type": "string"}, {"minLength": 1}]},
+        {"allOf": [{"const": "foo"}]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": accepted,
+        }
+        _compiler().compile_json_schema(json.dumps(schema))
+    for rejected in (
+        {"allOf": [{"type": "number"}]},
+        {"allOf": [{"type": "string"}, {"type": "number"}]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": rejected,
+        }
+        with pytest.raises(
+            Exception, match="must be an object that validates string"
+        ):
+            _compiler().compile_json_schema(json.dumps(schema))
+
+
 def test_cache_key_not_forgeable_via_property_name() -> None:
     # A property name may contain quotes and colons that make one
     # subschema's text resemble a structurally different sibling's. Such
@@ -5065,3 +5189,199 @@ def test_oneof_finite_arm_with_redundant_siblings_compiles() -> None:
     assert _accepts(compiled, '"a"')
     assert _accepts(compiled, "1")
     assert not _accepts(compiled, '"b"')
+
+
+_VARKEY_STYLE_NAMES: dict[str, Any] = {
+    "m2": "minimax_xml",
+    "glm": "glm_xml",
+    "qwen": "qwen_xml",
+}
+
+
+def _varkey_frame(style: str, key: str, value: str) -> str:
+    if style == "m2":
+        return f'<parameter name="{key}">{value}</parameter>'
+    if style == "glm":
+        return f"<arg_key>{key}</arg_key><arg_value>{value}</arg_value>"
+    return f"<parameter={key}>{value}</parameter>"
+
+
+# A byte vocab wide enough to spell any key/value plus the JSON structural bytes.
+_VARKEY_VOCAB = (
+    ["{", "}", '"', ":", " ", "\t", "\n"]
+    + [chr(c) for c in range(33, 127)]
+    + ["<eos>"]
+)
+_VARKEY_VOCAB = list(dict.fromkeys(_VARKEY_VOCAB))
+_VARKEY_ID = {tok: i for i, tok in enumerate(_VARKEY_VOCAB)}
+
+
+def _varkey_compiled(
+    style: str, schema: dict[str, Any], reject_unsupported: bool = False
+) -> xgr.CompiledGrammar:
+    info = xgr.TokenizerInfo(
+        _VARKEY_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[_VARKEY_ID["<eos>"]],
+    )
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema,
+            style=_VARKEY_STYLE_NAMES[style],
+            require_object_root=True,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    return xgr.GrammarCompiler(info).compile_structural_tag(tag)
+
+
+def _varkey_schema(property_names: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": {"const": "V"},
+        "propertyNames": property_names,
+    }
+
+
+_VARKEY_STYLES = ["m2", "glm", "qwen"]
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_const_pins_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"const": "foo"}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "foo", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "bar", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_enum_restricts_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"enum": ["foo", "bar"]}))
+    for good in ("foo", "bar"):
+        m = xgr.GrammarMatcher(compiled)
+        assert (
+            m.accept_string(_varkey_frame(style, good, "V"))
+            and m.is_completed()
+        )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "baz", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_max_length_bounds_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"maxLength": 3}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "abc", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "abcd", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_min_length_bounds_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"minLength": 3}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "abc", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "ab", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_plain_additional_properties_key_is_free(style: str) -> None:
+    compiled = _varkey_compiled(
+        style, {"type": "object", "additionalProperties": {"const": "V"}}
+    )
+    for key in ("anything", "other_key"):
+        m = xgr.GrammarMatcher(compiled)
+        assert (
+            m.accept_string(_varkey_frame(style, key, "V")) and m.is_completed()
+        )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_pattern_enforced(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"pattern": "^a+$"}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "aaa", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "bbb", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_format_enforced(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"format": "email"}))
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "foo", "V"))
+        and bad.is_completed()
+    )
+
+
+# TODO(CENG-1076): support patternProperties without properties in XML formats.
+@pytest.mark.xfail(
+    strict=True,
+    raises=Exception,
+    reason="patternProperties without properties in XML formats is planned",
+)
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_single_pattern_properties_compiles(style: str) -> None:
+    _varkey_compiled(
+        style,
+        {
+            "type": "object",
+            "patternProperties": {"\\wcole": {"const": "V"}},
+        },
+        reject_unsupported=True,
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_multi_pattern_properties_fails_closed(style: str) -> None:
+    with pytest.raises(Exception):
+        _varkey_compiled(
+            style,
+            {
+                "type": "object",
+                "patternProperties": {
+                    "^a+$": {"const": "V"},
+                    "^b+$": {"const": "W"},
+                },
+            },
+            reject_unsupported=True,
+        )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_pattern_properties_permissive_compiles(style: str) -> None:
+    # Without reject_unsupported, XML variable-key patternProperties is emitted
+    # best-effort rather than rejected; it must at least compile without error.
+    _varkey_compiled(
+        style,
+        {
+            "type": "object",
+            "patternProperties": {"\\wcole": {"const": "V"}},
+        },
+    )

@@ -19,13 +19,13 @@ from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from std.sys.info import simd_width_of, _current_target
+from std.sys.info import CompilationTarget, simd_width_of
 
 from std.utils._select import _select_register_value as select
 from std.utils.index import IndexList
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
     # Normalize the start/stop indices
     var normalized_idx = select(start < 0, start + dim_i, start)
@@ -43,7 +43,7 @@ def _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_dim_as_view[
     dtype: DType, dim: Int
 ](
@@ -55,6 +55,9 @@ def slice_dim_as_view[
         stride_types=DynamicCoord[.int64, tensor.rank].element_types,
     ],
     tensor.origin,
+    Engine=tensor.Engine.OffsetResultType[
+        TypeList.of[Scalar[tensor.linear_idx_type]]()
+    ],
     address_space=tensor.address_space,
 ]:
     """Returns a view of `tensor` sliced along a single dimension.
@@ -81,10 +84,6 @@ def slice_dim_as_view[
 
     var new_offset = clamped_start * old_stride
 
-    # The data does not change however we will be addressing a different
-    # offset of the data.
-    var new_data = tensor.ptr + new_offset
-
     # Stride == number of elements to the next index in this dimension.
     # So to step we can just increase the stride.
     new_stride[dim] = old_stride * step
@@ -93,7 +92,11 @@ def slice_dim_as_view[
     # stop.
     new_shape[dim] = len(range(clamped_start, clamped_stop, step))
 
-    # Create the new view
+    # The data does not change however we will be addressing a different
+    # offset of the data.
+    var new_data = tensor._offset_storage(
+        Scalar[tensor.linear_idx_type](new_offset)
+    )
     return {
         new_data,
         Layout(
@@ -108,7 +111,7 @@ def slice_dim_as_view[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_as_view[
     dtype: DType,
     start_type: DType,
@@ -126,6 +129,9 @@ def slice_as_view[
         stride_types=DynamicCoord[.int64, tensor.rank].element_types,
     ],
     tensor.origin,
+    Engine=tensor.Engine.OffsetResultType[
+        TypeList.of[Scalar[tensor.linear_idx_type]]()
+    ],
     address_space=tensor.address_space,
 ]:
     """Returns a view of `tensor` sliced along every dimension.
@@ -148,8 +154,9 @@ def slice_as_view[
     var new_stride = IndexList[tensor.rank]()
 
     # The data does not change however we will be addressing a different
-    # offset of the data.
-    var new_data = tensor.ptr
+    # offset of the data; accumulate that offset and apply it once at the
+    # end.
+    var total_offset = Scalar[tensor.linear_idx_type](0)
 
     comptime for i in range(tensor.rank):
         var start = Int(starts[i])
@@ -162,8 +169,7 @@ def slice_as_view[
         start = _normalize_and_clamp_dim(start, step, dim_i)
         stop = _normalize_and_clamp_dim(stop, step, dim_i)
 
-        var new_offset = start * stride_i
-        new_data = new_data + new_offset
+        total_offset += Scalar[tensor.linear_idx_type](start * stride_i)
 
         # Stride == number of elements to the next index in this dimension.
         # So to step we can just increase the stride.
@@ -173,7 +179,7 @@ def slice_as_view[
         # stop.
         new_shape[i] = len(range(start, stop, step))
 
-    # Create the new view
+    var new_data = tensor._offset_storage(total_offset)
     return {
         new_data,
         Layout(
@@ -188,7 +194,7 @@ def slice_as_view[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def copy_to_slice[
     dtype: DType,
     start_type: DType,
@@ -232,7 +238,7 @@ def copy_to_slice[
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
 
-    @always_inline
+    @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         buffer_slice_view.store[width=simd_width](
             idx, in_slice.load[width=simd_width](idx)
@@ -250,7 +256,7 @@ def copy_to_slice[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_as_copy[
     dtype: DType,
     index_type: DType,
@@ -281,7 +287,7 @@ def slice_as_copy[
     var sliced = slice_as_view(tensor, start, end, step)
 
     # Copy lambda sliced view into output buffer.
-    @always_inline
+    @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         output.store[width=simd_width](idx, sliced.load[width=simd_width](idx))
 
@@ -294,7 +300,7 @@ def slice_as_copy[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_shape[
     input_type: DType,
     start_type: DType,
@@ -423,7 +429,7 @@ def sliced_add[
             ctx,
         )
     else:
-        comptime compile_target = _current_target()
+        comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[simd_width, target=target](

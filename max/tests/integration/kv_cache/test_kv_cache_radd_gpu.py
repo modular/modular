@@ -20,9 +20,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.nn.kernels import kv_cache_ragged_radd
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
 @dataclass(frozen=True)
@@ -43,24 +42,12 @@ class KVCacheRaddModel:
         *kv_inputs: TensorValue,
     ) -> None:
         """Apply the radd operation to the KV cache."""
-        (
-            kv_blocks,
-            cache_lengths,
-            lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            *_,
-        ) = kv_inputs
         kv_cache_ragged_radd(
             kv_params=self.kv_params,
             a=a,
-            kv_collection=PagedCacheValues(
-                kv_blocks=kv_blocks.buffer,
-                cache_lengths=cache_lengths.tensor,
-                lookup_table=lookup_table.tensor,
-                max_prompt_length=max_prompt_length.tensor,
-                max_cache_length=max_cache_length.tensor,
-            ),
+            kv_collection=self.kv_params.unflatten_kv_inputs(
+                iter(kv_inputs)
+            ).inputs[0],
             input_row_offsets=input_row_offsets,
             batch_offset=batch_offset,
             layer_idx=self.layer_idx,
@@ -85,13 +72,6 @@ def test_kv_cache_radd_basic() -> None:
         num_layers=num_layers,
         page_size=128,
         devices=[DeviceRef.GPU()],
-    )
-
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
     )
 
     # Calculate total length and offsets
@@ -127,15 +107,9 @@ def test_kv_cache_radd_basic() -> None:
     # Compile and init the model
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context)
-        kv_manager.alloc(context)
-        batch.append(context)
-
-    kv_inputs = kv_manager.runtime_inputs([batch]).flatten()
+    kv_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
+    ).flatten()
 
     a_np = np.ones(
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),

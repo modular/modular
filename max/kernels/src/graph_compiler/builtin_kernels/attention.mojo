@@ -30,6 +30,7 @@ from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu
 from kv_cache.paged_sparse_kv_index_remap import paged_sparse_kv_index_remap
 from kv_cache.types import KVCacheStaticParams
+from linalg.mx_format import MXFormat
 from layout import (
     Layout,
     LayoutTensor,
@@ -75,6 +76,9 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.latent_sparse_attention import (
+    latent_sparse_attention_ragged_paged,
+)
 from nn.attention.gpu.mla_decode_dispatch_scalars import (
     mla_decode_dispatch_scalars,
 )
@@ -128,11 +132,13 @@ struct MLAIndexerRaggedFloat8Paged:
         qs: InputTensor[dtype=.float32, rank=2, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         k_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         k_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         k_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
         # Resolves a request's scale pages. Pass `k_lookup_table` itself when
         # the scales share the values' block-id space; pass a distinct table
         # when they are paged independently.
@@ -166,6 +172,7 @@ struct MLAIndexerRaggedFloat8Paged:
             input_row_offsets: Ragged row offsets [batch_size + 1] for queries.
             k_blocks: Paged K cache blocks [num_blocks, 1, num_layers, page_size,
                 num_heads, head_size] in FP8.
+            page_stride: Page-to-page distance in elements; -1 when packed.
             k_cache_lengths: Cache lengths [batch_size] - number of cached tokens
                 per sequence.
             k_lookup_table: Page lookup table [batch_size, pages_per_seq] mapping
@@ -173,6 +180,7 @@ struct MLAIndexerRaggedFloat8Paged:
             k_max_prompt_length: Max prompt (query) length scalar tensor [1].
             k_max_cache_length: Max cache length scalar tensor [1].
             k_scales: K scale blocks matching k_blocks shape with scale values.
+            scales_page_stride: The same, for the scales leaf.
             k_scales_lookup_table: Page lookup table for the scale blocks
                 [batch_size, pages_per_seq]. Equal to `k_lookup_table` when the
                 scales share the values' block-id space.
@@ -204,6 +212,12 @@ struct MLAIndexerRaggedFloat8Paged:
                     k_blocks.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
+            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
+                page_stride.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    page_stride.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
             LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
                 k_cache_lengths.to_layout_tensor().ptr,
                 RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -232,6 +246,12 @@ struct MLAIndexerRaggedFloat8Paged:
                 k_scales.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[6]()].row_major(
                     k_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
+                scales_page_stride.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    scales_page_stride.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
             LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
@@ -624,7 +644,7 @@ struct NoMaskFlashAttentionCPU:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
@@ -633,7 +653,7 @@ struct NoMaskFlashAttentionCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
@@ -642,7 +662,7 @@ struct NoMaskFlashAttentionCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def mask_input_fn[
             width: Int, _rank: Int
         ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -683,7 +703,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
@@ -692,7 +712,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
@@ -701,7 +721,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def k_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k_cache.dtype, width]:
@@ -710,7 +730,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def v_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v_cache.dtype, width]:
@@ -719,7 +739,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
@@ -812,7 +832,7 @@ struct WithMaskFlashAttentionCPU:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
@@ -821,7 +841,7 @@ struct WithMaskFlashAttentionCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
@@ -830,7 +850,7 @@ struct WithMaskFlashAttentionCPU:
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
@@ -854,7 +874,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
     """Registers the `mo.fused_qkv_matmul.padded.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -865,6 +885,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
         hidden_state: InputTensor[dtype=dtype, rank=3, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -875,6 +896,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -905,7 +927,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
     """Registers the `mo.fused_qkv_matmul.ragged.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -917,6 +939,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -926,6 +949,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -949,7 +973,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     """Registers the `mo.fused_qkv_matmul.ragged.paged.quantized` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -964,6 +988,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=weight_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -977,6 +1002,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         comptime has_zp = True if has_zp_int == 1 else False
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1002,7 +1028,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
     """Registers the `mo.fused_qkv_matmul.ragged.paged.bias` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1014,6 +1040,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1024,6 +1051,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1048,7 +1076,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
     """Registers the `mo.fused_qkv_matmul.ragged.paged.scale` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1068,6 +1096,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         input_scale: InputTensor[dtype=scale_type, rank=2, ...],
         weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1077,6 +1106,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1114,7 +1144,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
     """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.float4` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1133,6 +1163,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
         weight_scale: InputTensor[dtype=scale_type, rank=5, ...],
         tensor_sf: Float32,
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1142,6 +1173,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1173,7 +1205,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
     # MXFP8 from its data dtype, scale dtype, and SF_VECTOR_SIZE parameters. The
     # "float4" in the callee name is intentional. Do not split off a separate
     # MXFP8 path.
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1192,6 +1224,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
         weight_scale: InputTensor[dtype=scale_type, rank=5, ...],
         tensor_sf: Float32,
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1201,6 +1234,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1233,7 +1267,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
     # differs by vendor: SM100 wants the rank-5 SF-atom interleave, CDNA4
     # consumes the checkpoint's plain rank-2 [N, K // 32] E8M0 scales.
     # Everything below the entry point is shared.
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1252,6 +1286,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
         weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
         tensor_sf: Float32,
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1261,6 +1296,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1269,6 +1305,72 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            tensor_sf,
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
+        )
+
+
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd")
+struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
+    """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        //,
+        SF_VECTOR_SIZE: Int,
+        FP6_FORMAT: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        input_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        tensor_sf: Float32,
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+        comptime fmt = (
+            MXFormat.FP6_E2M3 if FP6_FORMAT == 0 else MXFormat.FP6_E3M2
+        )
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+            mx_format=fmt,
         ](
             hidden_state.to_layout_tensor(),
             input_row_offsets.to_layout_tensor(),
@@ -1302,7 +1404,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
     # `IQ_DIM` is the IndexQ output-band width (num_index_heads * idx_head_dim).
     # It is a parameter because, for the MLA index cache, it cannot be recovered
     # from the index cache's `num_heads` (== 1 for the single latent head).
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1324,11 +1426,13 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         weight_scale: InputTensor[dtype=scale_type, rank=5, ...],
         tensor_sf: Float32,
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
+        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
         index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1338,6 +1442,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1345,6 +1450,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         )
         var index_kv_collection = generic_get_paged_cache(
             index_kv_blocks,
+            index_page_stride,
             index_cache_lengths,
             index_kv_lookup_table,
             index_max_prompt_length,
@@ -1393,7 +1499,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
     # `IQ_DIM` is the IndexQ output-band width (num_index_heads * idx_head_dim).
     # It is a parameter because, for the MLA index cache, it cannot be recovered
     # from the index cache's `num_heads` (== 1 for the single latent head).
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1415,11 +1521,13 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
         weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
         tensor_sf: Float32,
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
+        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
         index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1429,6 +1537,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1436,6 +1545,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
         )
         var index_kv_collection = generic_get_paged_cache(
             index_kv_blocks,
+            index_page_stride,
             index_cache_lengths,
             index_kv_lookup_table,
             index_max_prompt_length,
@@ -1445,6 +1555,96 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 target=target,
+            ](
+                hidden_state.to_layout_tensor(),
+                input_row_offsets.to_layout_tensor(),
+                weight.to_layout_tensor(),
+                input_scale.to_layout_tensor(),
+                weight_scale.to_layout_tensor(),
+                tensor_sf,
+                kv_collection,
+                index_kv_collection,
+                layer_idx,
+                IQ_DIM,
+                q_output.to_layout_tensor(),
+                iq_output.to_layout_tensor(),
+                ctx,
+            )
+        )
+
+
+@extensibility.register(
+    "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd"
+)
+struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
+    """Registers the `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        index_kv_type: DType,
+        //,
+        SF_VECTOR_SIZE: Int,
+        IQ_DIM: Int,
+        FP6_FORMAT: Int,
+        target: StaticString,
+    ](
+        q_output: OutputTensor[dtype=output_type, rank=2, ...],
+        iq_output: OutputTensor[dtype=output_type, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        input_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        tensor_sf: Float32,
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
+        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        var index_kv_collection = generic_get_paged_cache(
+            index_kv_blocks,
+            index_page_stride,
+            index_cache_lengths,
+            index_kv_lookup_table,
+            index_max_prompt_length,
+            index_max_cache_length,
+        )
+        comptime assert FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+        comptime fmt = (
+            MXFormat.FP6_E2M3 if FP6_FORMAT == 0 else MXFormat.FP6_E3M2
+        )
+        return (
+            generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                target=target,
+                mx_format=fmt,
             ](
                 hidden_state.to_layout_tensor(),
                 input_row_offsets.to_layout_tensor(),
@@ -1479,7 +1679,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
     # `IQ_DIM` is the IndexQ output-band width (num_index_heads * idx_head_dim).
     # It is a parameter because, for the MLA index cache, it cannot be recovered
     # from the index cache's `num_heads` (== 1 for the single latent head).
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1494,11 +1694,13 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
+        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
         index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1508,6 +1710,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1515,6 +1718,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
         )
         var index_kv_collection = generic_get_paged_cache(
             index_kv_blocks,
+            index_page_stride,
             index_cache_lengths,
             index_kv_lookup_table,
             index_max_prompt_length,
@@ -1540,7 +1744,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
     """Registers the `mo.fused_qkv_matmul.ragged.paged.scale.bias` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1560,6 +1764,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         input_scale: InputTensor[dtype=scale_type, rank=2, ...],
         weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1570,6 +1775,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1608,7 +1814,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
     """Registers the `mo.fused_qkv_matmul.ragged.paged.bias.quantized` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1623,6 +1829,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=weight_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1637,6 +1844,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         comptime has_zp = True if has_zp_int == 1 else False
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1663,7 +1871,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     """Registers the `mo.fused_qk_rope.ragged.paged.with_position_id` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1677,6 +1885,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         q_proj: InputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1688,6 +1897,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1717,7 +1927,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     """Registers the `mo.fused_qk_rope.ragged.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1730,6 +1940,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         q_proj: InputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1745,6 +1956,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1771,7 +1983,7 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
     """Registers the `mo.fused_qk_rope.padded.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1781,6 +1993,7 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
         output: OutputTensor[dtype=dtype, rank=4, ...],
         q_proj: InputTensor[dtype=dtype, rank=4, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1792,6 +2005,7 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1815,7 +2029,7 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
 struct Struct_mha_padded_paged:
     """Registers the `mo.mha.padded.paged` graph op with the graph compiler."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1827,6 +2041,7 @@ struct Struct_mha_padded_paged:
         output: OutputTensor[dtype=dtype, rank=4, ...],
         q: InputTensor[dtype=dtype, rank=4, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1838,6 +2053,7 @@ struct Struct_mha_padded_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1872,7 +2088,7 @@ struct Struct_mha_decode_num_partitions:
     """Registers the `mo.mha.decode.get_num_partitions` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         *, n_kv_heads: Int
@@ -1918,7 +2134,7 @@ struct Struct_mha_decode_num_partitions:
 struct Struct_mha_ragged_paged_scalar_args:
     """Registers the `mo.mha.ragged.paged` graph op with the graph compiler."""
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         out_dtype: DType,
@@ -1933,6 +2149,7 @@ struct Struct_mha_ragged_paged_scalar_args:
         q: InputTensor[dtype=q_dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -1955,6 +2172,7 @@ struct Struct_mha_ragged_paged_scalar_args:
             q,
             input_row_offsets,
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -1971,7 +2189,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
     """Registers the `mo.mha.ragged.paged.sink_weights` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -1984,6 +2202,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         q: InputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2010,6 +2229,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
             q,
             input_row_offsets,
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2035,7 +2255,7 @@ struct Struct_mha_ragged_paged_rel_logits:
     materializing a dense `(q, k)` mask.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         out_dtype: DType,
@@ -2049,6 +2269,7 @@ struct Struct_mha_ragged_paged_rel_logits:
         q: InputTensor[dtype=q_dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2071,6 +2292,7 @@ struct Struct_mha_ragged_paged_rel_logits:
             q,
             input_row_offsets,
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2088,7 +2310,7 @@ struct Struct_mla_decode_ragged_paged:
     """Registers the `mo.mla.decode.ragged.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2102,6 +2324,7 @@ struct Struct_mla_decode_ragged_paged:
         q: InputTensor[dtype=q_dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2116,6 +2339,7 @@ struct Struct_mla_decode_ragged_paged:
         ), "Only support only_k=True for MLA decompress"
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2141,7 +2365,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
     """Registers the `mo.mla.decode.ragged.paged.scaled` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2157,11 +2381,13 @@ struct Struct_mla_decode_ragged_paged_scaled:
         q: InputTensor[dtype=q_dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         kv_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
         # Resolves a request's scale pages. Pass `kv_lookup_table` itself when
         # the scales share the values' block-id space; pass a distinct table
         # when they are paged independently.
@@ -2194,6 +2420,12 @@ struct Struct_mla_decode_ragged_paged_scaled:
                     kv_blocks.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
+            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
+                page_stride.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    page_stride.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
             LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
                 cache_lengths.to_layout_tensor().ptr,
                 RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -2222,6 +2454,12 @@ struct Struct_mla_decode_ragged_paged_scaled:
                 kv_scales.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[6]()].row_major(
                     kv_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
+                scales_page_stride.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    scales_page_stride.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
             LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
@@ -2257,7 +2495,7 @@ struct Struct_mla_prefill_ragged_paged:
     """Registers the `mo.mla.prefill.ragged.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2274,6 +2512,7 @@ struct Struct_mla_prefill_ragged_paged:
         cache_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=qkv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2284,6 +2523,7 @@ struct Struct_mla_prefill_ragged_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2312,7 +2552,7 @@ struct Struct_mla_prefill_ragged_plan:
     """Registers the `mo.mla.prefill.ragged.plan` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2324,6 +2564,7 @@ struct Struct_mla_prefill_ragged_plan:
         buffer_lengths: OutputTensor[dtype=.int32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2338,6 +2579,7 @@ struct Struct_mla_prefill_ragged_plan:
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2360,7 +2602,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
     """Registers the `mo.mla.decompress.k.cache.ragged.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType,
@@ -2374,6 +2616,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         buffer_length: Int32,
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2383,6 +2626,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2406,7 +2650,7 @@ struct Struct_mla_prefill_graph_paged:
     """Registers the `mo.mla.graph.prefill.paged.fp8` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2434,6 +2678,7 @@ struct Struct_mla_prefill_graph_paged:
         w_k: InputTensor[dtype=fp8_dtype, rank=2, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2447,6 +2692,7 @@ struct Struct_mla_prefill_graph_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2458,7 +2704,7 @@ struct Struct_mla_prefill_graph_paged:
         ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -2497,7 +2743,7 @@ struct Struct_mla_compute_dispatch_args_scalar:
     """Registers the `mo.mla.compute_dispatch_args.scalar` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         num_heads: Int,
@@ -2554,7 +2800,7 @@ struct Struct_mla_decode_graph_paged_fp8:
     """Registers the `mo.mla.graph.decode.paged.fp8` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2579,6 +2825,7 @@ struct Struct_mla_decode_graph_paged_fp8:
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2594,6 +2841,7 @@ struct Struct_mla_decode_graph_paged_fp8:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2605,7 +2853,7 @@ struct Struct_mla_decode_graph_paged_fp8:
         ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -2649,7 +2897,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
     """Registers the `mo.mla.graph.decode.paged.fp8.sparse` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2681,6 +2929,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2699,6 +2948,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2710,7 +2960,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         ](), "mo.mla.graph.decode.paged.fp8.sparse is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -2790,7 +3040,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
     """Registers the `mo.mla.graph.prefill.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2813,6 +3063,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
         w_k: InputTensor[dtype=.bfloat16, rank=2, ...],
         w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2824,6 +3075,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2835,7 +3087,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
         ](), "mo.mla.graph.prefill.paged is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -2869,7 +3121,7 @@ struct Struct_mla_decode_graph_bf16_paged:
     """Registers the `mo.mla.graph.decode.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2889,6 +3141,7 @@ struct Struct_mla_decode_graph_bf16_paged:
         w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
         w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2902,6 +3155,7 @@ struct Struct_mla_decode_graph_bf16_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -2913,7 +3167,7 @@ struct Struct_mla_decode_graph_bf16_paged:
         ](), "mo.mla.graph.decode.paged is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -2952,7 +3206,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
     """Registers the `mo.mla.graph.decode.paged.sparse` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -2973,6 +3227,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
         w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -2989,6 +3244,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3000,7 +3256,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         ](), "mo.mla.graph.decode.paged.sparse is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -3064,7 +3320,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
     """Registers the `mo.mla.graph.prefill.decode.paged.fp8` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -3094,6 +3350,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3110,6 +3367,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3121,7 +3379,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -3171,7 +3429,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
     """Registers the `mo.mla.graph.prefill.decode.paged.fp8.sparse` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -3207,6 +3465,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3226,6 +3485,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3238,7 +3498,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -3317,7 +3577,7 @@ struct Struct_mla_prefill_sparse_paged:
     """Registers the `mo.mla.prefill.sparse.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -3330,6 +3590,7 @@ struct Struct_mla_prefill_sparse_paged:
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3348,6 +3609,7 @@ struct Struct_mla_prefill_sparse_paged:
 
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3430,7 +3692,7 @@ struct Struct_mla_prefill_sparse_paged_fp8:
     """Registers the `mo.mla.prefill.sparse.paged.fp8` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -3442,6 +3704,7 @@ struct Struct_mla_prefill_sparse_paged_fp8:
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3461,6 +3724,7 @@ struct Struct_mla_prefill_sparse_paged_fp8:
 
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3536,7 +3800,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
     """Registers the `mo.mla.graph.prefill.decode.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -3560,6 +3824,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
         w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3573,6 +3838,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3584,7 +3850,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -3625,7 +3891,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 
 @extensibility.register("mo.mla.graph.prefill.decode.paged.sparse")
 struct Struct_mla_prefill_graph_decode_paged_sparse:
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -3650,6 +3916,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
         w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3666,6 +3933,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3677,7 +3945,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         ](), "mo.mla.graph.prefill.decode.paged.sparse is only supported on GPU"
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -3749,7 +4017,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
     """Registers the `mo.mla.graph.prefill.decode.paged.quantized` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     @__parameter
     def execute[
@@ -3774,6 +4042,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         w_uk: InputTensor[dtype=.bfloat16, rank=3, ...],
         w_uv: InputTensor[dtype=.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3788,6 +4057,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3800,7 +4070,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def kv_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
@@ -3844,7 +4114,7 @@ struct Struct_cross_attention_ragged_paged:
     """Registers the `mo.cross_attention.ragged.paged` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         out_dtype: DType,
@@ -3861,6 +4131,7 @@ struct Struct_cross_attention_ragged_paged:
         q_max_seq_len: InputTensor[dtype=.uint32, rank=1, ...],
         kv_input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -3871,6 +4142,7 @@ struct Struct_cross_attention_ragged_paged:
     ) raises:
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
+            page_stride,
             cache_lengths,
             kv_lookup_table,
             max_prompt_length,
@@ -3890,5 +4162,81 @@ struct Struct_cross_attention_ragged_paged:
             layer_idx,
             scale,
             output.to_layout_tensor(),
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Latent sparse attention (DeepSeek-V4 CSA): window leaf + compressed leaf
+# ===-----------------------------------------------------------------------===#
+
+
+@extensibility.register("mo.latent_sparse_attention.ragged.paged")
+struct Struct_latent_sparse_attention_ragged_paged:
+    """Registers the `mo.latent_sparse_attention.ragged.paged` graph op with the graph compiler.
+
+    Sparse attention over a shared K=V latent read from two paged leaves: the
+    sliding-window leaf by position range and the compressed leaf by an
+    explicit per-query entry list, with a per-head attention sink in the
+    denominator. See `nn.attention.latent_sparse_attention`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        q_type: DType,
+        swa_type: DType,
+        comp_type: DType,
+        //,
+        window: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=q_type, rank=3, ...],
+        q: InputTensor[dtype=q_type, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_indices: InputTensor[dtype=.int32, rank=2, ...],
+        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
+        swa_kv_blocks: MutableInputTensor[dtype=swa_type, rank=6, ...],
+        swa_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        swa_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        swa_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        swa_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        swa_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_kv_blocks: MutableInputTensor[dtype=comp_type, rank=6, ...],
+        comp_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        comp_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        comp_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_swa: UInt32,
+        layer_comp: UInt32,
+        scale: Float32,
+        context: DeviceContext,
+    ) raises:
+        var swa_collection = generic_get_paged_cache(
+            swa_kv_blocks,
+            swa_page_stride,
+            swa_cache_lengths,
+            swa_kv_lookup_table,
+            swa_max_prompt_length,
+            swa_max_cache_length,
+        )
+        var comp_collection = generic_get_paged_cache(
+            comp_kv_blocks,
+            comp_page_stride,
+            comp_cache_lengths,
+            comp_kv_lookup_table,
+            comp_max_prompt_length,
+            comp_max_cache_length,
+        )
+        latent_sparse_attention_ragged_paged[target=target, window=window](
+            output.to_layout_tensor(),
+            q.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            comp_indices.to_layout_tensor(),
+            attn_sink.to_layout_tensor(),
+            swa_collection.get_key_cache(Int(layer_swa)),
+            comp_collection.get_key_cache(Int(layer_comp)),
+            scale,
             context,
         )

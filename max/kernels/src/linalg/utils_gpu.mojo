@@ -59,7 +59,7 @@ def block_swizzle(
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
-@always_inline
+@inline(.always)
 def _block_swizzle_by_scale[
     scale0: Int
 ](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
@@ -296,20 +296,20 @@ struct MatmulConfig[
         Args:
             hasher: The hasher instance.
         """
-        hasher.update(Self.a_type)
-        hasher.update(Self.b_type)
-        hasher.update(Self.c_type)
-        hasher.update(Self.transpose_b)
-        hasher.update(self.block_tile_shape)
-        hasher.update(self.warp_tile_shape)
-        hasher.update(self.cluster_shape)
-        hasher.update(self.num_pipeline_stages)
-        hasher.update(self.num_k_partitions)
-        hasher.update(self.num_warp_k_partitions)
-        hasher.update(self.k_group_size)
-        hasher.update(self.split_k_reduction_scheme)
-        hasher.update(self.num_consumer)
-        hasher.update(self.partitioned_multicast)
+        Self.a_type.__hash__(hasher)
+        Self.b_type.__hash__(hasher)
+        Self.c_type.__hash__(hasher)
+        Self.transpose_b.__hash__(hasher)
+        self.block_tile_shape.__hash__(hasher)
+        self.warp_tile_shape.__hash__(hasher)
+        self.cluster_shape.__hash__(hasher)
+        self.num_pipeline_stages.__hash__(hasher)
+        self.num_k_partitions.__hash__(hasher)
+        self.num_warp_k_partitions.__hash__(hasher)
+        self.k_group_size.__hash__(hasher)
+        self.split_k_reduction_scheme.__hash__(hasher)
+        self.num_consumer.__hash__(hasher)
+        self.partitioned_multicast.__hash__(hasher)
 
 
 # Helper for choosing the base of BK based on type.
@@ -329,7 +329,7 @@ def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
         return 16
 
 
-@always_inline
+@inline(.always)
 def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
 ](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> Int:

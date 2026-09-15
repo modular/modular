@@ -44,13 +44,10 @@ trait Hasher:
         """Initialize a new hasher instance."""
         ...
 
-    def _update_with_bytes(mut self, data: Span[Byte, _]):
-        ...
-
     def _update_with_simd(mut self, value: SIMD[_, _]):
         ...
 
-    def update(mut self, value: Some[Hashable]):
+    def update(mut self, value: ImmSpan[Byte, _]):
         """Update the hash with a value.
 
         Args:

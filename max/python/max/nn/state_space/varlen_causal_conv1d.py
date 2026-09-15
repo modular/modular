@@ -35,33 +35,43 @@ def causal_conv1d_varlen_fwd(
     has_initial_state: TensorValue,
     activation: str = "silu",
     channels_last: bool = False,
+    use_residual: bool = False,
 ) -> TensorValue:
-    """Slot-indexed varlen causal depthwise conv1d (prefill and decode).
+    """Applies a slot-indexed varlen causal depthwise conv1d for prefill
+    and decode.
 
     Mutates the conv-state pool ``conv_states`` in place at slot
-    ``cache_indices[batch_item]`` — the Qwen3.5 GatedDeltaNet conv pattern. The
-    builtin registers ``conv_states`` as a ``MutableInputTensor`` at operand
-    position 4 (after ``output, x, weight, bias``).
+    ``cache_indices[batch_item]`` — the Qwen3.5 GatedDeltaNet conv
+    pattern. The builtin registers ``conv_states`` as a
+    ``MutableInputTensor`` at operand position 4 (after ``output, x,
+    weight, bias``).
 
     Args:
-        x: ``[dim, total_seqlen]`` input (channels-first, model dtype), or
-            ``[total_seqlen, dim]`` when ``channels_last`` is true.
-        weight: ``[dim, width]`` depthwise conv weights.
-        bias: ``[dim]`` per-channel bias (empty to disable).
-        conv_states: ``[max_slots, dim, width - 1]`` mutable conv-state pool.
-        query_start_loc: ``[batch + 1]`` int32 cumulative sequence lengths.
-        cache_indices: ``[batch]`` int32 slot indices into ``conv_states``.
-        has_initial_state: ``[batch]`` bool, whether to use the stored state.
+        x: The ``[dim, total_seqlen]`` input (channels-first, model
+            dtype), or ``[total_seqlen, dim]`` when ``channels_last`` is
+            true.
+        weight: The ``[dim, width]`` depthwise conv weights.
+        bias: The ``[dim]`` per-channel bias (empty to disable).
+        conv_states: The ``[max_slots, dim, width - 1]`` mutable
+            conv-state pool.
+        query_start_loc: The ``[batch + 1]`` int32 cumulative sequence
+            lengths.
+        cache_indices: The ``[batch]`` int32 slot indices into
+            ``conv_states``.
+        has_initial_state: The ``[batch]`` bool, whether to use the
+            stored state.
         activation: ``"silu"`` or ``"none"``.
         channels_last: If true, ``x`` and the output are tokens-major
             ``[total_seqlen, dim]``. The kernel indexes through runtime
             strides, so this only relabels the axes — it avoids the
             materialized transposes the ``[dim, total_seqlen]`` contract
             forces on a tokens-major caller.
+        use_residual: If true, adds ``x`` to the convolution sum at each
+            output position, before ``activation``.
 
     Returns:
-        Conv output with the same shape/layout as ``x``. ``conv_states`` is
-        mutated in place.
+        The conv output with the same shape/layout as ``x``.
+        ``conv_states`` is mutated in place.
     """
     device = x.device
 
@@ -84,6 +94,10 @@ def causal_conv1d_varlen_fwd(
             has_initial_state,
         ],
         [out_type],
-        parameters={"activation": activation, "channels_last": channels_last},
+        parameters={
+            "activation": activation,
+            "channels_last": channels_last,
+            "use_residual": use_residual,
+        },
     )
     return cast(TensorValue, results[0])

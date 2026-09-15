@@ -417,7 +417,7 @@ struct DType(
         else:
             return None
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """
         Formats this dtype to the provided Writer.
@@ -498,7 +498,7 @@ struct DType(
 
         return writer.write_string("<<unknown>>")
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the DType.
 
@@ -508,7 +508,7 @@ struct DType(
         writer.write_string("DType.")
         self.write_to(writer)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def get_value(self) -> __mlir_type.`!kgen.dtype`:
         """Gets the associated internal kgen.dtype value.
 
@@ -547,7 +547,7 @@ struct DType(
     def _match(self, mask: __mlir_type.`!kgen.scalar<ui8>`) -> Bool:
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred=__mlir_attr.`#kgen<cmp_pred ne>`
+                pred=__mlir_attr.`#kgen.cmp_pred<ne>`
             ](
                 __mlir_op.`pop.simd.and`(self._as_ui8(), mask),
                 __mlir_attr.`#kgen.simd<0> : !kgen.scalar<ui8>`,
@@ -566,7 +566,7 @@ struct DType(
         """
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred=__mlir_attr.`#kgen<cmp_pred eq>`
+                pred=__mlir_attr.`#kgen.cmp_pred<eq>`
             ](self._as_ui8(), rhs._as_ui8())
         )
 
@@ -582,7 +582,7 @@ struct DType(
         """
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred=__mlir_attr.`#kgen<cmp_pred ne>`
+                pred=__mlir_attr.`#kgen.cmp_pred<ne>`
             ](self._as_ui8(), rhs._as_ui8())
         )
 
@@ -706,7 +706,7 @@ struct DType(
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def mantissa_width[dtype: DType]() -> Int:
         """Returns the mantissa width of a floating point type.
 
@@ -729,7 +729,7 @@ struct DType(
             return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def max_exponent[dtype: DType]() -> Int:
         """Returns the max exponent of a floating point dtype without accounting
         for inf representations. This is not the maximum representable exponent,
@@ -763,7 +763,7 @@ struct DType(
             comptime assert False, "unsupported float type"
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def exponent_width[dtype: DType]() -> Int:
         """Returns the exponent width of a floating point type.
 
@@ -795,7 +795,7 @@ struct DType(
             comptime assert False, "unsupported float type"
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def exponent_bias[dtype: DType]() -> Int:
         """Returns the exponent bias of a floating point type.
 
@@ -815,7 +815,7 @@ struct DType(
     # __mlir_type
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __mlir_type(self) -> __mlir_type.`!kgen.deferred`:
         """Returns the MLIR type of the current DType as an MLIR type.
 
@@ -893,7 +893,7 @@ struct DType(
 # ===-------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _integral_type_of[dtype: DType]() -> DType:
     """Gets the integral type which has the same bitwidth as the input type."""
 
@@ -916,7 +916,7 @@ def _integral_type_of[dtype: DType]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _unsigned_integral_type_of[dtype: DType]() -> DType:
     """Gets the unsigned integral type which has the same bitwidth as
     the input type."""
@@ -964,7 +964,7 @@ def _scientific_notation_digits[
 # ===-------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _int_type_of_width[width: Int]() -> DType:
     comptime assert width in (
         8,
@@ -1019,7 +1019,7 @@ def _uint_type_of_width[width: Int]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _index_printf_format() -> StaticString:
     comptime if bit_width_of[Int]() == 32:
         return "%d"
@@ -1027,7 +1027,7 @@ def _index_printf_format() -> StaticString:
         return "%ld"
 
 
-@always_inline
+@inline(.always)
 def _get_dtype_printf_format[dtype: DType]() -> StaticString:
     comptime if dtype in (DType.bool, DType.int, DType.uint):
         return _index_printf_format()

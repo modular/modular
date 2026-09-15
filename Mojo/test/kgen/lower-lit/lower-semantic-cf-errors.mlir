@@ -50,3 +50,38 @@ lit.fn @unresolved_fn() {
 lit.fn @resolved_fn() {
   lit.end_fn // expected-error {{return expected at end of function with results}}
 }
+
+// First case always completes, so the second case and else are dead. The
+// match itself still falls through via match.complete.
+lit.fn @unreachable_match_case_and_else() {
+  hlcf.match {
+    hlcf.match.complete
+  }
+  case {
+    // expected-warning @below {{unreachable code after match case that always completes}}
+    "do.something"() : () -> ()
+    hlcf.match.next
+  }
+  else {
+    // expected-warning @below {{unreachable code after match that always completes}}
+    "do.something.else"() : () -> ()
+    hlcf.yield
+  }
+  lit.return
+  lit.end_fn
+}
+
+// No case completes: the first case advances to else, which returns, so code
+// after the match is dead.
+lit.fn @unreachable_after_match() {
+  hlcf.match {
+    hlcf.match.next
+  }
+  else {
+    lit.return
+    hlcf.yield
+  }
+  // expected-warning @below {{unreachable code after match statement that does not fall through}}
+  lit.return
+  lit.end_fn
+}

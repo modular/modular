@@ -11,12 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# FIXME: "string" and "float" are not part of the standard library - they are
-# ancient relics of Mojo bringup. These should be removed from stubs.mojo and
-# the dependent tests should be migrated off of them.
-comptime string = __mlir_type.`!kgen.string`
-comptime float = __mlir_type.`!kgen.scalar<f64>`
-
 
 struct _MLIR:
     comptime KGENTypeType = __mlir_type.`!kgen.type`
@@ -518,9 +512,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 comptime StringSlice = StringSpan
 
 
-struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
-    TrivialRegisterPassable
-):
+struct StringSpan[origin: ImmOrigin](TrivialRegisterPassable):
     var _slice: Span[Byte, Self.origin]
 
     @implicit
@@ -529,7 +521,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
 
     @implicit
     def __init__(out self: StaticString, lit: StringLiteral):
-        pass
+        self._slice = {}
 
     @always_inline
     def __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
@@ -547,6 +539,21 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
 
 
 comptime StaticString = StringSlice[ImmStaticOrigin]
+
+
+struct InlineLevel(ImplicitlyCopyable, TrivialRegisterPassable):
+    """The levels the `@inline` decorator accepts."""
+
+    var _value: Int
+
+    @always_inline("builtin")
+    def __init__(out self, *, value: Int):
+        self._value = value
+
+    comptime automatic = Self(value=0)
+    comptime always = Self(value=1)
+    comptime nodebug = Self(value=2)
+    comptime never = Self(value=4)
 
 
 @always_inline("builtin")
@@ -591,19 +598,22 @@ struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
     def __init__(out self, *, deinit move: String):
         pass
 
+    def __eq__(self, other: Self) -> Bool:
+        return True
+
     def __deinit__(deinit self):
         pass
 
     def __len__(self) -> Int:
         return 0
 
-    def __contains__(self, substr: StringSlice[mut=False, ...]) -> Bool:
+    def __contains__(self, substr: StringSlice) -> Bool:
         return True
 
     def __add__(self, other: StringSlice) -> String:
         pass
 
-    def __iadd__(mut self, rhs: StringSlice[mut=False, ...]):
+    def __iadd__(mut self, rhs: StringSlice):
         pass
 
     def byte_length(self) -> Int:
@@ -666,6 +676,10 @@ struct Bool(TrivialRegisterPassable):
     @always_inline("builtin")
     def __and__(self, rhs: Bool) -> Bool:
         return __mlir_op.`pop.simd.and`(self._mlir_value, rhs._mlir_value)
+
+    @always_inline("nodebug")
+    def __eq__(self, rhs: Bool) -> Bool:
+        return True
 
 
 struct Slice(TrivialRegisterPassable):
@@ -829,10 +843,6 @@ struct Dict[K: Copyable & Deinitable, V: Copyable & Deinitable]:
 # ===----------------------------------------------------------------------=== #
 
 
-# A linear type, see
-# https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
-
-
 @stable
 trait AnyType:
     pass
@@ -892,6 +902,34 @@ trait Deinitable:
     comptime __del__is_trivial: Bool
 
 
+# ===----------------------------------------------------------------------=== #
+# Pattern matching support
+# ===----------------------------------------------------------------------=== #
+
+comptime KGENString = __mlir_type.`!kgen.string`
+
+
+trait EnumLike:
+    comptime _enum_case_length: Int
+    comptime _enum_case_names: _MLIR.KGENParamListType[KGENString]
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType]
+
+    comptime _enum_elt_type_for_case[id: Int]: AnyType = TypeList[
+        Self._enum_case_types
+    ]()[id]
+
+    def _get_enum_discriminant(self) -> Int:
+        ...
+
+    # FIXME: Use an interior origin.
+    # Return type uses TypeList directly (not `_enum_elt_type_for_case`) to
+    # avoid a recursive alias cycle when specializing this method.
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        ...
+
+
 # ===-----------------------------------------------------------------------===#
 # ParameterList
 # ===-----------------------------------------------------------------------===#
@@ -909,6 +947,10 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             `> : index`,
         ]
     )
+
+    comptime of[type: AnyType, //, *values: type] = ParameterList[
+        type=type, values.values
+    ]
 
     def __init__(out self):
         pass
@@ -1610,7 +1652,7 @@ def paramfor_next_value[
         abort()
 
 
-struct Optional[T: Movable](Copyable):
+struct Optional[T: Movable](Copyable, EnumLike):
     def __deinit__(deinit self):
         pass
 
@@ -1634,6 +1676,25 @@ struct Optional[T: Movable](Copyable):
     def value(ref self) -> ref[self] Self.T:
         while True:
             pass
+
+    # Enable pattern matching on Optional.
+    comptime _enum_case_length = 2
+    comptime _enum_case_names = ParameterList.of[
+        "None".value, "Some".value
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
+        NoneType, Self.T
+    ].values
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        comptime assert id != 0, "cannot get payload for None case"
+        comptime elt_type = TypeList[Self._enum_case_types]()[id]
+        return rebind[elt_type](self.value())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1736,7 +1797,7 @@ struct DType(TrivialRegisterPassable):
 
     @always_inline("builtin")
     def is_floating_point(self) -> Bool:
-        return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred ne>`](
+        return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen.cmp_pred<ne>`](
             __mlir_op.`pop.simd.and`(
                 __mlir_op.`pop.cast_from_builtin`[
                     _type=__mlir_type.`!kgen.scalar<ui8>`
@@ -1871,7 +1932,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
             __mlir_op.`pop.cast`[
                 _type=SIMD[.int, 1]._mlir_type,
-                fastmathFlags=__mlir_attr.`#pop<fmf fast>`,
+                fastmathFlags=__mlir_attr.`#pop.fmf<fast>`,
             ](rebind[SIMD[Self.dtype, SIMDLength(1)]](self)._mlir_value)
         )
 
@@ -1981,37 +2042,37 @@ struct SIMD[dtype: DType, size: SIMDLength](
     @always_inline("builtin")
     def __eq__(self, rhs: Self) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate eq>`
+            pred=__mlir_attr.`#index.cmp_predicate<eq>`
         ](self.__mlir_index__(), rhs.__mlir_index__())
 
     @always_inline("builtin")
     def __ne__(self, rhs: Self) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate ne>`
+            pred=__mlir_attr.`#index.cmp_predicate<ne>`
         ](self.__mlir_index__(), rhs.__mlir_index__())
 
     @always_inline("builtin")
     def __lt__(self, rhs: Self) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate slt>`
+            pred=__mlir_attr.`#index.cmp_predicate<slt>`
         ](self.__mlir_index__(), rhs.__mlir_index__())
 
     @always_inline("builtin")
     def __le__(self, rhs: Self) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sle>`
+            pred=__mlir_attr.`#index.cmp_predicate<sle>`
         ](self.__mlir_index__(), rhs.__mlir_index__())
 
     @always_inline("builtin")
     def __gt__(self, rhs: Self) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sgt>`
+            pred=__mlir_attr.`#index.cmp_predicate<sgt>`
         ](self.__mlir_index__(), rhs.__mlir_index__())
 
     @always_inline("builtin")
     def __ge__(self, rhs: Self) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sge>`
+            pred=__mlir_attr.`#index.cmp_predicate<sge>`
         ](self.__mlir_index__(), rhs.__mlir_index__())
 
     @always_inline("builtin")

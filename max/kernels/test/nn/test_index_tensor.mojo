@@ -61,24 +61,20 @@ def test_index_tensor_DLRM() raises:
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
-    var a_stack = Array[
-        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
-    ](uninitialized=True)
-    var index_a = TileTensor(a_stack, row_major[index_len]())
     # Initialize with random values within [0-dim_1) since it points do dim_1 of
     # input.
-    for i in range(index_len):
-        a_stack[i] = random_ui64(0, dim_1 - 1)
+    var a_stack = Array[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](fill_with=lambda (_i: Int) -> UInt64: random_ui64(0, dim_1 - 1))
+    var index_a = TileTensor(a_stack, row_major[index_len]())
 
     # index_len-element input tensor.
-    var b_stack = Array[
-        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
-    ](uninitialized=True)
-    var index_b = TileTensor(b_stack, row_major[index_len]())
     # Initialize with random values within [0-dim_2) since it points do dim_2 of
     # input.
-    for i in range(index_len):
-        b_stack[i] = random_ui64(0, dim_2 - 1)
+    var b_stack = Array[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](fill_with=lambda (_i: Int) -> UInt64: random_ui64(0, dim_2 - 1))
+    var index_b = TileTensor(b_stack, row_major[index_len]())
 
     # The two 1D tensors are used as coordinates to dimensions 1 and 2 in the
     # dim_0 x dim_1 x dim_1 input tensor. Dimension 0 is preserved.
@@ -162,22 +158,18 @@ def test_index_tensor_DLRM_batch() raises:
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
+    # Initialize with random values within [0-dim_3)
     var a_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
-    ](uninitialized=True)
+    ](fill_with=lambda (_i: Int) -> UInt64: random_ui64(0, dim_3 - 1))
     var index_a = TileTensor(a_stack, row_major[index_len]())
-    # Initialize with random values within [0-dim_3)
-    for i in range(index_len):
-        a_stack[i] = random_ui64(0, dim_3 - 1)
 
     # index_len-element input tensor.
+    # Initialize with random values within [0-dim_4)
     var b_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
-    ](uninitialized=True)
+    ](fill_with=lambda (_i: Int) -> UInt64: random_ui64(0, dim_4 - 1))
     var index_b = TileTensor(b_stack, row_major[index_len]())
-    # Initialize with random values within [0-dim_4)
-    for i in range(index_len):
-        b_stack[i] = random_ui64(0, dim_4 - 1)
 
     # The two 1D tensors are used as coordinates to dimensions 1 and 2 in the
     # dim_0 x dim_1 x dim_1 input tensor. Dimension 0 is preserved.
@@ -471,7 +463,7 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
-    @always_inline
+    @inline(.always)
     def input_tensor_fn[
         dtype: DType, width: Int
     ](idx: IndexList[input_rank]) {var input_dyn} -> SIMD[dtype, width]:
@@ -479,7 +471,7 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
             input_dyn.load[width=width, alignment=1](Coord(idx))
         )
 
-    @always_inline
+    @inline(.always)
     def indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) {
@@ -616,7 +608,7 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     var updates = TileTensor(updates_stack, updates_static_layout)
     var updates_dyn = updates.make_dynamic[.int64]()
 
-    @always_inline
+    @inline(.always)
     def updates_tensor_fn[
         dtype: DType, width: Int
     ](idx: IndexList[updates_rank]) {var updates_dyn} -> SIMD[dtype, width]:
@@ -624,7 +616,7 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
             updates_dyn.load[width=width, alignment=1](Coord(idx))
         )
 
-    @always_inline
+    @inline(.always)
     def indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) {

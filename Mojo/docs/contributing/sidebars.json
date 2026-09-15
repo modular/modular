@@ -1,0 +1,39 @@
+{
+  "contributingSidebar": [
+    {
+      "label": "Mojo contributor guide",
+      "type": "category",
+      "className": "sidebar-heading",
+      "collapsible": false,
+      "items": [
+        {
+          "label": "Introduction",
+          "type": "doc",
+          "id": "README"
+        },
+        "contribution-areas",
+        "contribution-process",
+        "proposal-process",
+        "issue-pr-etiquette",
+        "faq",
+        {
+          "label": "Standard library",
+          "type": "category",
+          "className": "sidebar-heading",
+          "collapsed": false,
+          "items": [
+            "stdlib/stdlib-development",
+            "stdlib/stdlib-code-style",
+            "stdlib/docstring-style-guide",
+            "stdlib/adding-gpu-targets"
+          ]
+        },
+        {
+          "label": "Mojo compiler",
+          "type": "doc",
+          "id": "compiler/README"
+        }
+      ]
+    }
+  ]
+}

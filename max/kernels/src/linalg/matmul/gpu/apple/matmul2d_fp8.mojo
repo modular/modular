@@ -66,7 +66,7 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
 
-from layout import Idx, TileTensor
+from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
 from layout.tile_layout import Layout, TensorLayout
 
@@ -130,16 +130,16 @@ struct Matmul2dFp8[
         b_type=Self.b_type,
     ]
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _gemm_body[
         c_layout: TensorLayout,
         a_layout: TensorLayout,
         w_layout: TensorLayout,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
-        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        weight: TileTensor[Self.b_type, w_layout, ImmutAnyOrigin],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=_],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=_],
+        weight: TileTensor[Self.b_type, w_layout, ImmutAnyOrigin, Engine=_],
         M: Int,
         N: Int,
         K: Int,
@@ -276,7 +276,7 @@ struct Matmul2dFp8[
         # needs a base-pointer rebind to fp32 (as the dense `_fast_path_store`
         # does), which the TileTensor-idioms-only rule forbids here. `_write4`
         # reaches the same 2-vector-store result.
-        @always_inline
+        @inline(.always)
         @__parameter
         def _apply_epilogue[bounded: Bool]():
             var c_sub = c.tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
@@ -285,7 +285,7 @@ struct Matmul2dFp8[
             comptime elem_align = align_of[Scalar[Self.c_type]]()
             var c_vec = c_sub.vectorize[1, 4]()
 
-            @always_inline
+            @inline(.always)
             @__parameter
             def _write4(lrow: Int, lcol: Int, acol: Int, v: SIMD[.float32, 4]):
                 var y = v.cast[Self.c_type]()
@@ -334,12 +334,21 @@ struct Matmul2dFp8[
         b_layout: TensorLayout,
         ao_layout: TensorLayout,
         ei_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        ao_engine: TensorEngine,
+        ei_engine: TensorEngine,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
-        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
-        a_offsets: TileTensor[mut=False, .uint32, ao_layout, MutAnyOrigin],
-        expert_ids: TileTensor[mut=False, .int32, ei_layout, MutAnyOrigin],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        a_offsets: TileTensor[
+            mut=False, .uint32, ao_layout, MutAnyOrigin, Engine=ao_engine
+        ],
+        expert_ids: TileTensor[
+            mut=False, .int32, ei_layout, MutAnyOrigin, Engine=ei_engine
+        ],
         N_arg: Int32,
         K_arg: Int32,
     ):
@@ -394,7 +403,7 @@ struct Matmul2dFp8[
         Self._gemm_body(c_group, a_group, w_group, M, N, K, active)
 
 
-@always_inline
+@inline(.always)
 def enqueue_matmul2d_fp8[
     c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -495,7 +504,7 @@ def enqueue_matmul2d_fp8[
     )
 
 
-@always_inline
+@inline(.always)
 def enqueue_grouped_matmul2d_fp8[
     c_type: DType = .float32,
     block_m: Int = 64,
@@ -562,6 +571,11 @@ def enqueue_grouped_matmul2d_fp8[
         type_of(b).LayoutType,
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
+        type_of(a_offsets).Engine,
+        type_of(expert_ids).Engine,
     ]
     ctx.enqueue_function[kernel](
         c,

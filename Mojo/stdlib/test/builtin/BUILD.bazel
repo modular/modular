@@ -8,11 +8,6 @@ _DATA = [
 
 _NO_ASAN = [
     "test_simd.mojo",  # Takes too long to compile with ASAN
-    # 25 `compile_info[...]` calls, every one of them retargeting to NVPTX or
-    # AMDGPU. Under asan on aarch64 the comptime compiler invocations blow past
-    # the remote-executor timeout, the same way `test_compile_atomic.mojo` does.
-    # Tracked in MOCO-3794.
-    "test_range_codegen.mojo",
 ]
 
 _PLATFORM_CONSTRAINTS = {
@@ -48,6 +43,7 @@ _LIT_TESTS = [
     "test_issue_3908.mojo",
     "test_print_long_string.mojo",
     "test_print_stderr.mojo",
+    "test_simd_pow_compile_fail.mojo",
     "test_stdin.mojo",
 ]
 
@@ -131,7 +127,18 @@ _EXTRA_DEPS = {
         name = src + ".test",
         srcs = [src],
         enable_assertions = False,
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        # Note: Only one test, so may need to be more specific here if more are added
+        target_compatible_with = select({
+            # OSS repo: Only works with the prebuilt toolchain,
+            # since it uses GPU compiler backends.
+            "//:use_prebuilt_mojo_toolchain_disabled": ["@platforms//:incompatible"],
+            # 25 `compile_info[...]` calls, every one of them retargeting to NVPTX or
+            # AMDGPU. Under asan on aarch64 the comptime compiler invocations blow past
+            # the remote-executor timeout, the same way `test_compile_atomic.mojo` does.
+            # Tracked in MOCO-3794.
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

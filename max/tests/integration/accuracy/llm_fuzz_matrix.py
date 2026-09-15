@@ -96,6 +96,21 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
+    # Tiny model on CPU: a cheap end-to-end check of the fuzz harness and the
+    # serve path without occupying an accelerator at all. 135M params in FP32
+    # is ~540MB of weights, so there is nothing a GPU buys here. The CPU
+    # runner is why llmFuzzAdHoc.yaml's GPU-info step is conditional -- see
+    # that step for the coupling.
+    PipelineEntry(
+        pipeline="modularai/SmolLM-135M-Instruct-FP32",
+        model_path="modularai/SmolLM-135M-Instruct-FP32",
+        runner="modrunner-m7i-normal",
+        gpu_flag="--devices cpu",
+        # No bm.gpu.* equivalent for a CPU runner, and the workflow never
+        # reads this field; it exists for the matrix schema.
+        instance_type="cpu",
+        timeout=30,
+    ),
 ]
 
 

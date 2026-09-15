@@ -156,15 +156,6 @@ class ModelOutputs:
     For data parallel models, the hs will be on the first gpu since it is replicated.
     """
 
-    sampled_tokens: Buffer | None = None
-    """Greedy token ids selected inside the forward graph, shape ``[B, 1]``.
-
-    Present only when ``fold_sampler_into_graph`` is enabled and the
-    architecture emits a folded argmax output. Consumed by the overlap
-    pipeline for all-greedy decode batches in place of a separate sampler
-    submission; ``None`` otherwise.
-    """
-
 
 @dataclass(kw_only=True)
 class ModelInputs:
@@ -609,19 +600,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         """Custom-op extension paths to compile the sampler graph with."""
         return ()
 
-    @property
-    def emits_folded_sampled_tokens(self) -> bool:
-        """Whether the forward graph appends a folded greedy-token output.
-
-        Architectures that fold the sampler (argmax) into the forward graph
-        emit the sampled-token buffer as a trailing graph output and override
-        this to return ``True``. Callers must peel that trailing output into
-        :attr:`ModelOutputs.sampled_tokens` only when this is ``True``;
-        otherwise the ``fold_sampler_into_graph`` runtime flag is a no-op for
-        the architecture.
-        """
-        return False
-
     @abstractmethod
     def execute(
         self,
@@ -769,7 +747,7 @@ class GraphPipelineModel(PipelineModel[BaseContextType]):
 
 
 class ModuleV3PipelineModel(PipelineModel[BaseContextType]):
-    """ModuleV3 eager pipeline model without KV cache.
+    """ModuleV3 pipeline model without KV cache.
 
     Subclasses implement :meth:`_instantiate_module` and optionally
     :meth:`_create_model_config`, :meth:`_prepare_state_dict`, and
@@ -819,7 +797,7 @@ class ModuleV3PipelineModel(PipelineModel[BaseContextType]):
     def _module_default_dtype(
         self, state_dict: dict[str, Any], model_config: Any
     ) -> DType:
-        """Default dtype for the eager module build context."""
+        """Default dtype for the module build context."""
         del state_dict, model_config
         return self.dtype
 
@@ -956,7 +934,7 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
     :meth:`_create_model_config`, :meth:`_init_distributed_runtime`) rather than
     duplicating weight loading, timing, and EP batch-processor wiring.
 
-    ModuleV3 (eager) models and multi-graph VLMs should inherit
+    ModuleV3 models and multi-graph VLMs should inherit
     :class:`MultiGraphPipelineModelWithKVCache` instead.
     """
 
@@ -1117,7 +1095,7 @@ class MultiGraphPipelineModelWithKVCache(
 class ModuleV3PipelineModelWithKVCache(
     PipelineModelWithKVCache[BaseContextType]
 ):
-    """ModuleV3 (eager) pipeline model with shared compile template.
+    """ModuleV3 pipeline model with shared compile template.
 
     Subclasses override :meth:`_instantiate_module` (and optionally
     :meth:`_create_model_config`, :meth:`_init_distributed_runtime`,
@@ -1169,7 +1147,7 @@ class ModuleV3PipelineModelWithKVCache(
     def _module_default_dtype(
         self, state_dict: dict[str, Any], model_config: Any
     ) -> DType:
-        """Default dtype for the eager module build context."""
+        """Default dtype for the module build context."""
         del state_dict
         return model_config.dtype
 

@@ -13,6 +13,7 @@
 
 #include "Mojo/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 
 using namespace M;
@@ -34,7 +35,10 @@ void ControlFlowTree::buildTree(ControlFlowNode node, unsigned &nodeId,
   for (Region &region : node->getRegions()) {
     for (Block &block : region) {
       auto terminator = dyn_cast<ControlFlowTerminator>(block.getTerminator());
-      if (!terminator || terminator->hasTrait<mlir::OpTrait::ReturnLike>())
+      // Returns and unreachable have no CFG branch targets; LowerControlFlow
+      // handles them specially and must not consume a tree.targets slot.
+      if (!terminator || terminator->hasTrait<mlir::OpTrait::ReturnLike>() ||
+          isa<KGEN::UnreachableOp>(terminator.getOperation()))
         continue;
 
       std::optional<unsigned> nodeId;

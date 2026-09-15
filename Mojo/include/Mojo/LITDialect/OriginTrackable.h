@@ -192,6 +192,9 @@ enum class OverallOpValueEffect {
   /// This is HLCF::ElifOp specifically.
   elifOp,
 
+  /// This is HLCF::MatchOp.
+  matchOp,
+
   /// This is HLCF::LoopOp.
   loopOp,
 

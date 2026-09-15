@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
+from max.nn.kv_cache.cache_params import recurrent_leaf
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     NixlBackendType,
@@ -76,7 +77,8 @@ def _get_nixl_backend_type() -> NixlBackendType:
 
     Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``). The default
     is this engine's, not the validator's: the dKV connector reads the same
-    variable through the same validator but auto-selects when it is unset.
+    variable through the same validator but requires it, having no
+    auto-selection to fall back on.
     """
     return validate_nixl_backend(os.environ.get(NIXL_BACKEND_ENV_VAR, "ucx"))
 
@@ -216,6 +218,15 @@ def _validate_tensor_shape(tensors: Sequence[Buffer]) -> int:
     """
     first_tensor = tensors[0]
     first_shape = tuple(first_tensor.shape)
+    # TODO(MXSERV-502): `_build_group_descriptors` uses one number as both the
+    # page stride and the copy length, which a padded leaf needs separated.
+    for i, tensor in enumerate(tensors):
+        if not tensor.is_contiguous:
+            raise ValueError(
+                f"NIXL group tensor {i} is not contiguous (shape "
+                f"{tuple(tensor.shape)}, strides {tuple(tensor.strides)}): "
+                "padded KV pages cannot be transferred yet (MXSERV-502)."
+            )
     for i, tensor in enumerate(tensors[1:], 1):
         if tuple(tensor.shape) != first_shape:
             raise ValueError(
@@ -260,7 +271,7 @@ def _resolve_remote_bytes_per_group(
 
     Raises unless the remote advertises exactly as many groups as the local
     engine has: connect() already enforces this (a full ``bytes_per_group``
-    equality check), so this is defense-in-depth, not the primary guard --
+    equality check), so this is defense-in-num_blocks, not the primary guard --
     fewer groups means there is no way to infer the remote's stride for a
     group it never advertised, and more groups would silently assume a
     positional-prefix correspondence that was never validated.
@@ -297,6 +308,50 @@ class TensorAgentMetadata(
 
     device_id: int
     """Device ID for this tensor."""
+
+
+_AMD_RDMA_START_ALIGNMENT = 2 * 1024 * 1024
+_AMD_RDMA_ALIGNED_SIZE_FACTOR = 32
+
+
+def _check_rdma_start_alignment(
+    base_addr: int,
+    num_bytes: int,
+    device: Device,
+    agent_name: str,
+    group_index: int,
+) -> None:
+    """Rejects a VRAM region amdgpu cannot pin for RDMA.
+
+    ``amdgpu`` pins device memory for RDMA a 2 MiB page at a time, so
+    ``ibv_reg_mr`` refuses any region whose *start* is not 2 MiB aligned --
+    regardless of its length. NIXL surfaces that refusal as a bare
+    ``NIXL_ERR_BACKEND``, arbitrarily far into a serving run and with nothing
+    pointing at the allocator, so check the address up front instead.
+
+    Only regions the allocator was asked to align are checked.
+    ``MemoryManager`` grants the coarse start address to blocks of
+    ``_AMD_RDMA_ALIGNED_SIZE_FACTOR`` times the alignment and up
+    (``kLargeAllocSizeFactor`` in ``MemoryManager.h``). A KV cache group sits
+    far above that bar; the small buffers other callers register sit below it
+    and keep the device's plain 256-byte alignment by design, so there is no
+    missed promise to report for them.
+    """
+    aligned_size = _AMD_RDMA_START_ALIGNMENT * _AMD_RDMA_ALIGNED_SIZE_FACTOR
+    if (
+        device.api != "hip"
+        or num_bytes < aligned_size
+        or base_addr % _AMD_RDMA_START_ALIGNMENT == 0
+    ):
+        return
+    raise ValueError(
+        f"NIXL group {group_index} for agent {agent_name} starts at "
+        f"{base_addr:#x}, which is not aligned to "
+        f"{_AMD_RDMA_START_ALIGNMENT // (1024 * 1024)} MiB. AMD GPUs cannot "
+        "register a device memory region for RDMA unless its start address "
+        "is 2 MiB aligned, so this buffer must be allocated with that "
+        "alignment."
+    )
 
 
 @dataclass
@@ -417,9 +472,12 @@ class TensorAgent:
         # Register one memory region per group, uniformly.
         base_addrs: list[int] = []
         reg_dlists: list[nixl.RegistrationDescriptorList] = []
-        for tensor in tensors:
+        for group_index, tensor in enumerate(tensors):
             base_addr = tensor._data_ptr()
             num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
+            _check_rdma_start_alignment(
+                base_addr, num_bytes, device, agent_name, group_index
+            )
             reg_dlist = nixl.RegistrationDescriptorList(
                 type=memory_type,
                 descs=[(base_addr, num_bytes, device.id, "")],
@@ -1755,7 +1813,7 @@ class KVTransferEngine(TransferEngine):
     The engine accepts per-replica producer-authored NIXL groups
     (:class:`~max.nn.kv_cache.cache_params.KVCacheMemory`).  The outer list is
     indexed by DP replica; the inner list is that replica's group list — one
-    group per logical ``(child, kind)`` tensor, from ``to_memory()``.
+    group per pool leaf, in the order the cache declares its leaves.
 
     ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine` that adds:
 
@@ -1783,13 +1841,12 @@ class KVTransferEngine(TransferEngine):
             name: Unique name for this engine.
             memory: Per-replica group lists as ``[replica][group]``.  Each entry
                 is a
-                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one
-                logical ``(child, kind)`` tensor carrying every TP-shard view,
-                as returned by ``KVCacheBuffer.to_memory()``.  All
-                replicas must have the same group count and consistent
-                replication kind.  The page count (including the null block) is
-                read from the groups themselves, so every group must agree on
-                ``total_num_pages``.
+                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one pool
+                leaf's unit, carrying every TP-shard view, ordered by the
+                caller.  All replicas must have the same group count and
+                consistent replication kind.  The page count (including the
+                null block) is read from the groups themselves, so every group
+                must agree on ``total_num_pages``.
         """
         if not memory:
             raise ValueError("tensors must contain at least one replica")
@@ -1963,10 +2020,10 @@ class KVTransferEngine(TransferEngine):
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
-        Calls ``KVCacheBuffer.to_memory()`` on each replica's device
-        buffer to obtain the producer-authored NIXL groups, then passes them to
-        the constructor, which carries each group's ``replicated`` field as
-        ``replicated_per_group``.
+        Calls ``to_memory()`` on each replica's device buffer to obtain the
+        producer-authored NIXL groups, orders them by the leaves the cache
+        declares, and passes them to the constructor, which carries each
+        group's ``replicated`` field as ``replicated_per_group``.
 
         For models with multiple KV caches (e.g., speculative decoding with a
         separate target and draft KV), each child cache contributes its own
@@ -1977,11 +2034,29 @@ class KVTransferEngine(TransferEngine):
         separate group for values and for scales (one group per child x kind).
         For non-quantized caches this collapses to one group per child, which is
         byte-identical to the previous ``all_buffers`` path.
+
+        Raises:
+            NotImplementedError: If the cache keeps recurrent state.
         """
-        dp = kv_cache.params.data_parallel_degree
+        params = kv_cache.params
+        if recurrent_leaf(params) is not None:
+            raise NotImplementedError(
+                "Disaggregated inference cannot transfer a recurrent state"
+                " pool: a state block is a whole request's state, not a span"
+                " of tokens, so it has no page count in common with the"
+                " attention groups this engine registers."
+            )
+        dp = params.data_parallel_degree
         device_buffers = [kv_cache.get_device_buffer(r) for r in range(dp)]
 
+        # The peer engine matches groups by position, so fix the order from the
+        # declared leaves rather than from however a mapping happens to
+        # iterate.
+        leaf_ids = list(params.leaves())
         return cls(
             name=name,
-            memory=[buf.to_memory() for buf in device_buffers],
+            memory=[
+                [units[leaf_id] for leaf_id in leaf_ids]
+                for units in (buf.to_memory() for buf in device_buffers)
+            ],
         )

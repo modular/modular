@@ -74,7 +74,7 @@ def LIT_FnOp : LITOp<"fn", [
     UnitAttr:$external,
     UnitAttr:$defaultedTraitFn, // Present for trait methods with non-empty bodies.
     KGEN_ExportKindAttr:$exportKind,
-    KGEN_InlineLevelAttr:$inlineLevel,
+    TypedAttrInterface:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
     // The linkage name of this function within the compiled artifact. If null,
     // the flattened full symbol reference of the function will be used.
@@ -1048,7 +1048,7 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   let results = (outs LIT_RefType:$result);
 
   let assemblyFormat = [{
-    $name $kind `:`
+    $name enum($kind) `:`
     custom<VarDeclType>(type($result), $paramDecl) attr-dict
   }];
 

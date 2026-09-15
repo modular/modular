@@ -63,9 +63,9 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
     ctx.enqueue_memset(device_c_ref, 0)
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )

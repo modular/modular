@@ -24,10 +24,8 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
-    PagedCacheValues,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
 @dataclass(frozen=True)
@@ -62,13 +60,7 @@ class RMSNormKeyCacheModel:
         """
         rms_norm_key_cache(
             self.kv_params,
-            PagedCacheValues(
-                kv_blocks=graph_inputs[0].buffer,
-                cache_lengths=graph_inputs[1].tensor,
-                lookup_table=graph_inputs[2].tensor,
-                max_prompt_length=graph_inputs[3].tensor,
-                max_cache_length=graph_inputs[4].tensor,
-            ),
+            self.kv_params.unflatten_kv_inputs(iter(graph_inputs)).inputs[0],
             gamma=gamma,
             epsilon=1e-5,
             layer_idx=ops.constant(
@@ -88,7 +80,6 @@ class RMSNormKeyCacheModel:
 )
 def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     seq_lens = [10, 4]
-    batch_size = 2
     kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
@@ -97,13 +88,6 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(
         dtype, shape=[kv_params.head_dim], device=DeviceRef.CPU()
@@ -126,15 +110,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context)
-        kv_manager.alloc(context)
-        batch.append(context)
-
-    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    graph_inputs = paged_kv_cache_inputs(kv_params, seq_lens, total_num_pages=8)
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks
@@ -169,7 +145,6 @@ def test_partial_rms_norm_key_cache(
     seq_lens = [
         10,
     ]
-    batch_size = 1
     gamma_size = 512
     kv_params = MHAKVCacheParams(
         dtype=dtype,
@@ -179,13 +154,6 @@ def test_partial_rms_norm_key_cache(
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
     input_row_offsets_type = TensorType(
@@ -209,15 +177,7 @@ def test_partial_rms_norm_key_cache(
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context)
-        kv_manager.alloc(context)
-        batch.append(context)
-
-    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    graph_inputs = paged_kv_cache_inputs(kv_params, seq_lens, total_num_pages=8)
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks
@@ -265,7 +225,6 @@ def test_rms_norm_new_key_cache(
     seq_lens = [
         10,
     ]
-    batch_size = 1
     gamma_size = 128
     kv_params = MHAKVCacheParams(
         dtype=dtype,
@@ -275,13 +234,6 @@ def test_rms_norm_new_key_cache(
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
     input_row_offsets_type = TensorType(
@@ -305,24 +257,11 @@ def test_rms_norm_new_key_cache(
     # Compile and init the model.
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache.
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context)
-        kv_manager.alloc(context)
-        batch.append(context)
-
-    # note that unlike previous tests, we step the kv cache by 10 tokens
-    # this is to test that we only operate on the new tokens
-    _ = kv_manager.runtime_inputs([batch])
-
-    for ctx in batch:
-        ctx.update(42)
-    for ctx in batch:
-        kv_manager.step(ctx)
-
-    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    # Unlike the previous tests, each request already holds ``seq_lens[i]``
+    # tokens in the cache, so the kernel must only touch the new tokens.
+    graph_inputs = paged_kv_cache_inputs(
+        kv_params, seq_lens, cache_lengths=seq_lens, total_num_pages=8
+    )
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks
@@ -412,7 +351,6 @@ def test_rms_norm_key_cache_dtype_mismatch(
 def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     """Test RMS normalization applied per token (across all heads) rather than per head."""
     seq_lens = [5, 3]
-    batch_size = 2
     n_kv_heads = 4
     head_dim = 64
 
@@ -424,13 +362,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # For per token normalization, gamma has shape [n_kv_heads * head_dim]
     # This means normalization is applied across all heads for each token
     total_features = n_kv_heads * head_dim
@@ -460,15 +391,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     # Compile and init the model
     model = session.load(graph)
 
-    # Create contexts and claim seq_ids in cache
-    batch = []
-    for i in range(batch_size):
-        context = create_text_context(np.empty(seq_lens[i]))
-        kv_manager.claim(context)
-        kv_manager.alloc(context)
-        batch.append(context)
-
-    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    graph_inputs = paged_kv_cache_inputs(kv_params, seq_lens, total_num_pages=8)
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks

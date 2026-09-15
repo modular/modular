@@ -21,6 +21,7 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
+        requirement("torch"),
     ],
 )
 
@@ -108,6 +109,86 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_video_tokenizer",
+    srcs = ["test_video_tokenizer.py"],
+    # transformers imports it lazily from apply_chat_template.
+    ignore_extra_deps = [requirement("jinja2")],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/support",
+        requirement("av"),
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_clip_graph",
+    srcs = ["test_vision_clip_graph.py"],
+    # The 280 MB signal buffer is a single allocation, so the default per-test
+    # GPU budget cannot serve it whatever the encoder size.
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    # `mo.spatial_merge` is `comptime assert is_gpu[target]()`.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_video_processing",
+    srcs = ["test_video_processing.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        requirement("av"),
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_pos_embed",
+    srcs = ["test_vision_pos_embed.py"],
+    # `mo.spatial_merge` is `comptime assert is_gpu[target]()`, so this cannot
+    # run on CPU at all.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_vision_cache",
     srcs = ["test_vision_cache.py"],
     target_compatible_with = select({
@@ -124,6 +205,16 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_output_gate",
+    srcs = ["test_output_gate.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/qwen3_5",
     ],
 )
 
@@ -147,19 +238,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/qwen3_5",
-    ],
-)
-
-modular_py_test(
-    name = "test_state_warmup",
-    srcs = ["test_state_warmup.py"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/pipelines/architectures/qwen3_5",
-        "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
-        requirement("numpy"),
     ],
 )
 

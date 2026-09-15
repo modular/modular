@@ -18,8 +18,8 @@ EP MoE via a :class:`DeviceMesh`). The two towers are compiled as separate
 callables, mirroring ``gemma3multimodal_modulev3``.
 
 The text path is wired for bf16, FP8, and NVFP4 under the DeepseekV3 ModuleV3
-DP-attention + EP-MoE ABI (:class:`KimiK2_5ModelInputs` below, produced by
-``batch_processor.py``). Validated end to end on 8xB200 for NVFP4
+DP-attention + EP-MoE ABI (:class:`KimiK2_5ModelInputs` in ``inputs.py``,
+produced by ``batch_processor.py``). Validated end to end on 8xB200 for NVFP4
 (``nvidia/Kimi-K2.5-NVFP4``, DP=8/EP=8).
 
 TODO(MODELS-kimi-v3): the multimodal (image) path under the multi-GPU V3 ABI
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any, ClassVar
 
 from max.driver import Buffer, Device, DeviceSpec, is_virtual_device_mode
@@ -40,9 +40,10 @@ from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.nn import CompiledModel
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
-    DistributedTensorType,
     Replicated,
+    TensorLayout,
 )
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
@@ -71,66 +72,18 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
+from ..deepseekV3_modulev3.layers.quant_ops import (
+    routed_weight_dtype,
+)
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
+from .inputs import KimiK2_5ModelInputs
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .layers.language_model import KimiK2_5MoEDecoder
 from .layers.vision.transformer import Transformer
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class KimiK2_5ModelInputs(ModelInputs):
-    """Flat ModuleV3 inputs for the Kimi-K2.5 model.
-
-    The language ABI is ``(tokens, return_n_logits, input_row_offsets,
-    vision_embeddings, vision_scatter_indices, *kv, *ep)`` — the DeepseekV3
-    ModuleV3 order with the two multimodal tensors spliced in after the row
-    offsets. ``vision_embeddings``/``vision_scatter_indices`` are the base
-    :class:`ModelInputs` fields, set by the pipeline's vision seam
-    (``finalize_vision_inputs``); replicated per device (one ``Buffer`` per
-    device, identical data). Shape ``[num_patches, hidden]`` /
-    ``[num_image_tokens]`` during prefill, ``[0, hidden]`` / ``[0]`` otherwise.
-    """
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-
-    batch_context_lengths: list[Buffer] = field(kw_only=True)
-    """Host (CPU) page-aligned KV context length, one per DP replica.
-
-    Substituted for the planner's device-resident ``buffer_lengths`` so the
-    per-layer ``.to(CPU())`` stays host-to-host and the graph is capturable."""
-
-    data_parallel_splits: Buffer | None = field(default=None, kw_only=True)
-    input_row_offsets_i64: Buffer | None = field(default=None, kw_only=True)
-    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        """Flat language-model input tuple in compile ABI order."""
-        dp_inputs: tuple[Buffer, ...] = ()
-        if self.data_parallel_splits is not None:
-            assert self.input_row_offsets_i64 is not None
-            dp_inputs = (self.data_parallel_splits, self.input_row_offsets_i64)
-        return (
-            self.tokens,
-            self.return_n_logits,
-            self.input_row_offsets,
-            *self.vision_embeddings,
-            *self.vision_scatter_indices,
-            *self.batch_context_lengths,
-            *dp_inputs,
-            *(
-                self.kv_cache_inputs.flatten()
-                if self.kv_cache_inputs is not None
-                else ()
-            ),
-            *self.ep_inputs,
-        )
 
 
 class KimiK2_5Model(
@@ -281,10 +234,12 @@ class KimiK2_5Model(
             quant_config = parse_quant_config(
                 self.huggingface_config.text_config, state_dict, self.dtype
             )
-            shared_experts_weight_dtype, _ = infer_kimi_nvfp4_weight_flags(
-                state_dict,
-                first_k_dense_replace=llm.first_k_dense_replace,
-                quant_config=quant_config,
+            shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
+                infer_kimi_nvfp4_weight_flags(
+                    state_dict,
+                    first_k_dense_replace=llm.first_k_dense_replace,
+                    quant_config=quant_config,
+                )
             )
             if (
                 quant_config is not None
@@ -294,6 +249,7 @@ class KimiK2_5Model(
                     quant_config,
                     shared_experts_weight_dtype=shared_experts_weight_dtype,
                 )
+            llm.dense_mlp_layers_without_quant = dense_mlp_layers_without_quant
         llm.quant_config = quant_config
         # Kimi K2.5 keeps the entire attention block (including o_proj) in bf16
         # (the checkpoint's modelopt ``ignore`` list covers all ``self_attn``),
@@ -353,6 +309,13 @@ class KimiK2_5Model(
         quantized_dispatch = quant_config is not None and (
             self.dtype.is_float8() or quant_config.is_nvfp4
         )
+        fused_shared_expert = llm.n_shared_experts == 1
+        if quant_config is not None:
+            fused_shared_expert = fused_shared_expert and (
+                quant_config.shared_experts_use_quant(
+                    routed_weight_dtype(quant_config)
+                )
+            )
         ep_config = EPConfig(
             dispatch_dtype=(
                 self.dtype if quantized_dispatch else DType.bfloat16
@@ -372,7 +335,7 @@ class KimiK2_5Model(
             ),
             n_gpus_per_node=n_devices,
             n_nodes=ep_size // n_devices,
-            fused_shared_expert=llm.n_shared_experts == 1,
+            fused_shared_expert=fused_shared_expert,
             use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
         )
         llm.ep_config = ep_config
@@ -455,17 +418,15 @@ class KimiK2_5Model(
         tokens_t, return_n_logits_t, input_row_offsets_t, *kv_types = (
             base_inputs
         )
-        image_embeddings_type = DistributedTensorType(
+        image_embeddings_type = TensorLayout(
             DType.bfloat16,
-            shape=["vision_merged_seq_len", llm.hidden_size],
-            mesh=llm.mesh,
-            placements=(Replicated(),),
+            ["vision_merged_seq_len", llm.hidden_size],
+            DeviceMapping(llm.mesh, (Replicated(),)),
         )
-        image_token_indices_type = DistributedTensorType(
+        image_token_indices_type = TensorLayout(
             DType.int32,
-            shape=["total_image_tokens"],
-            mesh=llm.mesh,
-            placements=(Replicated(),),
+            ["total_image_tokens"],
+            DeviceMapping(llm.mesh, (Replicated(),)),
         )
 
         # Host per-replica KV context lengths, and (under data parallelism) the

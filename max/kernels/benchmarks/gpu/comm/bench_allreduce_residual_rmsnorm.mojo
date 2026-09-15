@@ -42,7 +42,7 @@ from max.benchmark import (
     bench_multicontext,
     bencher_iter_custom,
 )
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.allreduce import allreduce, elementwise_epilogue_type
 from comm.allreduce_residual_rmsnorm import (
     allreduce_residual_rmsnorm,
@@ -72,7 +72,7 @@ def _verify_results[
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -140,7 +140,7 @@ def _verify_results[
     var ar_ptr_v = ar_out_dev[0].unsafe_ptr()
 
     @__copy_capture(ar_ptr_v)
-    @always_inline
+    @inline(.always)
     @__parameter
     def v_fused_in[
         width: Int, _rank: Int
@@ -307,7 +307,7 @@ def _verify_add_results[
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -371,7 +371,7 @@ def _verify_add_results[
         var ar_ptr_i = ar_out_dev[i].unsafe_ptr()
 
         @__copy_capture(ar_ptr_i, residual_ptr)
-        @always_inline
+        @inline(.always)
         @__parameter
         def add_epilogue_v[
             _dtype: DType,
@@ -405,7 +405,7 @@ def _verify_add_results[
     var ar_ptr_v = ar_out_dev[0].unsafe_ptr()
 
     @__copy_capture(ar_ptr_v)
-    @always_inline
+    @inline(.always)
     @__parameter
     def v_ep_fused_in[
         width: Int, _rank: Int
@@ -589,7 +589,7 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -780,11 +780,11 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 1: allreduce only =====
 
-    @always_inline
+    @inline(.always)
     def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_tensors, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_tensors, imm}:
@@ -815,11 +815,11 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 2: allreduce + fused RMSNorm+FP8 (FP8 only) =====
     comptime if quantize:
 
-        @always_inline
+        @inline(.always)
         def bench_ar_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises {mut in_tensors, imm}:
-            @always_inline
+            @inline(.always)
             def call_fn(
                 ctx_inner: DeviceContext, cache_iter: Int
             ) raises {mut in_tensors, imm}:
@@ -843,7 +843,7 @@ def bench_allreduce_rmsnorm_fp8[
                 var ar_ptr = ar_out_dev[ctx_idx].unsafe_ptr()
 
                 @__copy_capture(ar_ptr)
-                @always_inline
+                @inline(.always)
                 @__parameter
                 def fused_in[
                     width: Int, _rank: Int
@@ -889,11 +889,11 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 3: fully fused allreduce+RMSNorm (single kernel) =====
 
-    @always_inline
+    @inline(.always)
     def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_tensors, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_tensors, imm}:
@@ -938,11 +938,11 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 4: allreduce (add epilogue) + fused RMSNorm+FP8 (FP8) ===
     comptime if quantize:
 
-        @always_inline
+        @inline(.always)
         def bench_ar_add_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises {mut in_tensors, mut ar_out_dev, imm}:
-            @always_inline
+            @inline(.always)
             def call_fn(
                 ctx_inner: DeviceContext, cache_iter: Int
             ) raises {mut in_tensors, mut ar_out_dev, imm}:
@@ -958,7 +958,7 @@ def bench_allreduce_rmsnorm_fp8[
                 var ar_ptr = ar_out_dev[ctx_idx].unsafe_ptr()
 
                 @__copy_capture(ar_ptr, residual_ptr_base)
-                @always_inline
+                @inline(.always)
                 @__parameter
                 def add_epilogue[
                     _dtype: DType,
@@ -993,7 +993,7 @@ def bench_allreduce_rmsnorm_fp8[
                 # Step 2: Fused RMSNorm + FP8 (reads from ar_out which has
                 # allreduce + residual).
                 @__copy_capture(ar_ptr)
-                @always_inline
+                @inline(.always)
                 @__parameter
                 def add_fused_in[
                     width: Int, _rank: Int
@@ -1039,11 +1039,11 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 5: fused allreduce+add+RMSNorm (single kernel) =====
 
-    @always_inline
+    @inline(.always)
     def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_tensors, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_tensors, imm}:

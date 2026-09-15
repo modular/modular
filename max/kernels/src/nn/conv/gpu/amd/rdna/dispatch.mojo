@@ -304,7 +304,7 @@ def dispatch_rdna_conv2d[
 
         # --- Helper to launch the implicit GEMM kernel ---
         @__parameter
-        @always_inline
+        @inline(.always)
         def _launch_implicit_gemm[
             _epilogue: Optional[elementwise_epilogue_type] = None,
         ]() raises:
@@ -323,6 +323,8 @@ def dispatch_rdna_conv2d[
                 type_of(filter_nk_tt).LayoutType,
                 elementwise_lambda_fn=_epilogue,
                 BLOCK_K=BLOCK_K,
+                out_engine=type_of(out_tt).Engine,
+                filter_nk_engine=type_of(filter_nk_tt).Engine,
             ]
 
             ctx.enqueue_function[conv_kernel](
@@ -347,7 +349,7 @@ def dispatch_rdna_conv2d[
 
         # --- Helper to launch explicit im2col + matmul fallback ---
         @__parameter
-        @always_inline
+        @inline(.always)
         def _launch_explicit_im2col[
             _epilogue: Optional[elementwise_epilogue_type] = None,
         ]() raises:
@@ -401,7 +403,7 @@ def dispatch_rdna_conv2d[
             var out_ptr = output.ptr
 
             @__parameter
-            @always_inline
+            @inline(.always)
             @__copy_capture(hw, out_w, N, resid_src, resid_beta, out_ptr)
             def _gemm_epilogue[
                 _dtype: DType,

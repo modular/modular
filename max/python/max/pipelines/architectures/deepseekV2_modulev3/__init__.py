@@ -13,7 +13,8 @@
 """DeepSeek-V2 mixture-of-experts architecture for text generation."""
 
 from .arch import deepseekV2_modulev3_arch
-from .model import DeepseekV2Inputs, DeepseekV2Model
+from .inputs import DeepseekV2Inputs
+from .model import DeepseekV2Model
 from .model_config import DeepseekV2Config
 
 __all__ = [

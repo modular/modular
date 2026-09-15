@@ -17,7 +17,7 @@ from std.os import abort
 from std.utils import StaticTuple
 
 
-@always_inline
+@inline(.always)
 def _strlen(ptr: ImmPointer[Byte, _]) -> Int:
     var offset = 0
     while ptr[unsafe_offset=offset]:
@@ -25,9 +25,7 @@ def _strlen(ptr: ImmPointer[Byte, _]) -> Int:
     return offset
 
 
-struct TString[
-    origins: ImmOrigin, //, format_string: StaticString, *Ts: Writable
-](Movable, Writable):
+struct TString[origins: ImmOrigin, //, *Ts: Writable](Movable, Writable):
     """A template string that captures interpolated values at compile-time.
 
     TString is a zero-cost abstraction for string interpolation that preserves
@@ -41,7 +39,6 @@ struct TString[
 
     Parameters:
         origins: The origin of the interpolated values.
-        format_string: The compile-time format string template.
         Ts: The types of the interpolated values.
     """
 
@@ -49,21 +46,29 @@ struct TString[
         origin=Self.origins, element_trait=Writable, False, *Self.Ts
     ]
     var _values: Self._InjectedValues
+    var _encoded: ImmPointer[Byte, ImmStaticOrigin]
+    """The template's NUL-separated literal parts, encoded at construction."""
 
     @doc_hidden
-    @always_inline
-    def __init__(out self, *, var pack: Self._InjectedValues):
+    @inline(.always)
+    def __init__(
+        out self,
+        *,
+        var pack: Self._InjectedValues,
+        encoded: ImmPointer[Byte, ImmStaticOrigin],
+    ):
         self._values = pack^
+        self._encoded = encoded
 
-    @always_inline
+    @inline(.always)
     def _write_to_impl(
-        self, mut writer: Some[Writer], encoded_bytes: ImmSpan[Byte, _]
+        self, mut writer: Some[Writer], encoded_bytes: ImmPointer[Byte, _]
     ):
         var offset = 0
 
-        @always_inline
-        def write_string() {imm encoded_bytes, imm offset, mut writer} -> Int:
-            var literal_start = encoded_bytes.unsafe_ptr().unsafe_offset(offset)
+        @inline(.always)
+        def write_string() {mut writer, imm} -> Int:
+            var literal_start = encoded_bytes.unsafe_offset(offset)
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
                 unsafe_from_utf8=Span(
@@ -88,30 +93,14 @@ struct TString[
 
         This method implements the `Writable` trait by formatting the TString's
         template with its interpolated values and writing the result to the
-        provided writer. The format string is compiled at compile-time for
-        optimal performance.
+        provided writer.
 
         Args:
             writer: The writer to output the formatted string to.
         """
-        comptime length = _count_encoded_bytes(Self.format_string)
-        comptime bytes = _encoded_bytes[length](Self.format_string)
+        self._write_to_impl(writer, self._encoded)
 
-        def tuple_to_span(
-            ref bytes: type_of(bytes),
-        ) -> Span[Byte, origin_of(bytes)]:
-            return {
-                unsafe_ptr = Pointer(to=bytes).unsafe_bitcast[Byte](),
-                length = length,
-            }
-
-        if __is_run_in_comptime_interpreter:
-            self._write_to_impl(writer, tuple_to_span(materialize[bytes]()))
-        else:
-            ref global_bytes = global_constant[bytes]()
-            self._write_to_impl(writer, tuple_to_span(global_bytes))
-
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write a debug representation of the TString to a writer.
 
@@ -134,21 +123,16 @@ struct TString[
             self_ptr[]._values._write_to[is_repr=True](writer, start="", end="")
 
         fmt.FormatStruct(writer, "TString").params(
-            fmt.Repr(self.format_string),
             fmt.TypeNames[*Self.Ts](),
         ).fields(fields)
 
 
-@always_inline
+@inline(.always)
 def __make_tstring[
     format_string: __mlir_type.`!kgen.string`, *Ts: Writable
 ](
     *args: *Ts,
-    out tstring: TString[
-        origins=ImmOrigin(type_of(args).origin),
-        StaticString(format_string),
-        *Ts,
-    ],
+    out tstring: TString[origins=ImmOrigin(type_of(args).origin), *Ts],
 ):
     """Compiler entry point for creating TStrings from t-string expressions.
 
@@ -167,7 +151,15 @@ def __make_tstring[
     Returns:
         The constructed TString object.
     """
-    tstring = {pack = rebind_var[type_of(tstring)._InjectedValues](args.copy())}
+    comptime fmt_str = StaticString(format_string)
+    comptime length = _count_encoded_bytes(fmt_str)
+    comptime bytes = _encoded_bytes[length](fmt_str)
+
+    ref global_bytes = global_constant[bytes]()
+    tstring = {
+        pack = rebind_var[type_of(tstring)._InjectedValues](args.copy()),
+        encoded = Pointer(to=global_bytes).unsafe_bitcast[Byte](),
+    }
 
 
 def _count_encoded_bytes(format: StaticString) -> Int:
@@ -243,7 +235,7 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
     # using `bytes[i]` as it puts less stress on the comptime interpreter
     # resulting in better compile times.
 
-    @always_inline
+    @inline(.always)
     def peek_next_is(byte: Byte) {imm} -> Bool:
         return (
             i + 1 < len(bytes)

@@ -1,9 +1,3 @@
-# ===----------------------------------------------------------------------=== #
-#
-# This file is Modular Inc proprietary.
-#
-# ===----------------------------------------------------------------------=== #
-
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bazel:api.bzl", "mojo_binary")
 

@@ -59,9 +59,15 @@ def _dequant_mxfp4_to_fp8_kernel[
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
 ](
-    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
-    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
-    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    output: TileTensor[
+        out_dtype, output_layout, MutAnyOrigin, Engine=output_engine
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, MutAnyOrigin, Engine=input_engine
+    ],
+    scales: TileTensor[
+        scales_dtype, scales_layout, MutAnyOrigin, Engine=scales_engine
+    ],
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -126,7 +132,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def dequant_mxfp4[
     *, SF_VECTOR_SIZE: Int = 32
 ](
@@ -253,7 +259,7 @@ def _cast_bf16_to_fp8(
     comptime assert in_tt.flat_rank == 2, "input must be rank 2"
     comptime assert out_tt.mut, "output must be mutable"
 
-    @always_inline
+    @inline(.always)
     def cast_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 2, "cast_fn only supports rank-2 tensors"
         out_tt.store[width=width](

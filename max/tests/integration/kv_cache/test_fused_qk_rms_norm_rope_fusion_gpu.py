@@ -37,9 +37,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import fused_qk_rms_norm_rope_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from max.nn.kv_cache import MHAKVCacheParams
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 pytestmark = pytest.mark.skipif(
     accelerator_count() == 0,
@@ -154,28 +153,15 @@ def _build_graph(
         freqs_cis = g.inputs[2].tensor
         q_gamma = g.inputs[3].tensor
         k_gamma = g.inputs[4].tensor
-        (
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            _dispatch_metadata,
-        ) = g.inputs[5:]
-
         if combined_width is not None:
             # slice + reshape carve Q out of the combined buffer; both fold into
             # the kernel's Q read lambda via input-prologue fusion.
             inp = inp[:, HEAD_DIM : HEAD_DIM + Q_WIDTH]
             inp = inp.reshape([inp.shape[0], NUM_Q_HEADS, HEAD_DIM])
 
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            max_prompt_length.tensor,
-            max_cache_length.tensor,
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(
+            iter(g.inputs[5:])
+        ).inputs[0]
         q = fused_qk_rms_norm_rope_ragged(
             kv_params,
             inp,
@@ -232,19 +218,9 @@ def _run(
 
     # Allocate the paged cache for the batch. Its contents are irrelevant to Q,
     # which is computed purely from the projection.
-    kv_manager = PagedKVCacheManager(
-        _kv_params(dtype),
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
+    kv_rt = paged_kv_cache_inputs(
+        _kv_params(dtype), PROMPT_LENS, total_num_pages=8
     )
-    batch = [
-        create_text_context(np.empty(n, dtype=np.int64)) for n in PROMPT_LENS
-    ]
-    for ctx in batch:
-        kv_manager.claim(ctx)
-        kv_manager.alloc(ctx)
-    kv_rt = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     assert kv_rt.attention_dispatch_metadata is not None
 
     if combined_width is None:
@@ -261,12 +237,7 @@ def _run(
         _to_device(_rope_freqs(rope_dim), dtype, device),
         _to_device(gamma, dtype, device),  # q_gamma
         _to_device(gamma, dtype, device),  # k_gamma
-        kv_rt.kv_blocks,
-        kv_rt.cache_lengths,
-        kv_rt.lookup_table,
-        kv_rt.max_prompt_length,
-        kv_rt.max_cache_length,
-        kv_rt.attention_dispatch_metadata,
+        *kv_rt.flatten(),
     ]
     (result,) = model.execute(*inputs)
     assert isinstance(result, Buffer)

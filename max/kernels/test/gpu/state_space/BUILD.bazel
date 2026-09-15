@@ -117,6 +117,7 @@ _KDA_DEPS = {
     "test_kda_chunk_parallel.mojo": ["//Kernels/lib/kda"],
     "test_kda_decode_batch_independence.mojo": ["//Kernels/lib/kda"],
     "test_kda_gpu.mojo": ["//Kernels/lib/kda"],
+    "test_kda_reference.mojo": ["//Kernels/lib/kda"],
     "bench_kda_chunk_parallel.mojo": ["//Kernels/lib/kda"],
     "bench_sm100_kda_bt16.mojo": ["//Kernels/lib/kda"],
     "bench_sm100_kda_prefill_m128.mojo": ["//Kernels/lib/kda"],

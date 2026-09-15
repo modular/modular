@@ -175,6 +175,32 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    enable_spec_decode_mixed_batches: bool = Field(
+        default=False,
+        description=(
+            "When enabled with speculative decoding, prefill requests are "
+            "batched into decode steps (implies in-flight batching) and the "
+            "decode rows keep verifying their draft tokens instead of "
+            "advancing draft-less. Architectures that do not declare "
+            "``supports_spec_decode_mixed_batches`` fall back to plain "
+            "in-flight batching."
+        ),
+    )
+
+    prefill_coalesce_min_pending: int = Field(
+        default=0,
+        description=(
+            "Under in-flight batching each replica holds queued fresh prefill "
+            "requests until enough can share one decode step. The same number "
+            "is used two ways. Prefills are released once this many are "
+            "queued. A held prefill is also released after this many decode "
+            "steps so it never waits indefinitely. Holding keeps more steps "
+            "pure decode so they can replay the captured graph. A step "
+            "holding a prefill request runs eager. The default of 0 holds "
+            "nothing back."
+        ),
+    )
+
     eplb_replicas_per_gpu: int = Field(
         default=0,
         description=(
@@ -259,16 +285,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    fold_sampler_into_graph: bool = Field(
-        default=True,
+    experimental_device_graph_synthesis: bool = Field(
+        default=False,
         description=(
-            "Fold greedy token selection (argmax) into the captured forward "
-            "graph so a single device-graph replay materializes the sampled "
-            "token, avoiding a separate sampler submission and its blocking "
-            "readback. Only takes effect for all-greedy decode batches on "
-            "architectures that emit the folded token output (Nemotron-H); "
-            "any non-greedy request falls back to the separate sampler. "
-            "Default on."
+            "Compile model graphs with device-graph synthesis: the compiled "
+            "model constructs a device graph directly and executes it on "
+            "model forward passes. This is an experimental alternative to the "
+            "capture/replay workflow. Honored only by "
+            "architectures that opt in, and mutually exclusive with "
+            "``device_graph_capture``. "
+            "Use ``--experimental-device-graph-synthesis`` to enable."
         ),
     )
 
@@ -277,21 +303,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Skip validation of user provided flags against the architecture's "
             "required arguments."
-        ),
-    )
-
-    max_pending_futures: int = Field(
-        default=1,
-        description=(
-            "Maximum number of unrealized future-token placeholders a request "
-            "may hold at once. The default of 1 is the classic overlap-"
-            "scheduler depth: one forward in flight per request. A value of 2 "
-            "enables experimental schedule-ahead decoding in the overlap "
-            "pipeline: two forwards stay in flight and each step's outputs "
-            "are consumed one step late, for pure-greedy token-generation "
-            "batches only (other batches drain to the classic depth). Not "
-            "supported with speculative decoding; prefill-only workers pin "
-            "to 1."
         ),
     )
 
@@ -395,9 +406,9 @@ class PipelineRuntimeConfig(ConfigFileModel):
     prefer_module_v3: bool = Field(
         default=False,
         description=(
-            "Whether to prefer the eager API architecture over the graph API architecture. "
+            "Whether to prefer the ModuleV3 architecture over the graph API architecture. "
             "When ``False`` (default), the inference server uses the graph API architecture. "
-            "When ``True``, the server uses the eager API architecture when available and "
+            "When ``True``, the server uses the ModuleV3 architecture when available and "
             "falls back to the graph API architecture."
         ),
     )

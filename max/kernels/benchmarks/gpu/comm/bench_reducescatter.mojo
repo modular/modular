@@ -35,7 +35,7 @@ from max.benchmark import (
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from layout import Idx, TileTensor, row_major
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
@@ -47,7 +47,7 @@ from internal_utils import (
 from std.testing import assert_almost_equal, assert_true
 
 
-@always_inline
+@inline(.always)
 @__parameter
 def _per_gpu_value[
     dtype: DType,
@@ -138,7 +138,7 @@ def bench_reducescatter_2d[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -217,11 +217,11 @@ def bench_reducescatter_2d[
             )
         list_of_ctx[i].synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_iter_2d(
         mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_bufs, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_bufs, imm}:
@@ -231,6 +231,9 @@ def bench_reducescatter_2d[
                     row_major(M, D),
                 )
 
+            # `reducescatter` takes a world-view output array (every device's
+            # own partition, indexed by global rank); `out_bufs` is already
+            # that array.
             reducescatter[
                 dtype=dtype,
                 ngpus=ngpus,
@@ -238,7 +241,7 @@ def bench_reducescatter_2d[
                 axis=axis,
             ](
                 in_bufs,
-                out_bufs[ctx_idx],
+                out_bufs,
                 rank_sigs,
                 ctx_inner,
                 max_num_blocks,
@@ -379,7 +382,7 @@ def bench_reducescatter[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -450,11 +453,11 @@ def bench_reducescatter[
         )
         list_of_ctx[i].synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut in_bufs, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_bufs, imm}:
@@ -466,7 +469,7 @@ def bench_reducescatter[
 
             reducescatter[dtype=dtype, ngpus=ngpus, use_multimem=use_multimem](
                 in_bufs,
-                out_bufs[ctx_idx],
+                out_bufs,
                 rank_sigs,
                 ctx_inner,
                 max_num_blocks,

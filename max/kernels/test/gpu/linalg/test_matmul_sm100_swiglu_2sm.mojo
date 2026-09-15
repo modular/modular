@@ -172,9 +172,9 @@ def test_swiglu[
 
     vendor_blas.matmul(
         ctx,
-        full_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
+        full_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=True,
     )

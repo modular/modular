@@ -15,15 +15,67 @@
 
 from __future__ import annotations
 
-__all__ = ["PipelineTokenizer", "TokenizerEncoded", "UnboundContextType"]
+__all__ = [
+    "PipelineTokenizer",
+    "PreprocessedImageProbe",
+    "TokenizerEncoded",
+    "UnboundContextType",
+]
 
-from typing import Protocol, TypeVar, runtime_checkable
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from max.pipelines.request import RequestType
+
+if TYPE_CHECKING:
+    from .pipeline_variants.text_generation import (
+        TextGenerationRequestMessage,
+    )
 
 # TODO: Bound this to TextContext, after we've audited the class.
 UnboundContextType = TypeVar("UnboundContextType", covariant=True)
 TokenizerEncoded = TypeVar("TokenizerEncoded")
+
+
+@runtime_checkable
+class PreprocessedImageProbe(Protocol):
+    """Optional tokenizer capability: report already-preprocessed images.
+
+    A tokenizer that caches preprocessed image tensors implements this so the
+    API server can skip the pixel decode for an image whose tensor it already
+    holds -- nothing downstream reads those pixels. A tokenizer without such a
+    cache simply does not implement it, and every image is decoded as before.
+
+    Declared as a protocol rather than read off the tokenizer with
+    ``getattr``, because unlike the model-specific media *limits* the route
+    also reads (plain data attributes with safe defaults) this is a callable
+    carrying a positional-argument contract and a length invariant. The
+    protocol is what states them.
+    """
+
+    def preprocessed_image_mask(
+        self,
+        images: list[bytes],
+        messages: list[TextGenerationRequestMessage],
+    ) -> Sequence[bool]:
+        """Which of ``images`` this tokenizer can already serve preprocessed.
+
+        Must not decode, mutate or cache anything: the API server calls it on
+        the event loop before deciding what to decode, and the answer is only
+        a hint. An entry may be evicted between this call and tokenization, so
+        a ``True`` that later misses must remain correct (the image is simply
+        decoded then).
+
+        Args:
+            images: Raw encoded bytes per image, in request order.
+            messages: The request's messages, carrying any per-image sizing
+                hints that the cache key folds in.
+
+        Returns:
+            One flag per entry in ``images``, in the same order. Returning a
+            different length is a contract violation.
+        """
+        ...
 
 
 @runtime_checkable

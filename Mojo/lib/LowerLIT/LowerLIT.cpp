@@ -261,7 +261,7 @@ flattenNameAndReinsertOp(T op, SymbolTable &symbolTable,
   else
     op->remove();
 
-  op.setName(mangled.mangled);
+  op.setSymbolName(mangled.mangled);
   symbolTable.insert(op, mainSymbolTablePosIter);
   return mangled.mangled;
 }
@@ -284,7 +284,7 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   // If this function has a subprogram attached, update its information to
   // account for the new name.
   if (newName != func.getSymNameAttr()) {
-    func.setName(newName);
+    func.setSymbolName(newName);
     DebugInfo::updateSubprogram(func, newName);
   }
 
@@ -398,8 +398,11 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   auto region = ParamDeclareRegionOp::create(
       b, /*sym_name=*/nullptr, /*sym_visibility=*/nullptr, decl, sourceName,
       func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
-      func.getInlineLevel(), func.getLinkageNameAttr(),
+      func.getInlineLevelAttr(), func.getLinkageNameAttr(),
       func.getLLVMMetadataArray(), func.getLLVMArgMetadataArray());
+  // The convenience builder only takes a level, so an unfolded
+  // `@inline(expr)` has to be carried over separately.
+  region.setInlineLevelAttr(func.getInlineLevelAttr());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }

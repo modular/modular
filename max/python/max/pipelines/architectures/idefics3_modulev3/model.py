@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device
@@ -45,6 +44,7 @@ from max.pipelines.weights.weight_loading import (
 )
 
 from .batch_processor import Idefics3ModuleV3BatchProcessor
+from .inputs import Idefics3Inputs
 from .model_config import Idefics3Config
 from .text_model.idefics3_text import Idefics3Language
 from .vision_model.idefics3_vision import Idefics3VisionModel
@@ -73,23 +73,6 @@ def _assert_image_embeddings_invariant(
         f"Vision embedding shape mismatch: {embed_count} embeddings "
         f"but {indices_count} indices."
     )
-
-
-@dataclass
-class Idefics3Inputs(ModelInputs):
-    """Inputs for the Idefics3 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-
-    # Vision inputs
-    pixel_values: Buffer | None = None
-    image_token_indices: Buffer | None = None
-
-    @property
-    def has_vision_inputs(self) -> bool:
-        return self.pixel_values is not None
 
 
 class Idefics3Model(

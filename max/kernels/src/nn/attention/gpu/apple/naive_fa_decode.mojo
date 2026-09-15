@@ -79,7 +79,7 @@ comptime NEG_INF = Float32(-3.0e38)
 comptime NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM = 256
 
 
-@always_inline
+@inline(.always)
 def naive_fa_decode_apple_supports_depth(depth: Int) -> Bool:
     """Whether this kernel has a `Depth` specialization for `depth`.
 
@@ -103,7 +103,7 @@ def naive_fa_decode_apple_supports_depth(depth: Int) -> Bool:
     )
 
 
-@always_inline
+@inline(.always)
 def _apple_simd_sum(val: Float32) -> Float32:
     """Sum `val` across the simdgroup (broadcast to all lanes).
 
@@ -112,7 +112,7 @@ def _apple_simd_sum(val: Float32) -> Float32:
     return llvm_intrinsic["llvm.air.simd_sum", Float32](val)
 
 
-@always_inline
+@inline(.always)
 def _ml_idx(
     b: Int, head: Int, split: Int, num_heads: Int, num_partitions: Int
 ) -> Int:
@@ -120,7 +120,7 @@ def _ml_idx(
     return (b * num_heads + head) * num_partitions + split
 
 
-@always_inline
+@inline(.always)
 def _o_idx(
     b: Int,
     head: Int,
@@ -704,7 +704,7 @@ def naive_fa_decode_apple[
     # Flat 1D TileTensor views over the q/output/partial buffers. The kernels
     # bake the per-(batch, head, split, depth) offset into a linear index
     # (`_o_idx`/`_ml_idx`) and the BSHD/ragged q/out offset, so the flat views
-    # just carry the device pointers with TileTensor typing (no raw pointers /
+    # just carry the storage handles with TileTensor typing (no raw pointers /
     # DeviceBuffer-as-pointer inside the kernels).
     var q_flat = TileTensor(
         q.ptr.as_imm().as_unsafe_any_origin(),
@@ -718,27 +718,12 @@ def naive_fa_decode_apple[
         valid_length.ptr.as_imm().as_unsafe_any_origin(),
         row_major(Coord(Int(valid_length.size()))),
     )
-    var o_partial_t = TileTensor(
-        o_partial_dev.unsafe_ptr(), row_major(Coord(o_partial_n))
-    )
-    var m_partial_t = TileTensor(
-        m_partial_dev.unsafe_ptr(), row_major(Coord(ml_partial_n))
-    )
-    var l_partial_t = TileTensor(
-        l_partial_dev.unsafe_ptr(), row_major(Coord(ml_partial_n))
-    )
-    var o_partial_imm = TileTensor(
-        o_partial_dev.unsafe_ptr().as_imm().as_unsafe_any_origin(),
-        row_major(Coord(o_partial_n)),
-    )
-    var m_partial_imm = TileTensor(
-        m_partial_dev.unsafe_ptr().as_imm().as_unsafe_any_origin(),
-        row_major(Coord(ml_partial_n)),
-    )
-    var l_partial_imm = TileTensor(
-        l_partial_dev.unsafe_ptr().as_imm().as_unsafe_any_origin(),
-        row_major(Coord(ml_partial_n)),
-    )
+    var o_partial_t = TileTensor(o_partial_dev, row_major(Coord(o_partial_n)))
+    var m_partial_t = TileTensor(m_partial_dev, row_major(Coord(ml_partial_n)))
+    var l_partial_t = TileTensor(l_partial_dev, row_major(Coord(ml_partial_n)))
+    var o_partial_imm = o_partial_t.as_immut()
+    var m_partial_imm = m_partial_t.as_immut()
+    var l_partial_imm = l_partial_t.as_immut()
 
     # Sink weights: a nullable `OptionalReg[TileTensor]` passed by value (NOT a
     # dangling `UnsafePointer` -- KB `unsafepointer-is-non-nullable`). When

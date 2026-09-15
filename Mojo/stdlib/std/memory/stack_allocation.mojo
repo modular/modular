@@ -25,7 +25,7 @@ from std.sys import align_of, is_gpu
 from std._plugin import CurrentPlugin
 
 
-@always_inline
+@inline(.always)
 def unsafe_stack_allocation[
     count: Int,
     dtype: DType,
@@ -61,7 +61,7 @@ comptime _StackAllocationPluginHookFnType[address_space: AddressSpace] = def[
 """Plugin-hook signature for `PluginHooks.stack_allocation_fn`; keep in sync with `unsafe_stack_allocation`."""
 
 
-@always_inline
+@inline(.always)
 def unsafe_stack_allocation[
     count: Int,
     type: AnyType,
@@ -94,7 +94,7 @@ def unsafe_stack_allocation[
                 _mlir_value = __mlir_op.`pop.global_alloc`[
                     name=_get_kgen_string[global_name](),
                     count=count.__mlir_index__(),
-                    memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
+                    memoryType=__mlir_attr.`#pop.global_alloc_addr_space<gpu_shared>`,
                     _type=Pointer[
                         type, MutUntrackedOrigin, address_space=address_space
                     ]._mlir_type,
@@ -150,7 +150,7 @@ def unsafe_stack_allocation[
     }
 
 
-@always_inline
+@inline(.always)
 def stack_allocation[
     count: Int,
     dtype: DType,
@@ -179,7 +179,7 @@ def stack_allocation[
     ]()
 
 
-@always_inline
+@inline(.always)
 def stack_allocation[
     count: Int,
     type: AnyType,

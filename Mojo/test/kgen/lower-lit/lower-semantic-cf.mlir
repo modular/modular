@@ -880,32 +880,30 @@ lit.fn @self_recursive_arg_diff(%a: index) -> !kgen.none {
 // CHECK-NEXT: %idx0 = index.constant 0
 // CHECK-NEXT: %idx1 = index.constant 1
 // CHECK-NEXT: %idx2 = index.constant 2
-// CHECK-NEXT: %0 = hlcf.elif -> index {
 // CHECK-NEXT: [[V1:%*.]] = index.cmp eq(%arg0, %idx0)
 // CHECK-NEXT: [[V1SB:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
-// CHECK-NEXT: hlcf.elif.yield [[V1SB]]
-// CHECK-NEXT: } then {
-// CHECK-NEXT: hlcf.yield %arg0 : index
-// CHECK-NEXT: } {
+// CHECK-NEXT: [[V0:%.*]] = hlcf.elif [[V1SB]] -> index {
+// CHECK-NEXT:   hlcf.yield %arg0 : index
+// CHECK-NEXT: } else {
 // CHECK-NEXT: [[V2:%*.]] = index.cmp eq(%arg0, %idx1)
 // CHECK-NEXT: [[V2SB:%.*]] = pop.cast_from_builtin [[V2]] : i1 to !kgen.scalar<bool>
 // CHECK-NEXT: hlcf.elif.yield [[V2SB]]
 // CHECK-NEXT: } then {
-// CHECK-NEXT: kgen.return %arg1 : index
+// CHECK-NEXT:   kgen.return %arg1 : index
 // CHECK-NEXT: } else {
 // CHECK-NEXT: kgen.return %arg1 : index
+// CHECK-NEXT: }
+// CHECK-NEXT: kgen.return %2 : index
 // CHECK-NEXT: }
 lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %idx2 = index.constant 2
-  %0 = hlcf.elif -> index {
-    %c = index.cmp eq(%arg0, %idx0)
-    %c_sb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
-    hlcf.elif.yield %c_sb
-  } then {
+  %c0 = index.cmp eq(%arg0, %idx0)
+  %c0_sb = pop.cast_from_builtin %c0 : i1 to !kgen.scalar<bool>
+  %0 = hlcf.elif %c0_sb -> index {
     hlcf.yield %arg0 : index
-  } {
+  } else {
     %c = index.cmp eq(%arg0, %idx1)
     %c_sb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
     hlcf.elif.yield %c_sb
@@ -919,6 +917,46 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   kgen.return %0 : index
 }
 
+
+// CHECK-LABEL: lit.fn @elif_2
+// CHECK-NEXT: %idx0 = index.constant 0
+// CHECK-NEXT: %idx1 = index.constant 1
+// CHECK-NEXT: %idx2 = index.constant 2
+// CHECK-NEXT: [[V1:%*.]] = index.cmp eq(%arg0, %idx0)
+// CHECK-NEXT: [[V1SB:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
+// CHECK-NEXT: [[V0:%.*]] = hlcf.elif [[V1SB]] -> index {
+// CHECK-NEXT:   hlcf.yield %arg0 : index
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   %simd = kgen.param.constant: scalar<bool> = <true>
+// CHECK-NEXT:   hlcf.elif.yield %simd
+// CHECK-NEXT: } then {
+// CHECK-NEXT:   kgen.return %arg1 : index
+// CHECK-NEXT: } else {
+// CHECK-NEXT:   kgen.unreachable
+// CHECK-NEXT: }
+// CHECK-NEXT: kgen.return %2 : index
+// CHECK-NEXT: }
+lit.fn @elif_2(%arg0: index, %arg1: index, %arg2: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %c0 = index.cmp eq(%arg0, %idx0)
+  %c0_sb = pop.cast_from_builtin %c0 : i1 to !kgen.scalar<bool>
+  %0 = hlcf.elif %c0_sb -> index {
+    hlcf.yield %arg0 : index
+  } else {
+    %simd = kgen.param.constant: scalar<bool> = <true>
+    hlcf.elif.yield %simd
+  } then {
+    lit.return %arg1 : index
+    hlcf.yield %arg1 : index
+  } else {
+    // expected-warning @+1 {{unreachable code after 'if True'}}
+    lit.return %arg1 : index
+    hlcf.yield %arg2 : index
+  }
+  kgen.return %0 : index
+}
 
 // COM: https://github.com/modularml/modular/issues/33570
 // COM: When cloning the finally block, we must uniquely mangle parameters to
@@ -1051,9 +1089,7 @@ lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
 
 // CHECK-LABEL: lit.fn @containsEarlyReturn
 lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
-  // CHECK: hlcf.elif {
-  // CHECK:     hlcf.elif.yield %arg
-  // CHECK:    } then {
+  // CHECK: hlcf.elif %arg {
   // CHECK:     %none = kgen.param.constant: none = <#kgen.none>
   // CHECK:     kgen.return %none : !kgen.none
   // CHECK:   } else {
@@ -1061,9 +1097,7 @@ lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
   // CHECK:     kgen.return %none : !kgen.none
   // CHECK:   }
   // CHECK:   kgen.unreachable
-  hlcf.elif {
-    hlcf.elif.yield %arg
-  } then {
+  hlcf.elif %arg {
     %none_0 = kgen.param.constant: none = <#kgen.none>
     lit.return %none_0 : !kgen.none
     hlcf.yield
@@ -1083,9 +1117,7 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
 // CHECK-NEXT: kgen.param.if <cond1> {
 // CHECK-NEXT:   kgen.return %rhs : index
 // CHECK-NEXT:  } else {
-// CHECK-NEXT:  hlcf.elif {
-// CHECK-NEXT:    hlcf.elif.yield %cond2
-// CHECK-NEXT:  } then {
+// CHECK-NEXT:  hlcf.elif %cond2 {
 // CHECK-NEXT:    hlcf.yield
 // CHECK-NEXT:  } else {
 // CHECK-NEXT:    hlcf.yield
@@ -1104,9 +1136,7 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
      lit.return %rhs : index
      kgen.param.yield
    } else {
-     hlcf.elif {
-       hlcf.elif.yield %cond2
-     } then {
+     hlcf.elif %cond2 {
        hlcf.yield
      } else {
        hlcf.yield
@@ -1126,31 +1156,26 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
 
-  // CHECK:  hlcf.elif -> index {
-  // CHECK-NEXT: index.cmp eq(%arg0, %idx0)
-  %0 = hlcf.elif -> index {
-    %c = index.cmp eq(%arg0, %idx0)
-    %c_sb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
-    hlcf.elif.yield %c_sb
-  } then {
+  // CHECK:  index.cmp eq(%arg0, %idx0)
+  // CHECK-NEXT: pop.cast_from_builtin
+  // CHECK-NEXT: hlcf.elif {{%.*}} -> index {
+  %c0 = index.cmp eq(%arg0, %idx0)
+  %c0_sb = pop.cast_from_builtin %c0 : i1 to !kgen.scalar<bool>
+  %0 = hlcf.elif %c0_sb -> index {
     hlcf.yield %arg0 : index
   } else {
     hlcf.yield %arg1 : index
   }
-  // CHECK:  hlcf.elif {
-  // CHECK-NEXT:   index.cmp eq(%arg0, %idx1)
+  // CHECK:  index.cmp eq(%arg0, %idx1)
   // CHECK-NEXT:   pop.cast_from_builtin
-  // CHECK-NEXT:   hlcf.elif.yield
-  // CHECK-NEXT: } then {
+  // CHECK-NEXT: hlcf.elif {{%.*}} {
   // CHECK-NEXT:   kgen.return %arg0 : index
   // CHECK-NEXT: } else {
   // CHECK-NEXT:   kgen.return %arg1 : index
   // CHECK-NEXT: }
-  hlcf.elif {
-    %c = index.cmp eq(%arg0, %idx1)
-    %c_sb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
-    hlcf.elif.yield %c_sb
-  } then {
+  %c1 = index.cmp eq(%arg0, %idx1)
+  %c1_sb = pop.cast_from_builtin %c1 : i1 to !kgen.scalar<bool>
+  hlcf.elif %c1_sb {
     lit.return %arg0 : index
     hlcf.yield
   } else {
@@ -1236,9 +1261,7 @@ lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
     kgen.param.yield
   } else {
     %runbool_sb = pop.cast_from_builtin %runbool : i1 to !kgen.scalar<bool>
-    hlcf.elif {
-      hlcf.elif.yield %runbool_sb
-    } then {
+    hlcf.elif %runbool_sb {
       hlcf.yield
     } else {
       hlcf.yield
@@ -1272,5 +1295,58 @@ lit.fn @dead_code_after_param_assert_false<cond: i1>() -> !kgen.none {
   // expected-warning @+1 {{unreachable code after compile-time assertion failure}}
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
+  lit.end_fn
+}
+
+// CHECK-LABEL: lit.fn @match_pass_through
+lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
+  // CHECK: hlcf.match
+  hlcf.match {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
+      // CHECK: hlcf.match.complete
+      hlcf.match.complete
+    } else {
+      // CHECK: hlcf.match.next
+      hlcf.match.next
+    }
+    kgen.unreachable
+  }
+  case {
+    // Second case can match.next, so the else remains reachable.
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
+      // CHECK: hlcf.match.complete
+      hlcf.match.complete
+    } else {
+      // CHECK: hlcf.match.next
+      hlcf.match.next
+    }
+    kgen.unreachable
+  }
+  else {
+    // CHECK: hlcf.yield
+    hlcf.yield
+  }
+  // CHECK: kgen.return %a : i32
+  lit.return %a : i32
+  lit.end_fn
+}
+
+// CHECK-LABEL: lit.fn @match_no_fallthrough
+lit.fn @match_no_fallthrough(%a: i32) -> i32 {
+  // CHECK: hlcf.match
+  hlcf.match {
+    // CHECK: hlcf.match.next
+    hlcf.match.next
+  }
+  else {
+    // CHECK: kgen.return %a : i32
+    lit.return %a : i32
+    hlcf.yield
+  }
+  // CHECK: kgen.unreachable
+  // expected-warning @+1 {{unreachable code after match statement that does not fall through}}
+  lit.return %a : i32
   lit.end_fn
 }

@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "pkg_files", "strip_prefix")
+
+package(default_visibility = ["//Mojo:consumers"])
+
+pkg_files(
+    name = "docs",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "compiler/BUILD.bazel",
+        ],
+    ),
+    strip_prefix = strip_prefix.from_pkg(""),
+    tags = ["manual"],
+)

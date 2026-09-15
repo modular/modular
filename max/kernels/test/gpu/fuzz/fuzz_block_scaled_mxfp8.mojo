@@ -121,7 +121,6 @@ def run_one_case(
     var b_host_ptr = ctx.enqueue_create_host_buffer[a_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_ptr = ctx.enqueue_create_host_buffer[out_dtype](c_size)
-    var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[out_dtype](c_size)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -240,18 +239,13 @@ def run_one_case(
 
     if check:
         # Higher-precision reference: cuBLAS with the same E8M0 scales.
-        var a_lt = a_tensor.to_layout_tensor()
-        var b_lt = b_tensor.to_layout_tensor()
-        var a_scales_lt = a_scales_tensor.to_layout_tensor()
-        var b_scales_lt = b_scales_tensor.to_layout_tensor()
-        var c_ref_lt = c_ref_tensor.to_layout_tensor()
         vendor_blas.matmul(
             ctx,
-            c_ref_lt.as_unsafe_any_origin(),
-            a_lt,
-            b_lt,
-            a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
-            b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales=a_scales_tensor,
+            b_scales=b_scales_tensor,
             transpose_b=transpose_b,
             c_row_major=True,
         )

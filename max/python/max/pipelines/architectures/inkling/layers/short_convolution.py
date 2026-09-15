@@ -32,8 +32,6 @@ from max.graph import (
 from max.nn.layer import Module, Shardable
 from max.nn.state_space import causal_conv1d_varlen_fwd
 
-_COMPUTE_DTYPE = DType.float32
-
 
 class ShortConvolution(Module, Shardable):
     """Depthwise causal conv1d with a residual, stateful across decode
@@ -62,11 +60,20 @@ class ShortConvolution(Module, Shardable):
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Splits the convolution channels evenly across devices."""
+        """Splits the channels across devices, or replicates them.
+
+        Replicate suits a caller that convolves per-rank partial sums and
+        reduces afterwards: the convolution is linear, so the result matches
+        convolving the reduced value.
+        """
+        if strategy.is_replicate:
+            self.weight.sharding_strategy = strategy
+            self._sharding_strategy = strategy
+            return
         if not strategy.is_tensor_parallel:
             raise ValueError(
-                "ShortConvolution only supports the tensor parallel sharding "
-                "strategy."
+                "ShortConvolution supports the tensor parallel and replicate "
+                "sharding strategies."
             )
         if self.channels % strategy.num_devices:
             raise ValueError(
@@ -85,12 +92,17 @@ class ShortConvolution(Module, Shardable):
                 "ShortConvolution cannot be sharded: no sharding strategy."
             )
         devices = list(devices)
+        replicated = self._sharding_strategy.is_replicate
         shards = []
         for device, weight in zip(
             devices, self.weight.shard(devices), strict=True
         ):
             sharded = ShortConvolution(
-                channels=self.channels // len(devices),
+                channels=(
+                    self.channels
+                    if replicated
+                    else self.channels // len(devices)
+                ),
                 kernel_size=self.kernel_size,
                 dtype=self.dtype,
                 device=device,
@@ -105,32 +117,31 @@ class ShortConvolution(Module, Shardable):
         conv_state_pool: BufferValue,
         slot_idx: TensorValue,
         input_row_offsets: TensorValue,
+        has_initial_state: TensorValue,
     ) -> TensorValue:
-        """Returns ``x + conv(x)``; updates ``conv_state_pool`` in place."""
+        """Returns ``x + conv(x)``; updates ``conv_state_pool`` in place.
+
+        ``has_initial_state`` is false for a request's first chunk, which has
+        no convolution history: the kernel then reads zeros instead of the
+        slot, so the slot never has to be cleared on admission.
+        """
         device = x.device
         channels, _, kernel_size = self.weight.shape
-        x_f32 = ops.cast(x, _COMPUTE_DTYPE)
 
-        conv = causal_conv1d_varlen_fwd(
-            x_f32,
-            ops.cast(
-                self.weight.reshape([channels, kernel_size]), _COMPUTE_DTYPE
-            ),
+        # The kernel adds the residual and widens to its own accumulator, so
+        # x goes in and comes back at the model dtype.
+        return causal_conv1d_varlen_fwd(
+            x,
+            self.weight.reshape([channels, kernel_size]),
             # No bias tensor at any site; the kernel wants one anyway.
             ops.broadcast_to(
-                ops.constant(0.0, _COMPUTE_DTYPE, device=device), [channels]
+                ops.constant(0.0, x.dtype, device=device), [channels]
             ),
             conv_state_pool,
             ops.cast(input_row_offsets, DType.int32),
             ops.cast(slot_idx, DType.int32),
-            # A freshly claimed slot is zeroed, so reading the pool window is
-            # right at a sequence start too.
-            ops.broadcast_to(
-                ops.constant(True, DType.bool, device=device),
-                [slot_idx.shape[0]],
-            ),
+            has_initial_state,
             activation="none",
             channels_last=True,
+            use_residual=True,
         )
-
-        return ops.cast(conv + x_f32, x.dtype)

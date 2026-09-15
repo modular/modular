@@ -21,7 +21,7 @@
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/Lexer.h"
 #include "Mojo/MojoParser/SharedState.h"
-#include "Mojo/Support/TriState.h"
+#include "Mojo/Support/TriBool.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/MapVector.h"
@@ -39,7 +39,6 @@ class DocStringAttr;
 class DocString;
 class TraitDeclOp;
 class TraitType;
-struct ConstraintFailure;
 
 // TODO(MOCO-4712): This should just be a CValue variant, we should
 // simplify how trait witness are created in general, then it should be merged
@@ -269,8 +268,8 @@ public:
   /// If concreteType is provided, its parameter bindings are used to evaluate
   /// conditional trait conformances. If callerAssumptions is non-empty, those
   /// where-clause assumptions are used to prove unfoldable constraints.
-  TriState doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
-                                    ArrayRef<ConstraintAttr> callerAssumptions);
+  TriBool doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
+                                   ArrayRef<ConstraintAttr> callerAssumptions);
 
   /// Same, additionally collecting the problematic constraints so a diagnosing
   /// caller can name them.
@@ -371,6 +370,11 @@ public:
   /// subexpressions but whose children will be inherited later by a decl being
   /// resolved.
   void takeDecls(ASTDecl &src);
+
+  /// Append the children decls of `src` into this scope (updating their
+  /// `parentDecl`), without replacing existing names already in this scope.
+  /// Used when promoting temporary pattern-binding scopes into a case scope.
+  void mergeDeclsFrom(ASTDecl &src);
 
   /// Anonymous origins, closure impl structs, and potentially other names are
   /// uniqued to avoid collisions. This returns an ID that is unique to this

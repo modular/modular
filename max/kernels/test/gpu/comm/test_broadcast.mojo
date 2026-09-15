@@ -22,12 +22,12 @@ from layout import (
 )
 from std.testing import assert_true
 
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.broadcast import broadcast
 from comm.sync import enable_p2p, init_signal_buffer
 
 
-@always_inline
+@inline(.always)
 @__parameter
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
@@ -112,7 +112,7 @@ def broadcast_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
     for i in range(ngpus):

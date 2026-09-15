@@ -31,6 +31,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
@@ -41,7 +42,9 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Regex.h"
@@ -643,7 +646,12 @@ private:
   void applyExtern(SMLoc decoratorLoc, const CallNode *node);
   void applyExportLike(SMLoc loc, bool isExport, const CallNode *node,
                        IREmitter &emitter);
-  void applyAlwaysInline(const CallNode *node);
+  void applyAlwaysInline(SMLoc decoratorLoc, const CallNode *node);
+  void applyInline(SMLoc decoratorLoc, const CallNode *node);
+
+  /// Set the function's inline spec, diagnosing a second inline decorator that
+  /// disagrees with the one already applied.
+  void trySetInlineLevel(SMLoc loc, StringRef spelling, TypedAttr spec);
   void applyLLVMMetadata(SMLoc decoratorLoc, const CallNode *node);
 
   void applyArgumentless(StringRef spelling, const CallNode *callNode,
@@ -669,6 +677,9 @@ private:
 
   /// The working vector of the LLVMMetadata.
   SmallVector<Attribute> llvmMetadata;
+
+  /// The inline decorator already applied, empty until one is.
+  StringRef inlineSpelling;
 };
 } // namespace
 
@@ -753,10 +764,17 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
     // clear, and this will suppress errors about missing self arguments.
     funcOp.setIsStatic(true);
   } else if (spelling == "always_inline") {
-    applyAlwaysInline(callNode);
+    // Mojo 2.0: remove @always_inline
+    applyAlwaysInline(decorator->getLoc(), callNode);
+  } else if (spelling == "inline") {
+    applyInline(decorator->getLoc(), callNode);
   } else if (spelling == "no_inline") {
-    applyArgumentless(spelling, callNode,
-                      [&]() { funcOp.setInlineLevel(InlineLevel::Never); });
+    // Mojo 2.0: remove @no_inline
+    applyArgumentless(spelling, callNode, [&]() {
+      trySetInlineLevel(
+          decorator->getLoc(), spelling,
+          getInlineLevelAttr(funcOp.getContext(), InlineLevel::Never));
+    });
   } else if (spelling == "__parameter" || spelling == "parameter") {
     // Temporarily accept the legacy `@parameter` spelling with a deprecation
     // warning so the rename to `@__parameter` can land without breaking
@@ -1137,11 +1155,27 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
     getDeclResolver().registerAndCheckExport(*simpleLinkageName, loc);
 }
 
-void FnSigDecorators::applyAlwaysInline(const CallNode *callNode) {
+void FnSigDecorators::trySetInlineLevel(SMLoc loc, StringRef spelling,
+                                        TypedAttr spec) {
+  if (!inlineSpelling.empty() && spec != funcOp.getInlineLevelAttr()) {
+    emitError(loc) << "function has conflicting inline level from a previous '@"
+                   << inlineSpelling << "' decorator";
+    return;
+  }
+  inlineSpelling = spelling;
+  funcOp.setInlineLevelAttr(spec);
+}
+
+// Mojo 2.0: remove @always_inline
+void FnSigDecorators::applyAlwaysInline(SMLoc decoratorLoc,
+                                        const CallNode *callNode) {
+  StringRef spelling = "always_inline";
   size_t numOperands = callNode ? callNode->operands.size() : 0;
   if (numOperands == 0) {
     // `@always_inline` and `@always_inline()` are both allowed.
-    funcOp.setInlineLevel(InlineLevel::Always);
+    trySetInlineLevel(
+        decoratorLoc, spelling,
+        getInlineLevelAttr(funcOp.getContext(), InlineLevel::Always));
     return;
   }
 
@@ -1154,13 +1188,120 @@ void FnSigDecorators::applyAlwaysInline(const CallNode *callNode) {
 
   const Operand &operand = callNode->operands[0];
   if (operand.isPositionalStringLiteral("nodebug")) {
-    funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+    trySetInlineLevel(
+        decoratorLoc, spelling,
+        getInlineLevelAttr(funcOp.getContext(), InlineLevel::AlwaysNoDebug));
   } else if (operand.isPositionalStringLiteral("builtin")) {
-    funcOp.setInlineLevel(InlineLevel::AlwaysBuiltin);
+    trySetInlineLevel(
+        decoratorLoc, spelling,
+        getInlineLevelAttr(funcOp.getContext(), InlineLevel::AlwaysBuiltin));
   } else {
     emitError(callNode->getLoc())
         << "'@always_inline' operand must be \"nodebug\" or \"builtin\"";
   }
+}
+
+/// The level `@inline` takes from `spec`: an error if `spec` folded to a value
+/// the decorator does not accept, or nullopt while it still depends on a
+/// parameter.
+static ErrorOr<std::optional<InlineLevel>>
+inlineDecoratorLevel(TypedAttr spec) {
+  std::optional<int64_t> value = inlineLevelValueOf(spec);
+  if (!value)
+    return std::optional<InlineLevel>();
+  // AlwaysBuiltin is excluded: it also needs the foldability checks
+  // `@always_inline("builtin")` performs.
+  if (std::optional<InlineLevel> level = inlineLevelOf(spec);
+      level && *level != InlineLevel::AlwaysBuiltin)
+    return level;
+  return Error("'@inline' argument " + llvm::Twine(*value) +
+               " is not an InlineLevel; use '.always', '.nodebug', '.never' or "
+               "'.automatic'");
+}
+
+void FnSigDecorators::applyInline(SMLoc decoratorLoc,
+                                  const CallNode *callNode) {
+  size_t numOperands = callNode ? callNode->operands.size() : 0;
+  if (numOperands != 1) {
+    emitError(callNode ? callNode->getLoc() : decoratorLoc)
+        << "'@inline' decorator takes exactly 1 argument, found "
+        << numOperands;
+    return;
+  }
+
+  const Operand &operand = callNode->operands[0];
+  if (!operand.isPositional()) {
+    emitError(operand.getLoc()) << "'@inline' argument must be positional";
+    return;
+  }
+
+  // Strings were the old spelling; say so instead of failing in emitIndex.
+  if (isa<StringLiteralNode>(operand.expr)) {
+    emitError(operand.getLoc())
+        << "'@inline' argument must be an InlineLevel, not a string; use "
+           "'.always', '.nodebug', '.never' or '.automatic'";
+    return;
+  }
+
+  // `InlineLevel` conforms to `Equatable`, whose own members carry this
+  // decorator, so evaluating the argument as a value can need the decorator
+  // being resolved. Map the shorthand by name to stay out of that cycle;
+  // everything else falls through to the type checked path below.
+  if (auto *shorthand = dyn_cast<InferredAttributeRefNode>(operand.expr)) {
+    std::optional<InlineLevel> level =
+        llvm::StringSwitch<std::optional<InlineLevel>>(shorthand->spelling)
+            .Case("automatic", InlineLevel::Automatic)
+            .Case("always", InlineLevel::Always)
+            .Case("nodebug", InlineLevel::AlwaysNoDebug)
+            .Case("never", InlineLevel::Never)
+            .Default(std::nullopt);
+    if (level) {
+      trySetInlineLevel(decoratorLoc, "inline",
+                        getInlineLevelAttr(funcOp.getContext(), *level));
+      return;
+    }
+  }
+
+  // The contextual type is what lets the argument be written as `.always`,
+  // and makes anything else a type error at its own location.
+  ASTType levelType =
+      shared.lookupBuiltinType("InlineLevel", decl, operand.getLoc());
+  if (levelType.isTypeCheckErrorType())
+    return;
+
+  IREmitter emitter(sigDecl, EC_Decorator);
+  PValue pvalue = emitter.emitExprPValue(operand.expr, EC_Decorator, levelType);
+  // `emitExprPValue` has already said why.
+  if (!pvalue)
+    return;
+
+  // `InlineLevel` holds an `Int`, which is a SIMD scalar, so the level sits
+  // two fields deep.
+  SMLoc loc = operand.getLoc();
+  TypedAttr boxed =
+      ASTType::extractStructField(pvalue.get(), "_value", loc, shared);
+  if (!boxed)
+    return;
+  // The first field read leaves a rebind wrapper, which the second one cannot
+  // see through.
+  TypedAttr level = ASTType::extractStructField(stripIdentityWrappers(boxed),
+                                                "_mlir_value", loc, shared);
+  if (!level)
+    return;
+
+  // Recording a known level as itself keeps two decorators that agree from
+  // reading as a conflict.
+  ErrorOr<std::optional<InlineLevel>> known = inlineDecoratorLevel(level);
+  if (const char *rejection = known.getError()) {
+    emitError(operand.getLoc()) << rejection;
+    return;
+  }
+  if (*known) {
+    trySetInlineLevel(decoratorLoc, "inline",
+                      getInlineLevelAttr(funcOp.getContext(), **known));
+    return;
+  }
+  trySetInlineLevel(decoratorLoc, "inline", level);
 }
 
 void FnSigDecorators::applyArgumentless(StringRef spelling,
@@ -1319,12 +1460,14 @@ void FnSigDecorators::applyLLVMArgMetadata(SMLoc decoratorLoc,
 
 void FnSigDecorators::finalize() {
   if (funcOp.isExternal()) {
-    if (funcOp.getInlineLevel() != InlineLevel::Never &&
-        funcOp.getInlineLevel() != InlineLevel::Automatic) {
+    if (inlineLevelOrAutomatic(funcOp.getInlineLevel()) != InlineLevel::Never &&
+        inlineLevelOrAutomatic(funcOp.getInlineLevel()) !=
+            InlineLevel::Automatic) {
       emitError(funcOp.getLoc(), "extern functions cannot be inlined");
       return;
     }
-    funcOp.setInlineLevel(InlineLevel::Never);
+    funcOp.setInlineLevelAttr(
+        getInlineLevelAttr(funcOp.getContext(), InlineLevel::Never));
   }
 
   // If we've an exported function with no explicit linkage name, set it now.
@@ -1472,8 +1615,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
     }
   }
   Value closureInstance =
-      emitter.emitClosure(*moduleDecl, nestedFnDecl, captures,
-                          cast<TraitDeclOp>(closureTrait->getIfOperation()),
+      emitter.emitClosure(*moduleDecl, nestedFnDecl, captures, *closureTrait,
                           mlirLoc, isCopyable, closureSig, capturedRefs);
   if (!closureInstance)
     return {};
@@ -2136,7 +2278,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   fnSignature.parseResultIfPresent(p);
 
   // Parse trailing body constraints if present.
-  if (failed(parsedParamList.parseTrailingConstraintsIfPresent(p)))
+  if (failed(parsedParamList.parseTrailingConstraintsIfPresent(
+          p, decl.getIndentation())))
     return failure();
 
   // Reject where clauses on trait methods. Users almost certainly expect
@@ -2567,9 +2710,11 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
 
   // If this function is @always_inline("builtin"), check that its body obeys
   // the right invariants.
-  if (funcOp.getInlineLevel() == InlineLevel::AlwaysBuiltin) {
+  if (inlineLevelOrAutomatic(funcOp.getInlineLevel()) ==
+      InlineLevel::AlwaysBuiltin) {
     if (failed(FnSigDecorators::checkAlwaysInlineBuiltin(funcOp, shared)))
-      funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+      funcOp.setInlineLevelAttr(
+          getInlineLevelAttr(funcOp.getContext(), InlineLevel::AlwaysNoDebug));
   }
 
   if (funcOp.isExternal()) {
@@ -2676,15 +2821,14 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
         .applySignatureDecorators(decoratorExprs);
   }
 
-  // Parse the type if present. Accept either 'alias' or 'comptime' keyword.
-  SMLoc identifierLoc;
-  if (p.getToken().isNot(Token::kw_alias, Token::kw_comptime)) {
+  // Parse the type if present. Accept 'comptime' keyword.
+  if (!p.consumeIf(Token::kw_comptime)) {
     p.emitError(p.getToken().getLoc(),
                 "internal error: checked by stmt parser");
     return failure();
   }
-  p.consumeToken(); // Consume either kw_alias or kw_comptime
 
+  SMLoc identifierLoc;
   if (p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc))
     return failure();
@@ -2704,7 +2848,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   }
 
   // Parse trailing 'where' clauses if present.
-  if (parsedParams.parseTrailingConstraintsIfPresent(p))
+  if (parsedParams.parseTrailingConstraintsIfPresent(p, decl.getIndentation()))
     return failure();
 
   // The alias signature is a self-contained scope where the input parameters
@@ -2830,53 +2974,6 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   // Process the doc string of the alias.
   p.parseDocString(decl);
 
-  if (auto parentTraitRef = dyn_cast_if_present<SymbolRefAttr>(
-          aliasDeclOp->getAttr("parentTraitRef"))) {
-    // Cleanup after ourselves.
-    aliasDeclOp->removeAttr("parentTraitRef");
-
-    // This can happen since since the signature resolution branch of the
-    // overall 'resolve' function in DeclResolver doesn't guard against the
-    // input decl being erroneous. Rather than add that check there for this
-    // singular exceptional case catch it now.
-    if (decl.isErroneous())
-      return failure();
-
-    ASTDecl &traitDecl = *decl.getParentDecl();
-    auto name = *decl.getUserNameIfOperation();
-    ASTDecl &parentTraitDecl = getDeclForTypeSymbol(parentTraitRef);
-
-    auto decls = parentTraitDecl.lookupInCurrentScope(name);
-    assert(decls.size() == 1 && "Expected to find exactly one decl");
-    auto parentAliasDeclOp =
-        cast<AliasDeclOp>(*decls.front()->getIfOperation());
-
-    if (failed(resolveSignature(*decls.front(), decls.front()->getLoc())))
-      return failure();
-
-    SyntheticNode synthNode(traitDecl.getLoc());
-    auto overrideAliasType = aliasDeclOp.getType();
-    // Conjure a fake value here that we can hand to
-    // canImplicitlyConvertToType.
-    // TODO: Make a version of canImplicitlyConvertToType that can take
-    // two types directly.
-    // TODO: Be able to do this with canZeroCostConvert since we don't
-    // want to call implicit constructors here.
-    auto overrideAliasParamValue =
-        PValue(ParamDeclRefAttr::get(aliasDeclOp.getParamDecl()));
-    if (!IREmitter::canImplicitlyConvertToType(
-            {overrideAliasParamValue, &synthNode},
-            parentAliasDeclOp.getParamDecl().getType(), traitDecl)) {
-      auto diag = emitError(aliasDeclOp->getLoc(), "invalid redefinition of '")
-                  << name << "': cannot convert " << ASTType(overrideAliasType)
-                  << " to parent trait's member's type "
-                  << ASTType(parentAliasDeclOp.getParamDecl().getType());
-      diag.attachNote(parentAliasDeclOp->getLoc())
-          << "parent trait's member defined here";
-      return failure();
-    }
-  }
-
   shared.notifyListenerOnAliasDecl(decl, identifierLoc);
   return success();
 }
@@ -2898,6 +2995,9 @@ struct ParsedTraitConstraint {
   /// Whether this constraint was for an explicitly listed trait in the
   /// conformance list (vs propagated from an ancestor).
   bool isExplicit;
+  /// Whether the entry this came from was spelled `not Trait`. See
+  /// `ParsedConformanceEntry::isNegated`.
+  bool isNegated;
 };
 
 /// A single entry in a parsed conformance list: a type expression naming a
@@ -2909,6 +3009,15 @@ struct ParsedConformanceEntry {
   ExprNode *typeExpr = nullptr;
   SMLoc loc;
   std::optional<ParsedConstraint> constraint;
+  /// Set for the `not Trait` spelling.
+  bool isNegated = false;
+};
+
+/// An explicitly listed conformance: its constraint, plus whether the entry was
+/// spelled `not Trait`.
+struct ExplicitConformance {
+  ConstraintAttr constraint;
+  bool isNegated;
 };
 
 /// Verify that each explicitly listed derived trait's constraint implies its
@@ -2929,12 +3038,17 @@ struct ParsedConformanceEntry {
 ///
 ///   struct S(Derived where condA and condB, Base where condB): ...
 ///
+/// A failure against an ancestor opted out with `not` is reported as a
+/// contradicted opt-out rather than as a constraint to strengthen, since the
+/// user wrote no constraint to strengthen.
+///
 /// Returns failure if any implication errors were found.
 static LogicalResult verifyDerivedAncestorImplication(
-    const DenseMap<TraitSymbolAttr, ConstraintAttr> &explicitConstraints,
+    const DenseMap<TraitSymbolAttr, ExplicitConformance> &explicitConstraints,
     SharedState &shared) {
   bool hasErrors = false;
-  for (const auto &[symbol, constraint] : explicitConstraints) {
+  for (const auto &[symbol, conformance] : explicitConstraints) {
+    ConstraintAttr constraint = conformance.constraint;
     TypedAttr prop = constraint.getProposition();
 
     ASTDecl &traitDecl =
@@ -2953,17 +3067,30 @@ static LogicalResult verifyDerivedAncestorImplication(
       if (it == explicitConstraints.end())
         continue; // Not explicitly listed -- handled by propagation.
 
-      TypedAttr ancestorProp = it->second.getProposition();
+      ConstraintAttr ancestorConstraint = it->second.constraint;
+      TypedAttr ancestorProp = ancestorConstraint.getProposition();
 
-      if (!isImplicationProven(ancestorProp, prop)) {
+      if (isImplicationProven(ancestorProp, prop))
+        continue;
+
+      if (it->second.isNegated) {
+        StringRef symbolName = symbol.getSymbol().getLeafReference();
+        StringRef ancestorName = ancestor.getSymbol().getLeafReference();
+        MojoInflightDiag diag = shared.emitError(constraint.getLoc());
+        diag << "trait '" << symbolName << "' requires ancestor trait '"
+             << ancestorName
+             << "', which is opted out with 'not'; remove one "
+                "of the entries";
+        diag.attachNote(ancestorConstraint.getLoc()) << "opted out here";
+      } else {
         shared.emitError(constraint.getLoc())
             << "constraint for " << symbol.getSymbol().getLeafReference()
             << " does not imply constraint for ancestor trait "
             << ancestor.getSymbol().getLeafReference()
             << "; strengthen the derived constraint by adding the ancestor's "
                "constraint with 'and'";
-        hasErrors = true;
       }
+      hasErrors = true;
     }
   }
   return failure(hasErrors);
@@ -3069,7 +3196,7 @@ static LogicalResult buildTraitConstraintsMap(
     SharedState &shared) {
   ConstraintAttr unconditional =
       getUnconditionalConstraint(shared.getContext());
-  DenseMap<TraitSymbolAttr, ConstraintAttr> explicitConstraints;
+  DenseMap<TraitSymbolAttr, ExplicitConformance> explicitConstraints;
   DenseMap<TraitSymbolAttr, SmallVector<ConstraintAttr, 2>> propagated;
   bool hasErrors = false;
 
@@ -3080,15 +3207,39 @@ static LogicalResult buildTraitConstraintsMap(
     if (pc.isExplicit) {
       auto newConstraint = ConstraintAttr::get(prop, pc.constraint.getLoc(),
                                                pc.constraint.getMessage());
-      auto [it, inserted] =
-          explicitConstraints.try_emplace(pc.traitSymbol, newConstraint);
-      // Catches cases where a trait is listed twice with different constraints.
-      // Canonicalization normalizes operand order for commutative ops, so
-      // structural equality after canonicalization suffices here.
-      if (!inserted && getCanonicalAttr(it->second.getProposition()) !=
-                           getCanonicalAttr(prop)) {
+      auto [it, inserted] = explicitConstraints.try_emplace(
+          pc.traitSymbol, ExplicitConformance{newConstraint, pc.isNegated});
+      const ExplicitConformance &prior = it->second;
+
+      if (!inserted && (prior.isNegated || pc.isNegated)) {
+        // Since an opt-out does not carry any conditions (yet), any trait that
+        // is opted out must not appear in the conformance list again.
+        StringRef traitName = pc.traitSymbol.getSymbol().getLeafReference();
+        Location optOutLoc =
+            pc.isNegated ? pc.constraint.getLoc() : prior.constraint.getLoc();
+        Location otherLoc =
+            pc.isNegated ? prior.constraint.getLoc() : pc.constraint.getLoc();
+        if (prior.isNegated && pc.isNegated) {
+          MojoInflightDiag diag = shared.emitError(optOutLoc);
+          diag << "trait '" << traitName
+               << "' must be opted out at most once; remove the duplicate "
+                  "'not'";
+          diag.attachNote(otherLoc) << "first opted out here";
+        } else {
+          MojoInflightDiag diag = shared.emitError(otherLoc);
+          diag << "trait '" << traitName
+               << "' must not be listed and also opted out with 'not'; "
+                  "remove one of the entries";
+          diag.attachNote(optOutLoc) << "opted out here";
+        }
+        hasErrors = true;
+      } else if (!inserted &&
+                 getCanonicalAttr(prior.constraint.getProposition()) !=
+                     getCanonicalAttr(prop)) {
+        // Catches when a trait is listed twice under different conditions.
+        StringRef traitName = pc.traitSymbol.getSymbol().getLeafReference();
         shared.emitError(pc.constraint.getLoc())
-            << "trait '" << pc.traitSymbol.getSymbol().getLeafReference()
+            << "trait '" << traitName
             << "' appears multiple times in the conformance list with "
                "different constraints";
         hasErrors = true;
@@ -3119,8 +3270,8 @@ static LogicalResult buildTraitConstraintsMap(
     hasErrors = true;
 
   // Merge explicit constraints into the output map (after verification).
-  traitConstraints.insert(explicitConstraints.begin(),
-                          explicitConstraints.end());
+  for (const auto &[symbol, conformance] : explicitConstraints)
+    traitConstraints.try_emplace(symbol, conformance.constraint);
 
   // Resolve propagated constraints for non-explicit ancestor traits.
   if (failed(
@@ -3147,8 +3298,13 @@ static LogicalResult buildTraitConstraintsMap(
 /// For a struct or trait declaration, parse an optional conformance list
 /// without resolving the trait types or emitting constraints.
 ///
+/// conformance_list ::= conformance ("," conformance)* [","]
+/// conformance      ::= type_expression ["where" constraint]
+///                    | "not" type_expression ["else" message]
+///
 /// Set `allowConformanceConstraints` to `false` for declarations that don't
-/// support conditional conformance (traits and extensions).
+/// support conditional conformance (traits and extensions). Both `where` and
+/// `not` are conformance conditions, so both are rejected there.
 static ParseResult parseOptionalConformanceListSyntax(
     ParserBase &p, SmallVectorImpl<ParsedConformanceEntry> &parsedConformances,
     std::optional<size_t> stmtIndent, bool allowConformanceConstraints) {
@@ -3157,8 +3313,24 @@ static ParseResult parseOptionalConformanceListSyntax(
 
   auto parseConformance = [&]() -> ParseResult {
     ParsedConformanceEntry conformance;
-    if (p.getLocation(conformance.loc) ||
-        p.parseExpression(conformance.typeExpr, stmtIndent))
+    conformance.loc = p.getToken().getLoc();
+
+    // Try to consume any `not` before the type expression.
+    if (p.consumeIf(Token::kw_not)) {
+      if (!allowConformanceConstraints)
+        return p.emitError(conformance.loc,
+                           "'not' conformances are only supported on structs");
+      // Catch a common typo / misconception: `not not Trait`.
+      if (p.getToken().is(Token::kw_not))
+        return p.emitError(p.getToken().getLoc(),
+                           "'not' must not be repeated in a conformance "
+                           "entry");
+      conformance.isNegated = true;
+      conformance.constraint.emplace();
+      conformance.constraint->loc = conformance.loc;
+    }
+
+    if (p.parseExpression(conformance.typeExpr, stmtIndent))
       return failure();
 
     SMLoc whereLoc = p.getToken().getLoc();
@@ -3169,18 +3341,36 @@ static ParseResult parseOptionalConformanceListSyntax(
             "'where' clauses in conformance lists are only supported on "
             "structs");
       }
+      // `not Trait` syntax does not support a where clause (yet).
+      if (conformance.isNegated) {
+        return p.emitError(
+            whereLoc, "'not' conformance does not support a 'where' clause");
+      }
       ParsedConstraint constraint;
       constraint.loc = whereLoc;
       ExprNode *parsed;
       if (p.parseExpression(parsed, stmtIndent))
         return failure();
-      // A message is written `where (condition, "message")`. Because the
-      // message lives inside the parentheses, the trailing comma that
-      // separates the next conformance entry is unambiguous -- no lookahead
-      // is needed here.
+      // Only the `where (condition, "message")` version is handled here.
+      // The `else` version is shared with the `not` case below.
       if (constraint.extractParenthesizedMessage(p, parsed))
         return failure();
       conformance.constraint = constraint;
+    }
+
+    // Read any "else" message that follows the conformance.
+    SMLoc elseLoc = p.getToken().getLoc();
+    if (p.getToken().is(Token::kw_else)) {
+      if (!allowConformanceConstraints)
+        return p.emitError(
+            elseLoc, "conformance messages are only supported on structs");
+      if (!conformance.constraint)
+        return p.emitError(elseLoc, "a conformance message requires a 'where' "
+                                    "clause or a 'not' conformance");
+      StringRef what =
+          conformance.isNegated ? "a 'not' conformance" : "a 'where' clause";
+      if (conformance.constraint->parseElseMessage(p, stmtIndent, what))
+        return failure();
     }
 
     parsedConformances.push_back(conformance);
@@ -3274,7 +3464,14 @@ static ParseResult resolveConformanceList(
                   shared.diags.translateLocation(conformance.loc),
                   /*message=*/StringAttr())
             : ConstraintAttr();
-    if (traitConstraints && conformance.constraint) {
+    if (traitConstraints && conformance.isNegated) {
+      // For now, record a `not Trait` as `Trait where False`, carrying any
+      // `else` reason as the constraint's message.
+      constraint = ConstraintAttr::get(
+          SIMDAttr::getScalarBool(shared.getContext(), false),
+          shared.diags.translateLocation(conformance.loc),
+          conformance.constraint->message);
+    } else if (traitConstraints && conformance.constraint) {
       IREmitter constraintEmitter(declScope, EC_Requires);
       RValue prop = constraintEmitter.emitExprScalarBool(
           conformance.constraint->propExpr, EC_Requires);
@@ -3306,7 +3503,7 @@ static ParseResult resolveConformanceList(
       if (traitConstraints) {
         for (TraitSymbolAttr symbol : reduced) {
           traitConstraints->push_back(
-              {symbol, constraint, /*isExplicit=*/true});
+              {symbol, constraint, /*isExplicit=*/true, conformance.isNegated});
         }
       }
     }
@@ -3358,8 +3555,9 @@ static ParseResult resolveConformanceList(
         // builder checks that all paths to the same ancestor agree, or
         // requires explicit listing if they disagree (diamond case).
         if (traitConstraints && ancestor != symbol)
-          traitConstraints->push_back(
-              {ancestor, constraint, /*isExplicit=*/false});
+          traitConstraints->push_back({ancestor, constraint,
+                                       /*isExplicit=*/false,
+                                       conformance.isNegated});
       }
       // Insert this `symbol` as an immediate parent. This must happen after the
       // loop, because this symbol itself is part of `canonicalParent` too.
@@ -3570,8 +3768,8 @@ static void emitExplicitDestroyRequiresArgError(SharedState &shared,
               << "@explicit_destroy requires an argument: "
                  "`@explicit_destroy(\"...\")`";
   diag.attachNote(decl)
-      << "Use `Deinitable where False` conformance to opt out of "
-         "implicit deletion. `@explicit_destroy` is no longer required.";
+      << "Use a `not Deinitable` conformance to opt out of implicit "
+         "deletion. `@explicit_destroy` is no longer required.";
 }
 
 /// Validates that an `@explicit_destroy(...)` call has exactly one string
@@ -3627,7 +3825,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       parseOptionalConformanceListSyntax(
           p, parsedConformances, sigDecl.getIndentation(),
           /*allowConformanceConstraints=*/true) ||
-      parsedParams.parseTrailingConstraintsIfPresent(p) ||
+      parsedParams.parseTrailingConstraintsIfPresent(
+          p, sigDecl.getIndentation()) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.isErroneous())
     return failure();
@@ -3747,9 +3946,34 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       }
     }
   }
-  if (linearTypeErrorMsg && !std::get<0>(*linearTypeErrorMsg).empty()) {
+  bool hasDecoratorMessage =
+      linearTypeErrorMsg && !std::get<0>(*linearTypeErrorMsg).empty();
+  if (hasDecoratorMessage) {
     structOp.setLinearTypeErrorMsg(
         std::make_optional(llvm::StringRef(std::get<0>(*linearTypeErrorMsg))));
+  }
+
+  // An always-false `Deinitable` conformance makes the struct linear, so its
+  // reason, if any, is recorded here.
+  if (implicitDelDecl) {
+    auto it = traitConstraints.find(
+        TraitSymbolAttr::get(implicitDelDecl->getSymbolRef()));
+    StringAttr reason =
+        it != traitConstraints.end() && isTriviallyFalseConstraint(it->second)
+            ? it->second.getMessage()
+            : StringAttr();
+    if (reason) {
+      if (hasDecoratorMessage) {
+        MojoInflightDiag diag =
+            shared.emitError(std::get<1>(*linearTypeErrorMsg));
+        diag << "@explicit_destroy and the 'Deinitable' opt-out both give a "
+                "message; keep only one";
+        diag.attachNote(it->second.getLoc()) << "opt-out message written here";
+        decl.setErroneous();
+        return failure();
+      }
+      structOp.setLinearTypeErrorMsg(reason.getValue());
+    }
   }
 
   // Build canonical trait with constraints for conditional conformance.
@@ -3772,7 +3996,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                     << "@explicit_destroy is not valid on `struct` with "
                        "unconditional conformance to `Deinitable`";
         diag.attachNote(decl.getLoc())
-            << "Add `Deinitable where False` conformance or "
+            << "Add a `not Deinitable` conformance or "
                "remove `@explicit_destroy`";
         decl.setErroneous();
         return failure();
@@ -4216,18 +4440,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       return failure();
     }
 
-    auto isInherited = [&](auto nestedOp, ASTDecl &parentDecl) {
-      if (nestedOp.getInheritedFrom())
-        return true;
-
-      // inheritedFrom is set by signature resolution -- for inherited trait
-      // methods the decl itself might contain a reference to the lit.fn op from
-      // the parent this checks for that.
-      auto parentTraitOp = cast<TraitDeclOp>(nestedOp->getParentOp());
-      return getFullyResolvedSymbolRef(parentTraitOp) !=
-             parentDecl.getSymbolRef();
-    };
-
     auto isDefaulted = [](auto nestedOp) {
       if constexpr (std::is_same_v<FnOp, decltype(nestedOp)>)
         return nestedOp.isDefaultedTraitFn();
@@ -4238,7 +4450,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
     auto insertDefaultDecl = [&](auto newOp, StringAttr childName,
                                  ASTDecl *childDecl) -> LogicalResult {
-      if (!isDefaulted(newOp) || isInherited(newOp, parentDecl))
+      if (!isDefaulted(newOp))
         return success();
 
       if constexpr (std::is_same_v<AliasDeclOp, decltype(newOp)>) {
@@ -4632,164 +4844,6 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   return success();
 }
 
-namespace {
-/// This replaces one attribute with another without respect to its original
-/// type.  TODO: Is there a better way to do this?
-struct AttrReplacer : public IndexParameterReplacer<AttrReplacer> {
-  TypedAttr oldAttrValue, newAttrValue;
-
-  AttrReplacer(TypedAttr oldAttrValue, TypedAttr newAttrValue)
-      : oldAttrValue(oldAttrValue), newAttrValue(newAttrValue) {}
-
-  // CRTP methods.
-  Attribute tryReplace(Attribute attr, size_t depth) {
-    if (attr == oldAttrValue)
-      return newAttrValue;
-    return {};
-  }
-  Type tryReplace(Type, size_t) { return {}; }
-};
-} // end anonymous namespace
-
-/// Update the types for a method pulled from a trait base to a derived trait,
-/// so they refer to the correct self type.
-static void replaceTraitMethodSelfTypes(FnOp func, TypedAttr parentSelfType,
-                                        TypedAttr traitSelfType) {
-  assert(isa<ParamDeclRefAttr>(parentSelfType) &&
-         isa<ParamDeclRefAttr>(traitSelfType));
-
-  TypedAttr upcastTraitSelfType =
-      UpcastAttr::get(parentSelfType.getType(), traitSelfType);
-  AttrReplacer replacer(parentSelfType, upcastTraitSelfType);
-
-  // Update functionType, signature, and block argument types.
-  func.setFuncTypeGenerator(replacer.replace(func.getFuncTypeGenerator()));
-  func.setFunctionType(replacer.replace(func.getFunctionType()));
-  for (auto arg : func.getBody()->getArguments())
-    arg.setType(replacer.replace(arg.getType()));
-}
-
-/// Update the types for a method pulled from a trait base to a derived trait,
-/// so they refer to the correct self type.
-static void replaceTraitAliasSelfTypes(AliasDeclOp alias,
-                                       TypedAttr parentSelfType,
-                                       TypedAttr traitSelfType) {
-  assert(isa<ParamDeclRefAttr>(parentSelfType) &&
-         isa<ParamDeclRefAttr>(traitSelfType));
-  AttrReplacer replacer(parentSelfType, traitSelfType);
-  alias.setParamDeclAttr(
-      ParamDeclAttr::get(alias.getParamDecl().getName(),
-                         // Get updated type with new Self.
-                         replacer.replace(alias.getParamDecl().getType())));
-  // Also rewrite Self references in the alias's value expression so they
-  // point at the child trait's `_Self` rather than the parent's.
-  if (TypedAttr value = alias.getValueAttr()) {
-    alias.setValueAttr(cast<TypedAttr>(replacer.replace(value)));
-  }
-}
-
-void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
-                                         ASTDecl &traitDecl) {
-
-  // Since we lazily resolve nested decls the inheritedFrom attribute may or may
-  // not already be set. In cases where that attribute isn't set the decl will
-  // have a different parent trait decl op than the passed in op.
-  auto isInherited = [&](auto nestedOp, ASTDecl &parentDecl) {
-    if (nestedOp.getInheritedFrom())
-      return true;
-
-    auto parentTraitOp = cast<TraitDeclOp>(nestedOp->getParentOp());
-    return getFullyResolvedSymbolRef(parentTraitOp) !=
-           parentDecl.getSymbolRef();
-  };
-
-  // Now just pull in the functions in the bodies of all parents.
-  for (TraitSymbolAttr parentOrSelf :
-       traitOp.getCanonicalTrait().getSymbols()) {
-    ASTDecl &parentOrSelfDecl = getDeclForTypeSymbol(parentOrSelf.getSymbol());
-    if (&parentOrSelfDecl == &traitDecl)
-      continue;
-    auto &parentDecl = parentOrSelfDecl;
-
-    if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
-      continue;
-
-    // Inherit function members, which we can override without worry because
-    // they are all just declarations.
-    for (auto &[name, declsInParent] : parentDecl.getDeclsInScope()) {
-      if (declsInParent.empty())
-        continue;
-      if (isa_and_nonnull<FnOp>(declsInParent.front()->getIfOperation())) {
-        for (ASTDecl *decl : declsInParent) {
-          // Skip disabled or erroneous decls whose operation was cleared.
-          auto func = dyn_cast_or_null<FnOp>(decl->getIfOperation());
-          if (!func)
-            continue;
-
-          if (isInherited(func, parentDecl))
-            continue;
-
-          addDecl(func, decl->getLoc(), name, &traitDecl, LexerCursor(),
-                  LexerCursor(), -1);
-        }
-      } else if (auto parentAliasDecl = dyn_cast_if_present<AliasDeclOp>(
-                     declsInParent.front()->getIfOperation())) {
-        assert(declsInParent.size() == 1 &&
-               "Can't have two aliases with same name.");
-        auto &declInParent = *declsInParent.front();
-
-        if (isInherited(parentAliasDecl, parentDecl))
-          continue;
-
-        ArrayRef<ASTDecl *> overrides = traitDecl.lookupInCurrentScope(name);
-        // If there's no overrides, then we need to copy the alias decl from the
-        // parent trait into this one.
-        if (overrides.size() == 0) {
-          // Add a synthetic decl that points to the parent trait's alias decl
-          // op
-          addDecl(declInParent.getIfOperation(), declInParent.getLoc(), name,
-                  &traitDecl, LexerCursor(), LexerCursor(), -1);
-        } else {
-
-          // Theoretically there should be at most one override, since
-          // duplicates aren't even added to the trait's ASTDecl entries.
-          assert(overrides.size() == 1);
-
-          auto override = overrides.front();
-          auto overrideAliasDecl =
-              dyn_cast_or_null<AliasDeclOp>(override->getIfOperation());
-          if (!overrideAliasDecl) {
-            auto diag =
-                emitError(override->getLoc(), "invalid redefinition of ")
-                << name;
-            diag.attachNote(parentAliasDecl->getLoc())
-                << "cannot overload comptime alias with a non-comptime "
-                   "definition";
-            continue;
-          }
-
-          // This check is necessary since an alias mau be defined multiple
-          // times in a trait's inheritance tree. If this branch is true then
-          // that means that the current trait didn't define an alias of 'name'
-          // and ad already created a decl pointing to one of the parent trait's
-          // aliases.
-          if (isInherited(overrideAliasDecl, traitDecl))
-            continue;
-
-          // Store a SymbolRefAttr pointing to the parent trait of the alias
-          // we're currently overriding.
-          //
-          // This allows us to lookup the parent trait and its alias whenever
-          // the override alias gets signature resolved and ensures that it's
-          // valid (the types of the aliases implicitly convert).
-          override->getIfOperation()->setAttr("parentTraitRef",
-                                              parentDecl.getSymbolRef());
-        }
-      }
-    }
-  }
-}
-
 ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
                                       ASTDecl &traitDecl) {
   // TODO: Sink this to when the body is actually resolved.
@@ -4804,166 +4858,33 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   if (ParserBase(shared, lexer).parseSuite(traitDecl))
     return failure();
 
-  addParentDeclsToTrait(traitOp, traitDecl);
-
-  return success();
+  // Delegate error detection to the union type.
+  return shared.getDeclResolver().resolve(
+      *ASTType(traitOp.getCanonicalTrait()).getDecl(shared),
+      DeclResolvedness::signature, traitDecl.getLoc());
 }
 
-/// Handles signature resolving inherited function decls in traits. In such
-/// cases the passed in ASTDecl will be a child of the actual trait we're
-/// working on, while the function op it contains is actually from the parent
-/// trait we're inheriting from.
-///
-/// This logic was originally invoked during trait body resolution -- in an
-/// effort to make the resolution of child declarations of traits lazier we've
-/// moved it here.
-///
-/// The majority of the logic is largely the same as the less lazy version
-/// except for some of the initial op and decl lookups.
+/// Handles signature resolving a defaulted trait method inherited by a
+/// conforming struct. The passed in ASTDecl is a child of that struct, while
+/// the function op it contains belongs to the trait supplying the default.
 LogicalResult
 DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
                                         ASTDecl &childTraitFnDecl) {
   assert(isa<TraitDeclOp>(inheritedFnOp->getParentOp()) &&
          "Expected synthetic function decl's parent to be a trait");
 
-  auto childTraitDecl = childTraitFnDecl.getParentDecl();
+  ASTDecl *structDecl = childTraitFnDecl.getParentDecl();
+  assert(inheritedFnOp.isDefaultedTraitFn() &&
+         isa_and_nonnull<StructDeclOp>(structDecl->getIfOperation()) &&
+         "Expected trait -> struct default method inheritance");
 
-  // This covers the case of trait -> struct default method inheritance.
-  if (inheritedFnOp.isDefaultedTraitFn() &&
-      isa_and_nonnull<StructDeclOp>(childTraitDecl->getIfOperation()))
-    return resolveDefaultedOpFromTrait(*this, inheritedFnOp, childTraitDecl);
-
-  // This is the actual child trait of the decl.
-  TraitDeclOp childTraitDeclOp =
-      cast<TraitDeclOp>(childTraitDecl->getIfOperation());
-
-  // And this is the parent trait of the function we're inheriting from.
-  TraitDeclOp parentTraitDeclOp =
-      cast<TraitDeclOp>(inheritedFnOp->getParentOp());
-
-  SymbolRefAttr parentTraitRef = getFullyResolvedSymbolRef(parentTraitDeclOp);
-
-  ASTDecl &parentTraitDecl = getDeclForTypeSymbol(parentTraitRef);
-  auto functionName =
-      dyn_cast<ASTDeclInterface>(inheritedFnOp.getOperation()).getDeclName();
-
-  auto parentOverloadDecls = parentTraitDecl.lookupInCurrentScope(functionName);
-
-  ASTDecl *inheritedFnDecl = nullptr;
-  for (auto &overloadDecl : parentOverloadDecls) {
-    if (inheritedFnOp.getOperation() == overloadDecl->getIfOperation()) {
-      inheritedFnDecl = overloadDecl;
-      if (failed(resolveSignature(*overloadDecl, overloadDecl->getLoc())))
-        return failure();
-    }
-  }
-
-  assert(inheritedFnDecl &&
-         "Couldn't find the decl for inheritedFnOp in the parent trait.");
-
-  auto parentFnSymName = inheritedFnOp.getSymNameAttr();
-
-  DenseSet<StringAttr> existingFns;
-  auto childFnDecls = childTraitDecl->lookupInCurrentScope(functionName);
-
-  // Signature resolve all corresponding overloads in the child trait decl.
-  for (auto &childOverload : childFnDecls) {
-    auto childOverloadOp = childOverload->getIfOperation();
-    if (!childOverloadOp) // Other inits may not even be signature resolved.
-      continue;
-    auto actualParentTraitRef = getFullyResolvedSymbolRef(
-        cast<TraitDeclOp>(childOverloadOp->getParentOp()));
-
-    // Skip processing any inherited members to avoid cycles.
-    if (actualParentTraitRef != getFullyResolvedSymbolRef(childTraitDeclOp))
-      continue;
-
-    if (failed(resolveSignature(*childOverload, childOverload->getLoc())))
-      return failure();
-
-    auto childFnSymName =
-        cast<FnOp>(childOverload->getIfOperation()).getSymNameAttr();
-
-    // We've found that the child trait implements an overload with equivalent
-    // signature. At this point we don't really care about this decl anymore.
-    //
-    // In such cases we'd really like to be able to just delete the decl we had
-    // created at this point since nothing will ever actually make use of it (as
-    // the child already has a definition).
-    if (parentFnSymName == childFnSymName) {
-      childTraitFnDecl.markDisabled();
-      return success();
-    }
-  }
-
-  auto parentTraitSelfType = parentTraitDecl.getTypeDeclSelf();
-  auto childTraitSelfType = childTraitDecl->getTypeDeclSelf();
-
-  // Clone the function over but leave an empty body.
-  //
-  // This is necessary to avoid errors around type mismatches between trait self
-  // types, to make this concrete consider:
-  //
-  //
-  // trait Foo:
-  //   def foo(self) -> Int:
-  //     ...
-  //
-  // trait Bar(Foo):
-  //   def bar(self) -> Int:
-  //     return self.foo() * 2
-  //
-  // trait Baz(Bar):
-  //   ...
-  //
-  // If we just naively cloned the full body of Bar.bar into Baz the lit.call to
-  // foo would be expecting an argument of type Bar rather than Baz.
-  //
-  // Since we're only ever dealing with inherited trait methods in this function
-  // and structs get to see a flat list of all their parent trait methods we'll
-  // still be able to appropriately pick up the parent trait method with the
-  // actual defaulted implementation.
-  auto clonedFunc = inheritedFnOp.cloneWithoutRegions();
-
-  {
-    Block *entryBlock = clonedFunc.addEntryBlock();
-    auto builder = OpBuilder::atBlockEnd(entryBlock);
-    UnreachableOp::create(builder, clonedFunc.getLoc());
-  }
-
-  replaceTraitMethodSelfTypes(clonedFunc, PValue(parentTraitSelfType).get(),
-                              PValue(childTraitSelfType).get());
-  clonedFunc.setInheritedFromAttr(TraitSymbolAttr::get(parentTraitRef));
-
-  if (!clonedFunc.getDefaultFnRef())
-    clonedFunc.setDefaultFnRefAttr(inheritedFnDecl->getSymbolRef());
-
-  childTraitDeclOp.getBody()->push_back(clonedFunc);
-  childTraitFnDecl.setIRValue(clonedFunc.getOperation());
-  childTraitFnDecl.resolvedness = DeclResolvedness::body;
-
-  // If present, clear the function body and replace with just kgen.unreachable
-  // since we don't need to preserve the actual implementation.
-  if (!isa<UnreachableOp>(clonedFunc.getBody()->front())) {
-    clonedFunc.getBody()->clear();
-    auto builder = OpBuilder::atBlockEnd(clonedFunc.getBody());
-    UnreachableOp::create(builder, clonedFunc.getLoc());
-  }
-
-  return success();
+  // TODO(MOCO-4712): this can be further simplified too.
+  return resolveDefaultedOpFromTrait(*this, inheritedFnOp, structDecl);
 }
 
-/// Handles signature resolving inherited alias decls in traits. In such cases
-/// the passed in ASTDecl will be a child of the actual trait we're working on,
-/// while the alias.decl op it contains is actually from the parent trait we're
-/// inheriting from.
-///
-/// This logic was originally invoked during trait body resolution -- in an
-/// effort to make the resolution of child declarations of traits lazier we've
-/// moved it here.
-///
-/// The majority of the logic is largely the same as the less lazy version
-/// except for some of the initial op and decl lookups.
+/// Handles signature resolving an alias declaration inherited by a conforming
+/// struct. The passed in ASTDecl is a child of that struct, while the
+/// alias.decl op it contains belongs to the trait it is inherited from.
 LogicalResult
 DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
                                         ASTDecl &childTraitAliasDecl) {
@@ -4980,21 +4901,17 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
     return SpecialFunctionKind::kNormal;
   };
 
-  // Special handling for __*__is_trivial aliases.
-  // These are synthesized when a struct
-  // inherits from a trait that declares them.
-  //
-  // We must check that the parent
-  // is a struct (not a trait) because this function is also called for
-  // trait-to-trait inheritance, where we should fall through to the general
-  // alias inheritance handling below.
+  ASTDecl *structDecl = childTraitAliasDecl.getParentDecl();
+  assert(isa_and_nonnull<StructDeclOp>(structDecl->getIfOperation()) &&
+         "Expected the inherited alias to be resolved into a struct");
+
+  // '__*__is_trivial' aliases are synthesized when a struct inherits from a
+  // trait that declares them, and take their value from the struct's fields
+  // rather than from the trait.
   SpecialFunctionKind spFn = getFnIsTrivialKind(inheritedAliasOp.getDeclName());
-  if (spFn != SpecialFunctionKind::kNormal &&
-      isa_and_nonnull<StructDeclOp>(
-          childTraitAliasDecl.getParentDecl()->getIfOperation())) {
-    StructEmitter gen(*childTraitAliasDecl.getParentDecl());
-    TypedAttr isTrivial = gen.populateSpecialFnIsTrivial(
-        getFnIsTrivialKind(inheritedAliasOp.getDeclName().strref()));
+  if (spFn != SpecialFunctionKind::kNormal) {
+    TypedAttr isTrivial =
+        StructEmitter(*structDecl).populateSpecialFnIsTrivial(spFn);
 
     if (isTrivial) {
       inheritedAliasOp.setParamDeclAttr(ParamDeclAttr::get(
@@ -5008,64 +4925,11 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
     return success();
   }
 
-  assert(isa<TraitDeclOp>(inheritedAliasOp->getParentOp()) &&
-         "Expected synthetic alias decl's parent to be a trait");
+  assert(inheritedAliasOp.isDefaultedAssociatedAlias() &&
+         "Expected trait -> struct default associated alias");
 
-  ASTDecl *childTraitDecl = childTraitAliasDecl.getParentDecl();
-  // This covers the case of trait -> struct default associated alias.
-  if (inheritedAliasOp.isDefaultedAssociatedAlias() &&
-      isa_and_nonnull<StructDeclOp>(childTraitDecl->getIfOperation()))
-    return resolveDefaultedOpFromTrait(*this, inheritedAliasOp, childTraitDecl);
-
-  // This is the actual child trait of the decl.
-  TraitDeclOp childTraitDeclOp =
-      cast<TraitDeclOp>(childTraitDecl->getIfOperation());
-
-  // And this is the parent trait of the alias decl we're inheriting from.
-  TraitDeclOp parentTraitDeclOp =
-      cast<TraitDeclOp>(inheritedAliasOp->getParentOp());
-
-  Block &childTraitBody = *childTraitDeclOp.getBody();
-  SymbolRefAttr parentTraitRef = getFullyResolvedSymbolRef(parentTraitDeclOp);
-  ASTDecl &parentTraitDecl = getDeclForTypeSymbol(parentTraitRef);
-
-  // Since alias decls don't implement SymbolOpInterface we need to do a
-  // lookup by source name.
-  StringRef aliasName = inheritedAliasOp.getDeclName().getValue();
-
-  auto parentAliasDecls = parentTraitDecl.lookupInCurrentScope(aliasName);
-  auto &inheritedAliasDecl = *parentAliasDecls.front();
-
-  assert(parentAliasDecls.size() == 1 &&
-         isa_and_present<AliasDeclOp>(inheritedAliasDecl.getIfOperation()) &&
-         "Expected to find exactly one comptime decl op");
-
-  // Make sure to resolve the actual decl that holds inheritedAliasOp before we
-  // proceed.
-  if (failed(resolveBody(inheritedAliasDecl, inheritedAliasDecl.getLoc())))
-    return failure();
-
-  auto childTraitSelfType =
-      childTraitAliasDecl.getParentDecl()->getTypeDeclSelf();
-  auto parentTraitSelfType = parentTraitDecl.getTypeDeclSelf();
-
-  auto clonedAliasDecl = inheritedAliasOp.clone();
-
-  replaceTraitAliasSelfTypes(clonedAliasDecl, PValue(parentTraitSelfType).get(),
-                             PValue(childTraitSelfType).get());
-
-  // Mark the alias as inherited so that conformance checking won't
-  // give duplicate errors if it is not provided.
-  clonedAliasDecl.setInheritedFromAttr(TraitSymbolAttr::get(parentTraitRef));
-  childTraitBody.push_back(clonedAliasDecl);
-
-  childTraitAliasDecl.setIRValue(clonedAliasDecl);
-  childTraitAliasDecl.resolvedness = DeclResolvedness::body;
-  // We don't need to call something like finalizeFuncSignature for
-  // aliases because we can't have multiple aliases with the same name
-  // (there's no such thing as alias overloading).
-
-  return success();
+  // TODO(MOCO-4712): this can be further simplified too.
+  return resolveDefaultedOpFromTrait(*this, inheritedAliasOp, structDecl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -5356,12 +5220,15 @@ ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
   if (auto alias = dyn_cast<AliasDeclOp>(
           witness->getDecls().front()->getIfOperation())) {
     Type mergedType;
+    ASTDecl *mergedTypeDecl = nullptr;
+
     DenseSet<TraitType> traitTypesToMerge;
-    for (ASTDecl *decl : witness->getDecls()) {
-      if (failed(resolve(*decl, DeclResolvedness::signature, decl->getLoc())))
+    for (ASTDecl *curDecl : witness->getDecls()) {
+      if (failed(resolve(*curDecl, DeclResolvedness::signature,
+                         curDecl->getLoc())))
         return failure();
 
-      auto alias = cast<AliasDeclOp>(decl->getIfOperation());
+      auto alias = cast<AliasDeclOp>(curDecl->getIfOperation());
       Type aliasType = alias.getType();
       std::optional<ParameterEvaluator> evaluatorOpt =
           populateTraitBindingEvaluator(witness->traitSymbol, shared);
@@ -5372,6 +5239,7 @@ ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
 
       if (!mergedType) {
         mergedType = aliasType;
+        mergedTypeDecl = curDecl;
         if (isa<TraitType>(mergedType))
           traitTypesToMerge.insert(cast<TraitType>(mergedType));
         continue;
@@ -5386,9 +5254,14 @@ ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
       }
 
       // We can only merge two trait types.
-      return emitError(decl->getLoc(),
-                       "trait composition has conflicting types for '")
-             << alias.getDeclName().getValue() << "'";
+      auto diag =
+          emitError(mergedTypeDecl->getLoc(), "invalid redefinition of '")
+          << alias.getDeclName().getValue() << "': cannot convert "
+          << ASTType(mergedType) << " to the other trait's member's type "
+          << ASTType(aliasType);
+      diag.attachNote(curDecl->getLoc())
+          << "the other trait's member defined here";
+      return failure();
     }
     if (traitTypesToMerge.size() > 1) {
       SmallVector<TraitSymbolAttr> mergedTraitSymbols;
@@ -5448,21 +5321,6 @@ ParseResult DeclResolver::resolveSignature(TraitType traitType,
 }
 
 ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
-  // TODO: why do we ever need to add inherited decl to begin with?? now that
-  // every trait type is canonical and every lookup on trait are routed via
-  // trait type, we no longer need this.
-  auto isInherited = [&](Operation *nestedOp, ASTDecl &parentDecl) {
-    if (auto aliasOp = dyn_cast<AliasDeclOp>(nestedOp);
-        aliasOp && aliasOp.getInheritedFrom())
-      return true;
-    if (auto fnOp = dyn_cast<FnOp>(nestedOp); fnOp && fnOp.getInheritedFrom())
-      return true;
-
-    auto parentTraitOp = cast<TraitDeclOp>(nestedOp->getParentOp());
-    return getFullyResolvedSymbolRef(parentTraitOp) !=
-           parentDecl.getSymbolRef();
-  };
-
   // TODO: Sink this to when the body is actually resolved.
   traitDecl.resolvedness = DeclResolvedness::body;
 
@@ -5473,6 +5331,9 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
   //   The ASTDecl's irValue is a TraitType (instead of a TraitDeclOp).
   DenseMap<StringAttr, std::pair<TraitSymbolAttr, SmallVector<ASTDecl *>>>
       aliases;
+
+  // Collect all fn decl for error detection.
+  SmallVector<std::pair<StringAttr, ASTDecl *>> fnDecls;
 
   for (TraitSymbolAttr symbol : traitType.getSymbols()) {
     // FIXME: we need to handle trait type with constraints correctly here...
@@ -5486,7 +5347,7 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
       for (ASTDecl *decl : decls) {
         Operation *memberOp = decl->getIfOperation();
         // Skip disabled member and inherited decls.
-        if (decl->isDisabled() || isInherited(memberOp, parentDecl))
+        if (decl->isDisabled())
           continue;
         if (!isa<AliasDeclOp, FnOp>(memberOp)) {
           // If the decl is not a function or alias, it is an error.
@@ -5497,6 +5358,7 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
         if (isa<FnOp>(memberOp)) {
           attachDeclToTraitCompositionDecl(&traitDecl, symbol,
                                            SmallVector<ASTDecl *>{decl}, name);
+          fnDecls.push_back(std::make_pair(name, decl));
         } else {
           auto &witnessForAndDecls = aliases[name];
           witnessForAndDecls.second.push_back(decl);
@@ -5505,6 +5367,17 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
           witnessForAndDecls.first = symbol;
         }
       }
+    }
+  }
+
+  for (auto [name, fnDecl] : fnDecls) {
+    if (auto it = aliases.find(name); it != aliases.end()) {
+      auto diag = shared.emitError(fnDecl->getLoc())
+                  << "invalid redefinition of " << name;
+      diag.attachNote(it->second.second.front()->getLoc())
+          << "conflicting comptime alias declared here";
+      traitDecl.setErroneous();
+      return failure();
     }
   }
 

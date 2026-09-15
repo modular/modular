@@ -14,14 +14,7 @@
 
 from std.math import sqrt
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
 from std.random import rand, Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_gpu
 from std.testing import TestSuite, assert_almost_equal
@@ -93,76 +86,56 @@ def run_rms_norm_fused_residual_gpu[
     ctx.enqueue_copy(residual_output_d, residual_output_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
-    # Create device LayoutTensors
-    comptime layout_nd = Layout.row_major[rank]()
-
-    var input_tensor = LayoutTensor[dtype, layout_nd](
-        input_d,
-        RuntimeLayout[layout_nd].row_major(shape),
-    )
-    var residual_tensor = LayoutTensor[dtype, layout_nd](
-        residual_d,
-        RuntimeLayout[layout_nd].row_major(shape),
-    )
-    var output_tensor = LayoutTensor[dtype, layout_nd](
-        output_d,
-        RuntimeLayout[layout_nd].row_major(shape),
-    )
-    var residual_output_tensor = LayoutTensor[dtype, layout_nd](
-        residual_output_d,
-        RuntimeLayout[layout_nd].row_major(shape),
+    var input_tensor = TileTensor(input_d, row_major(Coord(shape)))
+    var residual_tensor = TileTensor(residual_d, row_major(Coord(shape)))
+    var output_tensor = TileTensor(output_d, row_major(Coord(shape)))
+    var residual_output_tensor = TileTensor(
+        residual_output_d, row_major(Coord(shape))
     )
     var gamma_tensor = TileTensor(gamma_d, row_major(cols))
 
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
-    # Define input functions
-    @__copy_capture(input_tensor)
-    @always_inline
-    @__parameter
+    @inline(.always)
     def input_fn[
         width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        return input_tensor.load[width=width](rebind[IndexList[rank]](coords))
-
-    @__copy_capture(residual_tensor)
-    @always_inline
-    @__parameter
-    def residual_input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        return residual_tensor.load[width=width](
+    ](coords: IndexList[_rank]) {var input_tensor} -> SIMD[dtype, width]:
+        return input_tensor.load_linear[width=width](
             rebind[IndexList[rank]](coords)
         )
 
-    # Define output functions
-    @__copy_capture(output_tensor)
-    @always_inline
-    @__parameter
+    @inline(.always)
+    def residual_input_fn[
+        width: Int, _rank: Int
+    ](coords: IndexList[_rank]) {var residual_tensor} -> SIMD[dtype, width]:
+        return residual_tensor.load_linear[width=width](
+            rebind[IndexList[rank]](coords)
+        )
+
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        output_tensor.store[width=width](coords, val)
+    ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+        var output_tensor
+    } -> None:
+        output_tensor.store_linear[width=width](coords, val)
 
-    @__copy_capture(residual_output_tensor)
-    @always_inline
-    @__parameter
+    @inline(.always)
     def residual_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        residual_output_tensor.store[width=width](coords, val)
+    ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+        var residual_output_tensor
+    } -> None:
+        residual_output_tensor.store_linear[width=width](coords, val)
 
     var dropout_p_scalar = Scalar[dtype](dropout_p)
 
-    # Run the GPU kernel
-    rms_norm_fused_residual_gpu[
+    rms_norm_fused_residual_gpu[multiply_before_cast=True](
         input_fn,
         residual_input_fn,
         residual_output_fn,
         output_fn,
-        multiply_before_cast=True,
-    ](
         shape,
         gamma_tensor,
         epsilon,

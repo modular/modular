@@ -18,6 +18,13 @@ model:
     kv_cache_page_size: 128
     kv_connector_config:
       type: rust_tiered
+      # TODO(MXSERV-541): pin the host tier instead of letting it auto-size to
+      # 1.5x the device pool. NVFP4 weights leave the most room for KV, so this
+      # recipe's 92 GiB device pool auto-sized a 138 GiB pinned host buffer --
+      # past the runner's cgroup limit, which OOM-killed the process mid-
+      # allocation with no traceback. Drop this once the connector's preflight
+      # is cgroup-aware and the auto-size clamps instead of overcommitting.
+      host_offload_max_gb: 100
 
 draft_model:
   model_path: google/gemma-4-26B-A4B-it-assistant

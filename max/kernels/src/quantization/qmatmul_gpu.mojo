@@ -79,7 +79,7 @@ from std.utils.index import Index, StaticTuple
 from std.utils.numerics import get_accum_type
 
 
-@always_inline
+@inline(.always)
 @doc_hidden
 def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
     """Returns the two integer arguments as a tuple, swapping their order when `swap` is set.
@@ -100,7 +100,7 @@ def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
         return (arg_0, arg_1)
 
 
-@always_inline
+@inline(.always)
 @doc_hidden
 def multistage_mma_q[
     BM: Int,
@@ -307,7 +307,7 @@ def multistage_mma_q[
     comptime a_idx_t = a_iter_arg.linear_idx_type
     comptime b_idx_t = b_iter_arg.linear_idx_type
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def _async_copy_a_tile(
         dst: LayoutTensor[mut=True, a_type, address_space=.SHARED, ...],
@@ -346,7 +346,7 @@ def multistage_mma_q[
                 ](),
             )
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def _async_copy_b_tile(
         dst: LayoutTensor[mut=True, b_type, address_space=.SHARED, ...],
@@ -928,7 +928,7 @@ def multistage_qgemm_kernel[
     var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def apply_epilogue():
         # This block is identical to the one used for f32 case
@@ -1149,7 +1149,7 @@ def multistage_qgemm_kernel[
 # This data layout can be expressed by UInt32 LayoutTensor
 # with shape = IntTuple(IntTuple(64, TN),IntTuple(2, TK))
 # and stride = IntTuple(IntTuple(2, TK * 128),IntTuple(1, 128))
-@always_inline
+@inline(.always)
 @doc_hidden
 def pack_Q_tile(input: SIMD[.uint8, 16]) -> SIMD[.uint32, 4]:
     """Packs sixteen bytes (thirty-two 4-bit weights, two per byte) into four `uint32` lanes for the repacked weight layout.
@@ -1179,7 +1179,7 @@ def pack_Q_tile(input: SIMD[.uint8, 16]) -> SIMD[.uint32, 4]:
     return res
 
 
-@always_inline
+@inline(.always)
 @doc_hidden
 def unpack_4bit_int(val: SIMD[.uint32, _], idx: Int) -> UInt8:
     """Extracts a single 4-bit value from the packed `uint32` lane at the given nibble index.
@@ -1244,7 +1244,7 @@ def repack_Q4_0_for_sm8x[
     comptime uint_K = K // pack_factor
     comptime uint_BK = BK // pack_factor
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
@@ -1451,7 +1451,7 @@ def repack_GPTQ_for_sm8x[
     comptime uint_K = K // pack_factor
     comptime uint_BK = BK // pack_factor
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
@@ -1648,7 +1648,7 @@ def repack_GPTQ_for_sm8x[
             raw_scales_gmem_iter._incr()
 
 
-@always_inline
+@inline(.always)
 @doc_hidden
 def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     """Computes the shared memory footprint in bytes for the quantized GEMM kernel under the given configuration.
@@ -1810,7 +1810,7 @@ def multistage_gemm_q[
     )
 
 
-@always_inline
+@inline(.always)
 def matmul_gpu_qint4[
     c_type: DType,
     a_type: DType,
@@ -1860,7 +1860,7 @@ def matmul_gpu_qint4[
     )
 
 
-@always_inline
+@inline(.always)
 def matmul_gpu_qint4_impl[
     c_type: DType,
     a_type: DType,
@@ -2379,7 +2379,7 @@ def matmul_gpu_qint4_impl[
     )
 
 
-@always_inline
+@inline(.always)
 def gpu_qint4_repack_Q4_0[
     target: StaticString,
 ](
@@ -2439,7 +2439,7 @@ def gpu_qint4_repack_Q4_0[
     )
 
 
-@always_inline
+@inline(.always)
 def gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,

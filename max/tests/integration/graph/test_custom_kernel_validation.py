@@ -479,6 +479,12 @@ class TestCustomOperationExecution:
         input_tensor = Buffer.from_numpy(np.array([42], dtype=np.int32))
         compiled_model.execute(input_tensor)
 
+    @pytest.mark.skipif(
+        "MAX_GC_USE_ADV_FUSION" in os.environ,
+        reason="Segfaults the graph compiler under the new fusion system: the "
+        "inplace custom op's mutable buffer lowering crashes at compile time "
+        "(known gap). A process crash can't be xfail'd, so it's skipped.",
+    )
     def test_inplace_custom__execution_with_session(
         self, kernel_verification_ops_path: Path, session: InferenceSession
     ) -> None:

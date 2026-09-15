@@ -78,27 +78,21 @@ def test_every_cli_flag_routes_to_a_known_destination() -> None:
     )
 
 
-def test_from_args_threads_fold_sampler_and_pending_futures() -> None:
+def test_from_args_threads_runtime_flags() -> None:
     args = PipelineArgs(
-        runtime=PipelineRuntimeConfig(
-            fold_sampler_into_graph=True, max_pending_futures=2
-        )
+        runtime=PipelineRuntimeConfig(execute_empty_batches=True)
     )
     config = PipelineConfig.from_args(args)
-    assert config.runtime.fold_sampler_into_graph is True
-    assert config.runtime.max_pending_futures == 2
+    assert config.runtime.execute_empty_batches is True
 
 
 def test_runtime_flags_survive_flat_kwargs_path() -> None:
     # Non-default values for the fields this test guards, spelled the way
     # the CLI passes them (flat).
     config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(
-            fold_sampler_into_graph=True, max_pending_futures=2
-        )
+        PipelineArgs.from_flat_kwargs(execute_empty_batches=True)
     )
-    assert config.runtime.fold_sampler_into_graph is True
-    assert config.runtime.max_pending_futures == 2
+    assert config.runtime.execute_empty_batches is True
 
 
 def test_sampling_flags_survive_flat_kwargs_path() -> None:
@@ -109,6 +103,28 @@ def test_sampling_flags_survive_flat_kwargs_path() -> None:
         PipelineArgs.from_flat_kwargs(enable_structured_output=True)
     )
     assert config.sampling.enable_structured_output is True
+
+
+def test_cascade_field_round_trips_through_flat_kwargs() -> None:
+    # ``--cascade`` is a top-level PipelineArgs bool surfaced by the serve
+    # CLI; it must survive the flat-kwargs path so ``cli_serve`` can branch on
+    # ``pipeline_args.cascade``.
+    assert PipelineArgs.from_flat_kwargs(cascade=False).cascade is False
+    assert PipelineArgs.from_flat_kwargs(cascade=True).cascade is True
+
+
+def test_cascade_skips_huggingface_manifest_probe() -> None:
+    # Cascade accepts Cascade-only model paths (e.g. ``echo:``) that the
+    # HuggingFace manifest probe rejects. With ``--cascade`` set, the probe
+    # must be skipped so ``from_flat_kwargs`` does not fail before the serve
+    # entrypoint can forward to Cascade.
+    with pytest.raises(ValueError):
+        PipelineArgs.from_flat_kwargs(model_path="echo:org/some-model")
+    args = PipelineArgs.from_flat_kwargs(
+        cascade=True, model_path="echo:org/some-model"
+    )
+    assert args.cascade is True
+    assert args.model_path == "echo:org/some-model"
 
 
 def test_empty_models_kwarg_is_not_a_manifest_override() -> None:

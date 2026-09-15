@@ -155,11 +155,11 @@ def bench_topk_batched[
 
     ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_func(
         mut b: Bencher,
     ) {var K_dev_buffer, var top_p_dev_buffer, imm,}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
@@ -333,9 +333,9 @@ def bench_topk_multi_rank[
         )
     )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) {var k, imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             topk_gpu[sampling=sampling, largest=largest](
                 ctx,
@@ -467,9 +467,9 @@ def bench_topk_fi[
     ctx.synchronize()
     var seed_tt = TileTensor(seed_device_buffer, row_major(batch_size))
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) {imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             _topk_topp_sampling_fi[dtype, out_idx_type](
                 ctx,
@@ -573,9 +573,9 @@ def bench_topk_topp_dist[
     ctx.enqueue_copy(seed_dev, seed_host)
     ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) {mut tokens_dev, mut dist_dev, imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(
             ctx: DeviceContext,
         ) raises {mut tokens_dev, mut dist_dev, imm}:
@@ -688,9 +688,9 @@ def bench_topk_topp_masked[
     ctx.enqueue_copy(top_k_dev, top_k_host)
     ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) {mut probs_dev, imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {mut probs_dev, imm}:
             topk_topp_masked_probs[dtype](
                 ctx,
@@ -827,7 +827,11 @@ def main() raises:
     # If no N was provided (kbench env args or --N= on the CLI), run the
     # built-in dispatch grid instead of the parameterized benchmark.
     var N = arg_parse("N", -1)
+    var gumbel_from_probs = arg_parse("gumbel_from_probs", 0)
     if N < 0:
+        if gumbel_from_probs > 0:
+            bench_gumbel_from_probs()
+            return
         bench_dispatch_all()
         return
 
@@ -932,7 +936,7 @@ def main() raises:
 
 
 from std.benchmark import BenchConfig
-from nn.topk import fused_token_sampling_gpu
+from nn.topk import fused_token_sampling_gpu, gumbel_sampling_fused_gpu
 
 
 def bench_dispatch[
@@ -973,9 +977,9 @@ def bench_dispatch[
     )
     var iter0 = 0
 
-    @always_inline
+    @inline(.always)
     def do_bench(mut bb: Bencher) raises {mut iter0, imm}:
-        @always_inline
+        @inline(.always)
         def launch(
             dctx: DeviceContext,
         ) raises {
@@ -1048,6 +1052,67 @@ def bench_dispatch_all() raises:
         b.dump_report()
 
 
+def bench_gumbel_from_probs() raises:
+    # The fused sampler's `from_probs` path refuses to build on Apple
+    # (`_block_reduce_topk` caps its shared storage at WARP_SIZE there while
+    # the kernel launches full-sized blocks), so the benchmark cannot be
+    # instantiated for Metal.
+    comptime if has_apple_gpu_accelerator():
+        raise Error("the gumbel_from_probs benchmark requires a non-Apple GPU")
+    else:
+        comptime dtype = DType.float32
+        comptime vocab = 200064
+
+        with DeviceContext() as ctx:
+            var b = Bench()
+            b.config.max_iters = 200
+            b.config.show_progress = False
+            for rows in [32, 96]:
+                var probs_buf = ctx.enqueue_create_buffer[dtype](rows * vocab)
+                var out_buf = ctx.enqueue_create_buffer[.int64](rows)
+                var seed_buf = ctx.enqueue_create_buffer[.uint64](rows)
+                probs_buf.enqueue_fill(Scalar[dtype](1.0 / vocab))
+                seed_buf.enqueue_fill(UInt64(42))
+                ctx.synchronize()
+
+                var probs = (
+                    TileTensor(probs_buf, row_major(rows, vocab))
+                    .as_unsafe_any_origin()
+                    .as_immut()
+                )
+                var out = TileTensor(out_buf, row_major(rows))
+                var seeds = (
+                    TileTensor(seed_buf, row_major(rows))
+                    .as_unsafe_any_origin()
+                    .as_immut()
+                )
+
+                @inline(.always)
+                def bench_fn(mut bb: Bencher) raises {imm}:
+                    @inline(.always)
+                    def launch(dctx: DeviceContext) raises {imm}:
+                        gumbel_sampling_fused_gpu[from_probs=True](
+                            dctx, probs, out, seed=seeds
+                        )
+
+                    bencher_iter_custom(bb, launch, ctx)
+
+                b.bench_function(
+                    bench_fn,
+                    BenchId(
+                        String(
+                            "gumbel_from_probs/rows=", rows, "/vocab=", vocab
+                        )
+                    ),
+                )
+                _ = probs_buf^
+                _ = out_buf^
+                _ = seed_buf^
+
+            print()
+            b.dump_report()
+
+
 def bench_bitonic_topk(
     mut b: Bench,
     ctx: DeviceContext,
@@ -1070,9 +1135,9 @@ def bench_bitonic_topk(
     scores_buf.enqueue_fill(Scalar[dtype](0.5))
     ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_fn(mut bb: Bencher) {mut idxs_buf, imm}:
-        @always_inline
+        @inline(.always)
         def launch(dctx: DeviceContext) raises {mut idxs_buf, imm}:
             persistent_topk_block(
                 dctx,

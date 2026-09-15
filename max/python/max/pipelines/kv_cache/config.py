@@ -183,11 +183,9 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Endpoint for the co-located dKV service.
 
-    Remote dKV endpoints are discovered at runtime through the
-    Orchestrator (via ``external_block_metadata`` on the request
-    context), not configured statically. For multi-store reads, the
-    discovered metadata must include MAX-native transfer-engine metadata so
-    the connector can reuse ``KVTransferEngine.connect()``.
+    Remote dKV endpoints are discovered at runtime from the Orchestrator's
+    per-request ``dkv_cache_hint``, not configured statically. The connector
+    parses the hint in Rust and dials each named instance itself.
     """
 
 
@@ -331,6 +329,7 @@ class KVCacheConfig(ConfigFileModel):
         num_draft_tokens: int = 0,
         allow_kv_head_replication: bool = False,
         page_size: int | None = None,
+        slots_per_page: int | None = None,
         window_size: int | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
@@ -364,6 +363,10 @@ class KVCacheConfig(ConfigFileModel):
                 back to the config's :attr:`kv_cache_page_size`). Architectures
                 with a kernel-imposed minimum page size pass their effective
                 value here instead of mutating the shared config.
+            slots_per_page: Storage slots per KV cache page, which must divide
+                the page size evenly. Defaults to ``None``, one slot per token.
+                An architecture whose attention compresses a run of tokens into
+                one cached entry passes the entries a page compresses into.
             window_size: Window size for the attention layer.
 
         Returns:
@@ -379,6 +382,7 @@ class KVCacheConfig(ConfigFileModel):
             page_size=(
                 page_size if page_size is not None else self.kv_cache_page_size
             ),
+            slots_per_page=slots_per_page,
             enable_prefix_caching=self.enable_prefix_caching,
             enable_dp_cross_replica_prefix_copy=(
                 self.enable_dp_cross_replica_prefix_copy

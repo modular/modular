@@ -35,10 +35,13 @@ class InklingMemoryPlanner(PagedMemoryPlanner):
         del huggingface_config
         config = self._config
         assert isinstance(config, InklingConfig)
-        layout = InklingConvStateLayout.from_config(config.text_config)
+        tp_size = len(config.devices)
+        layout = InklingConvStateLayout.from_config(
+            config.text_config, tp_size=tp_size
+        )
         # Runs before the estimator resolves the batch size, so fall back to
         # the value it will infer.
         max_batch_size = (
             pipeline_config.runtime.max_batch_size or _DEFAULT_BATCH_SIZE
         )
-        return max_batch_size * layout.bytes_per_request()
+        return tp_size * max_batch_size * layout.bytes_per_request()

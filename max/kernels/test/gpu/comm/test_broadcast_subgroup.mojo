@@ -24,7 +24,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, row_major
 from std.testing import assert_true
 
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.broadcast import broadcast
 from comm.sync import enable_p2p, init_signal_buffer
 
@@ -35,7 +35,7 @@ comptime test_dtypes = (DType.uint8, DType.bfloat16)
 comptime test_gpu_counts = (2, 4)
 
 
-@always_inline
+@inline(.always)
 @__parameter
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     return Scalar[dtype](root + 1) + Scalar[dtype](j % 251)
@@ -69,7 +69,7 @@ def broadcast_subgroup_test[
     var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
     for i in range(ngpus):
@@ -82,13 +82,6 @@ def broadcast_subgroup_test[
 
     var num_bytes = length * size_of[dtype]()
     var signal_buf_size = size_of[Signal]() + ceildiv(num_bytes, ngpus)
-
-    # Production leaves the slots past the group size uninitialized; poison
-    # them so an out-of-group read faults deterministically.
-    for i in range(MAX_GPUS):
-        rank_sigs[i] = MutPointer[Signal, MutAnyOrigin](
-            unsafe_from_address=0xDEAD_BEEF_0000
-        )
 
     for i in range(ngpus):
         signal_buffers.append(

@@ -25,10 +25,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.modular_graph_test import modular_graph_test
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -74,13 +73,6 @@ def test_kv_cache_ragged_attention(
         DType.uint32, ["input_row_offsets_len"], DeviceRef.CPU()
     )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     kv_symbolic_inputs = kv_params.get_symbolic_inputs()
 
     def construct() -> Graph:
@@ -92,26 +84,12 @@ def test_kv_cache_ragged_attention(
                 *kv_symbolic_inputs.flatten(),
             ],
         ) as g:
-            (
-                input,
-                input_row_offsets,
-                blocks,
-                cache_lengths,
-                lookup_table,
-                max_prompt_length,
-                max_cache_length,
-                attention_dispatch_metadata,
-            ) = g.inputs
+            input, input_row_offsets, *kv_inputs = g.inputs
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                blocks.buffer,
-                cache_lengths.tensor,
-                lookup_table.tensor,
-                max_prompt_length.tensor,
-                max_cache_length.tensor,
-                attention_dispatch_metadata=attention_dispatch_metadata.tensor,
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(kv_inputs)
+            ).inputs[0]
             result = flash_attention_ragged(
                 kv_params,
                 input=input.tensor,
@@ -127,15 +105,6 @@ def test_kv_cache_ragged_attention(
 
     g = construct()
 
-    batch = [
-        create_text_context(np.empty(prompt_lens[i])) for i in range(batch_size)
-    ]
-
-    for context in batch:
-        kv_manager.claim(context)
-        assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context)
-
     input_row_offsets = Buffer(
         DType.uint32,
         [batch_size + 1],
@@ -145,7 +114,9 @@ def test_kv_cache_ragged_attention(
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
+    )
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     @modular_graph_test(
@@ -157,12 +128,8 @@ def test_kv_cache_ragged_attention(
         },
         provided_inputs={
             1: input_row_offsets,
-            2: kv_runtime_inputs.kv_blocks,
-            3: kv_runtime_inputs.cache_lengths,
-            4: kv_runtime_inputs.lookup_table,
-            5: kv_runtime_inputs.max_prompt_length,
-            6: kv_runtime_inputs.max_cache_length,
-            7: kv_runtime_inputs.attention_dispatch_metadata,
+            # The KV tail starts at slot 2; let its own order place the rest.
+            **{2 + i: buf for i, buf in enumerate(kv_runtime_inputs.flatten())},
         },
     )
     def test_runs_without_nan(

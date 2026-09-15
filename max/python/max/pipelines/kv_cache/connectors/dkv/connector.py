@@ -30,7 +30,6 @@ import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 
-import msgspec
 from max.driver import Buffer, Device
 from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
@@ -43,6 +42,7 @@ from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
+    SUPPORTED_NIXL_BACKENDS,
     NixlBackendType,
     validate_nixl_backend,
 )
@@ -202,12 +202,44 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 
 # Default wall-clock budget for admitting (connect + handshake) one per-replica
 # dKV client. dKV is co-located and usually up within seconds, but a still-
-# starting server (connection refused) or a cold slab warm-up (deferred region
-# carve) can take longer; admission retries transient failures until this budget
-# is spent, then fails model load. Override via MODULAR_DKV_ADMISSION_TIMEOUT_S.
-_DEFAULT_ADMISSION_TIMEOUT_S = 120.0
+# starting server (connection refused), a cold slab warm-up (deferred region
+# carve), or a node with no room until a departed tenant's pages drain can all
+# take much longer; admission retries transient failures until this budget is
+# spent, then fails model load. Override via MODULAR_DKV_ADMISSION_TIMEOUT_S.
+#
+# Sized above a worst-case cold carve, which budgets to roughly 600s for a
+# 1.6 TiB slab. A single attempt does not have to cover that carve, because the
+# server builds a share single-flight and a retry blocks on the in-flight build
+# rather than starting a second one, so what matters is that the budget spans
+# enough attempts to outlast it.
+_DEFAULT_ADMISSION_TIMEOUT_S = 600.0
 _ADMISSION_INITIAL_BACKOFF_S = 1.0
 _ADMISSION_MAX_BACKOFF_S = 10.0
+
+# The Rust client's default per-attempt handshake bound, mirrored from
+# DEFAULT_HANDSHAKE_REQUEST_TIMEOUT in dkv-connector/src/transport.rs, purely to
+# size the admission floor below.
+#
+# Deliberately the constant and not MODULAR_DKV_HANDSHAKE_TIMEOUT_S. That
+# variable belongs to the transport, which reads it permissively (anything
+# unparsable, non-positive, or above its 3600s cap silently falls back), and a
+# second parser here would disagree with it in both directions: rejecting values
+# the transport accepts, and sizing the floor off values the transport ignores.
+_DEFAULT_HANDSHAKE_TIMEOUT_S = 60.0
+
+# An admission budget has to cover several whole attempts. At or just above the
+# per-attempt timeout it is spent inside the first attempt and retries nothing,
+# so a refusal that would clear in seconds fails model load instead. That is the
+# shape of CLIN-1842.
+#
+# The floor is computed against the DEFAULT per-attempt timeout, not the
+# configured one. An operator raising the handshake timeout is covering one long
+# cold carve, not asking for a proportionally longer budget: a retry blocks on
+# the in-flight single-flight build rather than starting a second one, so the
+# per-attempt bound does not multiply the work. Scaling the floor by it would
+# reject configurations that raise both together, which is exactly what the
+# in-tree kimi26 deployment and transport.rs both instruct.
+_MIN_ADMISSION_ATTEMPTS = 4
 
 
 # Env-var overrides for the Rust client's background heartbeat poller, mapped to
@@ -268,23 +300,85 @@ def _heartbeat_overrides() -> dict[str, int]:
     return overrides
 
 
-def _nixl_backend_override() -> NixlBackendType | None:
-    """The validated NIXL transfer backend override, or ``None`` when unset.
+def _required_nixl_backend() -> NixlBackendType:
+    """The validated NIXL transfer backend this connector must use.
 
-    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` with the same three-way shape as
-    the Rust ``BackendSelection`` parse: unset, empty, and case-insensitive
-    ``auto`` mean auto-select (``None`` here) — the dKV server's own
-    ``DKV_MEMXFER_BACKEND`` accepts and defaults to ``auto``, so that spelling
-    must not crash the MAX pod — and anything else goes through the same
-    validator as the KV transfer engine, so a typo fails model load with the
-    accepted set rather than surfacing as a handshake mismatch. The default
-    differs from the transfer engine on purpose: it assumes ``"ucx"``, while
-    the connector auto-selects.
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND``, which is mandatory: dKV has no
+    auto-select mode, so there is nothing for an unset variable to mean. An
+    unset, empty, or unknown value fails model load naming the variable and
+    the accepted set, rather than surfacing later as a handshake mismatch or a
+    transfer against a transport that cannot do the job. ``auto`` reaches the
+    validator like any other unknown name — it was the dKV server's own
+    spelling for the mode that was removed, so an operator mirroring
+    ``DKV_MEMXFER_BACKEND`` gets a clear error instead of a silent fallback.
+
+    This deliberately differs from the KV transfer engine, which assumes
+    ``"ucx"`` when the variable is unset. The two consumers share the
+    validator, not the default.
+
+    Returns:
+        The transport to hand the Rust client, normalized to lowercase.
+
+    Raises:
+        ValueError: If the variable is unset, empty, or not a supported
+            backend.
     """
     raw = os.getenv(NIXL_BACKEND_ENV_VAR, "").strip()
-    if not raw or raw.lower() == "auto":
-        return None
+    if not raw:
+        raise ValueError(
+            f"{NIXL_BACKEND_ENV_VAR} must be set to the NIXL transport this "
+            "host's fabric needs (libfabric on EFA, ucx on InfiniBand). The "
+            "dKV connector has no auto-select mode, so there is no default. "
+            f"Supported backends: {sorted(SUPPORTED_NIXL_BACKENDS)}"
+        )
     return validate_nixl_backend(raw)
+
+
+def _required_operator_env() -> tuple[NixlBackendType, str]:
+    """The operator-injected settings dKV refuses to start without.
+
+    Both the NIXL transport and the tenant identity are the deployment
+    operator's to set, and a pod missing one is usually missing both, so they
+    are validated in one pass: an operator learns every missing variable from
+    a single model load instead of discovering the next one after fixing the
+    first. A lone problem is reported on its own, so the common
+    one-variable-missing message stays as direct as it was.
+
+    Returns:
+        The transport to hand the Rust client and the tenant identity.
+
+    Raises:
+        ValueError: If either variable is unset or empty, or the transport is
+            not a supported backend, naming every problem found.
+    """
+    problems: list[str] = []
+
+    backend: NixlBackendType | None = None
+    try:
+        backend = _required_nixl_backend()
+    except ValueError as exc:
+        problems.append(str(exc))
+
+    # MODULAR_DKV_TENANT_ID is injected by the operator (the trust boundary —
+    # not a user-facing override flag, which would be forgeable). It is
+    # REQUIRED: dKV has no default/legacy single-tenant path, so an unset or
+    # empty value fails model load rather than silently keying an unfenced
+    # shared store. Every DP replica handshakes the same per-tenant identity
+    # (kv_shard_id/replica_id zeroed), so the server keys ONE region-sharded
+    # store per tenant_id (backend dedup).
+    tenant_id = os.getenv("MODULAR_DKV_TENANT_ID", "")
+    if not tenant_id:
+        problems.append(
+            "dKV requires MODULAR_DKV_TENANT_ID to be set to a non-empty "
+            "tenant identity (the operator injects it); the legacy "
+            "empty-tenant default path has been removed."
+        )
+
+    if problems:
+        raise ValueError(" ".join(problems))
+
+    assert backend is not None  # no problems recorded means it parsed
+    return backend, tenant_id
 
 
 def _dtype_tag(dtype: object) -> str:
@@ -306,9 +400,9 @@ def _layout_fields(
     :class:`MultiKVCacheParams` tree contributes a ``multi`` marker, its child
     count, and each child's fields recursively, prefixed by the child's index
     and name in the tree's insertion order. That order is deterministic for a
-    fixed model config and matches the ``to_memory()`` unit order the
-    concatenated block (and thus ``unit_strides``) follows, so folding the index
-    and name makes any child add/remove/reorder flip the fingerprint.
+    fixed model config and matches the declared leaf order the concatenated
+    block (and thus ``unit_strides``) follows, so folding the index and name
+    makes any child add/remove/reorder flip the fingerprint.
 
     Excludes the contract version and the concatenated ``unit_strides``, which
     :func:`_kv_config_hash` owns at the top level so a multi-cache tree folds
@@ -376,8 +470,8 @@ def _kv_config_hash(
       (speculative draft+target, quantized values+scales), a ``multi`` marker
       plus each child's fields folded recursively under its index and name.
     * ``unit_strides`` — comma-joined per-page byte stride of one shard's
-      buffer units in canonical ``to_memory()`` order (values, quant scales,
-      indexer, draft, and so on), derived by :func:`_shard_unit_strides`. A
+      buffer units in declared leaf order (values, quant scales, indexer,
+      draft, and so on), derived by :func:`_shard_unit_strides`. A
       shard's dKV block is these strides concatenated across the WHOLE cache
       tree, so any change to the unit set or its ordering makes stored blocks
       byte-incompatible and must flip the hash. Folding one shard's subsequence
@@ -508,6 +602,62 @@ def _is_permanent_admission_error(exc: Exception) -> bool:
     return "[retriable=false]" in str(exc)
 
 
+def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
+    """Resolves the admission retry budget, raising it to cover several attempts.
+
+    A budget too small to retry is corrected with a warning rather than
+    rejected. The point of the floor is to guarantee that a transient refusal is
+    retried; failing model load at construction would trade one broken outcome
+    for another, and would do it to deployments that merely pinned the old
+    default.
+
+    Args:
+        env: Environment to read; defaults to :data:`os.environ`. Injectable for
+            tests.
+
+    Returns:
+        The admission budget in seconds, never below the floor.
+
+    Raises:
+        ValueError: If ``MODULAR_DKV_ADMISSION_TIMEOUT_S`` is set but not a
+            positive, finite number. This shim is its only reader, so there is
+            no permissive parser to mirror and a typo is worth surfacing.
+    """
+    env = os.environ if env is None else env
+
+    raw = env.get("MODULAR_DKV_ADMISSION_TIMEOUT_S")
+    if raw is None:
+        admission_s = _DEFAULT_ADMISSION_TIMEOUT_S
+    else:
+        try:
+            admission_s = float(raw)
+        except ValueError:
+            raise ValueError(
+                f"MODULAR_DKV_ADMISSION_TIMEOUT_S={raw!r} is not a number"
+            ) from None
+        if not (0 < admission_s < float("inf")):
+            raise ValueError(
+                f"MODULAR_DKV_ADMISSION_TIMEOUT_S={raw!r} must be a positive, "
+                f"finite number"
+            )
+
+    minimum = _MIN_ADMISSION_ATTEMPTS * _DEFAULT_HANDSHAKE_TIMEOUT_S
+    if admission_s < minimum:
+        _logger.warning(
+            "dKV admission budget %gs is below %.0fs, the time %d handshake "
+            "attempts can take, so a transient refusal would fail model load "
+            "instead of being retried; using %.0fs. Set "
+            "MODULAR_DKV_ADMISSION_TIMEOUT_S at or above %.0fs to silence this.",
+            admission_s,
+            minimum,
+            _MIN_ADMISSION_ATTEMPTS,
+            minimum,
+            minimum,
+        )
+        return minimum
+    return admission_s
+
+
 def _admit_with_retry(
     factory: Callable[[], object],
     *,
@@ -561,27 +711,6 @@ def _admit_with_retry(
             backoff *= 2
 
 
-class DKVExternalBlockMetadata(
-    msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
-):
-    """Marker that a block hash is referenced by the orchestrator hint.
-
-    The slim hint only carries ``seq_hash``; the dKV server resolves slab
-    location and length when the connector reads the block. We still wrap the
-    hash in a typed struct so the context payload survives the
-    API-server -> model-worker process boundary via msgspec's tagged-struct
-    serialization.
-
-    The struct is intentionally retained even though it degenerates to a single
-    ``seq_hash`` field today. The orchestrator's hint shape is expected to evolve
-    to mix blocks from multiple source dKV instances in a single hint (per-block
-    ``instance_name`` for routing); keeping the per-block container in place now
-    lets that land without re-introducing a context-side data structure.
-    """
-
-    seq_hash: int
-
-
 class DKVConnector(KVConnector):
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
@@ -621,13 +750,16 @@ class DKVConnector(KVConnector):
                 ``kv_config_hash``.
 
         Raises:
-            ValueError: If ``MODULAR_DKV_TENANT_ID`` is unset or empty — dKV has
-                no default/legacy single-tenant path, so it fails model load
-                rather than silently keying an unfenced shared store.
+            ValueError: If either operator-injected variable is missing —
+                ``MODULAR_NIXL_TRANSFER_BACKEND`` (dKV auto-selects no
+                transport) or ``MODULAR_DKV_TENANT_ID`` (dKV has no
+                default/legacy single-tenant path, so it fails model load
+                rather than silently keying an unfenced shared store). Both are
+                checked in one pass, so a pod missing both is told about both.
         """
-        # Deferred so importing this module (e.g. for DKVExternalBlockMetadata,
-        # or by non-dKV pipelines) does not require the optional, runtime-
-        # provided dkv_connector extension to be installed.
+        # Deferred so importing this module (e.g. by a non-dKV pipeline) does
+        # not require the optional, runtime-provided dkv_connector extension to
+        # be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
 
         # The Rust client creates a NIXL agent, which dlopens the transport
@@ -645,7 +777,10 @@ class DKVConnector(KVConnector):
             )
 
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
-        backend = _nixl_backend_override()
+        # Both operator-injected variables at once, so a pod missing both is
+        # told about both (CLIN-1730 made the transport required alongside the
+        # tenant identity, and reading them separately reported only the first).
+        backend, tenant_id = _required_operator_env()
 
         # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
         # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
@@ -662,21 +797,6 @@ class DKVConnector(KVConnector):
             "y",
         )
 
-        # Tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
-        # injected by the operator (the trust boundary — not a user-facing
-        # override flag, which would be forgeable). It is REQUIRED: dKV has no
-        # default/legacy single-tenant path, so an unset or empty value fails
-        # model load rather than silently keying an unfenced shared store. Every
-        # DP replica handshakes the same per-tenant identity (kv_shard_id/
-        # replica_id zeroed), so the server keys ONE region-sharded store per
-        # tenant_id (backend dedup).
-        tenant_id = os.getenv("MODULAR_DKV_TENANT_ID", "")
-        if not tenant_id:
-            raise ValueError(
-                "dKV requires MODULAR_DKV_TENANT_ID to be set to a non-empty "
-                "tenant identity (the operator injects it); the legacy "
-                "empty-tenant default path has been removed."
-            )
         num_replicas = len(replica_kv_memory)
         # one shard's per-unit page strides in canonical order, from replica 0
         # because every DP replica runs the same model and config and so the
@@ -732,12 +852,7 @@ class DKVConnector(KVConnector):
         # than a restatement of it.
         devices_per_replica = split_into_groups(list(devices), num_replicas)
 
-        admission_timeout_s = float(
-            os.getenv(
-                "MODULAR_DKV_ADMISSION_TIMEOUT_S",
-                str(_DEFAULT_ADMISSION_TIMEOUT_S),
-            )
-        )
+        admission_timeout_s = _resolve_admission_timeout_s()
 
         heartbeat_overrides = _heartbeat_overrides()
         if heartbeat_overrides:
@@ -857,7 +972,7 @@ class DKVConnector(KVConnector):
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
     ) -> object:
-        # Group the to_memory() units into one (device_id, units) entry
+        # Group the per-leaf units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
         # this order, into one dKV block, so a quantized cache's scale buffers
         # and a multi-cache buffer's extra caches (speculative draft and
@@ -886,8 +1001,8 @@ class DKVConnector(KVConnector):
         # seq_hash)`` key, so its shard ids must line up with ours by device
         # rank. ``expected_devices`` is the replica's device order sourced from
         # the pipeline config, so comparing it against the shard order the
-        # grouping derived catches a future ``to_memory`` change that reorders
-        # buffers before it silently shifts every key.
+        # grouping derived catches a future change that reorders buffers
+        # before it silently shifts every key.
         registered_order = [device_id for device_id, _ in shards]
         expected_order = [device.id for device in expected_devices]
         if registered_order != expected_order:
@@ -936,6 +1051,7 @@ class DKVConnector(KVConnector):
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
+        hint: bytes | None = None,
     ) -> KVConnectorTransfer:
         """Loads external blocks into ``replica_idx``'s device memory by hash.
 
@@ -943,6 +1059,11 @@ class DKVConnector(KVConnector):
         ``ahash64`` / ``sha256_64`` or 32 bytes for full ``sha256``. 32-byte
         digests are truncated to their first 8 bytes at the dkv boundary (see
         :func:`_to_dkv_u64`).
+
+        ``hint`` is the request's ``dkv_cache_hint`` JSON bytes, forwarded
+        unparsed: the Rust client reads it to route each block to the peer that
+        holds it, and treats anything unusable as no hint, which costs a miss
+        rather than a failed load.
 
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set). The
@@ -964,6 +1085,7 @@ class DKVConnector(KVConnector):
             group_id=_DKV_GROUP_FULL_ATTENTION,
             block_ids=leaf_block_ids,
             block_hashes=dkv_hashes,
+            hint=hint,
         )
         # dKV orders its posted READs before the forward in the deprecated
         # ``wait_for_loads`` barrier, so the manager treats the load as already
@@ -1103,6 +1225,16 @@ class DKVConnector(KVConnector):
                 nixl_write_bytes=m["write_bytes"],
                 nixl_read_latency_total_ms=m["read_transfer_latency_total_ms"],
                 nixl_read_latency_count=m["read_transfer_latency_count"],
+                nixl_read_latency_max_ms=m["read_transfer_latency_max_ms"],
+                # The lookup RPCs, which the transfer pairs above exclude by
+                # construction: they bracket the copies, these bracket the
+                # round trip that finds and pins the blocks. Unfed until
+                # CLIN-1844, which is why the scheduler log used to print
+                # "acquire 0.0ms, pin 0.0ms" on every line.
+                rpc_read_latency_total_ms=m["rpc_read_latency_total_ms"],
+                rpc_read_latency_count=m["rpc_read_latency_count"],
+                rpc_acquire_latency_total_ms=m["rpc_acquire_latency_total_ms"],
+                rpc_acquire_latency_count=m["rpc_acquire_latency_count"],
                 nixl_write_latency_total_ms=m[
                     "write_transfer_latency_total_ms"
                 ],
@@ -1110,5 +1242,15 @@ class DKVConnector(KVConnector):
                 dkv_connected_clients=1 if m["connected"] else 0,
                 dkv_total_clients=1,
                 dkv_reconnect_attempts=m["reconnect_attempts"],
+                # Cross-node pull. Ordinary per-window deltas that
+                # reset_metrics clears, unlike the health keys above, so they
+                # fold in the same way as the transfer keys. The dict also
+                # carries attached_peers, a level neither engine exports yet.
+                dkv_peer_attaches=m["peer_attaches"],
+                dkv_peer_attach_failures=m["peer_attach_failures"],
+                dkv_peers_dropped=m["peers_dropped"],
+                dkv_peer_loads=m["peer_loads"],
+                dkv_peer_load_failures=m["peer_load_failures"],
+                dkv_hints_rejected=m["hints_rejected"],
             )
         return total

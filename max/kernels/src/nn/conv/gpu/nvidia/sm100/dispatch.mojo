@@ -16,7 +16,7 @@ This module provides a dtype-safe dispatch function that gates SM100
 conv2d kernel instantiation to supported dtypes (bf16/fp16) only.
 Importing this module does NOT trigger kernel compilation -- the kernel
 is only compiled when `dispatch_sm100_conv2d` is called with a supported
-dtype inside a @parameter if guard.
+dtype inside a comptime if guard.
 """
 
 from std.collections import OptionalReg
@@ -94,7 +94,7 @@ def _transpose_fcrs_to_krsc[
 # =========================================================================
 
 
-@always_inline
+@inline(.always)
 def test_alignment_sm100_conv2d[
     input_type: DType, output_type: DType
 ](in_channels: Int, out_channels: Int) -> Bool:
@@ -142,7 +142,7 @@ def dispatch_sm100_conv2d[
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.
 
-    This function gates the SM100 kernel import behind @parameter if
+    This function gates the SM100 kernel import behind comptime if
     on dtype, so the kernel is never compiled for unsupported dtypes.
 
     Parameters:
@@ -260,7 +260,7 @@ def dispatch_sm100_conv2d[
         var in_c_bytes = in_c * size_of[input_type]()
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def _launch[
             swizzle: TensorMapSwizzle,
             num_pipeline_stages_override: Int = 0,

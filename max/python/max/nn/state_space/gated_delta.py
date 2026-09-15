@@ -33,10 +33,14 @@ design — kernel does pointer arithmetic ``state_ptr += slot * stride``
 into a long-lived pool, no per-step pool allocation.
 
 
-Usage
------
-::
+**Usage:**
 
+.. skip: next
+
+.. code-block:: python
+
+    # Illustrative fragment: the pools and projected tensors come from a
+    # live gated-deltanet layer, so it isn't runnable standalone.
     from max.nn.state_space import (
         gated_delta_conv1d_fwd,
         gated_delta_recurrence_fwd,
@@ -78,22 +82,26 @@ def gated_delta_conv1d_fwd(
     slot_idx: TensorValue,
     input_row_offsets: TensorValue,
 ) -> TensorValue:
-    """Pass 1: causal conv1d that mutates a slot-indexed pool in place.
+    """Applies the causal conv1d pass, mutating a slot-indexed conv-state
+    pool in place.
 
-    ``conv_state`` is a mutable pool of shape ``[max_slots, conv_dim, K-1]``
-    and the kernel reads/writes slot ``slot_idx[batch_item]`` directly.
-    There is no ``conv_state_out`` graph output: the pool is mutated in
-    place.
+    ``conv_state`` is a mutable pool of shape ``[max_slots, conv_dim,
+    kernel_size - 1]`` and the kernel reads/writes slot
+    ``slot_idx[batch_item]`` directly. There is no ``conv_state_out``
+    graph output: the pool is mutated in place.
 
     Args:
-        qkv_input_ragged: ``[total_seq_len, conv_dim]`` projected QKV input.
-        conv_weight: ``[conv_dim, kernel_size]`` depthwise conv weights.
-        conv_state: ``[max_slots, conv_dim, kernel_size-1]`` mutable pool.
-        slot_idx: ``[batch_size]`` uint32 slot indices into the pool.
-        input_row_offsets: ``[batch_size + 1]`` uint32 ragged offsets.
+        qkv_input_ragged: The ``[total_seq_len, conv_dim]`` projected QKV
+            input.
+        conv_weight: The ``[conv_dim, kernel_size]`` depthwise conv
+            weights.
+        conv_state: The ``[max_slots, conv_dim, kernel_size - 1]``
+            mutable pool.
+        slot_idx: The ``[batch_size]`` uint32 slot indices into the pool.
+        input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
 
     Returns:
-        ``conv_output_ragged: [total_seq_len, conv_dim]``.
+        The conv output, ``[total_seq_len, conv_dim]``.
     """
     device = qkv_input_ragged.device
     total_seq_len = qkv_input_ragged.shape[0]
@@ -138,24 +146,26 @@ def gated_delta_recurrence_fwd(
     slot_idx: TensorValue,
     input_row_offsets: TensorValue,
 ) -> TensorValue:
-    """Pass 2: gated delta recurrence mutating a slot-indexed pool in place.
+    """Applies the gated delta recurrence pass, mutating a slot-indexed
+    state pool in place.
 
-    ``recurrent_state`` is a mutable pool of shape ``[max_slots, nv, KD, VD]``
-    and the kernel reads/writes slot ``slot_idx[batch_item]`` directly.
-    There is no ``recurrent_state_out`` graph output: the pool is mutated
-    in place.
+    ``recurrent_state`` is a mutable pool of shape ``[max_slots, nv, KD,
+    VD]`` and the kernel reads/writes slot ``slot_idx[batch_item]``
+    directly. There is no ``recurrent_state_out`` graph output: the pool
+    is mutated in place.
 
     Args:
-        qkv_conv_output: ``[total_seq_len, conv_dim]`` from
+        qkv_conv_output: The ``[total_seq_len, conv_dim]`` output of
             :func:`gated_delta_conv1d_fwd`.
-        decay_per_token: ``[total_seq_len, num_value_heads]`` decays.
-        beta_per_token: ``[total_seq_len, num_value_heads]`` beta gates.
-        recurrent_state: ``[max_slots, nv, KD, VD]`` mutable pool.
-        slot_idx: ``[batch_size]`` uint32 slot indices into the pool.
-        input_row_offsets: ``[batch_size + 1]`` uint32 ragged offsets.
+        decay_per_token: The ``[total_seq_len, num_value_heads]`` decays.
+        beta_per_token: The ``[total_seq_len, num_value_heads]`` beta
+            gates.
+        recurrent_state: The ``[max_slots, nv, KD, VD]`` mutable pool.
+        slot_idx: The ``[batch_size]`` uint32 slot indices into the pool.
+        input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
 
     Returns:
-        ``recurrence_output: [total_seq_len, value_dim]``.
+        The recurrence output, ``[total_seq_len, value_dim]``.
     """
     device = qkv_conv_output.device
     total_seq_len = qkv_conv_output.shape[0]

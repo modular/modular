@@ -48,6 +48,7 @@ from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.base import TensorStruct
 from max.profiler import traced
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 from . import denoise
 from .autoregressive import (
@@ -74,20 +75,22 @@ ACTIVATION_HEADROOM = 6 * 2**30
 
 @dataclass(frozen=True)
 class MiniMaxMusic3Inputs(TensorStruct):
-    """One request, as tensors.
+    """One request, stored as tensors.
 
-    The prompt arrives embedded rather than as ids: the embedding table is the
-    only place the model's full 200000-row vocabulary is addressed, it is
-    addressed once per request, and keeping it off the device saves 1.6 GiB of
-    a card that has none to spare.
+    The prompt arrives already embedded rather than as token ids, which keeps
+    the model's 200000-row embedding table off the device. See
+    :func:`embed_text`.
     """
 
     prompt: Tensor
-    """``(2 * prompt_length, hidden_size)``: the conditional prompt's
-    embeddings and the classifier-free-guidance prompt's, laid end to end."""
+    """The conditional prompt embeddings and the classifier-free guidance
+    prompt embeddings, laid end to end. Shape is
+    ``(2 * prompt_length, hidden_size)``.
+    """
 
     prompt_length: Tensor
-    """Positions per prompt, 1-element int64. Both rows share one length."""
+    """The number of tokens in each prompt. A 1-element int64 tensor. Both
+    rows share one length."""
 
     max_frames: Tensor
     """Upper bound on generated frames, 1-element int64. The model may stop
@@ -123,13 +126,7 @@ def _read_float(tensor: Tensor) -> float:
 class MiniMaxMusic3Executor(
     PipelineExecutor[AudioContext, MiniMaxMusic3Inputs, AudioExecutorOutputs]
 ):
-    """Text and lyrics to music, one request at a time.
-
-    Compiles nothing at construction. Which stages can coexist is a property of
-    the device rather than of the model, so the decision is made once here and
-    the stages are built on first use -- kept between requests where they fit,
-    and dropped after each use where they do not.
-    """
+    """Turns a text prompt and lyrics into music, one request at a time."""
 
     def __init__(
         self,
@@ -167,10 +164,9 @@ class MiniMaxMusic3Executor(
         )
         staged = weights + ACTIVATION_HEADROOM > free
         logger.info(
-            "MiniMax Music 3: %.1f GiB of weights against %.1f GiB free, "
-            "%s residency.",
-            weights / 2**30,
-            free / 2**30,
+            "MiniMax Music 3: %s of weights against %s free, %s residency.",
+            to_human_readable_bytes(weights),
+            to_human_readable_bytes(free),
             "staged" if staged else "whole-model",
         )
         if staged:
@@ -184,7 +180,7 @@ class MiniMaxMusic3Executor(
 
     @property
     def sample_rate(self) -> int:
-        """44100 Hz, the vocoder's rate."""
+        """The vocoder's sample rate of 44100 Hz."""
         return self.config.sampling_rate
 
     # -- PipelineExecutor interface ------------------------------------------
@@ -197,9 +193,7 @@ class MiniMaxMusic3Executor(
 
         Raises:
             ValueError: If the batch is not exactly one request, or if the
-                context carries no guidance prompt -- this model's guidance is
-                not optional, and a missing second row would silently halve the
-                batch the graphs are compiled for.
+                context carries no guidance prompt.
         """
         if len(contexts) != 1:
             raise ValueError(
@@ -244,7 +238,9 @@ class MiniMaxMusic3Executor(
 
     @traced(message="MiniMaxMusic3Executor.execute")
     def execute(self, inputs: MiniMaxMusic3Inputs) -> AudioExecutorOutputs:
-        """Runs all three stages and returns the finished stereo waveform."""
+        """Runs the language model, diffusion, and vocoder stages, returning
+        the finished stereo waveform.
+        """
         seed = _read(inputs.seed)
         conditioning = self._generate(inputs, seed)
         chunks = self._denoise(

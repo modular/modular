@@ -45,7 +45,7 @@
 
 from std.sys import size_of
 
-from comm import MAX_GPUS, Signal, group_end, group_start
+from comm import Signal, group_end, group_start
 from comm.allreduce import allreduce, allreduce_tuning_table
 from comm.device_query import dispatch_select_comm_config
 from comm.sync import enable_p2p, init_signal_buffer
@@ -140,7 +140,7 @@ def allreduce_determinism_test[
     )
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
@@ -176,21 +176,25 @@ def allreduce_determinism_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tensors[i] = TileTensor(
+    var in_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTensorType: TileTensor(
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 in_dev[i].unsafe_ptr()
             ),
             row_major(length),
         )
+    )
 
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
+    var out_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) {
+            mut out_dev, imm
+        } -> OutTensorType: TileTensor(
+            out_dev[i], row_major(length)
+        ).as_unsafe_any_origin()
+    )
 
     # One-time signal-buffer init (barrier counters + Lamport sentinel), then
     # sync so every rank is initialized before the first push.

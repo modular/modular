@@ -34,14 +34,14 @@ from max.benchmark import (
 from layout import Idx, TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 
 from std.testing import assert_true
 
 
-@always_inline
+@inline(.always)
 def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
@@ -140,7 +140,7 @@ def bench_allgather[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -218,11 +218,11 @@ def bench_allgather[
             )
         list_of_ctx[gpu_idx].synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {mut tt_in, imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut tt_in, imm}:
@@ -233,15 +233,11 @@ def bench_allgather[
                     row_major(lengths[i]),
                 ).as_immut()
 
-            var device_out = Array[OutTileType, ngpus](
-                fill_with_unrolled=lambda [
-                    src_idx: Int
-                ]() -> OutTileType: tt_out[ctx_idx * ngpus + src_idx]
-            )
-
+            # `tt_out` is already the world-view output array `allgather`
+            # expects (`ngpus * ngpus` for this full-world, ungrouped bench).
             allgather(
                 tt_in,
-                device_out,
+                tt_out,
                 rank_sigs,
                 ctx_inner,
                 ctx_idx,

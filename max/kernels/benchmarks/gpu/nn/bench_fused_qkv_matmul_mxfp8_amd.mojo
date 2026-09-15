@@ -47,7 +47,7 @@ CDNA4 only: the fused epilogue and the block-scaled AMD matmul are MI355X paths.
 
 A run covers ONE variant at ONE shape, defaulting to dense at decode batch 1.
 The sibling yaml holds the sweep: `$has_indexer` over both variants crossed with
-`$batch_size` / `$seq_len` over the decode and prefill shapes.
+`$batch_size` / `$seq_len` over the decode, verify, and prefill shapes.
 
 Run the default (dense, decode bs=1):
     ./bazelw run //max/kernels/benchmarks:gpu/nn/bench_fused_qkv_matmul_mxfp8_amd
@@ -128,7 +128,7 @@ comptime IndexCollection = PagedKVCacheCollection[
 ]
 
 
-@always_inline
+@inline(.always)
 def _any(
     ptr: MutPointer[Scalar[OUT_DTYPE], ...],
 ) -> MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin]:
@@ -315,7 +315,7 @@ def bench_shape[
     )
 
     # ============ FUSED: one GEMM, scatter from the epilogue ============
-    @always_inline
+    @inline(.always)
     def fused_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {
@@ -393,7 +393,7 @@ def bench_shape[
                 ctx,
             )
 
-    @always_inline
+    @inline(.always)
     def fused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, fused_launch, ctx)
 
@@ -414,7 +414,7 @@ def bench_shape[
     )
 
     # ============ UNFUSED: one dense GEMM per output band ============
-    @always_inline
+    @inline(.always)
     def unfused_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {
@@ -447,7 +447,7 @@ def bench_shape[
 
         # Q band: the only wide one (N=2048); the rest are N=128.
         @__parameter
-        @always_inline
+        @inline(.always)
         def band[
             band_n: Int
         ](
@@ -498,7 +498,7 @@ def bench_shape[
         # Placing K/V (and IndexK) is the other half of what the fused epilogue
         # does, so the unfused path pays for those paged-store launches on top
         # of its band GEMMs.
-        @always_inline
+        @inline(.always)
         @__copy_capture(kv_out_ptr)
         def k_in[
             width: Int, alignment: Int
@@ -507,7 +507,7 @@ def bench_shape[
                 width=width
             ]()
 
-        @always_inline
+        @inline(.always)
         @__copy_capture(kv_out_ptr, total_seq)
         def v_in[
             width: Int, alignment: Int
@@ -516,7 +516,7 @@ def bench_shape[
                 _any(kv_out_ptr) + total_seq * kv_dim + idx[0] * kv_dim + idx[2]
             ).load[width=width]()
 
-        @always_inline
+        @inline(.always)
         @__copy_capture(kv_out_ptr, total_seq)
         def ik_in[
             width: Int, alignment: Int
@@ -548,7 +548,7 @@ def bench_shape[
                 ctx,
             )
 
-    @always_inline
+    @inline(.always)
     def unfused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, unfused_launch, ctx)
 
@@ -590,12 +590,17 @@ def main() raises:
     var has_indexer = arg_parse("has_indexer", False)
     var batch_size = Int(arg_parse("batch_size", 1))
     var seq_len = Int(arg_parse("seq_len", 1))
+    var is_verify = arg_parse("is_verify", False)
 
     seed(0)
     var m = Bench()
     with DeviceContext() as ctx:
         var prompt_lens = List[Int](length=batch_size, fill=seq_len)
-        var regime: String = "decode" if seq_len == 1 else "prefill"
+        var regime = "prefill"
+        if is_verify:
+            regime = "verify"
+        elif seq_len == 1:
+            regime = "decode"
         if has_indexer:
             bench_shape[True](ctx, m, prompt_lens, regime)
         else:

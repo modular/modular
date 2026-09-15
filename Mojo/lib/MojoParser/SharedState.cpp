@@ -25,6 +25,7 @@
 #include "ParserEvaluationContext.h"
 #include "Signatures.h"
 
+#include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -1559,7 +1560,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
       for (FlatSymbolRefAttr dep : deps) {
         ASTDecl *depDecl =
             &importModule({dep.getValue()},
-                          /*currentPackage=*/nullptr, decl.getLoc());
+                          /*currentPackage=*/nullptr, packageImportLoc);
         if (failed(declResolver->resolveBody(*depDecl, decl.getLoc())))
           return failure();
       }
@@ -2775,20 +2776,37 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return failure();
   };
 
-  // We can fold hlcf.if operations in limited form that end with a yield of
-  // a single value for which both sides are foldable.
-  if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
-    if (auto condVal = findValue(ifOp.getCond())) {
-      auto isYield = [](Operation &op) { return isa<HLCF::YieldOp>(op); };
-      auto trueVal = foldBlock(ifOp.getThenBlock(), isYield);
-      if (failed(trueVal))
-        return trueVal;
-      auto falseVal = foldBlock(ifOp.getElseBlock(), isYield);
-      if (failed(falseVal))
-        return falseVal;
+  // We can fold hlcf.if / single-arm hlcf.elif operations in limited form that
+  // end with a yield of a single value for which both sides are foldable.
+  auto foldIfLike = [&](Value cond, Block &thenBlock,
+                        Block &elseBlock) -> FailureOr<TypedAttr> {
+    auto condVal = findValue(cond);
+    if (!condVal)
+      return TypedAttr();
+    auto isYield = [](Operation &op) { return isa<HLCF::YieldOp>(op); };
+    auto trueVal = foldBlock(thenBlock, isYield);
+    if (failed(trueVal))
+      return trueVal;
+    auto falseVal = foldBlock(elseBlock, isYield);
+    if (failed(falseVal))
+      return falseVal;
 
-      return ParamOperatorAttr::get(POC::Cond, {condVal, *trueVal, *falseVal},
-                                    trueVal->getType());
+    return ParamOperatorAttr::get(POC::Cond, {condVal, *trueVal, *falseVal},
+                                  trueVal->getType());
+  };
+  if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
+    auto folded =
+        foldIfLike(ifOp.getCond(), ifOp.getThenBlock(), ifOp.getElseBlock());
+    if (failed(folded) || *folded)
+      return folded;
+  }
+  if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
+    // Only fold the simple if/else shape (no additional elif arms).
+    if (elifOp.getElifRegions().empty()) {
+      auto folded = foldIfLike(elifOp.getCond(), elifOp.getThenBlock(),
+                               elifOp.getElseBlock());
+      if (failed(folded) || *folded)
+        return folded;
     }
   }
 
@@ -2869,14 +2887,16 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   assert(llvm::isa_and_present<FnOp>(calleeDecl->getIfOperation()) &&
          "callee isn't known?");
   auto fnOp = cast_or_null<FnOp>(calleeDecl->getIfOperation());
-  if (fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
+  if (inlineLevelOrAutomatic(fnOp.getInlineLevel()) !=
+      InlineLevel::AlwaysBuiltin) {
     folder.emitError(callLoc) << "only supports calls to other "
                                  "'@always_inline(\"builtin\")' functions";
     return {};
   }
   if (failed(resolver.resolveBody(*calleeDecl, calleeDecl->getLoc())) ||
       // Double check to ensure body resolution's check succeeded.
-      fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
+      inlineLevelOrAutomatic(fnOp.getInlineLevel()) !=
+          InlineLevel::AlwaysBuiltin) {
     return {}; // Error already diagnosed.
   }
 

@@ -195,6 +195,98 @@ kgen.func @switch(%arg0: index) {
 // COM: Ensure raising inside anything other than the try region of a `lit.try`
 // COM: will not branch back to the except.
 
+// CHECK-LABEL: @match
+kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
+  // Entry branches to the first case (region #1; else is inlined first as ^bb1).
+  // CHECK-NEXT: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
+  // CHECK-NEXT: llvm.br ^bb2
+  %0 = hlcf.match -> i32 {
+    hlcf.if %arg0 {
+      hlcf.match.complete %arg1 : i32
+    } else {
+      hlcf.match.next
+    }
+    kgen.unreachable
+  }
+  case {
+    hlcf.if %arg0 {
+      hlcf.match.complete %arg1 : i32
+    } else {
+      hlcf.match.next
+    }
+    kgen.unreachable
+  }
+  else {
+    // CHECK-NEXT: ^bb1:
+    // CHECK: llvm.br ^bb8(%{{.*}} : i32)
+    hlcf.yield %arg2 : i32
+  }
+  // CHECK: ^bb2:
+  // CHECK: llvm.cond_br %{{.*}}, ^bb3, ^bb4
+  // CHECK: ^bb3:
+  // CHECK: llvm.br ^bb8(%{{.*}} : i32)
+  // CHECK: ^bb4:
+  // CHECK-NEXT: llvm.br ^bb5
+  // CHECK: ^bb5:
+  // CHECK: llvm.cond_br %{{.*}}, ^bb6, ^bb7
+  // CHECK: ^bb6:
+  // CHECK: llvm.br ^bb8(%{{.*}} : i32)
+  // CHECK: ^bb7:
+  // CHECK-NEXT: llvm.br ^bb1
+  // CHECK: ^bb8(%{{.*}}: i32):
+  // CHECK: return
+  kgen.return %0 : i32
+}
+
+// CHECK-LABEL: @match_next_to_else
+kgen.func @match_next_to_else(%arg0: i32, %arg1: i32) -> i32 {
+  // CHECK-NEXT: llvm.br ^bb2
+  %0 = hlcf.match -> i32 {
+    hlcf.match.next
+  }
+  else {
+    // CHECK-NEXT: ^bb1:
+    // CHECK: llvm.br ^bb3(%{{.*}} : i32)
+    hlcf.yield %arg1 : i32
+  }
+  // CHECK: ^bb2:
+  // CHECK-NEXT: llvm.br ^bb1
+  // CHECK: ^bb3(%{{.*}}: i32):
+  kgen.return %0 : i32
+}
+
+// Nested match: next in an inner else targets the enclosing match.
+// CHECK-LABEL: @nested_match
+kgen.func @nested_match(%arg0: i32, %arg1: i32) -> i32 {
+  // CHECK-NEXT: llvm.br ^bb1
+  %0 = hlcf.match -> i32 {
+    // CHECK-NEXT: ^bb1:
+    // CHECK-NEXT: llvm.br ^bb3
+    hlcf.match {
+      hlcf.match.next
+    }
+    else {
+      // Targets the outer match's next case.
+      // CHECK-NEXT: ^bb2:
+      // CHECK-NEXT: llvm.br ^bb4
+      hlcf.match.next
+    }
+    kgen.unreachable
+  }
+  case {
+    // CHECK: ^bb3:
+    // CHECK-NEXT: llvm.br ^bb2
+    // CHECK: ^bb4:
+    // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+    hlcf.match.complete %arg0 : i32
+  }
+  else {
+    hlcf.yield %arg1 : i32
+  }
+  // CHECK: ^bb5(%{{.*}}: i32):
+  kgen.return %0 : i32
+}
+
 // CHECK-LABEL: @reraise_in_try
 kgen.func @reraise_in_try(%err: i32) {
   // CHECK-NEXT: br ^bb1

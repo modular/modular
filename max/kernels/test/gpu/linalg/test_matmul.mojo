@@ -43,7 +43,7 @@ comptime epilogue_func_type = def[
 
 
 @__parameter
-@always_inline
+@inline(.always)
 def epilogue_test_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](
@@ -183,7 +183,7 @@ def test[
     ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
     @__parameter
-    @always_inline
+    @inline(.always)
     @__copy_capture(c_device, m, n)
     def epilogue_fn[
         _dtype: DType,
@@ -258,7 +258,7 @@ def test[
 
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-    @always_inline
+    @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         var val = c_device_ref.load[width=simd_width](idx0)
 
@@ -490,3 +490,24 @@ def main() raises:
             N=Int(128256),
             K=Int(4096),
         ](ctx, 600, 128256, 4096)
+
+        # Unaligned N: N * size_of(bfloat16) % 16 != 0, so a tile GEMM's TMA
+        # output descriptor is misaligned and the dispatcher has to route
+        # around it. At m <= 64 the split-K GEMV takes these, odd N included.
+        # The three m values land in its three tile_m bands.
+        print("===> bfloat16 unaligned N")
+        test[.bfloat16, transpose_b=True, N=Int(258), K=Int(4096)](
+            ctx, 6, 258, 4096
+        )
+        test[.bfloat16, transpose_b=True, N=Int(258), K=Int(4096)](
+            ctx, 12, 258, 4096
+        )
+        test[.bfloat16, transpose_b=True, N=Int(258), K=Int(4096)](
+            ctx, 64, 258, 4096
+        )
+        test[.bfloat16, transpose_b=True, N=Int(257), K=Int(4096)](
+            ctx, 6, 257, 4096
+        )
+        test[.bfloat16, transpose_b=True, N=Int(514), K=Int(4096)](
+            ctx, 32, 514, 4096
+        )

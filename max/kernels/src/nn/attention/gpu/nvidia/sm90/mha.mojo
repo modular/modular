@@ -40,7 +40,7 @@ from max.gpu.host.info import H100
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.sync import named_barrier
-from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, TensorEngine
 from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -58,6 +58,7 @@ from nn.attention.gpu.nvidia.sm90.attention import (
     _apply_mask,
     _get_position,
     get_q_head_idx,
+    ImmutTileTensor1D,
     KVTMATile,
     MHAPosition,
     NonNullPointer,
@@ -99,7 +100,7 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
 
-@always_inline
+@inline(.always)
 def mha_sm90_dispatch[
     q_type: DType,
     KVType: MHAOperand,
@@ -107,6 +108,8 @@ def mha_sm90_dispatch[
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
+    KVRowOffsetsEngine: TensorEngine,
+    SinkEngine: TensorEngine,
     //,
     config: MHAConfig,
     group: Int,
@@ -125,14 +128,12 @@ def mha_sm90_dispatch[
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        ImmutTileTensor1D[.uint32, Engine=KVRowOffsetsEngine]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type, Engine=SinkEngine]],
 ) raises:
     """Dispatches the SM90 FlashAttention-3 MHA kernel for a single batch.
 
@@ -151,6 +152,9 @@ def mha_sm90_dispatch[
             compile time (inferred).
         PartitionType: The scheme for partitioning attention work across
             SMs (inferred).
+        KVRowOffsetsEngine: The `TensorEngine` of `kv_input_row_offsets`
+            (inferred).
+        SinkEngine: The `TensorEngine` of `sink_weights` (inferred).
         config: The MHA configuration holding block sizes, head count,
             depth, and algorithm.
         group: The query grouping factor, the number of query heads per
@@ -285,6 +289,8 @@ def mha_sm90_dispatch[
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
+            KVRowOffsetsEngine=KVRowOffsetsEngine,
+            SinkEngine=SinkEngine,
             config=new_config,
             group=group,
             ragged=ragged,
@@ -305,13 +311,7 @@ def mha_sm90_dispatch[
             valid_length,
             kv_input_row_offsets,
             rebind[
-                OptionalReg[
-                    LayoutTensor[
-                        KVType.dtype,
-                        Layout.row_major(UNKNOWN_VALUE),
-                        ImmutAnyOrigin,
-                    ]
-                ]
+                OptionalReg[ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]]
             ](sink_weights),
             partition,
             mask_functor,
@@ -329,6 +329,8 @@ def mha_sm90_dispatch[
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
+            KVRowOffsetsEngine=KVRowOffsetsEngine,
+            SinkEngine=SinkEngine,
             config=new_config,
             group=group,
             ragged=ragged,
@@ -349,13 +351,7 @@ def mha_sm90_dispatch[
             valid_length,
             kv_input_row_offsets,
             rebind[
-                OptionalReg[
-                    LayoutTensor[
-                        KVType.dtype,
-                        Layout.row_major(UNKNOWN_VALUE),
-                        ImmutAnyOrigin,
-                    ]
-                ]
+                OptionalReg[ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]]
             ](sink_weights),
             partition,
             mask_functor,
@@ -380,6 +376,8 @@ def mha_sm90_dispatch[
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
+            KVRowOffsetsEngine=KVRowOffsetsEngine,
+            SinkEngine=SinkEngine,
             config=new_config,
             group=group,
             ragged=ragged,
@@ -400,13 +398,7 @@ def mha_sm90_dispatch[
             valid_length,
             kv_input_row_offsets,
             rebind[
-                OptionalReg[
-                    LayoutTensor[
-                        KVType.dtype,
-                        Layout.row_major(UNKNOWN_VALUE),
-                        ImmutAnyOrigin,
-                    ]
-                ]
+                OptionalReg[ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]]
             ](sink_weights),
             partition,
             mask_functor,
@@ -416,7 +408,7 @@ def mha_sm90_dispatch[
 
 
 # materializes max prompt len, call partition
-@always_inline
+@inline(.always)
 def _mha_sm90_sink_dispatch[
     SchedulerType: MHATileScheduler,
     KVLUTType: MHAOperand,
@@ -424,6 +416,8 @@ def _mha_sm90_sink_dispatch[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     MaskType: MHAMask,
+    KVRowOffsetsEngine: TensorEngine,
+    SinkEngine: TensorEngine,
     config: MHAConfig,
     group: Int,
     ragged: Bool,
@@ -460,12 +454,10 @@ def _mha_sm90_sink_dispatch[
     num_keys_arg: UInt32,
     valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        ImmutTileTensor1D[.uint32, Engine=KVRowOffsetsEngine]
     ],
     sink_weights: OptionalReg[
-        LayoutTensor[
-            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        ImmutTileTensor1D[KVLUTType.dtype, Engine=SinkEngine]
     ],
     partition: PartitionType,
     mask: MaskType,
@@ -485,6 +477,7 @@ def _mha_sm90_sink_dispatch[
             group=group,
             ragged=ragged,
             SinkType=SinkType,
+            KVRowOffsetsEngine=KVRowOffsetsEngine,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
         ](
@@ -519,6 +512,7 @@ def _mha_sm90_sink_dispatch[
             group=group,
             ragged=ragged,
             SinkType=SinkType,
+            KVRowOffsetsEngine=KVRowOffsetsEngine,
             _is_cache_length_accurate=_is_cache_length_accurate,
             swizzle_mode=swizzle_mode,
         ](
@@ -547,7 +541,7 @@ def _mha_sm90_sink_dispatch[
 # materializes kv_input_row_offsets, calls kernel
 
 
-@always_inline
+@inline(.always)
 def _mha_sm90_kv_input_row_offset_dispatch[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -557,6 +551,7 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     group: Int,
     ragged: Bool,
     SinkType: OptionalPointer,
+    KVRowOffsetsEngine: TensorEngine,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
@@ -591,7 +586,7 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     num_keys_arg: UInt32,
     valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        ImmutTileTensor1D[.uint32, Engine=KVRowOffsetsEngine]
     ],
     sink_weights: SinkType,
     partition: PartitionType,
@@ -672,7 +667,7 @@ def _mha_sm90_kv_input_row_offset_dispatch[
         )
 
 
-@always_inline
+@inline(.always)
 def _mha_sm90_valid_length_dispatch[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -794,7 +789,7 @@ def _mha_sm90_valid_length_dispatch[
         )
 
 
-@always_inline
+@inline(.always)
 def _mha_sm90_enqueue[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1222,7 +1217,7 @@ def _mha_sm90[
 
     # returns `true` if we are done
     @__parameter
-    @always_inline
+    @inline(.always)
     def advance[
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
@@ -1268,7 +1263,7 @@ def _mha_sm90[
     ]
 
     @__parameter
-    @always_inline
+    @inline(.always)
     def k_tile(
         idx: UInt32,
         out k_smem: LayoutTensor[
@@ -1285,7 +1280,7 @@ def _mha_sm90[
         k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @__parameter
-    @always_inline
+    @inline(.always)
     def v_tile(
         idx: UInt32,
         out v_smem: LayoutTensor[
@@ -1302,7 +1297,7 @@ def _mha_sm90[
         v_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @__parameter
-    @always_inline
+    @inline(.always)
     def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
             BM,
@@ -1375,7 +1370,7 @@ def _mha_sm90[
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
         @__parameter
-        @always_inline("nodebug")
+        @inline(.nodebug)
         def q_consumer(
             q_idx: UInt32,
         ) -> LayoutTensor[
@@ -1423,7 +1418,7 @@ def _mha_sm90[
         ].stack_allocation()
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def vectorize_p_reg_tile(
             out result: LayoutTensor[
                 accum_type,
@@ -1436,7 +1431,7 @@ def _mha_sm90[
             result = {p_reg_tile.ptr}
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def vectorize_o_reg_tile(
             out result: LayoutTensor[
                 accum_type,
@@ -1471,7 +1466,7 @@ def _mha_sm90[
         )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32):
             var k_smem_sub = k_tile(read_idx)
             var q_smem_sub = q_consumer(q_idx)
@@ -1495,7 +1490,7 @@ def _mha_sm90[
             warpgroup_fence(p_reg_tile)
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def p_mul_v(read_idx: UInt32, read_phase: UInt32):
             var v_smem_sub = v_tile(read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
@@ -1510,19 +1505,19 @@ def _mha_sm90[
             warpgroup_fence(output_reg_tile)
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32):
             wgmma_0.wait_group[wgmma_left_in_flight]()  # P is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def wait_for_p_mul_v(read_idx: UInt32):
             wgmma_1.wait_group[0]()  # output is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def apply_mask(
             position: PositionType,
             mask_status: TileMaskStatus,
@@ -1544,7 +1539,7 @@ def _mha_sm90[
             )
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def scale_output(correction: type_of(rowmax)):
             # we are now able to read/modify `output_reg_tile` and modify `p_frag`
             var vout = vectorize_o_reg_tile()
@@ -1562,7 +1557,7 @@ def _mha_sm90[
                     vout[row, col] = vout[row, col] * c
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
@@ -1574,7 +1569,7 @@ def _mha_sm90[
                 old_rowsum[row] = new
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def write_output(
             position: PositionType,
             q_idx: UInt32,

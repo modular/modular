@@ -270,8 +270,32 @@ class LineGenerator(Visitor[Line]):
             for child in node.children:
                 yield from self.visit(child)
 
-    def visit_match_case(self, node: Node) -> Iterator[Line]:
-        """Visit either a match or case statement."""
+    def visit_match_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit a match / __match statement.
+
+        In Mojo mode, cases share the match indent (no extra indent around the
+        case blocks). Skip the Python-style INDENT/DEDENT wrapper when present.
+        """
+        normalize_invisible_parens(
+            node, parens_after=set(), preview=self.mode.preview
+        )
+
+        yield from self.line()
+        for child in node.children:
+            if (
+                self.mode.is_mojo
+                and isinstance(child, Leaf)
+                and child.type in (token.INDENT, token.DEDENT)
+            ):
+                # Preserve any comments carried on DEDENT without changing depth.
+                if child.type == token.DEDENT and child.prefix:
+                    yield from self.line()
+                    yield from self.visit_default(child)
+                continue
+            yield from self.visit(child)
+
+    def visit_case_block(self, node: Node) -> Iterator[Line]:
+        """Visit a case block."""
         normalize_invisible_parens(
             node, parens_after=set(), preview=self.mode.preview
         )
@@ -525,12 +549,17 @@ class LineGenerator(Visitor[Line]):
         """Sorts the conformance/inheritance list for struct/trait nodes in-place.
 
         Each conformance entry in the arglist is either:
-        - A bare NAME leaf (unconditional conformance), or
-        - An 'argument' node whose first child is a NAME leaf (conditional
-          conformance with a where clause).
+        - A bare NAME leaf (unconditional conformance),
+        - An 'argument' node whose first child is the trait (conditional
+          conformance with a where clause, or an opt-out with an `else`
+          reason), or
+        - A 'not_test' node over a NAME leaf (`not Trait`, the opt-out), which
+          sorts under the trait it names.
 
         We sort the full entries as units keyed by their trait name so that
-        where clauses stay attached to the correct trait.
+        where clauses stay attached to the correct trait. An entry we cannot
+        key -- a trait composition, say -- keeps its slot and the rest sort
+        around it.
         """
 
         for child in node.children:
@@ -543,12 +572,12 @@ class LineGenerator(Visitor[Line]):
 
         def _conformance_name(entry: LN) -> str | None:
             """Return the trait name for a conformance entry, or None."""
+            if isinstance(entry, Node) and entry.type == syms.argument:
+                entry = entry.children[0]
+            if isinstance(entry, Node) and entry.type == syms.not_test:
+                entry = entry.children[1]
             if isinstance(entry, Leaf) and entry.type == token.NAME:
                 return entry.value
-            if isinstance(entry, Node) and entry.type == syms.argument:
-                first = entry.children[0]
-                if isinstance(first, Leaf) and first.type == token.NAME:
-                    return first.value
             return None
 
         # Collect (index, entry) pairs for conformance entries (skip commas).
@@ -605,10 +634,6 @@ class LineGenerator(Visitor[Line]):
         self.visit_assert_stmt = partial(
             v, keywords={"assert"}, parens={"assert", ","}
         )
-        # Old __comptime_assert syntax (deprecated)
-        self.visit_old_comptime_assert_stmt = partial(
-            v, keywords={"__comptime_assert"}, parens={"__comptime_assert", ","}
-        )
         # New comptime assert syntax: "comptime assert expr, msg"
         # The comptime_assert_stmt_body rule contains "assert test [, test]"
         # and needs parens after "assert" and "," for line splitting.
@@ -655,10 +680,6 @@ class LineGenerator(Visitor[Line]):
         self.visit_del_stmt = partial(v, keywords=Ø, parens={"del"})
         self.visit_async_funcdef = self.visit_async_stmt
         self.visit_decorated = self.visit_decorators
-
-        # PEP 634
-        self.visit_match_stmt = self.visit_match_case
-        self.visit_case_block = self.visit_match_case
 
         # Mojo-specific declarations
         from mblib2to3.pgen2 import token as mtoken
@@ -1459,7 +1480,6 @@ def maybe_make_parens_invisible_in_atom(
             syms.annassign,
             syms.expr_stmt,
             syms.assert_stmt,
-            syms.old_comptime_assert_stmt,
             syms.comptime_assert_stmt_body,
             syms.return_stmt,
             # these ones aren't useful to end users, but they do please fuzzers

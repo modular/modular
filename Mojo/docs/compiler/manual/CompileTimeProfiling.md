@@ -12,15 +12,19 @@ act on.
 | `--mlir-timing`              | Times every MLIR pass and analysis.                                                            |
 | `--llvm-timing`              | Times every LLVM pass and analysis.                                                            |
 | `--mlir-timing-display MODE` | `tree` (default) nests by pipeline structure; `list` aggregates per pass name, sorted by time. |
+| `--timing-json`              | Writes the reports as one JSON object instead of as text.                                      |
+| `--timing-file FILE`         | Writes the reports to `FILE` instead of to stderr.                                             |
 
 See them and their full help text with `mojo build --help-hidden` or
 `mojo run --help-hidden`. Their definitions live in
-`KGEN/tools/mojo/Common/CompilationOptions.td`.
+`Mojo/tools/mojo/Common/CompilationOptions.td`.
 
 Four things to know before reading any report they produce:
 
 1. Both reports go to **stderr** when compilation finishes, so capture with
-   `2>`. For `mojo run` they print before the program starts.
+   `2>`. For `mojo run` they print before the program starts. `--timing-file`
+   redirects them to a file instead, in either format; see
+   [JSON output](#json-output).
 2. `--llvm-timing` forces single threaded compilation. LLVM's timers are
    process global and not thread safe, so the flag sets `numThreads = 1` and
    overrides `--num-threads`. The report therefore measures total CPU work, not
@@ -87,6 +91,60 @@ MLIR root spans the whole compile including code generation. See
 [Reading the numbers by hand](#reading-the-numbers-by-hand) for the
 consequences.
 
+## JSON output
+
+`--timing-json` writes the reports as one JSON object rather than as text, and
+`--timing-file FILE` sends them to a file rather than to stderr. The two are
+independent, so JSON on stderr and text in a file both work. Neither changes
+the measurement: `--llvm-timing` still forces single threaded compilation, and
+a warm cache still reports nothing.
+
+The object holds one member per report, and only the members the command asked
+for — `--timing-json` with no timing flag gets `{}`.
+
+```json
+{
+  "mlir": [
+    {
+      "name": "ElaborateGenerators",
+      "wall": {"duration": 119.7262, "percentage": 45.1},
+      "passes": [
+        {
+          "name": "offload nvptx64-nvidia-cuda sm_100a (also in host)",
+          "wall": {"duration": 101.8517, "percentage": 38.4},
+          "passes": []
+        }
+      ]
+    }
+  ],
+  "llvm": [
+    {
+      "pipeline": "offload nvptx64-nvidia-cuda sm_100a",
+      "times": {"time.pass.SROAPass.wall": 0.000464}
+    }
+  ]
+}
+```
+
+`mlir` follows `--mlir-timing-display`. `tree` nests each entry's children
+under `passes`; `list` is flat and opens with a `root` entry. `llvm` is one
+entry per pipeline in the order they ran — each accelerator target, then the
+host — each with a flat `times` map.
+
+Those `times` keys are `time.<group>.<name>.<metric>`, with `<metric>` one of
+`wall`, `user`, `sys` or `instr`. The four groups are the same four the text
+report prints and they overlap the same way, so the arithmetic in
+[The LLVM groups overlap](#the-llvm-groups-overlap) applies unchanged.
+
+One difference from the text report: accelerator scope names in `mlir` carry no
+`===---` rule. The rule exists to set the scope apart from the host passes it
+sits beside when a human reads a tree, and it only gets in a matcher's way.
+Match the `(also in host)` suffix instead.
+
+The digest script reads the text report, not the JSON. Use `--timing-json`
+when feeding another consumer, and `2> log.txt` or `--timing-file` when feeding
+[the digest](#digesting-the-report).
+
 ## Timing a model
 
 Two steps: get the Mojo that the graph compiler emits for the model, then
@@ -124,8 +182,8 @@ no GPU present, only a valid arch such as `sm_100a` or `gfx950`. `-o /dev/null`
 skips writing the object file, since the timing is the point.
 
 Record which build of `mojo` produced the log. A debug build and a production
-build are not comparable — see
-[Notes for benchmarking](#notes-for-benchmarking).
+build run different pass pipelines, so their timings are not comparable and a
+debug measurement cannot be scaled into a production estimate.
 
 ## Digesting the report
 
@@ -149,7 +207,7 @@ Useful options:
   first argument is the subject, the second the baseline.
 - `--top N` — passes to name per group before rolling the tail up (default 5).
 - `--markdown` — the tree in a fenced block plus a rollup table.
-- `--json` — machine readable, for a dashboard.
+- `--json` — machine readable, for another consumer.
 
 The output for the gemma-4 debug compile above:
 
@@ -194,7 +252,7 @@ them; they matter when checking its output or writing another consumer.
 ### The MLIR root is the whole compile
 
 It spans parsing, the passes, and code generation, because the `MLIRPassTiming`
-object lives for all of `build()` in `KGEN/tools/mojo/Build/mojo-build.cpp`. On
+object lives for all of `build()` in `Mojo/tools/mojo/Build/mojo-build.cpp`. On
 one gemma-4 compile the root read 272.34s against 272.56s of wall clock. Take
 the compile total from the root; never add sections to it.
 
@@ -209,7 +267,8 @@ computes `Rest` as the root minus the sum of the children, so double counted
 time lands there with its sign flipped: the row reads `-59.0020` in place of the
 42.85s that is genuinely unattributed. Adding the scope back recovers it:
 `-59.00 + 101.85 = 42.85` seconds. A consumer of the report has to either skip
-rows whose name starts with `===---` or subtract them.
+those scope rows or subtract them — by the `===---` prefix in the text report,
+or by the `(also in host)` suffix, which both formats carry.
 
 ### `Rest` is host code generation, not noise
 
@@ -222,12 +281,12 @@ and 8.4s of translation to LLVM IR plus object emission.
 
 Each LLVM section prints up to four groups, and only two are disjoint:
 
-| Group                                  | Relationship                       |
-|----------------------------------------|------------------------------------|
-| `Pass execution timing report`         | the passes                         |
-| `Analysis execution timing report`     | the analyses, separate from passes |
-| `Instruction Selection and Scheduling` | sub-timers inside the ISel pass    |
-| `Register Allocation`                  | sub-timers inside the RA pass      |
+| Group                                  | JSON key prefix    | Relationship                       |
+|----------------------------------------|--------------------|------------------------------------|
+| `Pass execution timing report`         | `time.pass.`       | the passes                         |
+| `Analysis execution timing report`     | `time.analysis.`   | the analyses, separate from passes |
+| `Instruction Selection and Scheduling` | `time.sdag.`       | sub-timers inside the ISel pass    |
+| `Register Allocation`                  | `time.regalloc.`   | sub-timers inside the RA pass      |
 
 The last two come from `NamedRegionTimer` objects inside
 `SelectionDAGISel::CodeGenAndEmitDAG` and the greedy allocator, so their time is
@@ -240,25 +299,3 @@ One more detail when ranking accelerator passes: the report has one row per pass
 per module, so `InstCombinePass` appears 765 times at about 0.30s each.
 Aggregate by name, stripping the `#N` instance suffix, or the top of the list
 is ten identical rows.
-
-## Notes for benchmarking
-
-Benchmark the production build. It is what ships, and it is faster, so runs cost
-less. More importantly the two builds are not comparable: on the gemma-4 pair
-measured here, production ran 56 outermost passes against 60 in debug, with
-`LowerGlobalPOPToLLVM` absent entirely, and `VerifyParameters` ran twice instead
-of five times. Per pass speedups ranged from 1.2x to 8.2x, so a debug
-measurement cannot be scaled into a production estimate.
-
-Because the timing flags force single threaded compilation, these numbers are
-total CPU work rather than the latency a user sees. Tracking user visible
-compile time needs a second measurement with default threads and no timing
-flags.
-
-The accelerator module count is a property of the input, not the compiler. If it
-moves, the emitted Mojo changed shape, so compare compile times across snapshots
-only while it holds steady.
-
-Some time still belongs to no pass, about 10% of the compiles measured so far:
-the translation and object emit rows on both the host and the accelerator side.
-A regression landing there shows up only in the total.

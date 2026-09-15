@@ -39,10 +39,12 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn.kernels import topk_fused_sampling_with_dist
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
+    _draft_step_seed,
     _reshape_target_logits,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -89,6 +91,22 @@ class UnifiedMTPGlm5_2(Module):
             and speculative_config.num_speculative_tokens is not None
             else 1
         )
+        self.sampled_draft_proposal = (
+            speculative_config is not None
+            and speculative_config.draft_proposal == "sampled"
+        )
+        if self.sampled_draft_proposal:
+            assert speculative_config is not None
+            if speculative_config.synthetic_acceptance_rate is not None:
+                raise ValueError(
+                    "draft_proposal='sampled' is incompatible with "
+                    "synthetic_acceptance_rate"
+                )
+            if speculative_config.use_relaxed_acceptance_for_thinking:
+                raise ValueError(
+                    "draft_proposal='sampled' is incompatible with "
+                    "use_relaxed_acceptance_for_thinking"
+                )
         relaxed_topk: int | None = None
         relaxed_delta: float | None = None
         if (
@@ -107,6 +125,12 @@ class UnifiedMTPGlm5_2(Module):
             use_stochastic=True,
             relaxed_topk=relaxed_topk,
             relaxed_delta=relaxed_delta,
+            draft_proposal=(
+                "sampled" if self.sampled_draft_proposal else "argmax"
+            ),
+            vocab_size=(
+                config.vocab_size if self.sampled_draft_proposal else None
+            ),
         )
         self.target = DeepseekV3_2(config)
         self.target.emit_last_token_logits = False
@@ -140,6 +164,9 @@ class UnifiedMTPGlm5_2(Module):
         pinned_bitmask: TensorValue | None = None,
         wait_payload: BufferValue | None = None,
         device_bitmask_scratch: BufferValue | None = None,
+        # [batch, num_steps, vocab] distributions the draft sampled
+        # draft_tokens from. Required iff draft_proposal="sampled".
+        draft_probs_full: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         devices = self.config.devices
         n_devs = len(devices)
@@ -184,6 +211,10 @@ class UnifiedMTPGlm5_2(Module):
             device=device0,
         )
 
+        if self.sampled_draft_proposal and draft_probs_full is None:
+            raise ValueError(
+                "draft_probs_full is required when draft_proposal='sampled'"
+            )
         num_accepted_draft_tokens, recovered, bonus, next_tokens = (
             accept_and_pick_next_tokens(
                 self.acceptance_sampler,
@@ -197,6 +228,7 @@ class UnifiedMTPGlm5_2(Module):
                 min_top_p=min_top_p,
                 in_thinking_phase=in_thinking_phase,
                 token_bitmasks=effective_bitmasks,
+                draft_probs_full=draft_probs_full,
             )
         )
 
@@ -246,15 +278,41 @@ class UnifiedMTPGlm5_2(Module):
         all_hs = list(draft_outputs[2 : 2 + n_devs])
         step0_topk = list(draft_outputs[2 + n_devs : 2 + 2 * n_devs])
 
-        draft_logits_3d = _reshape_target_logits(draft_variable_logits)
-        draft_argmax = ops.squeeze(
-            ops.argmax(draft_logits_3d, axis=-1), axis=-1
-        )
-        next_draft_tokens = ops.gather_nd(
-            draft_argmax,
-            ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
-            batch_dims=1,
-        ).reshape([-1])
+        gather_idx = ops.unsqueeze(num_accepted_draft_tokens, axis=-1)
+        all_draft_dists: list[TensorValue] | None = None
+        if self.sampled_draft_proposal:
+            # Gather the accepted row first, then sample: only [batch, vocab]
+            # reaches the sampling kernel rather than all [batch * (K+1)] rows.
+            # Tokens and distributions share one index tensor, so the token
+            # cannot disagree with the distribution it is reported as drawn
+            # from.
+            vocab_size = self.draft.config.vocab_size
+            accepted_logits = ops.gather_nd(
+                _reshape_target_logits(draft_variable_logits),
+                gather_idx,
+                batch_dims=1,
+            ).rebind(["batch_size", vocab_size])
+            next_draft_tokens, next_draft_dist = topk_fused_sampling_with_dist(
+                accepted_logits,
+                top_k=top_k,
+                temperature=temperature,
+                top_p=top_p,
+                seed=seed,
+            )
+            next_draft_tokens = next_draft_tokens.reshape([-1])
+            all_draft_dists = [
+                ops.rebind(next_draft_dist, ["batch_size", vocab_size])
+            ]
+        else:
+            draft_logits_3d = _reshape_target_logits(draft_variable_logits)
+            draft_argmax = ops.squeeze(
+                ops.argmax(draft_logits_3d, axis=-1), axis=-1
+            )
+            next_draft_tokens = ops.gather_nd(
+                draft_argmax,
+                gather_idx,
+                batch_dims=1,
+            ).reshape([-1])
 
         hidden_dim = self.draft.config.hidden_size
         index_topk = self.draft.config.index_topk
@@ -417,7 +475,24 @@ class UnifiedMTPGlm5_2(Module):
                 self.draft.shared_head_norm_shards, draft_hs
             )
 
-            next_draft_tokens = ops.argmax(logits, axis=-1).reshape([-1])
+            if self.sampled_draft_proposal:
+                # step_logits carries a different symbolic row identity than
+                # "batch_size"; rebind so it lines up with the per-row params.
+                step_vocab_size = self.draft.config.vocab_size
+                step_tokens, step_dist = topk_fused_sampling_with_dist(
+                    logits.rebind(["batch_size", step_vocab_size]),
+                    top_k=top_k,
+                    temperature=temperature,
+                    top_p=top_p,
+                    seed=_draft_step_seed(seed, step),
+                )
+                next_draft_tokens = step_tokens.reshape([-1])
+                assert all_draft_dists is not None
+                all_draft_dists.append(
+                    ops.rebind(step_dist, ["batch_size", step_vocab_size])
+                )
+            else:
+                next_draft_tokens = ops.argmax(logits, axis=-1).reshape([-1])
             all_draft_tokens.append(
                 ops.rebind(next_draft_tokens, ["batch_size"])
             )
@@ -431,6 +506,15 @@ class UnifiedMTPGlm5_2(Module):
             new_token = ops.stack(all_draft_tokens, axis=-1)
         else:
             new_token = ops.unsqueeze(all_draft_tokens[0], -1)
+
+        if self.sampled_draft_proposal:
+            assert all_draft_dists is not None
+            return (
+                num_accepted_draft_tokens,
+                next_tokens,
+                new_token,
+                ops.stack(all_draft_dists, axis=1),
+            )
 
         return (
             num_accepted_draft_tokens,
@@ -452,6 +536,8 @@ class UnifiedMTPGlm5_2(Module):
             data_parallel_degree=self.config.data_parallel_degree,
             include_in_thinking_phase=True,
             enable_structured_output=self.enable_structured_output,
+            enable_sampled_draft_proposal=self.sampled_draft_proposal,
+            vocab_size=self.config.vocab_size,
         )
         ep_input_types = (
             self.target.ep_manager.input_types()

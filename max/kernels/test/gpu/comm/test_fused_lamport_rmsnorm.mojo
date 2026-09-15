@@ -34,7 +34,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, TileTensor, row_major
 
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.sync import init_signal_buffer
 from comm.sync import enable_p2p
 from comm.allreduce import allreduce
@@ -92,14 +92,14 @@ def _run_rms_norm_unfused(
     var out_view = TileTensor(out_ptr, row_major(Coord(shape)))
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(Index(K))))
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(in_view)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = in_view.layout(coords)
         return in_view.raw_load[width=width](idx)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(out_view)
     @__parameter
     def output_fn[
@@ -160,10 +160,10 @@ def rmsnorm_test[
     # lamport_state) but each rotates its own generation flag independently.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -226,25 +226,25 @@ def rmsnorm_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(0)), ImmutAnyOrigin
     ]
-    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
-    for g in range(ngpus):
-        in_tensors[g] = InTensorType(
+    var in_tensors = Array[_, ngpus](
+        fill_with=lambda (g: Int) -> InTensorType: InTensorType(
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 act_in[g].unsafe_ptr()
             ),
             act_layout,
         )
+    )
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(0)), MutAnyOrigin
     ]
-    var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
-    for g in range(ngpus):
-        ar_out_tensors[g] = OutTensorType(
+    var ar_out_tensors = Array[_, ngpus](
+        fill_with=lambda (g: Int) -> OutTensorType: OutTensorType(
             rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
             act_layout,
         )
+    )
 
     # ---- Unfused reference: on-device AR -> on-device rms_norm_gpu. ----
     # `allreduce` routes to the standalone Lamport AR for this shape (small,
@@ -377,10 +377,10 @@ def unsynced_skew_test[
     # Separate signal buffers per kernel path -- as in `rmsnorm_test`.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -441,21 +441,22 @@ def unsynced_skew_test[
 
     for it in range(NUM_UNSYNCED_ITERS):
         var base = it * slice_size
-        var in_tensors = Array[InType, ngpus](uninitialized=True)
-        var ar_out_tensors = Array[OutType, ngpus](uninitialized=True)
-        for g in range(ngpus):
-            in_tensors[g] = InType(
+        var in_tensors = Array[_, ngpus](
+            fill_with=lambda (g: Int) -> InType: InType(
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_big[g].unsafe_ptr() + base
                 ),
                 act_layout,
             )
-            ar_out_tensors[g] = OutType(
+        )
+        var ar_out_tensors = Array[_, ngpus](
+            fill_with=lambda (g: Int) -> OutType: OutType(
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     ar_big[g].unsafe_ptr() + base
                 ),
                 act_layout,
             )
+        )
 
         group_start()
         comptime for g in range(ngpus):

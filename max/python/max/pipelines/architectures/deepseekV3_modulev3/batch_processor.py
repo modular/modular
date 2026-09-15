@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 import numpy as np
 from max.driver import Buffer
@@ -36,9 +35,7 @@ from max.pipelines.lib.utils import compute_data_parallel_splits
 from ..deepseekV2_modulev3.batch_processor import (
     DeepseekV2ModuleV3BatchProcessor,
 )
-
-if TYPE_CHECKING:
-    from .model import DeepseekV3Inputs
+from .inputs import DeepseekV3Inputs
 
 
 class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
@@ -147,8 +144,6 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
     ) -> DeepseekV3Inputs:
-        from .model import DeepseekV3Inputs
-
         return DeepseekV3Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
@@ -170,8 +165,6 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         device-0 batch plus the CPU ``data_parallel_splits`` boundaries the
         forward splits it by.
         """
-        from .model import DeepseekV3Inputs
-
         assert kv_cache_inputs is not None
         device0 = self.runtime.devices[0]
         dp_degree = self._dp_degree

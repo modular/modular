@@ -23,12 +23,12 @@ from std.time.time import _CTimeSpec
 from std.testing import assert_equal, assert_true, TestSuite
 
 
-@always_inline
+@inline(.always)
 def time_me():
     sleep(1.0)
 
 
-@always_inline
+@inline(.always)
 def time_me_templated[
     dtype: DType,
 ]():
@@ -48,6 +48,32 @@ def time_capturing_function(iters: Int) -> Int:
         sleep(1.0)
 
     return Int(time_function(time_fn))
+
+
+def test_sleep_small_fractional() raises:
+    """Test that sleep handles very small fractional seconds without truncation.
+    """
+    # sleep(1e-9) should not crash or return immediately due to Int() truncation.
+    # Before the fix, Int((sec - floor(sec)) * 1e9) would truncate near-zero
+    # floating-point values to 0, causing the nanosleep call to be skipped.
+    sleep(1e-9)
+    sleep(0.000000001)
+    sleep(0.0000001)
+
+
+def test_sleep_millisecond() raises:
+    """Test that sleep actually suspends for roughly the expected duration."""
+    comptime ns_per_ms = 1_000_000
+    comptime ns_per_sec = 1_000_000_000
+
+    var t1 = perf_counter_ns()
+    sleep(0.001)  # 1 millisecond
+    var t2 = perf_counter_ns()
+    var elapsed = t2 - t1
+    # Should sleep at least 0.5ms (allow some timer imprecision).
+    assert_true(elapsed > 500 * ns_per_ms // 1000)
+    # Should not take more than 10 seconds (sanity upper bound).
+    assert_true(elapsed < 10 * ns_per_sec)
 
 
 def test_time() raises:

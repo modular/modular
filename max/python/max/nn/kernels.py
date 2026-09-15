@@ -28,6 +28,7 @@ from max.graph import (
     DeviceKind,
     DeviceRef,
     Dim,
+    DimLike,
     Graph,
     StaticDim,
     TensorType,
@@ -299,46 +300,51 @@ def rope_split_store_ragged(
     rms_norm_eps: float | None = None,
     k_eq_v: bool = False,
 ) -> TensorValue:
-    """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
+    """Applies RoPE to Q and K from a flat QKV buffer and stores K/V to the cache.
 
-    Reads from a flat QKV matmul output, applies RoPE to Q and K regions,
-    stores K/V to the paged KV cache, and writes roped Q to the output.
+    Reads from a flat QKV matmul output, applies RoPE to the Q and K
+    regions, stores K/V to the paged KV cache, and writes the roped Q to
+    the output.
 
     Args:
-        kv_params: KV cache parameters.
-        qkv: Flat QKV matmul output [total_seq_len, q_dim + k_dim + v_dim].
-        input_row_offsets: Ragged offsets [batch_size + 1].
-        freqs_cis: RoPE frequencies [max_seq_len, head_dim].
-        kv_collection: Paged KV cache.
-        layer_idx: Layer index.
-        n_heads: Number of query attention heads.
-        interleaved: Whether freqs_cis uses interleaved (re, im) format.
-        position_ids: Optional ragged 2D array of position IDs. If None,
-            defaults to cache_length + token_idx for each token. When
-            ``num_sections > 1``, ``mrope_section`` must be provided.
-            Shape: [num_sections, total_seq_len].
-        mrope_section: Optional list of ints indicating the section of the
-            head_dim to apply RoPE to. Must be used with ``position_ids``.
-        fuse: If True (default), emit a single fused custom op. If False,
-            emit separate split, rope, and store ops for testing graph
-            compiler fusion.
-        q_out_dtype: Dtype for the roped Q output. Defaults to ``qkv.dtype``.
-        q_norm_weight: Optional per-head RMSNorm gamma ``[head_dim]`` for Q. When
-            given (with ``k_norm_weight`` and ``rms_norm_eps``), the per-head
-            Q/K/V RMS-norm is fused into the op (q/k use their gammas, v is a bare
-            norm), removing the separate norm ops. Mutually exclusive with
+        kv_params: The KV cache parameters.
+        qkv: The flat QKV matmul output,
+            ``[total_seq_len, q_dim + k_dim + v_dim]``.
+        input_row_offsets: The ragged offsets, ``[batch_size + 1]``.
+        freqs_cis: The RoPE frequencies, ``[max_seq_len, head_dim]``.
+        kv_collection: The paged KV cache.
+        layer_idx: The layer index.
+        n_heads: The number of query attention heads.
+        interleaved: Whether ``freqs_cis`` uses interleaved (re, im) format.
+        position_ids: The optional ragged 2D array of position IDs. If
+            ``None``, defaults to ``cache_length + token_idx`` for each
+            token. When ``num_sections > 1``, ``mrope_section`` must be
+            provided. Shape: ``[num_sections, total_seq_len]``.
+        mrope_section: The optional list of ints indicating the section of
+            the ``head_dim`` to apply RoPE to. Must be used with
             ``position_ids``.
-        k_norm_weight: Per-head RMSNorm gamma ``[head_dim]`` for K (see
+        fuse: If ``True`` (the default), emits a single fused custom op. If
+            ``False``, emits separate split, rope, and store ops for
+            testing graph compiler fusion.
+        q_out_dtype: The dtype for the roped Q output. Defaults to
+            ``qkv.dtype``.
+        q_norm_weight: The optional per-head RMSNorm gamma ``[head_dim]``
+            for Q. When given (with ``k_norm_weight`` and ``rms_norm_eps``),
+            the per-head Q/K/V RMS-norm is fused into the op (Q/K use their
+            gammas, V is a bare norm), removing the separate norm ops.
+            Mutually exclusive with ``position_ids``.
+        k_norm_weight: The per-head RMSNorm gamma ``[head_dim]`` for K (see
             ``q_norm_weight``).
-        rms_norm_eps: Epsilon for the fused qk-norm; required when
+        rms_norm_eps: The epsilon for the fused qk-norm; required when
             ``q_norm_weight`` is set.
-        k_eq_v: When True (only valid with ``q_norm_weight``), V has no own
-            projection and reuses K's: ``qkv`` is ``[q|k]`` (no V region) and the
-            kernel reads the K head for both the K and V stores, sharing the norm
-            reduction. When False (default), ``qkv`` is ``[q|k|v]``.
+        k_eq_v: When ``True`` (only valid with ``q_norm_weight``), V has no
+            own projection and reuses K's: ``qkv`` is ``[q|k]`` (no V
+            region) and the kernel reads the K head for both the K and V
+            stores, sharing the norm reduction. When ``False`` (the
+            default), ``qkv`` is ``[q|k|v]``.
 
     Returns:
-        Roped Q output [total_seq_len, n_heads * head_dim].
+        The roped Q output, ``[total_seq_len, n_heads * head_dim]``.
     """
     _check_rank(2, qkv=qkv)
 
@@ -478,12 +484,14 @@ def store_k_scale_cache_ragged(
         values=[
             x_k_scale,
             kv_collection.kv_blocks,
+            kv_collection.values_page_stride(),
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             input_row_offsets,
             kv_collection.max_prompt_length,
             kv_collection.max_cache_length,
             kv_collection.kv_scales,
+            kv_collection.scales_page_stride(),
             kv_collection.scales_lookup_table or kv_collection.lookup_table,
             layer_idx,
         ],
@@ -540,6 +548,7 @@ def _rope_split_store_ragged_unfused(
 
     # Store K and V to cache individually.
     kv_blocks = kv_collection.kv_blocks
+    page_stride = kv_collection.values_page_stride()
     cache_lengths = kv_collection.cache_lengths
     lookup_table = kv_collection.lookup_table
     max_prompt_length = kv_collection.max_prompt_length
@@ -550,6 +559,7 @@ def _rope_split_store_ragged_unfused(
         values=[
             xk_rope,
             kv_blocks,
+            page_stride,
             cache_lengths,
             lookup_table,
             input_row_offsets,
@@ -565,6 +575,7 @@ def _rope_split_store_ragged_unfused(
         values=[
             x_v,
             kv_blocks,
+            page_stride,
             cache_lengths,
             lookup_table,
             input_row_offsets,
@@ -963,6 +974,120 @@ def _fused_qkv_ragged_matmul_scaled_mxfp8(
     )[0].tensor
 
 
+def _fused_qkv_ragged_matmul_scaled_mxfp6(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    fp6_format: str = "e2m3",
+    _output_dim: int | None = None,
+) -> TensorValue:
+    """Computes fused QKV projections with MXFP6 block-scaled input and weights.
+
+    The MXFP6 sibling of :func:`_fused_qkv_ragged_matmul_scaled_mxfp8`:
+    ``input`` and ``wqkv`` carry packed FP6 data as ``uint8`` (four codes per
+    three bytes) with E8M0 (``float8_e8m0fnu``) block scales over 32-element K
+    blocks. The Q
+    projection is returned, while K and V are written in place into
+    ``kv_collection``.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: Packed FP6 activations, ``uint8`` with shape
+            [M=total_seq_len, K=hidden_dim * 3 // 4].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        wqkv: Weight tensor, ``uint8`` with shape
+            [N=(num_heads + 2 * num_kv_heads) * head_dim,
+            K=hidden_dim * 3 // 4].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: Layer index, expected to have dtype uint32 and live on CPU.
+        n_heads: Number of attention heads.
+        input_scale: E8M0 input block scales, rank-2 ``[M, K // 32]``. CDNA4
+            reads the plain layout; this path has no SM100 variant.
+        weight_scale: E8M0 weight block scales, rank-2 ``[N, K // 32]``.
+        _output_dim: Optional output dimension. Defaults to
+            ``n_heads * head_dim``.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    _check_same_dtype(input=input, wqkv=wqkv)
+
+    input_rank_expected = 2
+    _check_rank(input_rank_expected, input=input)
+
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            "expected all tensors to be on the same device as input"
+            f" ({input.device}), but got:\n  wqkv={wqkv.device}\n "
+            f" input_row_offsets={input_row_offsets.device}\n "
+            f" input_scale={input_scale.device}\n "
+            f" weight_scale={weight_scale.device}"
+        )
+
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            "expected layer_idx to be on CPU device, but got"
+            f" {layer_idx.device}"
+        )
+
+    tensor_sf = ops.constant(1.0, DType.float32, device=DeviceRef.CPU())
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "dtype": DType.uint8,
+        "scale_type": DType.float8_e8m0fnu,
+        "kv_type": kv_params.dtype,
+        "SF_VECTOR_SIZE": 32,
+        "FP6_FORMAT": _fp6_format_code(fp6_format),
+    }
+
+    if not _is_amd_gpu():
+        raise ValueError(
+            "the fused MXFP6 QKV matmul is CDNA4-only; there is no SM100 path"
+        )
+    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.mxfp6.amd"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
+
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [output_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     kv_params: KVCacheParams,
     index_kv_params: KVCacheParams,
@@ -1086,6 +1211,150 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
     # store-redirect epilogue routes the Q band to the first output and the
     # IndexQ band to the second, so the downstream reshapes stay contiguous
     # views (no split/copy).
+    q_dim = n_heads * kv_params.head_dim
+
+    results = ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [q_dim],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [iq_dim],
+                device=input.device,
+            ),
+        ],
+        parameters=parameters,
+    )
+    return (results[0].tensor, results[1].tensor)
+
+
+def _fused_qkv_index_ragged_matmul_scaled_mxfp6(
+    kv_params: KVCacheParams,
+    index_kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    index_kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    num_index_heads: int,
+    idx_head_dim: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    fp6_format: str = "e2m3",
+) -> tuple[TensorValue, TensorValue]:
+    """Computes MiniMax-M3's fused QKV + index-QK projections in one MXFP6 GEMM.
+
+    A 5-way fusion: ``input`` and ``wqkv`` carry packed FP6 data as ``uint8``
+    (four codes per three bytes) with E8M0 (``float8_e8m0fnu``) block scales
+    over 32-element K blocks. ``wqkv`` is the concatenation
+    ``[Wq | Wk | Wv | Wiq | Wik]`` along the output dimension.
+    The single matmul output columns route as:
+
+    - ``Q``       -> returned as the first output, shape ``[M, q_dim]``.
+    - ``K`` / ``V`` -> scattered in place into the MAIN ``kv_collection``.
+    - ``IndexQ``  -> returned as the second output, shape ``[M, iq_dim]``.
+    - ``IndexK``  -> scattered in place into the INDEX ``index_kv_collection``
+      (MLA cache: single latent head, head 0, K only).
+
+    Band boundaries land on M3's 128-element scale blocks, so the per-column
+    scale lookup matches the split matmuls. The CDNA4 tile picks its split-K
+    factor from N, so the concatenated and split GEMMs may still reduce K in a
+    different order and differ by a bf16 ULP; see
+    `test_fused_qkv_index_matmul_scale_mxfp6.mojo`.
+
+    Args:
+        kv_params: KVCacheParams for the MAIN (K, V) cache (GQA/MHA, non-MLA).
+        index_kv_params: KVCacheParams for the INDEX (IndexK) cache; MLA with a
+            single latent head (``is_mla=True``, ``n_kv_heads=1`` for M3).
+        input: Packed FP6 activations, ``uint8`` with shape
+            [M=total_seq_len, K=hidden_dim * 3 // 4].
+        input_row_offsets: Ragged offsets ``[batch_size + 1]``, uint32.
+        wqkv: Concatenated weight ``[Wq | Wk | Wv | Wiq | Wik]``,
+            ``uint8``, shape [N_total, K=hidden_dim * 3 // 4] where
+            ``N_total = q_dim + 2 * kv_dim + iq_dim + ik_dim``.
+        kv_collection: PagedCacheValues for the MAIN cache.
+        index_kv_collection: PagedCacheValues for the INDEX cache.
+        layer_idx: Layer index, uint32 on CPU.
+        n_heads: Number of (main) attention heads. ``q_dim = n_heads *
+            head_dim``.
+        num_index_heads: Number of index Q heads. ``iq_dim = num_index_heads *
+            idx_head_dim``.
+        idx_head_dim: Index head dimension; also the single-head IndexK width.
+        input_scale: E8M0 input block scales, rank-2 ``[M, K // 32]``.
+            CDNA4 reads the plain layout, not SM100's SF-atom interleave.
+        weight_scale: E8M0 weight block scales, rank-2 ``[N_total, K // 32]``.
+        fp6_format: FP6 encoding of both operands, ``e2m3`` or ``e3m2``.
+
+    Returns:
+        A tuple ``(q, index_q)`` of bf16 tensors: ``q`` is ``[M, q_dim]`` and
+        ``index_q`` is ``[M, iq_dim]``.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    _check_same_dtype(input=input, wqkv=wqkv)
+
+    input_rank_expected = 2
+    _check_rank(input_rank_expected, input=input)
+
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            "expected all tensors to be on the same device as input"
+            f" ({input.device}), but got:\n  wqkv={wqkv.device}\n "
+            f" input_row_offsets={input_row_offsets.device}\n "
+            f" input_scale={input_scale.device}\n "
+            f" weight_scale={weight_scale.device}"
+        )
+
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            "expected layer_idx to be on CPU device, but got"
+            f" {layer_idx.device}"
+        )
+
+    tensor_sf = ops.constant(1.0, DType.float32, device=DeviceRef.CPU())
+
+    assert kv_params.page_size is not None
+    assert index_kv_params.page_size is not None
+    iq_dim = num_index_heads * idx_head_dim
+    parameters: dict[str, int | str | DType] = {
+        "dtype": DType.uint8,
+        "scale_type": DType.float8_e8m0fnu,
+        "kv_type": kv_params.dtype,
+        "index_kv_type": index_kv_params.dtype,
+        "SF_VECTOR_SIZE": 32,
+        "FP6_FORMAT": _fp6_format_code(fp6_format),
+        "IQ_DIM": iq_dim,
+    }
+
+    if not _is_amd_gpu():
+        raise ValueError("the fused MXFP6 QKV+IndexQK matmul is CDNA4-only")
+    op_name = "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp6.amd"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
+
     q_dim = n_heads * kv_params.head_dim
 
     results = ops.inplace_custom(
@@ -2130,7 +2399,15 @@ def kv_cache_store_paged_ragged(
     *,
     key_or_value: int,
 ) -> None:
-    """Stores key or value tensor into the paged KV cache (ragged inputs)."""
+    """Stores key or value tensor into the paged KV cache (ragged inputs).
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_cache: The rank-3 tensor of new projections to store.
+        input_row_offsets: Ragged row offsets of shape ``[batch + 1]``.
+        layer_idx: Scalar layer index identifying which layer's cache to write.
+        key_or_value: Whether to store into the key or the value cache.
+    """
     _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
     _check_rank(3, x_cache=x_cache)
     _check_rank(1, input_row_offsets=input_row_offsets)
@@ -2146,6 +2423,7 @@ def kv_cache_store_paged_ragged(
         values=[
             x_cache,
             kv_collection.kv_blocks,
+            kv_collection.values_page_stride(),
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             input_row_offsets,
@@ -2233,6 +2511,7 @@ def kv_cache_store_paged_padded(
         values=[
             x_cache,
             kv_collection.kv_blocks,
+            kv_collection.values_page_stride(),
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             valid_lengths,
@@ -2970,6 +3249,7 @@ def msa_sparse_attention_ragged(
     *,
     group: int,
     topk: int,
+    sparse_block_size: int,
     scale: float,
 ) -> TensorValue:
     """Computes MiniMax-M3 block-sparse attention over the main paged KV cache.
@@ -2997,6 +3277,9 @@ def msa_sparse_attention_ragged(
             topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
         group: Query heads per kv-head (``n_heads // n_kv_heads``).
         topk: Number of gathered KV blocks per token.
+        sparse_block_size: KV block size in tokens; the model's
+            ``sparse_attention_config.sparse_block_size``. Must equal the
+            KV cache page size and the kernel's ``BN``.
         scale: QK scale.
 
     Returns:
@@ -3029,6 +3312,7 @@ def msa_sparse_attention_ragged(
         parameters={
             "group": group,
             "topk": topk,
+            "sparse_block_size": sparse_block_size,
         },
     )[0].tensor
 
@@ -3045,6 +3329,7 @@ def msa_sparse_attention_ragged_mxfp8(
     *,
     group: int,
     topk: int,
+    sparse_block_size: int,
     scale: float,
 ) -> tuple[TensorValue, TensorValue]:
     """Computes MiniMax-M3 block-sparse attention, emitting MXFP8 + scales.
@@ -3074,6 +3359,9 @@ def msa_sparse_attention_ragged_mxfp8(
             topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
         group: Query heads per kv-head (``n_heads // n_kv_heads``).
         topk: Number of gathered KV blocks per token.
+        sparse_block_size: KV block size in tokens; the model's
+            ``sparse_attention_config.sparse_block_size``. Must equal the
+            KV cache page size and the kernel's ``BN``.
         scale: QK scale.
 
     Returns:
@@ -3121,6 +3409,100 @@ def msa_sparse_attention_ragged_mxfp8(
         parameters={
             "group": group,
             "topk": topk,
+            "sparse_block_size": sparse_block_size,
+        },
+    )
+    return results[0].tensor, results[1].tensor
+
+
+def msa_sparse_attention_ragged_mxfp6(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    cache_row_offsets: TensorValue,
+    total_context_length: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    block_indices: TensorValue,
+    *,
+    group: int,
+    topk: int,
+    scale: float,
+    fp6_format: str = "e2m3",
+) -> tuple[TensorValue, TensorValue]:
+    """Computes MiniMax-M3 block-sparse attention, emitting packed MXFP6 + scales.
+
+    AMD (gfx950) variant of :func:`msa_sparse_attention_ragged` whose output
+    is the o_proj-ready MXFP8 activation instead of BF16: quantized data
+    ``[num_rows, n_heads, head_dim]`` in ``float8_e4m3fn`` plus E8M0 block
+    scales ``[num_rows, n_heads * head_dim // 32]`` -- the same pair
+    :func:`quantize_dynamic_block_scaled` produces from the BF16 output, so
+    it feeds :func:`dynamic_block_scaled_matmul_amd` directly and the
+    separate quantize dispatch is skipped. Bit-identical to that unfused
+    pair; on split-K decode shapes the quantize fuses into the reduce and
+    saves a dispatch.
+
+    Args:
+        kv_params: Key-value cache parameters for the main KV cache.
+        input: Query tensor ``[total_q, n_heads, head_dim]`` (prefill) or
+            ``[batch, n_heads, head_dim]`` (decode); dtype matches the KV
+            cache (BF16 or FP8 e4m3).
+        input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32.
+        cache_row_offsets: Ragged valid-cache offsets ``[batch + 1]`` uint32.
+        total_context_length: Total padded cache length for the batch, CPU
+            scalar ``[1]`` uint32.
+        kv_collection: Main paged KV cache (BF16 or FP8 e4m3, no scales).
+        layer_idx: Layer index, uint32, on CPU.
+        block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
+            topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
+        group: Query heads per kv-head (``n_heads // n_kv_heads``).
+        topk: Number of gathered KV blocks per token.
+        scale: QK scale.
+
+    Returns:
+        The quantized attention output ``[total_q, n_heads, head_dim]``
+        ``float8_e4m3fn`` and its E8M0 block scales ``[total_q,
+        n_heads * head_dim // 32]``.
+    """
+    values = _msa_sparse_attention_ragged_values(
+        input=input,
+        input_row_offsets=input_row_offsets,
+        cache_row_offsets=cache_row_offsets,
+        total_context_length=total_context_length,
+        kv_collection=kv_collection,
+        layer_idx=layer_idx,
+        block_indices=block_indices,
+        topk=topk,
+        scale=scale,
+    )
+
+    row_width = input.shape[1] * input.shape[2]
+    if int(row_width) % _MX_SF_VECTOR_SIZE != 0:
+        raise ValueError(
+            "n_heads * head_dim must be a multiple of"
+            f" {_MX_SF_VECTOR_SIZE}, got {row_width}"
+        )
+
+    results = ops.inplace_custom(
+        "mo.msa.attention.ragged.paged.mxfp6",
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.uint8,
+                shape=[input.shape[0], input.shape[1], input.shape[2] * 3 // 4],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[input.shape[0], row_width // _MX_SF_VECTOR_SIZE],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "group": group,
+            "topk": topk,
+            "FP6_FORMAT": _FP6_FORMAT_CODE[fp6_format],
         },
     )
     return results[0].tensor, results[1].tensor
@@ -3237,21 +3619,26 @@ def flash_attention_gpu(
     local_window_size: int = -1,
     valid_length: TensorValue | None = None,
 ) -> TensorValue:
-    """Computes flash attention using GPU-optimized kernel.
+    """Computes flash attention using a GPU-optimized kernel.
 
     Args:
-        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
-        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
-        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
-        mask_variant: The mask variant to use for attention
-        scale: Scaling factor for attention scores
-        local_window_size: Local window size for sliding window attention
-        valid_length: Optional tensor of shape [batch] with dtype uint32.
-            When provided, uses the padded kernel variant that respects
-            the valid sequence lengths for each batch element.
+        q: The query tensor, of shape ``[batch, seq_len, num_heads,
+            head_dim]``.
+        k: The key tensor, of shape ``[batch, seq_len, num_heads,
+            head_dim]``.
+        v: The value tensor, of shape ``[batch, seq_len, num_heads,
+            head_dim]``.
+        mask_variant: The mask variant to use for attention.
+        scale: The scaling factor for attention scores.
+        local_window_size: The local window size for sliding window
+            attention.
+        valid_length: The optional tensor of shape ``[batch]`` with dtype
+            uint32. When provided, uses the padded kernel variant that
+            respects the valid sequence lengths for each batch element.
 
     Returns:
-        Output tensor of shape [batch, seq_len, num_heads, head_dim]
+        The output tensor, of shape ``[batch, seq_len, num_heads,
+        head_dim]``.
     """
     if q.dtype != k.dtype or q.dtype != v.dtype:
         raise ValueError(
@@ -3604,22 +3991,30 @@ def flash_attention_ragged_gpu(
     scale: float,
     local_window_size: int = -1,
 ) -> TensorValue:
-    """Computes flash attention for ragged inputs using GPU-optimized kernel
-    without a KV cache.
+    """Computes flash attention for ragged inputs using a GPU-optimized
+    kernel, without a KV cache.
 
     Args:
-        q: Query tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        k: Key tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        v: Value tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        input_row_offsets: Buffer of shape [batch_size + 1] with dtype uint32.
-            Indicates where each sequence starts and ends in the ragged tensors.
-            The values should be a prefix sum (cumulative sum) of sequence lengths.
-        mask_variant: The mask variant to use for attention
-        scale: Scaling factor for attention scores
-        local_window_size: Local window size for sliding window attention
+        q: The query tensor, of shape ``[total_seq_len, num_heads,
+            head_dim]`` (ragged).
+        k: The key tensor, of shape ``[total_seq_len, num_heads,
+            head_dim]`` (ragged).
+        v: The value tensor, of shape ``[total_seq_len, num_heads,
+            head_dim]`` (ragged).
+        input_row_offsets: The buffer of shape ``[batch_size + 1]`` with
+            dtype uint32. Indicates where each sequence starts and ends in
+            the ragged tensors. The values should be a prefix sum
+            (cumulative sum) of sequence lengths.
+        max_seq_len: The maximum sequence length across the batch, as a
+            rank-1 ``uint32`` tensor on CPU.
+        mask_variant: The mask variant to use for attention.
+        scale: The scaling factor for attention scores.
+        local_window_size: The local window size for sliding window
+            attention.
 
     Returns:
-        Output tensor of shape [total_seq_len, num_heads, head_dim]
+        The output tensor, of shape ``[total_seq_len, num_heads,
+        head_dim]``.
     """
     q = TensorValue(q)
     k = TensorValue(k)
@@ -4859,24 +5254,45 @@ def rms_norm_key_cache(
     multiply_before_cast: bool = True,
     per_head_norm: bool = True,
 ) -> None:
-    """This function applies RMSNorm to the _new_ entries in the KVCache.
+    """Applies RMSNorm to the new entries in the KV cache.
 
-    When per_head_norm=True (default), RMSNorm is applied separately to each head.
-    In this mode, gamma should have size [head_dim] and normalization occurs
-    across the head_dim dimensions within each head.
+    When ``per_head_norm`` is ``True`` (the default), RMSNorm is applied
+    separately to each head. In this mode, ``gamma`` should have size
+    ``[head_dim]`` and normalization occurs across the ``head_dim``
+    dimensions within each head.
 
-    When per_head_norm=False, RMSNorm is applied per token across all heads.
-    In this mode, gamma should have size [n_kv_heads * head_dim] and normalization
-    occurs across all dimensions for each token.
+    When ``per_head_norm`` is ``False``, RMSNorm is applied per token
+    across all heads. In this mode, ``gamma`` should have size
+    ``[n_kv_heads * head_dim]`` and normalization occurs across all
+    dimensions for each token.
 
-    The size of the gamma tensor determines how many dimensions will be normalized.
-    If gamma's size doesn't match the expected size based on per_head_norm setting,
-    rms_norm_cols must be explicitly specified to confirm the intention to normalize
-    only a subset of dimensions.
+    The size of the ``gamma`` tensor determines how many dimensions will
+    be normalized. If ``gamma``'s size doesn't match the expected size
+    based on the ``per_head_norm`` setting, ``rms_norm_cols`` must be
+    explicitly specified to confirm the intention to normalize only a
+    subset of dimensions.
 
-    Currently, the KVCacheT class itself isn't aware of the new cache entries
-    until cache length increment, which happens after model forward.
-    So use `input_row_offsets` to do this bookkeeping.
+    The KV cache collection itself isn't aware of the new cache entries
+    until the cache length increment, which happens after the model
+    forward, so ``input_row_offsets`` does this bookkeeping.
+
+    Args:
+        kv_params: The KV cache parameters.
+        kv_collection: The paged KV cache holding the entries to
+            normalize.
+        gamma: The RMSNorm weight.
+        epsilon: The epsilon added inside the normalization.
+        layer_idx: The index of the layer being normalized.
+        total_seq_len: The total sequence length of the ragged batch.
+        input_row_offsets: The ragged offsets delimiting the new entries.
+        weight_offset: The offset added to ``gamma`` before the multiply.
+        rms_norm_cols: The number of columns to normalize. Required when
+            ``gamma``'s size doesn't match the expected size, to confirm
+            the intention to normalize only a subset of dimensions.
+        multiply_before_cast: Whether to multiply by ``gamma`` before
+            casting back to the cache dtype.
+        per_head_norm: Whether to normalize each head separately. Defaults
+            to ``True``.
     """
     gamma_rank_expected = 1
     if gamma.rank != gamma_rank_expected:
@@ -5002,7 +5418,6 @@ def moe_create_indices(
     num_local_experts: int,
     *,
     needs_scales_offset: bool = False,
-    scales_alignment: int = 128,
 ) -> tuple[TensorValue, ...]:
     """Creates indices for the MoE layer.
 
@@ -5012,14 +5427,16 @@ def moe_create_indices(
 
     Returns:
         A tuple of five tensors:
-        - token_expert_order: The reordered token indices, grouped by assigned expert.
-        - expert_start_indices: The starting index for each expert's token group in
-            the reordered sequence.
-        - restore_token_order: The indices to restore original token ordering after
-            expert computation.
-        - expert_ids: ids of active experts selected for tokens
-        - expert_usage_stats: The maximum number of tokens assigned to any expert,
-            and the number of active experts.
+
+        - token_expert_order: The reordered token indices, grouped by
+          assigned expert.
+        - expert_start_indices: The starting index for each expert's token
+          group in the reordered sequence.
+        - restore_token_order: The indices that restore the original token
+          ordering after expert computation.
+        - expert_ids: The IDs of the active experts selected for tokens.
+        - expert_usage_stats: The maximum number of tokens assigned to
+          any expert, and the number of active experts.
     """
 
     op_name = "mo.moe.create.indices"
@@ -5090,39 +5507,44 @@ def moe_router_group_limited(
     norm_weights: bool,
     routed_scaling_factor: float,
 ) -> tuple[TensorValue, TensorValue]:
-    """Group limited MoE router.
-    When `n_groups > 1`, selects up to `topk_group` expert groups, then
-    picks ``n_experts_per_tok`` experts within those groups (DeepSeek-V3 style).
-    When ``n_groups == 1``, there is only one group, so group selection is
-    skipped and routing uses the dedicated GPU single-group path
-    (``mo.moe.single.group.router``, implemented as ``single_group_router`` in
-    Mojo). In that case ``topk_group`` is not used by the kernel.
+    """Routes tokens with the group-limited MoE router.
 
-    Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566.
+    When ``n_groups > 1``, selects up to ``topk_group`` expert groups,
+    then picks ``n_experts_per_tok`` experts within those groups
+    (DeepSeek-V3 style). When ``n_groups == 1``, there is only one group,
+    so group selection is skipped and routing uses the dedicated GPU
+    single-group path (``mo.moe.single.group.router``, implemented as
+    ``single_group_router`` in Mojo). In that case ``topk_group`` is not
+    used by the kernel.
+
+    Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566
 
     Args:
         expert_scores: The scores for each expert for each token. Shape:
-            [num_tokens, n_routed_experts].
-        expert_bias: The bias for each expert. Shape: [n_routed_experts].
-        n_routed_experts: The total number of experts. Must be divisible by
-            n_groups.
-        n_experts_per_tok: The number of experts to be selected per token.
-        n_groups: The total number of expert groups. Must be divisible by
-            n_routed_experts.
-        topk_group: The maximum number of expert groups that a token will be
-            routed to.
-        norm_weights: Whether to normalize the selected expert weights when
-            n_groups > 1. When n_groups == 1, normalization is currently
-            always enabled (norm_weights is treated as True) so behavior
-            matches the previous graph path that always divided weights by their
-            sum per token.
+            ``[num_tokens, n_routed_experts]``.
+        expert_bias: The bias for each expert. Shape:
+            ``[n_routed_experts]``.
+        n_routed_experts: The total number of experts. Must be divisible
+            by ``n_groups``.
+        n_experts_per_tok: The number of experts to be selected per
+            token.
+        n_groups: The total number of expert groups. ``n_routed_experts``
+            must be divisible by this.
+        topk_group: The maximum number of expert groups that a token
+            will be routed to.
+        norm_weights: Whether to normalize the selected expert weights
+            when ``n_groups > 1``. When ``n_groups == 1``, normalization
+            is currently always enabled (``norm_weights`` is treated as
+            ``True``) so behavior matches the graph path that always
+            divided weights by their sum per token.
 
     Returns:
         A tuple of two tensors:
-        - expert_indices: The indices of the routed experts for each token.
-            Shape: [num_tokens, n_experts_per_tok].
-        - expert_weights: The weights of the routed experts for each token.
-            Shape: [num_tokens, n_experts_per_tok].
+
+        - expert_indices: The indices of the routed experts for each
+          token. Shape: ``[num_tokens, n_experts_per_tok]``.
+        - expert_weights: The weights of the routed experts for each
+          token. Shape: ``[num_tokens, n_experts_per_tok]``.
     """
 
     if expert_bias.rank != 1:
@@ -5205,7 +5627,9 @@ def moe_sink_gate_router(
         logits: Raw (pre-sigmoid) gate logits, routed experts followed by
             sink experts. Must be float32, which is the only dtype the
             kernel's joint softmax has been validated at. Shape:
-            [num_tokens, n_routed_experts + n_shared_experts].
+            [num_tokens, at least n_routed_experts + n_shared_experts]; a
+            wider row's tail is not read, so a gate weight padded for
+            alignment needs no slice.
         expert_bias: Per-routed-expert selection bias. Shape: [n_routed_experts].
         global_scale: Scalar output-scaling weight. Shape: [1].
         n_routed_experts: Total number of routed experts. Must be a positive
@@ -5276,9 +5700,13 @@ def moe_sink_gate_router(
             " n_experts_per_tok or n_routed_experts"
         )
 
-    if logits.shape[1] != n_routed_experts + n_shared_experts:
+    logits_width = logits.shape[1]
+    if (
+        not isinstance(logits_width, StaticDim)
+        or int(logits_width) < n_routed_experts + n_shared_experts
+    ):
         raise ValueError(
-            "expected logits of shape [num_tokens, n_routed_experts +"
+            "expected logits of shape [num_tokens, at least n_routed_experts +"
             f" n_shared_experts] but got {logits.shape}"
         )
     if expert_bias.shape[0] != n_routed_experts:
@@ -5636,17 +6064,31 @@ def grouped_matmul_ragged(
     expert_ids: TensorValue,
     expert_usage_stats: TensorValue,
 ) -> TensorValue:
-    """Grouped matmul used in MoE layer.
+    """Performs the grouped matmul used in the MoE layer.
 
-    `hidden_states` and `expert_start_indices` are used together to implement
-    the ragged tensor. `expert_start_indices` indicates where each group starts
-    and ends in `hidden_states`
+    ``hidden_states`` and ``expert_start_indices`` are used together to
+    implement the ragged tensor. ``expert_start_indices`` indicates where
+    each group starts and ends in ``hidden_states``.
 
-    `expert_ids` is the id of the expert for each group in `hidden_states`
+    ``expert_ids`` is the id of the expert for each group in
+    ``hidden_states``.
 
-    `expert_usage_stats` is a rank-1 ``uint32`` tensor laid out as
+    ``expert_usage_stats`` is a rank-1 ``uint32`` tensor laid out as
     ``[max_tokens_per_expert, num_active_experts]`` (the output of
     ``moe_create_indices``).
+
+    Args:
+        hidden_states: The ragged input activations.
+        weight: The expert weights, ``[num_experts, N, K]`` (Linear
+            convention); each group computes ``group @ weight.T``.
+        expert_start_indices: The start index of each group in
+            ``hidden_states``.
+        expert_ids: The id of the expert for each group.
+        expert_usage_stats: The per-expert usage stats, the output of
+            ``moe_create_indices``.
+
+    Returns:
+        The ragged matmul output.
     """
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
@@ -6149,6 +6591,11 @@ def grouped_matmul_block_scaled(
     and it pairs an unpacked activation row with a packed weight row. It also
     requires ``K`` to be a multiple of 128, which the padded FP4 TMA copy that
     feeds the weights into shared memory imposes.
+
+    Every combination needs the activation row to be a multiple of 16 storage
+    elements for its TMA descriptor, so a packed-FP4 ``K`` must be a multiple
+    of 32. For a MoE down projection ``K`` is the expert intermediate size, and
+    that is the constraint a tensor-parallel split of it runs into.
 
     ``hidden_states`` and ``expert_start_indices`` together implement the ragged
     tensor representation for variable-length expert inputs.
@@ -10048,14 +10495,22 @@ def spatial_merge(
     grid_thw: TensorValue,
     hidden_size: int,
     merge_size: int,
+    *,
+    out_rows: DimLike,
 ) -> TensorValue:
     """Performs spatial merge operation on ragged input tensors.
 
     This operation merges spatial dimensions of input patches according to
-    the grid dimensions specified in grid_thw.
+    the grid dimensions specified in grid_thw, replicating each grid item's
+    spatial rows across its ``t`` temporal slices.
+
+    Input and output row counts differ whenever any ``t > 1``: the kernel
+    consumes ``sum(h * w)`` rows and emits ``sum(t * h * w)``, so ``out_rows``
+    cannot be derived from ``input.shape``. They coincide only at ``t == 1``,
+    which is why the two are separate arguments.
 
     Args:
-        input: Input tensor of shape [total_patches_in_grid, hidden_size]
+        input: Input tensor of shape [sum(h * w), hidden_size]
         grid_thw: Grid dimensions tensor of shape [batch_size, 3] containing
             [t, h, w] for each batch item, where:
             - t: temporal/frame dimension
@@ -10063,9 +10518,11 @@ def spatial_merge(
             - w: width dimension
         hidden_size: Hidden dimension size
         merge_size: Size of spatial merge blocks (typically 2)
+        out_rows: Row count of the output, ``sum(t * h * w)``. Usually the
+            patch-row dimension of the caller's ``pixel_values``.
 
     Returns:
-        Output tensor of shape [total_patches_in_grid, hidden_size]
+        Output tensor of shape [out_rows, hidden_size]
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -10099,7 +10556,7 @@ def spatial_merge(
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=[input.shape[0], hidden_size],
+                shape=[out_rows, hidden_size],
                 device=input.device,
             )
         ],
@@ -10363,12 +10820,13 @@ def wait_host_value_with_dep(
 def wait_host_value(payload: BufferValue, device: DeviceRef) -> None:
     """Stalls the device stream until a host-visible flag reaches a value.
 
-    Wraps the ``mo.wait_host_value`` custom op, which lowers to CUDA's
-    ``cuStreamWaitValue64`` via ``DeviceQueue.wait_for_host_value``.
-    Captures cleanly into a CUDA graph as a wait-value (batch-mem-op)
-    node, so it can sit inside a captured forward graph to gate a
-    downstream consumer kernel on CPU-produced data while the rest of
-    the forward body runs concurrently.
+    Wraps the ``mo.wait_host_value`` custom op, which lowers to
+    ``cuStreamWaitValue64`` / ``hipStreamWaitValue64`` via
+    ``DeviceQueue.wait_for_host_value``. Records into a captured device
+    graph as a wait-value (batch-mem-op) node, so it can sit inside a
+    captured forward graph to gate a downstream consumer kernel on
+    CPU-produced data while the rest of the forward body runs
+    concurrently.
 
     The payload buffer must be a CPU-resident ``int64[2]``:
 
@@ -10390,7 +10848,7 @@ def wait_host_value(payload: BufferValue, device: DeviceRef) -> None:
     signals the flag, and this op gates the consumer kernel on that
     signal.
 
-    Only supported on CUDA devices.
+    Only supported on CUDA and HIP devices.
 
     Args:
         payload: CPU buffer of shape ``[2]`` and dtype ``int64`` holding
@@ -10745,3 +11203,89 @@ def apply_qk_rms_norm(
         ],
     )
     return q_out.tensor, k_out.tensor
+
+
+def latent_sparse_attention_ragged(
+    q: TensorValue,
+    input_row_offsets: TensorValue,
+    comp_indices: TensorValue,
+    attn_sink: TensorValue,
+    swa_collection: PagedCacheValues,
+    comp_collection: PagedCacheValues,
+    layer_swa: TensorValue,
+    layer_comp: TensorValue,
+    *,
+    scale: float,
+    window: int,
+) -> TensorValue:
+    """Sparse attention over a shared K=V latent held in two paged leaves.
+
+    DeepSeek-V4 compressed sparse attention: every head attends to the same
+    latent row per key. A query at absolute position ``pos`` (its sequence's
+    ``cache_lengths`` plus its offset in the step) sees the window positions
+    ``max(0, pos - window + 1) .. pos`` from ``swa_collection`` and the
+    compressed entries listed for it in ``comp_indices`` from
+    ``comp_collection``. Both leaves must already hold the current step's
+    rows; issue the store ops before this one, as for every paged attention.
+
+    ``attn_sink`` enters the denominator only: the max is over the gathered
+    scores and ``den += exp(sink - max)``.
+
+    Args:
+        q: ``[total_rows, num_heads, head_dim]`` queries, ragged over the
+            batch.
+        input_row_offsets: ``[batch + 1]`` uint32 row offsets of ``q``.
+        comp_indices: ``[total_rows, num_comp]`` int32 entry indices into
+            the compressed leaf; ``-1`` marks an unused slot.
+        attn_sink: ``[num_heads]`` float32 per-head sink logits.
+        swa_collection: The sliding-window leaf (single latent head, paged
+            by token position).
+        comp_collection: The compressed leaf (single latent head, paged by
+            entry through ``slots_per_page``).
+        layer_swa: uint32 scalar, this layer's index in the window leaf.
+        layer_comp: uint32 scalar, this layer's index in the compressed leaf.
+        scale: Softmax scale applied to the scores.
+        window: Sliding window length in tokens.
+
+    Returns:
+        ``[total_rows, num_heads, head_dim]`` in ``q``'s dtype.
+    """
+    _check_rank(3, q=q)
+    _check_rank(1, input_row_offsets=input_row_offsets, attn_sink=attn_sink)
+    _check_rank(2, comp_indices=comp_indices)
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
+    _check_dtype(DType.int32, comp_indices=comp_indices)
+    _check_dtype(DType.float32, attn_sink=attn_sink)
+    _check_dtype(DType.uint32, layer_swa=layer_swa, layer_comp=layer_comp)
+    _check_rank(6, swa_kv_blocks=swa_collection.kv_blocks)
+    _check_rank(6, comp_kv_blocks=comp_collection.kv_blocks)
+    if window <= 0:
+        raise ValueError(f"window must be positive, got {window}")
+
+    return ops.inplace_custom(
+        "mo.latent_sparse_attention.ragged.paged",
+        device=q.device,
+        values=[
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_collection.kv_blocks,
+            swa_collection.values_page_stride(),
+            swa_collection.cache_lengths,
+            swa_collection.lookup_table,
+            swa_collection.max_prompt_length,
+            swa_collection.max_cache_length,
+            comp_collection.kv_blocks,
+            comp_collection.values_page_stride(),
+            comp_collection.cache_lengths,
+            comp_collection.lookup_table,
+            comp_collection.max_prompt_length,
+            comp_collection.max_cache_length,
+            layer_swa,
+            layer_comp,
+            ops.constant(scale, DType.float32, DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(q.dtype, q.shape, q.device)],
+        parameters={"window": window},
+    )[0].tensor

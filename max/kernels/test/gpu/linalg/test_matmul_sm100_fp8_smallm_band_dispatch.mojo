@@ -60,7 +60,7 @@ comptime BAND_MS = [25, 27, 29, 31, 8, 16, 64, 128]
 
 
 @__parameter
-@always_inline
+@inline(.always)
 def scaled_compute_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
@@ -132,9 +132,9 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     # Reference: same FP8 GEMM via vendor cuBLASLt, static scale via `alpha`.
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
         alpha=Float32(STATIC_SCALE),
@@ -197,9 +197,9 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     # Reference: same GEMM via vendor cuBLASLt.
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

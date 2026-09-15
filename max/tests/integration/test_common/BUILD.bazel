@@ -184,10 +184,31 @@ modular_py_library(
     testonly = True,
     srcs = ["context_utils.py"],
     imports = [".."],
+    # Extends the package default with the Qwen4-Exp arch package, whose QSA
+    # tests build their contexts through this helper.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//max_private/qwen4_exp:__pkg__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("numpy"),
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_library(
+    name = "simple_kv_cache",
+    testonly = True,
+    srcs = ["simple_kv_cache.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/nn",
+        "//max/python/max/support",
     ],
 )
 

@@ -95,7 +95,7 @@ trait Hashable:
                 FieldIndex=i,
                 ParentConformsTo="Hashable",
             ]()
-            hasher.update(r.field_ref[i](self))
+            r.field_ref[i](self).__hash__(hasher)
 
 
 def hash[
@@ -114,7 +114,7 @@ def hash[
         A 64-bit integer hash based on the underlying implementation.
     """
     var hasher = HasherType()
-    hasher.update(hashable)
+    hashable.__hash__(hasher)
     var value = hasher^.finish()
     return value
 
@@ -135,6 +135,6 @@ def hash[
         A 64-bit integer hash value.
     """
     var hasher = HasherType()
-    hasher._update_with_bytes(Span(unsafe_ptr=bytes, length=n))
+    hasher.update(Span(unsafe_ptr=bytes, length=n))
     var value = hasher^.finish()
     return value

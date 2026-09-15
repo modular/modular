@@ -26,7 +26,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     print("New shape:", coord_to_index_list(shape))
     print("New strides:", stride)
 
-    @always_inline
+    @inline(.always)
     def print_elements_lambda[
         simd_width: Int, alignment: Int = 1
     ](coords: Coord) {var}:
@@ -49,7 +49,7 @@ def test_slice[
     use_copy: Bool,
 ) raises:
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = Array[Scalar[dtype], numelems](uninitialized=True)
+    var output_mem = Array[Scalar[dtype], numelems](fill={})
 
     var memory1 = Array[Scalar[dtype], numelems](
         fill_with=lambda (i: Int) -> Scalar[dtype]: Scalar[dtype](i)

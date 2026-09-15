@@ -26,6 +26,10 @@
 # --max-num-steps, --enable-prefix-caching, --device-memory-utilization,
 # and any draft quantization override (the draft checkpoint is bf16).
 
+# Launch via //max_private:max_private. The tiered KV connector below is
+# backed by the Rust kv_tier_connector pyo3 extension, which only the
+# private target bundles; the public one dies at startup importing it.
+use_max_private=1
 batch_size=64
 max_length=262144
 

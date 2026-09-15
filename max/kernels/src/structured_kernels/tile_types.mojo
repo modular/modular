@@ -34,8 +34,10 @@ from layout import (
     ComptimeInt,
     Coord,
     CoordLike,
+    DefaultEngine,
     Idx,
     LayoutTensor,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
@@ -232,6 +234,7 @@ comptime SMemTile[
     layout: Layout,
     *,
     alignment: Int = 128,
+    Engine: TensorEngine,
 ] = TileTensor[
     dtype,
     Layout[
@@ -239,6 +242,7 @@ comptime SMemTile[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
+    Engine=Engine,
     address_space=.SHARED,
 ]
 """Shared memory tile using TileTensor with a Layout.
@@ -250,6 +254,7 @@ Parameters:
     dtype: The data type of tile elements.
     layout: The full layout including swizzle information.
     alignment: Memory alignment (default 128 for shared memory).
+    Engine: Engine policy of the tile.
 """
 
 
@@ -558,7 +563,8 @@ def create_tma_tile[
 comptime GMEMTile[
     dtype: DType,
     tt_layout: TensorLayout,
-] = TileTensor[dtype, tt_layout, MutAnyOrigin]
+    Engine: TensorEngine = DefaultEngine[element_width=1],
+] = TileTensor[dtype, tt_layout, MutAnyOrigin, Engine=Engine]
 """Global memory TileTensor for global memory kernel parameters.
 
 Used for kernel parameter types, replacing LayoutTensor parameters.
@@ -608,7 +614,8 @@ comptime SMemTile2D[
     dim1: Int,
     *,
     alignment: Int = 128,
-] = SMemTile[dtype, row_major[dim0, dim1](), alignment=alignment]
+    Engine: TensorEngine,
+] = SMemTile[dtype, row_major[dim0, dim1](), alignment=alignment, Engine=Engine]
 """Backward-compatible alias for SMemTile with explicit 2D dimensions."""
 
 
@@ -646,7 +653,10 @@ struct SMemTileArrayWithLayout[
     """
 
     # The TileTensor-based tile type with correct layout
-    comptime Tile = SMemTile[Self.dtype, Self.tile_layout]
+    # Shared memory is raw-pointer addressed so use DefaultEngine.
+    comptime Tile = SMemTile[
+        Self.dtype, Self.tile_layout, Engine=DefaultEngine[element_width=1]
+    ]
 
     # Size calculations - use layout.product() for element count
     comptime tile_size: Int = Self.tile_layout.product()
@@ -684,7 +694,7 @@ struct SMemTileArrayWithLayout[
         """
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
@@ -722,7 +732,7 @@ struct SMemTileArrayWithLayout[
         """
         return type_of(result)(self.ptr + Self.tile_size * start)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
@@ -832,7 +842,7 @@ struct SMemTileArray[
         """
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
@@ -879,7 +889,7 @@ struct SMemTileArray[
         """
         return type_of(result)(self.ptr + Self.tile_size * start)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
@@ -958,6 +968,8 @@ struct SMemTileArray2D[
         Self.dtype,
         internal_k_major[Self.dtype, Self.dim0, Self.dim1, Self.swizzle_bytes],
         alignment=Self.alignment,
+        # Shared memory is raw-pointer addressed so use DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
     ]
 
     # Size calculations
@@ -1001,7 +1013,7 @@ struct SMemTileArray2D[
         Self.dtype, Self.dim0, Self.dim1, Self.swizzle_bytes
     ]
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
@@ -1020,11 +1032,15 @@ struct SMemTileArray2D[
             Self.tile_layout,
         )
 
-    @always_inline
+    @inline(.always)
     def get_with_layout[
         tile_layout: Layout, T: Intable
     ](self, index: T) -> SMemTile[
-        Self.dtype, tile_layout, alignment=Self.alignment
+        Self.dtype,
+        tile_layout,
+        alignment=Self.alignment,
+        # Returned view aliases this array's shared memory so use DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
     ]:
         """Get tile at the given index with a specified layout.
 
@@ -1069,7 +1085,7 @@ struct SMemTileArray2D[
         """
         return type_of(result)(self.ptr + Self.tile_size * start)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
@@ -1124,6 +1140,8 @@ struct SMemTileArray2DRowMajor[
         Self.dtype,
         row_major[Self.dim0, Self.dim1](),
         alignment=Self.alignment,
+        # Returned view aliases this array's shared memory so use DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
     ]
 
     # The internal layout matching the Tile type
@@ -1165,7 +1183,7 @@ struct SMemTileArray2DRowMajor[
         """
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
-    @always_inline
+    @inline(.always)
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
@@ -1206,7 +1224,7 @@ struct SMemTileArray2DRowMajor[
         """
         return type_of(result)(self.ptr + Self.tile_size * start)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).

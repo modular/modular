@@ -111,6 +111,11 @@ def smart_resize(
 
 
 def to_rgb(pil_image: Image.Image) -> Image.Image:
+    if pil_image.mode == "RGB":
+        # ``convert("RGB")`` on an RGB image copies every pixel to produce an
+        # identical image. On a 1920x1080 screenshot that copy is pure waste,
+        # and a vision request carries tens of them.
+        return pil_image
     if pil_image.mode == "RGBA":
         white_background = Image.new("RGB", pil_image.size, (255, 255, 255))
         white_background.paste(

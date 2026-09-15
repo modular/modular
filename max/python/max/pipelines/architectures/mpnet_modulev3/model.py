@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
@@ -40,19 +39,12 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import MPNetModuleV3BatchProcessor
 from .graph import MPNetModel
+from .inputs import MPNetInputs
 from .model_config import MPNetConfig
 
 logger = logging.getLogger("max.pipelines")
 
 PAD_VALUE = 1
-
-
-@dataclass
-class MPNetInputs(ModelInputs):
-    """Input tensors for the MPNet model."""
-
-    next_tokens_batch: Buffer
-    attention_mask: Buffer
 
 
 class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):

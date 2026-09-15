@@ -36,4 +36,5 @@ Modules
    nn
    pipelines
    profiler
+   serve.media
    support.image

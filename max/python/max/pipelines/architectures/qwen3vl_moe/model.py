@@ -257,10 +257,14 @@ class Qwen3VLModel(
             for device in self.devices
         ]
 
+        # Own dimension, not `vision_seq_len`: the bilinear position grid is
+        # interpolated once per FRAME while the pixels and rotary ids carry one
+        # row per temporal PATCH. The two coincide only for still images, and
+        # this arch shares `Qwen3VLTokenizer`, which now emits clips.
         weights_types = [
             TensorType(
                 DType.float32,
-                shape=[4, "vision_seq_len", 1],
+                shape=[4, "vision_pos_len", 1],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -269,7 +273,7 @@ class Qwen3VLModel(
         indices_types = [
             TensorType(
                 DType.int64,
-                shape=[4, "vision_seq_len"],
+                shape=[4, "vision_pos_len"],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices

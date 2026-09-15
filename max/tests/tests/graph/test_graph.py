@@ -22,7 +22,15 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+from max.graph import (
+    DeviceRef,
+    Graph,
+    ProfileScopeColor,
+    TensorType,
+    TensorValue,
+    Weight,
+    ops,
+)
 from max.graph.graph import _location
 from max.mlir.dialects import rmo
 
@@ -170,6 +178,24 @@ def test_profile_scope_nests() -> None:
     # Innermost scope is the outermost ProfileScopeLocationAttr layer.
     assert 'loc(#mogg.profile_scope<"inner",' in asm
     assert 'profile_scope<"outer",' in asm
+
+
+def test_profile_scope_color() -> None:
+    """A colored scope stores its color in the ProfileScopeLocationAttr."""
+    input_type = TensorType(
+        dtype=DType.float32, shape=[4], device=DeviceRef.CPU()
+    )
+    with Graph("profile_scope_color", input_types=[input_type]) as graph:
+        with graph.profile_scope("outer", color=ProfileScopeColor.ORANGE):
+            with graph.profile_scope("inner"):
+                y = ops.add(graph.inputs[0], graph.inputs[0])
+        graph.output(y)
+
+    asm = graph._mlir_op.get_asm(enable_debug_info=True)
+    # The colored scope carries the color field; the uncolored sibling does not.
+    assert 'loc(#mogg.profile_scope<"inner",' in asm
+    assert 'color = "orange"' in asm
+    assert 'profile_scope<"outer", loc(unknown), color = "orange">' in asm
 
 
 def test_profile_scope_skips_constants_and_weights() -> None:

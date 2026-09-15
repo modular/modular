@@ -34,7 +34,7 @@ from max.benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.broadcast import broadcast
-from comm import MAX_GPUS, Signal
+from comm import Signal
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import (
     DeviceBuffer,
@@ -47,7 +47,7 @@ from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 from std.testing import assert_true
 
 
-@always_inline
+@inline(.always)
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
@@ -116,7 +116,7 @@ def bench_broadcast[
     var chunk_bytes = ceildiv(num_bytes, ngpus)
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
         uninitialized=True
     )
 
@@ -220,11 +220,11 @@ def bench_broadcast[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises {imm}:
-        @always_inline
+        @inline(.always)
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
                 cb_in.offset_ptr(cache_iter), row_major(length)
