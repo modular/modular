@@ -1,0 +1,246 @@
+---
+title: Mojo conversions cheat sheet
+sidebar_label: Conversions
+description: "Make one, convert one, access one. Remember to cast."
+hide_title: true
+hide_table_of_contents: true
+compiler_verified: "2026-08-17, Mojo 1.0.0 (ed45d567)"
+last_updated: "2026-08-17 (1.0.0 audit)"
+build_version: "1.1.0dev"
+---
+
+import {
+  Sheet,
+  Panel,
+  Intro,
+} from '@site/src/components/CheatSheets/sheet';
+
+{/* markdownlint-disable MD033 MD034 */}
+
+<Sheet slug="conversions">
+
+## Numbers
+
+<Panel title="Int" summary="machine-width integer; a 1-lane SIMD">
+
+<Intro>make</Intro>
+
+```mojo
+42 # IntLiteral
+Int(x) # any Intable: Bool, Int8 …
+Int(s) # any Intable that's raising: String
+Int(Int32(5)) # any numeric scalar, cross-dtype
+```
+
+<Intro>convert</Intro>
+
+```mojo
+Float64(i), UInt(i) # to float, to unsigned (same bits)
+String(i), Bool(i) # to text, True if non-zero
+i.cast[DType.int8]() # to another dtype
+```
+
+Float to Int truncates toward zero; cross-dtype casts wrap
+(two's complement). **Int** is **Scalar[DType.int]**, so **.cast**
+works like any SIMD scalar.
+
+**Int** and **UInt** share bits: Int(-1) is UInt 2^64-1.
+
+</Panel>
+
+<Panel title="Float64" summary="IEEE double; a 1-lane SIMD">
+
+<Intro>make</Intro>
+
+```mojo
+3.14 # FloatLiteral
+Float64(x) # any Floatable: Int, Bool
+Float64(s) # any Floatable that's raising: String
+Float32(x).cast[DType.float64]() # widen a scalar
+```
+
+<Intro>convert</Intro>
+
+```mojo
+Int(f) # truncates toward zero
+f.cast[DType.float32]() # narrow (precision loss)
+Bool(f), String(f) # True if non-zero, to text
+```
+
+No bare **Float**, and no Float128/256. Convert all other
+floats (including special purpose) with **.cast()**.
+
+</Panel>
+
+<Panel title="Bool" summary="true / false, and what's truthy" table="zebra">
+
+<Intro>make</Intro>
+
+```mojo
+Bool(x) # any Boolable
+```
+
+<Intro>convert</Intro>
+
+```mojo
+Int(b), Float64(b), String(b) # 0 or 1, 0.0 or 1.0, "True" or "False"
+```
+
+<Intro>truthy — for if / while / and / or / Bool()</Intro>
+
+| Kind                      | Truthy when           |
+|---------------------------|-----------------------|
+| **Numbers**               | non-zero              |
+| **Strings & collections** | non-empty             |
+| **Optional**              | None False, else True |
+| **PythonObject**          | Python's own rules    |
+
+Any type with a **\_\_bool\_\_** is truthy. Converting a
+**Bool** to a number is explicit: **Int(b)**, never implicit.
+
+</Panel>
+
+<Panel title="SIMD[T, N]" summary="N lanes of one dtype; Scalar = SIMD[T, 1]">
+
+<Intro>make</Intro>
+
+```mojo
+SIMD[T, N](x) # splat one value to all lanes
+SIMD[T, 4](a, b, c, d) # per-lane
+```
+
+<Intro>convert</Intro>
+
+```mojo
+v.cast[DType.x]() # new dtype, same lane count
+SIMD[T, N](scalar) # splat a Scalar up to N lanes
+```
+
+**N** is the lane count, not bit width; a lane's bit
+width is its **DType**. Int, Float64, Int8 … are all SIMD scalars.
+
+</Panel>
+
+## Text
+
+<Panel title="String" summary="owned, growable UTF-8 text">
+
+<Intro>make</Intro>
+
+```mojo
+String(x) # any StringSpan, StringLiteral, Writable (Int, Float64, Bool …)
+String(t"{x}") # Not needed for print()
+String(from_utf8=bytes) # raises on bad UTF-8
+String(from_utf8_lossy=bytes) # replaces bad bytes
+```
+
+<Intro>convert</Intro>
+
+```mojo
+Int(s) # base-10 parse; raises on "3.5", "0xff", ""
+Float64(s) # parse (1e3, inf ok); raises "", garbage
+Bool(s) # True if non-empty
+```
+
+<Intro>access (by byte / codepoint / grapheme)</Intro>
+
+```mojo
+s[byte=i], s[byte=i:j] # also for codepoint and single index grapheme
+s.as_bytes(), s.codepoints(), s.graphemes() # iterators
+```
+
+</Panel>
+
+## Pointers
+
+<Panel title="Pointer[T]" summary="to backing buffer">
+
+Use **unsafe_ptr()** to access: **List**, **String**,
+**StringSpan**, **Array**, and **Span**.
+
+<Intro>access through a pointer</Intro>
+
+```mojo
+buf.unsafe_ptr() # -> Pointer[T]
+p[unsafe_offset=i] # deref one element
+p.unsafe_offset(i)[] # pointer arithmetic, then deref
+p.unsafe_load[width=N]() # read N lanes -> SIMD[T, N]
+```
+
+<Intro>vectorize a buffer (the escape hatch)</Intro>
+
+```mojo
+var v = data.unsafe_ptr().unsafe_load[width=8]() # 8 elements -> one SIMD
+var total = v.reduce_add() # SIMD-wide reduce
+```
+
+**Pointer** is non-null by design. Use
+**OptionalPointer** for a nullable pointer. Unsafe operations carry the
+**unsafe\_** prefix or an **unsafe\_** keyword.
+
+</Panel>
+
+## Collections
+
+<Panel title="List[T]" summary="growable, homogeneous sequence">
+
+<Intro>make</Intro>
+
+```mojo
+var x: List[T] = [a, b, c] # annotate: unannotated defaults to Array
+List[T](capacity=n) # empty; initial room for n
+List[T](length=n, fill=x) # n copies of x (T: Copyable)
+List(range(n)) # materialize a range
+List(iterable) # from any iterator / iterable
+```
+
+<Intro>access</Intro>
+
+```mojo
+list[i], list[i:j] # element by ref, Span view (no copy)
+list.unsafe_take_allocation() # hand off the buffer as an Allocation[T]
+```
+
+</Panel>
+
+<Panel title="Dict[K, V]" summary="hash map; keys Hashable + Equatable + Movable">
+
+<Intro>make</Intro>
+
+```mojo
+Dict[K, V]() # empty; fill with d[k] = v
+Dict[K, V](capacity=n) # empty; initial room for n
+Dict.fromkeys(keys, v) # every key maps to v
+```
+
+<Intro>access</Intro>
+
+```mojo
+d.setdefault(key, default) # ref; inserts default if absent
+d.get(key) d.find(key) # Optional[V]
+d.keys() d.values() # lazy iterators
+d.items() # iterator of DictEntry (.key / .value)
+d.pop(key) # value, removes it
+```
+
+</Panel>
+
+<Panel title="Optional[T]" summary="a value, or nothing">
+
+<Intro>make</Intro>
+
+```mojo
+Optional(x) # from a value (T inferred from x)
+Optional[T](), Optional[T](None) # empty
+```
+
+<Intro>access</Intro>
+
+```mojo
+o.value(), o.take(), o[] # ref, move out, ref (abort, abort, raise)
+o.or_else(default) # value, or default
+```
+
+</Panel>
+
+</Sheet>

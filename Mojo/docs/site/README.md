@@ -35,6 +35,50 @@ is the single place that knows the published site layout and rewrites them:
 stdlib → **mojolang.org** ``/docs/std/...``, kernels → **max.modular.com**
 ``/api/mojo/...``.
 
+## Cheat sheets
+
+The `reference/cheat-sheets/` pages are normal MDX documents published on the
+website, like any others, except they use some additional React components
+for a unique layout.
+
+The PDF files in `reference/cheat-sheets/assets/` must be explicitly updated
+anytime we make a change to the corresponding MDX files, using a Python script
+in the `mojosite` project (in the internal `modular-fe` repo).
+
+### To regenerate PDF files (Modular internal only)
+
+Wait until you're completely done editing the cheat sheets, because you must
+execute all these commands in order anytime you change an MDX file:
+
+1. In the monorepo root, build the docs:
+
+   ```sh
+   br //Mojo/docs/site:install
+   ```
+
+2. In the `modular-fe` path, build the static website:
+
+   ```sh
+   npm run mojo-build
+   ```
+
+   Do _not_ use `mojo-start`.
+
+3. Back in the monorepo root, generate the PDFs using the `build.py` script in
+   the `modular-fe` repo, but with the `output` path set to the monorepo's
+   `cheat-sheets/assets/` path. For example:
+
+   ```sh
+   python3 .derived/modular-fe/mojosite/scripts/cheat-sheets/bin/build.py all --output Mojo/docs/site/reference/cheat-sheets/assets/
+   ```
+
+Confirm the PDFs look as expected, and then commit them to the monorepo.
+
+NOTE: Even if the MDX files are unchanged, running the `build.py` script will
+probably always create PDFs that look "changed" to git. The PDFs are binary
+files and include metadata such as the creation timestamp that will result in a
+changed file, even if the visible PDF is exactly the same as it was.
+
 ## Contributing
 
 If you see something in the docs that is wrong or could be improved, we'd love
