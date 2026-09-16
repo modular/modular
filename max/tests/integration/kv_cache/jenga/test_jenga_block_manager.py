@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -24,7 +25,7 @@ from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
-from max.pipelines.kv_cache.kv_connector import BlockCount
+from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import PrefixCacheHits
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import (
     LittleKVCacheBlock,
@@ -67,6 +68,7 @@ def make_manager(
     max_num_input_tokens: int | None = None,
     num_draft_tokens: int = 0,
     num_draft_tokens_per_step: int = 0,
+    connector: KVConnector | None = None,
     replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]] | None = None,
     enable_dp_cross_replica_prefix_copy: bool = True,
 ) -> JengaBlockManager:
@@ -79,6 +81,7 @@ def make_manager(
         max_num_input_tokens=max_num_input_tokens,
         num_draft_tokens=num_draft_tokens,
         num_draft_tokens_per_step=num_draft_tokens_per_step,
+        connector=connector,
         replica_kv_memory=replica_kv_memory,
         enable_dp_cross_replica_prefix_copy=enable_dp_cross_replica_prefix_copy,
         leaves={
@@ -1634,6 +1637,26 @@ def test_reset_metrics_zeroes_the_counters() -> None:
     bm.reset_metrics()
 
     assert bm.metrics == KVCacheMetrics()
+
+
+def test_metrics_include_connector_metrics() -> None:
+    connector = MagicMock(spec=KVConnector)
+    connector.metrics = KVCacheMetrics(input_tokens=6)
+    connector.reset_metrics.side_effect = lambda: setattr(
+        connector, "metrics", KVCacheMetrics()
+    )
+
+    bm = make_manager({FULL: full(ratio=1)}, block_size=1, connector=connector)
+    ctx = make_ctx(num_tokens=4)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+
+    assert bm.metrics.input_tokens == 10
+
+    bm.reset_metrics()
+
+    assert bm.metrics == KVCacheMetrics()
+    connector.reset_metrics.assert_called_once()
 
 
 # ===--------------------------------------------------------------------=== #
