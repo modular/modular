@@ -234,12 +234,14 @@ private:
   ErrorKind error = ErrorKind::none;
 };
 
-/// Parsed `case` arm for `__match`: pattern, optional guard, and suite cursor.
+/// Parsed `case` arm for `__match`: pattern, optional guard, suite cursor, and
+/// the preprocessed command list for the pattern.
 struct MatchCaseEntry {
   ExprNode *patternExpr;
   ExprNode *guardExpr;
   LexerCursor caseCursor;
   size_t caseIndent;
+  PatternCommandList commandList;
 };
 
 /// This class provides the implementation details of the concrete Lightning
@@ -1585,12 +1587,28 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     return success();
   }
 
+  // Because we don't know whether a case is allowed to consume an RValue, we
+  // convert the subject to a BValue before building patterns, so none of the
+  // later pattern emission can consume the RValue.  For example, any "var"
+  // bindings will have to do a copy.
+  // TODO: maintain RValueness for as long as we can.
+  BValue subjectBVal =
+      getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
+  if (!subjectBVal)
+    return failure();
+
+  // Shared path uniquing across all cases. Command lists are built while
+  // parsing each case so a later step can optimize/emit them as a group.
+  PatternMatchBuilder checkListBuilder(*curDeclScope, EC_Type);
+  const PatternPath *rootPath =
+      checkListBuilder.getRootPath(subjectBVal.getRValueType());
+
   // Parse one or more case blocks. Cases may share the match indent (Mojo
   // style) or be indented beneath it (Python style).  We parse each of the
-  // patterns before emitting the IR so we can optimize the pattern tests and
-  // allocate the MatchOp once.
+  // patterns and lower them to command lists before emitting the IR so we can
+  // optimize the pattern tests and allocate the MatchOp once.
   SmallVector<MatchCaseEntry, 4> caseEntries;
-
+  bool hadError = false;
   while (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
          getToken().is(Token::kw_case)) {
     size_t caseIndent = getToken().getIndentation().value_or(curIndent);
@@ -1603,6 +1621,7 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     if (parseExpression(patternExpr, caseIndent,
                         Precedence(int(Precedence::kIfElse) + 1))) {
       skipUntilIndentation(caseIndent);
+      hadError = true;
       continue;
     }
 
@@ -1612,6 +1631,7 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     if (consumeIf(Token::kw_as, &asLoc)) {
       Token nameTok = getToken();
       if (parseIdentifier("expected a name after 'as'")) {
+        hadError = true;
         skipUntilIndentation(caseIndent);
         continue;
       }
@@ -1626,41 +1646,45 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     if (consumeIf(Token::kw_if)) {
       if (parseExpression(guardExpr, caseIndent, Precedence::kAssignExpr)) {
         skipUntilIndentation(caseIndent);
+        hadError = true;
         continue;
       }
     }
     if (parseToken(Token::colon, "expected ':' after case pattern")) {
       skipUntilIndentation(caseIndent);
+      hadError = true;
+      continue;
+    }
+
+    // Lower the pattern to a command list (type/pattern errors only; no IR).
+    PatternCommandList commandList;
+    if (failed(patternExpr->buildCheckList(checkListBuilder, subjectBVal,
+                                           rootPath, commandList))) {
+      skipUntilIndentation(caseIndent);
+      hadError = true;
       continue;
     }
 
     // Okay, we successfully parsed a case block. Remember it for later.
-    caseEntries.push_back(
-        {patternExpr, guardExpr, getLexer().getCursor(), caseIndent});
+    caseEntries.push_back({patternExpr, guardExpr, getLexer().getCursor(),
+                           caseIndent, std::move(commandList)});
     skipUntilIndentation(caseIndent);
   }
 
   if (caseEntries.empty()) {
-    emitError(matchLoc) << "'__match' statement must have at least one 'case' "
-                           "block";
+    // Pattern-type failures still count as a case being present; only diagnose
+    // a missing case when no `case` header parsed successfully.
+    if (!hadError)
+      emitError(matchLoc) << "'__match' statement must have at least one "
+                             "'case' block";
     return success();
   }
 
   auto afterCaseCursor = getLexer().getCursor();
 
-  // Given we have the pile of pattern collected together in a list, we can add
-  // emission optimizations to improve the order various sub-patterns are
-  // emitted.  For now, we simply emit each linearly.
-
-  // Because we don't know whether a case is allowed to consume an RValue, we
-  // convert the subject to a BValue, so none of the pattern emission can
-  // consume the RValue.  For example, any "var" bindings will have to do a
-  // copy.
-  // TODO: maintain RValueness for as long as we can.
-  BValue subjectBVal =
-      getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
-  if (!subjectBVal)
-    return failure();
+  // Given we have the pile of patterns collected together as command lists, we
+  // can add emission optimizations to improve the order various sub-patterns
+  // are emitted.  For now, we simply emit each linearly.
 
   // Emit as one `hlcf.match`. Each source case becomes a case region that tests
   // its pattern (and optional guard), runs the body on success via
@@ -1668,12 +1692,6 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   auto matchOp = HLCF::MatchOp::create(builder, matchLocation, TypeRange(),
                                        /*caseRegionsCount=*/caseEntries.size());
   matchOp.getElseRegion().emplaceBlock();
-
-  // Preprocess each case into a command list with shared path uniquing across
-  // the match. Paths are keyed by the subject rvalue type at the root.
-  PatternMatchBuilder checkListBuilder(*curDeclScope, EC_Type);
-  const PatternPath *rootPath =
-      checkListBuilder.getRootPath(subjectBVal.getRValueType());
 
   for (auto [idx, caseEntry] : llvm::enumerate(caseEntries)) {
     auto &region = matchOp.getCaseRegions()[idx];
@@ -1686,14 +1704,9 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     IREmitter emitter = getEmitter();
     auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
 
-    // Build the command list, then emit it.
-    PatternCommandList commandList;
-    if (failed(caseEntry.patternExpr->buildCheckList(
-            checkListBuilder, subjectBVal, rootPath, commandList)))
-      continue;
-
     SmallVector<PatternBoundName> bindings;
-    if (failed(commandList.emit(emitter, subjectBVal, rootPath, bindings)))
+    if (failed(caseEntry.commandList.emit(emitter, subjectBVal, rootPath,
+                                          bindings)))
       continue;
 
     // Materialize pattern bindings before the guard so guards can refer to
