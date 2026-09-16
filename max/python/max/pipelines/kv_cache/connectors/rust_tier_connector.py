@@ -38,7 +38,7 @@ How it works:
   (tiny) input/output copies -- copy-engine scheduling ignores CUDA stream
   priority, so this is the lever that matters.
 
-This shim owns the pinned host buffer (allocated the same way as
+This shim owns the host staging region (allocated the same way as
 ``BlockOffloadEngine``) and passes its address plus the per-replica device
 buffer pointers and compute-stream handles to the Rust connector.
 """
@@ -51,14 +51,7 @@ from collections.abc import Mapping, Sequence
 from typing import NamedTuple, Protocol
 
 import psutil
-from max.driver import (
-    Device,
-    DevicePinnedBuffer,
-    _unsafe_alloc_fast_pinned_buffer,
-    _unsafe_free_fast_pinned_buffer,
-    accelerator_api,
-)
-from max.dtype import DType
+from max.driver import Device, _ChunkedStagingRegion, accelerator_api
 from max.nn.kv_cache import (
     KVCacheGroupId,
     KVCacheMemory,
@@ -199,32 +192,33 @@ class _RustTierTransfer:
         self._inner.synchronize()
 
 
-def _alloc_pinned_host_buffer(
+def _alloc_chunked_staging_region(
     host_offload_num_huge_blocks: int,
     host_offload_huge_page_bytes: int,
     device: Device,
-) -> DevicePinnedBuffer:
+) -> _ChunkedStagingRegion:
     host_offload_bytes = (
         host_offload_num_huge_blocks * host_offload_huge_page_bytes
     )
     logger.info(
-        "Allocating %s pinned host KV cache...",
+        "Allocating %s host KV cache staging region...",
         to_human_readable_bytes(host_offload_bytes),
     )
     start = time.perf_counter()
-    host_buffer = _unsafe_alloc_fast_pinned_buffer(
-        DType.uint8,
-        [host_offload_num_huge_blocks, host_offload_huge_page_bytes],
-        device,
+    # Rust copies a block at a time, so no chunk boundary may split one.
+    region = _ChunkedStagingRegion(
+        byte_size=host_offload_bytes,
+        row_bytes=host_offload_huge_page_bytes,
+        device=device,
     )
     elapsed = time.perf_counter() - start
     logger.info(
-        "Allocated %s pinned host KV cache in %.1f s (%.2f GiB/s)",
+        "Allocated %s host KV cache staging region in %.1f s (%.2f GiB/s)",
         to_human_readable_bytes(host_offload_bytes),
         elapsed,
         host_offload_bytes / 1024**3 / elapsed,
     )
-    return host_buffer
+    return region
 
 
 class RustTierConnector(KVConnector):
@@ -255,12 +249,12 @@ class RustTierConnector(KVConnector):
 
         leaf0 = next(iter(leaves.keys()))
         gpu0 = replica_kv_memory[0][leaf0].buffers[0].device
-        self._host_buffer = _alloc_pinned_host_buffer(
+        self._host_region = _alloc_chunked_staging_region(
             host_offload_num_huge_blocks,
             host_offload_huge_page_bytes,
             gpu0,
         )
-        host_base = self._host_buffer._data_ptr()
+        host_base = self._host_region.address
 
         replica_memories: list[list[_Leaf]] = []
         for memories in replica_kv_memory:
@@ -500,8 +494,9 @@ class RustTierConnector(KVConnector):
             return
         self._shutdown = True
         self._rust.shutdown()
-        # Free the pinned host buffer after all Rust lanes have been drained/stopped.
-        _unsafe_free_fast_pinned_buffer(self._host_buffer)
+        # Rust holds a raw pointer, so the shutdown above is what makes the
+        # unmap safe.
+        del self._host_region
         # Likewise the offload directory: the Rust shutdown above is what
         # guarantees no worker is still writing into it.
         if self._disk_dir is not None:

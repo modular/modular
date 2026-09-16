@@ -40,8 +40,7 @@ from max._core_types.driver import DLPackArray
 from .buffer import (
     Buffer,
     DevicePinnedBuffer,
-    _unsafe_alloc_fast_pinned_buffer,
-    _unsafe_free_fast_pinned_buffer,
+    _ChunkedStagingRegion,
     batch_inplace_copy,
     copy_pinned_to_destinations,
     load_max_buffer,

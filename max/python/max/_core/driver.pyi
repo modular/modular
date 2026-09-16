@@ -1604,62 +1604,59 @@ class DevicePinnedBuffer(Buffer):
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
     ) -> DevicePinnedBuffer: ...
 
+class _ChunkedStagingRegion:
+    """
+    A host mapping made device-accessible in chunks.
+
+    Page-locking a multi-hundred-GiB range in one call is slow, and above
+    1 TiB it fails outright. This maps the range once, faults it in across
+    parallel workers, and registers it in chunks while they run ahead.
+
+    Not a :obj:`Buffer`: a ``Buffer`` promises a range the device addresses
+    in a single transfer, and a transfer crossing a chunk boundary here
+    fails. Callers work from :obj:`address` and keep each transfer inside
+    one ``row_bytes`` row, which no chunk boundary splits.
+
+    Releases on garbage collection: drains the device, unregisters every
+    chunk, then unmaps.
+
+    Internal to ``max``; no compatibility guarantee.
+
+    Args:
+        byte_size (int): Total bytes to map. Must be a positive multiple of ``row_bytes``.
+        row_bytes (int): Row width no chunk boundary may fall inside.
+        device (Device): GPU/Accelerator the range is made accessible to. Must not be CPU.
+        threads (int, optional): Parallel page-touch workers. Defaults to 16.
+        chunk_bytes (int, optional): Registration granularity, rounded up to whole rows and pages. Defaults to 512 MiB.
+
+    Raises:
+        ValueError: If ``device`` is a CPU device, any size is zero, or ``byte_size`` is not a multiple of ``row_bytes``.
+    """
+
+    def __init__(
+        self,
+        byte_size: int,
+        row_bytes: int,
+        device: Device,
+        threads: int = 16,
+        chunk_bytes: int = 536870912,
+    ) -> None: ...
+    @property
+    def address(self) -> int:
+        """Base host address, valid until this is released."""
+
+    @property
+    def byte_size(self) -> int: ...
+    @property
+    def row_bytes(self) -> int: ...
+    @property
+    def chunk_bytes(self) -> int:
+        """The requested ``chunk_bytes`` rounded up to whole rows and pages."""
+
+    @property
+    def num_chunks(self) -> int: ...
+    @property
+    def device(self) -> Device: ...
+
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""
-
-def _unsafe_alloc_fast_pinned_buffer(
-    dtype: max._core.dtype.DType,
-    shape: Sequence[int],
-    device: Device,
-    threads: int = 16,
-    chunk_bytes: int = 536870912,
-) -> DevicePinnedBuffer:
-    """
-    Fast page-locked host allocation for very large host KV-cache buffers.
-
-    Maps one contiguous region and faults it in across ``threads`` parallel
-    workers while a single consumer registers it with the device in
-    ``chunk_bytes`` chunks, overlapping the two phases. Far faster than the
-    per-call ``cuMemAllocHost`` path, and it avoids the ``cuMemAllocHost``
-    failure on single >1 TiB allocations.
-
-    UNSAFE / low-level (host KV-cache offloading). The returned buffer is
-    NOT garbage-collected: it must be freed explicitly via
-    :func:`_unsafe_free_fast_pinned_buffer`, and forgetting to do so leaks
-    the mapping. No host/device synchronization is performed -- before
-    reading the region on the host (or freeing it) the caller must ensure
-    the GPU is done accessing it (host-synchronize the relevant streams).
-
-    Args:
-        dtype (DType): Data type of buffer elements (typically ``uint8``).
-        shape (Sequence[int]): Buffer shape, e.g. ``[num_blocks, bytes_per_block]``.
-        device (Device): GPU/Accelerator device the memory is registered against. Must not be CPU.
-        threads (int, optional): Number of parallel page-touch workers. Defaults to 16.
-        chunk_bytes (int, optional): Per-call host-register granularity in bytes. Defaults to 512 MiB.
-
-    Returns:
-        DevicePinnedBuffer: A pinned host buffer over the mapping. Must be
-        freed with :func:`_unsafe_free_fast_pinned_buffer`.
-
-    Raises:
-        ValueError: If ``device`` is a CPU device.
-    """
-
-def _unsafe_free_fast_pinned_buffer(buffer: DevicePinnedBuffer) -> None:
-    """
-    Free a buffer from :func:`_unsafe_alloc_fast_pinned_buffer` (unregister + munmap).
-
-    UNSAFE / low-level. The caller MUST first host-synchronize every GPU
-    stream that issued copies into the region -- the buffer does not track
-    them, and unmapping a region a stream is still copying to/from is a
-    use-after-free. After this call the buffer (and any view/slice of it)
-    must not be used.
-
-    Args:
-        buffer (DevicePinnedBuffer): A buffer from
-            :func:`_unsafe_alloc_fast_pinned_buffer`.
-
-    Raises:
-        ValueError: If the buffer was not produced by
-            :func:`_unsafe_alloc_fast_pinned_buffer`, or was already freed.
-    """
