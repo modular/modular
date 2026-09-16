@@ -808,7 +808,7 @@ struct TileTensor[
         # Inline store logic to avoid constraint propagation issues
         comptime alignment = align_of[
             SIMD[Self.dtype, Self.element_size]
-        ]() if is_gpu() else 1
+        ]() if is_gpu() else align_of[Self.dtype]()
         self._store_storage[alignment=alignment](
             self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple),
             value,
@@ -817,7 +817,9 @@ struct TileTensor[
     @inline(.nodebug)
     def load[
         width: SIMDLength = Self.element_size,
-        alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
+        alignment: Int = align_of[
+            SIMD[Self.dtype, width]
+        ]() if is_gpu() else align_of[Self.dtype](),
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width]:
@@ -856,7 +858,9 @@ struct TileTensor[
     @inline(.nodebug)
     def store[
         width: SIMDLength = Self.element_size,
-        alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
+        alignment: Int = align_of[
+            SIMD[Self.dtype, width]
+        ]() if is_gpu() else align_of[Self.dtype](),
         non_temporal: Bool = False,
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where Self.mut:
         """Store elements to the tensor at the specified coordinates.
