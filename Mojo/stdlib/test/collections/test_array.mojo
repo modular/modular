@@ -94,34 +94,31 @@ def test_array_int() raises:
     var arr3: Array[Int, 1] = [5]
     assert_equal(arr3[0], 5)
 
-    def test_init_fill[
-        size: Int, batch_size: Int, dt: DType
-    ](arg: Scalar[dt]) raises {imm}:
-        var arr = Array[Scalar[dt], size].__init__[batch_size=batch_size](
-            fill=arg
-        )
+    def test_init_fill[size: Int, dt: DType](arg: Scalar[dt]) raises {imm}:
+        var arr = Array[Scalar[dt], size](fill=arg)
         for i in range(size):
             assert_equal(arr[i], arg)
 
-    def test_init_fill_scalars[
-        *dts: DType, sizes: List[Int], batch_sizes: List[Int]
-    ]() raises {imm}:
-        comptime for current_batch_size in range(len(batch_sizes)):
-            comptime for current_size in range(len(sizes)):
-                comptime for current_type in range(dts.size):
-                    test_init_fill[
-                        sizes[current_size], batch_sizes[current_batch_size]
-                    ](Scalar[dts[current_type]].MAX)
+    def test_init_fill_scalars[*dts: DType, sizes: List[Int]]() raises {imm}:
+        comptime for current_size in range(len(sizes)):
+            comptime for current_type in range(dts.size):
+                test_init_fill[sizes[current_size]](
+                    Scalar[dts[current_type]].MAX
+                )
 
+    # Both the full-unroll threshold and the batch below it are derived from
+    # the element width. The four dtypes unroll fully up to 64 elements, above
+    # which 8-byte elements batch at 32 and the rest at 64. The sizes straddle
+    # each of those boundaries in both directions.
     test_init_fill_scalars[
-        Int64.dtype,
         Int8.dtype,
-        sizes=[1, 32, 64, 129, 256, 512, 768, 1000],
-        batch_sizes=[1, 8, 32, 64, 128],
+        Int16.dtype,
+        Int32.dtype,
+        Int64.dtype,
+        sizes=[1, 31, 32, 33, 63, 64, 65, 129, 256, 1000],
     ]()
 
-    test_init_fill[2048, 512](Int64.MAX)
-    test_init_fill[2048, 1](Int64.MAX)
+    test_init_fill[2048](Int64.MAX)
 
 
 def test_array_fill_with() raises:
@@ -144,8 +141,6 @@ def test_array_fill_with_named_function() raises:
 
 
 def test_array_fill_with_non_movable() raises:
-    # `fill_with=` constructs each element in place, so it works even for a
-    # non-`Movable` element type -- no constraint on `T` at all.
     var arr = Array[NonMovable, 3](
         fill_with=lambda (i: Int) -> NonMovable: NonMovable(i * 10)
     )
@@ -154,18 +149,19 @@ def test_array_fill_with_non_movable() raises:
     assert_equal(arr[2].value, 20)
 
 
-def test_array_fill_with_explicit_batch_size() raises:
-    var arr = Array[Int, 10].__init__[batch_size=4](
-        fill_with=lambda (i: Int) -> Int: i * 2
+def test_array_fill_with_wide_element() raises:
+    # A 32-byte element derives an 8-element batch, leaving a 5-element
+    # remainder here -- a different batch/remainder split than any scalar case.
+    comptime size = 21
+    var arr = Array[Array[Int, 4], size](
+        fill_with=lambda (i: Int) -> Array[Int, 4]: Array[Int, 4](fill=i)
     )
-    for i in range(10):
-        assert_equal(arr[i], i * 2)
+    for i in range(size):
+        for j in range(4):
+            assert_equal(arr[i][j], i)
 
 
 def test_array_fill_with_crosses_batch_boundary() raises:
-    # The default `batch_size` is 64: indices `>= 64` come from a runtime
-    # loop rather than a `comptime for` unroll, so this exercises the
-    # `batch_start + i` arithmetic on both sides of that boundary.
     comptime size = 130
     var arr = Array[Int, size](fill_with=lambda (i: Int) -> Int: i + 1)
     for i in range(size):
@@ -457,8 +453,8 @@ def _return_array[copy: Bool = False]() -> Array[Int32, 4]:
         return arr^
 
 
-def _return_batched_array[copy: Bool = False]() -> Array[Int32, 64]:
-    var arr = Array[Int32, 64](fill=0)
+def _return_batched_array[copy: Bool = False]() -> Array[Int32, 128]:
+    var arr = Array[Int32, 128](fill=0)
 
     comptime if copy:
         return arr.copy()
@@ -467,11 +463,12 @@ def _return_batched_array[copy: Bool = False]() -> Array[Int32, 64]:
 
 
 def test_array_batched_copy_and_move_llvm_ir() raises:
-    # 64 elements reaches `fill=`'s batched runtime loop, unlike the 4-element
-    # case above which unrolls at compile time. A callsite marker is expected
-    # for the live loop, so this checks only the range attribute.
+    # `Int32` batches 64 elements at a time, so 128 reaches `fill=`'s batched
+    # runtime loop, unlike the 4-element case above which unrolls at compile
+    # time. A callsite marker is expected for the live loop, so this checks
+    # only the range attribute.
     def _test(ir: StringSlice) raises:
-        assert_true("initializes((0, 256))" in ir)
+        assert_true("initializes((0, 512))" in ir)
 
     var move_info = compile_info[
         _return_batched_array[copy=False], emission_kind="llvm-opt"
