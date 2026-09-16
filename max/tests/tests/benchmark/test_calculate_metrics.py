@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import statistics
 from unittest.mock import MagicMock
 
 import pytest
@@ -28,12 +29,33 @@ from max.benchmark.benchmark_shared.request import (
     ServerTokenStats,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
+    _aggregate_gpu_stats,
     _per_turn_cache_retentions,
     build_text_generation_result,
     calculate_metrics,
     calculate_pixel_generation_metrics,
 )
 from max.profiler.cpu import CPUMetrics
+from max.profiler.gpu import GPUStats, MemoryStats, UtilizationStats
+
+_MIB = 1024 * 1024
+
+
+def _gpu_stats(*, util: int, used_mib: int, free_mib: int) -> GPUStats:
+    """A minimal GPUStats shaped like the scraper/NVML recorder emit."""
+    return GPUStats(
+        memory=MemoryStats(
+            total_bytes=(used_mib + free_mib) * _MIB,
+            free_bytes=free_mib * _MIB,
+            used_bytes=used_mib * _MIB,
+            reserved_bytes=None,
+        ),
+        utilization=UtilizationStats(
+            gpu_usage_percent=util, memory_activity_percent=None
+        ),
+        clocks=None,
+    )
+
 
 _EMPTY_CPU_METRICS = CPUMetrics(
     user=0.0, user_percent=0.0, system=0.0, system_percent=0.0, elapsed=0.0
@@ -1845,3 +1867,72 @@ def test_constrained_split_reaches_the_flat_result_dict() -> None:
     assert math.isclose(d["mean_ttft_ms_constrained"], 300.0, rel_tol=1e-6)
     assert math.isclose(d["mean_tpot_ms_unconstrained"], 100.0, rel_tol=1e-6)
     assert d["constrained_request_rate"] == 0.5
+
+
+def test_aggregate_gpu_stats_disabled_or_empty() -> None:
+    """Collection off, no snapshots, or all-empty snapshots yield nothing."""
+    assert _aggregate_gpu_stats(collect_gpu_stats=False, gpu_metrics=[]) == (
+        [],
+        [],
+        [],
+    )
+    assert _aggregate_gpu_stats(collect_gpu_stats=True, gpu_metrics=None) == (
+        [],
+        [],
+        [],
+    )
+    # Snapshots with no devices report nothing rather than raising.
+    assert _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=[{}, {}]
+    ) == ([], [], [])
+
+
+def test_aggregate_gpu_stats_single_device_across_snapshots() -> None:
+    """Peak used = max, available = min free, util = mean over snapshots."""
+    snapshots = [
+        {"n:gpu0": _gpu_stats(util=80, used_mib=100, free_mib=900)},
+        {"n:gpu0": _gpu_stats(util=90, used_mib=300, free_mib=700)},
+    ]
+    peak, avail, util = _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=snapshots
+    )
+    assert peak == [300.0]
+    assert avail == [700.0]
+    assert util == [85.0]
+
+
+def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
+    """A device set that varies across snapshots never raises KeyError.
+
+    This is the multi-node failure mode: a Service scrape (or a flaky
+    endpoint) makes successive snapshots disagree on which devices appear.
+    Each device is aggregated only over the snapshots that contain it.
+    """
+    snapshots = [
+        # Only node-1 present this interval.
+        {
+            "node-1:gpu0": _gpu_stats(util=100, used_mib=200, free_mib=800),
+        },
+        # Both nodes present.
+        {
+            "node-1:gpu0": _gpu_stats(util=50, used_mib=400, free_mib=600),
+            "node-2:gpu0": _gpu_stats(util=40, used_mib=100, free_mib=900),
+        },
+        # Only node-2 present.
+        {
+            "node-2:gpu0": _gpu_stats(util=60, used_mib=300, free_mib=700),
+        },
+    ]
+
+    peak, avail, util = _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=snapshots
+    )
+
+    # Union of devices, sorted: node-1:gpu0 then node-2:gpu0.
+    assert peak == [400.0, 300.0]
+    assert avail == [600.0, 700.0]
+    # node-1: mean(100, 50) = 75; node-2: mean(40, 60) = 50. Each averaged
+    # only over the snapshots in which it appears.
+    assert util == [75.0, 50.0]
+    # Reported mean GPU util is the mean across all engine devices seen.
+    assert statistics.mean(util) == 62.5

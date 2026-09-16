@@ -962,6 +962,21 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    gpu_metrics_host: str = Field(
+        default="",
+        description=(
+            "DCGM-exporter host, 'host:port', or full URL to scrape GPU "
+            "utilization from when the benchmark runs off the accelerator "
+            "node (e.g. a disaggregated Mammoth deployment). When set, "
+            "--collect-gpu-stats reads this remote endpoint instead of local "
+            "NVML. A bare host expands to 'http://<host>:9400/metrics'. "
+            "Accepts a comma-separated list of endpoints (one exporter pod "
+            "per accelerator node) for multi-node engines; every endpoint is "
+            "scraped each interval and merged into one snapshot."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     print_workload_stats: bool = Field(
         default=False,
         description="Print workload distribution statistics (input/output lengths, num turns, delays).",

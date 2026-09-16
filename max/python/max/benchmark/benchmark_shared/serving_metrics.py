@@ -111,37 +111,34 @@ def _aggregate_gpu_stats(
     if not collect_gpu_stats or not gpu_metrics:
         return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
 
-    # Simplification: We assume that whatever devices are available at the
-    # start of benchmarking stays the same throughout the run. If someone is
-    # hotplugging GPUs during a benchmark this may not be true.
-    all_devices = list(gpu_metrics[0].keys())
+    # The device set can vary across snapshots: a remote DCGM scrape spans
+    # several exporter pods, one may miss an interval, and a pod can restart
+    # mid-run. Aggregate over the union of every snapshot's devices, and score
+    # each device only over the snapshots that actually contain it -- never
+    # index a device absent from a snapshot (no KeyError) and never fold a
+    # gap in as a zero. Sorted for deterministic output.
+    all_devices = sorted(set().union(*(s.keys() for s in gpu_metrics)))
     if not all_devices:
         logger.warning("No GPUs found, so there are no GPU stats to report")
         return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
 
     bytes_per_mib = 1024 * 1024
     for device_name in all_devices:
+        present = [s[device_name] for s in gpu_metrics if device_name in s]
         peak_gpu_memory_mib.append(
-            max(
-                snapshot[device_name].memory.used_bytes
-                for snapshot in gpu_metrics
-            )
-            / bytes_per_mib
+            max(stats.memory.used_bytes for stats in present) / bytes_per_mib
         )
         available_gpu_memory_mib.append(
-            min(
-                snapshot[device_name].memory.free_bytes
-                for snapshot in gpu_metrics
-            )
-            / bytes_per_mib
+            min(stats.memory.free_bytes for stats in present) / bytes_per_mib
         )
         gpu_utilization.append(
             statistics.mean(
-                snapshot[device_name].utilization.gpu_usage_percent
-                for snapshot in gpu_metrics
+                stats.utilization.gpu_usage_percent for stats in present
             )
         )
 
+    # One entry per device, so the reported mean GPU utilization (mean of this
+    # list) is genuinely the mean across every engine device seen this run.
     return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
 
 

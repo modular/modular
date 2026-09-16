@@ -48,8 +48,6 @@ from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
-    from max.profiler.gpu import BackgroundRecorder as GPUBackgroundRecorder
-    from max.profiler.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
@@ -77,6 +75,10 @@ from max.benchmark.benchmark_shared.datasets.types import (
     ChatSession,
     RequestSamples,
     Samples,
+)
+from max.benchmark.benchmark_shared.gpu_metrics_scraper import (
+    DCGMBackgroundRecorder,
+    GPUStatsSnapshot,
 )
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
@@ -140,7 +142,7 @@ from max.profiler.cpu import (
     CPUMetricsCollector,
     collect_pids_for_port,
 )
-from max.profiler.gpu import GPUDiagContext
+from max.profiler.gpu import GPUDiagContext, GpuStatsRecorder
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import TypeAdapter, ValidationError
 
@@ -171,6 +173,40 @@ def _expand_pids(pids: list[int]) -> list[int]:
         result.add(pid)
         queue.extend(ppid_to_children.get(pid, []))
     return list(result)
+
+
+def _make_gpu_recorder(
+    *, collect_gpu_stats: bool, gpu_metrics_host: str
+) -> GpuStatsRecorder | None:
+    """Choose the GPU-stats recorder for this run, or None to disable it.
+
+    ``gpu_metrics_host`` is a source selector, not an additive toggle: a
+    non-empty value means the load generator runs off the accelerator node (a
+    disaggregated Mammoth bench pod) with no local engine GPUs, so stats must
+    come from the engine nodes' DCGM exporter(s) rather than local NVML.
+    Running both would double-count and destabilize the device set
+    :func:`_aggregate_gpu_stats` aggregates over. Returned un-entered; the
+    caller is responsible for entering it as a context manager.
+
+    Args:
+        collect_gpu_stats: Whether GPU-stats collection is enabled at all.
+        gpu_metrics_host: Remote DCGM endpoint(s); empty selects local NVML.
+
+    Returns:
+        A recorder to sample GPU stats, or None when disabled/unavailable.
+    """
+    if not collect_gpu_stats:
+        return None
+    if gpu_metrics_host:
+        return DCGMBackgroundRecorder(gpu_metrics_host)
+    try:
+        from max.profiler.gpu import BackgroundRecorder
+    except ImportError:
+        logger.warning(
+            "max.profiler not available, skipping GPU stats collection"
+        )
+        return None
+    return BackgroundRecorder()
 
 
 def parse_response_format(arg: str) -> ResponseFormat:
@@ -548,18 +584,12 @@ async def benchmark(
         semaphore = contextlib.nullcontext()
 
     with contextlib.ExitStack() as benchmark_stack:
-        gpu_recorder: GPUBackgroundRecorder | None = None
-        if args.collect_gpu_stats:
-            try:
-                from max.profiler.gpu import BackgroundRecorder
-            except ImportError:
-                logger.warning(
-                    "max.profiler not available, skipping GPU stats collection"
-                )
-            else:
-                gpu_recorder = benchmark_stack.enter_context(
-                    BackgroundRecorder()
-                )
+        gpu_recorder = _make_gpu_recorder(
+            collect_gpu_stats=args.collect_gpu_stats,
+            gpu_metrics_host=args.gpu_metrics_host,
+        )
+        if gpu_recorder is not None:
+            gpu_recorder = benchmark_stack.enter_context(gpu_recorder)
 
         cpu_collector = None
         if args.collect_cpu_stats:
@@ -784,7 +814,7 @@ async def benchmark(
             api_url=session.base_url,
         )
 
-    gpu_metrics: list[dict[str, GPUStats]] | None = None
+    gpu_metrics: list[GPUStatsSnapshot] | None = None
     if args.collect_gpu_stats and gpu_recorder is not None:
         gpu_metrics = gpu_recorder.stats
 

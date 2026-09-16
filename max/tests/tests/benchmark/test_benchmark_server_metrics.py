@@ -162,7 +162,7 @@ def test_parse_metrics_success(sample_metrics: str) -> None:
     assert result.raw_text == sample_metrics
 
 
-@patch("max.benchmark.benchmark_shared.server_metrics.requests.get")
+@patch("max.benchmark.benchmark_shared.prometheus_fetch.requests.get")
 def test_fetch_and_parse_http_error(mock_get: MagicMock) -> None:
     """Test that HTTP errors raise HTTPError."""
     import requests

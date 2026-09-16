@@ -23,11 +23,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import requests
 from prometheus_client.parser import text_string_to_metric_families
 
 from .config import Backend
 from .metrics import SpecDecodeMetrics
+from .prometheus_fetch import fetch_metrics
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric
@@ -170,28 +170,6 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
         metrics_port = parsed_url.port or 8000
 
     return f"http://{host}:{metrics_port}/metrics"
-
-
-def fetch_metrics(url: str) -> str:
-    """Fetch raw metrics text from a Prometheus endpoint.
-
-    Args:
-        url: Prometheus metrics endpoint URL
-
-    Returns:
-        Raw Prometheus text format
-
-    Raises:
-        requests.HTTPError: If the response status is not 200
-        requests.RequestException: For network/connection errors
-    """
-    response = requests.get(url, timeout=2)
-    if response.status_code != 200:
-        raise requests.HTTPError(
-            f"Failed to fetch metrics: {response.status_code}",
-            response=response,
-        )
-    return response.text
 
 
 def _format_metric_key(metric_name: str, labels: dict[str, str]) -> str:

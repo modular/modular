@@ -40,7 +40,7 @@ else:
     from taskgroup import TaskGroup
 
 from .multi import GPUDiagContext
-from .types import GPUStats
+from .types import GPUStats, GpuStatsRecorder
 
 _T = TypeVar("_T")
 
@@ -279,7 +279,7 @@ def _read_stats(path: Path) -> list[dict[str, GPUStats]]:
     return stats
 
 
-class BackgroundRecorder:
+class BackgroundRecorder(GpuStatsRecorder):
     """Asynchronous GPU metrics collection and data export capabilities.
 
     The ``BackgroundRecorder`` enables continuous monitoring of GPU performance metrics

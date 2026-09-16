@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from max.benchmark.benchmark_serving import (
+    _make_gpu_recorder,
     _resolve_skip_counts,
     _sample_for_seed,
     _seed_for_concurrency,
@@ -32,6 +33,49 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SampledRequest,
     SessionMessage,
 )
+
+
+@patch("max.profiler.gpu.BackgroundRecorder")
+@patch("max.benchmark.benchmark_serving.DCGMBackgroundRecorder")
+def test_make_gpu_recorder_host_selects_dcgm(
+    mock_dcgm: MagicMock, mock_local: MagicMock
+) -> None:
+    """A configured gpu_metrics_host picks the DCGM recorder, not local NVML."""
+    recorder = _make_gpu_recorder(
+        collect_gpu_stats=True, gpu_metrics_host="10.0.0.5,10.0.0.6"
+    )
+
+    mock_dcgm.assert_called_once_with("10.0.0.5,10.0.0.6")
+    mock_local.assert_not_called()
+    assert recorder is mock_dcgm.return_value
+
+
+@patch("max.profiler.gpu.BackgroundRecorder")
+@patch("max.benchmark.benchmark_serving.DCGMBackgroundRecorder")
+def test_make_gpu_recorder_empty_host_selects_local(
+    mock_dcgm: MagicMock, mock_local: MagicMock
+) -> None:
+    """An empty host preserves the local NVML recorder path."""
+    recorder = _make_gpu_recorder(collect_gpu_stats=True, gpu_metrics_host="")
+
+    mock_local.assert_called_once_with()
+    mock_dcgm.assert_not_called()
+    assert recorder is mock_local.return_value
+
+
+@patch("max.profiler.gpu.BackgroundRecorder")
+@patch("max.benchmark.benchmark_serving.DCGMBackgroundRecorder")
+def test_make_gpu_recorder_disabled_selects_neither(
+    mock_dcgm: MagicMock, mock_local: MagicMock
+) -> None:
+    """collect_gpu_stats=False disables both recorders."""
+    recorder = _make_gpu_recorder(
+        collect_gpu_stats=False, gpu_metrics_host="10.0.0.5"
+    )
+
+    assert recorder is None
+    mock_dcgm.assert_not_called()
+    mock_local.assert_not_called()
 
 
 def test_resolve_skip_counts() -> None:
