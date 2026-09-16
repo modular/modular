@@ -518,7 +518,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         if num_linear == 0:
             return 0
         return sum(
-            region.bytes_per_state
+            region.bytes_per_page
             for region in linear_state_regions(
                 num_linear_layers=num_linear,
                 key_head_dim=self.linear_key_head_dim,

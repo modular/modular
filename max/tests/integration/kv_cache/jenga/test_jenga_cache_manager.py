@@ -34,7 +34,6 @@ from max.nn.kv_cache import (
     KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsPerDevice,
-    KVCacheParams,
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
@@ -560,12 +559,9 @@ def test_a_hybrid_tree_still_serves_a_prefix_hit() -> None:
 
 def test_the_state_does_not_change_what_attention_reuses() -> None:
     """Same prompt, with and without a state, reuses the same tokens."""
-    plain = MultiKVCacheParams.from_params(
-        {"attn": make_leaf(n_kv_heads=1, page_size=4)}
-    )
-    for child in plain.children.values():
-        assert isinstance(child, KVCacheParams)
-        child.enable_prefix_caching = True
+    leaf = make_leaf(n_kv_heads=1, page_size=4)
+    leaf.enable_prefix_caching = True
+    plain = MultiKVCacheParams.from_params({"attn": leaf})
 
     reused: list[int] = []
     for mgr in (

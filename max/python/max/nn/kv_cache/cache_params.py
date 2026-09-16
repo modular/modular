@@ -20,7 +20,14 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
-from typing import Any, Literal, Protocol, TypeGuard, runtime_checkable
+from typing import (
+    Any,
+    ClassVar,
+    Literal,
+    Protocol,
+    TypeGuard,
+    runtime_checkable,
+)
 
 import numpy as np
 from max import tree
@@ -713,7 +720,7 @@ class RecurrentStateBuffer(KVCacheBufferInterface):
     """One replica's recurrent state pool, viewed as the pages it holds."""
 
     pages: dict[str, list[Buffer]]
-    """Each state leaf's ``[num_blocks, bytes_per_state]`` uint8 pages, one
+    """Each state leaf's ``[num_blocks, bytes_per_page]`` uint8 pages, one
     buffer per device."""
 
     def __post_init__(self) -> None:
@@ -942,8 +949,8 @@ class RecurrentStateRegion:
         return f"{self.leaf_id}/pool"
 
     @property
-    def bytes_per_state(self) -> int:
-        """Bytes one request's state of this kind occupies on one device."""
+    def bytes_per_page(self) -> int:
+        """Bytes one page of this leaf holds on one device."""
         return self.num_layers * self.row_elements * self.dtype.size_in_bytes
 
     def rows_of(self, page: int) -> range:
@@ -1000,19 +1007,59 @@ class RecurrentKVLeafRegion(KVLeafRegion):
         return {self.region.pool_key: self.region.rows_of(block)}
 
 
+class CacheLeafKind(Enum):
+    """What a child of a cache tree holds."""
+
+    ATTENTION = "attention"
+    """Keys and values a span of tokens wrote, read through an attention op."""
+
+    RECURRENT = "recurrent"
+    """One fixed-size state carrying every token before it."""
+
+
 @runtime_checkable
 class CacheLeafParamInterface(Protocol):
-    """What every child of a cache tree contributes: leaves, inputs, cost.
-
-    How the pool itself is configured belongs to
-    :class:`KVCacheParamInterface`; a child of this type draws from a pool
-    rather than describing one.
-    """
+    """What every child of a cache tree contributes: leaves, inputs, cost."""
 
     data_parallel_degree: int
     """Degree of data parallelism."""
     devices: Sequence[DeviceRef]
     """Devices to use for the cache."""
+
+    page_size: int
+    """Tokens a block covers, or zero where this child declares no pool."""
+
+    @property
+    def bytes_per_block(self) -> int:
+        """Number of bytes per cache block.
+
+        Zero for a cache whose entry is not a span of tokens.
+        """
+        ...
+
+    kv_connector_config: KVConnectorConfigInterface
+    speculative_method: SpeculativeMethod | None
+    num_draft_tokens: int
+
+    @property
+    def enable_prefix_caching(self) -> bool: ...
+
+    @property
+    def enable_dp_cross_replica_prefix_copy(self) -> bool: ...
+
+    @property
+    def kv_hash_algo(self) -> KVHashAlgo: ...
+
+    @property
+    def kv_hash_seed(self) -> bytes | None: ...
+
+    @property
+    def replicates_kv_across_tp(self) -> bool: ...
+
+    @property
+    def leaf_kind(self) -> CacheLeafKind:
+        """What this child holds."""
+        ...
 
     @property
     def n_devices(self) -> int:
@@ -1057,14 +1104,6 @@ class CacheLeafParamInterface(Protocol):
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns the leaves this cache contributes to the pool."""
-        ...
-
-    @property
-    def bytes_per_block(self) -> int:
-        """Number of bytes per cache block.
-
-        Zero for a cache whose entry is not a span of tokens.
-        """
         ...
 
     def allocate_buffers(
@@ -1219,6 +1258,8 @@ class KVCacheParams(KVCacheParamInterface):
 
     head_dim: int
     """Dimensionality of each attention head."""
+
+    leaf_kind: ClassVar[CacheLeafKind] = CacheLeafKind.ATTENTION
 
     num_layers: int
     """Number of layers in the model."""
@@ -2542,13 +2583,15 @@ class RecurrentStateParams(CacheLeafParamInterface):
     """A cache leaf whose entry is a state rather than a span of tokens.
 
     One fixed-size value carrying every token before it, drawn from the same
-    slab, prefix index and eviction order as the attention caches. It
-    declares none of that pool's configuration.
+    slab, prefix index and eviction order as the attention caches.
 
-    A model declares exactly one however many attention caches it has, since
-    a state belongs to the request. Being unique, its regions name the pool's
-    state leaves without a prefix.
+    A cache may hold more than one -- a speculative pair keeps a state for
+    the target and one for the draft. They are told apart by their regions'
+    leaf ids, which name both the pool entry a state binds and the symbolic
+    dim it declares, so each state chooses its own.
     """
+
+    leaf_kind: ClassVar[CacheLeafKind] = CacheLeafKind.RECURRENT
 
     regions: tuple[RecurrentStateRegion, ...]
     """The state leaves one request occupies, in flatten order."""
@@ -2558,6 +2601,24 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     data_parallel_degree: int = 1
     """Degree of data parallelism."""
+
+    page_size: int = 0
+    """Tokens a block covers, set only by a cache with no attention leaf.
+
+    Zero otherwise: the attention leaves beside a state declare the pool, and
+    no page covers zero tokens, so nothing real collides with it.
+    """
+
+    kv_connector_config: KVConnectorConfigInterface = field(
+        default_factory=NullKVConnectorConfig
+    )
+    enable_prefix_caching: bool = False
+    enable_dp_cross_replica_prefix_copy: bool = True
+    kv_hash_algo: KVHashAlgo = "ahash64"
+    kv_hash_seed: bytes | None = None
+    speculative_method: SpeculativeMethod | None = None
+    num_draft_tokens: int = 0
+    """Read only from the leaf a tree takes its pool configuration off."""
 
     def __post_init__(self) -> None:
         if not self.regions:
@@ -2571,6 +2632,15 @@ class RecurrentStateParams(CacheLeafParamInterface):
     def n_devices(self) -> int:
         return len(self.devices)
 
+    @property
+    def tensor_parallel_degree(self) -> int:
+        return self.n_devices // self.data_parallel_degree
+
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """False: a state's rows hold one device's shard of the heads."""
+        return False
+
     @cached_property
     def devices_per_replica(self) -> Sequence[Sequence[DeviceRef]]:
         return split_into_groups(self.devices, self.data_parallel_degree)
@@ -2578,7 +2648,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
     @property
     def bytes_per_state(self) -> int:
         """Bytes one request's state occupies on one device, every layer."""
-        return sum(region.bytes_per_state for region in self.regions)
+        return sum(region.bytes_per_page for region in self.regions)
 
     def slab_to_row_views(
         self, slabs: Sequence[Buffer]
@@ -2644,7 +2714,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
                 region.leaf_id: [
                     page_view(
                         slab,
-                        (region.bytes_per_state,),
+                        (region.bytes_per_page,),
                         DType.uint8,
                         padded.get(region.leaf_id),
                     )
@@ -2753,52 +2823,131 @@ class RecurrentStateParams(CacheLeafParamInterface):
             region.leaf_id: RecurrentKVLeafRegion(
                 leaf_id=region.leaf_id,
                 group_id=KVCacheGroupId.recurrent(),
-                bytes_per_page=region.bytes_per_state,
+                bytes_per_page=region.bytes_per_page,
                 region=region,
             )
             for region in self.regions
         }
 
 
+def recurrent_leaves(
+    params: CacheLeafParamInterface,
+) -> list[RecurrentStateParams]:
+    """Returns every state a cache keeps, in tree order."""
+    if isinstance(params, RecurrentStateParams):
+        return [params]
+    if isinstance(params, MultiKVCacheParams):
+        return [
+            state
+            for child in params.children.values()
+            for state in recurrent_leaves(child)
+        ]
+    return []
+
+
 def recurrent_leaf(
     params: CacheLeafParamInterface,
 ) -> RecurrentStateParams | None:
-    """Returns the one state a cache keeps, or ``None`` if it keeps none."""
-    if isinstance(params, RecurrentStateParams):
-        return params
-    if isinstance(params, MultiKVCacheParams):
-        for child in params.children.values():
-            state = recurrent_leaf(child)
-            if state is not None:
-                return state
-    return None
+    """Returns the first state a cache keeps, or ``None`` if it keeps none."""
+    states = recurrent_leaves(params)
+    return states[0] if states else None
 
 
 def _is_attention(
     child: CacheLeafParamInterface,
 ) -> TypeGuard[KVCacheParamInterface]:
-    """Returns whether an attention op reads this child of a cache tree.
-
-    A structural test, so it answers for any implementation.
-
-    TODO(brodriguez): this separates the two kinds of leaf a cache can hold
-    today. A third kind would need a marker of its own, since a structural
-    test only sees the members a class happens to have.
-    """
-    return isinstance(child, KVCacheParamInterface)
+    """Returns whether an attention op reads this child of a cache tree."""
+    return child.leaf_kind is CacheLeafKind.ATTENTION
 
 
-def _pool_defining_child(
+def _agreed_pool(
     children: Mapping[str, CacheLeafParamInterface],
-) -> KVCacheParamInterface:
-    """Returns the child a tree reads the pool's configuration off."""
-    for child in children.values():
-        if _is_attention(child):
-            return child
-    raise ValueError(
-        "MultiKVCacheParams requires at least one attention cache: the page"
-        " size and pool configuration are read off it."
-    )
+) -> CacheLeafParamInterface:
+    """Returns a child the pool's configuration is read off.
+
+    Every child that declares one must agree, so which is returned cannot
+    matter.
+
+    Raises:
+        ValueError: If no child declares a pool, or if two disagree.
+    """
+    params = [child for child in children.values() if child.page_size]
+    if not params:
+        raise ValueError(
+            "A cache tree takes its page size and pool configuration from a"
+            " child that declares one, and none of these does."
+        )
+    first = params[0]
+    page_sizes = {p.page_size for p in params}
+    if len(page_sizes) > 1:
+        raise ValueError(
+            f"All params must use the same page size, got: {page_sizes}"
+        )
+
+    data_parallel_degrees = {p.data_parallel_degree for p in params}
+    if len(data_parallel_degrees) > 1:
+        raise ValueError(
+            "All params must use the same data parallel degree, got:"
+            f" {data_parallel_degrees}"
+        )
+
+    devices = {tuple(p.devices) for p in params}
+    if len(devices) > 1:
+        raise ValueError(
+            f"All params must use the same number of devices, got: {devices}"
+        )
+
+    enable_prefix_caching = {p.enable_prefix_caching for p in params}
+    if len(enable_prefix_caching) > 1:
+        raise ValueError(
+            "All params must use the same enable_prefix_caching, got:"
+            f" {enable_prefix_caching}"
+        )
+
+    enable_dp_cross_replica_prefix_copy = {
+        p.enable_dp_cross_replica_prefix_copy for p in params
+    }
+    if len(enable_dp_cross_replica_prefix_copy) > 1:
+        raise ValueError(
+            "All params must use the same"
+            " enable_dp_cross_replica_prefix_copy, got:"
+            f" {enable_dp_cross_replica_prefix_copy}"
+        )
+
+    # ``KVConnectorConfig`` is not hashable, so compare by equality against
+    # the first rather than collapsing into a set.
+    if any(p.kv_connector_config != first.kv_connector_config for p in params):
+        raise ValueError(
+            "All params must use the same kv_connector_config, got:"
+            f" {[p.kv_connector_config for p in params]}"
+        )
+
+    speculative_methods = {p.speculative_method for p in params}
+    if len(speculative_methods) > 1:
+        raise ValueError(
+            "All params must use the same speculative_method, got:"
+            f" {speculative_methods}"
+        )
+
+    num_draft_tokens_set = {p.num_draft_tokens for p in params}
+    if len(num_draft_tokens_set) > 1:
+        raise ValueError(
+            "All params must use the same num_draft_tokens, got:"
+            f" {num_draft_tokens_set}"
+        )
+
+    kv_hash_algos = {p.kv_hash_algo for p in params}
+    if len(kv_hash_algos) > 1:
+        raise ValueError(
+            f"All params must use the same kv_hash_algo, got: {kv_hash_algos}"
+        )
+
+    kv_hash_seeds = {p.kv_hash_seed for p in params}
+    if len(kv_hash_seeds) > 1:
+        raise ValueError(
+            f"All params must use the same kv_hash_seed, got: {kv_hash_seeds}"
+        )
+    return first
 
 
 @dataclass(frozen=True)
@@ -2821,6 +2970,15 @@ class MultiKVCacheParams(KVCacheParamInterface):
     :class:`KVCacheParams` or :class:`RecurrentStateParams` instances, or
     nested :class:`MultiKVCacheParams` trees."""
 
+    @property
+    def leaf_kind(self) -> CacheLeafKind:
+        """Attention where the subtree holds any, else recurrent."""
+        return (
+            CacheLeafKind.ATTENTION
+            if self._attention_children
+            else CacheLeafKind.RECURRENT
+        )
+
     page_size: int
     """Number of tokens per page, a value every child cache must share."""
     data_parallel_degree: int
@@ -2830,6 +2988,14 @@ class MultiKVCacheParams(KVCacheParamInterface):
     kv_connector_config: KVConnectorConfigInterface
     """The KV connector's type and settings, a value every child must
     share."""
+    enable_prefix_caching: bool = False
+    """Whether prefix caching is enabled, a value every child must share."""
+    enable_dp_cross_replica_prefix_copy: bool = True
+    """Whether a DP cross-replica prefix copy may serve a hit."""
+    kv_hash_algo: KVHashAlgo = "ahash64"
+    """Hash algorithm used for block identity."""
+    kv_hash_seed: bytes | None = None
+    """Resolved cluster seed for ``sha256``/``sha256_64``."""
     speculative_method: SpeculativeMethod | None = None
     """Speculative decoding method propagated from ``SpeculativeConfig``."""
     num_draft_tokens: int = 0
@@ -2865,13 +3031,19 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """
         if len(params) == 0:
             raise ValueError("MultiKVCacheParams requires at least one param.")
-        first = _pool_defining_child(params)
+        first = _agreed_pool(params)
         return cls(
             children=dict(params),
             page_size=first.page_size,
             data_parallel_degree=first.data_parallel_degree,
             devices=first.devices,
             kv_connector_config=first.kv_connector_config,
+            enable_prefix_caching=first.enable_prefix_caching,
+            enable_dp_cross_replica_prefix_copy=(
+                first.enable_dp_cross_replica_prefix_copy
+            ),
+            kv_hash_algo=first.kv_hash_algo,
+            kv_hash_seed=first.kv_hash_seed,
             speculative_method=first.speculative_method,
             num_draft_tokens=first.num_draft_tokens,
         )
@@ -2883,103 +3055,19 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 "MultiKVCacheParams requires at least one param set."
             )
 
-        states = [
-            key
-            for key, child in self.children.items()
-            if isinstance(child, RecurrentStateParams)
-        ]
-        if len(states) > 1:
-            raise ValueError(
-                f"Found {sorted(states)} recurrent states but only 0 or 1 is"
-                " allowed."
-            )
-        nested = [
-            key
-            for key, child in self.children.items()
-            if key not in states and recurrent_leaf(child) is not None
-        ]
-        if nested:
-            raise ValueError(
-                f"Subtrees {sorted(nested)} declare a recurrent state; it must"
-                " be declared on the root cache."
-            )
-
-        # Only the caches that define the pool have to agree on it.
-        first = _pool_defining_child(self.children)
-        params: list[KVCacheParamInterface] = list(
-            self._attention_children.values()
-        )
-        page_sizes = {p.page_size for p in params}
-        if len(page_sizes) > 1:
-            raise ValueError(
-                f"All params must use the same page size, got: {page_sizes}"
-            )
-
-        data_parallel_degrees = {p.data_parallel_degree for p in params}
-        if len(data_parallel_degrees) > 1:
-            raise ValueError(
-                "All params must use the same data parallel degree, got:"
-                f" {data_parallel_degrees}"
-            )
-
-        devices = {tuple(p.devices) for p in params}
-        if len(devices) > 1:
-            raise ValueError(
-                f"All params must use the same number of devices, got: {devices}"
-            )
-
-        enable_prefix_caching = {p.enable_prefix_caching for p in params}
-        if len(enable_prefix_caching) > 1:
-            raise ValueError(
-                "All params must use the same enable_prefix_caching, got:"
-                f" {enable_prefix_caching}"
-            )
-
-        enable_dp_cross_replica_prefix_copy = {
-            p.enable_dp_cross_replica_prefix_copy for p in params
-        }
-        if len(enable_dp_cross_replica_prefix_copy) > 1:
-            raise ValueError(
-                "All params must use the same"
-                " enable_dp_cross_replica_prefix_copy, got:"
-                f" {enable_dp_cross_replica_prefix_copy}"
-            )
-
-        # ``KVConnectorConfig`` is not hashable, so compare by equality against
-        # the first rather than collapsing into a set.
-        if any(
-            p.kv_connector_config != first.kv_connector_config for p in params
-        ):
-            raise ValueError(
-                "All params must use the same kv_connector_config, got:"
-                f" {[p.kv_connector_config for p in params]}"
-            )
-
-        speculative_methods = {p.speculative_method for p in params}
-        if len(speculative_methods) > 1:
-            raise ValueError(
-                "All params must use the same speculative_method, got:"
-                f" {speculative_methods}"
-            )
-
-        num_draft_tokens_set = {p.num_draft_tokens for p in params}
-        if len(num_draft_tokens_set) > 1:
-            raise ValueError(
-                "All params must use the same num_draft_tokens, got:"
-                f" {num_draft_tokens_set}"
-            )
-
-        kv_hash_algos = {p.kv_hash_algo for p in params}
-        if len(kv_hash_algos) > 1:
-            raise ValueError(
-                f"All params must use the same kv_hash_algo, got: {kv_hash_algos}"
-            )
-
-        kv_hash_seeds = {p.kv_hash_seed for p in params}
-        if len(kv_hash_seeds) > 1:
-            raise ValueError(
-                f"All params must use the same kv_hash_seed, got: {kv_hash_seeds}"
-            )
+        # A leaf id keys the pool's leaves and names the symbolic dim sizing
+        # its rows, so a duplicate collides in both.
+        seen: dict[str, str] = {}
+        for key, child in self.children.items():
+            for state in recurrent_leaves(child):
+                for region in state.regions:
+                    clash = seen.setdefault(region.leaf_id, key)
+                    if clash != key:
+                        raise ValueError(
+                            f"Recurrent states {clash!r} and {key!r} both"
+                            f" declare leaf {region.leaf_id!r}; give each"
+                            " state its own leaf ids."
+                        )
 
     @cached_property
     def _attention_children(self) -> dict[str, KVCacheParamInterface]:
@@ -2991,39 +3079,9 @@ class MultiKVCacheParams(KVCacheParamInterface):
         }
 
     @property
-    def _first(self) -> KVCacheParamInterface:
-        """Returns the child the pool's configuration is read off.
-
-        An attention child, so the answer does not fall to dict order.
-        """
-        return _pool_defining_child(self.children)
-
-    @property
     def n_devices(self) -> int:
         """Returns the number of devices."""
         return len(self.devices)
-
-    @property
-    def enable_prefix_caching(self) -> bool:
-        """Whether prefix caching is enabled (shared across all caches)."""
-        return self._first.enable_prefix_caching
-
-    @property
-    def enable_dp_cross_replica_prefix_copy(self) -> bool:
-        """Whether DP cross-replica prefix copies are enabled (shared across
-        all caches)."""
-        return self._first.enable_dp_cross_replica_prefix_copy
-
-    @property
-    def kv_hash_algo(self) -> KVHashAlgo:
-        """Hash algorithm used for KV-cache block identity."""
-        return self._first.kv_hash_algo
-
-    @property
-    def kv_hash_seed(self) -> bytes | None:
-        """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``.
-        ``None`` for ``ahash64``."""
-        return self._first.kv_hash_seed
 
     @property
     def bytes_per_block(self) -> int:
@@ -3086,13 +3144,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     @property
     def replicates_kv_across_tp(self) -> bool:
-        """Whether every device holds identical KV state."""
-        return self._first.replicates_kv_across_tp
+        """Whether every device holds identical KV state.
+
+        A leaf's own answer, not the tree's: an MHA leaf shards its heads
+        where an MLA one replicates its latent, so siblings can differ.
+        """
+        attention = list(self._attention_children.values())
+        if attention:
+            return attention[0].replicates_kv_across_tp
+        states = recurrent_leaves(self)
+        assert states, "a cache tree holds attention leaves or state leaves"
+        return states[0].replicates_kv_across_tp
 
     @property
     def tensor_parallel_degree(self) -> int:
         """Returns the tensor parallel degree."""
-        return self._first.tensor_parallel_degree
+        return self.n_devices // self.data_parallel_degree
 
     def resolve_attn_key(
         self,
@@ -3295,6 +3362,21 @@ def compute_num_device_blocks(
         if include_null_block:
             max_total_blocks += 1
 
+    if params.bytes_per_block == 0:
+        # Nothing here costs per token, so memory does not divide into equal
+        # blocks. Every leaf plateaus instead -- a state keeps its live block
+        # and one checkpoint however long a request runs.
+        slots = ceildiv(max_seq_len, params.page_size) if max_seq_len else 1
+        per_request = max(
+            (
+                leaf.blocks_to_reserve(slots)
+                for leaf in params.leaves().values()
+            ),
+            default=0,
+        )
+        blocks = per_request * (max_batch_size or 1)
+        return blocks + 1 if include_null_block else blocks
+
     # Compute total number of blocks allocatable based on available memory.
     available_cache_memory_per_replica = (
         available_cache_memory // params.data_parallel_degree
@@ -3399,16 +3481,18 @@ def estimated_memory_size(
         params=params,
         include_null_block=include_null_block,
     )
-    return (
-        num_device_blocks * params.bytes_per_block * params.data_parallel_degree
+    bytes_per_block = params.bytes_per_block or (
+        sum(leaf.bytes_per_page for leaf in params.leaves().values())
+        * params.tensor_parallel_degree
     )
+    return num_device_blocks * bytes_per_block * params.data_parallel_degree
 
 
 def compute_max_seq_len_fitting_in_cache(
     params: KVCacheParamInterface,
     available_cache_memory: int,
     include_null_block: bool = False,
-) -> int:
+) -> int | None:
     """Computes the maximum sequence length that can fit in the available memory.
 
     Args:
@@ -3417,10 +3501,12 @@ def compute_max_seq_len_fitting_in_cache(
         include_null_block: Whether to include room for the null block.
 
     Returns:
-        The maximum sequence length that can fit in the available cache memory.
+        The maximum sequence length that fits, or None where no length
+        exhausts the cache. A recurrent state costs the same however long a
+        request runs, which is what the manager reports once it exists.
     """
     if params.bytes_per_block == 0:
-        raise ValueError("bytes_per_block cannot be zero")
+        return None
     num_blocks = compute_num_device_blocks(
         params=params,
         available_cache_memory=available_cache_memory,

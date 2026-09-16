@@ -38,7 +38,7 @@ LEAVES = {
     region.leaf_id: RecurrentKVLeafRegion(
         leaf_id=region.leaf_id,
         group_id=KVCacheGroupId.recurrent(),
-        bytes_per_page=region.bytes_per_state,
+        bytes_per_page=region.bytes_per_page,
         region=region,
     )
     for region in REGIONS

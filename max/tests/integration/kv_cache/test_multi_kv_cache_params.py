@@ -39,6 +39,7 @@ from max.nn.kv_cache import (
     compute_num_device_blocks,
     estimated_memory_size,
     recurrent_leaf,
+    recurrent_leaves,
 )
 from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.kv_cache.config import KVConnectorConfig
@@ -242,6 +243,11 @@ class TestMultiKVCacheParamsMemoryEstimation:
             multi_params, available_memory
         )
 
+        # Every cache here spans tokens, so each is bounded.
+        assert max_seq_len_1 is not None
+        assert max_seq_len_2 is not None
+        assert max_seq_len_multi is not None
+
         # With two identical caches, multi should fit roughly half the seq len
         # (since bytes_per_block is doubled)
         assert max_seq_len_multi < max_seq_len_1
@@ -328,6 +334,7 @@ class TestMultiKVCacheParamsMemoryEstimation:
         max_seq_len = compute_max_seq_len_fitting_in_cache(
             multi_params, available_memory
         )
+        assert max_seq_len is not None
         assert max_seq_len > 0
 
 
@@ -1010,22 +1017,26 @@ def create_state_params(
 class TestRecurrentState:
     """The state is a child of the root cache, and there is one of it."""
 
-    def test_the_state_declares_none_of_the_pool_it_draws_from(self) -> None:
-        """It carries what it reads and nothing else."""
+    def test_a_state_beside_attention_declares_no_pool(self) -> None:
+        """Declaring none is how it says the attention leaf carries it."""
         attn = create_kv_cache_params(page_size=256)
         state = create_state_params(attn)
-        assert state.devices == attn.devices
-        assert state.data_parallel_degree == attn.data_parallel_degree
-        for absent in (
-            "page_size",
-            "enable_prefix_caching",
-            "kv_hash_algo",
-            "kv_connector_config",
-            "num_draft_tokens",
-        ):
-            assert not hasattr(state, absent), absent
-        # ...and the tree it joins still agrees with itself.
-        MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+        assert state.page_size == 0
+
+        root = MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+        assert root.page_size == 256
+        assert root.kv_hash_algo == attn.kv_hash_algo
+
+    def test_a_state_only_tree_costs_nothing_per_block(self) -> None:
+        """Every child reports zero, so the sum is zero."""
+        state = create_state_params(create_kv_cache_params())
+        state.page_size = 64
+        root = MultiKVCacheParams.from_params({"state": state})
+
+        assert root.bytes_per_block == 0
+        assert state.bytes_per_state > 0
 
     def test_two_attention_caches_share_one_state(self) -> None:
         """The shape a field on an attention cache could not express."""
@@ -1041,19 +1052,32 @@ class TestRecurrentState:
         assert recurrent_leaf(root) is root.children["state"]
         assert set(root.children) == {"target", "draft", "state"}
 
-    def test_a_branch_may_not_declare_a_state(self) -> None:
-        """A request holds one state, so it belongs to the root cache."""
+    def test_a_branch_may_declare_its_own_state(self) -> None:
+        """A speculative pair keeps a state on each side of the tree."""
         attn = create_kv_cache_params()
-        branch = MultiKVCacheParams.from_params(
-            {"attn": attn, "state": create_state_params(attn)}
+        target = MultiKVCacheParams.from_params(
+            {
+                "attn": attn,
+                "state": create_state_params(attn, leaf_prefix="target"),
+            }
         )
-        with pytest.raises(ValueError, match="must be declared on the root"):
-            MultiKVCacheParams.from_params({"target": branch})
+        draft = MultiKVCacheParams.from_params(
+            {
+                "attn": attn,
+                "state": create_state_params(attn, leaf_prefix="draft"),
+            }
+        )
 
-    def test_one_state_per_cache(self) -> None:
-        """A request holds one, so two would leave the num_blocks ambiguous."""
+        root = MultiKVCacheParams.from_params(
+            {"target": target, "draft": draft}
+        )
+
+        assert len(recurrent_leaves(root)) == 2
+
+    def test_two_states_may_not_share_a_leaf_id(self) -> None:
+        """They name the pool entry and the symbolic dim; sharing collides."""
         attn = create_kv_cache_params()
-        with pytest.raises(ValueError, match="only 0 or 1 is allowed"):
+        with pytest.raises(ValueError, match="both declare leaf"):
             MultiKVCacheParams.from_params(
                 {
                     "attn": attn,
@@ -1062,13 +1086,48 @@ class TestRecurrentState:
                 }
             )
 
-    def test_a_cache_of_nothing_but_a_state_is_refused(self) -> None:
-        """A state shares an attention cache's pool; it does not stand one up."""
+    def test_states_with_their_own_leaf_ids_coexist(self) -> None:
+        attn = create_kv_cache_params()
+
+        root = MultiKVCacheParams.from_params(
+            {
+                "attn": attn,
+                "live": create_state_params(attn, leaf_prefix="live"),
+                "shadow": create_state_params(attn, leaf_prefix="shadow"),
+            }
+        )
+
+        assert {"live/conv", "shadow/conv"} <= set(root.leaves())
+        assert len(recurrent_leaves(root)) == 2
+
+    def test_a_pure_state_cache_carries_the_pool_configuration(self) -> None:
+        """With no attention leaf, the state is the whole cache."""
         state = create_state_params(create_kv_cache_params())
-        with pytest.raises(
-            ValueError, match="requires at least one attention cache"
-        ):
+        state.page_size = 64
+
+        root = MultiKVCacheParams.from_params({"state": state})
+
+        assert root.page_size == 64
+        assert root.tensor_parallel_degree == state.tensor_parallel_degree
+
+    def test_a_cache_no_child_declares_a_pool_for_is_refused(self) -> None:
+        """Defaulting one would publish checkpoints on a made-up boundary."""
+        state = create_state_params(create_kv_cache_params())
+        with pytest.raises(ValueError, match="none of these does"):
             MultiKVCacheParams.from_params({"state": state})
+
+    def test_no_sequence_length_exhausts_a_state_only_cache(self) -> None:
+        """A request costs the same however long it runs."""
+        state = create_state_params(create_kv_cache_params())
+        state.page_size = 64
+        root = MultiKVCacheParams.from_params({"state": state})
+
+        assert (
+            compute_max_seq_len_fitting_in_cache(
+                params=root, available_cache_memory=1 << 30
+            )
+            is None
+        )
 
     def test_a_state_declared_first_does_not_answer_for_the_pool(self) -> None:
         """Which child answers cannot fall to declaration order."""
@@ -1112,7 +1171,7 @@ class TestRecurrentState:
         conv, rec = state.regions
         # A huge block is the least common multiple of the leaves' page
         # sizes, which is what makes it a whole number of every leaf's rows.
-        huge_block = math.lcm(conv.bytes_per_state, rec.bytes_per_state)
+        huge_block = math.lcm(conv.bytes_per_page, rec.bytes_per_page)
         slab = _cpu_buffer(2, huge_block, dtype=DType.uint8)
 
         views = state.slab_to_row_views([slab])
@@ -1143,7 +1202,6 @@ class TestRecurrentState:
         for region in state.regions:
             leaf = leaves[region.leaf_id]
             assert leaf.group_id.is_recurrent()
-            assert leaf.bytes_per_page == region.bytes_per_state
         # The attention leaves keep their child prefix.
         assert any(leaf_id.startswith("attn.") for leaf_id in leaves)
 

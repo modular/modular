@@ -14,6 +14,7 @@
 from .cache_params import (
     PACKED_PAGE_STRIDE,
     BatchCharacteristics,
+    CacheLeafKind,
     CacheLeafParamInterface,
     KVCacheAssignments,
     KVCacheBuffer,
@@ -43,6 +44,7 @@ from .cache_params import (
     estimated_memory_size,
     packed_page_stride,
     recurrent_leaf,
+    recurrent_leaves,
     spec_decode_cache_slack,
 )
 from .input_types import (
@@ -68,6 +70,7 @@ __all__ = [
     "AttnKey",
     "AttnKeyInterface",
     "BatchCharacteristics",
+    "CacheLeafKind",
     "CacheLeafParamInterface",
     "KVCacheAssignments",
     "KVCacheBuffer",
@@ -108,5 +111,6 @@ __all__ = [
     "packed_page_stride",
     "padded_lut_cols",
     "recurrent_leaf",
+    "recurrent_leaves",
     "spec_decode_cache_slack",
 ]

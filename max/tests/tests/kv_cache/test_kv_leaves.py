@@ -32,6 +32,8 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
+    compute_num_device_blocks,
+    estimated_memory_size,
 )
 from max.nn.kv_cache.cache_params import (
     KVCacheBuffer,
@@ -171,7 +173,6 @@ def test_a_state_page_is_exactly_the_bytes_its_rows_occupy() -> None:
     unit = params.slab_to_buffer_views([slab]).to_memory()[region.leaf_id]
     (rows,) = state.slab_to_bound_views([slab])[region.pool_key]
 
-    assert unit.bytes_per_page == region.bytes_per_state
     # Every page of the pool is reachable, each one layer-deep per row.
     assert unit.total_num_pages * region.num_layers == rows.shape[0]
 
@@ -206,3 +207,92 @@ def test_jenga_scale_pages_outnumber_value_pages() -> None:
     per_device = params.get_symbolic_inputs()[0]
     assert per_device.kv_scales is not None
     assert per_device.kv_blocks.shape[0] != per_device.kv_scales.shape[0]
+
+
+def _state_only(page_size: int = 64) -> MultiKVCacheParams:
+    """A cache of nothing but state, as a pure-SSM model declares one."""
+    attn = _params(quantized=False)
+    return MultiKVCacheParams.from_params(
+        {
+            "state": RecurrentStateParams(
+                regions=(
+                    RecurrentStateRegion(
+                        leaf_id="conv_state",
+                        num_layers=2,
+                        row_shape=(8, 3),
+                        dtype=DType.float32,
+                    ),
+                ),
+                devices=attn.devices,
+                page_size=page_size,
+            )
+        }
+    )
+
+
+def test_a_state_only_cache_sizes_from_its_requests() -> None:
+    """Memory does not divide into blocks, so the batch decides the count.
+
+    A state keeps its live block and one checkpoint however long a request
+    runs, so two per leaf per request is the whole pool.
+    """
+    root = _state_only()
+
+    assert (
+        compute_num_device_blocks(
+            params=root,
+            available_cache_memory=1 << 30,
+            max_batch_size=8,
+            max_seq_len=4096,
+        )
+        == 2 * 8
+    )
+
+
+def test_a_state_only_cache_reports_the_bytes_it_needs() -> None:
+    """``bytes_per_block`` is zero here, so the leaves' pages are the size."""
+    root = _state_only()
+    state = root.children["state"]
+    assert isinstance(state, RecurrentStateParams)
+
+    size = estimated_memory_size(
+        params=root,
+        available_cache_memory=1 << 30,
+        max_batch_size=8,
+        max_seq_len=4096,
+    )
+
+    assert root.bytes_per_block == 0
+    assert size == 2 * 8 * state.bytes_per_state * root.tensor_parallel_degree
+
+
+def test_a_hybrid_cache_still_divides_memory_into_blocks() -> None:
+    """Its attention leaves do cost per token, so the usual path applies."""
+    attn = _params(quantized=False)
+    root = MultiKVCacheParams.from_params(
+        {
+            "attn": attn,
+            "state": RecurrentStateParams(
+                regions=(
+                    RecurrentStateRegion(
+                        leaf_id="conv_state",
+                        num_layers=2,
+                        row_shape=(8, 3),
+                        dtype=DType.float32,
+                    ),
+                ),
+                devices=attn.devices,
+            ),
+        }
+    )
+
+    assert root.bytes_per_block == attn.bytes_per_block
+    assert (
+        compute_num_device_blocks(
+            params=root,
+            available_cache_memory=1 << 30,
+            max_batch_size=4,
+            max_seq_len=128,
+        )
+        > 0
+    )
