@@ -294,7 +294,7 @@ def main() raises:
     if (n := len(items)) > 10:
         print(n)
 
-    var name: String
+    var name: String                  # declare before use
     while name := input("Prompt: "):  # input is raising
         print("Hello,", name)
 ```
@@ -306,9 +306,8 @@ The name must already be declared. Walrus only assigns into existing values.
 
 Walrus assignment is most useful for temporary values created as part of an
 expression. Its binding remains available for the rest of its scope. Walrus
-assignment doesn't imply ownership, reference, or memory semantics. The
-value on the right needn't exist in memory; it might exist only in a
-register.
+assignment doesn't imply ownership, reference, or memory semantics. Plus, the
+value on the right needn't exist in memory; it might exist only in a register.
 
 The walrus operator has the lowest precedence of any expression operator.
 Use parentheses when needed to make your intent clear:

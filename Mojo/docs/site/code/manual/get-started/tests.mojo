@@ -56,15 +56,26 @@ struct Grid[num_cols: Int, num_rows: Int]:
     )
 
     def print_grid(self):
-        var grid_str = ""
-        for index in range(len(self.cells)):
-            grid_str += "X" if self.cells[index] else "."
-            if (
-                index % Self.num_cols == (Self.num_cols - 1)
-                and index != len(self.cells) - 1
-            ):
-                grid_str += "\n"
+        var grid_str = "".join(
+            [
+                (
+                    ("X" if value else ".")
+                    + ("\n" if (index + 1) % Self.num_cols == 0 else "")
+                )
+                for index, value in enumerate(self.cells)
+            ]
+        )
         print(grid_str)
+
+        # var grid_str = ""
+        # for index in range(len(self.cells)):
+        #     grid_str += "X" if self.cells[index] else "."
+        #     if (
+        #         index % Self.num_cols == (Self.num_cols - 1)
+        #         and index != len(self.cells) - 1
+        #     ):
+        #         grid_str += "\n"
+        # print(grid_str)
 
     def is_valid_coord(self, coord: Tuple[Int, Int]) -> Bool:
         return not (

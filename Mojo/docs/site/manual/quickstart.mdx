@@ -6,32 +6,22 @@ sidebar_label: Quickstart
 
 Welcome to Mojo, a systems language for the AI era.
 
-Mojo offers rich ways to express compile-time intent, runtime
-behavior, and hardware-specific optimization in a single language.
+This tutorial offers a quick tour of Mojo language fundamentals by showing
+you how to build a simple application. You'll get a taste of Mojo's syntax
+and enough familiarity to read and write basic Mojo code.
 
-Other languages struggle to span those layers without fragmenting the
-stack. With Mojo, take your code with you to your next chip. And the one
-after that.
-
-This tutorial offers a quick tour of Mojo language fundamentals. Build a
-simple temperature application as you learn core Mojo syntax.
-
-It should take about 15-30 minutes if you stop to explore, or less if you
-work straight through. The focus is syntax, not concepts.
-
-You'll get a taste of Mojo's syntax and enough familiarity to start writing
-simple Mojo code.
+It should take about 15-30 minutes if you stop to explore, or less if
+you work straight through.
 
 ## Setup
 
 Before starting:
 
 - Check the [system requirements](/docs/requirements/).
-- Choose `pixi` (recommended) or `uv` as your package manager.
-- [Install Mojo](/install/).
+- [Install Mojo](/install/) in a `pixi` or `uv` environment.
 - Open a terminal and make sure `mojo` is in your path or environment.
 
-As you work through this tour, look for *Checkpoint* items. They connect
+As you work through this tour, look for *Takeaways* items. They connect
 new Mojo syntax to concepts you may already know from other languages.
 
 ## Hello Mojo
@@ -51,7 +41,7 @@ Run it:
 mojo analyzer.mojo
 ```
 
-### Checkpoint
+### Takeaways
 
 - If you see "Temperature Analyzer", your setup works.
 - All Mojo executables use `main()` as their entry point.
@@ -82,13 +72,19 @@ def main():
         print(t"  Day {index + 1}: {temps[index]}°C")
 ```
 
-### Checkpoint
+### Takeaways
 
 - This loop uses indexes. Normally you iterate over elements.
+
 - The `t"..."` prefix creates a *template string*. Braces `{}` interpolate
   expressions into the output. This avoids memory allocations for
   intermediate values.
-- Mojo also has a `while` loop.
+
+:::tip Worth knowing
+
+Mojo also has a `while` loop.
+
+:::
 
 ## Functions
 
@@ -113,7 +109,7 @@ Call the function by adding this to the end of `main()`:
     print(t"Average: {round(avg, 2)}°C")
 ```
 
-### Checkpoint
+### Takeaways
 
 - Mojo's `def` functions don't raise by default.
 - `round()` returns `avg` rounded to two decimal places.
@@ -178,7 +174,7 @@ Wrap failable code in `try-except` for error handling:
 To test the error, replace `temps` with `[]`.
 Confirm that your app errors with "No temperature data".
 
-### Checkpoint
+### Takeaways
 
 - Each `try` statement requires at least one `except` or `finally` clause.
 - An `else` clause runs only if no error occurs.
