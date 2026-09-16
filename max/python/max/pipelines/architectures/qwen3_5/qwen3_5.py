@@ -347,9 +347,12 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         #
         # The KV cache dtype does not enter into this: rope is applied to K
         # before the value is cast into the cache.
-        self.mrope_enabled = (
-            config.mrope_section is not None
-            and config.vision_config is not None
+        # `vision_config` stands in for "an image can appear in context". The
+        # fused speculative graph compiles no encoder yet still verifies
+        # tokens that follow one, so it sets `mrope_without_encoder` to keep
+        # the 3-axis positions without the tower.
+        self.mrope_enabled = config.mrope_section is not None and (
+            config.vision_config is not None or config.mrope_without_encoder
         )
         rope: Llama3RotaryEmbedding
         if self.mrope_enabled:

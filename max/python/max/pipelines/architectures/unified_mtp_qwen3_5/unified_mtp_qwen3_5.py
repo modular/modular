@@ -188,6 +188,7 @@ class UnifiedMTPQwen3_5(Module):
         pinned_bitmask: TensorValue | None = None,
         wait_payload: BufferValue | None = None,
         device_bitmask_scratch: BufferValue | None = None,
+        position_ids: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         devices = self.config.devices
         n_devs = len(devices)
@@ -251,6 +252,10 @@ class UnifiedMTPQwen3_5(Module):
             assert isinstance(block, Qwen3_5LinearAttentionBlock)
             block.replay_capture = captures
 
+        # `position_ids` covers the MERGED window, so it lines up with
+        # `merged_tokens` rather than with `tokens`. None keeps the target on
+        # the static rope table, which is correct only while no request in the
+        # batch has an image in context.
         target_outputs = self.target(
             merged_tokens,
             target_kv,
@@ -258,6 +263,7 @@ class UnifiedMTPQwen3_5(Module):
             merged_offsets,
             signal_buffers,
             shadow_state,
+            position_ids=position_ids,
         )
         for layer_idx in self.target.linear_layer_indices:
             block = self.target.layers[layer_idx]
@@ -423,10 +429,12 @@ class UnifiedMTPQwen3_5(Module):
     ) -> tuple[TensorType | BufferType, ...]:
         """Canonical spec-decode signature plus the Qwen state-pool tail.
 
-        The tail is, every block device-major: the live conv and recurrent
-        pools, the ``[batch_size, num_layers]`` rows each layer of each
-        request occupies in them, then the two shadow pools. One buffer per
-        leaf rather than one per layer, so the caller picks the row layout.
+        The tail is, every block region-major and device-minor: the live
+        conv and recurrent pools, the ``[batch_size, num_layers]`` rows each
+        layer of each request occupies in them, then the two shadow pools.
+        One buffer per leaf rather than one per layer, so the caller picks
+        the row layout. When the target runs M-RoPE a shared
+        ``[3, merged_total_seq_len]`` positions tensor follows them.
 
         The shadow takes no rows; ``state_rollback.shadow_row_ids`` builds
         them in-graph.
@@ -471,6 +479,23 @@ class UnifiedMTPQwen3_5(Module):
                     device=device,
                 )
                 for device in devices
+            )
+
+        # M-RoPE positions for the MERGED window -- one column per token of
+        # `[real, draft_1..draft_k]` per row, not per prompt token. Shared
+        # across devices like the base graph's, and last so the pooled tail
+        # above keeps its slot indices.
+        #
+        # Only declared when the target runs M-RoPE. Without it the rotary
+        # falls back to the static table indexed by `cache_length + token_idx`,
+        # which is right for text and wrong for every token after an image.
+        if self.target.mrope_enabled:
+            tail.append(
+                TensorType(
+                    DType.int64,
+                    shape=[3, "merged_total_seq_len"],
+                    device=devices[0],
+                )
             )
 
         return (*spec_types, *tail)

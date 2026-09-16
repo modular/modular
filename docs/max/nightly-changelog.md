@@ -10,6 +10,18 @@ This version is still a work in progress.
 
 ## MAX models
 
+- The fused Qwen3.5 speculative-decoding graph
+  (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
+  decoding composes with the vision path instead of excluding it. Without
+  them the rotary fell back to a static table indexed by
+  `cache_length + token_idx`, which is wrong for every token after an image:
+  an image advances the position counter by its grid extent rather than by
+  its soft-token count. The input covers the merged
+  `[real, draft_1..draft_k]` window and is appended after the existing
+  spec-decode signature, so earlier inputs keep their positions. It is
+  declared only when the target runs M-RoPE, leaving text-only exports
+  byte-identical, and a graph exported without it still serves text.
+
 - Added video input to the Qwen3.5 and Qwen3-VL architectures, which
   previously rejected any request carrying a video part. Clips are sampled at
   2 fps, sized against a whole-clip pixel budget rather than a per-frame one,

@@ -169,6 +169,17 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     vision_config: VisionConfig | None = None
     """Vision encoder configuration; None for text-only models."""
 
+    mrope_without_encoder: bool = False
+    """Keep M-RoPE on a graph that compiles no vision encoder.
+
+    ``vision_config`` normally carries two facts at once: that an encoder must
+    be built, and that images can appear in a request's context. The fused
+    speculative graph separates them — it never encodes an image, because the
+    encoder ran before the tokens it verifies ever reached it, but a request
+    whose context holds one still needs 3-axis positions for every token after
+    it. Setting this keeps :attr:`Qwen3_5.mrope_enabled` true with
+    ``vision_config`` cleared."""
+
     image_token_id: int | None = None
     """Token ID used for image placeholders in the input sequence."""
 

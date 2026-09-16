@@ -73,6 +73,10 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs):
     live_recurrent_row_ids: list[Buffer]
     shadow_conv_pools: list[Buffer]
     shadow_recurrent_pools: list[Buffer]
+    #: ``[3, merged_total_seq_len]`` M-RoPE positions for the merged
+    #: ``[real, draft_1..draft_k]`` window. ``None`` on a text-only graph,
+    #: whose rotary stays on the static cache-derived table.
+    position_ids: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -98,6 +102,7 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs):
                 *self.shadow_conv_pools,
                 *self.shadow_recurrent_pools,
             )
+            + (() if self.position_ids is None else (self.position_ids,))
         )
 
 
@@ -170,8 +175,12 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         # The rollback reads the verify pass's per-layer state-kernel inputs,
         # which cannot cross a subgraph boundary.
         config.use_subgraphs = False
-        # The spec graph is text-only; a vision encoder here would be compiled
-        # and never called.
+        # No encoder here: it ran before the tokens this graph verifies ever
+        # reached it, so compiling one would build a tower nothing calls. The
+        # positions are a separate matter -- a request whose context holds an
+        # image needs 3-axis positions for every token after it -- so M-RoPE
+        # survives the clear.
+        config.mrope_without_encoder = config.vision_config is not None
         config.vision_config = None
 
         # Attention only: this graph declares its own state pools in
@@ -286,6 +295,12 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             shadow_conv_pools = per_device_buffers()
             shadow_recurrent_pools = per_device_buffers()
 
+            # Declared last by ``input_types`` and only when the target runs
+            # M-RoPE, so it is consumed after the whole state tail.
+            position_ids: TensorValue | None = None
+            if nn_model.target.mrope_enabled:
+                position_ids = next(it).tensor
+
             outputs = nn_model(
                 tokens=tokens.tensor,
                 input_row_offsets=input_row_offsets.tensor,
@@ -312,6 +327,7 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 pinned_bitmask=pinned_bitmask,
                 wait_payload=wait_payload,
                 device_bitmask_scratch=device_bitmask_scratch,
+                position_ids=position_ids,
             )
             graph.output(*outputs)
 
