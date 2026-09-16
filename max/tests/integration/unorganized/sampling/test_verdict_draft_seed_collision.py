@@ -18,12 +18,25 @@ for ``draft_proposal="sampled"``.
    token draw (``topk_topp_sampling_from_prob``'s ``Random(seed=seed_val)``),
    so seeding it with the bare per-execute seed handed batch row 0 the same
    float for both. ``test_verdict_coin_equals_raw_philox_draw`` pins that
-   op-level identity; ``test_sampled_verdict_coin_is_domain_separated``
-   drives the real sampler and shows its coin now comes from ``seed +
-   _SEED_DOMAIN_VERDICT``.
-2. STILL OPEN, by design. ``set_seed`` always reads index 0 of a rank-1 seed
-   tensor, so every row's implicit draw is keyed off row 0's seed alone;
-   changing only row 0's seed changes every other row's committed stream.
+   op-level identity, and
+   ``test_verdict_domain_tag_is_off_the_draft_and_recovery_lattices`` pins
+   the tag that keeps the surviving implicit stream off the draft and
+   recovery keys.
+2. FIXED here. ``set_seed`` always reads index 0 of a rank-1 seed tensor, so
+   while the accept coin came off that implicit stream, every row's draw was
+   keyed off row 0's seed alone and changing only row 0's seed changed every
+   other row's committed stream. The coin is now an explicitly keyed per-row
+   draw, so the sampler takes the whole rank-1 seed and no row's verdict
+   depends on another row's seed. (A row's own batch position still reaches
+   the draw, through the row term in its key and through the sampling
+   kernel's per-row RNG counter; that is a separate concern and not what
+   these tests claim.) That is what
+   ``test_row_verdict_ignores_another_rows_seed`` pins, with
+   ``test_row_verdict_follows_its_own_seed`` as the control that keeps it
+   from passing vacuously.
+
+The op-level lemma in claim 1 still holds for the implicit stream, which
+other callers reach; the sampled verdict's coin simply no longer rides it.
 """
 
 from __future__ import annotations
@@ -35,7 +48,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.sampling import rejection_sampler, stochastic_acceptance_sampler
+from max.nn.sampling import stochastic_acceptance_sampler
 from max.nn.sampling.rejection_sampler import (
     _SEED_DOMAIN_RECOVERY,
     _SEED_DOMAIN_VERDICT,
@@ -101,14 +114,14 @@ def _philox_step_uniform(
 
 @pytest.fixture(scope="module")
 def verdict_coin_graph(session: InferenceSession) -> Model:
-    """The exact op the sampled verdict issues for its accept coin.
+    """One draw off the implicit stream, at the offset a batch-level draw uses.
 
     ``ops.random.set_seed(seed) ; ops.random.uniform(TensorType(..., [1]))``
-    is precisely ``rejection_sampler.py``'s ``ops.random.set_seed(seed[0]
-    ...)`` followed by ``coins = ops.random.uniform(p_target.type)`` at flat
-    position 0, since a size-1 output has row-major flat offset 0 for its
-    only element -- the same offset the real ``p_target`` tensor's row
-    0/step 0 coin gets.
+    is what any batch-level implicit draw in ``rejection_sampler.py`` lowers
+    to at flat position 0, since a size-1 output has row-major flat offset 0
+    for its only element. The sampled verdict's accept coin used to be
+    exactly this draw; it is now keyed per row instead, but the lemma still
+    describes every remaining implicit consumer.
     """
     d = DeviceRef.from_device(session.devices[0])
     with Graph("verdict_coin", input_types=[ops.random.SeedType(d)]) as graph:
@@ -134,10 +147,9 @@ def test_verdict_coin_equals_raw_philox_draw(
     ``ops.random.set_seed``, the first implicit draw off it is exactly
     ``Random(seed=that_seed, offset=0)`` -- the same primitive
     ``topk_topp_sampling_from_prob`` uses for the draft's own token draw
-    (``topk_fi.mojo``'s ``PHASE 3`` block, also offset/subsequence 0). That
-    identity is what :func:`test_sampled_verdict_coin_is_domain_separated`
-    relies on to predict the sampler's coin from the from-scratch Philox
-    reimplementation below.
+    (``topk_fi.mojo``'s ``PHASE 3`` block, also offset/subsequence 0) -- the
+    identity that made the pre-fix collision exact rather than approximate,
+    and the reason every batch-level stream here carries a domain tag.
     """
     device = session.devices[0]
     seed_buf = Buffer.from_numpy(np.array([seed_int], dtype=np.uint64)).to(
@@ -213,13 +225,8 @@ def _build_sampled_verdict(session: InferenceSession) -> Model:
         TensorType(DType.int64, [], device=DeviceRef.CPU()),
         TensorType(DType.float32, ["batch_size"], device=d),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
-        # A per-row [batch_size] seed tensor, matching what
-        # `overlap_text_generation.py` actually builds. `eagle3_unified.py`
-        # (`accept_and_pick_next_tokens(..., seed=seed[0], ...)`) slices this
-        # down to a scalar *before* calling the sampler -- passing the raw
-        # rank-1 tensor straight through is rejected outright for
-        # ``draft_proposal="sampled"``. This fixture reproduces that same
-        # caller-side slice rather than the rejected shape.
+        # The per-row [batch_size] seed tensor `overlap_text_generation.py`
+        # builds, passed through whole, as `eagle3_unified.py` now does.
         TensorType(DType.uint64, ["batch_size"], device=d),
     ]
     with Graph("sampled_verdict_slot0", input_types=graph_inputs) as graph:
@@ -233,7 +240,7 @@ def _build_sampled_verdict(session: InferenceSession) -> Model:
                 max_k=mk.tensor,
                 top_p=tp.tensor,
                 min_top_p=mtp.tensor,
-                seed=seed.tensor[0],
+                seed=seed.tensor,
                 draft_proposal="sampled",
                 draft_probs_full=dpf.tensor,
                 vocab_size=VOCAB_SIZE,
@@ -247,138 +254,100 @@ def sampled_verdict(session: InferenceSession) -> Model:
     return _build_sampled_verdict(session)
 
 
-def _coin_margin_ok(seed_int: int) -> bool:
-    """Is a seed's predicted coin far enough from the 0.5 accept threshold?
-
-    ``test_sampled_verdict_coin_is_domain_separated`` reads one bit per seed
-    -- whether the coin landed above or below a ``p_target`` of 0.5 -- so a
-    coin sitting within float noise of 0.5 would make that bit meaningless.
-    Both hypotheses must clear the margin, since the test asserts a match
-    against one and a mismatch against the other.
-    """
-    shifted = float(
-        _philox_step_uniform((seed_int + _SEED_DOMAIN_VERDICT) % 2**64)[0]
-    )
-    plain = float(_philox_step_uniform(seed_int)[0])
-    return abs(shifted - 0.5) > 0.05 and abs(plain - 0.5) > 0.05
+# Row 1's accept decision is one bit per execute, so a handful of executions
+# is enough to show it never moves with row 0's seed, and enough to show it
+# does move with its own.
+_PROBE_SEEDS = tuple(range(1, 49))
 
 
-# The first 24 small seeds whose predicted coins clear the threshold margin
-# under both hypotheses. Selected by rule rather than hand-picked so the set
-# is reproducible from the Philox reimplementation above.
-_SEPARATION_SEEDS = [s for s in range(1, 400) if _coin_margin_ok(s)][:24]
+def _row_accept_bits(
+    model: Model, session: InferenceSession, seeds: npt.NDArray[np.uint64]
+) -> list[bool]:
+    """Returns whether each row accepted its single draft token.
 
-
-def _observed_signature(model: Model, session: InferenceSession) -> str:
-    """Reads one bit of the sampler's accept coin per seed, off the real graph.
-
-    One row, one draft step, ``q = 1`` (a one-hot draft distribution over the
-    drafted token) and ``p_target = 0.5`` (target logits that put half the
-    mass on the drafted token and half on one other, everything else ~1e-22
-    so no top-k/top-p truncation rule can change the split) reduce
-    ``rejected = coins * q_eff >= p_target`` to ``coin >= 0.5``.
-    ``first_rejected_idx`` is then 0 when the coin landed at or above 0.5 and
-    1 (the "all accepted" sentinel, ``num_steps``) when it landed below --
-    exactly one bit of the coin per execute. A single row also pins the coin
-    to flat index 0, so the reading holds whatever SIMD width
-    ``random_uniform``'s elementwise dispatch picks.
+    ``q = 1`` (a one-hot draft distribution over the drafted token) and
+    ``p_target = 0.5`` (target logits putting half the mass on the drafted
+    token and half on one other, everything else ~1e-22 so no top-k/top-p
+    rule can shift the split) make each row's verdict a fair coin. With one
+    draft step, ``first_rejected_idx`` is 0 when the row rejected and 1 --
+    ``num_steps``, the "all accepted" sentinel -- when it accepted, so each
+    row yields exactly one bit of its own coin.
     """
     device = session.devices[0]
+    batch = len(seeds)
     logits_row = np.full(VOCAB_SIZE, -50.0, dtype=np.float32)
     logits_row[0] = 0.0
     logits_row[1] = 0.0
-    logits_np = np.tile(logits_row, (2, 1))  # [batch * (num_steps + 1), vocab]
-    draft_tokens_np = np.zeros((1, 1), dtype=np.int64)
-    draft_probs_np = np.zeros((1, 1, VOCAB_SIZE), dtype=np.float32)
-    draft_probs_np[0, 0, 0] = 1.0
+    # [batch * (num_steps + 1), vocab]
+    logits_np = np.tile(logits_row, (batch * 2, 1))
+    draft_tokens_np = np.zeros((batch, 1), dtype=np.int64)
+    draft_probs_np = np.zeros((batch, 1, VOCAB_SIZE), dtype=np.float32)
+    draft_probs_np[:, 0, 0] = 1.0
 
-    bits = []
-    for seed_int in _SEPARATION_SEEDS:
-        fri, _, _ = model(
-            Buffer.from_dlpack(draft_tokens_np).to(device),
-            Buffer.from_dlpack(logits_np).to(device),
-            Buffer.from_dlpack(draft_probs_np).to(device),
-            Buffer.from_numpy(np.ones(1, np.float32)).to(device),
-            Buffer.from_numpy(np.full(1, -1, np.int64)).to(device),
-            Buffer.from_numpy(np.array(-1, np.int64)),
-            Buffer.from_numpy(np.ones(1, np.float32)).to(device),
-            Buffer.from_numpy(np.array(1.0, np.float32)),
-            Buffer.from_numpy(np.array([seed_int], dtype=np.uint64)).to(device),
-        )
-        assert isinstance(fri, Buffer)
-        bits.append(bool(fri.to_numpy()[0] == 0))
-    return "".join("1" if b else "0" for b in bits)
-
-
-def _predicted_signature(domain: int) -> str:
-    """The same bits, predicted for a stream keyed on ``seed + domain``."""
-    return "".join(
-        "1"
-        if float(_philox_step_uniform((s + domain) % 2**64)[0]) >= 0.5
-        else "0"
-        for s in _SEPARATION_SEEDS
+    fri, _, _ = model(
+        Buffer.from_dlpack(draft_tokens_np).to(device),
+        Buffer.from_dlpack(logits_np).to(device),
+        Buffer.from_dlpack(draft_probs_np).to(device),
+        Buffer.from_numpy(np.ones(batch, np.float32)).to(device),
+        Buffer.from_numpy(np.full(batch, -1, np.int64)).to(device),
+        Buffer.from_numpy(np.array(-1, np.int64)),
+        Buffer.from_numpy(np.ones(batch, np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, np.float32)),
+        Buffer.from_numpy(seeds).to(device),
     )
+    assert isinstance(fri, Buffer)
+    return [bool(v == 1) for v in fri.to_numpy()]
 
 
-def test_sampled_verdict_coin_is_domain_separated(
+def test_row_verdict_ignores_another_rows_seed(
     session: InferenceSession, sampled_verdict: Model
 ) -> None:
-    """The verdict's coin comes off a different Philox key than the draft's.
+    """Row 1's verdict does not move when only row 0's seed changes.
 
-    Guards the fix for claim 1: ``stochastic_acceptance_sampler`` offsets the
-    per-execute seed by ``_SEED_DOMAIN_VERDICT`` before
-    ``ops.random.set_seed``, so batch row 0's accept coin is no longer the
-    very draw its own proposal inverted. The coin is read back through the
-    sampler's own public output rather than assumed.
-
-    Twenty-four seeds give a 24-bit signature. It must equal the signature
-    predicted from ``seed + _SEED_DOMAIN_VERDICT`` and differ from the one
-    predicted from the bare ``seed`` -- the latter being the stream the draft
-    proposal draws its own token from. That the collided signature is the one
-    a pre-fix sampler really produces is not assumed either; see
-    :func:`test_zeroing_the_domain_tag_reproduces_the_collision`.
+    The form the leak took: one request's generated-token count drove every
+    co-resident request's accept decisions, so a request's output depended on
+    who it shared a batch with. Row 1's seed is held fixed while row 0's
+    sweeps, and row 1's bit must not budge.
     """
-    assert len(_SEPARATION_SEEDS) == 24
+    row1_seed = np.uint64(0x5EED_1)
+    bits = {
+        int(probe): _row_accept_bits(
+            sampled_verdict,
+            session,
+            np.array([probe, row1_seed], dtype=np.uint64),
+        )[1]
+        for probe in _PROBE_SEEDS
+    }
 
-    observed = _observed_signature(sampled_verdict, session)
-    domain_separated = _predicted_signature(_SEED_DOMAIN_VERDICT)
-    collided_with_draft = _predicted_signature(0)
-
-    assert domain_separated != collided_with_draft, (
-        "the two hypotheses predict the same signature, so this run cannot "
-        "tell them apart -- the seed selection rule needs revisiting"
-    )
-    if observed == collided_with_draft:
-        pytest.fail(
-            f"verdict coins {observed} match the bare-seed stream: the "
-            "sampled verdict is again drawing its accept coin from the same "
-            "Philox state as batch row 0's own draft proposal"
-        )
-    assert observed == domain_separated, (
-        f"verdict coins {observed} match neither the domain-separated stream "
-        f"{domain_separated} nor the bare seed: the seed derivation in "
-        "stochastic_acceptance_sampler has changed shape"
+    distinct = set(bits.values())
+    assert len(distinct) == 1, (
+        "row 1's verdict changed with row 0's seed alone, at probes "
+        f"{sorted(k for k, v in bits.items() if v != bits[_PROBE_SEEDS[0]])}"
+        " -- the verdict is keyed off another row's seed again"
     )
 
 
-def test_zeroing_the_domain_tag_reproduces_the_collision(
-    session: InferenceSession, monkeypatch: pytest.MonkeyPatch
+def test_row_verdict_follows_its_own_seed(
+    session: InferenceSession, sampled_verdict: Model
 ) -> None:
-    """Without the domain tag, the coins are the draft proposal's own draws.
+    """Row 1's verdict does move when its own seed changes.
 
-    Shows the guard above has teeth rather than merely passing: zeroing
-    ``_SEED_DOMAIN_VERDICT`` restores exactly the pre-fix derivation
-    (``set_seed(seed + 0)``), and the sampler's coins then reproduce the
-    bare-seed Philox stream -- the same stream
-    ``topk_topp_sampling_from_prob`` hands batch row 0 to pick its draft
-    token with.
+    Without this, :func:`test_row_verdict_ignores_another_rows_seed` would
+    pass just as well against a verdict that ignored every seed, or one whose
+    coin was pinned to a constant.
     """
-    monkeypatch.setattr(rejection_sampler, "_SEED_DOMAIN_VERDICT", 0)
-    collided_verdict = _build_sampled_verdict(session)
+    row0_seed = np.uint64(0x5EED_0)
+    bits = [
+        _row_accept_bits(
+            sampled_verdict,
+            session,
+            np.array([row0_seed, probe], dtype=np.uint64),
+        )[1]
+        for probe in _PROBE_SEEDS
+    ]
 
-    observed = _observed_signature(collided_verdict, session)
-    assert observed == _predicted_signature(0), (
-        f"a zero-tag sampler produced {observed}, which is not the bare-seed "
-        "stream -- the coin reading in this file no longer matches how the "
-        "sampler consumes its implicit RNG"
+    assert len(set(bits)) == 2, (
+        f"row 1 accepted on {sum(bits)} of {len(bits)} of its own seeds: its "
+        "coin is not keyed on its seed at all, so the companion test proves "
+        "nothing"
     )

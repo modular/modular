@@ -598,6 +598,56 @@ modular_py_test(
     ],
 )
 
+# What does a shared key between the bonus and a draft proposal cost?
+modular_py_test(
+    name = "test-bonus-draft-quantile-collision",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_bonus_draft_quantile_collision.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Is the per-row-keyed uniform a sound accept coin through the graph API?
+modular_py_test(
+    name = "test-keyed-uniform-coin",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_keyed_uniform_coin.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 # Does the sampled verdict's implicit RNG stream collide with a draft
 # proposal's explicit-seed stream, and does it leak across batch rows?
 modular_py_test(

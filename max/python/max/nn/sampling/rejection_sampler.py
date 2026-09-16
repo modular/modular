@@ -21,6 +21,7 @@ from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
 from max.nn.kernels import (
     apply_packed_bitmask,
     gumbel_argmax_from_probs,
+    keyed_uniform,
     topk_fused_sampling,
     topk_topp_masked_probs,
 )
@@ -57,6 +58,12 @@ _SEED_DOMAIN_VERDICT = 0x94D049BB133111EB
 # the committed bonus token and the very next proposal reselect the same
 # quantile off two near-identical distributions, and adjacent tokens correlate.
 _SEED_DOMAIN_BONUS = 0xC4CEB9FE1A85EC53
+
+# xxHash64's second prime, tagging the accept coin. The coin used to come
+# from the implicit graph-level stream, which ``set_seed`` keys off row 0
+# alone, so one request's token count drove every co-resident request's
+# accept decisions. An explicitly keyed draw needs its own domain.
+_SEED_DOMAIN_COIN = 0xC2B2AE3D27D4EB4F
 
 # MurmurHash3 fmix64's first constant, tagging the synthetic sampler's
 # implicit RNG stream. Synthetic acceptance never reads the drafted token, so
@@ -158,6 +165,64 @@ def repeat_per_draft_step(
         ops.broadcast_to(ops.unsqueeze(value, axis=-1), [batch_dim, steps_dim]),
         [batch_dim * steps_dim],
     )
+
+
+def _bonus_seed_rows(
+    seed: TensorValue, batch_size: Dim, device: DeviceRef
+) -> TensorValue:
+    """Returns the bonus-token seeds, one per request.
+
+    The domain tag alone keeps the draw off the next proposal's key, but every
+    row still shares one seed *value*, so a batch draws its bonus tokens from
+    a single RNG stream: identical quantiles on the routes that do not mix the
+    row index into the draw, and a lock-step shift of one another on the route
+    that does. Spacing by the row index, the way :func:`_recovery_seed_rows`
+    does, gives each request a stream of its own.
+    """
+    row_offsets = ops.constant(
+        _SEED_DOMAIN_BONUS, DType.uint64, device
+    ) + ops.range(
+        0,
+        batch_size,
+        1,
+        out_dim=Dim("batch_size"),
+        device=device,
+        dtype=DType.uint64,
+    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
+    return seed + row_offsets
+
+
+def _coin_seed_rows(
+    seed: TensorValue,
+    batch_size: Dim,
+    num_steps: Dim,
+    device: DeviceRef,
+) -> TensorValue:
+    """Returns the accept-coin seeds, one per (request, draft position).
+
+    :func:`_recovery_seed_rows` shares one noise row across a request's draft
+    positions because at most one recovered token -- the first rejection -- is
+    ever committed. Every position's coin is consumed, so each needs its own
+    key, and the offsets walk the flattened row index rather than the request.
+    The result is shaped per (request, position), the shape the verdict works
+    in, so the coin draw does not have to reshape around it.
+    """
+    per_row = (
+        repeat_per_draft_step(seed, batch_size, num_steps)
+        if seed.rank == 1
+        else seed
+    )
+    flat_offsets = ops.constant(
+        _SEED_DOMAIN_COIN, DType.uint64, device
+    ) + ops.range(
+        0,
+        batch_size * num_steps,
+        1,
+        out_dim=batch_size * num_steps,
+        device=device,
+        dtype=DType.uint64,
+    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
+    return ops.reshape(per_row + flat_offsets, [batch_size, num_steps])
 
 
 def _recovery_seed_rows(
@@ -603,11 +668,12 @@ class AcceptanceSampler:
             target_logits: Verified target logits.
             seed: Per-execute seed tensor. Required by the synthetic and
                 stochastic paths; ignored by greedy. Rank-0, or a rank-1
-                ``[batch_size]`` per-row seed tensor in stochastic argmax
-                mode -- each row's sampling is then keyed off its own seed
-                and never coupled to co-residents' draws (which member of
-                the seed family is drawn can still vary with batch position
-                and kernel route; the distribution cannot). A rank-1 ``[1]``
+                ``[batch_size]`` per-row seed tensor in either stochastic
+                draft proposal, ``argmax`` or ``sampled`` -- each row's
+                sampling is then keyed off its own seed and never coupled
+                to co-residents' draws (which member of the seed family is
+                drawn can still vary with batch position and kernel route;
+                the distribution cannot). A rank-1 ``[1]``
                 tensor is the graph-level :func:`~max.graph.ops.random.SeedType`
                 input and keeps its shared-seed (scalar) semantics.
             temperature, top_k, max_k, top_p, min_top_p: Per-row
@@ -761,7 +827,9 @@ def _sampled_draft_verdict(
         has_dist, q_draft, ops.constant(1.0, DType.float32, device)
     )
 
-    coins = ops.random.uniform(p_target.type)
+    # One key per (request, draft position), rather than the implicit stream
+    # that ``set_seed`` keys off row 0 of the seed tensor alone.
+    coins = keyed_uniform(_coin_seed_rows(seed, batch_size, num_steps, device))
     # ``coin >= min(1, p_target / q)`` without dividing, so a q that
     # underflows to 0 degrades toward reject rather than accept.
     rejected = (coins * q_eff) >= p_target
@@ -1074,15 +1142,9 @@ def stochastic_acceptance_sampler(
         # per-row seed tensor. Normalize to the scalar path; at batch size 1
         # the two interpretations coincide bit-for-bit.
         seed = seed[0]
-    if seed.rank == 1 and draft_proposal == "sampled":
-        # The sampled verdict draws implicit stream uniforms seeded once for
-        # the whole batch; only the argmax verdict derives per-row keys.
-        raise ValueError(
-            "per-row seeds require draft_proposal='argmax'; the sampled "
-            "verdict consumes a single batch-level random stream"
-        )
-    # The argmax verdict is explicitly keyed per flat row and never reads this
-    # stream.
+    # Both verdicts key every draw per row, so a rank-1 seed reaches the draw
+    # that consumes it. This stream is what remains for callers that still
+    # reach the implicit RNG, and its domain tag keeps it off a proposal's key.
     _set_domain_seed(seed, _SEED_DOMAIN_VERDICT)
 
     device = draft_tokens.device
@@ -1239,12 +1301,10 @@ def stochastic_acceptance_sampler(
             target_logits_3d[:, -1],
             shape=[Dim("batch_size"), Dim("vocab_size")],
         )
-        # Tag the draw so it cannot share a key with the next sampled draft
-        # proposal, whose step 0 uses the bare seed.
-        seed_per_batch = ops.broadcast_to(
-            seed + ops.constant(_SEED_DOMAIN_BONUS, DType.uint64, device),
-            [batch_size],
-        )
+        # Tagged so the draw cannot share a key with the next sampled draft
+        # proposal, whose step 0 uses the bare seed, and spaced by row so
+        # co-resident requests do not share a quantile.
+        seed_per_batch = _bonus_seed_rows(seed, batch_size, device)
         bonus_token_tensor = topk_fused_sampling(
             logits=bonus_logits,
             top_k=top_k,

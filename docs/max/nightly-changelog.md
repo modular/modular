@@ -111,6 +111,14 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- Added `max.nn.kernels.keyed_uniform`, which draws one uniform value in
+  `[0, 1)` per row of a seed tensor. Every row is its own Philox key, so a
+  row's value is a function of its seed alone, not of the row's position or of
+  what else shares the launch. `ops.random.uniform` keys the whole tensor off
+  index 0 of the graph seed and walks the flat element index as its Philox
+  counter, so it cannot express that. Speculative decoding's accept coin uses
+  it to draw one uniform per (request, draft position).
+
 ## Breaking changes
 
 - `KVCacheMetrics` drops `nixl_read_blocks_local`, `nixl_read_blocks_remote`,

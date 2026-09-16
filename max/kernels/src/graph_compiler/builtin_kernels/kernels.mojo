@@ -95,7 +95,7 @@ from nn.moe import (
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.pool import max_pool, pool_shape, pool_shape_ceil
 from nn.rand_normal import random_normal
-from nn.rand_uniform import random_uniform
+from nn.rand_uniform import keyed_uniform, random_uniform
 from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.roi_align import roi_align_nhwc
 from nn.rope import rope_ragged
@@ -2776,6 +2776,35 @@ struct Struct_gumbel_argmax_from_probs:
             seed=seed.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
+        )
+
+
+@extensibility.register("sampler.keyed_uniform")
+struct Struct_keyed_uniform:
+    """Registers the `sampler.keyed_uniform` graph op.
+
+    Draws one uniform value in [0, 1) per row, keyed off that row's seed.
+    `mo.random.uniform` reads index 0 of its seed tensor, so a caller that
+    needs a row's draw to be independent of its co-residents -- speculative
+    decoding's accept coin, keyed per (request, draft position) -- has no
+    per-row seed to reach for. Op arity is fixed, so this is a separate
+    registration rather than an extra operand on that one.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_values: OutputTensor[dtype=.float32, rank=1, ...],
+        seed: InputTensor[dtype=.uint64, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        keyed_uniform[target=target](
+            out_values.to_tile_tensor[.int64]().as_unsafe_any_origin(),
+            seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_immut(),
+            ctx,
         )
 
 

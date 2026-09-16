@@ -9962,6 +9962,46 @@ def topk_topp_masked_probs(
     )[0].tensor
 
 
+def keyed_uniform(seed: TensorValue) -> TensorValue:
+    """Draws one uniform value in ``[0, 1)`` per row, keyed off that row's seed.
+
+    :func:`max.graph.ops.random.uniform` reads index 0 of the graph's seed
+    tensor and walks the flat element index as its Philox counter, so one
+    stream covers the whole tensor. Here each row is its own Philox key: rows
+    with equal seeds draw equal values, and a row's draw never depends on how
+    many rows share the launch or on where it sits among them.
+
+    Args:
+        seed: RNG seed per drawn value, uint64, of any shape.
+
+    Returns:
+        The drawn values, ``float32``, shaped like ``seed``.
+
+    Raises:
+        ValueError: If the seed is not a uint64 tensor.
+    """
+    if seed.dtype != DType.uint64:
+        raise ValueError(
+            f"keyed_uniform requires a uint64 seed, got {seed.dtype}"
+        )
+
+    # The kernel keys one Philox stream per row of a flat tensor. Flattening
+    # around it lets a caller keep the shape its seeds already have, which for
+    # the speculative accept coin is one seed per (request, draft position).
+    flat = seed if seed.rank == 1 else ops.reshape(seed, [-1])
+    drawn = ops.custom(
+        "sampler.keyed_uniform",
+        device=flat.device,
+        values=[flat],
+        out_types=[
+            TensorType(
+                dtype=DType.float32, shape=[flat.shape[0]], device=flat.device
+            )
+        ],
+    )[0].tensor
+    return drawn if seed.rank == 1 else ops.reshape(drawn, seed.shape)
+
+
 def gumbel_argmax_from_probs(
     probs: TensorValue, *, seed: TensorValue
 ) -> TensorValue:

@@ -14,13 +14,16 @@
 
 A request's per-execute seed is ``sampling_params.seed + len(ctx.tokens)``, so
 it advances by however many tokens the last iteration committed -- 1 to
-``K + 1`` under speculation, rather than always 1. Two invariants keep the
+``K + 1`` under speculation, rather than always 1. Three invariants keep the
 sampling streams apart under that advance:
 
 1. No draft step key repeats across iterations, for any commit count a
    speculative iteration can produce.
 2. No residual-recovery key ever equals a draft-proposal key, in either
    adjacent-iteration ordering.
+3. No two seed families meet anywhere, which the accept coin and the bonus
+   token now need in their own right: both are keyed per row, so each spans a
+   lattice of keys rather than the single key a batch-level draw occupied.
 
 The offsets come from the production helpers, so a call site reverting to
 consecutive integers changes what these assert.
@@ -28,12 +31,18 @@ consecutive integers changes what these assert.
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.nn.sampling.rejection_sampler import (
+    _SEED_DOMAIN_BONUS,
+    _SEED_DOMAIN_COIN,
+    _SEED_DOMAIN_RECOVERY,
+    _SEED_DOMAIN_VERDICT,
     _SEED_GOLDEN_GAMMA,
     _recovery_row_offset,
     _recovery_seed_rows,
@@ -147,3 +156,65 @@ def test_recovery_seed_rows_use_the_row_offsets(
         dtype=np.uint64,
     )
     np.testing.assert_array_equal(rows, expected)
+
+
+# Every family walks the golden gamma off the same per-execute base, so a
+# family is a lattice ``domain + i * gamma`` and the draft proposal's is the
+# untagged one at domain 0.
+_DOMAIN_LATTICES = {
+    "draft proposal": 0,
+    "residual recovery": _SEED_DOMAIN_RECOVERY,
+    "verdict stream": _SEED_DOMAIN_VERDICT,
+    "bonus token": _SEED_DOMAIN_BONUS,
+    "accept coin": _SEED_DOMAIN_COIN,
+}
+
+# Far past any index a family can reach: draft steps are bounded by K, and
+# recovery, bonus and coin rows by the batch times at most K positions.
+_REACHABLE = 1 << 20
+
+
+def _lattice_gap(delta: int) -> int:
+    """Returns the gamma-step distance from one lattice to another.
+
+    The gamma is odd, hence invertible mod 2**64, so dividing an offset by it
+    gives the exact index that would produce it -- every index at once, rather
+    than a sampled prefix. Taken as a signed distance, so a lattice sitting
+    just *below* another is not read as being ~2**64 steps away.
+    """
+    index = (delta * pow(_SEED_GOLDEN_GAMMA, -1, _U64)) % _U64
+    return min(index, _U64 - index)
+
+
+def test_domain_tags_are_distinct() -> None:
+    """Two families sharing a tag would share every key they ever draw.
+
+    Distinctness is the requirement; oddness deliberately is not. The gamma is
+    odd, so ``i * gamma`` alternates parity and every family's lattice already
+    covers both -- an even tag separates exactly as well as an odd one, and
+    :func:`test_no_two_seed_families_meet_under_any_commit_advance` is what
+    establishes that they never meet. (The *gamma* must still be odd, to stay
+    invertible mod 2**64; :func:`test_gamma_is_odd` covers that.)
+    """
+    tags = [d for d in _DOMAIN_LATTICES.values() if d != 0]
+    assert len(set(tags)) == len(tags), "two families share a domain tag"
+
+
+def test_no_two_seed_families_meet_under_any_commit_advance() -> None:
+    """No key of any family equals a key of another, at any reachable index.
+
+    Two lattices ``d1 + i * gamma`` and ``d2 + j * gamma`` collide exactly
+    when ``(d1 - d2)`` is itself a gamma multiple, so this checks the
+    arithmetic rather than sampling index pairs. The commit advance is folded
+    in because the next iteration's base is this one's plus the committed
+    count, which shifts one family's lattice against the other's.
+    """
+    for (name_a, dom_a), (name_b, dom_b) in itertools.combinations(
+        _DOMAIN_LATTICES.items(), 2
+    ):
+        for committed in range(_MAX_COMMITTED + 1):
+            gap = _lattice_gap((dom_a - dom_b + committed) % _U64)
+            assert gap > _REACHABLE, (
+                f"{name_a} and {name_b} share a key at a gamma-step distance "
+                f"of {gap} under a commit advance of {committed}"
+            )
