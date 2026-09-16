@@ -220,9 +220,8 @@ def _run_case[
             # Production two-launch fallback (== the op's closure): standalone
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`. Writing both outputs lets it hit the same oracles.
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
                     in_bufs, world_sum, rank_sigs, list_of_ctx[i], my_rank=i
                 )
@@ -236,7 +235,7 @@ def _run_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[two_launch=two_launch, pdl_level=pdl_level](
+            _dispatch_rs_norm[pdl_level=pdl_level](
                 in_bufs,
                 normed_view,
                 sum_view,
@@ -245,6 +244,7 @@ def _run_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 threshold=dispatch_threshold,
             )
         else:
@@ -688,9 +688,8 @@ def _run_prod_oracle_case[
             # Mirror the graph op's fallback (distributed.mojo): standalone
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`.
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 reducescatter[
                     dtype=in_dtype,
                     ngpus=ngpus,
@@ -708,7 +707,6 @@ def _run_prod_oracle_case[
                 )
 
             _dispatch_rs_norm[
-                two_launch=two_launch,
                 group_size=group_size,
                 pdl_level=pdl_level,
             ](
@@ -720,6 +718,7 @@ def _run_prod_oracle_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
         else:
@@ -1789,18 +1788,13 @@ def _run_rank_validation_case[
         row_major(Coord(Index(rank0_rows, num_cols))),
     )
 
-    @__parameter
-    @inline(.always)
     def two_launch_marker() raises:
         raise Error("two_launch ran with an unvalidated residual")
 
     # threshold=0 forces the two-launch arm; the default fuses at this M.
     for threshold in [0, RS_NORM_FUSE_THRESHOLD]:
         with assert_raises(contains="residual holds"):
-            _dispatch_rs_norm[
-                two_launch=two_launch_marker,
-                has_residual=True,
-            ](
+            _dispatch_rs_norm[has_residual=True,](
                 bufs,
                 normed_ok,
                 sum_ok,
@@ -1809,6 +1803,7 @@ def _run_rank_validation_case[
                 weight_offset,
                 sigs,
                 list_of_ctx[0],
+                two_launch_marker,
                 threshold=threshold,
                 my_rank=0,
                 residual=res_shard,

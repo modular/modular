@@ -1033,9 +1033,8 @@ struct DistributedReduceScatterRMSNorm:
                 residuals[index].to_tile_tensor[.int64]().as_immut()
             )
 
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 comptime if has_residual:
                     # Handed to `reducescatter` as a residual rather than as
                     # an epilogue: an epilogue would rule out the relay path,
@@ -1111,7 +1110,6 @@ struct DistributedReduceScatterRMSNorm:
             # be passed unconditionally -- hence the two call sites.
             comptime if has_residual:
                 _dispatch_rs_norm[
-                    two_launch=two_launch,
                     has_residual=True,
                     group_size=group_size,
                     pdl_level=PDLLevel.ON,
@@ -1124,12 +1122,12 @@ struct DistributedReduceScatterRMSNorm:
                     weight_offset,
                     rank_sigs,
                     dev_ctxs[index],
+                    two_launch,
                     my_rank=index,
                     residual=residual_buf,
                 )
             else:
                 _dispatch_rs_norm[
-                    two_launch=two_launch,
                     has_residual=False,
                     group_size=group_size,
                     pdl_level=PDLLevel.ON,
@@ -1142,6 +1140,7 @@ struct DistributedReduceScatterRMSNorm:
                     weight_offset,
                     rank_sigs,
                     dev_ctxs[index],
+                    two_launch,
                     my_rank=index,
                 )
 

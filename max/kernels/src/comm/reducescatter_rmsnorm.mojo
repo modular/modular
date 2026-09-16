@@ -643,7 +643,7 @@ def _dispatch_rs_norm[
     in_layout: TensorLayout,
     in_origin: Origin,
     //,
-    two_launch: def() raises capturing -> None,
+    TwoLaunchFuncType: def() raises -> None,
     has_residual: Bool = False,
     group_size: Int = ngpus,
     pdl_level: PDLLevel = PDLLevel(),
@@ -656,6 +656,7 @@ def _dispatch_rs_norm[
     weight_offset: Scalar[in_dtype],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    two_launch: TwoLaunchFuncType,
     threshold: Int = RS_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,
     residual: _ComptimeConditionalTileTensor[
@@ -691,9 +692,7 @@ def _dispatch_rs_norm[
         ngpus: Total number of devices in the world.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
-        two_launch: Caller-supplied standalone reduce-scatter + RMSNorm closure.
-            It must fold `residual` itself when `has_residual` -- this selector
-            only threads the residual into the FUSED arm.
+        TwoLaunchFuncType: Inferred type of the `two_launch` closure.
         has_residual: Fold `residual` into the fused arm's reduce-scatter sum.
         group_size: Number of devices per independent reduce-scatter group.
             Must evenly divide `ngpus`. Defaults to `ngpus` (one full-world
@@ -712,6 +711,9 @@ def _dispatch_rs_norm[
         rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
             device rank.
         ctx: Device context for this GPU.
+        two_launch: Caller-supplied standalone reduce-scatter + RMSNorm closure.
+            It must fold `residual` itself when `has_residual` -- this selector
+            only threads the residual into the FUSED arm.
         threshold: Per-rank-bytes fuse threshold; fuse at/below, else
             `two_launch`. Defaults to `RS_NORM_FUSE_THRESHOLD`.
         my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`. Defaults to

@@ -841,13 +841,14 @@ def bench_reducescatter_rmsnorm[
     @inline(.always)
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises {mut in_bufs, imm}:
+    ) raises {imm}:
         var local_rows = config.rank_units(ctx_idx)
 
         @inline(.always)
-        def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
-        ) raises {mut in_bufs, imm}:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+            # Local views: `{var}` cannot copy `Array[TileTensor, …]`, and
+            # `{imm}` nested under `{mut in_bufs}` aliases.
+            var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -856,9 +857,8 @@ def bench_reducescatter_rmsnorm[
                     row_major(Coord(Index(num_rows, num_cols))),
                 )
 
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
                     in_bufs, out_shards, rank_sigs, ctx_inner, my_rank=ctx_idx
                 )
@@ -873,7 +873,7 @@ def bench_reducescatter_rmsnorm[
                         ctx_inner,
                     )
 
-            _dispatch_rs_norm[two_launch=two_launch](
+            _dispatch_rs_norm(
                 in_bufs,
                 normed_shards[ctx_idx],
                 fused_sum_shards[ctx_idx],
@@ -882,6 +882,7 @@ def bench_reducescatter_rmsnorm[
                 weight_offset,
                 rank_sigs,
                 ctx_inner,
+                two_launch,
             )
 
         bencher_iter_custom(bench, call_fn, ctx)
