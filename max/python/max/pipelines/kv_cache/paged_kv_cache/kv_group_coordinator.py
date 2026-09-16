@@ -47,8 +47,8 @@ class KVGroupCoordinatorInterface:
     * :meth:`blocks_to_allocate`, :meth:`grow`: size and draw the next
       forward's blocks; :meth:`grow_with_padding` for a padding dummy.
     * :meth:`forward_blocks`: name the blocks the next forward touches.
-    * :meth:`resume`: name the block its incoming state is read from.
-    * :meth:`checkpoint`: copy anything overwritten in place.
+    * :meth:`resume`: fill the block the next forward runs in.
+    * :meth:`checkpoint`: fill the successor of the block just run in.
     * :meth:`commit`: publish what the forward filled.
     * :meth:`advance`: release what the group no longer reads.
     * :meth:`shrink_to_fit`: trim the row to the committed prefix.
@@ -322,7 +322,10 @@ class KVGroupCoordinatorInterface:
     def resume(
         self, ctx: TextContext, replica_idx: int
     ) -> Mapping[str, tuple[int | None, int]]:
-        """Returns the block each leaf's next forward resumes its state from.
+        """Returns the block each leaf's next forward is filled from.
+
+        The pair is the block to read and the block to write, a ``None``
+        source meaning zeros. :meth:`checkpoint` returns the same pair.
 
         Empty for a group whose blocks a forward only appends to, which is
         every group whose entry is a page of tokens rather than a state.
@@ -335,11 +338,14 @@ class KVGroupCoordinatorInterface:
 
     def checkpoint(
         self, ctx: TextContext, replica_idx: int
-    ) -> Mapping[str, tuple[int, int]]:
-        """Returns the block to copy and the block to copy it to, per leaf.
+    ) -> Mapping[str, tuple[int | None, int]]:
+        """Returns the block each leaf carries onto its successor.
+
+        The same pair :meth:`resume` returns, read the same way, though a
+        checkpoint always has a block to copy.
 
         Empty for a group whose blocks are not overwritten in place. The leaf
-        folds these into the rows the copy runs over.
+        folds each pair into the rows the copy runs over.
 
         Args:
             ctx: The request whose forward just ran.

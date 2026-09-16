@@ -92,7 +92,7 @@ def resume(
 
 def checkpoint(
     bm: JengaBlockManager, ctx: TextContext
-) -> Mapping[str, tuple[int, int]]:
+) -> Mapping[str, tuple[int | None, int]]:
     """The blocks the forward that just ran should be copied between."""
     return state_group(bm).checkpoint(ctx, 0)
 
@@ -317,6 +317,7 @@ def test_a_forward_ending_on_a_boundary_checkpoints() -> None:
     assert set(copies) == {region.leaf_id for region in STATE_PARAMS_REGIONS}
     leaves = STATE_PARAMS.leaves()
     for leaf_id, (src, dst) in copies.items():
+        assert src is not None, "a checkpoint always names a block to copy"
         assert src != dst, "a successor is a block of its own"
         rows = leaves[leaf_id].bound_row_copies(src, dst)
         for src_rows, dst_rows in rows.values():

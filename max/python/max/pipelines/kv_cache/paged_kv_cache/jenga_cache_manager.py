@@ -632,6 +632,26 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                     self._zero_rows[cache_key] = source
                 dst.inplace_copy_from(source)
 
+    def _fill_state(
+        self, replica_idx: int, fills: Mapping[str, tuple[int | None, int]]
+    ) -> None:
+        """Fills each state block from the block named for it, or with zeros.
+
+        Args:
+            replica_idx: Whose slab the blocks belong to.
+            fills: Per leaf, the block to fill from and the block to fill.
+        """
+        for leaf_id, (src, dst) in fills.items():
+            leaf = self._leaves[leaf_id]
+            if src is None:
+                span = leaf.bound_row_span(dst)
+                if span:
+                    self._wipe_rows(replica_idx, span)
+            else:
+                rows = leaf.bound_row_copies(src, dst)
+                if rows:
+                    self._copy_rows(replica_idx, rows)
+
     @traced
     def _resume_state(self, batches: Sequence[Sequence[TextContext]]) -> None:
         """Fills each request's state block before the forward reads it.
@@ -643,18 +663,9 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         for replica_idx, batch in enumerate(batches):
             for ctx in batch:
                 for group in self._groups.values():
-                    for leaf_id, (src, dst) in group.resume(
-                        ctx, replica_idx
-                    ).items():
-                        leaf = self._leaves[leaf_id]
-                        if src is None:
-                            span = leaf.bound_row_span(dst)
-                            if span:
-                                self._wipe_rows(replica_idx, span)
-                        else:
-                            rows = leaf.bound_row_copies(src, dst)
-                            if rows:
-                                self._copy_rows(replica_idx, rows)
+                    self._fill_state(
+                        replica_idx, group.resume(ctx, replica_idx)
+                    )
 
     @traced
     def step(self, ctx: TextContext) -> None:
@@ -666,12 +677,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         """
         replica_idx = self._replica_of(ctx)
         for group in self._groups.values():
-            for leaf_id, (src, dst) in group.checkpoint(
-                ctx, replica_idx
-            ).items():
-                rows = self._leaves[leaf_id].bound_row_copies(src, dst)
-                if rows:
-                    self._copy_rows(replica_idx, rows)
+            self._fill_state(replica_idx, group.checkpoint(ctx, replica_idx))
         super().step(ctx)
 
     # ============================================================================

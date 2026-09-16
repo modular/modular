@@ -194,12 +194,12 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     def resume(
         self, ctx: TextContext, replica_idx: int
     ) -> Mapping[str, tuple[int | None, int]]:
-        """Returns the block this forward resumes its state from, per leaf.
+        """Returns the block this forward resumes from and the one it fills.
 
-        A published block when the row holds one: what a prefix hit claimed,
-        or the predecessor a checkpoint published. ``None`` when the request has
-        processed nothing and matched no hit, meaning the block is wiped
-        instead, since a drawn block holds whatever its last request wrote.
+        Filled from a published block when the row holds one: what a prefix
+        hit claimed, or the predecessor a checkpoint published. Filled with
+        zeros when the request has processed nothing and matched no hit, since
+        a drawn block holds whatever its last request wrote.
 
         Empty once the request runs in a block it has written itself.
         """
@@ -208,19 +208,19 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         runs_in = self.live_blocks(ctx.request_id)
         if row is None or runs_in is None:
             return {}
-        sources: dict[str, tuple[int | None, int]] = {}
+        fills: dict[str, tuple[int | None, int]] = {}
         for leaf_id in self.leaf_ids:
             published = self._resumed_from(row[leaf_id])
             if published is None and ctx.tokens.processed_length > 0:
                 continue
             src = None if published is None else published.bid
-            sources[leaf_id] = (src, runs_in[leaf_id])
-        return sources
+            fills[leaf_id] = (src, runs_in[leaf_id])
+        return fills
 
     @traced
     def checkpoint(
         self, ctx: TextContext, replica_idx: int
-    ) -> Mapping[str, tuple[int, int]]:
+    ) -> Mapping[str, tuple[int | None, int]]:
         """Publishes the block just run in and fills the one that succeeds it.
 
         The block the forward ran in already holds the state the boundary
@@ -263,7 +263,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
             leaf_id: pool.alloc_block(leaf_id) for leaf_id in self.leaf_ids
         }
 
-        copies: dict[str, tuple[int, int]] = {}
+        fills: dict[str, tuple[int | None, int]] = {}
         for leaf_id in self.leaf_ids:
             r = row[leaf_id]
             while len(r) <= num_committed_blocks:
@@ -272,8 +272,8 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
             # successor takes over as the one the recurrence runs in.
             r[num_committed_blocks - 1] = r[-1]
             r[-1] = drawn[leaf_id]
-            copies[leaf_id] = (ran_in[leaf_id], drawn[leaf_id].bid)
-        return copies
+            fills[leaf_id] = (ran_in[leaf_id], drawn[leaf_id].bid)
+        return fills
 
     def _is_committable(
         self, row: Sequence[LittleKVCacheBlock], block_idx: int
