@@ -86,7 +86,7 @@ def test_index_tensor_DLRM() raises:
     var ref_stack = Array[
         Scalar[input_type],
         align_up(ref_layout.product(), simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(dim_0):
         for j in range(index_len):
@@ -97,7 +97,7 @@ def test_index_tensor_DLRM() raises:
     # TODO: This needs to be part of the OP itself.
     var indices_stack = Array[
         UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
-    ](uninitialized=True)
+    ](fill=0)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
     for i in range(index_len):
         indices[i, 0] = index_a[i]
@@ -115,7 +115,7 @@ def test_index_tensor_DLRM() raises:
     var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * index_len, simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     comptime output_static_layout = row_major[dim_0, index_len]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
@@ -182,7 +182,7 @@ def test_index_tensor_DLRM_batch() raises:
     var ref_stack = Array[
         Scalar[input_type],
         align_up(ref_layout.product(), simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(dim_0):
         for j in range(dim_1):
@@ -193,7 +193,7 @@ def test_index_tensor_DLRM_batch() raises:
     # indices TileTensor.
     var indices_stack = Array[
         UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
-    ](uninitialized=True)
+    ](fill=0)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
     for i in range(index_len):
         indices[i, 0] = index_a[i]
@@ -211,7 +211,7 @@ def test_index_tensor_DLRM_batch() raises:
     var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * dim_1 * index_len, simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     comptime output_static_layout = row_major[dim_0, dim_1, index_len]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
@@ -291,7 +291,7 @@ def test_index_tensor_CLIPVIT() raises:
     # 2D indices_len x 2 indices TileTensor
     var indices_stack = Array[
         UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
-    ](uninitialized=True)
+    ](fill=0)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
     indices[0, 0] = index_a[0]
     indices[0, 1] = index_b[0]
@@ -314,7 +314,7 @@ def test_index_tensor_CLIPVIT() raises:
     var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * dim_2, simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     comptime output_static_layout = row_major[dim_0, dim_2]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
@@ -375,7 +375,7 @@ def test_index_tensor_llama2_mistral() raises:
     var ref_stack = Array[
         Scalar[input_type],
         align_up(ref_layout.product(), simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(index_dim_0):
         for j in range(index_dim_1):
@@ -395,7 +395,7 @@ def test_index_tensor_llama2_mistral() raises:
         align_up(
             index_dim_0 * index_dim_1 * dim_1, simd_width_of[input_type]()
         ),
-    ](uninitialized=True)
+    ](fill=0)
     comptime output_static_layout = row_major[index_dim_0, index_dim_1, dim_1]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
@@ -458,7 +458,7 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     var output_data_stack = Array[
         Scalar[input_type],
         align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     comptime output_static_layout = row_major[2, 3, 2, 3]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
@@ -507,7 +507,7 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     var output_stack = Array[
         Scalar[input_type],
         align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=0)
     var reference_output = TileTensor(output_stack, output_static_layout)
 
     reference_output[0, 0, 0, 0] = 1

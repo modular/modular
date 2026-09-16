@@ -161,7 +161,7 @@ def test_advanced_indexing_getitem_gpu(ctx: DeviceContext) raises:
     var ref_stack = Array[
         Scalar[input_type],
         align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
-    ](uninitialized=True)
+    ](fill=-1)
     var reference_output = TileTensor(ref_stack, output_static_layout)
 
     reference_output[0, 0, 0, 0] = 1
