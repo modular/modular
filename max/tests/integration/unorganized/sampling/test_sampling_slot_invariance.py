@@ -57,9 +57,10 @@ VOCAB_SIZE = 256
 # independent draws usually disagree.
 _SUPPORT = 16
 
-# Deterministic request ids: the mixing hash is fixed, so an unlucky draw fails
+# A request's sampling identity is its seed, so the probes differ by seed and
+# nothing else. Fixed values rather than random ones, so an unlucky draw fails
 # every run rather than one in ten.
-_REQUEST_IDS = [f"slot-invariance-{i}" for i in range(24)]
+_SEEDS = [4242 + i for i in range(24)]
 
 # `fused_token_sampling_gpu` forks on (max_k, min_top_p): `-1`/`1.0` takes the
 # fused Gumbel kernel, a `max_k` of 10 or more the dual-pivot search that
@@ -109,15 +110,17 @@ def sampler(session: InferenceSession) -> Model:
     return session.load(graph)
 
 
-def _context(
-    request_id: str, base_seed: int = 4242, generated: int = 7
-) -> TextContext:
-    """Builds a context whose only free variable is its request id."""
+def _context(seed: int, generated: int = 7) -> TextContext:
+    """Builds a context whose only free variable is its seed.
+
+    The request id is deliberately constant: it does not reach the RNG key,
+    and giving each context its own would suggest otherwise.
+    """
     return TextContext(
-        request_id=RequestID(request_id),
+        request_id=RequestID("slot-invariance-probe"),
         max_length=128,
         tokens=TokenBuffer(np.arange(generated, dtype=np.int64)),
-        sampling_params=SamplingParams(seed=base_seed),
+        sampling_params=SamplingParams(seed=seed),
     )
 
 
@@ -172,10 +175,8 @@ def test_token_follows_the_request_not_the_slot(
     position. This is the bug: a preempted request re-admitted into a
     different slot used to draw a different token from the same seed.
     """
-    for first_id, second_id in zip(
-        _REQUEST_IDS[::2], _REQUEST_IDS[1::2], strict=True
-    ):
-        first, second = _context(first_id), _context(second_id)
+    for first_seed, second_seed in zip(_SEEDS[::2], _SEEDS[1::2], strict=True):
+        first, second = _context(first_seed), _context(second_seed)
         forward = _draw(
             sampler, session, _seeds(first, second), max_k, min_top_p
         )
@@ -183,12 +184,12 @@ def test_token_follows_the_request_not_the_slot(
             sampler, session, _seeds(second, first), max_k, min_top_p
         )
         assert forward[0] == reversed_[1], (
-            f"{first_id} drew {forward[0]} at slot 0 but {reversed_[1]} at"
-            " slot 1 with its seed unchanged"
+            f"seed {first_seed} drew {forward[0]} at slot 0 but"
+            f" {reversed_[1]} at slot 1, unchanged in every other respect"
         )
         assert forward[1] == reversed_[0], (
-            f"{second_id} drew {forward[1]} at slot 1 but {reversed_[0]} at"
-            " slot 0 with its seed unchanged"
+            f"seed {second_seed} drew {forward[1]} at slot 1 but"
+            f" {reversed_[0]} at slot 0, unchanged in every other respect"
         )
 
 
@@ -205,27 +206,27 @@ def test_a_different_seed_at_the_same_slot_moves_the_token(
     pass against a sampler that had stopped reading the seed, or against a row
     whose distribution had collapsed to a single token.
     """
-    other = _context("slot-invariance-companion")
+    other = _context(_SEEDS[-1] + 1)
     drawn = {
         int(
             _draw(
                 sampler,
                 session,
-                _seeds(_context(request_id), other),
+                _seeds(_context(seed), other),
                 max_k,
                 min_top_p,
             )[0]
         )
-        for request_id in _REQUEST_IDS
+        for seed in _SEEDS
     }
     assert len(drawn) > 1, (
-        f"slot 0 drew only token {drawn.pop()} across {len(_REQUEST_IDS)}"
+        f"slot 0 drew only token {drawn.pop()} across {len(_SEEDS)}"
         " distinct seeds: its draw is not keyed on its seed at all"
     )
 
 
 @pytest.mark.parametrize(("max_k", "min_top_p"), _ROUTES)
-def test_requests_sharing_a_seed_still_draw_independently(
+def test_requests_sharing_a_seed_reproduce_each_other(
     session: InferenceSession,
     sampler: Model,
     max_k: int,
@@ -233,37 +234,37 @@ def test_requests_sharing_a_seed_still_draw_independently(
 ) -> None:
     """Equal sampling params, equal token counts, different requests.
 
-    Two co-resident requests can be handed the same ``sampling_params.seed``
-    -- a client pinning a seed for reproducibility, most obviously -- and
-    reach a step having generated the same number of tokens. Nothing but the
-    request id then tells their keys apart, so this is where the id earns its
-    place: on the dual-pivot route it replaces the slot term that used to
-    separate them, and on the Gumbel and heap routes it supplies a separation
-    that never existed.
+    Two co-resident requests handed the same ``sampling_params.seed`` that
+    have generated the same number of tokens draw the same token, and must:
+    a client pins a seed precisely to reproduce a result, so lock step here
+    is the contract rather than a leak. An earlier revision salted the key
+    with the request id to separate them, which decorrelated the rows at the
+    cost of making a pinned seed unreproducible even against itself --
+    measured at 0/24 identical on a served bs=1 repeat.
+
+    :func:`~max.pipelines.sampling.request_row_seed` carries the cheap
+    unit-level statement of the same contract.
     """
-    disagreements = sum(
-        int(row[0] != row[1])
+    agreements = sum(
+        int(row[0] == row[1])
         for row in (
             _draw(
                 sampler,
                 session,
-                _seeds(_context(first_id), _context(second_id)),
+                _seeds(_context(shared_seed), _context(shared_seed)),
                 max_k,
                 min_top_p,
             )
-            for first_id, second_id in zip(
-                _REQUEST_IDS[::2], _REQUEST_IDS[1::2], strict=True
-            )
+            for shared_seed in _SEEDS
         )
     )
-    trials = len(_REQUEST_IDS) // 2
-    # The heap route's support here is 4 tokens, so ~1 trial in 4 agrees by
-    # chance even when the two rows are fully independent; the wider routes
-    # agree ~1 in 16. Half is comfortably below both and far above the zero a
-    # lock-stepped pair would give.
-    assert disagreements >= trials // 2, (
-        f"{trials - disagreements} of {trials} same-seed pairs drew the same"
-        " token: co-resident requests are sampling in lock step"
+    trials = len(_SEEDS)
+    # Equal keys against equal distributions, so every pair agrees. Exactness
+    # is the point: a rate short of all of them would mean something outside
+    # the seed and the token count had reached the key.
+    assert agreements == trials, (
+        f"{trials - agreements} of {trials} same-seed pairs drew different"
+        " tokens: a pinned seed is not reproducing across requests"
     )
 
 
@@ -283,9 +284,9 @@ def test_the_row_key_is_the_only_separator(
     request and why the graph-level shared seed is still spread by row index
     before it reaches the kernel.
     """
-    for trial, request_id in enumerate(_REQUEST_IDS):
+    for trial, seed in enumerate(_SEEDS):
         duplicate = np.full(
-            BATCH_SIZE, request_row_seed(_context(request_id)), dtype=np.uint64
+            BATCH_SIZE, request_row_seed(_context(seed)), dtype=np.uint64
         )
         row = _draw(sampler, session, duplicate, max_k, min_top_p)
         assert row[0] == row[1], (

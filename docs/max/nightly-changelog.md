@@ -141,14 +141,22 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed `sampling_params.seed` not reproducing. The batch-slot fix above
+  briefly salted each request's RNG key with a hash of its request id, which
+  the server mints fresh per HTTP request, so two identical requests carrying
+  the same pinned seed drew different tokens and a replayed request never
+  reproduced its own output. The key is the seed and the generated-token count
+  again; requests that pin the same seed and have generated the same number of
+  tokens now draw in lock step, which is what pinning a seed asks for.
+
 - Fixed sampled tokens depending on which batch slot a request occupied. Every
   draw from the fused token sampler — ordinary decode as well as speculative
   verification — mixed the physical batch position into its RNG counter, so a
   request that was preempted and re-admitted into a different slot, or that
   simply shared a step with a different set of requests, drew a different token
-  from an unchanged seed. A request's RNG key is now derived from a stable hash
-  of its request id together with its own seed and generated-token count, and
-  the batch position no longer reaches the sampler at all. No distribution
+  from an unchanged seed. A request's RNG key is now derived from its own seed
+  and generated-token count alone, and the batch position no longer reaches the
+  sampler at all. No distribution
   changes, but the exact token emitted for a given seed does move, so output
   pinned against a previous build will differ. Requests that pass the same
   `seed` stay independent of one another, which was previously true only on one

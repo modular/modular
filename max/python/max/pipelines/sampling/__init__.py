@@ -35,7 +35,7 @@ from .sampling_logits_processor import (
     PenaltyInputs,
     SamplerInputs,
 )
-from .seeds import request_id_key, request_row_seed
+from .seeds import request_row_seed
 
 __all__ = [
     "DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE",
@@ -55,7 +55,6 @@ __all__ = [
     "rejection_runner_registry",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
-    "request_id_key",
     "request_row_seed",
     "token_sampler",
 ]
