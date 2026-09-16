@@ -16,16 +16,15 @@
 These mirror `GraphCompiler/test/mo-opt/MAPDialect/Transforms/FuseMutableLoads/`'s
 cases with real ops rather than the MLIR suite's `sampler.apply_penalties`
 opaque kernel, so each case here also proves numeric correctness on the
-mutated buffer, not just IR shape. Every shape here fuses and computes correctly under
-both pipelines except one: the reduce write-back still lowers the reduction and
-the store as two kernels rather than fusing the store into the reduction's
-epilogue (`GEX-3964`), so that case alone keeps an `@xfail_under_adv_fusion`.
+mutated buffer, not just IR shape. Every shape here fuses and computes
+correctly under both pipelines.
 
-These four write-back cases previously all carried that marker, on the reading
-that the new system merely left the store unfused. It did worse than that: the
-store was dropped and the buffer never written, because `mogg._kernel` modelled
-no memory effects, so a kernel whose only effect was the store had no reason to
-survive DCE. The effects are carried now.
+The four write-back cases used to carry `@xfail_under_adv_fusion`, on the
+reading that the new system merely left the store unfused. It did worse than
+that: the store was dropped and the buffer never written, because `mogg._kernel`
+modelled no memory effects, so a kernel whose only effect was the store had no
+reason to survive DCE. With the effects carried and the output fuser
+retargeting the store to its buffer, all four pass.
 
 Every case in this file uses ``ops.buffer_load``/``ops.buffer_store`` around a
 plain elementwise/view op -- `mo.add`, `mo.negative`, `mo.abs`, a static
@@ -43,7 +42,6 @@ from __future__ import annotations
 import re
 
 import numpy as np
-from fusion_utils import xfail_under_adv_fusion
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -229,20 +227,11 @@ def test_slice_producer_fuses(session: InferenceSession) -> None:
     )
 
 
-@xfail_under_adv_fusion(
-    "GEX-3964: EpilogueFuser declines the mutable store, so the reduce and "
-    "the store stay two kernels. The store itself writes correctly"
-)
 def test_mutable_store_consumer_fuses(session: InferenceSession) -> None:
     """`buffer_store(buf, reduce.max(x, axis))` fuses the store into the
     reduction's epilogue, writing the buffer directly rather than
     materializing an intermediate tensor. Mirrors
-    `mutable_store_consumer_not_fused`.
-
-    `EpilogueFuser` (the new system) declines this case outright (GEX-3964, a
-    MOGG parity gap -- `map.iter.opaque` carries neither an out chain nor
-    memory-effect fields to fuse a store soundly), so it fuses only under the
-    legacy pipeline and is xfail'd under the new one.
+    `mutable_store_consumer_fused` in `epilogue_fusion_mutable_store.mlir`.
     """
     with Graph(
         "mutable_store_consumer_fuses",
