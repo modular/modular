@@ -22,6 +22,11 @@ modular_py_test(
             "test_launch_trace.py",
         ],
     ),
+    # test_buffer_usage.py: disabled due to nondeterminism. Tracking: QUA-899
+    # Re-enable tracking: https://linear.app/modularml/issue/DRIV-459/placeholder-re-enable-flaky-test-disabled-via-qua-899
+    per_test_tags = {
+        "test_buffer_usage.py": ["manual"],
+    },
     tags = [
         "enable-sanitizers",
     ],
