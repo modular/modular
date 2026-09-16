@@ -894,7 +894,7 @@ class TestPagePoolSymbolicNamespace:
         )
 
     def test_single_group_quantized_scales_page_dim_unchanged(self) -> None:
-        """The kv_scales page dim tracks total_num_pages and stays bare."""
+        """The kv_scales page dim is its own, and stays bare."""
         leaf = MHAKVCacheParams(
             dtype=DType.float8_e4m3fn,
             n_kv_heads=8,
@@ -914,7 +914,10 @@ class TestPagePoolSymbolicNamespace:
         )
         scales = symbolic[0].kv_scales
         assert scales is not None
-        assert str(scales.shape[0]) == "total_num_pages"
+        # The scale pool is a leaf of its own page width, so Jenga sizes it
+        # independently of the values. Only the legacy pool, which hands both
+        # buffers one count, could share a dim.
+        assert str(scales.shape[0]) == "total_num_scale_pages"
 
     def test_quantized_scale_leaf_pads_to_the_tma_alignment(self) -> None:
         """A padded scale page keeps the flat scale TMA's 16-byte start."""
@@ -970,9 +973,11 @@ class TestPagePoolSymbolicNamespace:
         g_scales = g[0].kv_scales
         loc_scales = loc[0].kv_scales
         assert g_scales is not None and loc_scales is not None
-        assert str(g_scales.shape[0]) == "global_total_num_pages"
-        assert str(loc_scales.shape[0]) == "local_total_num_pages"
-        assert str(g_scales.shape[0]) == _page_dim(g)
+        assert str(g_scales.shape[0]) == "global_total_num_scale_pages"
+        assert str(loc_scales.shape[0]) == "local_total_num_scale_pages"
+        # Namespaced per group, as before; distinct from the values' dim,
+        # which is the point -- one symbol cannot carry two page counts.
+        assert str(g_scales.shape[0]) != _page_dim(g)
 
 
 def create_state_params(

@@ -33,7 +33,10 @@ from max.nn.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.kv_cache.cache_params import KVCacheQuantizationConfig
+from max.nn.kv_cache.cache_params import (
+    KVCacheBuffer,
+    KVCacheQuantizationConfig,
+)
 
 
 def _params(quantized: bool, tp: int = 1) -> MHAKVCacheParams:
@@ -177,3 +180,29 @@ def test_a_state_page_is_exactly_the_bytes_its_rows_occupy() -> None:
     # ``row_shape`` is 2-D here, so the row view is ``[rows, 8, 3]``.
     page = unit.buffers[0][block : block + 1, :]
     assert page._data_ptr() == rows[span.start : span.stop, :, :]._data_ptr()
+
+
+def test_jenga_scale_pages_outnumber_value_pages() -> None:
+    """A Jenga leaf tiles one slab twice, at each of its two page widths.
+
+    Scale pages are the narrower of the two, so there are more of them. Both
+    buffers are graph inputs, so the two counts have to reach the graph as
+    separate symbolic dims: sharing one makes the entry graph assert they are
+    equal, and every forward then fails binding its inputs.
+    """
+    params = _params(quantized=True)
+    huge_page_bytes = lcm(
+        params.bytes_per_value_block, params.bytes_per_scale_block
+    )
+    slab = Buffer.zeros(
+        shape=(4, huge_page_bytes), dtype=DType.uint8, device=CPU()
+    )
+
+    buffers = params.slab_to_buffer_views([slab])
+    assert isinstance(buffers, KVCacheBuffer)
+    assert buffers.scales is not None
+    assert buffers.values[0].shape[0] < buffers.scales[0].shape[0]
+
+    per_device = params.get_symbolic_inputs()[0]
+    assert per_device.kv_scales is not None
+    assert per_device.kv_blocks.shape[0] != per_device.kv_scales.shape[0]

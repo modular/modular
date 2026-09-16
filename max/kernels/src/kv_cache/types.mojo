@@ -166,6 +166,63 @@ def create_flat_scale_tma_tile[
 
 
 @inline(.always)
+def create_paged_scale_tma_tile[
+    dtype: DType, BOX: Int
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[mut=_, Scalar[dtype], _],
+    total_blocks: Int,
+    rows_per_block: Int,
+    block_stride: Int,
+) raises -> TMATensorTile[dtype, 2, Index(1, BOX), Index(1, BOX)]:
+    """Builds a `total_blocks x rows_per_block` scale descriptor.
+
+    The paged counterpart of :func:`create_flat_scale_tma_tile`, and the same
+    descriptor type: a tile is one row of one block either way, so only the
+    global extents and the coordinate differ.
+
+    Addressed as (block, row-in-block) rather than as one flat run because a
+    flat row index is a SIGNED 32-bit TMA coordinate over a span that grows
+    with the whole KV slab -- `slab_bytes / size_of[scale]` -- not with this
+    leaf's share of it. A shared-slab allocator hands a small-page leaf
+    millions of blocks, and that product leaves 32 bits while the slab is still
+    an ordinary size. Split, the two coordinates are bounded by the block count
+    and by a block's own rows, neither of which tracks total cache memory.
+
+    `rows_per_block` is the page, not the block pitch: only `page_size` of a
+    block's `num_layers * page_size` scales belong to this layer, and they are
+    contiguous, so the layer rides in `ptr` and the rest is stride. Declaring
+    the pitch instead would run the last block's extent past the allocation by
+    the layer's own offset.
+
+    Parameters:
+        dtype: Scale element type.
+        BOX: Scales per box.
+
+    Args:
+        ctx: Device context used to create the TMA descriptor.
+        ptr: Base of this layer's scales in block 0.
+        total_blocks: Blocks the scale pool holds.
+        rows_per_block: This layer's scales in one block.
+        block_stride: Scales between consecutive blocks.
+
+    Returns:
+        The TMA descriptor.
+    """
+    var scale_tensor = TileTensor(
+        ptr,
+        InternalLayout(
+            Coord(total_blocks, rows_per_block), Coord(block_stride, Idx[1])
+        ),
+    )
+    return create_tensor_tile[
+        Index(1, BOX),
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __desc_shape=Index(1, BOX),
+    ](ctx, scale_tensor)
+
+
+@inline(.always)
 def padded_depth[
     dtype: DType, swizzle_mode: TensorMapSwizzle, depth: Int
 ]() -> Int:
@@ -1502,6 +1559,34 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ...
 
     @inline(.always)
+    def scale_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row, block)` coordinate of a token's scale tile.
+
+        Defaults to the flat form -- the whole pool as one block -- which is
+        what a contiguous scale buffer wants. A paged cache overrides it: its
+        pool spans the entire KV allocation, so folding the block into the row
+        gives a coordinate that grows with total cache memory and leaves the
+        signed 32-bit TMA coordinate.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row, and the block.
+        """
+        comptime align = scale_align_elems[Self.scale_dtype]()
+        return (
+            Int32(
+                self.scale_row_idx(batch_idx, start_tok_idx)
+                & ~UInt32(align - 1)
+            ),
+            Int32(0),
+        )
+
+    @inline(.always)
     def populate[
         BN: Int,
         base_alignment: Int,
@@ -2032,9 +2117,10 @@ struct ContinuousBatchingKVCache[
     def num_kv_rows(self) -> Int:
         """Returns the total number of virtual rows in this KV cache view."""
         var total_blocks = self.blocks.dim[0]()
-        return Int(
-            UInt32(total_blocks - 1) * self._stride()
-            + UInt32(self.blocks.dim[1]())
+        # 64-bit: `(blocks - 1) * stride` is a pool-wide product, and a shared
+        # slab gives a small-page leaf millions of blocks.
+        return Int(total_blocks - 1) * Int(self._stride()) + Int(
+            self.blocks.dim[1]()
         )
 
     @inline(.always)
@@ -2606,9 +2692,8 @@ struct PagedKVCache[
     def num_kv_rows(self) -> Int:
         """Returns the total number of virtual rows in this KV cache view."""
         var total_blocks = self.blocks.dim[0]()
-        return Int(
-            UInt32(total_blocks - 1) * self._stride() + UInt32(Self.page_size)
-        )
+        # 64-bit: see the note on the other `num_kv_rows`.
+        return Int(total_blocks - 1) * Int(self._stride()) + Int(Self.page_size)
 
     @inline(.always)
     def _scale_stride(self) -> UInt32:
@@ -2628,9 +2713,11 @@ struct PagedKVCache[
         """Total virtual rows in the scale pool, as `num_kv_rows` is for values.
         """
         var total_blocks = Int(self.scales.value().dim[0]())
-        return Int(
-            UInt32(total_blocks - 1) * self._scale_stride()
-            + UInt32(Self.page_size)
+        # 64-bit, and this is the pool that overflowed: a scale page is
+        # `num_layers * page_size` scales, so a quantized leaf holds far more
+        # blocks than its value sibling and its span clears 2**32 first.
+        return Int(total_blocks - 1) * Int(self._scale_stride()) + Int(
+            Self.page_size
         )
 
     @inline(.always)
@@ -2661,6 +2748,46 @@ struct PagedKVCache[
             Coord(Int(batch_idx), lut_block_index)
         )[0]
         return block_idx * self._scale_stride() + UInt32(tok_in_block_idx)
+
+    @inline(.always)
+    def scale_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row_in_block, block)` coordinate of a token's scale tile.
+
+        What :func:`create_paged_scale_tma_tile` is addressed by. Split rather
+        than folded into one row index because a fold is bounded by the whole
+        pool and a TMA coordinate is signed 32-bit; see that function.
+
+        Args:
+            batch_idx: Batch entry whose scales lookup table is read.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        comptime assert (
+            Self.quantization_enabled
+        ), "scale_tma_coords requires quantization to be enabled"
+        var lut_block_index, tok_in_block_idx = divmod(
+            Int(start_tok_idx), Self.page_size
+        )
+        debug_assert(
+            lut_block_index < Int(self.scales_lookup_table.dim[1]()),
+            "lut_block_index is OOB. Attempted to access scales LUT column ",
+            lut_block_index,
+            " with scales_lookup_table inner dim ",
+            Int(self.scales_lookup_table.dim[1]()),
+        )
+        # Rounded down to the 16-byte unit a TMA box must start on, mirroring
+        # the flat path. `page_size % TILE == 0` makes this a no-op on every
+        # paged operand; it is kept so the two paths round identically.
+        return (
+            Int32(
+                tok_in_block_idx & ~(scale_align_elems[Self.scale_dtype]() - 1)
+            ),
+            Int32(self.scales_lookup_table[Int(batch_idx), lut_block_index]),
+        )
 
     @inline(.always)
     def row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
@@ -2961,12 +3088,19 @@ struct PagedKVCache[
                 " scale base shifts residue between blocks"
             ),
         )
-        # Row extent, not `num_elements()`: `_scale_stride` exceeds `page_size`
-        # whenever the parent tensor interleaves kv_idx/layer_idx, and a short
-        # descriptor would silently zero-fill live rows.
-        return create_flat_scale_tma_tile[
+        # `page_size` rows per block, not `_scale_stride`: the pitch counts
+        # every layer's scales, and `scales_raw_ptr` already sits on this
+        # layer's, so declaring the pitch would run the last block past the
+        # allocation. The other layers are stride.
+        return create_paged_scale_tma_tile[
             Self.scale_dtype, flat_scale_window[Self.scale_dtype, TILE]()
-        ](ctx, self.scales_raw_ptr(), self.num_scale_rows())
+        ](
+            ctx,
+            self.scales_raw_ptr(),
+            Int(self.scales.value().dim[0]()),
+            Self.page_size,
+            Int(self._scale_stride()),
+        )
 
     @inline(.always)
     def create_gather4_tma_tile[

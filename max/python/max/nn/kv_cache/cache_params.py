@@ -2106,6 +2106,10 @@ class MHAKVCacheParams(KVCacheParams):
         devices = self.devices_per_replica[replica_idx]
         # Sibling cache groups may size their page pools independently.
         page_dim = page_namespace + "total_num_pages"
+        # A Jenga pool tiles one slab at every leaf's own page size, so a
+        # quantized leaf holds more scale pages than value pages. A legacy pool
+        # binds the two counts equal, which a separate symbol still accepts.
+        scale_page_dim = page_namespace + "total_num_scale_pages"
 
         def _blocks_per_layer(
             device: DeviceRef,
@@ -2134,7 +2138,7 @@ class MHAKVCacheParams(KVCacheParams):
             return [
                 BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=[page_dim, *self.shape_per_layer_scale_block],
+                    shape=[scale_page_dim, *self.shape_per_layer_scale_block],
                     device=device,
                 )
                 for _ in range(self.num_layers)
@@ -2193,7 +2197,7 @@ class MHAKVCacheParams(KVCacheParams):
                     # Per-layer buffers alias ``kv_scales`` to a single-layer
                     # scale (mirrors ``_kv_blocks`` for the KV data).
                     shape=[
-                        page_dim,
+                        scale_page_dim,
                         *(
                             self.shape_per_layer_scale_block
                             if self.per_layer_buffers
@@ -2369,6 +2373,10 @@ class MLAKVCacheParams(KVCacheParams):
         devices = self.devices_per_replica[replica_idx]
         # Sibling cache groups may size their page pools independently.
         page_dim = page_namespace + "total_num_pages"
+        # A Jenga pool tiles one slab at every leaf's own page size, so a
+        # quantized leaf holds more scale pages than value pages. A legacy pool
+        # binds the two counts equal, which a separate symbol still accepts.
+        scale_page_dim = page_namespace + "total_num_scale_pages"
 
         def _lookup_table(device: DeviceRef) -> TensorType:
             return TensorType(
@@ -2409,7 +2417,7 @@ class MLAKVCacheParams(KVCacheParams):
                 ),
                 kv_scales=BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=[page_dim, *self.shape_per_scale_block],
+                    shape=[scale_page_dim, *self.shape_per_scale_block],
                     device=device,
                 )
                 if self.quantized_kv_cache
