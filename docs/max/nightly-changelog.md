@@ -244,5 +244,11 @@ This version is still a work in progress.
   literal now keeps its JSON form inside the value markers. The tag-keyed
   formats, which spell an object as nested tags and so have no JSON form to
   fall back on, reject it with an explicit message instead.
+- Fixed a GLM tool-call argument pinned by `const` or `enum` to a string that
+  reads as a number or a boolean (`"2.0"`, `"true"`) being reported as that
+  number or boolean. GLM emits argument values bare, so the parser recovers the
+  type from the schema, and it consulted `type` and the string facets but not
+  `const` or `enum` — neither of which usually carries a sibling `type`. A
+  conforming tool call therefore read back as a schema violation.
 
 ## Mojo language

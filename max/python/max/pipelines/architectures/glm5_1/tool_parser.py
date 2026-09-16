@@ -151,6 +151,15 @@ def _schema_types(schema: dict[str, Any]) -> set[str]:
         return {t}
     if isinstance(t, list):
         return {x for x in t if isinstance(x, str)}
+    # const/enum admit a fixed set of literals, so they pin the type as firmly
+    # as "type" does and neither usually carries one. Without this a string
+    # const like "2.0" leaves the bare wire form decoded as the number 2.0 and
+    # the round-tripped arguments contradict the grammar that produced them.
+    if "const" in schema:
+        return {_json_type(schema["const"])}
+    values = schema.get("enum")
+    if isinstance(values, list) and values:
+        return {_json_type(v) for v in values}
     # A schema that declares string facets but omits "type" still constrains
     # a string (JSON Schema applies these keywords only to strings), matching
     # the grammar's own is_string test. Infer "string" so a bare non-string

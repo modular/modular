@@ -128,6 +128,42 @@ def test_string_facet_only_schema_coerces_bare_value_to_string() -> None:
     assert coerced == {"value": "1"}
 
 
+@pytest.mark.parametrize(
+    ("value_schema", "decoded", "expected"),
+    [
+        ({"const": "2.0"}, 2.0, "2.0"),
+        ({"enum": ["1", "2.0", "on"]}, 2.0, "2.0"),
+        ({"enum": ["true", "false"]}, True, "true"),
+        # A literal set that really does admit the decoded type is left alone,
+        # so the inference cannot turn a legal non-string literal into a string.
+        ({"enum": ["a", 1, None]}, 1, 1),
+        ({"const": 2}, 2, 2),
+    ],
+    ids=["const", "enum", "bool_enum", "mixed_enum", "int_const"],
+)
+def test_const_and_enum_pin_the_value_type_without_a_type_keyword(
+    value_schema: dict[str, Any], decoded: object, expected: object
+) -> None:
+    """``const``/``enum`` declare the type as firmly as ``type`` does.
+
+    GLM emits values bare, so ``<arg_value>2.0</arg_value>`` decodes to the
+    number 2.0 even where the grammar only ever admitted the string "2.0".
+    Neither keyword usually carries a sibling ``type``, so without inferring
+    from the literals the round-tripped arguments contradict the grammar that
+    produced them and a conforming tool call reads as a schema violation.
+    """
+    parser = GlmToolParser()
+    schema = {
+        "type": "object",
+        "properties": {"value": value_schema},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    assert parser.coerce_arguments({"value": decoded}, schema) == {
+        "value": expected
+    }
+
+
 def test_plain_text_has_no_tool_calls() -> None:
     parser = GlmToolParser()
     result = parser.parse_complete("just a normal answer")
