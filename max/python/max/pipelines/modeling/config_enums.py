@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+from enum import Enum
 from typing import Literal
 
 from max.driver import DeviceSpec
@@ -36,6 +37,23 @@ RopeType = Literal["none", "normal", "neox", "longrope", "yarn"]
 
 PipelineRole = Literal["prefill_and_decode", "prefill_only", "decode_only"]
 """Indicates whether the pipeline should do prefill and/or decode."""
+
+
+class EagerValidatorMode(str, Enum):
+    """Configures when the eager usage validator runs."""
+
+    # Move to StrEnum in Python 3.11. This is for Python 3.10 compatibility.
+    __str__ = str.__str__
+
+    ENABLED = "enabled"
+    """Enable validation during model initialization and during every request."""
+
+    DISABLED = "disabled"
+    """Never validate."""
+
+    INIT_ONLY = "init-only"
+    """Validate model initialization only. This is the default behavior, and
+    catches the footguns that are baked in at build time."""
 
 
 SupportedEncoding = Literal[

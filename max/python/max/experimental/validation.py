@@ -35,7 +35,7 @@ from max.experimental.realization_context import (
 from max.experimental.tensor import Tensor
 
 __all__ = [
-    "ProductionValidator",
+    "EagerUsageValidator",
     "active_validator",
 ]
 
@@ -217,7 +217,7 @@ class _ValidatingRealizationContext(EagerRealizationContext):
         return realized
 
 
-class ProductionValidator:
+class EagerUsageValidator:
     """A scope that tracks production-unsafe API usages.
 
     Reports:
@@ -230,9 +230,9 @@ class ProductionValidator:
 
     .. code-block:: python
 
-        from max.experimental.validation import ProductionValidator
+        from max.experimental.validation import EagerUsageValidator
 
-        with ProductionValidator():
+        with EagerUsageValidator():
             ...
 
     To mark where unsafe API usage is deliberate, use escape hatches. Example:
@@ -241,9 +241,9 @@ class ProductionValidator:
 
     .. code-block:: python
 
-        from max.pipelines.modeling.production_validation import prod_validator
+        from max.pipelines.modeling.eager_validation import eager_validator
 
-        with prod_validator.allow_eager(reason="input batching, off hot path"):
+        with eager_validator.allow_eager(reason="input batching, off hot path"):
             ...
 
     Args:
@@ -270,7 +270,7 @@ class ProductionValidator:
 
     # Scope management.
 
-    def enter(self) -> ProductionValidator:
+    def enter(self) -> EagerUsageValidator:
         """Starts validating. Prefer the context manager form."""
         if not self.enabled:
             return self
@@ -303,7 +303,7 @@ class ProductionValidator:
         if not self._exits and exc is None:
             self._report_findings()
 
-    def __enter__(self) -> ProductionValidator:
+    def __enter__(self) -> EagerUsageValidator:
         return self.enter()
 
     def __exit__(
@@ -483,7 +483,7 @@ class ProductionValidator:
         if findings.empty():
             return
         scope = f" during {self.label}" if self.label else ""
-        lines = [f"Production validator found{scope}:"]
+        lines = [f"Eager usage validator found{scope}:"]
         lines.extend(self._eager_warning())
         lines.extend(self._graph_break_warning())
         lines.extend(self._unused_output_lines())
@@ -505,7 +505,7 @@ class ProductionValidator:
             f"  {self._findings.eager_total} eager execution(s). Each "
             "compiles and launches a graph of its own, so nothing fuses "
             "across them; move the work into a compiled function, or mark "
-            "it with `prod_validator.allow_eager(reason=...)`.",
+            "it with `eager_validator.allow_eager(reason=...)`.",
         ]
         lines.extend(f"    {site.site} x{site.count}" for site in eager_sites)
         return lines + self._dropped_line("eager")
@@ -518,7 +518,7 @@ class ProductionValidator:
             "  Execution crossed a compiled-graph boundary. Each crossing "
             "materializes the tensors between the graphs and blocks fusion "
             "across them; compile the pieces as one graph, or mark the "
-            "boundary with `prod_validator.graph_break(reason=...)`.",
+            "boundary with `eager_validator.graph_break(reason=...)`.",
         ]
         lines.extend(
             f"    {findings.display(found.source)} -> "
@@ -536,7 +536,7 @@ class ProductionValidator:
         lines = [
             "  Compiled-graph outputs were materialized and never read. Drop "
             "them from the graph's outputs, or mark them with "
-            "`prod_validator.discard_output(output, reason=...)`.",
+            "`eager_validator.discard_output(output, reason=...)`.",
         ]
         lines.extend(
             f"    {findings.display(pending.graph)} output[{pending.index}] "
@@ -555,7 +555,7 @@ class ProductionValidator:
             f"  {self._findings.transfer_total} device-to-host transfer(s). "
             "Each one waits on the accelerator before the host can go on; "
             "keep the value on device, or mark the call site with "
-            "`prod_validator.allow_device_transfer(reason=...)`.",
+            "`eager_validator.allow_device_transfer(reason=...)`.",
         ]
         lines.extend(
             f"    {transfer.api} at {transfer.site} copies "

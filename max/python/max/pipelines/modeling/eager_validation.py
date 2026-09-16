@@ -11,13 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""The escape hatches a pipeline marks a deliberate footgun with.
+"""Helper methods for working with the eager usage validator.
+
+The eager usage validator protects against unsafe eager usages.
 
 .. code-block:: python
 
-    from max.pipelines.modeling.production_validation import prod_validator
+    from max.pipelines.modeling.eager_validation import eager_validator
 
-    with prod_validator.allow_eager(reason="input batching, off hot path"):
+    with eager_validator.allow_eager(reason="input batching, off hot path"):
         ...
 """
 
@@ -25,15 +27,38 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Literal
 
-from max.experimental.validation import active_validator
+from max.experimental.validation import EagerUsageValidator, active_validator
 
-__all__ = ["prod_validator"]
+from .config_enums import EagerValidatorMode
+
+__all__ = ["Phase", "eager_usage_validator", "eager_validator"]
+
+Phase = Literal["initialization", "execution"]
+"""Which part of a pipeline's life a validation scope covers."""
 
 
-class _ProdValidatorEscapeHatches:
-    """The escape hatches for :class:`ProductionValidator`."""
+def eager_usage_validator(
+    mode: EagerValidatorMode, phase: Phase
+) -> EagerUsageValidator:
+    """Builds the validator guarding ``phase``, per the configured mode.
+
+    Args:
+        mode: The configured ``runtime.eager_usage_validator`` mode.
+        phase: Which part of the pipeline's life the scope covers.
+
+    Returns:
+        A validator, disabled when ``mode`` excludes ``phase``.
+    """
+    enabled = mode is EagerValidatorMode.ENABLED or (
+        mode is EagerValidatorMode.INIT_ONLY and phase == "initialization"
+    )
+    return EagerUsageValidator(enabled=enabled, label=phase)
+
+
+class _EagerValidatorEscapeHatches:
+    """The escape hatches for :class:`EagerUsageValidator`."""
 
     @contextlib.contextmanager
     def allow_eager(self, *, reason: str) -> Iterator[None]:
@@ -68,5 +93,5 @@ class _ProdValidatorEscapeHatches:
             validator.discard_output(output, reason=reason)
 
 
-prod_validator = _ProdValidatorEscapeHatches()
-"""Use to opt in to the escape hatches for :class:`ProductionValidator`."""
+eager_validator = _EagerValidatorEscapeHatches()
+"""Use to opt in to the escape hatches for :class:`EagerUsageValidator`."""

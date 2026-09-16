@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Production validation hook trackers.
+"""Eager usage validation hook trackers.
 
 Breaks the circular dependency between the validator and the methods that
 require safeguards.
@@ -25,22 +25,22 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from max.experimental.validation import ProductionValidator
+    from max.experimental.validation import EagerUsageValidator
 
-VALIDATORS: ContextVar[tuple[ProductionValidator, ...]] = ContextVar(
+VALIDATORS: ContextVar[tuple[EagerUsageValidator, ...]] = ContextVar(
     "max_validators", default=()
 )
 """Validators in scope for the calling context."""
 
 
-def active_validator() -> ProductionValidator | None:
+def active_validator() -> EagerUsageValidator | None:
     """Returns the innermost validator in scope, or ``None``."""
     validators = VALIDATORS.get()
     return validators[-1] if validators else None
 
 
 @contextlib.contextmanager
-def register(validator: ProductionValidator) -> Iterator[None]:
+def register(validator: EagerUsageValidator) -> Iterator[None]:
     """Registers the validator."""
     token = VALIDATORS.set((*VALIDATORS.get(), validator))
     try:

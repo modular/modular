@@ -22,7 +22,10 @@ from max.pipelines.diffusion.config import (
     DEFAULT_DENOISING_CACHE_CONFIG,
     DenoisingCacheConfig,
 )
-from max.pipelines.modeling.config_enums import PipelineRole
+from max.pipelines.modeling.config_enums import (
+    EagerValidatorMode,
+    PipelineRole,
+)
 from pydantic import ConfigDict, Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
@@ -422,6 +425,17 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "When ``False`` (default), the inference server uses the graph API architecture. "
             "When ``True``, the server uses the ModuleV3 architecture when available and "
             "falls back to the graph API architecture."
+        ),
+    )
+
+    eager_usage_validator: EagerValidatorMode = Field(
+        default=EagerValidatorMode.INIT_ONLY,
+        description=(
+            "Configure when to use the eager usage validator, which reports "
+            "unsafe API usage. ``init-only`` (default) validates model "
+            "initialization only; ``enabled`` validates both model "
+            "initialization and every request, at the cost of Python overhead "
+            "on the serving path; ``disabled`` turns it off."
         ),
     )
 

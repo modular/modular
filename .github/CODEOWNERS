@@ -190,6 +190,7 @@
 /max/tests/tests/test_compile_serialization.py @modular/max-sdk
 /max/tests/tests/test_dim_substitute.py @modular/max-sdk
 /max/tests/tests/test_eager_cold_start_policy.py @modular/max-sdk
+/max/tests/tests/test_eager_usage_validator.py @modular/max-sdk
 /max/tests/tests/test_executor.py @modular/max-sdk
 /max/tests/tests/test_functional_signatures.py @modular/mojo-docs
 /max/tests/tests/test_functional_threading.py @modular/max-sdk
@@ -198,7 +199,6 @@
 /max/tests/tests/test_interpreter_ops.py @modular/max-sdk
 /max/tests/tests/test_interpreter_ops_gpu.py @modular/max-sdk
 /max/tests/tests/test_passes.py @modular/max-sdk
-/max/tests/tests/test_production_validator.py @modular/max-sdk
 /max/tests/tests/test_session_read.py @modular/max-sdk
 /max/tests/tests/test_support.py @modular/max-sdk
 /max/tests/tests/test_tensor.py @modular/max-sdk

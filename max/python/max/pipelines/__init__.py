@@ -13,7 +13,7 @@
 
 """Types to interface with ML pipelines such as text/token/pixel generation."""
 
-from max.experimental.validation import ProductionValidator
+from max.experimental.validation import EagerUsageValidator
 from max.pipelines.weights.hf_utils import download_weight_files
 
 from .architectures import register_all_models
@@ -46,7 +46,10 @@ from .lib.interfaces import (
     PipelineModel,
 )
 from .lib.memory_estimation import MemoryEstimator
-from .lib.pipeline_runtime_config import PipelineRuntimeConfig
+from .lib.pipeline_runtime_config import (
+    EagerValidatorMode,
+    PipelineRuntimeConfig,
+)
 from .lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
     TextGenerationPipelineInterface,
@@ -59,7 +62,7 @@ from .lib.tokenizer import (
 )
 from .lib.utils import upper_bounded_default
 from .lora import ADAPTER_CONFIG_FILE
-from .modeling.production_validation import prod_validator
+from .modeling.eager_validation import eager_validator
 from .sampling.sampling_config import SamplingConfig
 
 # Hydrate the registry.
@@ -68,6 +71,8 @@ register_all_models()
 __all__ = [
     "ADAPTER_CONFIG_FILE",
     "PIPELINE_REGISTRY",
+    "EagerUsageValidator",
+    "EagerValidatorMode",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "GenerateMixin",
@@ -84,7 +89,6 @@ __all__ = [
     "PipelineRole",
     "PipelineRuntimeConfig",
     "PixelGenerationPipeline",
-    "ProductionValidator",
     "ProfilingConfig",
     "PrometheusMetricsMode",
     "RepoType",
@@ -98,9 +102,9 @@ __all__ = [
     "TextGenerationPipelineInterface",
     "TextTokenizer",
     "download_weight_files",
+    "eager_validator",
     "is_float4_encoding",
     "parse_supported_encoding_from_file_name",
-    "prod_validator",
     "supported_encoding_dtype",
     "supported_encoding_quantization",
     "supported_encoding_supported_devices",
