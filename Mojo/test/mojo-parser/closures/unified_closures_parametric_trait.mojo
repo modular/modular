@@ -139,3 +139,31 @@ def foo[C: def(var Int)](c: C):
     # CHECK-SAME:     :param_list<type> [], :param_list<type> [
     # CHECK-SAME:     #kgen.quote<!lit.ref<!Int, mut *[0,1]>>]
     Runner().test(IntStrategy(), c)
+
+
+# // -----
+
+
+struct MemType:
+    pass
+
+
+def infer_arg_type[T: AnyType, C: def(y: T)](c: C):
+    pass
+
+
+def main():
+    var x = 1
+
+    def abc(y: MemType) {mut x}:
+        pass
+
+    # A closure's argument types are matched against the trait's symbolic
+    # argument list, so binding `C` also infers `T` from the closure's own
+    # parameter type.
+    # CHECK:      lit.call {{.*}}@"infer_arg_type[
+    # CHECK-SAME:   <:!AnyType !MemType,
+    # CHECK-SAME:     :trait<@"##__mojo_closure__##"<
+    # CHECK-SAME:     :param_list<type> [], :param_list<type> [
+    # CHECK-SAME:     #kgen.quote<!lit.ref<!MemType, imm *[0,1]>>]
+    infer_arg_type(abc)

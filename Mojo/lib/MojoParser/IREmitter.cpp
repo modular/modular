@@ -2242,23 +2242,38 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
 
 namespace {
 /// Shifts every reference to the closure's own parameters and implicit origins
-/// up by one, making room for the `_Self` parameter and `mut self` argument the
-/// universal parametric closure trait prepends. This is the index-reference
-/// analogue of `IndexRefRemapper`'s `offset` (which only covers parameter
-/// refs), extended to implicit-origin refs.
-struct SelfPrependShifter : IndexParameterReplacer<SelfPrependShifter> {
+/// by one slot: up (`Prepend`) to make room for the `_Self` parameter and `mut
+/// self` argument the universal parametric closure trait prepends, or down
+/// (`Drop`) to close the hole left by removing them again. This is the
+/// index-reference analogue of `IndexRefRemapper`'s `offset` (which only covers
+/// parameter refs), extended to implicit-origin refs.
+struct SelfSlotShifter : IndexParameterReplacer<SelfSlotShifter> {
+  explicit SelfSlotShifter(bool prepend) : prepend(prepend) {}
+
   Attribute tryReplace(Attribute attr, size_t depth) {
     if (auto ref = dyn_cast<ParamIndexRefAttr>(attr);
         ref && ref.getDepth() == depth)
-      return ParamIndexRefAttr::get(depth, ref.getIndex() + 1,
+      return ParamIndexRefAttr::get(depth, shift(ref.getIndex()),
                                     this->replaceImpl(ref.getType(), depth));
     if (auto ref = dyn_cast<ImplicitOriginRefAttr>(attr);
         ref && ref.getDepth() == depth)
-      return ImplicitOriginRefAttr::get(depth, ref.getIndex() + 1,
+      return ImplicitOriginRefAttr::get(depth, shift(ref.getIndex()),
                                         ref.getType());
     return nullptr;
   }
   Type tryReplace(Type, size_t) { return {}; }
+
+private:
+  size_t shift(size_t index) {
+    if (prepend)
+      return index + 1;
+
+    // This should never happen.
+    assert(index != 0 && "`_Self`/`self` is referenced");
+    return index - 1;
+  }
+
+  bool prepend;
 };
 } // namespace
 
@@ -2274,7 +2289,7 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // the trait's builder without creating an invalid binding -- the builder
   // unquotes them when it folds into the generator type. A parameter's declared
   // type, an argument type and the result type are all encoded this way.
-  SelfPrependShifter shifter;
+  SelfSlotShifter shifter(/*prepend=*/true);
   auto quote = [&](Type type) -> TypedAttr {
     // Canonicalize the type value (as the previous `emitPValue` path did): the
     // closure trait it feeds into must stay canonical.
@@ -2334,4 +2349,33 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   return traitDeclOp.bindReference({paramDeclList, argTypeList, resultType,
                                     metadata, PogListAttr::get(ctx, pogParams),
                                     PogListAttr::get(ctx, pogArgs)});
+}
+
+FnTypeGeneratorType
+IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
+  /// Drop the leading entry of an argument/parameter pog list, tolerating the
+  /// empty "no source-level metadata" list.
+  auto dropFrontPog = [](PogListAttr pogList) {
+    return pogList.cloneWith(pogList.getPogs().drop_front());
+  };
+
+  MLIRContext *ctx = sigWithSelf.getContext();
+  FuncType body = sigWithSelf.getBody();
+  FnMetaOriginDataAttr originData = sigWithSelf.getFnMetaOriginData();
+  assert(!sigWithSelf.getInputParamTypes().empty() &&
+         originData.getNumImplicitOriginDecls() != 0 &&
+         "expected a signature carrying the closure trait's `Self`");
+
+  SelfSlotShifter shifter(/*prepend=*/false);
+  return FnTypeGeneratorType::get(
+      shifter.replace(sigWithSelf.getInputParamTypes().drop_front()),
+      FunctionType::get(ctx, shifter.replace(body.getArguments().drop_front()),
+                        shifter.replace(body.getResults())),
+      sigWithSelf.getArgConventions().drop_front(), sigWithSelf.getFnEffects(),
+      FnMetaOriginDataAttr::get(ctx, originData.getNumImplicitOriginDecls() - 1,
+                                originData.getCaptureOrigins(),
+                                originData.getIsNestedOriginsReadOnly(),
+                                originData.getDefinesInteriorOrigins()),
+      dropFrontPog(sigWithSelf.getParamListAttrs()),
+      dropFrontPog(sigWithSelf.getArgListAttrs()));
 }

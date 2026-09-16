@@ -187,6 +187,8 @@ public:
   /// Note: this resolves the body of a struct type.
   bool isTrivialRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 
+  TraitType getProvidedTrait(SharedState &shared);
+
   /// Check whether this type conforms to the specified trait, returning a
   /// 3-state result. This uses the concrete type's parameter bindings to
   /// evaluate any conditional trait conformances.

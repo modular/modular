@@ -575,6 +575,12 @@ public:
   /// signatures and we can adapt the trait to any signature.
   ASTDecl *getUniversalParametricClosureTrait();
 
+  FnTypeGeneratorType getClosureFnSig(TraitSymbolAttr closureInst);
+  // Get the closure fn sig without self, this is the signature that we used to
+  // test closure compatibility. We can not simply replace `Self` here, since
+  // the closure trait might not be lined up, in that case, we need a extension
+  FnTypeGeneratorType getClosureFnSigWithoutSelf(TraitSymbolAttr closureInst);
+
   bool isUniversalParametricClosureTrait(TraitSymbolAttr symbol);
   bool isUniversalParametricClosureTrait(ASTDecl *trait) {
     return trait == getUniversalParametricClosureTrait();

@@ -3105,15 +3105,9 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   if (trait.getInputParams().size() > 1) {
     TraitSymbolAttr boundSymbol =
         emitter.bindParamsToClosureTraitFromSig(closureSig);
-    ParameterEvaluator evaluator =
-        *populateTraitBindingEvaluator(boundSymbol, shared);
-    auto callAlias = cast<AliasDeclOp>(
-        traitDecl.lookupInCurrentScope("__call__").front()->getIfOperation());
-    assert(callAlias.getDeclName() == "__call__");
     closureParents.emplace_back(
-        boundSymbol,
-        cast<FnTypeGeneratorType>(evaluator.replace(callAlias.getType())),
-        callAlias.getDeclName(), ClosureMethod::CALL);
+        boundSymbol, shared.getClosureFnSig(boundSymbol),
+        StringAttr::get(shared.getContext(), "__call__"), ClosureMethod::CALL);
   } else {
     closureParents.emplace_back(shared, trait.bindReference({}), "__call__",
                                 ClosureMethod::CALL);

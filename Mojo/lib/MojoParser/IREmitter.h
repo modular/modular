@@ -391,6 +391,12 @@ public:
   /// Bind the universal parametric closure trait's parameters to match the
   /// given function signature, returning the resulting concrete `TraitType`.
   TraitSymbolAttr bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig);
+
+  /// Remove the `_Self` parameter and `mut self` argument that the universal
+  /// parametric closure trait prepends, recovering the closure's own signature.
+  /// This is the inverse of `bindParamsToClosureTraitFromSig`.
+  static FnTypeGeneratorType
+  stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf);
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 

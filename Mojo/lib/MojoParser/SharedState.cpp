@@ -1800,6 +1800,21 @@ ASTDecl *SharedState::getUniversalParametricClosureTrait() {
   return impl->parametricClosureTrait;
 }
 
+FnTypeGeneratorType SharedState::getClosureFnSig(TraitSymbolAttr closureInst) {
+  ASTDecl *traitDecl = getUniversalParametricClosureTrait();
+  ParameterEvaluator evaluator = *populateTraitBindingEvaluator(
+      closureInst, cast<TraitDeclOp>(traitDecl->getIfOperation()));
+
+  auto callAlias = cast<AliasDeclOp>(
+      traitDecl->lookupInCurrentScope("__call__").front()->getIfOperation());
+  return cast<FnTypeGeneratorType>(evaluator.replace(callAlias.getType()));
+}
+
+FnTypeGeneratorType
+SharedState::getClosureFnSigWithoutSelf(TraitSymbolAttr closureInst) {
+  return IREmitter::stripSelfFromClosureSig(getClosureFnSig(closureInst));
+}
+
 bool SharedState::isUniversalParametricClosureTrait(TraitSymbolAttr symbol) {
   return getUniversalParametricClosureTrait()->getSymbolRef() ==
          symbol.getSymbol();

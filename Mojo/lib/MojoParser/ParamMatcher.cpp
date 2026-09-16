@@ -705,6 +705,37 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   if (succeeded(typeUpCastable) && typeUpCastable->isTrue())
     return success();
 
+  auto getClosureSym = [&](TraitType t) -> TraitSymbolAttr {
+    if (!t)
+      return nullptr;
+
+    // FIXME: what if there are multiple closure trait? We need to be more
+    // clever to line them up.
+    for (auto symbol : t.getTraitSymbols())
+      if (shared.isUniversalParametricClosureTrait(symbol))
+        return symbol;
+    return nullptr;
+  };
+
+  if (auto expectedTrait = dyn_cast<TraitType>(expectedType)) {
+    auto expected = getClosureSym(expectedTrait);
+    // We can infer from a parametric closure trait.
+    auto actual = getClosureSym(ASTType(actualType).getProvidedTrait(shared));
+    if (actual && expected) {
+      FnTypeGeneratorType f0 = shared.getClosureFnSigWithoutSelf(actual);
+      FnTypeGeneratorType f1 = shared.getClosureFnSigWithoutSelf(expected);
+      // Match against two trait fn signature with Self being replaced.
+      if (succeeded(matchFunctionTypes(f0, f1))) {
+        // See whether the type lines up after resolving closure parameters.
+        FailureOr<TriBool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
+            shared, state.declScope.getLoc(), actualType,
+            state.evaluator.replace(expectedType), &state.declScope);
+        if (succeeded(typeUpCastable) && typeUpCastable->isTrue())
+          return success();
+      }
+    }
+  }
+
   // Ok we have a failure, let's figure out why.
 
   // If the expected type has unresolved bindings that can't be inferred, then
