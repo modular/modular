@@ -2831,6 +2831,7 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     pipeline_config.runtime.max_batch_input_tokens = 8192
     pipeline_config.runtime.enable_chunked_prefill = True
     pipeline_config.runtime.chunked_prefill_min_chunk_size = 0
+    pipeline_config.runtime.max_request_input_tokens = 0
     pipeline_config.runtime.enable_in_flight_batching = False
     pipeline_config.runtime.prefill_coalesce_min_pending = 0
     pipeline_config.runtime.dp_ce_balance_threshold = 0.8

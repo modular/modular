@@ -548,6 +548,7 @@ class TextBatchConstructor:
                 applicable_types=RequestType.all(),
                 min_chunk_tokens=self.scheduler_config.chunked_prefill_min_chunk_size,
                 align_tokens=self.kv_cache.chunk_alignment_tokens,
+                max_context_tokens=self.scheduler_config.max_request_input_tokens,
             )
         ]
 
@@ -740,9 +741,9 @@ class TextBatchConstructor:
         """Advances request state based on executed CE batches.
 
         This method updates per-replica queues by moving executed context encoding (CE)
-        requests into the text generation (TG) queues. If the last request in a batch
-        is chunked and still requires additional CE work, it is moved back to the CE
-        queue for that replica.
+        requests into the text generation (TG) queues. Any request that is chunked and
+        still requires additional CE work is moved back to the head of that replica's CE
+        queue, keeping the batch's relative order.
 
         As a side effect, releases DP padding dummies from the previous
         batch.
@@ -765,16 +766,18 @@ class TextBatchConstructor:
                     continue
                 replica.tg_reqs[context.request_id] = context
 
-            # Move Chunked requests back to the CE request queue.
-            # Skip if the last request is a dummy padding context.
-            last_request = per_replica_batch[-1]
-            if (
-                self.contains(last_request.request_id)
-                and last_request.tokens.generated_length == 0
-            ):
-                del replica.tg_reqs[last_request.request_id]
-                replica.ce_reqs[last_request.request_id] = last_request
-                replica.ce_reqs.move_to_end(last_request.request_id, last=False)
+            # Move chunked requests back to the CE request queue. A request that
+            # produced no token is still mid-prefill; dummy padding contexts are
+            # not tracked and are skipped. Reverse order so each front-insert
+            # leaves the queue head in batch order.
+            for context in reversed(per_replica_batch):
+                if (
+                    self.contains(context.request_id)
+                    and context.tokens.generated_length == 0
+                ):
+                    del replica.tg_reqs[context.request_id]
+                    replica.ce_reqs[context.request_id] = context
+                    replica.ce_reqs.move_to_end(context.request_id, last=False)
 
     def _release_data_parallel_padding(self) -> None:
         """Releases dummy KV and pipeline entries from the previous batch's DP padding."""

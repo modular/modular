@@ -889,6 +889,124 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     assert len(batch_constructor.replicas[0].ce_reqs) == 1
 
 
+def test_text_batch_constructor__advance_requests_requeues_every_chunked_request(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A chunked request is requeued wherever it sits in the batch, not just last.
+
+    The CE token budget can only chunk the last request admitted to a batch, so
+    the batch a per-request prefill cap would produce is built by hand here.
+    """
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=True,
+        target_tokens_per_batch_ce=30,
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=create_mock_kv_cache(),
+    )
+
+    contexts = [
+        TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
+            max_length=100,
+        )
+        for _ in range(3)
+    ]
+    mid_prefill_a, mid_prefill_b, finished = contexts
+    for context in contexts:
+        batch_constructor.enqueue_new_request(context, replica_idx=0)
+
+    replica = batch_constructor.replicas[0]
+    # Stands in for _add_ce_requests draining the queue into the batch.
+    replica.ce_reqs.clear()
+    finished.update(ARBITRARY_TOKEN_ID)
+
+    batch_constructor.advance_requests(
+        TextGenerationInputs(batches=[[mid_prefill_a, mid_prefill_b, finished]])
+    )
+
+    assert list(replica.ce_reqs) == [
+        mid_prefill_a.request_id,
+        mid_prefill_b.request_id,
+    ]
+    assert list(replica.tg_reqs) == [finished.request_id]
+
+
+def _prefill_cap_constructor(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    max_request_input_tokens: int,
+) -> TextBatchConstructor:
+    return TextBatchConstructor(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=5,
+            max_batch_total_tokens=None,
+            enable_in_flight_batching=False,
+            enable_chunked_prefill=True,
+            target_tokens_per_batch_ce=1000,
+            max_request_input_tokens=max_request_input_tokens,
+        ),
+        pipeline=pipeline,
+        kv_cache=create_mock_kv_cache(),
+    )
+
+
+def _one_long_then_short_requests() -> tuple[TextContext, list[TextContext]]:
+    long_request = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(1000, dtype=np.int64)),
+        max_length=2000,
+    )
+    short_requests = [
+        TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+            max_length=100,
+        )
+        for _ in range(3)
+    ]
+    return long_request, short_requests
+
+
+def test_text_batch_constructor__prefill_cap_leaves_room_for_short_requests(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    batch_constructor = _prefill_cap_constructor(pipeline, 256)
+    long_request, short_requests = _one_long_then_short_requests()
+    for context in [long_request, *short_requests]:
+        batch_constructor.enqueue_new_request(context, replica_idx=0)
+
+    batch = batch_constructor.construct_batch().batches[0]
+
+    assert long_request.tokens.active_length == 256
+    assert [ctx.request_id for ctx in batch] == [
+        long_request.request_id,
+        *(ctx.request_id for ctx in short_requests),
+    ]
+
+
+def test_text_batch_constructor__long_request_takes_the_whole_batch_uncapped(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    batch_constructor = _prefill_cap_constructor(pipeline, 0)
+    long_request, short_requests = _one_long_then_short_requests()
+    for context in [long_request, *short_requests]:
+        batch_constructor.enqueue_new_request(context, replica_idx=0)
+
+    batch = batch_constructor.construct_batch().batches[0]
+
+    assert long_request.tokens.active_length == 1000
+    assert [ctx.request_id for ctx in batch] == [long_request.request_id]
+    assert list(batch_constructor.replicas[0].ce_reqs) == [
+        ctx.request_id for ctx in short_requests
+    ]
+
+
 def test_single_lora_scheduling() -> None:
     """Test scheduling a single LoRA request in CE batch."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)

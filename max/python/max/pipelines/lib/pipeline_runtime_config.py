@@ -220,6 +220,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    max_request_input_tokens: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Ceiling, in tokens, on how much of a single request is encoded "
+            "in one batch, so short requests still fit alongside a long "
+            "prefill instead of queueing behind it. 0 (default) disables the "
+            "cap. Requires chunked prefill."
+        ),
+    )
+    """Per-request ceiling on prefill tokens per batch (0 = off)."""
+
     use_experimental_kernels: str = Field(
         default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
         description=(

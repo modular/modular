@@ -47,6 +47,10 @@ class TokenGenerationSchedulerConfig:
     with no legal cut point within the remaining budget are left unsplit for
     a later step. 0 disables the floor."""
 
+    max_request_input_tokens: int = 0
+    """Ceiling, in tokens, on how much of one request is encoded in a single
+    batch. Applied by chunking. 0 disables the cap."""
+
     enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
@@ -118,6 +122,22 @@ class TokenGenerationSchedulerConfig:
                 "`chunked_prefill_min_chunk_size` must be non-negative, found"
                 f" {self.chunked_prefill_min_chunk_size}"
             )
+        if self.max_request_input_tokens < 0:
+            raise ValueError(
+                "`max_request_input_tokens` must be non-negative, found"
+                f" {self.max_request_input_tokens}"
+            )
+        if (
+            self.max_request_input_tokens > 0
+            and self.chunked_prefill_min_chunk_size
+            > self.max_request_input_tokens
+        ):
+            raise ValueError(
+                "`chunked_prefill_min_chunk_size` must not exceed "
+                "`max_request_input_tokens`, found "
+                f"{self.chunked_prefill_min_chunk_size} > "
+                f"{self.max_request_input_tokens}"
+            )
         if (
             self.max_batch_total_tokens is not None
             and self.max_seq_len is not None
@@ -170,6 +190,7 @@ class TokenGenerationSchedulerConfig:
             ),
             enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
             chunked_prefill_min_chunk_size=pipeline_config.runtime.chunked_prefill_min_chunk_size,
+            max_request_input_tokens=pipeline_config.runtime.max_request_input_tokens,
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             prefill_coalesce_min_pending=(
                 pipeline_config.runtime.prefill_coalesce_min_pending

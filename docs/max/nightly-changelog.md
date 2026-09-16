@@ -113,6 +113,15 @@ This version is still a work in progress.
   (at most the same number of decode steps) for lower decode latency at high
   concurrency. Mid-prefill chunked continuations are never held.
 
+- Added `--max-request-input-tokens` (default 0, off): a ceiling on how many
+  prefill tokens one request may draw from the batch's context-encoding budget
+  in a single step, applied by chunking. Without it a long prefill can claim
+  the whole `--max-batch-input-tokens` budget step after step while short
+  requests queue behind it, so the cap trades the long request's time to first
+  token for the interactivity of the short ones it no longer blocks. It
+  requires chunked prefill and is inert without it, and
+  `--chunked-prefill-min-chunk-size` must not exceed it.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured
