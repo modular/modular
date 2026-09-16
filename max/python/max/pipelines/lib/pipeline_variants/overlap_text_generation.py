@@ -174,6 +174,7 @@ from dataclasses import dataclass
 from max.pipelines.sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
+    request_row_seed,
     token_sampler,
 )
 
@@ -464,7 +465,7 @@ class SpecDecodeState:
 
     persistent_seed: Buffer
     """Persistent ``[total_max_batch]`` uint64 seed values, one per request,
-    derived from ``sampling_params.seed + len(tokens)``."""
+    derived by :func:`~max.pipelines.sampling.request_row_seed`."""
 
     batch_metrics: _SpeculativeDecodingMetrics | None = None
     """Per-batch metrics for the most recently completed batch."""
@@ -2575,16 +2576,11 @@ class OverlapTextGenerationPipeline(
             np.array(float(top_p_np.min()), dtype=np.float32)
         )
 
-        # Per-request seed mirrors the production sampler at
-        # `SamplerInputs.create` (sampling_logits_processor.py:610-619):
-        # seed[i] = sampling_params.seed + len(context.tokens). Adding the
-        # current token count gives a fresh effective Philox seed per
-        # decoding step without needing in-graph seed mutation.
+        # Shares `request_row_seed` with the production sampler at
+        # `SamplerInputs.create`, so a request keeps its key whichever of the
+        # two paths samples it.
         seed_np = np.fromiter(
-            (
-                ctx.sampling_params.seed + len(ctx.tokens)
-                for ctx in context_batch
-            ),
+            (request_row_seed(ctx) for ctx in context_batch),
             dtype=np.uint64,
             count=batch_size,
         )

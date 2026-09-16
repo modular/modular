@@ -674,6 +674,34 @@ modular_py_test(
     ],
 )
 
+# Does a request's sampled token move when the request changes batch slot?
+modular_py_test(
+    name = "test-sampling-slot-invariance",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_sampling_slot_invariance.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/pipelines/sampling",
+    ],
+)
+
 # Test for rejection_sampler (speculative decoding)
 modular_py_test(
     name = "test-rejection-sampler",

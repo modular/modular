@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Seed-family separation for sampled speculative decoding.
 
-A request's per-execute seed is ``sampling_params.seed + len(ctx.tokens)``, so
-it advances by however many tokens the last iteration committed -- 1 to
-``K + 1`` under speculation, rather than always 1. Three invariants keep the
-sampling streams apart under that advance:
+A request's per-execute seed is its own seed plus its generated-token count
+plus a fixed hash of its request id (:func:`request_row_seed`), so it advances
+by however many tokens the last iteration committed -- 1 to ``K + 1`` under
+speculation, rather than always 1. The id term is fixed per request, so it
+shifts a request's whole lattice without changing any of the distances below.
+Three invariants keep the sampling streams apart under that advance:
 
 1. No draft step key repeats across iterations, for any commit count a
    speculative iteration can produce.
@@ -122,36 +124,73 @@ def test_gamma_is_odd() -> None:
     assert _SEED_GOLDEN_GAMMA % 2 == 1
 
 
-def test_recovery_seed_rows_use_the_row_offsets(
-    session: InferenceSession,
-) -> None:
-    """The graph the sampler builds must apply ``_recovery_row_offset``.
+# One request per row, three draft positions each: enough rows to see spacing
+# and enough positions to see a key shared across a request's positions.
+_RECOVERY_BATCH = 4
+_RECOVERY_STEPS = 3
 
-    The arithmetic above pins the offsets; this pins that the residual-recovery
-    path actually spends them, so reverting its rows to consecutive integers
-    fails here rather than passing silently.
+
+def _recovery_rows(session: InferenceSession, base: np.ndarray) -> np.ndarray:
+    """Runs ``_recovery_seed_rows`` over a seed shaped like ``base``.
+
+    Static dims throughout: a shared seed carries no batch dim of its own, so
+    a symbolic one would have nothing in the graph to bind it.
     """
-    batch, num_steps = 4, 3
     device = DeviceRef.CPU()
-
     with Graph(
-        "recovery_seed_rows",
-        input_types=[TensorType(DType.uint64, ["batch_size"], device=device)],
+        f"recovery_seed_rows_{base.size}",
+        input_types=[TensorType(DType.uint64, [base.size], device=device)],
     ) as graph:
         seed = graph.inputs[0].tensor
         graph.output(
-            _recovery_seed_rows(seed, Dim("batch_size"), Dim(num_steps), device)
+            _recovery_seed_rows(
+                seed, Dim(_RECOVERY_BATCH), Dim(_RECOVERY_STEPS), device
+            )
         )
+    return session.load(graph)(Buffer.from_numpy(base))[0].to_numpy()
 
-    base = np.arange(batch, dtype=np.uint64) * np.uint64(1_000_000)
-    model = session.load(graph)
-    rows = model(Buffer.from_numpy(base))[0].to_numpy()
+
+def test_recovery_rows_of_a_per_row_seed_carry_no_row_term(
+    session: InferenceSession,
+) -> None:
+    """A per-row seed's recovery key is the tag alone -- no batch position.
+
+    The row index is a physical batch slot, so spending it here would make a
+    request's recovered token depend on where it landed in the batch. A
+    per-row seed is already distinct per request, so the tag is all the
+    separation the family needs.
+    """
+    base = np.arange(_RECOVERY_BATCH, dtype=np.uint64) * np.uint64(1_000_000)
+    rows = _recovery_rows(session, base)
 
     expected = np.array(
         [
-            (int(base[row]) + _recovery_row_offset(row)) % _U64
-            for row in range(batch)
-            for _ in range(num_steps)
+            (int(base[row]) + _recovery_row_offset(0)) % _U64
+            for row in range(_RECOVERY_BATCH)
+            for _ in range(_RECOVERY_STEPS)
+        ],
+        dtype=np.uint64,
+    )
+    np.testing.assert_array_equal(rows, expected)
+
+
+def test_recovery_rows_of_a_shared_seed_still_spend_the_row_offsets(
+    session: InferenceSession,
+) -> None:
+    """A shared seed must keep its row spacing, or every row recovers alike.
+
+    The graph-level ``SeedType`` input is one key for the whole batch, with no
+    per-request term to tell the rows apart. The arithmetic above pins the
+    offsets; this pins that the path still spends them.
+    """
+    base = np.array([12345], dtype=np.uint64)
+    rows = _recovery_rows(session, base)
+
+    expected = np.array(
+        [
+            (int(base[0]) + _recovery_row_offset(row)) % _U64
+            for row in range(_RECOVERY_BATCH)
+            for _ in range(_RECOVERY_STEPS)
         ],
         dtype=np.uint64,
     )

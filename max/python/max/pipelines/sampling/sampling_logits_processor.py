@@ -39,6 +39,8 @@ from max.pipelines.context import (
 from max.profiler import Tracer, traced
 from typing_extensions import Self
 
+from .seeds import request_row_seed
+
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
@@ -665,10 +667,7 @@ class SamplerInputs:
 
         # seed is a tensor of shape (batch_size,)
         seed_host = _to_pinned_host_buffer(
-            [
-                context.sampling_params.seed + len(context.tokens)
-                for context in batch
-            ],
+            [request_row_seed(context) for context in batch],
             device=device,
             dtype=DType.uint64,
         )

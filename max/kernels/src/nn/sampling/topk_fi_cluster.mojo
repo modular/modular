@@ -1092,10 +1092,10 @@ def TopKTopPSamplingEmitDistClusterKernel[
     if rng_seed:
         seed_val = rng_seed.unsafe_value()[row_idx]
 
-    # Offset is keyed on row_idx (the request's logical row), not bx (the
-    # physical batch slot), so a request samples identically regardless of
-    # where it lands in the batch. The per-row seed already decorrelates rows.
-    var generator = Random(seed=seed_val, offset=UInt64(row_idx) + rng_offset)
+    # The per-row seed is the only thing that separates rows: it carries a
+    # per-request key, so mixing an index in here would tie the draw to the
+    # batch slot instead of to the request.
+    var generator = Random(seed=seed_val, offset=rng_offset)
 
     var k = Int(top_k_val)
     if top_k_arr:

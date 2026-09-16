@@ -103,7 +103,12 @@ def _draft_step_seed(seed: TensorValue, step: int) -> TensorValue:
 
 
 def _recovery_row_offset(row: int) -> int:
-    """Returns the seed offset the residual-recovery stream uses for ``row``."""
+    """Returns the seed offset the residual-recovery stream uses for ``row``.
+
+    The row term applies only to a batch sharing one seed. A per-row seed is
+    already distinct per request, so its recovery key spends the domain tag
+    alone -- this function at ``row=0``.
+    """
     return _seed_offset(row, _SEED_DOMAIN_RECOVERY)
 
 
@@ -167,29 +172,89 @@ def repeat_per_draft_step(
     )
 
 
+def _gamma_iota(count: Dim, device: DeviceRef) -> TensorValue:
+    """Returns ``[0, gamma, 2 * gamma, ...]``, ``count`` entries long."""
+    return ops.range(
+        0, count, 1, out_dim=count, device=device, dtype=DType.uint64
+    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
+
+
+def _is_shared_seed(seed: TensorValue) -> bool:
+    """Whether ``seed`` is one key for the whole batch rather than one per row.
+
+    A rank-1 ``[1]`` tensor is the graph-level
+    :func:`~max.graph.ops.random.SeedType` input, not a batch of one.
+    """
+    return seed.rank == 0 or (seed.rank == 1 and seed.shape[0] == 1)
+
+
+def _shared_scalar(seed: TensorValue) -> TensorValue:
+    """Returns the single key a shared seed carries."""
+    return seed[0] if seed.rank == 1 else seed
+
+
+def _keyed_seed_rows(
+    seed: TensorValue, rows: Dim, device: DeviceRef, domain: int
+) -> TensorValue:
+    """Returns one RNG key per row, in the family tagged ``domain``.
+
+    A per-row seed already carries the request's own key in every entry, so
+    the rows need nothing but the tag: adding the row index back would key the
+    draw on the physical batch slot, which is exactly what the per-request key
+    exists to remove. A shared seed has no per-request identity to spread the
+    rows apart, so there the index is spent -- without it every row would draw
+    the same token, since the sampling kernel's RNG counter no longer varies
+    with the slot.
+    """
+    tag = ops.constant(domain, DType.uint64, device)
+    if _is_shared_seed(seed):
+        return _shared_scalar(seed) + tag + _gamma_iota(rows, device)
+    # The caller's seed input may carry a static or differently-named batch
+    # dim; rebind so it unifies with everything else derived from ``rows``.
+    return ops.rebind(seed, [rows]) + tag
+
+
+def _keyed_step_seeds(
+    seed: TensorValue,
+    batch_size: Dim,
+    num_steps: Dim,
+    device: DeviceRef,
+    domain: int,
+) -> TensorValue:
+    """Returns one RNG key per (request, position), in the ``domain`` family.
+
+    Unlike :func:`_keyed_seed_rows` every position consumes a draw of its own,
+    so the keys within a request must differ. A per-row seed spaces them by
+    the position *within* the request -- an offset that travels with the
+    request rather than with its slot -- while a shared seed spaces them by
+    the flattened row, the only index it has.
+    """
+    tag = ops.constant(domain, DType.uint64, device)
+    flat_rows = batch_size * num_steps
+    if _is_shared_seed(seed):
+        return _shared_scalar(seed) + tag + _gamma_iota(flat_rows, device)
+    per_row = repeat_per_draft_step(
+        ops.rebind(seed, [batch_size]), batch_size, num_steps
+    )
+    step_offsets = ops.reshape(
+        ops.broadcast_to(
+            ops.unsqueeze(_gamma_iota(num_steps, device), axis=0),
+            [batch_size, num_steps],
+        ),
+        [flat_rows],
+    )
+    return per_row + tag + step_offsets
+
+
 def _bonus_seed_rows(
     seed: TensorValue, batch_size: Dim, device: DeviceRef
 ) -> TensorValue:
     """Returns the bonus-token seeds, one per request.
 
-    The domain tag alone keeps the draw off the next proposal's key, but every
-    row still shares one seed *value*, so a batch draws its bonus tokens from
-    a single RNG stream: identical quantiles on the routes that do not mix the
-    row index into the draw, and a lock-step shift of one another on the route
-    that does. Spacing by the row index, the way :func:`_recovery_seed_rows`
-    does, gives each request a stream of its own.
+    The domain tag keeps the draw off the next proposal's key; the per-row
+    keying keeps one request's bonus token out of another's stream.
     """
-    row_offsets = ops.constant(
-        _SEED_DOMAIN_BONUS, DType.uint64, device
-    ) + ops.range(
-        0,
-        batch_size,
-        1,
-        out_dim=Dim("batch_size"),
-        device=device,
-        dtype=DType.uint64,
-    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
-    return seed + row_offsets
+    return _keyed_seed_rows(seed, batch_size, device, _SEED_DOMAIN_BONUS)
 
 
 def _coin_seed_rows(
@@ -202,27 +267,17 @@ def _coin_seed_rows(
 
     :func:`_recovery_seed_rows` shares one noise row across a request's draft
     positions because at most one recovered token -- the first rejection -- is
-    ever committed. Every position's coin is consumed, so each needs its own
-    key, and the offsets walk the flattened row index rather than the request.
-    The result is shaped per (request, position), the shape the verdict works
-    in, so the coin draw does not have to reshape around it.
+    ever committed. Every position's coin is consumed, so each needs a key.
+    Shaped per (request, position), the shape the verdict works in, so the
+    coin draw does not have to reshape around it; :func:`_keyed_step_seeds`
+    itself stays flat for the argmax verdict, which samples per flat row.
     """
-    per_row = (
-        repeat_per_draft_step(seed, batch_size, num_steps)
-        if seed.rank == 1
-        else seed
+    return ops.reshape(
+        _keyed_step_seeds(
+            seed, batch_size, num_steps, device, _SEED_DOMAIN_COIN
+        ),
+        [batch_size, num_steps],
     )
-    flat_offsets = ops.constant(
-        _SEED_DOMAIN_COIN, DType.uint64, device
-    ) + ops.range(
-        0,
-        batch_size * num_steps,
-        1,
-        out_dim=batch_size * num_steps,
-        device=device,
-        dtype=DType.uint64,
-    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
-    return ops.reshape(per_row + flat_offsets, [batch_size, num_steps])
 
 
 def _recovery_seed_rows(
@@ -237,23 +292,15 @@ def _recovery_seed_rows(
     times less RNG. Sharing is sound because at most one recovered token per
     request (the first rejection) is ever committed.
 
-    The vectorized form of :func:`_recovery_row_offset`: plain ``seed + b``
-    would put row ``b`` on the same key as draft step ``b``, which walks the
-    same small integers off the same base, so a row's recovery draw and one of
-    its own proposal draws would share randomness -- the coupling
-    :func:`_argmax_draft_verdict` already spaces its rows to avoid.
+    The domain tag is what keeps a row's recovery draw off its own proposal
+    draws: both families hang off the same base, so untagged they would meet
+    wherever the row index and the draft step agreed.
     """
-    row_offsets = ops.constant(
-        _SEED_DOMAIN_RECOVERY, DType.uint64, device
-    ) + ops.range(
-        0,
+    return repeat_per_draft_step(
+        _keyed_seed_rows(seed, batch_size, device, _SEED_DOMAIN_RECOVERY),
         batch_size,
-        1,
-        out_dim=Dim("batch_size"),
-        device=device,
-        dtype=DType.uint64,
-    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
-    return repeat_per_draft_step(seed + row_offsets, batch_size, num_steps)
+        num_steps,
+    )
 
 
 def _find_first_rejected(
@@ -374,7 +421,12 @@ class RejectionSampler(Module):
         ) + ops.squeeze(first_rejected_token, axis=1)
 
         batch_size = draft_tokens.shape[0]
-        seed_per_batch = ops.broadcast_to(seed, [batch_size])
+        # This graph's seed is the one shared graph-level key, so the rows are
+        # spaced by index; a broadcast alone would hand every request the same
+        # recovered token.
+        seed_per_batch = _keyed_seed_rows(
+            seed, batch_size, self.device, _SEED_DOMAIN_RECOVERY
+        )
         sampled_target_tokens = topk_fused_sampling(
             logits=ops.gather(target_logits, rejected_offsets, axis=0),
             top_k=self.top_k,
@@ -669,13 +721,13 @@ class AcceptanceSampler:
             seed: Per-execute seed tensor. Required by the synthetic and
                 stochastic paths; ignored by greedy. Rank-0, or a rank-1
                 ``[batch_size]`` per-row seed tensor in either stochastic
-                draft proposal, ``argmax`` or ``sampled`` -- each row's
-                sampling is then keyed off its own seed and never coupled
-                to co-residents' draws (which member of the seed family is
-                drawn can still vary with batch position and kernel route;
-                the distribution cannot). A rank-1 ``[1]``
-                tensor is the graph-level :func:`~max.graph.ops.random.SeedType`
-                input and keeps its shared-seed (scalar) semantics.
+                draft proposal, ``argmax`` or ``sampled`` -- every draw is
+                then keyed off the row's own seed and its position within the
+                request, never off a co-resident's seed or the row's batch
+                slot. A rank-1 ``[1]`` tensor is the graph-level
+                :func:`~max.graph.ops.random.SeedType` input and keeps its
+                shared-seed (scalar) semantics, where the rows have no
+                per-request key and are spread by batch index instead.
             temperature, top_k, max_k, top_p, min_top_p: Per-row
                 sampling params. Required when the sampler was built
                 with ``use_stochastic=True`` and synthetic mode is off;
@@ -902,54 +954,12 @@ def _argmax_draft_verdict(
         ),
         shape=[flat_all_rows, Dim("vocab_size")],
     )
-    # The fused sampling kernel depends on the seed to give different randomness
-    # to different rows. If two rows share randomness, then there would be a
-    # correlation between their accept/reject decisions.
-    # Here we use the golden seed gamma to ensure that each row gets a distinct
-    # seed value.
-    if seed.rank == 1:
-        # Per-row seeds: position p of row b keys off `seed[b] + p * gamma`,
-        # so a row's samples never depend on co-residents' seeds or draws.
-        # The sampling kernel may still mix the batch position into its RNG
-        # offset (route-dependent), so the drawn member of the seed family is
-        # position-variant; the distribution is not. At batch size 1 the keys
-        # reduce exactly to the rank-0 derivation.
-        #
-        # Rebind to the canonical batch dim first: the caller's seed input may
-        # carry a static or differently-named batch dim, and every other input
-        # here is rebound the same way (the flat reshape below cannot unify
-        # otherwise).
-        seed = ops.rebind(seed, [batch])
-        pos_iota = ops.range(
-            0,
-            all_positions,
-            1,
-            out_dim=all_positions,
-            device=device,
-            dtype=DType.uint64,
-        )
-        row_seeds = ops.reshape(
-            ops.unsqueeze(seed, axis=-1)
-            + ops.unsqueeze(pos_iota, axis=0)
-            * ops.constant(
-                _SEED_GOLDEN_GAMMA, dtype=DType.uint64, device=device
-            ),
-            shape=[flat_all_rows],
-        )
-    else:
-        row_iota = ops.range(
-            0,
-            flat_all_rows,
-            1,
-            out_dim=flat_all_rows,
-            device=device,
-            dtype=DType.uint64,
-        )
-        row_seeds = ops.broadcast_to(
-            seed, [flat_all_rows]
-        ) + row_iota * ops.constant(
-            _SEED_GOLDEN_GAMMA, dtype=DType.uint64, device=device
-        )
+    # Every position draws its own sample, so each needs a key of its own: two
+    # positions sharing one would correlate their accept/reject decisions.
+    # This verdict is the untagged family, the one a sampled draft proposal
+    # also walks -- the two never co-occur, since the proposal mode picks
+    # which verdict runs.
+    row_seeds = _keyed_step_seeds(seed, batch, all_positions, device, 0)
     sampled_flat = topk_fused_sampling(
         logits=flat_target_logits,
         top_k=repeat_per_draft_step(top_k, batch, all_positions),
@@ -1487,9 +1497,22 @@ class RejectionSamplerWithResiduals(Module):
         target_logits: TensorValue,
         target_logit_offsets: TensorValue,
         all_draft_logits: TensorValue,
+        seed: TensorValue,
         rejection_rand: TensorValue | None = None,
         residual_rand: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
+
+        Args:
+            draft_tokens: Draft token ids from the draft model.
+            draft_logits_for_sampled_tokens: Draft logits at the drafted tokens.
+            target_logits: Verified target logits.
+            target_logit_offsets: Row offsets into ``target_logits``.
+            all_draft_logits: Full draft logits, ``[num_steps, batch, vocab]``.
+            seed: Per-execute seed tensor, the shared graph-level key.
+            rejection_rand: Debug-only fixed acceptance noise.
+            residual_rand: Debug-only fixed residual noise.
+        """
         batch_draft_logits = ops.permute(
             all_draft_logits,
             [1, 0, 2],
@@ -1518,6 +1541,9 @@ class RejectionSamplerWithResiduals(Module):
             top_k=self.top_k,
             max_k=self.top_k,
             temperature=self.temperature,
+            seed=_keyed_seed_rows(
+                seed, Dim("batch_size"), self.device, _SEED_DOMAIN_BONUS
+            ),
         )
         return (
             first_rejected_token_idx,
