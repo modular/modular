@@ -39,7 +39,7 @@ from typing_extensions import override
 from ..qwen3_5.model import _SCALE_SUFFIXES, Qwen3_5Model
 from ..qwen3_5.model_config import Qwen3_5Config
 from ..qwen3_5.state_cache import attn_cache
-from .spec_adapters import (
+from .spec_state import (
     LIVE_CONV_POOLS,
     LIVE_CONV_ROW_IDS,
     LIVE_RECURRENT_POOLS,

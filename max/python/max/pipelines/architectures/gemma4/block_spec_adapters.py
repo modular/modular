@@ -24,17 +24,19 @@ lives here while each arch keeps its own proposer.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
 
 import numpy as np
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
-from max.nn.kv_cache import PagedCacheValues
 from max.nn.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
 )
-from max.pipelines.speculative.block_driver import BlockBatch
+from max.pipelines.speculative.block_driver import (
+    BlockBatch,
+    block_dispatch_metadata,
+    block_kv_with_dispatch,
+)
 from max.pipelines.speculative.spec_target import Verified
 
 from .gemma4 import Gemma4TextModel
@@ -48,35 +50,6 @@ __all__ = [
 
 SLIDING_KV = "sliding_attention"
 """Name the sliding leaf rides under in :attr:`BlockBatch.passthrough_kv`. """
-
-
-def block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
-    """Rebuilds the MHA dispatch metadata at the draft block's query width.
-
-    The 4-int CPU buffer is ``[batch_size, q_max_seq_len, num_partitions,
-    max_cache_valid_length]``. ``q_max_seq_len`` becomes the block width ``k``
-    and ``num_partitions`` is zeroed so the decode kernel recomputes the
-    split-K count for the draft's own head geometry instead of reusing the
-    target's.
-
-    Args:
-        meta: The leaf's verify-width dispatch metadata buffer.
-        k: The draft block width (anchor slot plus drafted tokens).
-
-    Returns:
-        The rebuilt dispatch metadata buffer.
-    """
-    assert meta is not None
-    cpu = DeviceRef.CPU()
-    return ops.concat(
-        [
-            meta[0:1],
-            ops.constant(k, DType.int64, device=cpu).reshape((1,)),
-            ops.constant(0, DType.int64, device=cpu).reshape((1,)),
-            meta[3:4],
-        ],
-        axis=0,
-    )
 
 
 class Gemma4BlockTarget:
@@ -137,21 +110,3 @@ class Gemma4BlockTarget:
 
     def ep_input_types(self) -> Sequence[TensorType | BufferType]:
         return ()
-
-
-def block_kv_with_dispatch(
-    block_kv: list[PagedCacheValues], k: int
-) -> list[PagedCacheValues]:
-    """The block caches with the dispatch buffer rebuilt at width ``k``."""
-    return [
-        replace(
-            kv,
-            attention_dispatch_metadata=block_dispatch_metadata(
-                kv.attention_dispatch_metadata, k
-            ),
-            max_prompt_length=ops.constant(
-                k, DType.uint32, device=DeviceRef.CPU()
-            ).broadcast_to([1]),
-        )
-        for kv in block_kv
-    ]

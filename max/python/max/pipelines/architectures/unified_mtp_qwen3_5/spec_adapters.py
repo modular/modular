@@ -19,17 +19,12 @@ from collections.abc import Sequence
 from max.graph import (
     BufferType,
     BufferValue,
-    DeviceRef,
     DimLike,
     TensorType,
     TensorValue,
     ops,
 )
-from max.nn.kv_cache import (
-    RecurrentLeafInputs,
-    RecurrentStateInputsPerDevice,
-    RecurrentStateRegion,
-)
+from max.nn.kv_cache import RecurrentStateRegion
 from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.speculative.driver import (
     CarryDimNames,
@@ -46,35 +41,11 @@ from max.pipelines.speculative.unified_graph_ops import (
     gather_accepted_hidden_states,
 )
 
-from ..qwen3_5.layers.gated_deltanet import GatedDeltaReplayInputs
 from ..qwen3_5.mtp import Qwen3_5MTP
-from ..qwen3_5.qwen3_5 import Qwen3_5, Qwen3_5LinearAttentionBlock
-from .state_rollback import (
-    accepted_row_plan,
-    replay_state_pools,
-    shadow_row_ids,
-    snapshot_state_pools,
-)
+from ..qwen3_5.qwen3_5 import Qwen3_5
+from .spec_state import POSITION_IDS, Qwen3_5RecurrentState
 
-__all__ = [
-    "LIVE_CONV_POOLS",
-    "LIVE_CONV_ROW_IDS",
-    "LIVE_RECURRENT_POOLS",
-    "LIVE_RECURRENT_ROW_IDS",
-    "POSITION_IDS",
-    "SHADOW_CONV_POOLS",
-    "SHADOW_RECURRENT_POOLS",
-    "Qwen3_5MTPProposer",
-    "Qwen3_5Target",
-]
-
-LIVE_CONV_POOLS = "live_conv_pools"
-LIVE_RECURRENT_POOLS = "live_recurrent_pools"
-LIVE_CONV_ROW_IDS = "live_conv_row_ids"
-LIVE_RECURRENT_ROW_IDS = "live_recurrent_row_ids"
-SHADOW_CONV_POOLS = "shadow_conv_pools"
-SHADOW_RECURRENT_POOLS = "shadow_recurrent_pools"
-POSITION_IDS = "position_ids"
+__all__ = ["Qwen3_5MTPProposer", "Qwen3_5Target"]
 
 _TargetHidden = list[TensorValue]
 """Per-device normalized hidden states, one entry per rank."""
@@ -87,86 +58,24 @@ class Qwen3_5Target:
         self, target: Qwen3_5, state_regions: tuple[RecurrentStateRegion, ...]
     ) -> None:
         self.target = target
-        self.regions = {region.leaf_id: region for region in state_regions}
-        self.num_layers = len(target.linear_layer_indices)
-        self.captures: list[list[GatedDeltaReplayInputs]] = []
-        """Per-device, per-layer state-kernel inputs the verify recorded.
-
-        The replay re-runs the two state kernels over exactly these rather
-        than recomputing the projections, so the arithmetic it repeats is the
-        arithmetic the verify did. Filled by :meth:`verify` and read by the
-        proposer's prefill, which is the only other phase that runs between
-        the capture and the pools being rolled forward.
-        """
-
-    def _set_replay_capture(
-        self, capture: list[list[GatedDeltaReplayInputs]] | None
-    ) -> None:
-        for layer_idx in self.target.linear_layer_indices:
-            block = self.target.layers[layer_idx]
-            assert isinstance(block, Qwen3_5LinearAttentionBlock)
-            block.replay_capture = capture
+        self.state = Qwen3_5RecurrentState(target, state_regions)
 
     def verify(self, batch: SequentialBatch) -> Verified[_TargetHidden]:
-        conv_row_ids = batch.extra[LIVE_CONV_ROW_IDS]
-        shadow_conv = batch.extra[SHADOW_CONV_POOLS]
-        shadow_recurrent = batch.extra[SHADOW_RECURRENT_POOLS]
-
-        # The verify runs on the shadow pools, so the live ones still hold the
-        # pre-verify state when the accepted length is known.
-        num_layers = self.num_layers
-        batch_dim = conv_row_ids[0].shape[0]
-        shadow_span = ops.shape_to_tensor([batch_dim])[0] * num_layers
-        snapshot_state_pools(
-            batch.extra[LIVE_CONV_POOLS],
-            shadow_conv,
-            conv_row_ids,
-            shadow_span,
-        )
-        snapshot_state_pools(
-            batch.extra[LIVE_RECURRENT_POOLS],
-            shadow_recurrent,
-            batch.extra[LIVE_RECURRENT_ROW_IDS],
-            shadow_span,
-        )
-
-        # The shadow's layout is this graph's own, so its rows are built here.
-        def shadow_leaf(
-            pool: BufferValue, device: DeviceRef
-        ) -> RecurrentLeafInputs[TensorValue, BufferValue]:
-            return RecurrentLeafInputs(
-                pool=pool,
-                # The snapshot already put the pre-verify state here; the
-                # verify reads and writes it in place.
-                live_row_ids=shadow_row_ids(num_layers, device),
+        shadow_state = self.state.snapshot(batch.extra, batch.devices)
+        with self.state.capturing(batch.n_devs):
+            # The positions cover the merged window, so they line up with
+            # ``merged_tokens`` rather than with the real tokens. ``None``
+            # keeps the target on its static rope table, which is correct
+            # only while no request in the batch has an image in context.
+            outputs = self.target(
+                batch.merged_tokens,
+                batch.kv_collections,
+                batch.return_n_logits,
+                batch.merged_offsets,
+                batch.signal_buffers,
+                shadow_state,
+                position_ids=batch.extra[POSITION_IDS],
             )
-
-        shadow_state = [
-            RecurrentStateInputsPerDevice(
-                leaves=(
-                    shadow_leaf(shadow_conv[i], batch.devices[i]),
-                    shadow_leaf(shadow_recurrent[i], batch.devices[i]),
-                ),
-            )
-            for i in range(batch.n_devs)
-        ]
-
-        self.captures = [[] for _ in range(batch.n_devs)]
-        self._set_replay_capture(self.captures)
-        # These cover the merged window, so they line up with
-        # ``merged_tokens`` rather than with the real tokens. ``None`` keeps
-        # the target on its static rope table, which is correct only while no
-        # request in the batch has an image in context.
-        outputs = self.target(
-            batch.merged_tokens,
-            batch.kv_collections,
-            batch.return_n_logits,
-            batch.merged_offsets,
-            batch.signal_buffers,
-            shadow_state,
-            position_ids=batch.extra[POSITION_IDS],
-        )
-        self._set_replay_capture(None)
 
         # VARIABLE logits + ALL_NORMALIZED hidden states ->
         # (last_logits, logits, offsets, hs_0..hs_{n-1}).
@@ -224,22 +133,16 @@ class Qwen3_5MTPProposer:
         assert batch.num_accepted is not None
         # Roll the live pools forward over the accepted prefix, before the
         # draft reads anything downstream.
-        row_indices, replay_offsets = accepted_row_plan(
-            batch.merged_offsets,
-            batch.num_accepted,
-            _shape_to_scalar(batch.num_draft_tokens, batch.device0),
-            batch.merged_tokens.shape[0],
-            batch.device0,
-        )
-        replay_state_pools(
-            self.target.captures,
-            batch.extra[LIVE_CONV_POOLS],
-            batch.extra[LIVE_RECURRENT_POOLS],
-            batch.extra[LIVE_CONV_ROW_IDS],
-            batch.extra[LIVE_RECURRENT_ROW_IDS],
-            row_indices,
-            replay_offsets,
-            batch.signal_buffers,
+        self.target.state.roll_forward(
+            batch.extra,
+            merged_offsets=batch.merged_offsets,
+            num_accepted=batch.num_accepted,
+            num_draft_tokens=_shape_to_scalar(
+                batch.num_draft_tokens, batch.device0
+            ),
+            total_rows=batch.merged_tokens.shape[0],
+            signal_buffers=batch.signal_buffers,
+            device=batch.device0,
         )
 
         hidden = self.draft(

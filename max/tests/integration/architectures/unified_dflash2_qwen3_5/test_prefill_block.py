@@ -59,6 +59,14 @@ from max.pipelines.architectures.unified_dflash2_qwen3_5.model_config import (
 from max.pipelines.architectures.unified_dflash2_qwen3_5.unified_dflash2_qwen3_5 import (
     UnifiedDflash2Qwen3_5,
 )
+from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
+    LIVE_CONV_POOLS,
+    LIVE_CONV_ROW_IDS,
+    LIVE_RECURRENT_POOLS,
+    LIVE_RECURRENT_ROW_IDS,
+    SHADOW_CONV_POOLS,
+    SHADOW_RECURRENT_POOLS,
+)
 from max.pipelines.speculative.config import (
     MAGIC_DRAFT_TOKEN_ID,
     SpeculativeConfig,
@@ -208,15 +216,6 @@ def _build() -> Step:
         kv_tree = kvp.unflatten_kv_inputs(it)
         assert isinstance(kv_tree, dict)
         tleaf, dleaf = kv_tree["target"], kv_tree["draft"]
-        assert (
-            isinstance(tleaf, tuple)
-            and tleaf
-            and isinstance(tleaf[0], KVCacheInputsPerDevice)
-        ) and (
-            isinstance(dleaf, tuple)
-            and dleaf
-            and isinstance(dleaf[0], KVCacheInputsPerDevice)
-        )
         next(it)  # batch_context_lengths
         dt = next(it).tensor
         seed, temp, tk, mk, tp, mtp_, think = (
@@ -233,8 +232,10 @@ def _build() -> Step:
             input_row_offsets=row_offsets.tensor,
             draft_tokens=dt,
             signal_buffers=sigs,
-            target_kv=tree.leaves(tleaf, leaf=KVCacheInputsPerDevice),
-            draft_kv=tree.leaves(dleaf, leaf=KVCacheInputsPerDevice),
+            kv_collections=tree.leaves(tleaf, leaf=KVCacheInputsPerDevice),
+            draft_kv_collections=tree.leaves(
+                dleaf, leaf=KVCacheInputsPerDevice
+            ),
             return_n_logits=ret_n.tensor,
             host_input_row_offsets=host_row_offsets.tensor,
             data_parallel_splits=dp_splits.tensor,
@@ -245,15 +246,17 @@ def _build() -> Step:
             top_p=tp,
             min_top_p=mtp_,
             in_thinking_phase=think,
-            live_conv_pools=[live_conv],
-            live_recurrent_pools=[live_rec],
-            live_conv_row_ids=[conv_rows],
-            live_recurrent_row_ids=[rec_rows],
-            shadow_conv_pools=[shadow_conv],
-            shadow_recurrent_pools=[shadow_rec],
             pinned_bitmask=pin,
             wait_payload=wait,
             device_bitmask_scratch=scratch,
+            extra={
+                LIVE_CONV_POOLS: [live_conv],
+                LIVE_RECURRENT_POOLS: [live_rec],
+                LIVE_CONV_ROW_IDS: [conv_rows],
+                LIVE_RECURRENT_ROW_IDS: [rec_rows],
+                SHADOW_CONV_POOLS: [shadow_conv],
+                SHADOW_RECURRENT_POOLS: [shadow_rec],
+            },
         )
         g.output(*out)
 

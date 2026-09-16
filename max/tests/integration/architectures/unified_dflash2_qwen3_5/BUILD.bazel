@@ -135,6 +135,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/unified_dflash2_qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),
     ],

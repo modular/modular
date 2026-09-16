@@ -60,8 +60,59 @@ __all__ = [
     "BlockCaches",
     "BlockDriver",
     "BlockProposer",
+    "block_dispatch_metadata",
+    "block_kv_with_dispatch",
     "local_row_offsets",
 ]
+
+
+def block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
+    """Rebuilds the MHA dispatch metadata at the draft block's query width.
+
+    The 4-int CPU buffer is ``[batch_size, q_max_seq_len, num_partitions,
+    max_cache_valid_length]``. Neither manager-supplied buffer fits the block:
+    the leaf's own metadata carries the *verify* query width, which equals the
+    block only on a decode batch and is far larger on a prefill batch, where
+    the oversized query bound can drive the block's first attention layer to
+    NaN. ``num_partitions`` is zeroed so the kernel recomputes the split-K
+    count for the drafter's own head geometry instead of reusing the target's.
+
+    Args:
+        meta: The leaf's verify-width dispatch metadata buffer.
+        k: The draft block width (anchor slot plus drafted tokens).
+
+    Returns:
+        The rebuilt dispatch metadata buffer.
+    """
+    assert meta is not None
+    cpu = DeviceRef.CPU()
+    return ops.concat(
+        [
+            meta[0:1],
+            ops.constant(k, DType.int64, device=cpu).reshape((1,)),
+            ops.constant(0, DType.int64, device=cpu).reshape((1,)),
+            meta[3:4],
+        ],
+        axis=0,
+    )
+
+
+def block_kv_with_dispatch(
+    block_kv: list[PagedCacheValues], k: int
+) -> list[PagedCacheValues]:
+    """The block caches with the dispatch buffer rebuilt at width ``k``."""
+    return [
+        replace(
+            kv,
+            attention_dispatch_metadata=block_dispatch_metadata(
+                kv.attention_dispatch_metadata, k
+            ),
+            max_prompt_length=ops.constant(
+                k, DType.uint32, device=DeviceRef.CPU()
+            ).broadcast_to([1]),
+        )
+        for kv in block_kv
+    ]
 
 
 def local_row_offsets(
@@ -142,6 +193,21 @@ class BlockBatch:
     stack."""
     vision_scatter_indices: list[TensorValue]
     """Per-device merge positions for :attr:`vision_embeddings`."""
+
+    extra: Mapping[str, Any]
+    """Graph inputs the driver carries but never reads, keyed by the model.
+
+    A model whose signature declares inputs outside the canonical set reaches
+    them from its adapters through here, rather than the driver growing a
+    field per model for values none of its phases understand."""
+
+    num_accepted: TensorValue | None
+    """How many draft tokens each request accepted, ``None`` before the accept.
+
+    Set for the phases that run after the accept, so a target carrying state
+    no length pointer can rewind -- a linear-attention recurrence, say -- can
+    roll that state onto the accepted prefix without the driver knowing what
+    the state is."""
 
     @property
     def devices_per_replica(self) -> int:
@@ -273,6 +339,7 @@ class BlockDriver(
         enable_structured_output: bool = False,
         relaxed_acceptance: bool = False,
         ctx_at_draft_cache_length: bool = False,
+        per_row_acceptance_seed: bool = False,
     ) -> None:
         super().__init__()
         self._target = target
@@ -286,6 +353,7 @@ class BlockDriver(
         # normally advance together.
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
+        self._per_row_acceptance_seed = per_row_acceptance_seed
         self.block_size = proposer.block_size
         self.num_speculative_tokens = self.block_size - (
             0 if proposer.samples_from_anchor else 1
@@ -341,6 +409,7 @@ class BlockDriver(
         pinned_bitmask: TensorValue | None = None,
         wait_payload: BufferValue | None = None,
         device_bitmask_scratch: BufferValue | None = None,
+        extra: Mapping[str, Any] | None = None,
     ) -> tuple[TensorValue, ...]:
         """Runs one block spec-decode iteration: verify K-1, propose K-1.
 
@@ -373,6 +442,8 @@ class BlockDriver(
             pinned_bitmask: Structured-output bitmask staged on the host.
             wait_payload: Host-side gate for the bitmask transfer.
             device_bitmask_scratch: Device buffer the bitmask lands in.
+            extra: This model's own graph inputs, reaching its adapters
+                through :attr:`BlockBatch.extra` untouched.
 
         Returns:
             ``(num_accepted, next_tokens, next_draft_tokens)``.
@@ -413,6 +484,8 @@ class BlockDriver(
             batch_context_lengths=batch_context_lengths or [],
             vision_embeddings=vision_embeddings or [],
             vision_scatter_indices=vision_scatter_indices or [],
+            extra=extra or {},
+            num_accepted=None,
         )
 
         pre_cache_lengths = self._pre_cache_lengths(batch)
@@ -440,6 +513,10 @@ class BlockDriver(
             in_thinking_phase=in_thinking_phase,
             token_bitmasks=effective_bitmasks,
         )
+
+        # Every phase below runs after the accept, so each sees the count
+        # rather than re-deriving it.
+        batch = replace(batch, num_accepted=accepted.num_accepted)
 
         caches = self._block_caches(
             batch, pre_cache_lengths, accepted.commit_lengths
@@ -482,7 +559,7 @@ class BlockDriver(
         num_accepted, recovered, bonus = self.acceptance_sampler(
             batch.draft_tokens,
             target_logits,
-            seed=seed[0],
+            seed=seed if self._per_row_acceptance_seed else seed[0],
             temperature=temperature,
             top_k=top_k,
             max_k=max_k,
