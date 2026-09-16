@@ -3968,6 +3968,84 @@ def create_tma_tile[
     )
 
 
+@inline(.always)
+def create_tma_tile[
+    *tile_sizes: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+](ctx: DeviceContext, tensor: TileTensor) raises -> TMATensorTile[
+    tensor.dtype,
+    2,
+    IndexList[2](tile_sizes[0], tile_sizes[1]),
+]:
+    """
+    Creates a `TMATensorTile` with specified tile dimensions and swizzle mode.
+
+    This function creates a hardware-accelerated Tensor Memory Access (TMA) descriptor
+    for efficient asynchronous data transfers between global memory and shared memory.
+    It configures the tile dimensions and memory access patterns based on the provided
+    parameters.
+
+    Parameters:
+        tile_sizes: The dimensions of the tile to be transferred. For 2D tensors, this should be
+            [height, width]. The dimensions determine the shape of data transferred in each
+            TMA operation.
+        swizzle_mode:
+            The swizzling mode to use for memory access optimization. Swizzling can improve
+            memory access patterns for specific hardware configurations.
+
+    Args:
+        ctx:
+            The CUDA device context used to create the TMA descriptor.
+        tensor:
+            The source tensor from which data will be transferred. This defines the
+            global memory layout and data type.
+
+    Returns:
+        A `TMATensorTile` configured with the specified tile dimensions and swizzle mode,
+        ready for use in asynchronous data transfer operations.
+
+    Constraints:
+
+        - The last dimension's size in bytes must not exceed the swizzle mode's byte limit
+          (32B for SWIZZLE_32B, 64B for SWIZZLE_64B, 128B for SWIZZLE_128B).
+        - Only supports 2D tensors in this overload.
+
+    Raises:
+        If TMA descriptor creation fails.
+    """
+    # the last dimension of smem shape has to be smaller or equals to the
+    # swizzle bytes.
+    comptime swizzle_rows_bytes = tile_sizes[tensor.rank - 1] * size_of[
+        tensor.dtype
+    ]()
+
+    comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        comptime assert swizzle_rows_bytes <= swizzle_mode.bytes(), (
+            "Current swizzle bytes is "
+            + String(swizzle_rows_bytes)
+            + " which exceeds "
+            + String(swizzle_mode.bytes())
+            + "B swizzle requirement."
+        )
+
+    return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
+        DeviceBuffer(
+            ctx,
+            tensor.ptr.unsafe_mut_cast[True]().unsafe_address_space_cast[
+                .GENERIC
+            ](),
+            1,
+            owning=False,
+        ),
+        (Int(tensor.dim[0]()), Int(tensor.dim[1]())),
+        (
+            Int(tensor.layout.stride[0]().value()),
+            Int(tensor.layout.stride[1]().value()),
+        ),
+        (tile_sizes[0], tile_sizes[1]),
+    )
+
+
 @__parameter
 def _gather4_box_width[
     dtype: DType,
