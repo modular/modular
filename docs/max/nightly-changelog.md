@@ -204,6 +204,19 @@ This version is still a work in progress.
   `seed` stay independent of one another, which was previously true only on one
   of the three sampling routes.
 
+- Fixed a negative-bound slice of a concatenated value silently returning that
+  value rotated instead of the region asked for. When two slices together cover
+  one axis, the graph compiler rewrites them into a single `split`, whose
+  results are consecutive chunks in order. It ordered those chunks by the raw
+  start constant, but slicing takes numpy-style bounds, so a negative start
+  counts back from the end of the axis: `x[..., -8:]` carries a start of `-8`,
+  which sorted ahead of a slice starting at `0` and swapped the two regions.
+  Writing `concat(x[..., :-rope_dim], x[..., -rope_dim:])` over a value built by
+  a `concat` therefore produced that value rotated left by `rope_dim`, on CPU
+  and GPU alike, with no error and with every operator individually correct.
+  Slice bounds are now normalized against the axis before the chunks are
+  ordered, and a set of slices that does not actually tile the axis is left
+  alone rather than rewritten.
 - Fixed the tiered KV cache connector leaking its `max_kv_tiered_*` disk
   offload directory on almost every shutdown. Deleting it relied on the model
   worker unwinding cleanly, which it never does: the worker is stopped with
