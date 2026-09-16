@@ -32,6 +32,8 @@ import re
 import shutil
 import sys
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -218,6 +220,70 @@ def _iter_shard_tensors(
             yield name, handle.get_tensor(name)
 
 
+def _process_shard(
+    numbered_shard: tuple[int, str],
+    patterns: Sequence[re.Pattern[str]],
+    ignored: Sequence[str],
+    fmt: QuantFormat,
+    dry_run: bool,
+    dst: Path,
+    n_shards: int,
+) -> tuple[dict[str, str], int, int, int, int]:
+    shard_idx, shard = numbered_shard
+    out_name = f"model-{shard_idx:05d}-of-{n_shards:05d}.safetensors"
+    out_tensors: dict[str, torch.Tensor] = {}
+    quantized = 0
+    copied = 0
+    bytes_saved = 0
+
+    for name, array in _iter_shard_tensors(Path(shard)):
+        written = None
+        if _should_quantize(name, patterns, ignored):
+            written = _quantize_tensor(name, array, fmt)
+            if written is None:
+                logger.warning(
+                    "%s matched a target pattern but its shape %s is not "
+                    "%s-quantizable; copying verbatim",
+                    name,
+                    tuple(array.shape),
+                    fmt.value,
+                )
+
+        if written is None:
+            out_tensors[name] = array
+            copied += 1
+            continue
+
+        out_tensors.update(written)
+        quantized += 1
+        bytes_saved += array.nbytes - sum(
+            tensor.nbytes for tensor in written.values()
+        )
+
+    weight_map = {name: out_name for name in out_tensors}
+    total_size = sum(array.nbytes for array in out_tensors.values())
+
+    if dry_run:
+        logger.info(
+            "[dry run] %s -> %s (%d tensors)",
+            shard,
+            out_name,
+            len(out_tensors),
+        )
+        return weight_map, total_size, quantized, copied, bytes_saved
+
+    save_file(out_tensors, dst / out_name)
+    logger.info(
+        "wrote %s (%d/%d), %d quantized, %d copied",
+        out_name,
+        shard_idx,
+        n_shards,
+        quantized,
+        copied,
+    )
+    return weight_map, total_size, quantized, copied, bytes_saved
+
+
 def quantize_checkpoint(
     src: Path,
     dst: Path,
@@ -226,6 +292,7 @@ def quantize_checkpoint(
     include_qkv: bool = False,
     extra_targets: Sequence[str] = (),
     dry_run: bool = False,
+    max_workers: int = 32,
 ) -> dict[str, int]:
     """Requantizes a checkpoint to MXFP6 or NVFP4, shard by shard.
 
@@ -238,6 +305,7 @@ def quantize_checkpoint(
         include_qkv: Also quantize the attention Q/K/V projections.
         extra_targets: Additional regexes matching tensors to quantize.
         dry_run: Report what would be written without writing weights.
+        max_workers: Shard-parallel workers.
 
     Returns:
         Counts keyed ``quantized``, ``copied``, and ``bytes_saved``.
@@ -268,55 +336,25 @@ def quantize_checkpoint(
     weight_map: dict[str, str] = {}
     total_size = 0
 
-    for shard_idx, shard in enumerate(shards, start=1):
-        out_name = f"model-{shard_idx:05d}-of-{len(shards):05d}.safetensors"
-        out_tensors: dict[str, torch.Tensor] = {}
-
-        for name, array in _iter_shard_tensors(shard):
-            written = None
-            if _should_quantize(name, patterns, ignored):
-                written = _quantize_tensor(name, array, fmt)
-                if written is None:
-                    logger.warning(
-                        "%s matched a target pattern but its shape %s is not "
-                        "%s-quantizable; copying verbatim",
-                        name,
-                        tuple(array.shape),
-                        fmt.value,
-                    )
-
-            if written is None:
-                out_tensors[name] = array
-                stats["copied"] += 1
-                continue
-
-            out_tensors.update(written)
-            stats["quantized"] += 1
-            stats["bytes_saved"] += array.nbytes - sum(
-                tensor.nbytes for tensor in written.values()
-            )
-
-        for name, array in out_tensors.items():
-            weight_map[name] = out_name
-            total_size += array.nbytes
-
-        if dry_run:
-            logger.info(
-                "[dry run] %s -> %s (%d tensors)",
-                shard.name,
-                out_name,
-                len(out_tensors),
-            )
-            continue
-
-        save_file(out_tensors, dst / out_name)
-        logger.info(
-            "wrote %s (%d/%d), %d quantized so far",
-            out_name,
-            shard_idx,
-            len(shards),
-            stats["quantized"],
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        results = pool.map(
+            partial(
+                _process_shard,
+                patterns=patterns,
+                ignored=ignored,
+                fmt=fmt,
+                dry_run=dry_run,
+                dst=dst,
+                n_shards=len(shards),
+            ),
+            enumerate(shards, start=1),
         )
+        for shard_map, size, quantized, copied, saved in results:
+            weight_map.update(shard_map)
+            total_size += size
+            stats["quantized"] += quantized
+            stats["copied"] += copied
+            stats["bytes_saved"] += saved
 
     if dry_run:
         return stats
@@ -373,6 +411,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="report what would be written without writing weights",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=32,
+        metavar="N",
+        help="shard-parallel workers (default: 32)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -387,6 +432,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         include_qkv=args.include_qkv,
         extra_targets=args.target,
         dry_run=args.dry_run,
+        max_workers=args.max_workers,
     )
 
     label = "NVFP4" if isinstance(fmt, FP4Format) else f"MXFP6 ({fmt.value})"
