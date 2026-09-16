@@ -470,47 +470,6 @@ struct Coord[*element_types: CoordLike](
         comptime assert False, "Coord is not a value type"
 
     @inline(.nodebug)
-    def inner_product[
-        *other_types: CoordLike
-    ](self, other: Coord[*other_types]) -> Int:
-        """Calculate the inner product with another CoordLike.
-
-        Parameters:
-            other_types: The types of the other value.
-
-        Args:
-            other: The other value to compute inner product with.
-
-        Returns:
-            The inner product of the two values.
-        """
-        comptime assert Self.__len__() == Coord[*other_types].__len__(), (
-            "Length of Coord ("
-            + String(Self.__len__())
-            + ") and Coord[*other_types] ("
-            + String(Coord[*other_types].__len__())
-            + ") must match"
-        )
-        var result = 0
-
-        comptime for i in range(Self.__len__()):
-            comptime T = Self.element_types[i]
-            comptime U = other_types[i]
-
-            comptime if T.is_tuple and U.is_tuple:
-                result += Coord(self[i]).inner_product(Coord(other[i]))
-            elif T.is_value and U.is_value:
-                result += Int(self[i].value()) * Int(other[i].value())
-            else:
-                comptime assert False, String(
-                    "Element ",
-                    i,
-                    " of Coord must both be a tuple or both be a value",
-                )
-
-        return result
-
-    @inline(.nodebug)
     def __eq__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
