@@ -11,6 +11,7 @@ modular_py_library(
         "_validation_hooks.py",
         "compilation.py",
         "compile_pool.py",
+        "custom.py",
         "executor.py",
         "random.py",
         "realization_context.py",
@@ -60,5 +61,6 @@ modular_py_library(
         "//max/python/max/mlir",
         requirement("numpy"),
         requirement("rich"),
+        "@mojo//:python",
     ],
 )

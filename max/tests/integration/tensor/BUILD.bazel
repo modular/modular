@@ -26,9 +26,13 @@ modular_eager_py_test(
     ),
     # CPU-only suite (GPU test files are separate targets below).
     cpu_only = True,
+    data = [
+        "//max/tests/integration/tensor/testdata/custom_op_def_kernels",
+    ],
     env = {
         # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
         "MAX_EAGER_EXECUTOR": "fallback-internal",
+        "MODULAR_CUSTOM_OP_DEF_KERNELS_PATH": "$(rootpath //max/tests/integration/tensor/testdata/custom_op_def_kernels)",
     },
     ignore_extra_deps = [
         # lazy import
@@ -36,6 +40,7 @@ modular_eager_py_test(
     ],
     imports = ["."],
     per_test_shard_count = {
+        "test_custom_op_def.py": 2,
         "test_functional_other.py": 10,
     },
     target_compatible_with = select({

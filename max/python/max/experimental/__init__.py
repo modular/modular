@@ -41,7 +41,16 @@ Example:
     may change.
 """
 
-from . import functional, random, tensor, validation
+from . import custom, functional, random, tensor, validation
+from .custom import CustomOp
 from .tensor import Tensor
 
-__all__ = ["Tensor", "functional", "random", "tensor", "validation"]
+__all__ = [
+    "CustomOp",
+    "Tensor",
+    "custom",
+    "functional",
+    "random",
+    "tensor",
+    "validation",
+]

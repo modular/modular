@@ -158,6 +158,7 @@ modular_py_test(
     name = "test_dim_substitute",
     srcs = ["test_dim_substitute.py"],
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/graph",
     ],
 )

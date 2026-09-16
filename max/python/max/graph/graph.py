@@ -341,6 +341,24 @@ def default_custom_extensions() -> tuple[Path, ...]:
     return _default_custom_extensions
 
 
+def _resolved_custom_extensions(
+    custom_extensions: Iterable[Path],
+) -> list[Path]:
+    """Unions *custom_extensions* with the process-global overlay.
+
+    Explicit paths keep their order and come first; an overlay path already
+    given explicitly is not repeated. This is the one place that ordering
+    lives, so anything that has to agree with what a :class:`Graph` links
+    against (a shape-function probe, a compiled-binding cache key) resolves
+    through here rather than combining the two lists its own way.
+    """
+    extensions = list(custom_extensions)
+    extensions.extend(
+        path for path in default_custom_extensions() if path not in extensions
+    )
+    return extensions
+
+
 @contextlib.contextmanager
 def default_custom_extensions_scope(*paths: Path) -> Generator[None]:
     """Adds *paths* to :func:`default_custom_extensions` for the block's duration.
@@ -858,18 +876,11 @@ class Graph:
                     _ChainValue.from_mlir(mlir_maybe_chain_value)
                 )
 
-        # Initialize the kernel library and load custom extensions paths.
-        # Process-global defaults are appended after any explicit extensions so
-        # graphs built without `custom_extensions` still reach a backend's
-        # kernel overlays (see `default_custom_extensions`).
+        # Resolving through `_resolved_custom_extensions` is what lets a graph
+        # built without `custom_extensions` still reach a backend's kernel
+        # overlays (see `default_custom_extensions`).
         self._kernel_library = kernel_library or KernelLibrary()
-        extensions = list(custom_extensions)
-        extensions.extend(
-            path
-            for path in default_custom_extensions()
-            if path not in extensions
-        )
-        self._import_kernels(extensions)
+        self._import_kernels(_resolved_custom_extensions(custom_extensions))
 
         self._subgraphs = {}
 

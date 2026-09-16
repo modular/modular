@@ -151,6 +151,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added `max.experimental.custom.declare`, which declares a custom op's
+  `inputs` and `outputs` signature once, as an immutable `custom.CustomOp`,
+  instead of computing output types per call. Dims in a signature come only
+  from the declaration: a `custom.Symbol` or a static size, and an output dim
+  may be an expression over them. Inputs sharing one symbol, or one
+  `custom.DTypeVar`, must agree at call time. An op is callable both eagerly
+  and inside an explicit `Graph` build.
+
 ### C API
 
 ## Kernels and GPU programming
