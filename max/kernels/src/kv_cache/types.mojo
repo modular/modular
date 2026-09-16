@@ -2199,7 +2199,8 @@ struct ContinuousBatchingKVCache[
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]() - 1
         # yields number of rows:
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
-        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+        # 64-bit, as the paged sibling.
+        var rows = Int(total_blocks - 1) * Int(self._stride()) + Int(
             self.blocks.dim[1]()
         )
 
@@ -3028,9 +3029,23 @@ struct PagedKVCache[
         #
         # Create a view that accounts for the paged layout
         var total_blocks = Int(self.blocks.dim[0]())
-        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+        # 64-bit, as `num_kv_rows` is. The product spans the pool, and a shared
+        # slab hands a small-page leaf millions of blocks.
+        var rows = Int(total_blocks - 1) * Int(self._stride()) + Int(
             Self.page_size
         )
+        # A TMA tile coordinate is SIGNED 32-bit, and the kernels address this
+        # descriptor by `row_idx`, whose span tracks total cache memory rather
+        # than this leaf's share of it. Refuse here rather than hand a kernel a
+        # negative row, which `OOBFill.NONE` turns into a silently zero-filled
+        # key tile. The scale pool retired the same ceiling by splitting the
+        # coordinate into (block, row_in_block). This descriptor has not yet.
+        if rows >= 1 << 31:
+            raise Error(
+                t"paged KV row span {rows} exceeds the signed 32-bit TMA"
+                t" coordinate. Lower --max-batch-size, or split this descriptor"
+                t" into (block, row_in_block) as the scale pool already is."
+            )
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
@@ -3043,7 +3058,7 @@ struct PagedKVCache[
             swizzle_mode,
             fold_chunks=fold_chunks,
             row_major=row_major,
-        ](ctx, self.blocks.ptr, Int(rows))
+        ](ctx, self.blocks.ptr, rows)
 
     @inline(.always)
     def create_index_scale_tma_tile[
@@ -3205,7 +3220,8 @@ struct PagedKVCache[
         comptime bf16_row_stride = (padded_depth + BK * 2) // 2
 
         var total_blocks = self.blocks.dim[0]()
-        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+        # 64-bit, as the non-rope sibling.
+        var rows = Int(total_blocks - 1) * Int(self._stride()) + Int(
             Self.page_size
         )
         # Offset past the FP8 content to reach the BF16 rope data,
@@ -3218,7 +3234,7 @@ struct PagedKVCache[
             bf16_row_stride,
         )
         tma = create_split_tma[smem_dim, gmem_dim, swizzle_mode](
-            ctx, rope_ptr, Int(rows)
+            ctx, rope_ptr, rows
         )
 
     @inline(.always)
