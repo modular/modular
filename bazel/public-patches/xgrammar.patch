@@ -1561,7 +1561,7 @@ index 8cfc6fd..b8e8cec 100644
  }
 
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..4bdeee9 100644
+index da8b516..4321176 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
 @@ -5,15 +5,20 @@
@@ -4946,7 +4946,19 @@ index da8b516..4bdeee9 100644
  ) {
    std::optional<int64_t> start, end;
    if (spec.minimum.has_value()) {
-@@ -1457,7 +4001,7 @@ std::string JSONSchemaConverter::GenerateInteger(
+@@ -1453,11 +3997,18 @@ std::string JSONSchemaConverter::GenerateInteger(
+     std::string range_regex = GenerateRangeRegex(start, end);
+     return RegexToEBNF(range_regex, false);
+   }
+-  return "(\"0\" | \"-\"? [1-9] [0-9]*)";
++  // An integer is a number with a zero fractional part (JSON Schema draft 6
++  // onward), so 1e80 is one, and is how a model writes a large integer. The
++  // exponent sign is "+" or absent on purpose: 1e-5 is a legal JSON number but
++  // not an integer, and admitting it would let a constrained field emit a value
++  // the schema forbids. Out of reach either way: 1.5e3, which needs the
++  // fraction length weighed against the exponent, and any exponent under a
++  // bounded range, where the range regex above enumerates digits.
++  return "(\"0\" | \"-\"? [1-9] [0-9]*) ([eE] \"+\"? [0-9]+)?";
  }
 
  std::string JSONSchemaConverter::GenerateNumber(
@@ -4955,7 +4967,7 @@ index da8b516..4bdeee9 100644
  ) {
    std::optional<double> start, end;
    bool exclusive_start = false;
-@@ -1491,55 +4035,220 @@ std::string JSONSchemaConverter::GenerateNumber(
+@@ -1491,55 +4042,220 @@ std::string JSONSchemaConverter::GenerateNumber(
    return "\"-\"? (\"0\" | [1-9] [0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?";
  }
 
@@ -5198,7 +5210,7 @@ index da8b516..4bdeee9 100644
  ) {
    indent_manager_.StartIndent();
 
-@@ -1554,13 +4263,13 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1554,13 +4270,13 @@ std::string JSONSchemaConverter::GenerateArray(
    // Handle prefix items
    for (size_t i = 0; i < spec.prefix_items.size(); ++i) {
      item_rule_names.push_back(
@@ -5214,7 +5226,7 @@ index da8b516..4bdeee9 100644
    }
 
    indent_manager_.EndIndent();
-@@ -1641,6 +4350,11 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1641,6 +4357,11 @@ std::string JSONSchemaConverter::GenerateArray(
  }
 
  std::string JSONSchemaConverter::FormatPropertyKey(const std::string& key) {
@@ -5226,7 +5238,7 @@ index da8b516..4bdeee9 100644
    return "\"" + JSONStrToPrintableStr(picojson::value(key).serialize()) + "\"";
  }
 
-@@ -1687,6 +4401,7 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
+@@ -1687,6 +4408,7 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
      const std::string& additional_suffix,
      int min_properties,
      int max_properties,
@@ -5234,7 +5246,7 @@ index da8b516..4bdeee9 100644
      const std::string& additional_prop_pattern_override
  ) {
    std::string first_sep = NextSeparator();
-@@ -1698,16 +4413,16 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
+@@ -1698,16 +4420,16 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
    std::vector<std::string> item_patterns;
    for (size_t idx = 0; idx < properties.size(); ++idx) {
      const auto& prop = properties[idx];
@@ -5254,7 +5266,7 @@ index da8b516..4bdeee9 100644
            add_value_rule,
            rule_name,
            additional_suffix
-@@ -1742,6 +4457,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1742,6 +4464,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
      const std::string& additional_suffix,
      int min_properties,
      int max_properties,
@@ -5262,7 +5274,7 @@ index da8b516..4bdeee9 100644
      const std::string& additional_prop_pattern_override
  ) {
    if (max_properties == 0) {
-@@ -1757,6 +4473,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1757,6 +4480,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
          additional_suffix,
          min_properties,
          max_properties,
@@ -5270,7 +5282,7 @@ index da8b516..4bdeee9 100644
          additional_prop_pattern_override
      );
    }
-@@ -1770,7 +4487,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1770,7 +4494,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
    std::vector<std::string> prop_patterns;
    for (size_t idx = 0; idx < properties.size(); ++idx) {
      const auto& prop = properties[idx];
@@ -5279,7 +5291,7 @@ index da8b516..4bdeee9 100644
      prop_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx));
    }
 
-@@ -1786,9 +4503,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1786,9 +4510,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
@@ -5291,7 +5303,7 @@ index da8b516..4bdeee9 100644
              add_value_rule,
              rule_name,
              additional_suffix
-@@ -1850,9 +4567,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1850,9 +4574,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
@@ -5303,7 +5315,7 @@ index da8b516..4bdeee9 100644
              add_value_rule,
              rule_name,
              additional_suffix
-@@ -1969,9 +4686,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1969,9 +4693,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
@@ -5315,7 +5327,7 @@ index da8b516..4bdeee9 100644
              add_value_rule,
              rule_name,
              additional_suffix
-@@ -2094,8 +4811,10 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -2094,8 +4818,10 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
  }
 
  std::string JSONSchemaConverter::GenerateObject(
@@ -5327,7 +5339,7 @@ index da8b516..4bdeee9 100644
    std::string result = "";
    if (need_braces) {
      result += "\"{\"";
-@@ -2127,21 +4846,24 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2127,21 +4853,24 @@ std::string JSONSchemaConverter::GenerateObject(
      std::string effective_suffix = additional_suffix;
      std::string pp_override = "";
 
@@ -5356,7 +5368,7 @@ index da8b516..4bdeee9 100644
          std::string add_prop =
              FormatOtherProperty(GetKeyPattern(), add_value_rule, rule_name, effective_suffix);
          pp_body += " | " + add_prop;
-@@ -2156,8 +4878,9 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2156,8 +4885,9 @@ std::string JSONSchemaConverter::GenerateObject(
        // propertyNames constrains keys of additional properties.
        // Only apply when additional properties are allowed — when additionalProperties
        // is false, no extra keys beyond named properties should be permitted.
@@ -5368,7 +5380,7 @@ index da8b516..4bdeee9 100644
        pp_override = key_pattern + " " + colon_pattern_ + " " + val_rule;
        effective_suffix = "pn";
      }
-@@ -2170,6 +4893,7 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2170,6 +4900,7 @@ std::string JSONSchemaConverter::GenerateObject(
                          effective_suffix,
                          spec.min_properties,
                          spec.max_properties,
@@ -5376,7 +5388,7 @@ index da8b516..4bdeee9 100644
                          pp_override
                      );
      could_be_empty = spec.required.empty() && spec.min_properties == 0;
-@@ -2179,12 +4903,14 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2179,12 +4910,14 @@ std::string JSONSchemaConverter::GenerateObject(
 
      std::string property_rule_body = "(";
      if (spec.max_properties != 0) {
@@ -5394,7 +5406,7 @@ index da8b516..4bdeee9 100644
            if (i != 0) {
              property_rule_body += " | ";
            }
-@@ -2192,9 +4918,13 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2192,9 +4925,13 @@ std::string JSONSchemaConverter::GenerateObject(
          }
          property_rule_body += ")";
        } else {
@@ -5410,7 +5422,7 @@ index da8b516..4bdeee9 100644
        }
 
        auto prop_rule_name = ebnf_script_creator_.AllocateRuleName(rule_name + "_prop");
-@@ -2217,16 +4947,21 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2217,16 +4954,21 @@ std::string JSONSchemaConverter::GenerateObject(
                          rule_name,
                          additional_suffix,
                          spec.min_properties,
@@ -5436,7 +5448,7 @@ index da8b516..4bdeee9 100644
        result += " " + NextSeparator() + " " + other_property_pattern + " ";
        result += GetPropertyWithNumberConstraints(
                      NextSeparator() + " " + other_property_pattern,
-@@ -2260,117 +4995,143 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2260,117 +5002,143 @@ std::string JSONSchemaConverter::GenerateObject(
      }
    }
 
@@ -5633,7 +5645,7 @@ index da8b516..4bdeee9 100644
    }
    return result;
  }
-@@ -2391,12 +5152,18 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2391,12 +5159,18 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
          ")";
      m["email"] = "^(" + dot_string + "|" + quoted_string + ")@" + domain + "$";
 
@@ -5656,7 +5668,7 @@ index da8b516..4bdeee9 100644
      m["duration"] =
          "^P((\\d+D|\\d+M(\\d+D)?|\\d+Y(\\d+M(\\d+D)?)?)(T(\\d+S|\\d+M(\\d+S)?|\\d+H(\\d+M(\\d+"
          "S)?"
-@@ -3328,7 +6095,16 @@ std::string JSONSchemaToEBNF(
+@@ -3328,7 +6102,16 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -5674,7 +5686,7 @@ index da8b516..4bdeee9 100644
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +6118,16 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +6125,16 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
@@ -5692,7 +5704,7 @@ index da8b516..4bdeee9 100644
    );
  }
 
-@@ -3354,11 +6139,58 @@ std::string JSONSchemaToEBNF(
+@@ -3354,11 +6146,58 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -5755,7 +5767,7 @@ index da8b516..4bdeee9 100644
    if (spec_result.IsErr()) {
      XGRAMMAR_LOG(FATAL) << std::move(spec_result).UnwrapErr().what();
    }
-@@ -3372,18 +6204,36 @@ std::string JSONSchemaToEBNF(
+@@ -3372,18 +6211,36 @@ std::string JSONSchemaToEBNF(
      return std::move(r).Unwrap();
    };
 
@@ -5794,7 +5806,7 @@ index da8b516..4bdeee9 100644
        XMLToolCallingConverter converter(
            indent,
            separators,
-@@ -3391,7 +6241,14 @@ std::string JSONSchemaToEBNF(
+@@ -3391,7 +6248,14 @@ std::string JSONSchemaToEBNF(
            max_whitespace_cnt,
            ref_resolver,
            json_format,
@@ -5810,7 +5822,7 @@ index da8b516..4bdeee9 100644
        );
        return converter.Convert(spec);
      }
-@@ -3414,7 +6271,9 @@ std::string GenerateFloatRangeRegex(
+@@ -3414,7 +6278,9 @@ std::string GenerateFloatRangeRegex(
    );
  }
 
@@ -5821,7 +5833,7 @@ index da8b516..4bdeee9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3428,11 +6287,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+@@ -3428,11 +6294,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
        true,
        std::nullopt,
        JSONFormat::kQwenXML,
@@ -5840,7 +5852,7 @@ index da8b516..4bdeee9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3446,11 +6310,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -3446,11 +6317,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
        true,
        std::nullopt,
        JSONFormat::kMiniMaxXML,
@@ -5859,7 +5871,7 @@ index da8b516..4bdeee9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3464,11 +6333,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -3464,11 +6340,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
        true,
        std::nullopt,
        JSONFormat::kDeepSeekXML,
@@ -5878,7 +5890,7 @@ index da8b516..4bdeee9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3482,7 +6356,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+@@ -3482,7 +6363,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
        true,
        std::nullopt,
        JSONFormat::kGlmXML,

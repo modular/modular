@@ -539,6 +539,104 @@ def test_container_enum_constrains_to_the_declared_literals(
     )
 
 
+# A JSON Schema integer is a number with a zero fractional part, so the
+# exponent forms below are integers and the fractional ones are not. The
+# terminal is shared by every framing, XML or not, so the schema is exercised
+# through a bare response_format schema, a JSON-framed tool call, and the XML
+# ones.
+_INTEGER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "quantity": {"type": "integer"},
+    },
+    "required": ["name", "quantity"],
+    "additionalProperties": False,
+}
+
+_INTEGER_FRAMINGS = ("response_format", "kimi", *_XML_TOOL_FORMATS)
+
+
+def _integer_wire(framing: str, literal: str) -> str:
+    """The on-wire text a model emits for ``quantity = literal``."""
+    args = f'{{"name":"x","quantity":{literal}}}'
+    if framing == "response_format":
+        return args
+    if framing == "kimi":
+        return (
+            "<|tool_calls_section_begin|><|tool_call_begin|>"
+            "functions.record_quantity:0<|tool_call_argument_begin|>"
+            f"{args}<|tool_call_end|><|tool_calls_section_end|>"
+        )
+    return _xml_tool_wire(
+        framing, "record_quantity", [("name", "x"), ("quantity", literal)]
+    )
+
+
+def _integer_matcher(helper: StructuredOutputHelper, framing: str) -> Any:
+    assert helper.backend is not None
+    if framing == "response_format":
+        return helper.backend.create_matcher(
+            helper.backend.compile_json_schema(json.dumps(_INTEGER_SCHEMA))
+        )
+    return _tool_matcher(helper, framing, "record_quantity", _INTEGER_SCHEMA)
+
+
+@pytest.mark.parametrize("framing", _INTEGER_FRAMINGS, ids=lambda f: f)
+@pytest.mark.parametrize(
+    ("literal", "is_integer"),
+    [
+        ("180", True),
+        ("100000000000000000000", True),
+        ("1e80", True),
+        ("1E80", True),
+        ("1e+80", True),
+        ("-1e80", True),
+        # Legal JSON numbers that are not integers, or whose integer-ness a
+        # terminal cannot decide. Each must stay rejected: the conformance
+        # checker validates the decoded value under JSON Schema, so a grammar
+        # that admitted these would hand the model a value its own schema
+        # forbids.
+        ("1e-5", False),
+        ("1.5", False),
+        ("1.0", False),
+        ("1.5e3", False),
+    ],
+    ids=lambda v: v if isinstance(v, str) else "",
+)
+def test_integer_terminal_admits_an_exponent_but_no_fraction(
+    framing: str, literal: str, is_integer: bool
+) -> None:
+    """An ``integer`` field must reach ``1e80``, and must not reach ``1e-5``.
+
+    The terminal had no exponent suffix at all, so a model asked for a very
+    large integer had the ``e`` masked out mid-number and was steered into the
+    nearest legal continuation -- ``1e80`` became ``180``, silently and with no
+    schema rejection anywhere to show for it.
+
+    The exponent's sign is ``+`` or absent by construction: ``1e-5`` is a legal
+    JSON number but not an integer. ``1.0`` and ``1.5e3`` are integers by value
+    yet stay rejected, because deciding that needs the fraction length weighed
+    against the exponent, which a regular terminal cannot do.
+
+    This terminal is not XML-specific -- it is the one every framing shares --
+    so ``response_format`` carried the same hole as tool calls.
+    """
+    helper = _helper_for(framing)
+    wire = _integer_wire(framing, literal)
+    matcher = _integer_matcher(helper, framing)
+    consumed = _consume_wire(matcher, framing, wire)
+    if is_integer:
+        assert consumed == len(wire) and matcher.is_accepting(), (
+            f"[{framing}] the grammar rejected the integer {literal!r} after "
+            f"{consumed} of {len(wire)} bytes"
+        )
+    else:
+        assert consumed < len(wire), (
+            f"[{framing}] the grammar admitted {literal!r} for an integer field"
+        )
+
+
 class _SlowBackend:
     """Minimal stand-in carrying the ``name`` the decorator reads."""
 

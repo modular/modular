@@ -250,5 +250,14 @@ This version is still a work in progress.
   type from the schema, and it consulted `type` and the string facets but not
   `const` or `enum` — neither of which usually carries a sibling `type`. A
   conforming tool call therefore read back as a schema violation.
+- Fixed a structured-output `integer` field being unable to accept a number
+  written with an exponent, such as `1e80`. JSON Schema reads an integer as a
+  number with a zero fractional part, so `1e80` is one, and it is how a model
+  writes a very large integer — but the grammar's integer terminal had no
+  exponent suffix, so the `e` was masked out mid-number and the model was
+  steered into the nearest legal continuation (`1e80` became `180`). The
+  terminal now admits an exponent whose sign is `+` or absent. A negative
+  exponent stays rejected, since `1e-5` is a legal JSON number but not an
+  integer. This affects `response_format` schemas as well as tool calls.
 
 ## Mojo language

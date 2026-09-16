@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from max.serve.parser.tool_call_validation import (
     _VALIDATOR_CACHE_SIZE,
     _build_validator,
@@ -262,3 +263,35 @@ def test_validator_cache_is_bounded() -> None:
             {"f": {"type": "object", "properties": {f"p{i}": {}}}},
         )
     assert _build_validator.cache_info().currsize <= _VALIDATOR_CACHE_SIZE
+
+
+@pytest.mark.parametrize(
+    ("literal", "conforms"),
+    [
+        ("180", True),
+        ("1e80", True),
+        ("1E80", True),
+        ("1e+80", True),
+        ("1e-5", False),
+        ("1.5", False),
+    ],
+    ids=lambda v: v if isinstance(v, str) else "",
+)
+def test_exponent_form_integer_matches_the_grammars_definition(
+    literal: str, conforms: bool
+) -> None:
+    """This checker and the structured-output grammar must agree on ``integer``.
+
+    Draft 7 reads an integer as a number with a zero fractional part, so
+    ``1e80`` conforms here even though it decodes to a Python float, while
+    ``1e-5`` does not. The grammar's integer terminal is built to the same
+    line: it admits an exponent whose sign is ``+`` or absent and nothing
+    fractional. If the two drift apart, one side lets a model emit a value the
+    other then reports as a violation -- which is what this pins.
+    """
+    r = _only([("get_weather", f'{{"location": "NYC", "count": {literal}}}')])
+    if conforms:
+        assert r.outcome == "valid", f"{literal} rejected: {r.errors}"
+    else:
+        assert r.outcome == "schema_mismatch"
+        assert r.errors == ["type@$.count"]
