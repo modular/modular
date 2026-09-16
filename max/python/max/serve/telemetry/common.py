@@ -249,6 +249,8 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.di.ce_preempted_tg_pending_count": HISTOGRAM_COUNT_BUCKETS,
     # Batch size
     "maxserve.batch_size": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Real tool inventories sit in the low tens; 512 clears all of them.
+    "maxserve.tool_call.tools_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # MiniMax-M3's video processor samples up to 512 frames per clip
     # (see max_private/minimax_m3/vision_processor.py); this bucket set's
     # upper bound (512) matches exactly.

@@ -753,6 +753,51 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "paths stay in the log to keep label cardinality bounded."
         ),
     ),  # type: ignore
+    "maxserve.tool_call.responses": _meter.create_counter(
+        "maxserve.tool_call.responses",
+        description=(
+            "Count of chat-completion requests whose response contained at "
+            "least one tool call, counted once per request however many "
+            "calls it emitted. Against 'maxserve.tool_call.requests' this "
+            "gives the share of declared tool inventories the model actually "
+            "draws on; tools declared but never called cost prompt tokens on "
+            "every request. Not a denominator for "
+            "'maxserve.tool_call.conformance_errors', which counts "
+            "individual generated calls rather than requests."
+        ),
+    ),  # type: ignore
+    "maxserve.tool_call.tools_per_request": _meter.create_histogram(
+        "maxserve.tool_call.tools_per_request",
+        unit="tools",
+        description=(
+            "Distribution of tools declared per chat-completion request. "
+            "Declared tools are rendered into the prompt, so inventory size "
+            "explains a client's prompt length and grammar compile cost. "
+            "Shares its population with 'maxserve.tool_call.requests'."
+        ),
+    ),  # type: ignore
+    "maxserve.tool_call.requests": _meter.create_counter(
+        "maxserve.tool_call.requests",
+        description=(
+            "Count of chat-completion requests that supplied a non-empty "
+            "'tools' array, split by the 'choice' tag (auto, required, "
+            "named). Pairs with 'maxserve.tool_call.responses' to show how "
+            "often a declared inventory is actually used. A "
+            "tool_choice='none' request is not counted: it cannot produce a "
+            "tool call."
+        ),
+    ),  # type: ignore
+    "maxserve.structured_output.requests": _meter.create_counter(
+        "maxserve.structured_output.requests",
+        description=(
+            "Count of chat-completion requests that carried a "
+            "response_format, split by the 'kind' tag (json_object, "
+            "json_schema); a 'text' format is the unconstrained default and "
+            "is not counted. Counted before the schema is compiled, so a "
+            "request later rejected by "
+            "'maxserve.structured_output.grammar_rejections' still counts."
+        ),
+    ),  # type: ignore
 }
 
 
@@ -1860,6 +1905,42 @@ class _AsyncMetrics:
                 "maxserve.dkv.nixl_write_gib_per_s",
                 gib_per_s,
                 self.extra_attributes,
+            ),
+        )
+
+    def tool_call_responses(self) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.tool_call.responses",
+                1,
+                self.extra_attributes,
+            ),
+        )
+
+    def tool_call_tools_per_request(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.tool_call.tools_per_request",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def tool_call_requests(self, choice: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.tool_call.requests",
+                1,
+                {**self.extra_attributes, "choice": choice},
+            ),
+        )
+
+    def structured_output_requests(self, kind: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.structured_output.requests",
+                1,
+                {**self.extra_attributes, "kind": kind},
             ),
         )
 

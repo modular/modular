@@ -103,6 +103,16 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- Added counters for how much traffic uses tool calling and structured
+  output: `maxserve.tool_call.requests` (the request declared tools, tagged
+  `choice`), `maxserve.tool_call.responses` (its response actually contained
+  a tool call), and `maxserve.structured_output.requests` (tagged `kind`).
+  The first two together show how often a declared tool inventory is used.
+- Added `maxserve.tool_call.tools_per_request`, a histogram of how many tools
+  a request declared. Tool schemas are rendered into the prompt, so this is
+  the explanatory variable behind a client's prompt length and grammar
+  compile cost.
+
 ### `max` CLI
 
 ### Python API

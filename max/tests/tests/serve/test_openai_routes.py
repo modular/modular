@@ -88,11 +88,14 @@ from max.serve.router.openai_routes import (
     _batch_id,
     _coerce_positive_float,
     _coerce_positive_int,
+    _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
     _get_cache_salt,
     _process_chat_log_probabilities,
+    _record_request_feature_metrics,
     _resolve_grammar_constraints,
     _set_batch_id_attributes,
+    _tool_choice_label,
     get_tool_parser,
     openai_create_chat_completion,
     openai_parse_chat_completion_request,
@@ -3820,3 +3823,207 @@ async def test_parse_chat_completion_reasoning_content_key_and_precedence() -> (
         request_both, wrap_content=False, settings=settings
     )
     assert parsed_both.messages[0].reasoning_content == "wins"
+
+
+_WEATHER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+def _feature_metrics_request(**extra: Any) -> CreateChatCompletionRequest:
+    return CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            **extra,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_choice", "expected"),
+    [
+        (None, "auto"),
+        ("auto", "auto"),
+        ("required", "required"),
+        ("none", "none"),
+        ({"type": "function", "function": {"name": "get_weather"}}, "named"),
+        ("a_choice_openai_added_later", "other"),
+    ],
+)
+def test_tool_choice_label(tool_choice: Any, expected: str) -> None:
+    """Every tool_choice maps to a bounded label; a named choice hides the name."""
+    assert _tool_choice_label(tool_choice) == expected
+
+
+def test_empty_tools_array_is_truthy_but_converts_to_empty_list() -> None:
+    """Pins the trap the feature counter has to route around.
+
+    ``CreateChatCompletionRequest.tools`` is a lazily-validated pydantic
+    ``Iterable``: it is truthy even for ``tools: []``, and iterating it
+    consumes it. The converted list is the only safe thing to test.
+    """
+    request = _feature_metrics_request(tools=[])
+    assert bool(request.tools) is True
+    assert (
+        _convert_chat_completion_tools_to_token_generator_tools(request.tools)
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_choice", "expected_choice"),
+    [
+        (None, "auto"),
+        ("auto", "auto"),
+        ("required", "required"),
+        ({"type": "function", "function": {"name": "get_weather"}}, "named"),
+    ],
+)
+def test_record_request_feature_metrics_counts_declared_tools(
+    tool_choice: Any, expected_choice: str
+) -> None:
+    request = _feature_metrics_request(
+        tools=[_WEATHER_TOOL], tool_choice=tool_choice
+    )
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools
+    )
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_requests.assert_called_once_with(expected_choice)
+    mock_metrics.tool_call_tools_per_request.assert_called_once_with(1)
+    mock_metrics.structured_output_requests.assert_not_called()
+
+
+@pytest.mark.parametrize("tools", [None, []])
+def test_record_request_feature_metrics_ignores_absent_tools(
+    tools: list[Any] | None,
+) -> None:
+    """An absent or empty converted tools list records nothing.
+
+    The ``tool_choice="none"`` case is the route's job, not the helper's, and
+    is covered by ``test_chat_completion_tool_choice_none_records_no_tool_metrics``.
+    """
+    request = _feature_metrics_request(tools=[_WEATHER_TOOL])
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_requests.assert_not_called()
+    mock_metrics.tool_call_tools_per_request.assert_not_called()
+
+
+def test_record_request_feature_metrics_reports_tool_inventory_size() -> None:
+    """The histogram carries the declared tool count, not just its presence."""
+    request = _feature_metrics_request(
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": f"tool_{i}", "parameters": {}},
+            }
+            for i in range(7)
+        ]
+    )
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools
+    )
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_tools_per_request.assert_called_once_with(7)
+
+
+@pytest.mark.parametrize(
+    ("response_format", "expected_kind"),
+    [
+        ({"type": "json_object"}, "json_object"),
+        (
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "s", "schema": {"type": "object"}},
+            },
+            "json_schema",
+        ),
+    ],
+)
+def test_record_request_feature_metrics_counts_response_format(
+    response_format: dict[str, Any], expected_kind: str
+) -> None:
+    request = _feature_metrics_request(response_format=response_format)
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(None, request)
+    mock_metrics.structured_output_requests.assert_called_once_with(
+        expected_kind
+    )
+    mock_metrics.tool_call_requests.assert_not_called()
+
+
+def test_record_request_feature_metrics_ignores_text_response_format() -> None:
+    """``text`` is the unconstrained default, so it is not structured output."""
+    request = _feature_metrics_request(response_format={"type": "text"})
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(None, request)
+    mock_metrics.structured_output_requests.assert_not_called()
+
+
+def test_record_request_feature_metrics_counts_both_features() -> None:
+    """A request using both features is counted once under each."""
+    request = _feature_metrics_request(
+        tools=[_WEATHER_TOOL],
+        tool_choice="required",
+        response_format={"type": "json_object"},
+    )
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools
+    )
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_requests.assert_called_once_with("required")
+    mock_metrics.structured_output_requests.assert_called_once_with(
+        "json_object"
+    )
+
+
+def _tool_request_payload(**extra: Any) -> dict[str, Any]:
+    return {
+        "model": "echo",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [_WEATHER_TOOL],
+        **extra,
+    }
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_records_tool_metrics(app) -> None:  # noqa: ANN001
+    """A request declaring tools is counted on the way through the route."""
+    async with AsyncTestClient(app) as client:
+        with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+            response = await client.post(
+                "/v1/chat/completions", json=_tool_request_payload()
+            )
+    assert response.status_code == 200
+    mock_metrics.tool_call_requests.assert_called_once_with("auto")
+    mock_metrics.tool_call_tools_per_request.assert_called_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_tool_choice_none_records_no_tool_metrics(
+    app,  # noqa: ANN001
+) -> None:
+    """``tool_choice="none"`` clears the tools list, so nothing is counted.
+
+    Exercised through the route rather than the helper: the suppression lives
+    in the route's tools derivation, so a helper-only test would keep passing
+    if that derivation stopped clearing the list.
+    """
+    async with AsyncTestClient(app) as client:
+        with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+            response = await client.post(
+                "/v1/chat/completions",
+                json=_tool_request_payload(tool_choice="none"),
+            )
+    assert response.status_code == 200
+    mock_metrics.tool_call_requests.assert_not_called()
+    mock_metrics.tool_call_tools_per_request.assert_not_called()
