@@ -13,7 +13,8 @@
 
 from std.testing import TestSuite
 from std.testing import assert_equal, assert_raises, assert_true, assert_false
-from test_utils import MoveOnly, check_write_to
+from test_utils import DelCounter, MoveOnly, check_write_to
+from std.memory import forget_deinit
 from std.math import iota
 from std.hashlib import Hasher
 
@@ -669,6 +670,28 @@ def test_span_iter_owned() raises:
     assert_equal(result[2], 30)
     # Original list is still intact (Span doesn't own data).
     assert_equal(len(list), 3)
+
+
+def test_unsafe_deinit_elements() raises:
+    var count = 0
+    var array = [
+        DelCounter(Pointer(to=count)),
+        DelCounter(Pointer(to=count)),
+    ]
+    Span(array).unsafe_deinit_elements()
+
+    forget_deinit(array^)
+
+    # Both elements ran their deinitializer exactly once.
+    assert_equal(count, 2)
+
+
+def test_unsafe_deinit_elements_trivial() raises:
+    var count = 0
+    var array = [DelCounter[_, trivial_del=True](Pointer(to=count))]
+
+    Span(array).unsafe_deinit_elements()
+    assert_equal(count, 0)
 
 
 def main() raises:

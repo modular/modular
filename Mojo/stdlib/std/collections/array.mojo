@@ -643,7 +643,7 @@ struct Array[T: AnyType, length: Int](
         deinit self,
     ) where conforms_to(Self.T, Deinitable):
         """Destroys the array's elements."""
-        unsafe_destroy_n(self.unsafe_ptr(), Self.length)
+        Span(self).unsafe_deinit_elements()
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consumes this array and deinitializes its elements using the provided

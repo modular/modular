@@ -298,12 +298,14 @@ struct Span[
     def __init__(
         out self,
         ref[Self.origin] list: List[Self.T],
-    ) where conforms_to(Self.T, Movable):
+    ):
         """Construct a `Span` from a `List`.
 
         Args:
             list: The list to which the span refers.
         """
+        # TODO: This should carry the List's interior origin and should not
+        # need a rebind.
         self._data = rebind[type_of(self._data)](list.unsafe_ptr())
         self._len = len(list)
 
@@ -1169,3 +1171,29 @@ struct Span[
             cursor += splat(cmp_result < 0) & half
 
         return Optional(cursor) if cmp_result == 0 else None
+
+    @inline(.always)
+    @__allow_legacy_custom_self_type
+    def unsafe_deinit_elements[U: Deinitable](self: MutSpan[U, _]):
+        """Destroys every element, leaving the memory uninitialized.
+
+        Each element's deinitializer runs in place, in index order, so the
+        storage behind the span can be reused or released without moving
+        anything out of it.
+
+        Parameters:
+            U: The span's element type.
+
+        Safety:
+
+        - Every element must hold a live `U`. Deinitializing an element that
+          was never initialized, or that was already deinitialized, is
+          undefined behavior.
+        - The elements are left uninitialized. Reading them, or deinitializing
+          them a second time, is undefined behavior.
+        """
+        comptime if IsTriviallyDeinitable[Self.T]:
+            pass
+        else:
+            for i in range(len(self)):
+                self._data.unsafe_offset(i).unsafe_deinit_pointee()

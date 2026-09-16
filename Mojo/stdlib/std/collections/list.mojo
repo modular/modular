@@ -36,7 +36,6 @@ from std.memory.alloc import (
 )
 from std.memory import (
     Pointer,
-    unsafe_destroy_n,
     unsafe_memcpy,
     unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
@@ -126,10 +125,9 @@ struct _ListIterOwned[T: Movable & Deinitable](
     def __deinit__(deinit self):
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        unsafe_destroy_n(
-            self._list.unsafe_ptr().unsafe_offset(self._index),
-            count=len(self._list) - self._index,
-        )
+        Span(self._list)._unchecked_subspan(
+            start=self._index, end=len(self._list)
+        ).unsafe_deinit_elements()
         self._list._len = 0
 
     @inline(.always)
@@ -572,10 +570,7 @@ struct List[T: AnyType, /](
     @stable(since="1.0")
     def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         """Destroy all elements in the list and free its memory."""
-        unsafe_destroy_n(
-            self._data,
-            count=len(self),
-        )
+        Span(self).unsafe_deinit_elements()
         self^._unsafe_assume_destroyed_and_deallocate()
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
@@ -1287,10 +1282,9 @@ struct List[T: AnyType, /](
                 " size is smaller than the current size."
             )
 
-        unsafe_destroy_n(
-            self._data.unsafe_offset(new_length),
-            count=len(self) - new_length,
-        )
+        Span(self)._unchecked_subspan(
+            start=new_length, end=len(self)
+        ).unsafe_deinit_elements()
 
         var old_length: Int = self._len
         self._len = new_length
@@ -1421,7 +1415,7 @@ struct List[T: AnyType, /](
         print(len(list))  # 0
         ```
         """
-        unsafe_destroy_n(self._data, count=self._len)
+        Span(self).unsafe_deinit_elements()
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)

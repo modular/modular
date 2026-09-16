@@ -111,6 +111,9 @@ This version is still a work in progress.
   pay the cost of holding an extra `Int` field. Dynamic (runtime) alignment will
   eventually be supported after some more design considerations.
 
+- `Span` has a new `unsafe_deinit_elements()` method, which destroys every
+  element in place and leaves the memory uninitialized.
+
 ## Tooling changes
 
 ## Removed
