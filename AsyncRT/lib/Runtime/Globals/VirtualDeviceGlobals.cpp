@@ -80,4 +80,28 @@ MODULAR_CXX_EXPORT std::string getVirtualDeviceTargetArch() {
   return getVirtualDeviceTargetArchImpl();
 }
 
+// Global CPU codegen target for virtual-device compilation, read by the
+// graph compiler's kernel codegen. The Driver DeviceContext wrappers forward
+// here rather than holding the string themselves so the setter (bound into
+// the Python extension's image) and the reader (bound into libmax) reach one
+// copy on Mach-O's two-level namespace, not one copy each.
+static std::string &getVirtualCpuTargetImpl() {
+  static std::string cpu;
+  return cpu;
+}
+static std::mutex &getVirtualCpuTargetMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+MODULAR_CXX_EXPORT void setVirtualCpuTarget(StringRef cpu) {
+  std::lock_guard<std::mutex> lock(getVirtualCpuTargetMutex());
+  getVirtualCpuTargetImpl() = cpu.str();
+}
+
+MODULAR_CXX_EXPORT std::string getVirtualCpuTarget() {
+  std::lock_guard<std::mutex> lock(getVirtualCpuTargetMutex());
+  return getVirtualCpuTargetImpl();
+}
+
 } // namespace M::AsyncRT
