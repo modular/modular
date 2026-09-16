@@ -56,6 +56,7 @@ row counts beyond the hardware-tuned block limit. Gamma weights are
 preloaded once and reused across all rows in the loop.
 """
 
+from std.builtin.device_passable import DevicePassable
 from std.collections import Array, Optional
 from std.collections._conditional import _ComptimeConditional
 from std.math import align_up, ceildiv, rsqrt
@@ -137,9 +138,10 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: SIMDLength](
-        row: Int, col: Int, val: SIMD[out_dtype, width]
-    ) capturing -> None,
+    OutputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: SIMDLength](Int, Int, SIMD[out_dtype, width]) -> None,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, LayoutType, origin],
@@ -165,6 +167,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         residual_out_origin,
         engaged=has_residual,
     ],
+    output_fn: OutputFnType,
 ):
     """Fused allreduce + RMSNorm + FP8 kernel using warp-tiling.
 
@@ -328,9 +331,10 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: SIMDLength](
-        row: Int, col: Int, val: SIMD[out_dtype, width]
-    ) capturing -> None,
+    OutputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: SIMDLength](Int, Int, SIMD[out_dtype, width]) -> None,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, LayoutType, origin],
@@ -356,6 +360,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
         residual_out_origin,
         engaged=has_residual,
     ],
+    output_fn: OutputFnType,
 ):
     """Single-kernel 2-stage fused RS + RMSNorm + FP8 + AG.
 
@@ -727,11 +732,9 @@ def _allreduce_rmsnorm_fp8_launch[
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(output)
     def output_fn[
         width: SIMDLength
-    ](row: Int, col: Int, val: SIMD[out_dtype, width]):
+    ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
         output.store[width=width](Coord(row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
@@ -751,7 +754,7 @@ def _allreduce_rmsnorm_fp8_launch[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
         has_residual=has_residual,
-        output_fn=output_fn,
+        OutputFnType=type_of(output_fn),
     ]
     ctx.enqueue_function[kernel](
         src_ptrs,
@@ -766,6 +769,7 @@ def _allreduce_rmsnorm_fp8_launch[
         Int32(my_rank),
         residual,
         residual_output,
+        output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
     )
@@ -886,11 +890,9 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(output)
     def output_fn[
         width: SIMDLength
-    ](row: Int, col: Int, val: SIMD[out_dtype, width]):
+    ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
         output.store[width=width](Coord(row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
@@ -910,7 +912,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
         has_residual=has_residual,
-        output_fn=output_fn,
+        OutputFnType=type_of(output_fn),
     ]
     ctx.enqueue_function[kernel](
         src_ptrs,
@@ -925,6 +927,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         Int32(my_rank),
         residual,
         residual_output,
+        output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
     )
