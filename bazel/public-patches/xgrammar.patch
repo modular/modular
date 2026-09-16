@@ -6392,7 +6392,7 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..e18eef1 100644
+index 4f1cc65..6faa369 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
 @@ -5,10 +5,18 @@
@@ -6712,8 +6712,7 @@ index 4f1cc65..e18eef1 100644
 -    return GetKeyPattern();
 +    auto pattern = BuildBareAdditionalKeyPattern(kXMLVariableNameTerminal, properties, rule_name);
 +    return pattern.has_value() ? *pattern : GetKeyPattern();
-   }
--  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
++  }
 +  return JSONSchemaConverter::GetAdditionalKeyPattern(properties, rule_name);
 +}
 +
@@ -6725,7 +6724,8 @@ index 4f1cc65..e18eef1 100644
 +        property_names, rule_name,
 +        MakeKeyContext(GenerationContext::Framing::kBare, kXMLVariableNameTerminal)
 +    );
-+  }
+   }
+-  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
 +  return JSONSchemaConverter::GetPropertyNamesKeyPattern(property_names, rule_name);
  }
 
@@ -6743,7 +6743,7 @@ index 4f1cc65..e18eef1 100644
    if (nested_object_level_ <= 1) {
      // For XML format, use TagDispatch for strings
      if (!spec.pattern.has_value() && !spec.format.has_value() && spec.min_length == 0 &&
-@@ -155,46 +367,246 @@ std::string XMLToolCallingConverter::GenerateString(
+@@ -155,82 +367,318 @@ std::string XMLToolCallingConverter::GenerateString(
        return converted_regex;
      }
 
@@ -6764,7 +6764,8 @@ index 4f1cc65..e18eef1 100644
 +      if (MarkerTokenId(kValueClose) >= 0) {
 +        const std::string ch = "[^\\0-\\x1f]";
 +        return ch + RepeatExpr(spec.min_length, spec.max_length);
-+      }
+       }
+-      return char_pattern + repetition;
 +      return BoundedBareValue(spec.min_length, spec.max_length, rule_name);
 +    }
 +    // Only an unenforceable format reaches here (freeform/pattern/length all
@@ -6787,7 +6788,7 @@ index 4f1cc65..e18eef1 100644
 +                                 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A,
 +                                 0x2028, 0x2029, 0x202F, 0x205F, 0x3000}) {
 +      edges.push_back(CharToUTF8(codepoint));
-+    }
+     }
 +    return edges;
 +  }();
 +  return kEdges;
@@ -6798,10 +6799,11 @@ index 4f1cc65..e18eef1 100644
 +  for (const auto& edge : EdgeWhitespace()) {
 +    if (result.size() > 1) result += ", ";
 +    result += "\"" + EscapeString(edge) + "\"";
-+  }
+   }
+-  return JSONSchemaConverter::GenerateString(spec, rule_name);
 +  return result + ")";
-+}
-+
+ }
+
 +}  // namespace
 +
 +std::string XMLToolCallingConverter::BoundedBareValue(
@@ -6876,8 +6878,7 @@ index 4f1cc65..e18eef1 100644
 +      if (tight_value_rules_.count(body.substr(i, j - i)) > 0) {
 +        tight_value_rules_.insert(rule_name);
 +        return;
-       }
--      return char_pattern + repetition;
++      }
 +      i = j;
 +    } else if (c == '"') {
 +      ++i;
@@ -6887,11 +6888,10 @@ index 4f1cc65..e18eef1 100644
 +      ++i;
 +    } else {
 +      ++i;
-     }
-   }
--  return JSONSchemaConverter::GenerateString(spec, rule_name);
- }
-
++    }
++  }
++}
++
 +std::string XMLToolCallingConverter::GenerateRef(
 +    const RefSpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +) {
@@ -6995,6 +6995,43 @@ index 4f1cc65..e18eef1 100644
    return result;
  }
 
++namespace {
++
++// A JSON container literal keeps its JSON spelling on the wire, so it carries
++// quotes and separators that are grammar syntax rather than content. Only the
++// base renderer escapes those; interpolating the raw serialization into an EBNF
++// string literal emits the object's own quotes as syntax, so `{"mode":...}`
++// leaves a bare `mode` the EBNF parser reads as an undefined rule.
++bool IsJSONContainer(const picojson::value& value) {
++  return value.is<picojson::object>() || value.is<picojson::array>();
++}
++
++}  // namespace
++
++std::string XMLToolCallingConverter::GenerateBareValueLiteral(
++    const picojson::value& parsed,
++    const std::string& json_value,
++    const std::string& rule_name,
++    const GenerationContext& ctx
++) {
++  // Only a string is emitted bare; the XML markers delimit it, so it carries no
++  // quotes of its own and the serialized form's outer pair is dropped.
++  if (parsed.is<std::string>()) {
++    return "\"" + json_value.substr(1, json_value.size() - 2) + "\"";
++  }
++  if (IsJSONContainer(parsed) && xml_wrapper_.key_is_tag) {
++    // A tag-keyed style spells an object's members as nested tags at every
++    // depth, so it has no JSON form to fall back on. Fail closed rather than
++    // constrain the model to a spelling its own format never produces.
++    XGRAMMAR_LOG(FATAL) << "unsupported: a const/enum object or array literal has no wire form "
++                           "in a tag-keyed XML tool-calling format";
++  }
++  ConstSpec single;
++  single.json_value = json_value;
++  single.parsed_json_value = parsed;
++  return JSONSchemaConverter::GenerateConst(single, rule_name, ctx);
++}
++
  std::string XMLToolCallingConverter::GenerateConst(
 -    const ConstSpec& spec, const std::string& rule_name
 +    const ConstSpec& spec, const std::string& rule_name, const GenerationContext& ctx
@@ -7003,11 +7040,12 @@ index 4f1cc65..e18eef1 100644
 +    return JSONSchemaConverter::GenerateConst(spec, rule_name, ctx);
 +  }
    if (nested_object_level_ <= 1) {
-     const std::string& val = spec.json_value;
-     if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
-@@ -202,14 +614,17 @@ std::string XMLToolCallingConverter::GenerateConst(
-     }
-     return "\"" + val + "\"";
+-    const std::string& val = spec.json_value;
+-    if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
+-      return "\"" + val.substr(1, val.size() - 2) + "\"";
+-    }
+-    return "\"" + val + "\"";
++    return GenerateBareValueLiteral(spec.parsed_json_value, spec.json_value, rule_name, ctx);
    }
 -  return JSONSchemaConverter::GenerateConst(spec, rule_name);
 +  return JSONSchemaConverter::GenerateConst(spec, rule_name, ctx);
@@ -7025,7 +7063,20 @@ index 4f1cc65..e18eef1 100644
    if (nested_object_level_ <= 1) {
      std::string result;
      for (size_t i = 0; i < spec.json_values.size(); ++i) {
-@@ -225,12 +640,13 @@ std::string XMLToolCallingConverter::GenerateEnum(
+       if (i != 0) {
+         result += " | ";
+       }
+-      const std::string& val = spec.json_values[i];
+-      if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
+-        result += "(\"" + val.substr(1, val.size() - 2) + "\")";
+-      } else {
+-        result += "(\"" + val + "\")";
+-      }
++      result += "(" +
++                GenerateBareValueLiteral(
++                    spec.parsed_json_values[i], spec.json_values[i], rule_name, ctx
++                ) +
++                ")";
      }
      return result;
    }
@@ -7041,7 +7092,7 @@ index 4f1cc65..e18eef1 100644
    }
    return JSONSchemaConverter::FormatPropertyKey(key);
  }
-@@ -239,15 +655,16 @@ std::string XMLToolCallingConverter::FormatProperty(
+@@ -239,15 +687,16 @@ std::string XMLToolCallingConverter::FormatProperty(
      const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
  ) {
    if (nested_object_level_ <= 1) {
@@ -7066,7 +7117,7 @@ index 4f1cc65..e18eef1 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +676,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +708,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -7092,7 +7143,7 @@ index 4f1cc65..e18eef1 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +693,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +725,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -7162,7 +7213,7 @@ index 4f1cc65..e18eef1 100644
    return result;
  }
 
-@@ -289,14 +759,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +791,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
@@ -7180,7 +7231,7 @@ index 4f1cc65..e18eef1 100644
 
  }  // namespace xgrammar
 diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
-index 8d778e0..b4397f9 100644
+index 8d778e0..283b47b 100644
 --- a/cpp/json_schema_converter_ext.h
 +++ b/cpp/json_schema_converter_ext.h
 @@ -7,8 +7,12 @@
@@ -7212,7 +7263,7 @@ index 8d778e0..b4397f9 100644
    );
 
    /*! \brief Convert SchemaSpec to EBNF with XML format for root object. Note that this function is
-@@ -39,14 +50,39 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -39,14 +50,49 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
 
   protected:
    // Override methods for XML format
@@ -7247,18 +7298,28 @@ index 8d778e0..b4397f9 100644
 +  ) override;
 +  std::string GenerateAllOf(
 +      const AllOfSpec& spec, const std::string& rule_name, const GenerationContext& ctx
-+  ) override;
-+  std::string GenerateTypeArray(
-+      const TypeArraySpec& spec, const std::string& rule_name, const GenerationContext& ctx
    ) override;
 -  std::string GenerateAny(const AnySpec& spec, const std::string& rule_name) override;
 -  std::string GenerateArray(const ArraySpec& spec, const std::string& rule_name) override;
 -  std::string GenerateConst(const ConstSpec& spec, const std::string& rule_name) override;
 -  std::string GenerateEnum(const EnumSpec& spec, const std::string& rule_name) override;
++  std::string GenerateTypeArray(
++      const TypeArraySpec& spec, const std::string& rule_name, const GenerationContext& ctx
++  ) override;
++
++  /*! \brief EBNF for one const/enum literal in XML mode, where the markers
++   * frame the value: a string loses its JSON quotes, anything else keeps its
++   * JSON spelling and goes through the base renderer that escapes it. */
++  std::string GenerateBareValueLiteral(
++      const picojson::value& parsed,
++      const std::string& json_value,
++      const std::string& rule_name,
++      const GenerationContext& ctx
++  );
 
    // Override format hooks
    std::string FormatPropertyKey(const std::string& key) override;
-@@ -65,9 +101,13 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -65,9 +111,13 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
 
    std::string GetKeyPattern() const override;
    std::string GetBasicAnyRuleName() const override;
@@ -7273,7 +7334,7 @@ index 8d778e0..b4397f9 100644
 
    std::string NextSeparator(bool is_end = false) override;
 
-@@ -76,13 +116,21 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -76,13 +126,21 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    void AddCache(const std::string& key, const std::string& value) override;
    std::optional<std::string> GetCache(const std::string& key) const override;
 
@@ -7296,7 +7357,7 @@ index 8d778e0..b4397f9 100644
    };
 
    static const std::unordered_map<JSONFormat, XMLWrapper> kKeyWrapperMap;
-@@ -90,10 +138,73 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -90,10 +148,73 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    static const std::string kXMLAny;
    static const std::string kXMLObject;
    static const std::string kXMLVariableName;

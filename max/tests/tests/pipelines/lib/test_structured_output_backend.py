@@ -331,6 +331,214 @@ def test_default_grammar_stays_compact(backend_name: str) -> None:
     )
 
 
+# Every tool-call framing a model can be served under. The XML ones share one
+# converter, so a defect in it reaches all of them; "kimi" frames arguments as
+# plain JSON and reaches a different one, which makes it the control that tells
+# an XML-framing bug apart from a JSON-schema-to-grammar bug.
+_XML_TOOL_FORMATS = ("glm_4_7", "minimax", "minimax_m3")
+# deepseek_v3_2 / deepseek_v4 also select an XML style, but no MAX tool parser
+# declares either as its XGRAMMAR_FORMAT -- the DeepSeek parsers read a
+# JSON-argument envelope instead -- so nothing routes to them today.
+
+# MiniMax-M3's envelope is built from single tokens, so its grammar needs a
+# vocab that holds them; the byte-level fake covers every other framing.
+_M3_TOKENS = ("<tool_call>", "</tool_call>", "]<]minimax[>[")
+
+
+def _minimax_m3_helper() -> StructuredOutputHelper:
+    """A helper whose vocab carries MiniMax-M3's structural tokens."""
+    vocab = {chr(i): i for i in range(_N_VOCAB)}
+    vocab.update({tok: _N_VOCAB + n for n, tok in enumerate(_M3_TOKENS)})
+    delegate = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(WordLevel(vocab=vocab, unk_token=chr(1))),
+        eos_token=chr(0),
+        unk_token=chr(1),
+    )
+    pipeline_tokenizer = MagicMock()
+    pipeline_tokenizer.delegate = delegate
+    pipeline_tokenizer.eos_token_ids = {delegate.eos_token_id}
+    return StructuredOutputHelper.from_tokenizer(
+        cast("PipelineTokenizer[Any, Any, Any]", pipeline_tokenizer),
+        enable_structured_output=True,
+        backend_name="xgrammar",
+    )
+
+
+def _helper_for(model_format: str) -> StructuredOutputHelper:
+    return (
+        _minimax_m3_helper()
+        if model_format == "minimax_m3"
+        else _make_helper("xgrammar")
+    )
+
+
+def _tool_matcher(
+    helper: StructuredOutputHelper,
+    model_format: str,
+    name: str,
+    schema: dict[str, Any],
+) -> Any:
+    """Compile ``schema`` as ``name``'s arguments in ``model_format``'s grammar."""
+    assert helper.backend is not None
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": "A tool.",
+                "parameters": schema,
+            },
+        }
+    ]
+    grammar = structured_output_backend.build_xgrammar_tool_grammar(
+        model_format, tools, "required"
+    )
+    return helper.backend.create_matcher(grammar)
+
+
+def _xml_tool_wire(
+    model_format: str, name: str, pairs: list[tuple[str, str]]
+) -> str:
+    """The bytes a model emits to call ``name`` with ``pairs`` under ``model_format``."""
+    if model_format == "glm_4_7":
+        body = "".join(
+            f"<arg_key>{k}</arg_key><arg_value>{v}</arg_value>"
+            for k, v in pairs
+        )
+        return f"<tool_call>{name}{body}</tool_call>"
+    if model_format == "minimax":
+        body = "".join(
+            f'<parameter name="{k}">{v}</parameter>' for k, v in pairs
+        )
+        return (
+            "\n</think>\n\n\n\n\n<minimax:tool_call>\n"
+            f'<invoke name="{name}">\n{body}</invoke>\n</minimax:tool_call>'
+        )
+    p = "]<]minimax[>["
+    body = "".join(f"{p}<{k}>{v}{p}</{k}>" for k, v in pairs)
+    return (
+        f'{p}<tool_call>\n{p}<invoke name="{name}">{body}'
+        f"{p}</invoke>\n{p}</tool_call>"
+    )
+
+
+def _consume_wire(matcher: Any, model_format: str, wire: str) -> int:
+    """Bytes of ``wire`` the matcher accepts, feeding M3's markers as tokens."""
+    i = consumed = 0
+    markers = _M3_TOKENS if model_format == "minimax_m3" else ()
+    while i < len(wire):
+        token_id, width = ord(wire[i]), 1
+        for n, marker in enumerate(markers):
+            if wire.startswith(marker, i):
+                token_id, width = _N_VOCAB + n, len(marker)
+                break
+        if matcher.try_consume_tokens([token_id]) != 1:
+            return consumed
+        i += width
+        consumed += width
+    return consumed
+
+
+_CONTAINER_ENUM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "preset": {
+            "enum": [
+                {"mode": "fast", "threads": 4},
+                {"mode": "safe", "threads": 1},
+            ]
+        },
+    },
+    "required": ["preset"],
+    "additionalProperties": False,
+}
+
+
+@pytest.mark.parametrize(
+    "model_format",
+    ["kimi", "glm_4_7", "minimax", "deepseek_v3_2", "deepseek_v4"],
+    ids=lambda f: f,
+)
+def test_container_enum_compiles_for_every_tool_format(
+    model_format: str,
+) -> None:
+    """An object-valued ``enum`` must compile, whatever the tool-call framing.
+
+    An XML-framed tool call emits a top-level string value bare, so the
+    converter used to paste every literal's raw JSON text into an EBNF string
+    literal. For a container that text carries its own quotes, which the EBNF
+    parser reads as syntax: ``{"mode":...}`` closed the literal after ``{`` and
+    left ``mode`` looking like a rule reference, so the compile died with
+    ``Rule "mode" is not defined`` and the request 400'd.
+
+    Every XML style shares the one converter, so every one of them was
+    affected; ``kimi`` is the JSON-framed control that never was.
+    """
+    _tool_matcher(
+        _helper_for(model_format),
+        model_format,
+        "apply_preset",
+        _CONTAINER_ENUM_SCHEMA,
+    )
+
+
+def test_container_enum_is_refused_where_it_has_no_wire_form() -> None:
+    """A tag-keyed style spells an object as nested tags at every depth.
+
+    There is no JSON form to fall back on there, so the literal is refused with
+    an explicit message rather than silently constrained to a spelling the
+    model's own format never produces.
+    """
+    with pytest.raises(RuntimeError, match="no wire form"):
+        _tool_matcher(
+            _minimax_m3_helper(),
+            "minimax_m3",
+            "apply_preset",
+            _CONTAINER_ENUM_SCHEMA,
+        )
+
+
+@pytest.mark.parametrize(
+    "model_format", ["glm_4_7", "minimax"], ids=lambda f: f
+)
+def test_container_enum_constrains_to_the_declared_literals(
+    model_format: str,
+) -> None:
+    """Compiling is not enough: the literal must also be enforced exactly.
+
+    A container literal is re-serialized as compact JSON inside the XML value
+    markers, matching how a nested object-typed property is already emitted.
+    """
+    helper = _helper_for(model_format)
+
+    declared = _xml_tool_wire(
+        model_format,
+        "apply_preset",
+        [("preset", '{"mode":"fast","threads":4}')],
+    )
+    matcher = _tool_matcher(
+        helper, model_format, "apply_preset", _CONTAINER_ENUM_SCHEMA
+    )
+    assert _consume_wire(matcher, model_format, declared) == len(declared), (
+        f"[{model_format}] the grammar rejected a declared enum literal"
+    )
+    assert matcher.is_accepting()
+
+    # Same shape, undeclared value: the enum must still pin the literal rather
+    # than degrade into "any object".
+    undeclared = _xml_tool_wire(
+        model_format,
+        "apply_preset",
+        [("preset", '{"mode":"slow","threads":9}')],
+    )
+    matcher = _tool_matcher(
+        helper, model_format, "apply_preset", _CONTAINER_ENUM_SCHEMA
+    )
+    assert _consume_wire(matcher, model_format, undeclared) < len(undeclared), (
+        f"[{model_format}] the grammar admitted an object matching no literal"
+    )
+
+
 class _SlowBackend:
     """Minimal stand-in carrying the ``name`` the decorator reads."""
 

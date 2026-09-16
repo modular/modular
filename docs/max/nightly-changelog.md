@@ -236,5 +236,13 @@ This version is still a work in progress.
   for M committed tokens, but only 0 are assigned`) and the model worker
   died. A KV cache allocation that fails now leaves the request exactly as it
   found it, in both the paged and the Jenga cache managers.
+- Fixed a tool whose parameter schema used `const` or `enum` with an object or
+  array value producing an uncompilable grammar, for models whose tool-call
+  format frames arguments in XML markers rather than JSON (GLM, MiniMax, Qwen,
+  DeepSeek). The literal's own JSON quotes were read as grammar syntax, so the
+  request failed with `Grammar provided in request cannot be compiled`. Such a
+  literal now keeps its JSON form inside the value markers. The tag-keyed
+  formats, which spell an object as nested tags and so have no JSON form to
+  fall back on, reject it with an explicit message instead.
 
 ## Mojo language
