@@ -15,6 +15,7 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -164,7 +165,7 @@ def run_kv_cache_2m_iadd(
         kv_input, row_offsets, end_idx, batch_len, *kv_inputs = graph.inputs
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
 
         kv_cache_ragged_2m_iadd(
             kv_params=kv_params,
@@ -195,7 +196,7 @@ def run_kv_cache_2m_iadd(
         Buffer.from_numpy(input_row_offsets).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs.flatten(),
+        *tree.leaves(kv_runtime_inputs),
     )
 
     k_caches = dump_kv_cache_to_torch(

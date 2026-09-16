@@ -19,12 +19,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
+from max import tree
 from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue
 from max.nn.kv_cache import (
-    KVCacheInputs,
-    MultiKVCacheInputs,
+    KVCacheInputsPerDevice,
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -84,7 +84,7 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *self.kv_cache_inputs.flatten(),
+            *tree.leaves(self.kv_cache_inputs),
             *self.batch_context_lengths,
         )
         return (
@@ -242,11 +242,13 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             signal_buffers = [next(it).buffer for _ in range(num_devices)]
 
             kv_tree = kv_params.unflatten_kv_inputs(it)
-            assert isinstance(kv_tree, MultiKVCacheInputs)
-            target_leaf = kv_tree.children["target"]
-            draft_leaf = kv_tree.children["draft"]
-            assert isinstance(target_leaf, KVCacheInputs)
-            assert isinstance(draft_leaf, KVCacheInputs)
+            assert isinstance(kv_tree, dict)
+            target_leaf = tree.leaves(
+                kv_tree["target"], leaf=KVCacheInputsPerDevice
+            )
+            draft_leaf = tree.leaves(
+                kv_tree["draft"], leaf=KVCacheInputsPerDevice
+            )
 
             # Consumed by the canonical signature but unused: Qwen3.5 has no
             # sparse-attention budget to bound.
@@ -289,8 +291,8 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 input_row_offsets=input_row_offsets.tensor,
                 draft_tokens=draft_tokens,
                 signal_buffers=signal_buffers,
-                target_kv=list(target_leaf.inputs),
-                draft_kv=list(draft_leaf.inputs),
+                target_kv=list(target_leaf),
+                draft_kv=list(draft_leaf),
                 return_n_logits=return_n_logits.tensor,
                 host_input_row_offsets=host_input_row_offsets.tensor,
                 data_parallel_splits=data_parallel_splits.tensor,

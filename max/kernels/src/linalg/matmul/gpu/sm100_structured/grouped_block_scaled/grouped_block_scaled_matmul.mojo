@@ -233,6 +233,8 @@ def grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
+        group_ptr_engine=type_of(a_ptrs).Engine,
+        problem_sizes_engine=type_of(problem_sizes).Engine,
         cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
@@ -291,7 +293,7 @@ def grouped_block_scaled_matmul[
 
     comptime sfb_tma_tile_shape = Index(
         1,
-        MMA_N // SF_MN_GROUP_SIZE,
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,

@@ -26,10 +26,10 @@ from max.engine import Model
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     BatchCharacteristics,
-    KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAAttnKey,
+    packed_page_stride,
 )
 from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
@@ -119,8 +119,10 @@ def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
     max_prompt_length = np.array([0], dtype=np.uint32)
     max_cache_length = np.array([1], dtype=np.uint32)
     dispatch = np.array([1, 1, 1, 1], dtype=np.int64)
+    kv_blocks = Buffer.zeros((1,), dtype=DType.float32)
     return KVCacheInputsPerDevice(
-        kv_blocks=Buffer.zeros((1,), dtype=DType.float32),
+        kv_blocks=kv_blocks,
+        page_stride=packed_page_stride(kv_blocks),
         cache_lengths=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         max_prompt_length=Buffer.from_numpy(max_prompt_length),
@@ -136,9 +138,7 @@ def _warmup_model_inputs(
     yield MockModelInputs(
         active_batch_size=batch_size,
         eos_prob=0.0,
-        kv_cache_inputs=KVCacheInputs[Buffer, Buffer](
-            inputs=[_make_kv_per_device()]
-        ),
+        kv_cache_inputs=(_make_kv_per_device(),),
     )
 
 

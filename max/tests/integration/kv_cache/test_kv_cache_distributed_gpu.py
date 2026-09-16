@@ -14,11 +14,15 @@
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+)
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
@@ -51,8 +55,8 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_manager.alloc(context)
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         for i in range(num_devices):
-            kv_inputs_per_device = kv_inputs.inputs[i]
-            assert len(kv_inputs_per_device.flatten()) == 7
+            kv_inputs_per_device = kv_inputs[i]
+            assert len(tree.leaves(kv_inputs_per_device)) == 7
             assert kv_inputs_per_device.attention_dispatch_metadata is not None
 
 
@@ -86,7 +90,7 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
 
     kv_inputs = kv_manager.runtime_inputs_for_leaf([[context]])
 
-    for shard_idx, kv_inputs_per_device in enumerate(kv_inputs.inputs):
+    for shard_idx, kv_inputs_per_device in enumerate(kv_inputs):
         assert kv_inputs_per_device.attention_dispatch_metadata is not None
         assert (
             kv_inputs_per_device.attention_dispatch_metadata.device

@@ -28,7 +28,7 @@ from max.driver import Buffer
 from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
 from max.nn.kv_cache.cache_params import KVCacheBufferInterface
@@ -70,7 +70,7 @@ class PagedKVCacheManagerInterface(ABC):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests."""
 
     @abstractmethod
@@ -80,7 +80,7 @@ class PagedKVCacheManagerInterface(ABC):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputs[Buffer, Buffer]:
+    ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Returns :meth:`runtime_inputs` narrowed to a single leaf cache."""
 
     @abstractmethod

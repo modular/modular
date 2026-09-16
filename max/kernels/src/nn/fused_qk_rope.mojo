@@ -26,8 +26,10 @@ from kv_cache.types import KVCacheT, KVCollectionT
 from layout import (
     Coord,
     CoordLike,
+    DefaultEngine,
     Idx,
     RowMajorLayout,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -454,13 +456,20 @@ def fused_qk_rope_ragged[
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],
+    # `position_ids` is optional, so its engine cannot be inferred.
+    PositionIdsEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_proj: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[.uint32, ...],
     kv_collection: collection_t,
     freqs_cis: TileTensor[freq_dtype, ...],
     position_ids: OptionalReg[
-        TileTensor[.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            .uint32,
+            PositionIdsLayoutType,
+            ImmutAnyOrigin,
+            Engine=PositionIdsEngine,
+        ]
     ],
     layer_idx: UInt32,
     output: TileTensor[mut=True, dtype, ...],
@@ -489,6 +498,8 @@ def fused_qk_rope_ragged[
             (defaults to `None`).
         PositionIdsLayoutType: The tensor layout of the `position_ids`
             tensor (defaults to `RowMajorLayout`).
+        PositionIdsEngine: The engine policy of the `position_ids` tensor
+            (defaults to `DefaultEngine`).
 
     Args:
         q_proj: Query projection tensor of shape [total_tokens, n_heads, head_dim].

@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "4154b56ccc70220dca3fa1226fc8a24bafd90ac3"
+LLVM_COMMIT = "5f604ff568a9493f1eee44441ef475a2aaad329c"
 
-LLVM_SHA = "611bc362c18f6b502b0d599be48680cf2b4fbfbe191de935d45afcb0634d25fd"
+LLVM_SHA = "2063e8dafa68fa4922a443c6e895ddbab60a4fff503ebfdbcd772dc54e8a4f3d"
 # END_GENERATED
 
 PATCHES = [
@@ -23,6 +23,13 @@ PATCHES = [
     # https://github.com/llvm/llvm-project/pull/188978
     # https://github.com/llvm/llvm-project/issues/190255
     "//bazel/public-patches:llvm-elf-extractor-local-copy.patch",
+    # Revert llvm/llvm-project#218490, which changed ELFSectionHeaderInfo's
+    # section_name from ConstString to std::string. ConstString is a pointer
+    # into a never-freed intern pool; std::string owns its buffer, so the
+    # header info now frees memory and reintroduces the same corrupted
+    # double-linked list on teardown that the patch above fixes.
+    # TODO(MOTO-1590): drop once the ownership is sound across DSO boundaries.
+    "//bazel/public-patches:llvm-revert-lldb-elf-section-name-string.patch",
     # Revert the config.bzl musl/gnu select() from llvm/llvm-project#207295,
     # which keys HAVE_BACKTRACE/BACKTRACE_HEADER/HAVE_MALLINFO on
     # @llvm//platforms/config:{musl,gnu}. That package is not present in the

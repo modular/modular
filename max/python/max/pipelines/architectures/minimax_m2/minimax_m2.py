@@ -26,6 +26,7 @@ import functools
 from collections.abc import Callable
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -43,8 +44,11 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager, EPConfig
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized, forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
@@ -57,6 +61,7 @@ from max.nn.transformer.distributed_transformer import (
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
+from max.tree import Tree
 
 from .layers.attention import MiniMaxM2Attention
 from .layers.moe_gate import MiniMaxM2TopKRouter
@@ -568,10 +573,8 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             # hidden states in the full [S, H] layout, so this path is shared.)
             pass
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
@@ -636,7 +639,7 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
         kv_inputs = kv_params.get_symbolic_inputs()
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # Input layout (must match MiniMaxM2Inputs.buffers and the graph-input
         # unpacking in model.py):

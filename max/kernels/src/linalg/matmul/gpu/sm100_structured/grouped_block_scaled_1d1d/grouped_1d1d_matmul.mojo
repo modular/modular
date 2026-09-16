@@ -381,8 +381,6 @@ def grouped_matmul_block_scaled[
     # Create 4D uint16 views of scale tensors (same memory, reinterpreted).
     # a_scales: 5D (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
     #        -> 4D uint16 (1, M_groups, K_groups, sf_atom_u16)
-    from std.memory import UnsafePointer as Ptr
-
     var sfa_4d_shape = Coord(
         Idx[1],
         a_scales.layout.shape[0](),
@@ -390,8 +388,16 @@ def grouped_matmul_block_scaled[
         Idx[sf_atom_u16],
     )
     var sfa_4d_layout = row_major(sfa_4d_shape)
-    var sfa_4d = TileTensor[.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
-        rebind[Ptr[UInt16, MutAnyOrigin]](a_scales.ptr),
+    var sfa_4d = TileTensor[
+        .uint16,
+        type_of(sfa_4d_layout),
+        MutAnyOrigin,
+        Engine=a_scales.Engine,
+        address_space=a_scales.address_space,
+    ](
+        a_scales._unsafe_storage_cast[
+            to_dtype=.uint16, to_origin=MutAnyOrigin
+        ](),
         sfa_4d_layout,
     )
 
@@ -407,8 +413,16 @@ def grouped_matmul_block_scaled[
         Idx[sf_atom_u16],
     )
     var sfb_4d_layout = row_major(sfb_4d_shape)
-    var sfb_4d = TileTensor[.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
-        rebind[Ptr[UInt16, MutAnyOrigin]](_b_scales.ptr),
+    var sfb_4d = TileTensor[
+        .uint16,
+        type_of(sfb_4d_layout),
+        MutAnyOrigin,
+        Engine=_b_scales.Engine,
+        address_space=_b_scales.address_space,
+    ](
+        _b_scales._unsafe_storage_cast[
+            to_dtype=.uint16, to_origin=MutAnyOrigin
+        ](),
         sfb_4d_layout,
     )
 

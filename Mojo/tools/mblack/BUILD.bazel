@@ -6,6 +6,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
+    "src/mblib2to3/LICENSE",
 ])
 
 modular_py_library(
@@ -100,7 +101,6 @@ filegroup(
         "scripts/diff_shades_gha_helper.py",
         "scripts/fuzz.py",
         "scripts/migrate-black.py",
-        "src/mblib2to3/LICENSE",
         "src/mblib2to3/README",
     ],
     tags = ["maybe-unused"],

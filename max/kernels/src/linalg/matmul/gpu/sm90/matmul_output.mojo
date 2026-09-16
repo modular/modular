@@ -25,7 +25,15 @@ from std.sys import simd_width_of, size_of
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.sync import named_barrier
-from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    DefaultEngine,
+    Idx,
+    Layout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_engine import TensorEngine
 from layout.tma_async import TMATensorTile
@@ -146,6 +154,8 @@ struct MatmulTileWriter[
         Self.dtype,
         LayoutType=Self.smem_tile_layout,
         origin=MutAnyOrigin,
+        # Shared memory is raw-pointer addressed so pin DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
         address_space=.SHARED,
     ]
     var warp_group_thread_idx: Int
@@ -163,6 +173,8 @@ struct MatmulTileWriter[
             Self.dtype,
             LayoutType=Self.smem_tile_layout,
             origin=MutAnyOrigin,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
+            Engine=DefaultEngine[element_width=1],
             address_space=.SHARED,
         ],
         warp_group_thread_idx: Int,
@@ -464,6 +476,9 @@ struct MatmulTileWriter[
                             Self.dtype,
                             LayoutType=type_of(tma_smem_layout),
                             origin=MutAnyOrigin,
+                            # Shared memory is raw-pointer addressed so pin
+                            # DefaultEngine.
+                            Engine=DefaultEngine[element_width=1],
                             address_space=.SHARED,
                         ](smem_offset, tma_smem_layout)
 

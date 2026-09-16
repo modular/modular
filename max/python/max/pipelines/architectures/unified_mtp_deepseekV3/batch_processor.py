@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessor,
 )
@@ -40,7 +40,7 @@ class UnifiedMTPDeepseekV3BatchProcessor(DeepseekV3BatchProcessor):
     def prepare_initial_token_inputs(  # type: ignore[override]
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> UnifiedMTPDeepseekV3Inputs:
         """Prepare batch inputs for a UnifiedMTPDeepseekV3 forward pass.

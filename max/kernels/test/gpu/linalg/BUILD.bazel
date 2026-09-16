@@ -456,7 +456,12 @@ _GPU_MEMORY = {
         },
         tags = [
             "gpu",
-        ],
+        ] + (
+            ["manual"] if src in [
+                # TODO(KERN-3603): Flaky on B200.
+                "test_matmul_sm100_blockwise_fp8.mojo",
+            ] else []
+        ),
         target_compatible_with = [
             "//:has_gpu",
             "//:b200_gpu",

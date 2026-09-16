@@ -12,15 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 """Seed-family separation for sampled speculative decoding.
 
-A request's per-execute seed is ``sampling_params.seed + len(ctx.tokens)``, so
-it advances by however many tokens the last iteration committed -- 1 to
-``K + 1`` under speculation, rather than always 1. Two invariants keep the
-sampling streams apart under that advance:
+A request's per-execute seed is its own seed plus its generated-token count
+plus a fixed hash of its request id (:func:`request_row_seed`), so it advances
+by however many tokens the last iteration committed -- 1 to ``K + 1`` under
+speculation, rather than always 1. The id term is fixed per request, so it
+shifts a request's whole lattice without changing any of the distances below.
+Three invariants keep the sampling streams apart under that advance:
 
 1. No draft step key repeats across iterations, for any commit count a
    speculative iteration can produce.
 2. No residual-recovery key ever equals a draft-proposal key, in either
    adjacent-iteration ordering.
+3. No two seed families meet anywhere, which the accept coin and the bonus
+   token now need in their own right: both are keyed per row, so each spans a
+   lattice of keys rather than the single key a batch-level draw occupied.
 
 The offsets come from the production helpers, so a call site reverting to
 consecutive integers changes what these assert.
@@ -28,12 +33,18 @@ consecutive integers changes what these assert.
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.nn.sampling.rejection_sampler import (
+    _SEED_DOMAIN_BONUS,
+    _SEED_DOMAIN_COIN,
+    _SEED_DOMAIN_RECOVERY,
+    _SEED_DOMAIN_VERDICT,
     _SEED_GOLDEN_GAMMA,
     _recovery_row_offset,
     _recovery_seed_rows,
@@ -113,37 +124,136 @@ def test_gamma_is_odd() -> None:
     assert _SEED_GOLDEN_GAMMA % 2 == 1
 
 
-def test_recovery_seed_rows_use_the_row_offsets(
-    session: InferenceSession,
-) -> None:
-    """The graph the sampler builds must apply ``_recovery_row_offset``.
+# One request per row, three draft positions each: enough rows to see spacing
+# and enough positions to see a key shared across a request's positions.
+_RECOVERY_BATCH = 4
+_RECOVERY_STEPS = 3
 
-    The arithmetic above pins the offsets; this pins that the residual-recovery
-    path actually spends them, so reverting its rows to consecutive integers
-    fails here rather than passing silently.
+
+def _recovery_rows(session: InferenceSession, base: np.ndarray) -> np.ndarray:
+    """Runs ``_recovery_seed_rows`` over a seed shaped like ``base``.
+
+    Static dims throughout: a shared seed carries no batch dim of its own, so
+    a symbolic one would have nothing in the graph to bind it.
     """
-    batch, num_steps = 4, 3
     device = DeviceRef.CPU()
-
     with Graph(
-        "recovery_seed_rows",
-        input_types=[TensorType(DType.uint64, ["batch_size"], device=device)],
+        f"recovery_seed_rows_{base.size}",
+        input_types=[TensorType(DType.uint64, [base.size], device=device)],
     ) as graph:
         seed = graph.inputs[0].tensor
         graph.output(
-            _recovery_seed_rows(seed, Dim("batch_size"), Dim(num_steps), device)
+            _recovery_seed_rows(
+                seed, Dim(_RECOVERY_BATCH), Dim(_RECOVERY_STEPS), device
+            )
         )
+    return session.load(graph)(Buffer.from_numpy(base))[0].to_numpy()
 
-    base = np.arange(batch, dtype=np.uint64) * np.uint64(1_000_000)
-    model = session.load(graph)
-    rows = model(Buffer.from_numpy(base))[0].to_numpy()
+
+def test_recovery_rows_of_a_per_row_seed_carry_no_row_term(
+    session: InferenceSession,
+) -> None:
+    """A per-row seed's recovery key is the tag alone -- no batch position.
+
+    The row index is a physical batch slot, so spending it here would make a
+    request's recovered token depend on where it landed in the batch. A
+    per-row seed is already distinct per request, so the tag is all the
+    separation the family needs.
+    """
+    base = np.arange(_RECOVERY_BATCH, dtype=np.uint64) * np.uint64(1_000_000)
+    rows = _recovery_rows(session, base)
 
     expected = np.array(
         [
-            (int(base[row]) + _recovery_row_offset(row)) % _U64
-            for row in range(batch)
-            for _ in range(num_steps)
+            (int(base[row]) + _recovery_row_offset(0)) % _U64
+            for row in range(_RECOVERY_BATCH)
+            for _ in range(_RECOVERY_STEPS)
         ],
         dtype=np.uint64,
     )
     np.testing.assert_array_equal(rows, expected)
+
+
+def test_recovery_rows_of_a_shared_seed_still_spend_the_row_offsets(
+    session: InferenceSession,
+) -> None:
+    """A shared seed must keep its row spacing, or every row recovers alike.
+
+    The graph-level ``SeedType`` input is one key for the whole batch, with no
+    per-request term to tell the rows apart. The arithmetic above pins the
+    offsets; this pins that the path still spends them.
+    """
+    base = np.array([12345], dtype=np.uint64)
+    rows = _recovery_rows(session, base)
+
+    expected = np.array(
+        [
+            (int(base[0]) + _recovery_row_offset(row)) % _U64
+            for row in range(_RECOVERY_BATCH)
+            for _ in range(_RECOVERY_STEPS)
+        ],
+        dtype=np.uint64,
+    )
+    np.testing.assert_array_equal(rows, expected)
+
+
+# Every family walks the golden gamma off the same per-execute base, so a
+# family is a lattice ``domain + i * gamma`` and the draft proposal's is the
+# untagged one at domain 0.
+_DOMAIN_LATTICES = {
+    "draft proposal": 0,
+    "residual recovery": _SEED_DOMAIN_RECOVERY,
+    "verdict stream": _SEED_DOMAIN_VERDICT,
+    "bonus token": _SEED_DOMAIN_BONUS,
+    "accept coin": _SEED_DOMAIN_COIN,
+}
+
+# Far past any index a family can reach: draft steps are bounded by K, and
+# recovery, bonus and coin rows by the batch times at most K positions.
+_REACHABLE = 1 << 20
+
+
+def _lattice_gap(delta: int) -> int:
+    """Returns the gamma-step distance from one lattice to another.
+
+    The gamma is odd, hence invertible mod 2**64, so dividing an offset by it
+    gives the exact index that would produce it -- every index at once, rather
+    than a sampled prefix. Taken as a signed distance, so a lattice sitting
+    just *below* another is not read as being ~2**64 steps away.
+    """
+    index = (delta * pow(_SEED_GOLDEN_GAMMA, -1, _U64)) % _U64
+    return min(index, _U64 - index)
+
+
+def test_domain_tags_are_distinct() -> None:
+    """Two families sharing a tag would share every key they ever draw.
+
+    Distinctness is the requirement; oddness deliberately is not. The gamma is
+    odd, so ``i * gamma`` alternates parity and every family's lattice already
+    covers both -- an even tag separates exactly as well as an odd one, and
+    :func:`test_no_two_seed_families_meet_under_any_commit_advance` is what
+    establishes that they never meet. (The *gamma* must still be odd, to stay
+    invertible mod 2**64; :func:`test_gamma_is_odd` covers that.)
+    """
+    tags = [d for d in _DOMAIN_LATTICES.values() if d != 0]
+    assert len(set(tags)) == len(tags), "two families share a domain tag"
+
+
+def test_no_two_seed_families_meet_under_any_commit_advance() -> None:
+    """No key of any family equals a key of another, at any reachable index.
+
+    Two lattices ``d1 + i * gamma`` and ``d2 + j * gamma`` collide exactly
+    when ``(d1 - d2)`` is itself a gamma multiple, so this checks the
+    arithmetic rather than sampling index pairs. The commit advance is folded
+    in because the next iteration's base is this one's plus the committed
+    count, which shifts one family's lattice against the other's.
+    """
+    for (name_a, dom_a), (name_b, dom_b) in itertools.combinations(
+        _DOMAIN_LATTICES.items(), 2
+    ):
+        for committed in range(_MAX_COMMITTED + 1):
+            gap = _lattice_gap((dom_a - dom_b + committed) % _U64)
+            assert gap > _REACHABLE, (
+                f"{name_a} and {name_b} share a key at a gamma-step distance "
+                f"of {gap} under a commit advance of {committed}"
+            )

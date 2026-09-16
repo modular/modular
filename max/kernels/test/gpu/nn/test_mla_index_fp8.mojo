@@ -106,6 +106,8 @@ def test_mla_index_fp8_paged_variable_lengths[
     strict_complete: Bool = False,
     check_scores: Bool = False,
     kpool: Int = 1,
+    num_layers: Int = 1,
+    layer_idx: Int = 0,
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],
@@ -139,6 +141,11 @@ def test_mla_index_fp8_paged_variable_lengths[
         kpool: Tokens per pooled cache row. With `kpool > 1` the cache rows are
             pooled keys, so the indexer selects pool ids and each token's
             candidate count is its visible-token count floored by `kpool`.
+        num_layers: Layers the cache's parent tensor holds. The scale pool's
+            block stride is `num_layers * page_size`, so at one layer it
+            equals `page_size` and the flat scale descriptor degenerates to
+            the contiguous case; more than one is what exercises the split.
+        layer_idx: Which layer's rows the op addresses.
 
     Args:
         seq_lens: Length of each sequence (new tokens) per batch item.
@@ -201,7 +208,6 @@ def test_mla_index_fp8_paged_variable_lengths[
         head_size=depth,
         is_mla=True,
     )
-    comptime num_layers = 1
 
     # Calculate number of pages needed (based on max sequence)
     var total_num_keys_max = max_cache_len + max_seq_len
@@ -380,7 +386,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         qs_tile,
         input_row_offsets_tile,
         k_collection,
-        UInt32(0),  # layer_idx
+        UInt32(layer_idx),
         ctx,
     )
 
@@ -2136,6 +2142,102 @@ def main() raises:
             ](
                 seq_lens=[4, 2],
                 cache_lens=[2048, 1024],
+                ctx=ctx,
+            )
+
+            # ===== GLM-5.3-Flash serve geometry =====
+            # What the running model actually launches, which no case above
+            # reaches: `top_k` is 512 (the served indexer's output row stride),
+            # the cache is empty, and the prompt is long enough to span several
+            # pools. `nh=32` sets UNIFY, so every one of these takes the
+            # warp-specialized prefill scorer regardless of length.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # Same, at the 16-token prompt the failing probe sent.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[16],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # Isolates `top_k`: identical shape, the tested-above 64.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # A prompt spanning many pages, still against an empty cache.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[2048],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # The served indexer's parent tensor holds 11 layers, and every
+            # case above holds one. That is not cosmetic here: the scale pool's
+            # block stride is `num_layers * page_size`, so at one layer it
+            # equals `page_size` and the flat scale TMA descriptor degenerates
+            # to the contiguous case. Eleven layers is what the model launches.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+                num_layers=11,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # A layer off the base, where the scale window starts mid-block.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+                num_layers=11,
+                layer_idx=5,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
                 ctx=ctx,
             )
 

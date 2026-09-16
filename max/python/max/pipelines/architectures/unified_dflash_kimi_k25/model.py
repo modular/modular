@@ -27,6 +27,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
+from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
@@ -35,7 +36,7 @@ from max.graph import BufferValue, DeviceRef, Graph, Module, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
+    KVCacheInputs,
     KVCacheParams,
     spec_decode_cache_slack,
 )
@@ -104,7 +105,7 @@ class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
             self.data_parallel_splits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -503,7 +504,7 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         **kwargs: Any,

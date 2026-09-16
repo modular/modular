@@ -19,10 +19,11 @@ from dataclasses import dataclass
 from itertools import islice
 from typing import Any, ClassVar
 
+from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.graph import BufferValue, Graph, Module, TensorValue
-from max.nn.kv_cache import MultiKVCacheInputs, MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
@@ -67,7 +68,7 @@ class UnifiedMTPInklingInputs(UnifiedSpecDecodeInputs, InklingInputs):
             self.image_embeddings,
             self.image_indices,
             *self.signal_buffers,
-            *self.kv_cache_inputs.flatten(),
+            *tree.leaves(self.kv_cache_inputs),
             *self.slot_idx,
             *self.has_initial_state,
             *self.conv_pools,
@@ -258,11 +259,11 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
                 next(variadic_iter).buffer for _ in range(num_signals)
             ]
             kv_tree = kv_params.unflatten_kv_inputs(variadic_iter)
-            assert isinstance(kv_tree, MultiKVCacheInputs)
-            target_tree = kv_tree.children["target"]
-            draft_tree = kv_tree.children["draft"]
-            assert isinstance(target_tree, MultiKVCacheInputs)
-            assert isinstance(draft_tree, MultiKVCacheInputs)
+            assert isinstance(kv_tree, dict)
+            target_tree = kv_tree["target"]
+            draft_tree = kv_tree["draft"]
+            assert isinstance(target_tree, dict)
+            assert isinstance(draft_tree, dict)
             target_kv = kv_collections_by_key(target_tree)
             draft_kv = kv_collections_by_key(draft_tree)
             slot_idx = [next(variadic_iter).tensor for _ in range(n_devs)]

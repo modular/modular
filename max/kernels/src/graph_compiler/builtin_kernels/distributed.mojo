@@ -194,13 +194,11 @@ struct DistributedAllReduceSum:
         # Marshal signal buffers into the expected format. World-view, indexed
         # by GLOBAL device rank -- the collectives below do their own
         # group-local slicing internally.
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
-        comptime for i in range(num_devices):
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
 
         # World-view input tensors, indexed by GLOBAL device rank. Built once
         # (shared by every per-device launch below) since it does not depend
@@ -349,15 +347,14 @@ struct DistributedReduceScatterSum:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         # World-view output tensors, indexed by GLOBAL device rank; built once
@@ -497,8 +494,10 @@ struct DistributedAllGather:
         var out_tensors = Array[OutputTensorType, num_devices * group_size](
             uninitialized=True
         )
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
         comptime for i in range(num_devices):
             in_tensors[i] = TileTensor(
@@ -506,9 +505,6 @@ struct DistributedAllGather:
                     inputs[i]._ptr
                 ),
                 row_major(inputs[i].size()),
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
         comptime for i in range(num_devices * group_size):
             out_tensors[i] = TileTensor(
@@ -605,14 +601,11 @@ struct DistributedBroadcast:
 
         var in_buf = input.to_tile_tensor[.int64]()
 
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
-
-        comptime for i in range(signal_buffers.size):
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
 
         @inline(.always)
         def launch_broadcast[
@@ -694,8 +687,10 @@ struct DistributedScatter:
             inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, ngpus](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], ngpus](
-            uninitialized=True
+        var rank_sigs = Array[_, ngpus](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
 
         comptime for i in range(ngpus):
@@ -704,9 +699,6 @@ struct DistributedScatter:
                 .to_tile_tensor[.int64]()
                 .make_dynamic[.int64]()
                 .as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         @inline(.always)
@@ -807,16 +799,15 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         var in_tensors = Array[InputTensorType, inputs.size](uninitialized=True)
 
         # Marshal signal buffers.
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
 
         comptime for i in range(inputs.size):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         @inline(.always)
@@ -977,15 +968,14 @@ struct DistributedReduceScatterRMSNorm:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         # `reducescatter`'s output and residual are world views too (every
@@ -1246,15 +1236,14 @@ struct DistributedAllGatherRMSNorm:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         # `allgather`'s world-view output array holds every device's own
@@ -1485,15 +1474,14 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         # `allgather`'s world-view output array holds every device's own
@@ -1816,15 +1804,14 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
             inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
             )
 
         @inline(.always)
@@ -2078,13 +2065,11 @@ struct DistributedMatmulReduceScatterSum:
             )
 
         # Marshal signal buffers.
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], num_devices](
-            uninitialized=True
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
-        comptime for i in range(num_devices):
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
 
         # Pinned MatmulConfig for the fused matmul+RS kernel.
         # The SM100 GEMM heuristic picks larger tiles (e.g.
@@ -2202,13 +2187,11 @@ struct LamportAllreduceRMSNorm:
         comptime epsilon = Float32(1e-6)
         comptime dtype = output.dtype
 
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], ngpus](
-            uninitialized=True
+        var rank_sigs = Array[_, ngpus](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
         )
-        comptime for i in range(ngpus):
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
 
         var rows = act.dim_size[0]()
         var cols = act.dim_size[1]()

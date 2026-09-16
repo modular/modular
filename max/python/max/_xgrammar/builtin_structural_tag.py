@@ -2138,6 +2138,83 @@ def get_deepseek_v4_structural_tag(
     return StructuralTag(format=sequence_format)
 
 
+# Characters backslash-escaped to stand for themselves in an xgrammar regex.
+# ``-`` is included so the same escape is safe inside a character class.
+_M3_REGEX_META = frozenset('\\^$.|?*+()[]{}/"-')
+
+# Body of the negated character class a generated tool name is drawn from.
+# Excluding the envelope's own punctuation keeps a name the model invents from
+# spelling ``]<]minimax[>[``, so it cannot close the invoke, close or reopen the
+# tool-call section, or run past the parser's ``name=([^>]+)>`` capture.
+_M3_INVOKE_NAME_CLASS_BODY = '^"<>\\[\\]\\n\\r'
+
+
+# Longest declared name the escape hatch will build a complement for. The
+# pattern nests one group per character, and xgrammar's EBNF parser rejects one
+# built from a name of ~1024 (600 still compiles). A tool name is
+# caller-supplied and its length is never checked, so without this a long one
+# would fail the request from inside the handler. Real names are far shorter --
+# OpenAI caps a function name at 64.
+_M3_UNKNOWN_HATCH_MAX_NAME_LEN = 256
+
+
+def _m3_escape_regex_literal(text: str) -> str:
+    """Escapes *text* so an xgrammar regex matches it literally."""
+    return "".join("\\" + c if c in _M3_REGEX_META else c for c in text)
+
+
+def _m3_regex_excluding(names: List[str], negated_class_body: str) -> str:
+    """Builds a regex for a nonempty run of *negated_class_body* not in *names*.
+
+    *negated_class_body* must be the body of a *negated* class (leading ``^``):
+    a diverging character is spelled by appending to that body, which subtracts
+    only because the class is negated.
+
+    xgrammar's converter rejects lookahead (``regex_converter.cc``: "Lookahead
+    is not supported yet"), so the complement of a finite literal set is spelled
+    out from a trie over it. At each prefix the match may diverge to a character
+    no candidate continues with, descend into one that does, or -- when the
+    prefix is not itself a candidate -- stop there. A candidate's strict
+    extensions stay admissible, so with ``set_alarm`` excluded ``set_alarm_v2``
+    still matches while ``set_alarm`` does not.
+    """
+    any_char = f"[{negated_class_body}]"
+    candidates = {n for n in names if n}
+    if not candidates:
+        return any_char + "+"
+
+    # prefix -> the characters some candidate continues it with.
+    continuations: Dict[str, set[str]] = {}
+    for name in candidates:
+        for i in range(len(name)):
+            continuations.setdefault(name[:i], set()).add(name[i])
+
+    # Built bottom-up, and the branches nest rather than being flattened into
+    # one alternation per trie node. Nesting writes a shared prefix once, which
+    # keeps the pattern linear in the total name length rather than quadratic;
+    # the explicit ordering keeps a caller-supplied name from recursing this
+    # once per character and exhausting the stack. Both matter because this
+    # compiles on the request path.
+    patterns: Dict[str, str] = {}
+    for prefix in sorted(continuations, key=len, reverse=True):
+        nexts = continuations[prefix]
+        blocked = "".join(_m3_escape_regex_literal(c) for c in sorted(nexts))
+        alternatives = [f"[{negated_class_body}{blocked}]{any_char}*"]
+        for char in sorted(nexts):
+            # A node nothing extends is a candidate, so its run must continue
+            # to land outside the set.
+            descent = patterns.get(prefix + char, any_char + "+")
+            alternatives.append(_m3_escape_regex_literal(char) + descent)
+        group = "(" + "|".join(alternatives) + ")"
+        # Stopping here is only outside the set if the prefix is not itself a
+        # candidate. The empty prefix is excluded because a name is nonempty.
+        patterns[prefix] = (
+            group if not prefix or prefix in candidates else group + "?"
+        )
+
+    return patterns[""]
+
+
 @register_model_structural_tag("minimax_m3")
 def get_minimax_m3_structural_tag(
     tools: Optional[List[FunctionToolParam]] = None,
@@ -2181,13 +2258,56 @@ def get_minimax_m3_structural_tag(
                 json_schema=parameters,
                 style="minimax_m3_xml",
                 xml_tag_prefix=TAG_PREFIX,
-                reject_unsupported=True,
+                reject_unsupported=False,
                 max_whitespace_cnt=1,
                 strict_mode=False,
                 require_object_root=True,
             ),
             end=INVOKE_END,
         )
+
+    def _unknown_invoke_tags(known_names: List[str]) -> List[TagFormat]:
+        """Builds the invoke admitting a name not among the request's tools.
+
+        The model may follow a tool-usage pattern established by the chat
+        history even when the request declared a different inventory, so an
+        unrecognized name is admitted with a free-form body -- no schema is
+        known for it. The name excludes ``known_names`` so this never shadows
+        the typed branches above: a declared tool still gets its
+        schema-enforced body, and it is drawn from a class that cannot spell
+        the envelope's own markers.
+
+        Returns nothing when a declared name is too long to build a complement
+        for. This only widens what is admissible, so declining it falls back to
+        the declared names alone rather than failing the request.
+        """
+        if any(
+            len(name) > _M3_UNKNOWN_HATCH_MAX_NAME_LEN for name in known_names
+        ):
+            return []
+        return [
+            TagFormat(
+                begin=INVOKE_BEGIN_PREFIX,
+                content=SequenceFormat(
+                    elements=[
+                        RegexFormat(
+                            pattern=_m3_regex_excluding(
+                                known_names, _M3_INVOKE_NAME_CLASS_BODY
+                            )
+                        ),
+                        ConstStringFormat(value=INVOKE_BEGIN_SUFFIX),
+                        AnyTextFormat(
+                            excludes=[
+                                INVOKE_END,
+                                TAG_PREFIX + TOOL_CALL_END,
+                                TAG_PREFIX + TOOL_CALL_BEGIN,
+                            ]
+                        ),
+                    ]
+                ),
+                end=INVOKE_END,
+            )
+        ]
 
     def _forced_or_required_section(invokes: Format) -> SequenceFormat:
         return SequenceFormat(
@@ -2213,6 +2333,9 @@ def get_minimax_m3_structural_tag(
             for t in tools
         ]
         if tags:
+            tags.extend(
+                _unknown_invoke_tags([t.function.name for t in tools])
+            )
             invokes = TagsWithSeparatorFormat(
                 tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True
             )
@@ -2251,6 +2374,7 @@ def get_minimax_m3_structural_tag(
             for t in tools
         ]
         assert len(tags) > 0
+        tags.extend(_unknown_invoke_tags([t.function.name for t in tools]))
         suffix_tag = _forced_or_required_section(
             TagsWithSeparatorFormat(
                 tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True

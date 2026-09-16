@@ -20,7 +20,7 @@ from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import unswitch
 from linalg.utils import partial_simd_load
-from layout import Coord, Idx, TileTensor
+from layout import Coord, Idx, TensorEngine, TileTensor
 from layout.coord import DynamicCoord
 from layout.tile_layout import RowMajorLayout
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
@@ -61,6 +61,8 @@ struct PackMatrixRows[
     original_origin: Origin[mut=original_mut],
     packed_layout: TensorLayout,
     original_layout: TensorLayout,
+    packed_engine: TensorEngine,
+    original_engine: TensorEngine,
 ](ImplicitlyCopyable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
@@ -76,15 +78,23 @@ struct PackMatrixRows[
         original_origin: Origin of the original input `TileTensor`.
         packed_layout: Layout of the packed output `TileTensor`.
         original_layout: Layout of the original input `TileTensor`.
+        packed_engine: Engine of the packed output `TileTensor`.
+        original_engine: Engine of the original input `TileTensor`.
     """
 
     # packed matrix (rank 3)
     var packed_matrix: TileTensor[
-        Self.dtype, Self.packed_layout, Self.packed_origin
+        Self.dtype,
+        Self.packed_layout,
+        Self.packed_origin,
+        Engine=Self.packed_engine,
     ]
     # original matrix (rank 2)
     var original_matrix: TileTensor[
-        Self.dtype, Self.original_layout, Self.original_origin
+        Self.dtype,
+        Self.original_layout,
+        Self.original_origin,
+        Engine=Self.original_engine,
     ]
     # offsets in original matrix
     var global_offset: DynamicCoord[.int64, 2]
@@ -101,10 +111,16 @@ struct PackMatrixRows[
     @staticmethod
     def run(
         packed_matrix: TileTensor[
-            Self.dtype, Self.packed_layout, Self.packed_origin
+            Self.dtype,
+            Self.packed_layout,
+            Self.packed_origin,
+            Engine=Self.packed_engine,
         ],
         original_matrix: TileTensor[
-            Self.dtype, Self.original_layout, Self.original_origin
+            Self.dtype,
+            Self.original_layout,
+            Self.original_origin,
+            Engine=Self.original_engine,
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -339,6 +355,8 @@ struct PackMatrixCols[
     original_origin: Origin[mut=original_mut],
     packed_layout: TensorLayout,
     original_layout: TensorLayout,
+    packed_engine: TensorEngine,
+    original_engine: TensorEngine,
 ](ImplicitlyCopyable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
@@ -356,15 +374,23 @@ struct PackMatrixCols[
         original_origin: Origin of the original input `TileTensor`.
         packed_layout: Layout of the packed output `TileTensor`.
         original_layout: Layout of the original input `TileTensor`.
+        packed_engine: Engine of the packed output `TileTensor`.
+        original_engine: Engine of the original input `TileTensor`.
     """
 
     # packed matrix (rank 3)
     var packed_matrix: TileTensor[
-        Self.dtype, Self.packed_layout, Self.packed_origin
+        Self.dtype,
+        Self.packed_layout,
+        Self.packed_origin,
+        Engine=Self.packed_engine,
     ]
     # original matrix (rank 2)
     var original_matrix: TileTensor[
-        Self.dtype, Self.original_layout, Self.original_origin
+        Self.dtype,
+        Self.original_layout,
+        Self.original_origin,
+        Engine=Self.original_engine,
     ]
     # offsets in original matrix:
     var global_offset: DynamicCoord[.int64, 2]
@@ -378,10 +404,16 @@ struct PackMatrixCols[
     @staticmethod
     def run(
         packed_matrix: TileTensor[
-            Self.dtype, Self.packed_layout, Self.packed_origin
+            Self.dtype,
+            Self.packed_layout,
+            Self.packed_origin,
+            Engine=Self.packed_engine,
         ],
         original_matrix: TileTensor[
-            Self.dtype, Self.original_layout, Self.original_origin
+            Self.dtype,
+            Self.original_layout,
+            Self.original_origin,
+            Engine=Self.original_engine,
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -998,6 +1030,7 @@ struct BTileGenerator[
     transpose_b: Bool,
     b_packed: Bool,
     origin: ImmOrigin,
+    b_engine: TensorEngine,
 ](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
@@ -1015,10 +1048,11 @@ struct BTileGenerator[
         transpose_b: True if the B operand is transposed, stored as [N, K].
         b_packed: True if B is already pre-packed into the mlas layout.
         origin: Origin of the B `TileTensor`.
+        b_engine: Engine of the B `TileTensor`.
     """
 
     var b: TileTensor[
-        Self.b_type, Self.b_layout, Self.origin
+        Self.b_type, Self.b_layout, Self.origin, Engine=Self.b_engine
     ]  # packed layout if b_packed is True
     var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutUntrackedOrigin]
     var tile_n_k: DynamicCoord[.int64, 2]
@@ -1027,7 +1061,9 @@ struct BTileGenerator[
     @inline(.always)
     @staticmethod
     def get(
-        b: TileTensor[Self.b_type, Self.b_layout, Self.origin],
+        b: TileTensor[
+            Self.b_type, Self.b_layout, Self.origin, Engine=Self.b_engine
+        ],
         tile_n_k: IndexList[2],
     ) -> BTileGenerator[
         Self.config,
@@ -1038,6 +1074,7 @@ struct BTileGenerator[
         Self.transpose_b,
         Self.b_packed,
         Self.origin,
+        Self.b_engine,
     ]:
         var b_tile_stack_ptr = UnsafePointer[
             Scalar[Self.b_type], MutUntrackedOrigin
@@ -1062,6 +1099,7 @@ struct BTileGenerator[
             Self.b_layout,
             Self.transpose_b,
             Self.b_packed,
+            b_engine=Self.b_engine,
         ](b, b_tile_stack_ptr, Coord(tile_n_k))
 
     comptime PackedTileLayout = RowMajorLayout[Int, Int, Int]

@@ -8,10 +8,12 @@ modular_py_library(
         "__init__.py",
     ],
     deps = [
+        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/weights",
     ],

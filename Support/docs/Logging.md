@@ -100,7 +100,7 @@ continuation form.
 #### Timing a scope
 
 `SpanGuard`, from `Support/SpanGuard.h`, times a scope and reports it as a pair
-of `MLOG_KV` records sharing a `span_id`:
+of `MLOG_KV_REQ` records sharing a `span_id`:
 
 ```cpp
 {
@@ -111,7 +111,7 @@ of `MLOG_KV` records sharing a `span_id`:
 
 ```text
 event=span_start operation=prefill span_id=802754119...
-event=span_end operation=prefill span_id=802754119... duration_us=1423
+event=span_end span_id=802754119... duration_us=1423
 ```
 
 The end record is emitted from the destructor, so an early return still closes
@@ -119,10 +119,37 @@ the span. Durations come from `steady_clock`, so a wall-clock adjustment
 mid-span cannot skew them. The `operation` string is stored, not copied, so it
 must outlive the guard — pass a literal.
 
+`operation` names the start record only. Both records go through
+`MLOG_KV_REQ`, so inside a `BatchScope` they also carry a `batch_id` and a
+reader can filter a whole span down to one request. That leaves the end record
+spending its four pairs on `event`, `span_id`, `duration_us` and the batch id,
+and the shared `span_id` is what carries the operation across.
+
 Span ids are drawn per thread from a random 64-bit base, so they are distinct
 across threads without a shared counter. Records logged inside the scope do not
 pick up the `span_id` automatically; pass `span.getSpanId()` explicitly if a
 record needs to join the span.
+
+##### Guarded scopes in the runtime
+
+One scope is guarded today: the point every model execution funnels through,
+whether it arrives from the Python `Model.execute` or the C API's
+`M_executeModel`. It reports as `operation=model_execute`, and its duration is
+the execution rather than the dispatch, because the scope closes only after
+the results are awaited.
+
+The unit is one compiled graph, which is narrower than either a request or a
+scheduler step. A request spans many forward passes, and each pass batches
+many requests, so no span here corresponds to one request — the `batch_id` is
+what ties a span to the step it ran in. A step also emits more than one span,
+because sampling runs as its own graph: expect at least a model execution and
+a sampler execution per step, sharing a `batch_id` and told apart only by
+`span_id`.
+
+Nor is a span per phase. A batch is scheduled as prefill or decode on the
+Python side and no C++ entry point distinguishes the two, so recovering the
+phase means joining the `batch_id` against the `max.batch` and `max.phase.*`
+OTel spans, which carry the same id.
 
 #### Correlating records with a request
 
@@ -154,6 +181,14 @@ on the logger — metrics and traces want the same answer. `BatchScope` nests, s
 an inner scope restores the enclosing id rather than clearing it. From Python
 the pair is `max._core.request_context.set_batch_id(batch_id)` and
 `clear_batch_id()`; the scheduler wraps each forward pass in them.
+
+##### Where the context is stored
+
+The batch id lives in a thread-local slot inside `libMSupportGlobals.so`,
+reached through `M::Globals::getRequestBatchId()`, rather than in a
+`thread_local` in `RequestContext.h`.
+
+##### Threads that do not inherit the context
 
 The context is thread-local and does not cross a dispatch boundary, so work
 that AsyncRT's `WorkQueue` fans out to its thread pool logs without a

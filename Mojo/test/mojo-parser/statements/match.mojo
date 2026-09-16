@@ -614,11 +614,10 @@ def match_vec3(v: Vec3):
     case Vec3(x=0, y=0, z=0):
         case_callee[0]()
 
-    # Bindings are materialized after field tests.
+    # Bindings are materialized after field tests. `_` does not project.
     # CHECK:       lit.ref.struct.ger {{.*}}[x]
     # CHECK:       lit.ref.struct.ger {{.*}}[y]
     # CHECK:       lit.call {{.*}}@"__eq__(
-    # CHECK:       lit.ref.struct.ger {{.*}}[z]
     # CHECK:       [[X:%.*]] = lit.var.decl "x" var
     # CHECK:       lit.ref.store {{.*}}, [[X]]
     __match v:

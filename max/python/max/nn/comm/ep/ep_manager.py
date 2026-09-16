@@ -19,15 +19,14 @@ communication in distributed inference scenarios.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 import os
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import (
     Accelerator,
     Buffer,
@@ -103,14 +102,14 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     return dispatch_async_size + dispatch_wait_size + combine_wait_size
 
 
-@dataclass
+@tree.dataclass
 class EPCommBuffers:
     """SHMEM communication buffers for one Expert Parallelism MoE forward pass.
 
     Bundles the per-device send, receive, and synchronization tensors produced
     by ``EPBatchManager.comm_buffers()`` into a single value so they can be
     passed through the subgraph pytree machinery as one forward argument. The
-    ``__tree_flatten__`` / ``__tree_unflatten__`` hooks expose the
+    ``@tree.dataclass`` hooks expose the
     :class:`~max.experimental.tensor.Tensor` leaves to that machinery.
     """
 
@@ -141,21 +140,6 @@ class EPCommBuffers:
     eplb_logcnt: dict[int, Tensor] | None = None
     """Per-device count of physical replicas per logical expert (EPLB), keyed by
     device ID. Populated only when EPLB is enabled; otherwise ``None``."""
-
-    def __tree_flatten__(
-        self,
-    ) -> tuple[tuple[object, ...], tuple[str, ...]]:
-        """Exposes the Tensor leaves to the subgraph pytree machinery."""
-        names = tuple(f.name for f in dataclasses.fields(self))
-        children = tuple(getattr(self, name) for name in names)
-        return children, names
-
-    @classmethod
-    def __tree_unflatten__(
-        cls, aux: tuple[str, ...], children: Sequence[Any]
-    ) -> EPCommBuffers:
-        """Rebuilds an :class:`EPCommBuffers` from flattened leaves."""
-        return cls(**dict(zip(aux, children, strict=True)))
 
 
 class EPBatchManager:

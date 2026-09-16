@@ -25,16 +25,10 @@ a given graph actually fuses is covered by that MLIR suite, not here.
 needed: its epilogue binds through the store-lambda path (`FusedOutputTensor`
 + `_bind_to_fused_output`).
 
-Several of that suite's cases are NOT ported here (see the trailing
-comment): `matmul_add`/`chain` because `mo.matmul`'s same-dtype (compute
-lambda) epilogue currently fails to compile under `MAX_GC_USE_ADV_FUSION=1`
-(a separate, already-tracked compute-lambda gap -- see
-`test_view_fusion.py`'s `test_broadcast_fuses_into_existing_epilogue`
-docstring). A dtype-CHANGING matmul epilogue does compile now -- the
-mixed-precision accumulating path (`AllocateAccumulatingBuffers`) gives it a
-pre-cast scratch buffer -- so `cast(matmul(...))` is exercised below. A
-couple of the remaining cases have no real-op counterpart at all and are
-intentionally not ported either (see the trailing comment).
+Both same-dtype (`matmul_add`, `chain`) and dtype-changing (`cast`) matmul
+epilogues are exercised below. A couple of the suite's remaining cases have no
+real-op counterpart at all and are intentionally not ported (see the trailing
+comment).
 """
 
 from __future__ import annotations
@@ -95,6 +89,61 @@ def test_matmul_epilogue_fuses_cast(
     )
     assert out.dtype == np.int32
     np.testing.assert_array_equal(out, (a_np @ b_np).astype(np.int32))
+
+
+def test_matmul_add_epilogue_fuses(
+    session: InferenceSession, adv_fusion_enabled: None
+) -> None:
+    """`add(matmul(x, y), z)` fuses the bias-add into the matmul's epilogue.
+
+    A same-dtype (f32 -> f32) matmul epilogue: the add binds through the
+    compute-lambda path (`_bind_to_fused_compute_output`). Mirrors `matmul_add`.
+    """
+    with Graph(
+        "matmul_add_epilogue_fuses",
+        input_types=[
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, y, z = (v.tensor for v in graph.inputs)
+        graph.output(ops.matmul(x, y) + z)
+
+    x_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    z_np = np.random.randn(8, 8).astype(np.float32)
+    (out,) = run_and_verify_fusion(
+        session, graph, x_np, y_np, z_np, fused=r"mo\.matmul.*mo\.add"
+    )
+    np.testing.assert_allclose(out, x_np @ y_np + z_np, rtol=1e-5, atol=1e-5)
+
+
+def test_matmul_add_relu_chain_epilogue_fuses(
+    session: InferenceSession, adv_fusion_enabled: None
+) -> None:
+    """`relu(add(matmul(x, y), z))` fuses the whole add+relu chain into the
+    matmul's epilogue as a single unit. Mirrors `chain`.
+    """
+    with Graph(
+        "matmul_add_relu_chain_epilogue_fuses",
+        input_types=[
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [8, 8], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, y, z = (v.tensor for v in graph.inputs)
+        graph.output(ops.relu(ops.matmul(x, y) + z))
+
+    x_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    z_np = np.random.randn(8, 8).astype(np.float32)
+    (out,) = run_and_verify_fusion(
+        session, graph, x_np, y_np, z_np, fused=r"mo\.matmul.*mo\.add.*mo\.relu"
+    )
+    ref = np.maximum(x_np @ y_np + z_np, 0)
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
 def test_no_fuse_multi_use(

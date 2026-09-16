@@ -167,12 +167,6 @@ def main() raises:
     var signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var relay_signal_bufs = List[DeviceBuffer[.uint8]](capacity=WORLD)
     var flag_bufs = List[DeviceBuffer[.int32]](capacity=WORLD)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
-        uninitialized=True
-    )
-    var relay_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], WORLD](
-        uninitialized=True
-    )
     var host_buffer = List[Scalar[dtype]](unsafe_uninit_length=max_input)
 
     for gpu_idx in range(WORLD):
@@ -193,22 +187,22 @@ def main() raises:
 
         signal_bufs.append(ctx.create_buffer_sync[.uint8](size_of[Signal]()))
         ctx.enqueue_memset[.uint8](signal_bufs[gpu_idx], 0)
-        rank_sigs[gpu_idx] = (
-            signal_bufs[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
         relay_signal_bufs.append(
             ctx.create_buffer_sync[.uint8](size_of[Signal]())
         )
         ctx.enqueue_memset[.uint8](relay_signal_bufs[gpu_idx], 0)
-        relay_rank_sigs[gpu_idx] = (
-            relay_signal_bufs[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, WORLD](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_bufs[i])
+    )
+    var relay_rank_sigs = Array[_, WORLD](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(relay_signal_bufs[i])
+    )
+
     for gpu_idx in range(WORLD):
         list_of_ctx[gpu_idx].synchronize()
 
@@ -258,20 +252,28 @@ def main() raises:
         # The group is presented as its own world, so `reducescatter` sees one
         # group and leaves the relay gate shut.
         var group_base = ualign_down(rank, GROUP)
-        var group_in = Array[InTileType, GROUP](uninitialized=True)
-        var group_out = Array[OutTileType, GROUP](uninitialized=True)
-        var group_sigs = Array[MutPointer[Signal, MutAnyOrigin], GROUP](
-            uninitialized=True
+        var group_in = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> InTileType: in_tile(
+                group_base + i, GROUP * part
+            )
         )
-        for i in range(GROUP):
-            group_in[i] = in_tile(group_base + i, GROUP * part)
-            group_out[i] = out_tile(group_base + i, part)
-            group_sigs[i] = rank_sigs[group_base + i]
+        var group_out = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> OutTileType: out_tile(
+                group_base + i, part
+            )
+        )
+        var group_sigs = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> MutPointer[
+                Signal, MutAnyOrigin
+            ]: rank_sigs[group_base + i]
+        )
 
         comptime if HAS_RESIDUAL:
-            var group_res = Array[SrcPtrType, GROUP](uninitialized=True)
-            for i in range(GROUP):
-                group_res[i] = res_ptrs[group_base + i]
+            var group_res = Array[_, GROUP](
+                fill_with=lambda (i: Int) -> SrcPtrType: res_ptrs[
+                    group_base + i
+                ]
+            )
             reducescatter[ngpus=GROUP, group_size=GROUP, has_residual=True](
                 group_in,
                 group_out,
@@ -323,11 +325,11 @@ def main() raises:
             peer_starts[i] = Int32(i * part)
             peer_res_ptrs[i] = res_ptrs[peer_base + i]
 
-        var pair_sigs = Array[MutPointer[Signal, MutAnyOrigin], PAIR](
-            uninitialized=True
+        var pair_sigs = Array[_, PAIR](
+            fill_with=lambda (i: Int) -> MutPointer[
+                Signal, MutAnyOrigin
+            ]: relay_rank_sigs[pair_base + i]
         )
-        for i in range(PAIR):
-            pair_sigs[i] = relay_rank_sigs[pair_base + i]
 
         _reducescatter_p2p_relay[has_residual=HAS_RESIDUAL](
             out_tile(rank, part).ptr,

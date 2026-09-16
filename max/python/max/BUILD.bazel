@@ -35,9 +35,7 @@ modular_nanobind_extension(
 
 modular_generate_stubfiles(
     name = "_core",
-    additional_update_targets = [
-        "//max/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles",
-    ] + select({
+    additional_update_targets = select({
         # nixl.pyi is diff-tested separately (linux-x86_64 only, see below); keep
         # it in the one-shot `./utils/sync-stubfiles.sh` update flow.
         "//:linux_x86_64": [":_core.sync-stubfiles.nixl"],
@@ -56,6 +54,18 @@ When you modify a .cpp file in the _core/src directory, you can run
 """,
     extension = ":_core.bindings",
     full_name = "max._core",
+    generated_pyi_srcs = [
+        "_core/dialects/builtin/__init__.pyi",
+        "_core/dialects/builtin/passes.pyi",
+        "_core/dialects/mo/__init__.pyi",
+        "_core/dialects/mo/passes.pyi",
+        "_core/dialects/rmo/__init__.pyi",
+        "_core/dialects/rmo/passes.pyi",
+        "_core/dialects/__init__.pyi",
+        "_core/dialects/mosh.pyi",
+        "_core/dialects/m.pyi",
+        "_core/dialects/kgen.pyi",
+    ],
     header = """
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
@@ -73,7 +83,7 @@ When you modify a .cpp file in the _core/src directory, you can run
 # ===----------------------------------------------------------------------=== #
 """,
     include_private = True,
-    pattern_file = "//max/python/max/_core/internal:patterns.nb",
+    pattern_file = ":_core/patterns.nb",
     pyi_srcs = glob(["**/*.pyi"]),
     deps = [
         "//max/python/max/_core_types",
@@ -134,6 +144,14 @@ modular_py_library(
 modular_py_library(
     name = "_eager_policy",
     srcs = ["_eager_policy.py"],
+)
+
+modular_py_library(
+    name = "tree",
+    srcs = ["tree.py"],
+    deps = [
+        requirement("typing-extensions"),
+    ],
 )
 
 alias(

@@ -862,11 +862,11 @@ def _allgather_p2p[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
+    var group_sigs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Pointer[
+            Signal, MutAnyOrigin
+        ]: rank_sigs[group_start + i]
     )
-    comptime for i in range(group_size):
-        group_sigs[i] = rank_sigs[group_start + i]
 
     # Build Int32 versions for passing to GPU kernels.
     var lengths_i32 = StaticTuple[Int32, group_size]()
@@ -922,11 +922,11 @@ def _allgather_p2p[
         ](pair_max_length * size_of[dtype]())
 
         if pair_max_length > 0 and recipe.relay_percent > 0:
-            var relay_sigs = Array[
-                MutPointer[Signal, MutAnyOrigin], 2 * group_size
-            ](uninitialized=True)
-            for i in range(2 * group_size):
-                relay_sigs[i] = rank_sigs[pair_base + i]
+            var relay_sigs = Array[_, 2 * group_size](
+                fill_with=lambda (i: Int) -> Pointer[
+                    Signal, MutAnyOrigin
+                ]: rank_sigs[pair_base + i]
+            )
 
             return _allgather_p2p_relay(
                 output_ptrs,
@@ -1129,9 +1129,11 @@ def allgather[
                 " between GPUs"
             )
         comptime OutputTensorType = type_of(output_buffers[0])
-        var my_outputs = Array[OutputTensorType, ngpus](uninitialized=True)
-        comptime for i in range(ngpus):
-            my_outputs[i] = output_buffers[my_rank * ngpus + i]
+        var my_outputs = Array[_, ngpus](
+            fill_with_unrolled=lambda [i: Int]() -> OutputTensorType: (
+                output_buffers[my_rank * ngpus + i]
+            )
+        )
         return _allgather_naive(input_buffers, my_outputs, ctx)
 
     # P2P path: hand the collective the whole world plus the group width, and

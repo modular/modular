@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import NoReturn
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
 
 from ..qwen3_5.batch_processor import Qwen3_5BatchProcessor
@@ -37,7 +37,7 @@ class UnifiedDflash2Qwen3_5BatchProcessor(Qwen3_5BatchProcessor):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> NoReturn:
         raise NotImplementedError(

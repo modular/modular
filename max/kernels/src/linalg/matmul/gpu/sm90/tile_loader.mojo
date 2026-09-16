@@ -66,6 +66,7 @@ trait TileLoader(TrivialRegisterPassable):
         dst: TileTensor[
             mut=True,
             address_space=.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
@@ -247,6 +248,7 @@ struct TileLoaderTMA[
         dst: TileTensor[
             mut=True,
             address_space=.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
@@ -334,7 +336,7 @@ struct TileLoaderCPAsync[
     thread_layout: MixedLayout,
     swizzle_mode: TensorMapSwizzle,
     vector_size: Int,
-    src_engine: TensorEngine = DefaultEngine[element_width=1],
+    src_engine: TensorEngine,
 ](TileLoader):
     """Software-based tile loader using cp.async instructions.
 
@@ -348,8 +350,7 @@ struct TileLoaderCPAsync[
         thread_layout: Thread arrangement for distributed copying.
         swizzle_mode: Swizzling pattern for shared memory access.
         vector_size: Number of elements loaded per thread.
-        src_engine: Engine of the source tensor (defaults to
-            `DefaultEngine`).
+        src_engine: Engine of the source tensor.
     """
 
     comptime _dtype = Self.dtype
@@ -388,6 +389,7 @@ struct TileLoaderCPAsync[
         dst: TileTensor[
             mut=True,
             address_space=.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
@@ -455,6 +457,8 @@ def async_copy_with_bound_check[
     thread_layout: MixedLayout,
     swizzle_mode: TensorMapSwizzle,
 ](
+    # Both operands arrive from `vectorize`, which collapses any source engine
+    # to `DefaultEngine`, and the copy below walks raw pointers anyway.
     src: TileTensor[
         mut=False,
         dtype,

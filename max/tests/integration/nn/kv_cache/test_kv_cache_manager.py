@@ -14,16 +14,16 @@
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
     MLAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
 )
 from max.nn.kv_cache.utils import padded_lut_cols
@@ -188,7 +188,7 @@ async def test_fetch_paged() -> None:
     # Fetch 3 of the 5 contexts created above
     for ctx in contexts[:3]:
         kv_manager.alloc(ctx)
-    _ = kv_manager.runtime_inputs_for_leaf([contexts[:3]]).inputs[0]
+    _ = kv_manager.runtime_inputs_for_leaf([contexts[:3]])[0]
 
 
 @pytest.mark.asyncio
@@ -216,18 +216,14 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
     kv_manager.claim(short_context)
 
     kv_manager.alloc(short_context)
-    first_inputs = kv_manager.runtime_inputs_for_leaf([[short_context]]).inputs[
-        0
-    ]
+    first_inputs = kv_manager.runtime_inputs_for_leaf([[short_context]])[0]
     assert tuple(first_inputs.lookup_table.shape) == (1, padded_lut_cols(1))
 
     long_context = create_text_context(np.zeros(256, dtype=np.int64))
     kv_manager.claim(long_context)
 
     kv_manager.alloc(long_context)
-    second_inputs = kv_manager.runtime_inputs_for_leaf([[long_context]]).inputs[
-        0
-    ]
+    second_inputs = kv_manager.runtime_inputs_for_leaf([[long_context]])[0]
     assert tuple(second_inputs.lookup_table.shape) == (1, padded_lut_cols(2))
 
 
@@ -242,13 +238,13 @@ async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
     kv_manager.claim(context)
     kv_manager.alloc(context)
 
-    runtime_inputs = kv_manager.runtime_inputs_for_leaf([[context]]).inputs[0]
+    runtime_inputs = kv_manager.runtime_inputs_for_leaf([[context]])[0]
     assert tuple(runtime_inputs.lookup_table.shape) == (1, padded_lut_cols(1))
 
     explicit_inputs = kv_manager.runtime_inputs_for_leaf(
         [[context]],
         max_cache_length=1024,
-    ).inputs[0]
+    )[0]
     assert tuple(explicit_inputs.lookup_table.shape) == (
         1,
         padded_lut_cols(total_num_pages),
@@ -274,9 +270,9 @@ async def test_mla_runtime_inputs_handles_empty_replica_batch() -> None:
     kv_manager.alloc(context)
 
     runtime_inputs = kv_manager.runtime_inputs_for_leaf([[context], []])
-    assert len(runtime_inputs.inputs) == 2
-    assert runtime_inputs.inputs[0].attention_dispatch_metadata is not None
-    assert runtime_inputs.inputs[1].attention_dispatch_metadata is not None
+    assert len(runtime_inputs) == 2
+    assert runtime_inputs[0].attention_dispatch_metadata is not None
+    assert runtime_inputs[1].attention_dispatch_metadata is not None
 
 
 @pytest.mark.asyncio
@@ -300,23 +296,23 @@ async def test_mixed_dp_tp_runtime_inputs_copy_lut_within_replica() -> None:
         replica_batches.append([context])
 
     runtime_inputs = kv_manager.runtime_inputs_for_leaf(replica_batches)
-    assert len(runtime_inputs.inputs) == 8
+    assert len(runtime_inputs) == 8
 
-    assert tuple(runtime_inputs.inputs[0].lookup_table.shape) == (
+    assert tuple(runtime_inputs[0].lookup_table.shape) == (
         1,
         padded_lut_cols(1),
     )
-    assert tuple(runtime_inputs.inputs[4].lookup_table.shape) == (
+    assert tuple(runtime_inputs[4].lookup_table.shape) == (
         1,
         padded_lut_cols(2),
     )
 
     for replica_start in (0, 4):
-        base = runtime_inputs.inputs[replica_start]
+        base = runtime_inputs[replica_start]
         base_lut = base.lookup_table.to_numpy()
         base_cache_lengths = base.cache_lengths.to_numpy()
         for tp_shard in range(replica_start + 1, replica_start + 4):
-            shard = runtime_inputs.inputs[tp_shard]
+            shard = runtime_inputs[tp_shard]
             np.testing.assert_array_equal(
                 shard.lookup_table.to_numpy(), base_lut
             )
@@ -344,7 +340,7 @@ async def test_multi_cache_runtime_inputs_match_symbolic_order(
         batches.append([ctx])
 
     symbolic_types = kv_manager.params.flattened_kv_inputs()
-    runtime_buffers = kv_manager.runtime_inputs(batches).flatten()
+    runtime_buffers = tree.leaves(kv_manager.runtime_inputs(batches))
 
     assert len(runtime_buffers) == len(symbolic_types), (
         "runtime produced a different number of KV inputs than the graph "
@@ -482,7 +478,7 @@ async def test_runtime_inputs_with_num_speculative_steps() -> None:
     kv_manager.alloc(ctx)
 
     inputs = kv_manager.runtime_inputs_for_leaf([[ctx]])
-    assert len(inputs.inputs) == 1
+    assert len(inputs) == 1
 
 
 @pytest.mark.asyncio
@@ -512,7 +508,7 @@ async def test_runtime_inputs_cache_length_bounded_by_accepted_not_speculative_l
     ctx.spec_decoding_state.draft_tokens_to_verify = [9, 9, 9, 9, 9, 9]
     kv_manager.alloc(ctx)
 
-    inputs = kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0]
+    inputs = kv_manager.runtime_inputs_for_leaf([[ctx]])[0]
     cache_length = int(inputs.cache_lengths.to_numpy()[0])
     assert cache_length == 7 + 3, (
         f"cache_lengths={cache_length}, expected processed_length(7) + "
@@ -580,17 +576,25 @@ async def test_multi_cache_runtime_inputs_combined() -> None:
     inputs = kv_manager.runtime_inputs([[ctx]])
 
     # With 1 device and 2 caches, the tree has one leaf per cache.
-    assert isinstance(inputs, MultiKVCacheInputs)
-    leaf0, leaf1 = inputs.children.values()
-    assert isinstance(leaf0, KVCacheInputs)
-    assert isinstance(leaf1, KVCacheInputs)
+    assert isinstance(inputs, dict)
+    leaf0, leaf1 = inputs.values()
+    assert (
+        isinstance(leaf0, tuple)
+        and leaf0
+        and isinstance(leaf0[0], KVCacheInputsPerDevice)
+    )
+    assert (
+        isinstance(leaf1, tuple)
+        and leaf1
+        and isinstance(leaf1[0], KVCacheInputsPerDevice)
+    )
 
     # Both caches share the same cache_lengths and lookup_table buffers.
-    assert leaf0.inputs[0].cache_lengths is leaf1.inputs[0].cache_lengths
-    assert leaf0.inputs[0].lookup_table is leaf1.inputs[0].lookup_table
+    assert leaf0[0].cache_lengths is leaf1[0].cache_lengths
+    assert leaf0[0].lookup_table is leaf1[0].lookup_table
 
     # But they have different block buffers (different caches).
-    assert leaf0.inputs[0].kv_blocks is not leaf1.inputs[0].kv_blocks
+    assert leaf0[0].kv_blocks is not leaf1[0].kv_blocks
 
 
 @pytest.mark.asyncio
@@ -660,11 +664,9 @@ def test_lut_tail_padding_sentinel_is_total_num_pages() -> None:
     dummy_ctx = create_text_context(np.zeros(1, dtype=np.int64))
     kv_manager.alloc_dummy(dummy_ctx)
 
-    lut = (
-        kv_manager.runtime_inputs_for_leaf([[real_ctx, dummy_ctx]])
-        .inputs[0]
-        .lookup_table.to_numpy()
-    )
+    lut = kv_manager.runtime_inputs_for_leaf([[real_ctx, dummy_ctx]])[
+        0
+    ].lookup_table.to_numpy()
 
     # No cell should contain the poison value 0xCCCCCCCC — that value times any
     # realistic page_stride overflows into unmapped GPU memory.

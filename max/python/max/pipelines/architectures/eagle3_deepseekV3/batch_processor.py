@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessor,
 )
@@ -53,7 +53,7 @@ class _Eagle3DeepseekV3BatchProcessorBase(DeepseekV3BatchProcessor):
     def _prepare_deepseek_base(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         return_n_logits: int,
     ) -> DeepseekV3Inputs:
         return super().prepare_initial_token_inputs(
@@ -69,7 +69,7 @@ class Eagle3DeepseekV3BatchProcessor(_Eagle3DeepseekV3BatchProcessorBase):
     def prepare_initial_token_inputs(  # type: ignore[override]
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Eagle3DeepseekV3Inputs:
         from .model import Eagle3DeepseekV3Inputs
@@ -99,7 +99,7 @@ class Eagle3MHADeepseekV3BatchProcessor(_Eagle3DeepseekV3BatchProcessorBase):
     def prepare_initial_token_inputs(  # type: ignore[override]
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Eagle3MHADeepseekV3Inputs:
         from .mha_pipeline import Eagle3MHADeepseekV3Inputs

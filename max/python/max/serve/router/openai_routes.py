@@ -58,12 +58,13 @@ from max.pipelines.context.exceptions import InputError
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
-from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
+    StructuralTagToolParser,
     maybe_name_from_tool,
     name_from_tool,
     names_from_tools,
 )
+from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -792,23 +793,42 @@ class OpenAIChatResponseGenerator(
                         # chunk.decoded_tokens from being used as content.
                         merged_stream_content = "".join(stream_content_parts)
 
+                # The parser withholds a trailing partial match for its
+                # start marker while more tokens could complete it. Nothing
+                # can complete the marker once generation is done, so release
+                # it as content rather than dropping characters the model
+                # generated. Keyed off ``is_done`` rather than the block
+                # above, whose final chunk may carry no decoded tokens.
                 if (
                     self.parse_tool_calls
                     and chunk.status.is_done
-                    and self._tool_schemas
+                    and isinstance(self.parser, StructuralTagToolParser)
+                ):
+                    withheld = self.parser.flush()
+                    if withheld:
+                        merged_stream_content = (
+                            merged_stream_content or ""
+                        ) + withheld
+
+                if (
+                    self.parse_tool_calls
+                    and chunk.status.is_done
                     and self._stream_tool_names
                 ):
-                    self._log_tool_call_conformance(
-                        [
-                            (
-                                self._stream_tool_names[i],
-                                "".join(self._stream_tool_args.get(i, [])),
-                            )
-                            for i in sorted(self._stream_tool_names)
-                        ],
-                        request_id=str(request.request_id),
-                        is_streaming=True,
-                    )
+                    METRICS.tool_call_responses()
+                    # Conformance still needs schemas to validate against.
+                    if self._tool_schemas:
+                        self._log_tool_call_conformance(
+                            [
+                                (
+                                    self._stream_tool_names[i],
+                                    "".join(self._stream_tool_args.get(i, [])),
+                                )
+                                for i in sorted(self._stream_tool_names)
+                            ],
+                            request_id=str(request.request_id),
+                            is_streaming=True,
+                        )
 
                 if (
                     chunk.decoded_tokens is not None
@@ -1210,6 +1230,7 @@ class OpenAIChatResponseGenerator(
                                     ensure_ascii=False,
                                 )
                     if parsed.tool_calls:
+                        METRICS.tool_call_responses()
                         if self._tool_schemas:
                             self._log_tool_call_conformance(
                                 [
@@ -1970,6 +1991,43 @@ def _get_cache_salt(
     return body_cache_salt
 
 
+_BOUNDED_TOOL_CHOICES = frozenset({"auto", "required", "none"})
+
+
+def _tool_choice_label(tool_choice: object) -> str:
+    """Buckets ``tool_choice`` into a bounded label, hiding any function name."""
+    if tool_choice is None:
+        # Absent tool_choice means "auto" per the OpenAI API.
+        return "auto"
+    if isinstance(tool_choice, str):
+        return tool_choice if tool_choice in _BOUNDED_TOOL_CHOICES else "other"
+    return "named"
+
+
+def _record_request_feature_metrics(
+    tools: list[TextGenerationRequestTool] | None,
+    completion_request: CreateChatCompletionRequest,
+) -> None:
+    """Counts the tool-calling and structured-output features a request asked for.
+
+    Takes the converted ``tools``, not ``completion_request.tools``: that one
+    is a lazily-validated pydantic ``Iterable``, truthy even when empty, and
+    iterating it here would consume it before the conversion runs.
+    """
+    if tools:
+        METRICS.tool_call_requests(
+            _tool_choice_label(completion_request.tool_choice)
+        )
+        METRICS.tool_call_tools_per_request(len(tools))
+    # Read off the client's request: a combined tools+response_format rewrite
+    # replaces it below with a ``type="grammar"`` one whose schema is empty.
+    response_format = completion_request.response_format
+    if response_format:
+        kind = response_format.get("type")
+        if kind in ("json_object", "json_schema"):
+            METRICS.structured_output_requests(kind)
+
+
 def _resolve_grammar_constraints(
     tools: list[TextGenerationRequestTool] | None,
     tool_choice: str | dict[str, Any] | None,
@@ -2154,6 +2212,8 @@ async def openai_create_chat_completion(
             if response_format is not None and response_format.json_schema
             else None
         )
+
+        _record_request_feature_metrics(tools, completion_request)
 
         # For architectures with a grammar-based tool parser (e.g., Kimi),
         # generate constrained decoding grammars for tool calls and/or

@@ -39,7 +39,8 @@ Key structured patterns:
 """
 
 from std.collections import Optional
-from std.math import ceildiv
+from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv, umod
 from std.memory import Pointer
 from std.sys import size_of
 
@@ -222,7 +223,9 @@ struct BlackwellBlockScaledMatmulKernel[
     # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
-    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
+    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (
+        align_up(Self.MMA_N, SF_MN_GROUP_SIZE) // 32
+    )
     comptime stage_stride_cols = Self.MMA_N
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
@@ -277,7 +280,7 @@ struct BlackwellBlockScaledMatmulKernel[
     ]()
 
     comptime sfb_smem_layout = tile_sf_layout_k_major[
-        Self.MMA_N,
+        align_up(Self.MMA_N, SF_MN_GROUP_SIZE),
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
     ]()
@@ -369,7 +372,7 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime SFBTileLayout = RowMajorLayout[
         *_IntToComptimeInt[
             1,
-            Self.MMA_N // SF_MN_GROUP_SIZE,
+            align_up(Self.MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
             SF_ATOM_M[0],
             SF_ATOM_M[1] * SF_ATOM_K,
@@ -378,7 +381,7 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime SFBDescLayout = tma_desc_layout_5d[
         Self.sfb_dtype,
         1,
-        Self.MMA_N // SF_MN_GROUP_SIZE,
+        align_up(Self.MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         Self.config.num_sf_k_tiles,
         SF_ATOM_M[0],
         TensorMapSwizzle.SWIZZLE_NONE,
@@ -662,7 +665,7 @@ struct BlackwellBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        work_tile_coord[1] * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        (work_tile_coord[1] * Self.MMA_N) // SF_MN_GROUP_SIZE,
                         batch_coord,
                     ),
                 )
@@ -687,6 +690,7 @@ struct BlackwellBlockScaledMatmulKernel[
         sfb_tmem: UInt32,
         iter_idx: UInt32,
         k_start: UInt32,
+        work_tile_n: Int,
     ):
         """Execute MMA operations using ConsumerTiles.
 
@@ -704,7 +708,20 @@ struct BlackwellBlockScaledMatmulKernel[
             sfb_tmem: TMEM base address for B scaling factors.
             iter_idx: K iteration index.
             k_start: Starting K iteration (for init_c determination).
+            work_tile_n: N-axis tile index used to select the SFB atom half.
         """
+        # Same numerator as the SFB source coordinate in `load_input_tiles`.
+        var sfb_tmem_adj: UInt32
+        comptime if Self.MMA_N in (64, 192):
+            sfb_tmem_adj = UInt32(
+                ufloordiv(
+                    umod(work_tile_n * Self.MMA_N, SF_MN_GROUP_SIZE),
+                    SF_ATOM_M[0],
+                )
+            )
+        else:
+            sfb_tmem_adj = UInt32(0)
+
         if elect_one_sync():
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
@@ -741,6 +758,7 @@ struct BlackwellBlockScaledMatmulKernel[
                     sfa_tmem_offset,
                     sfb_tmem_offset,
                     init_c=is_first_k,
+                    sfb_tmem_adj=sfb_tmem_adj,
                 )
 
             mma_op.commit(tiles.mbar())
@@ -1075,7 +1093,7 @@ struct BlackwellBlockScaledMatmulKernel[
                 )
 
                 with mma_ctx:  # TMEM lifecycle
-                    for _ in scheduler.work_iterator():
+                    for current in scheduler.work_iterator():
                         if ctx.elect_one_cta:
                             with mma_ctx.output_pipeline.producer() as output_stage:  # waits for epilogue
                                 var tmem_offset = UInt32(
@@ -1099,6 +1117,7 @@ struct BlackwellBlockScaledMatmulKernel[
                                                     Self.config.k_group_size
                                                 ),
                                                 0,
+                                                Int(current.n),
                                             )
 
                 comptime if Self.pdl_level > PDLLevel.OFF:

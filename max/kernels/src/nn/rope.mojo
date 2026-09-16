@@ -22,7 +22,9 @@ from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
     CoordLike,
+    DefaultEngine,
     RowMajorLayout,
+    TensorEngine,
     TensorLayout,
     TileTensor,
     coord,
@@ -135,6 +137,8 @@ def rope_ragged[
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],
+    # `position_ids` is optional, so its engine cannot be inferred.
+    PositionIdsEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     x: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[.uint32, ...],
@@ -143,7 +147,12 @@ def rope_ragged[
     context: DeviceContext,
     output_fn: OutputFn,
     position_ids: OptionalReg[
-        TileTensor[.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            .uint32,
+            PositionIdsLayoutType,
+            ImmutAnyOrigin,
+            Engine=PositionIdsEngine,
+        ]
     ] = None,
 ) raises where (
     input_row_offsets.flat_rank == 1

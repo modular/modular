@@ -15,12 +15,16 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
-from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+)
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 from torch.utils.dlpack import from_dlpack
 
@@ -60,11 +64,7 @@ def test_mla_prefill_plan() -> None:
             input_row_offsets = g.inputs[0].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = (
-                kv_params.get_symbolic_inputs()
-                .unflatten(iter(g.inputs[1:]))
-                .inputs[0]
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[1:]))[0]
 
             results = flare_mla_prefill_plan(
                 kv_params,
@@ -92,7 +92,9 @@ def test_mla_prefill_plan() -> None:
 
     kv_inputs = paged_kv_cache_inputs(kv_params, prompt_lens, total_num_pages=8)
 
-    results = model.execute(input_row_offsets.to(device0), *kv_inputs.flatten())
+    results = model.execute(
+        input_row_offsets.to(device0), *tree.leaves(kv_inputs)
+    )
 
     # Hardcoded reference for:
     # page_size = 128, buffer_tok_size = 256, prompt_lens = [160, 200]
@@ -159,11 +161,7 @@ def test_mla_decompress_k_cache() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = (
-                kv_params.get_symbolic_inputs()
-                .unflatten(iter(g.inputs[2:]))
-                .inputs[0]
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[2:]))[0]
 
             # Allocate a page-aligned buffer to hold decompressed KV cache.
             buffer_tok_size = 256
@@ -229,7 +227,7 @@ def test_mla_decompress_k_cache() -> None:
     results = model.execute(
         input_row_offsets.to(device0),
         Buffer.from_numpy(weight.numpy()).to(device0),
-        *kv_runtime_inputs.flatten(),
+        *tree.leaves(kv_runtime_inputs),
     )
 
     # With page-aligned spans and 256-token chunks, chunk 0 covers request 0 and 1.
@@ -292,11 +290,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = (
-                kv_params.get_symbolic_inputs()
-                .unflatten(iter(g.inputs[2:]))
-                .inputs[0]
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[2:]))[0]
 
             # Allocate a buffer to hold KV cache for 60 decompressed tokens
             buffer_tok_size = 60

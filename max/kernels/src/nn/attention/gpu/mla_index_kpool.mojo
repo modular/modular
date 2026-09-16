@@ -30,7 +30,7 @@ request. Only pools whose members all arrive in the same call are written.
 
 from std.math import exp, max
 
-from layout import TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 
 from max.gpu import block_dim, block_idx, thread_idx
 
@@ -85,19 +85,36 @@ def kpool_compress_kernel[
     CacheLenLayoutType: TensorLayout,
     OutLayoutType: TensorLayout,
     out_origin: MutOrigin,
+    KEngine: TensorEngine,
+    GateEngine: TensorEngine,
+    ApeEngine: TensorEngine,
+    IROEngine: TensorEngine,
+    PROEngine: TensorEngine,
+    CacheLenEngine: TensorEngine,
+    OutEngine: TensorEngine,
     head_dim: Int,
     kpool: Int,
 ](
-    pooled: TileTensor[dtype, OutLayoutType, out_origin],
-    k: TileTensor[mut=False, dtype, KLayoutType, k_origin],
-    gate: TileTensor[mut=False, dtype, GateLayoutType, gate_origin],
-    ape: TileTensor[mut=False, .float32, ApeLayoutType, ape_origin],
-    input_row_offsets: TileTensor[
-        mut=False, .uint32, IROLayoutType, iro_origin
+    pooled: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
+    k: TileTensor[mut=False, dtype, KLayoutType, k_origin, Engine=KEngine],
+    gate: TileTensor[
+        mut=False, dtype, GateLayoutType, gate_origin, Engine=GateEngine
     ],
-    pool_row_offsets: TileTensor[mut=False, .uint32, PROLayoutType, pro_origin],
+    ape: TileTensor[
+        mut=False, .float32, ApeLayoutType, ape_origin, Engine=ApeEngine
+    ],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, IROLayoutType, iro_origin, Engine=IROEngine
+    ],
+    pool_row_offsets: TileTensor[
+        mut=False, .uint32, PROLayoutType, pro_origin, Engine=PROEngine
+    ],
     cache_lengths: TileTensor[
-        mut=False, .uint32, CacheLenLayoutType, ImmutAnyOrigin
+        mut=False,
+        .uint32,
+        CacheLenLayoutType,
+        ImmutAnyOrigin,
+        Engine=CacheLenEngine,
     ],
 ):
     """Builds one pooled key per block; one thread per channel.
@@ -117,6 +134,13 @@ def kpool_compress_kernel[
         CacheLenLayoutType: Layout of `cache_lengths`.
         OutLayoutType: Layout of `pooled`.
         out_origin: Origin of `pooled`.
+        KEngine: Engine of `k`.
+        GateEngine: Engine of `gate`.
+        ApeEngine: Engine of `ape`.
+        IROEngine: Engine of `input_row_offsets`.
+        PROEngine: Engine of `pool_row_offsets`.
+        CacheLenEngine: Engine of `cache_lengths`.
+        OutEngine: Engine of `pooled`.
         head_dim: Channels per key; also the block width.
         kpool: Tokens per pool.
 
@@ -190,18 +214,36 @@ def kpool_tail_update_kernel[
     pos_origin: ImmOrigin,
     SlotLayoutType: TensorLayout,
     slot_origin: ImmOrigin,
+    TailEngine: TensorEngine,
+    OutEngine: TensorEngine,
+    ClosedEngine: TensorEngine,
+    KEngine: TensorEngine,
+    GateEngine: TensorEngine,
+    ApeEngine: TensorEngine,
+    PosEngine: TensorEngine,
+    SlotEngine: TensorEngine,
     head_dim: Int,
     kpool: Int,
     next_n: Int = 1,
 ](
-    tail: TileTensor[dtype, TailLayoutType, tail_origin],
-    pooled: TileTensor[dtype, OutLayoutType, out_origin],
-    closed_pool: TileTensor[.int32, ClosedLayoutType, closed_origin],
-    k: TileTensor[mut=False, dtype, KLayoutType, k_origin],
-    gate: TileTensor[mut=False, dtype, GateLayoutType, gate_origin],
-    ape: TileTensor[mut=False, .float32, ApeLayoutType, ape_origin],
-    positions: TileTensor[mut=False, .int32, PosLayoutType, pos_origin],
-    slot_idx: TileTensor[mut=False, .uint32, SlotLayoutType, slot_origin],
+    tail: TileTensor[dtype, TailLayoutType, tail_origin, Engine=TailEngine],
+    pooled: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
+    closed_pool: TileTensor[
+        .int32, ClosedLayoutType, closed_origin, Engine=ClosedEngine
+    ],
+    k: TileTensor[mut=False, dtype, KLayoutType, k_origin, Engine=KEngine],
+    gate: TileTensor[
+        mut=False, dtype, GateLayoutType, gate_origin, Engine=GateEngine
+    ],
+    ape: TileTensor[
+        mut=False, .float32, ApeLayoutType, ape_origin, Engine=ApeEngine
+    ],
+    positions: TileTensor[
+        mut=False, .int32, PosLayoutType, pos_origin, Engine=PosEngine
+    ],
+    slot_idx: TileTensor[
+        mut=False, .uint32, SlotLayoutType, slot_origin, Engine=SlotEngine
+    ],
     num_requests: Int32,
 ):
     """Stashes a request's new tokens, and closes each pool as it fills.
@@ -240,6 +282,14 @@ def kpool_tail_update_kernel[
         pos_origin: Origin of `positions`.
         SlotLayoutType: Layout of `slot_idx`.
         slot_origin: Origin of `slot_idx`.
+        TailEngine: Engine of `tail`.
+        OutEngine: Engine of `pooled`.
+        ClosedEngine: Engine of `closed_pool`.
+        KEngine: Engine of `k`.
+        GateEngine: Engine of `gate`.
+        ApeEngine: Engine of `ape`.
+        PosEngine: Engine of `positions`.
+        SlotEngine: Engine of `slot_idx`.
         head_dim: Channels per key; also the block width.
         kpool: Tokens per pool.
         next_n: Tokens appended per request per call.
@@ -336,19 +386,33 @@ def kpool_seed_tail_kernel[
     CacheLenLayoutType: TensorLayout,
     SlotLayoutType: TensorLayout,
     slot_origin: ImmOrigin,
+    TailEngine: TensorEngine,
+    KEngine: TensorEngine,
+    GateEngine: TensorEngine,
+    IROEngine: TensorEngine,
+    CacheLenEngine: TensorEngine,
+    SlotEngine: TensorEngine,
     head_dim: Int,
     kpool: Int,
 ](
-    tail: TileTensor[dtype, TailLayoutType, tail_origin],
-    k: TileTensor[mut=False, dtype, KLayoutType, k_origin],
-    gate: TileTensor[mut=False, dtype, GateLayoutType, gate_origin],
+    tail: TileTensor[dtype, TailLayoutType, tail_origin, Engine=TailEngine],
+    k: TileTensor[mut=False, dtype, KLayoutType, k_origin, Engine=KEngine],
+    gate: TileTensor[
+        mut=False, dtype, GateLayoutType, gate_origin, Engine=GateEngine
+    ],
     input_row_offsets: TileTensor[
-        mut=False, .uint32, IROLayoutType, iro_origin
+        mut=False, .uint32, IROLayoutType, iro_origin, Engine=IROEngine
     ],
     cache_lengths: TileTensor[
-        mut=False, .uint32, CacheLenLayoutType, ImmutAnyOrigin
+        mut=False,
+        .uint32,
+        CacheLenLayoutType,
+        ImmutAnyOrigin,
+        Engine=CacheLenEngine,
     ],
-    slot_idx: TileTensor[mut=False, .uint32, SlotLayoutType, slot_origin],
+    slot_idx: TileTensor[
+        mut=False, .uint32, SlotLayoutType, slot_origin, Engine=SlotEngine
+    ],
     num_requests: Int32,
 ):
     """Stashes a prefill chunk's trailing tokens into the tail ring.
@@ -373,6 +437,12 @@ def kpool_seed_tail_kernel[
         CacheLenLayoutType: Layout of `cache_lengths`.
         SlotLayoutType: Layout of `slot_idx`.
         slot_origin: Origin of `slot_idx`.
+        TailEngine: Engine of `tail`.
+        KEngine: Engine of `k`.
+        GateEngine: Engine of `gate`.
+        IROEngine: Engine of `input_row_offsets`.
+        CacheLenEngine: Engine of `cache_lengths`.
+        SlotEngine: Engine of `slot_idx`.
         head_dim: Channels per key; also the block width.
         kpool: Tokens per pool.
 
@@ -423,17 +493,29 @@ def kpool_expand_topk_kernel[
     IROLayoutType: TensorLayout,
     iro_origin: ImmOrigin,
     CacheLenLayoutType: TensorLayout,
+    OutEngine: TensorEngine,
+    PoolEngine: TensorEngine,
+    IROEngine: TensorEngine,
+    CacheLenEngine: TensorEngine,
     kpool: Int,
     pool_topk: Int,
     always_select_tail: Bool,
 ](
-    out_indices: TileTensor[.int32, OutLayoutType, out_origin],
-    pool_ids: TileTensor[mut=False, .int32, PoolLayoutType, pool_origin],
+    out_indices: TileTensor[
+        .int32, OutLayoutType, out_origin, Engine=OutEngine
+    ],
+    pool_ids: TileTensor[
+        mut=False, .int32, PoolLayoutType, pool_origin, Engine=PoolEngine
+    ],
     input_row_offsets: TileTensor[
-        mut=False, .uint32, IROLayoutType, iro_origin
+        mut=False, .uint32, IROLayoutType, iro_origin, Engine=IROEngine
     ],
     cache_lengths: TileTensor[
-        mut=False, .uint32, CacheLenLayoutType, ImmutAnyOrigin
+        mut=False,
+        .uint32,
+        CacheLenLayoutType,
+        ImmutAnyOrigin,
+        Engine=CacheLenEngine,
     ],
     total_seq_len: Int32,
 ):
@@ -459,6 +541,10 @@ def kpool_expand_topk_kernel[
         IROLayoutType: Layout of `input_row_offsets`.
         iro_origin: Origin of `input_row_offsets`.
         CacheLenLayoutType: Layout of `cache_lengths`.
+        OutEngine: Engine of `out_indices`.
+        PoolEngine: Engine of `pool_ids`.
+        IROEngine: Engine of `input_row_offsets`.
+        CacheLenEngine: Engine of `cache_lengths`.
         kpool: Tokens per pool.
         pool_topk: Selected pools per token, `index_topk // kpool`.
         always_select_tail: Whether to append the incomplete trailing pool.

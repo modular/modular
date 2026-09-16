@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -224,7 +225,7 @@ class Gemma3Model(
         weights_registry = nn_model.state_dict(auto_initialize=False)
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         with Graph(
             getattr(text_config, "model_type", "Gemma3"),
@@ -289,7 +290,7 @@ class Gemma3Model(
             model_inputs.return_n_logits,
             *input_row_offsets_per_dev,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Buffer)

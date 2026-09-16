@@ -17,15 +17,18 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import time
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
+    ChatMessage,
     ChatSession,
     ImageContentBlock,
     OpenAIImage,
+    ResponseFormat,
     SessionMessage,
     TextContentBlock,
 )
@@ -38,16 +41,19 @@ from max.benchmark.benchmark_shared.multi_turn import (
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
+    OpenAIChatCompletionsRequestDriver,
     RequestCounter,
     RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
+    ServerTokenStats,
 )
 from max.benchmark.benchmark_shared.warmup import (
     _prefix_delays_ms,
     _prefix_occupancy_ms,
     pick_warmup_population,
 )
+from pytest_mock import MockerFixture
 
 
 class _CapturingDriver(RequestDriver):
@@ -109,6 +115,126 @@ def _make_4turn_session(
         ],
         prefix_turns=prefix_turns,
     )
+
+
+def test_chat_session_driver_constrains_only_the_marked_turns() -> None:
+    """A per-turn constraint applies to its own turn and no other.
+
+    The marked turn sits between two unmarked ones, so a leak in either
+    direction fails. The driver snapshots rather than records: the session
+    reuses one ``RequestFuncInput``, so a stored reference would alias a
+    single mutating instance.
+    """
+    response_format: ResponseFormat = {"type": "json_object"}
+    sent: list[tuple[ResponseFormat | None, bool]] = []
+
+    class SnapshottingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            sent.append(
+                (
+                    request_func_input.response_format,
+                    request_func_input.ignore_eos,
+                )
+            )
+            return RequestFuncOutput(
+                success=True, latency=0.1, ttft=0.05, generated_text="ok"
+            )
+
+    async def run_test() -> None:
+        messages = [
+            SessionMessage(source="user", content="one", num_tokens=5),
+            SessionMessage(source="assistant", content="", num_tokens=5),
+            SessionMessage(
+                source="user",
+                content="two",
+                num_tokens=5,
+                response_format=response_format,
+            ),
+            SessionMessage(source="assistant", content="", num_tokens=5),
+            SessionMessage(source="user", content="three", num_tokens=5),
+            SessionMessage(source="assistant", content="", num_tokens=5),
+        ]
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=SnapshottingDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+        )
+
+    asyncio.run(run_test())
+
+    assert sent == [
+        (None, True),
+        (response_format, False),
+        (None, True),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("completion_tokens", "second_prompt_len"),
+    [(2, 22), (None, 70)],
+    ids=["server_reported", "fallback_to_the_draw"],
+)
+def test_chat_len_charges_what_the_turn_generated(
+    completion_tokens: int | None, second_prompt_len: int
+) -> None:
+    """A turn's prompt carries what the previous turn produced, not what it
+    drew.
+
+    A turn that ends before its drawn length -- a constrained one stops at
+    schema completion -- would otherwise report a ``prompt_len`` the next turn
+    never sends, and the overcount compounds down the session. Where the server
+    reports no usage the draw is the best estimate available, and it is exact
+    for an ``ignore_eos`` turn.
+    """
+    prompt_lens: list[int] = []
+
+    class ShortResponseDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            prompt_lens.append(request_func_input.prompt_len)
+            return RequestFuncOutput(
+                success=True,
+                latency=0.1,
+                ttft=0.05,
+                generated_text="{}",
+                server_token_stats=ServerTokenStats(
+                    completion_tokens=completion_tokens
+                ),
+            )
+
+    async def run_test() -> None:
+        messages = [
+            SessionMessage(source="user", content="one", num_tokens=10),
+            SessionMessage(source="assistant", content="", num_tokens=50),
+            SessionMessage(source="user", content="two", num_tokens=10),
+            SessionMessage(source="assistant", content="", num_tokens=50),
+        ]
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=ShortResponseDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+        )
+
+    asyncio.run(run_test())
+
+    assert prompt_lens == [10, second_prompt_len]
 
 
 def _make_session_with_id(session_id: int, prefix_turns: int) -> ChatSession:
@@ -1238,3 +1364,55 @@ def test_warmup_runtime_estimates_require_delay_biased() -> None:
         warmup_delay_estimated_tpot_ms=1.0,
     )
     assert cfg.warmup_delay_estimated_ttft_ms == 10.0
+
+
+@pytest.mark.asyncio
+async def test_serialized_payload_carries_the_turn_response_format(
+    mocker: MockerFixture,
+) -> None:
+    """The serialized body carries ``response_format`` and clears
+    ``ignore_eos``.
+
+    An endpoint that drops the field during serialization would report
+    constrained-decoding numbers for requests the server never constrained,
+    which the in-memory request cannot catch.
+    """
+    mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+    response_format: ResponseFormat = {"type": "json_object"}
+    request_input = RequestFuncInput(
+        model="test-model",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt=[
+            ChatMessage(role="user", content=[TextContentBlock(text="hi")])
+        ],
+        images=[],
+        api_url="http://localhost:8000/v1/chat/completions",
+        prompt_len=10,
+        max_tokens=16,
+        ignore_eos=False,
+        response_format=response_format,
+    )
+
+    session_class = mocker.patch(
+        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
+    )
+    client = session_class.return_value.__aenter__.return_value
+
+    async def body() -> AsyncIterator[bytes]:
+        yield b'data: {"choices": [{"delta": {"content": "{}"}}]}\n\n'
+        yield b"data: [DONE]\n\n"
+
+    response = mocker.AsyncMock()
+    response.status = 200
+    response.content = body()
+    post_ctx = mocker.AsyncMock()
+    post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
+    post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
+    client.post = mocker.Mock(return_value=post_ctx)
+
+    await OpenAIChatCompletionsRequestDriver().request(request_input)
+
+    payload = client.post.call_args.kwargs["json"]
+    assert payload["response_format"] == response_format
+    assert not payload["ignore_eos"]

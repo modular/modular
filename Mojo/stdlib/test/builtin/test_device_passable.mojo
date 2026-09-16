@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.testing import assert_equal, TestSuite
+from std.collections import OptionalReg
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from std.utils import StaticTuple
 from std.utils.coord import ComptimeInt, Coord, Idx
 
@@ -389,6 +390,146 @@ def test_unsafe_device_type_converts_to_safe_pointer_param() raises:
     comptime assert Pointer[Int, MutAnyOrigin]._is_convertible_to_device_type[
         Pointer[Int, MutAnyOrigin]
     ]()
+
+
+# `Optional[T].device_type` is `Optional[T.device_type]`, and likewise for
+# `OptionalReg`, so an engaged payload is read back through the converted
+# type. `ScaledInt` doubles on encode, so a payload that reads back unchanged
+# was bit-copied.
+def test_optional_device_type_is_parametric() raises:
+    comptime assert Optional[ScaledInt].device_type == Optional[Int32]
+    comptime assert OptionalReg[ScaledInt].device_type == OptionalReg[Int32]
+    comptime assert Optional[Int32].device_type == Optional[Int32]
+    comptime assert OptionalReg[Int32].device_type == OptionalReg[Int32]
+
+
+def test_optional_encodes_engaged_payload() raises:
+    var opt = Optional[ScaledInt](ScaledInt(21))
+    var allocation = alloc[Optional[Int32]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
+    var encoder = DefaultDeviceTypeEncoder()
+    opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_true(Bool(buf[]))
+    assert_equal(buf[].value(), 42)
+
+
+def test_optional_encodes_none() raises:
+    var opt = Optional[ScaledInt]()
+    var allocation = alloc[Optional[Int32]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
+    buf.unsafe_write(Optional[Int32](Int32(7)))
+    var encoder = DefaultDeviceTypeEncoder()
+    opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_false(Bool(buf[]))
+
+
+def test_optional_reg_encodes_engaged_payload() raises:
+    var opt = OptionalReg[ScaledInt](ScaledInt(21))
+    var allocation = alloc[OptionalReg[Int32]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
+    var encoder = DefaultDeviceTypeEncoder()
+    opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_true(Bool(buf[]))
+    assert_equal(buf[].value(), 42)
+
+
+def test_optional_reg_encodes_none() raises:
+    var opt = OptionalReg[ScaledInt]()
+    var allocation = alloc[OptionalReg[Int32]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
+    buf.unsafe_write(OptionalReg[Int32](Int32(7)))
+    var encoder = DefaultDeviceTypeEncoder()
+    opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_false(Bool(buf[]))
+
+
+# An identity payload collapses to `Self` and reads back unchanged.
+def test_optional_reg_identity_payload_round_trips() raises:
+    var opt = OptionalReg[Int32](Int32(7))
+    var allocation = alloc[OptionalReg[Int32]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
+    var encoder = DefaultDeviceTypeEncoder()
+    opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_true(Bool(buf[]))
+    assert_equal(buf[].value(), 7)
+
+
+# A niche-optimized optional (a pointer payload) keeps its layout on both
+# sides and encodes engaged and disengaged states through the niche.
+def test_optional_niche_payload_round_trips() raises:
+    var backing = Int32(3)
+    var ptr = Pointer(to=backing).as_unsafe_any_origin()
+    comptime P = Pointer[Int32, MutAnyOrigin]
+    comptime assert Optional[P].device_type == Optional[P]
+    var allocation = alloc[Optional[P]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
+    var encoder = DefaultDeviceTypeEncoder()
+    Optional[P](ptr)._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_true(Bool(buf[]))
+    assert_equal(buf[].value()[], 3)
+    Optional[P]()._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_false(Bool(buf[]))
+
+
+# A kernel must declare the optional of the *device* payload type; declaring
+# the host payload type is rejected at the enqueue boundary.
+def test_optional_kernel_spelling() raises:
+    comptime assert Optional[ScaledInt]._is_implicitly_encodable_to[
+        Optional[Int32]
+    ]()
+    comptime assert not Optional[ScaledInt]._is_implicitly_encodable_to[
+        Optional[ScaledInt]
+    ]()
+    comptime assert OptionalReg[ScaledInt]._is_implicitly_encodable_to[
+        OptionalReg[Int32]
+    ]()
+    comptime assert not OptionalReg[ScaledInt]._is_implicitly_encodable_to[
+        OptionalReg[ScaledInt]
+    ]()
+    comptime assert OptionalReg[Int32]._is_implicitly_encodable_to[
+        OptionalReg[Int32]
+    ]()
+
+
+# The device image of `OptionalScaledIntBox`: the optional's payload is the
+# converted `Int32`.
+@fieldwise_init
+struct OptionalScaledIntBoxDevice(ImplicitlyCopyable, TrivialRegisterPassable):
+    var maybe: OptionalReg[Int32]
+    var tag: Int32
+
+
+# The payload's conversion also runs when the optional is a field of a
+# composite that encodes itself with `encode_fields`.
+@fieldwise_init
+struct OptionalScaledIntBox(
+    DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
+):
+    comptime device_type: AnyType = OptionalScaledIntBoxDevice
+    var maybe: OptionalReg[ScaledInt]
+    var tag: Int32
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self.device_type](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "OptionalScaledIntBox"
+
+
+def test_optional_reg_field_encodes_payload() raises:
+    var box = OptionalScaledIntBox(OptionalReg[ScaledInt](ScaledInt(5)), 9)
+    var allocation = alloc[OptionalScaledIntBoxDevice](
+        {count = 1}
+    ).into_managed()
+    var buf = allocation.unsafe_ptr()
+    var encoder = DefaultDeviceTypeEncoder()
+    box._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
+    assert_true(Bool(buf[].maybe))
+    assert_equal(buf[].maybe.value(), 10)
+    assert_equal(buf[].tag, 9)
 
 
 def main() raises:

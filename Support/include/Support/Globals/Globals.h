@@ -19,8 +19,10 @@
 #include "llvm/ADT/StringMap.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 
 namespace M {
@@ -81,6 +83,10 @@ struct ProfilingRangeGlobals {
 };
 
 extern MODULAR_CXX_EXPORT ProfilingRangeGlobals &getProfilingRangeGlobals();
+
+// Per-thread request correlation, described in
+// `Support/include/Support/RequestContext.h`.
+extern MODULAR_CXX_EXPORT std::optional<int64_t> &getRequestBatchId();
 
 } // namespace Globals
 

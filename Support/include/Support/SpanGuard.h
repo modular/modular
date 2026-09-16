@@ -16,17 +16,23 @@
 //
 //   SpanGuard span("prefill");
 //
-//   event=span_start operation=prefill span_id=8027...
-//   event=span_end   operation=prefill span_id=8027... duration_us=1423
+//   event=span_start operation=prefill span_id=8027... batch_id=42
+//   event=span_end   span_id=8027... duration_us=1423 batch_id=42
 //
 // Downstream, the two records sharing a span_id are what lets Datadog Log
 // Management render time-in-operation per batch. The end record is emitted
 // from the destructor, so an early return still closes its span.
+//
+// `operation` is on the start record only. Both records go through
+// MLOG_KV_REQ so a reader can filter a span pair down to one request, and
+// MLOG_KV takes four pairs, which the end record already spent on event,
+// span_id and duration_us. The span_id is what carries the operation across.
 
 #ifndef SUPPORT_SPANGUARD_H
 #define SUPPORT_SPANGUARD_H
 
 #include "Log.h"
+#include "RequestLog.h"
 
 #include <chrono>
 #include <cstdint>
@@ -58,13 +64,13 @@ public:
   explicit SpanGuard(std::string_view operation)
       : operation(operation), spanId(Detail::nextSpanId()),
         start(std::chrono::steady_clock::now()) {
-    MLOG_KV(LogLevel::INFO, "event", "span_start", "operation", operation,
-            "span_id", spanId);
+    MLOG_KV_REQ(LogLevel::INFO, "event", "span_start", "operation", operation,
+                "span_id", spanId);
   }
 
   ~SpanGuard() {
-    MLOG_KV(LogLevel::INFO, "event", "span_end", "operation", operation,
-            "span_id", spanId, "duration_us", elapsedUs());
+    MLOG_KV_REQ(LogLevel::INFO, "event", "span_end", "span_id", spanId,
+                "duration_us", elapsedUs());
   }
 
   SpanGuard(const SpanGuard &) = delete;

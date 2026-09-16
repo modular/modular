@@ -20,7 +20,7 @@ rebuilds.
 
 .. code-block:: python
 
-    from max.experimental import tree_utils as tree
+    from max import tree
 
     class Linear:
         def __init__(self, weight, eps=1e-5):
@@ -50,14 +50,19 @@ a value reachable by two paths is one object or two.
 from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass as _std_dataclass
+from dataclasses import field, fields, is_dataclass
+from typing import Any, Protocol, TypeAlias, TypeVar, overload
+
+from typing_extensions import dataclass_transform
 
 __all__ = [
     "Selector",
+    "Tree",
     "TreeDef",
     "as_predicate",
+    "dataclass",
     "extend_path",
     "flatten",
     "flatten_one_level",
@@ -71,6 +76,7 @@ __all__ = [
 ]
 
 _T = TypeVar("_T")
+_T_co = TypeVar("_T_co", covariant=True)
 
 #: What ``leaf`` accepts: a type, a tuple of types, or a predicate.
 Selector = type | tuple[type, ...] | Callable[[Any], bool]
@@ -112,7 +118,7 @@ def extend_path(path: str, key: Any) -> str:
 
     .. code-block:: python
 
-        from max.experimental import tree_utils as tree
+        from max import tree
 
         assert tree.extend_path("blocks.3", "bias") == "blocks.3.bias"
         assert tree.extend_path("", "blocks") == "blocks"
@@ -135,8 +141,12 @@ def _path_or_root(path: str) -> str:
     return repr(path) if path else "<root>"
 
 
-def _meta_eq(a: Any, b: Any) -> bool:
-    """Compares two payloads without trusting their ``__eq__``."""
+def _equal(a: Any, b: Any) -> bool:
+    """Returns whether ``a == b`` is ``True``.
+
+    Returns ``False`` if the comparison raises or does not return a single
+    boolean, as it does for arrays.
+    """
     if a is b:
         return True
     try:
@@ -159,6 +169,90 @@ def _place_child(node: Any, key: Any, value: Any) -> None:
         )
 
 
+@overload
+@dataclass_transform(field_specifiers=(field,))
+def dataclass(cls: type[_T], /) -> type[_T]: ...
+
+
+@overload
+@dataclass_transform(field_specifiers=(field,))
+def dataclass(
+    cls: None = ..., /, **kwargs: Any
+) -> Callable[[type[_T]], type[_T]]: ...
+
+
+@dataclass_transform(field_specifiers=(field,))
+def dataclass(
+    cls: type[_T] | None = None, /, **kwargs: Any
+) -> type[_T] | Callable[[type[_T]], type[_T]]:
+    """Makes a dataclass a tree node.
+
+    Usable bare or with :func:`dataclasses.dataclass` arguments.
+
+    .. code-block:: python
+
+        from max import tree
+
+        @tree.dataclass
+        class AttentionInputs:
+            layer_idx: TensorValue
+            freqs_cis: TensorValue
+            indexer: TensorValue | None = None
+
+        @tree.dataclass(frozen=True)
+        class PLEInputs:
+            conv_pool: BufferValue
+            slot_idx: TensorValue
+
+    The generated ``__tree_flatten__`` includes fields that are not ``None`` at
+    flatten time, in declaration order. The generated ``__tree_unflatten__``
+    restores any absent field to ``None`` -- a field is dropped only when it is
+    ``None``, so a non-``None`` default is not reapplied.
+
+    Args:
+        cls: The class to decorate, or ``None`` when called with arguments.
+        kwargs: Passed to :func:`dataclasses.dataclass` when ``cls`` is not
+            already a dataclass.
+
+    Returns:
+        The decorated class, or a decorator when called with arguments.
+    """
+
+    def wrap(cls: type[_T]) -> type[_T]:
+        if not is_dataclass(cls):
+            cls = _std_dataclass(**kwargs)(cls)
+        typed_cls: type[Any] = cls
+        # The init fields, to fall back to None when absent at rebuild.
+        init_fields = tuple(f.name for f in fields(typed_cls) if f.init)
+
+        def __tree_flatten__(
+            self: Any,
+        ) -> tuple[tuple[Any, ...], tuple[str, ...]]:
+            present = [
+                (f.name, value)
+                for f in fields(self)
+                if (value := getattr(self, f.name)) is not None
+            ]
+            meta, children = zip(*present, strict=True) if present else ((), ())
+            return children, meta
+
+        def __tree_unflatten__(
+            cls_: type[_T], meta: tuple[str, ...], children: Sequence[Any]
+        ) -> _T:
+            values = dict(zip(meta, children, strict=True))
+            # Flatten drops a field only when it is None, so an absent field was
+            # None: restore that rather than a non-None default it never held.
+            for name in init_fields:
+                values.setdefault(name, None)
+            return cls_(**values)
+
+        typed_cls.__tree_flatten__ = __tree_flatten__
+        typed_cls.__tree_unflatten__ = classmethod(__tree_unflatten__)
+        return cls
+
+    return wrap if cls is None else wrap(cls)
+
+
 #: By exact type: another subclass is a leaf unless it declares the protocol.
 _BUILTIN_KINDS: dict[type, str] = {
     list: "list",
@@ -167,6 +261,33 @@ _BUILTIN_KINDS: dict[type, str] = {
     OrderedDict: "dict",
     defaultdict: "dict",
 }
+
+
+class _Flattenable(Protocol[_T_co]):
+    def __tree_flatten__(
+        self,
+    ) -> tuple[
+        Sequence[Tree[_T_co]] | Mapping[Any, Tree[_T_co]],
+        Any,
+    ]: ...
+
+
+class _NamedTuple(Protocol[_T_co]):
+    _fields: tuple[str, ...]
+
+    def __iter__(self) -> Iterator[_T_co]: ...
+
+
+Tree: TypeAlias = (
+    _T_co
+    | list["Tree[_T_co]"]
+    | tuple["Tree[_T_co]", ...]
+    | dict[Any, "Tree[_T_co]"]
+    | OrderedDict[Any, "Tree[_T_co]"]
+    | defaultdict[Any, "Tree[_T_co]"]
+    | _NamedTuple["Tree[_T_co]"]
+    | _Flattenable[_T_co]
+)
 
 
 def _node_kind(value: Any) -> str | None:
@@ -243,7 +364,7 @@ def _mapping_meta(value: Any) -> tuple[type, tuple[Any, ...]] | None:
     return type(value), args
 
 
-@dataclass(frozen=True, eq=False)
+@_std_dataclass(frozen=True, eq=False)
 class TreeDef:
     """The shape of a tree, with its leaves abstracted away.
 
@@ -301,15 +422,74 @@ class TreeDef:
             return False
         if (self.kind, self.keys) != (other.kind, other.keys):
             return False
-        return (
-            _meta_eq(self.meta, other.meta) and self.children == other.children
-        )
+        return _equal(self.meta, other.meta) and self.children == other.children
 
     def __hash__(self) -> int:
         return hash((self.kind, self.children, self.keys))
 
+    def flatten_up_to(self, tree: Any, path: str = "") -> list[Any]:
+        """Flattens ``tree`` using this structure to locate the leaves.
 
-@dataclass
+        The walk descends into ``tree`` wherever this structure has a
+        container and stops wherever it has a leaf, returning whatever
+        ``tree`` holds at that position. Use this to flatten a second tree the
+        same way as a first one, without a ``leaf`` predicate that might stop
+        at different positions.
+
+        The following example flattens a tree whose leaves are containers:
+
+        .. code-block:: python
+
+            from max.experimental import tree_utils as tree
+
+            _, treedef = tree.flatten({"a": 1, "b": [2, 3]}, leaf=int)
+            other = {"a": [0], "b": [[], {}]}
+            assert treedef.flatten_up_to(other) == [[0], [], {}]
+
+        Args:
+            tree: The value to flatten. It must have this structure, with
+                equal values at the positions of static values.
+            path: The path of ``tree``, used in error messages.
+
+        Returns:
+            The value at each leaf position, in order.
+
+        Raises:
+            ValueError: If ``tree`` does not have this structure.
+        """
+        where = _path_or_root(path)
+        if self.kind == "leaf":
+            return [tree]
+        if self.kind == "static" and not _equal(self.meta, tree):
+            raise ValueError(f"{where}: expected {self.meta!r}, got {tree!r}")
+        if self.kind in ("ref", "static"):
+            return []
+        if (kind := _node_kind(tree)) != self.kind:
+            raise ValueError(
+                f"{where}: expected a {self.kind}, got {type(tree).__name__}"
+            )
+        children, keys, meta = flatten_one_level(tree)
+        child_keys = keys or tuple(range(len(children)))
+        # Include the class in the metadata, as ``flatten`` does.
+        if kind == "node":
+            meta = (type(tree), meta)
+        if child_keys != self.child_keys:
+            raise ValueError(
+                f"{where}: expected keys {list(self.child_keys)}, got "
+                f"{list(child_keys)}"
+            )
+        if not _equal(meta, self.meta):
+            raise ValueError(f"{where}: expected {self.meta!r}, got {meta!r}")
+        return [
+            entry
+            for key, child, grand in zip(
+                child_keys, self.children, children, strict=True
+            )
+            for entry in child.flatten_up_to(grand, extend_path(path, key))
+        ]
+
+
+@_std_dataclass
 class _RefTracker:
     """The ``shared`` knob's memory, for one traversal."""
 
@@ -437,14 +617,20 @@ def flatten(
     return flat, walk(tree, "")
 
 
-def unflatten(treedef: TreeDef, leaves: Iterable[Any]) -> Any:
+def unflatten(
+    treedef: TreeDef, leaves: Iterable[Any], *, exact: bool = True
+) -> Any:
     """Rebuilds a tree from a structure and its leaves.
 
     The inverse of :func:`flatten`, always building a fresh tree.
 
     Args:
         treedef: The structure, as :func:`flatten` reported it.
-        leaves: Exactly one value per leaf slot, left to right.
+        leaves: One value per leaf slot, left to right; with ``exact``,
+            any trailing values are left unconsumed.
+        exact: When ``False``, stop after the structure's leaves and leave
+            trailing values (e.g. a shared iterator's later items) in place
+            instead of raising. Too few leaves is always an error.
 
     Returns:
         The rebuilt tree.
@@ -452,8 +638,9 @@ def unflatten(treedef: TreeDef, leaves: Iterable[Any]) -> Any:
     Raises:
         TypeError: If a cycle closes through a node whose class declares no
             ``__tree_empty__``.
-        ValueError: If the leaf count does not match the structure, or if
-            ``treedef`` did not come from :func:`flatten`.
+        ValueError: If there are too few leaves for the structure (or too many
+            when ``exact`` is ``True``), or if ``treedef`` did not come
+            from :func:`flatten`.
     """
     remaining = iter(leaves)
     filled: list[Any] = []
@@ -552,7 +739,7 @@ def unflatten(treedef: TreeDef, leaves: Iterable[Any]) -> Any:
         return value
 
     result = build(treedef)
-    if next(remaining, _MISSING) is not _MISSING:
+    if exact and next(remaining, _MISSING) is not _MISSING:
         raise ValueError(
             f"too many leaves: the structure has {treedef.num_leaves} leaf "
             "slots."
@@ -561,6 +748,24 @@ def unflatten(treedef: TreeDef, leaves: Iterable[Any]) -> Any:
 
 
 # ─── reads ──────────────────────────────────────────────────────────────────
+
+
+@overload
+def leaves(
+    tree: Any,
+    *,
+    leaf: type[_T] | tuple[type[_T], ...],
+    shared: bool = ...,
+) -> list[_T]: ...
+
+
+@overload
+def leaves(
+    tree: Any,
+    *,
+    leaf: Callable[[Any], bool] | None = ...,
+    shared: bool = ...,
+) -> list[Any]: ...
 
 
 def leaves(
@@ -685,23 +890,14 @@ def map(
     flat, treedef = flatten(tree, leaf=leaf, shared=shared)
     columns = [flat]
     for index, other in enumerate(rest):
-        other_flat, other_def = flatten(other, leaf=leaf, shared=shared)
-        if other_def != treedef:
-            # Reported as leaf paths, which are what a caller can act on.
-            want, got = treedef.leaf_paths, other_def.leaf_paths
-            lines = [
+        # Use the first tree's structure so that all trees flatten the same way.
+        try:
+            columns.append(treedef.flatten_up_to(other))
+        except ValueError as e:
+            raise ValueError(
                 f"tree structure mismatch: tree argument {index + 2} does "
-                "not match the structure of tree argument 1.",
-                f"  expected leaves at {list(want)}",
-                f"  got leaves at {list(got)}",
-            ]
-            if want == got:
-                lines.append(
-                    "  same paths, so the structures differ: "
-                    f"{treedef} != {other_def}"
-                )
-            raise ValueError("\n".join(lines))
-        columns.append(other_flat)
+                f"not match the structure of tree argument 1, at {e}"
+            ) from None
     mapped = [f(*row) for row in zip(*columns, strict=True)]
     return unflatten(treedef, mapped)
 

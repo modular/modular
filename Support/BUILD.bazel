@@ -1169,7 +1169,6 @@ modular_cc_library(
     hdrs = [
         "include/Support/Log.h",
         "include/Support/LogChannels.h",
-        "include/Support/SpanGuard.h",
     ],
     deps = [
         "Configuration",
@@ -1193,6 +1192,7 @@ modular_cc_library(
 modular_cc_library(
     name = "RequestContext",
     hdrs = ["include/Support/RequestContext.h"],
+    deps = [":Globals"],
 )
 
 modular_cc_library(
@@ -1201,6 +1201,17 @@ modular_cc_library(
     deps = [
         ":Log",
         ":RequestContext",
+    ],
+)
+
+# Sits above :RequestLog rather than in :Log: the span records go through
+# MLOG_KV_REQ so a reader can filter a span pair down to one request.
+modular_cc_library(
+    name = "SpanGuard",
+    hdrs = ["include/Support/SpanGuard.h"],
+    deps = [
+        ":Log",
+        ":RequestLog",
     ],
 )
 

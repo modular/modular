@@ -10,16 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo -debug-level full %s \
+# RUN:   | FileCheck %s
 
 
 @fieldwise_init
-struct Foo[T: Writable](def(x: T) __param_trait__):
+struct Foo[T: Writable](def(x: T)):
     def __call__(mut self, arg: Self.T):
         print("via struct:", arg)
 
 
-def call_int[T: def(x: Int) __param_trait__](mut closure: T):
+def call_int[T: def(x: Int)](mut closure: T):
     closure.__call__(1)
 
 
@@ -30,7 +31,7 @@ def main():
 
     var y = 1
 
-    def closure(x: Int) __param_trait__ {mut y}:
+    def closure(x: Int) {mut y}:
         y += x
 
     call_int(closure)

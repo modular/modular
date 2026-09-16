@@ -509,6 +509,19 @@ def StructFieldNamesAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type
 )>;
 
+def StructAnnotationTypesAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttr:$fieldIndex,
+  ConcreteType<"ParamListType">:$type
+)>;
+
+def StructAnnotationAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttr:$fieldIndex,
+  TypedAttr:$index,
+  ConcreteType<"ParamListType">:$annotationListType
+)>;
+
 def StructFieldIndexByNameAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
   TypedAttr:$fieldName,
@@ -664,7 +677,9 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     SingletonAttr,
     FnMetadataAttr,
     TraitSymbolAttr,
-    TraitSymbolArrayAttr
+    TraitSymbolArrayAttr,
+    StructAnnotationTypesAttr,
+    StructAnnotationAttr
   ];
 }
 

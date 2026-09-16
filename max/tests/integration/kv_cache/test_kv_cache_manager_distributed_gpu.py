@@ -18,15 +18,15 @@ from typing import cast
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     MHAKVCacheParams,
     MLAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
 )
 from max.pipelines.context import TextContext
@@ -333,11 +333,11 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
     manager.alloc(context)
 
     kv_cache_inputs = manager.runtime_inputs([[context]])
-    assert isinstance(kv_cache_inputs, MultiKVCacheInputs)
+    assert isinstance(kv_cache_inputs, dict)
 
     # The compiled graph declares its KV inputs from the same symbolic params.
     num_graph_inputs = len(params.flattened_kv_inputs())
-    num_runtime_inputs = len(kv_cache_inputs.flatten())
+    num_runtime_inputs = len(tree.leaves(kv_cache_inputs))
 
     assert num_runtime_inputs == num_graph_inputs, (
         f"runtime fed {num_runtime_inputs} KV inputs but the graph expects "
@@ -345,8 +345,12 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
     )
 
     # The MLA secondary cache must contribute its per-device mla_num_partitions.
-    secondary_inputs = kv_cache_inputs.children["indexer"]
-    assert isinstance(secondary_inputs, KVCacheInputs)
-    assert len(secondary_inputs.inputs) == num_devices
-    for per_device in secondary_inputs.inputs:
+    secondary_inputs = kv_cache_inputs["indexer"]
+    assert (
+        isinstance(secondary_inputs, tuple)
+        and secondary_inputs
+        and isinstance(secondary_inputs[0], KVCacheInputsPerDevice)
+    )
+    assert len(secondary_inputs) == num_devices
+    for per_device in secondary_inputs:
         assert per_device.mla_num_partitions is not None

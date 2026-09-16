@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -22,18 +23,21 @@ from functools import cached_property
 from typing import Any, Literal, Protocol, TypeGuard, runtime_checkable
 
 import numpy as np
+from max import tree
 from max._kv_cache_ops import (
     mha_decode_num_partitions,
     mla_dispatch_args_scalar,
 )
 from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
+from max.experimental.sharding import TensorLayout
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
     TensorType,
     TensorValue,
+    ops,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
@@ -41,13 +45,9 @@ from max.support.math import ceildiv
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheInputsPerDevice,
-    MultiKVCacheInputs,
     RecurrentLeafInputs,
-    RecurrentStateInputs,
     RecurrentStateInputsPerDevice,
-    RecurrentStateRegion,
 )
 from .utils import (
     AttnKeyInterface,
@@ -262,6 +262,19 @@ _SCALE_TMA_ALIGN_BYTES = 16
 
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel meaning the pages are packed."""
+
+
+def packed_page_stride(like: Any) -> Any:
+    """Returns the packed ``page_stride`` sentinel, typed to match ``like``."""
+    if isinstance(like, Buffer):
+        return Buffer.from_numpy(np.array([PACKED_PAGE_STRIDE], dtype=np.int64))
+    if isinstance(like, BufferType):
+        return TensorType(DType.int64, shape=[1], device=DeviceRef.CPU())
+    if isinstance(like, TensorLayout):
+        return TensorLayout(DType.int64, [1], DeviceRef.CPU())
+    return ops.constant(
+        [PACKED_PAGE_STRIDE], DType.int64, device=DeviceRef.CPU()
+    )
 
 
 def _page_stride_buffer(pages: Buffer) -> Buffer:
@@ -904,6 +917,42 @@ class PagedKVLeafRegion(KVLeafRegion):
 
 
 @dataclass(frozen=True)
+class RecurrentStateRegion:
+    """Shape and dtype of one kind of recurrent state, for one pool leaf."""
+
+    leaf_id: str
+    num_layers: int
+    row_shape: tuple[int, ...]
+    """Shape of one layer's state, per device."""
+    dtype: DType
+
+    @property
+    def rows_dim(self) -> str:
+        """Symbolic dim naming this leaf's row count."""
+        return f"{self.leaf_id.replace('/', '_')}_rows"
+
+    @property
+    def row_elements(self) -> int:
+        """Elements in one layer's state."""
+        return math.prod(self.row_shape)
+
+    @property
+    def pool_key(self) -> str:
+        """Key the leaf's flat pool view is staged under."""
+        return f"{self.leaf_id}/pool"
+
+    @property
+    def bytes_per_state(self) -> int:
+        """Bytes one request's state of this kind occupies on one device."""
+        return self.num_layers * self.row_elements * self.dtype.size_in_bytes
+
+    def rows_of(self, page: int) -> range:
+        """Returns the rows a page's layers occupy, layer ``l`` at index ``l``."""
+        base = page * self.num_layers
+        return range(base, base + self.num_layers)
+
+
+@dataclass(frozen=True)
 class RecurrentKVLeafRegion(KVLeafRegion):
     """A leaf addressed by row: one block holds one request's whole state."""
 
@@ -972,7 +1021,7 @@ class CacheLeafParamInterface(Protocol):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> KVCacheInputsInterface[TensorType, BufferType]:
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for this cache.
 
         Args:
@@ -984,11 +1033,11 @@ class CacheLeafParamInterface(Protocol):
 
     def flattened_kv_inputs(self) -> list[TensorType | BufferType]:
         """Flattens the symbolic inputs for this cache."""
-        return self.get_symbolic_inputs().flatten()
+        return tree.leaves(self.get_symbolic_inputs())
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> KVCacheInputsInterface[TensorValue, BufferValue]:
+    ) -> KVCacheInputs[TensorValue, BufferValue]:
         """Unflattens the symbolic inputs for this cache."""
         ...
 
@@ -997,13 +1046,13 @@ class CacheLeafParamInterface(Protocol):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime cache inputs spanning all replicas.
 
         ``assignments`` and ``buffers`` are indexed by data-parallel replica.
-        Returns a single :class:`KVCacheInputs` leaf (or a
-        :class:`MultiKVCacheInputs` tree) whose leaves each hold every
-        ``(replica, TP shard)`` device's inputs."""
+        Returns the :class:`KVCacheInputs` pytree (a tuple of per-device
+        leaves, or a dict of named subtrees for multi-cache models) whose
+        leaves each hold one ``(replica, TP shard)`` device's inputs."""
         ...
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
@@ -1566,7 +1615,7 @@ class KVCacheParams(KVCacheParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> KVCacheInputs[TensorType, BufferType]:
+    ) -> tuple[KVCacheInputsPerDevice[TensorType, BufferType], ...]:
         """Computes the symbolic inputs for the KV cache.
 
         Args:
@@ -1584,13 +1633,23 @@ class KVCacheParams(KVCacheParamInterface):
                 replica_idx, prefix, namespace
             )
             input_symbols.extend(symbols)
-        return KVCacheInputs(inputs=input_symbols)
+        return tuple(input_symbols)
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> KVCacheInputs[TensorValue, BufferValue]:
+    ) -> tuple[KVCacheInputsPerDevice[TensorValue, BufferValue], ...]:
         """Unflattens the KV cache inputs from a graph-input iterator."""
-        return self.get_symbolic_inputs().unflatten(it)
+        return tuple(
+            tree.leaves(
+                tree.unflatten(self._kv_symbolic_treedef, it, exact=False),
+                leaf=KVCacheInputsPerDevice,
+            )
+        )
 
     def allocate_buffers(
         self, total_num_pages: int, _prefix: str = ""
@@ -1739,7 +1798,7 @@ class KVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Builds the runtime KV-cache leaf spanning all replicas.
 
         ``assignments`` and ``buffers`` are indexed by data-parallel replica.
@@ -1819,7 +1878,7 @@ class KVCacheParams(KVCacheParamInterface):
                         scales_per_layer=scales_per_layer,
                     )
                 )
-        return KVCacheInputs(inputs=tp_shards)
+        return tuple(tp_shards)
 
     def unflatten_basic_kv_tree(
         self, it: Iterator[Any]
@@ -2047,6 +2106,10 @@ class MHAKVCacheParams(KVCacheParams):
         devices = self.devices_per_replica[replica_idx]
         # Sibling cache groups may size their page pools independently.
         page_dim = page_namespace + "total_num_pages"
+        # A Jenga pool tiles one slab at every leaf's own page size, so a
+        # quantized leaf holds more scale pages than value pages. A legacy pool
+        # binds the two counts equal, which a separate symbol still accepts.
+        scale_page_dim = page_namespace + "total_num_scale_pages"
 
         def _blocks_per_layer(
             device: DeviceRef,
@@ -2075,7 +2138,7 @@ class MHAKVCacheParams(KVCacheParams):
             return [
                 BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=[page_dim, *self.shape_per_layer_scale_block],
+                    shape=[scale_page_dim, *self.shape_per_layer_scale_block],
                     device=device,
                 )
                 for _ in range(self.num_layers)
@@ -2096,11 +2159,21 @@ class MHAKVCacheParams(KVCacheParams):
                 device=device,
             )
 
+        def _lookup_table(device: DeviceRef) -> TensorType:
+            return TensorType(
+                DType.uint32,
+                shape=[
+                    prefix + "batch_size",
+                    prefix + page_namespace + "max_num_pages",
+                ],
+                device=device,
+            )
+
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=_kv_blocks(device),
                 # Read off the buffer's stride when the inputs are bound.
-                page_stride_input=TensorType(
+                page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 ),
                 cache_lengths=TensorType(
@@ -2108,14 +2181,7 @@ class MHAKVCacheParams(KVCacheParams):
                     shape=[prefix + "batch_size"],
                     device=device,
                 ),
-                lookup_table=TensorType(
-                    DType.uint32,
-                    shape=[
-                        prefix + "batch_size",
-                        prefix + page_namespace + "max_num_pages",
-                    ],
-                    device=device,
-                ),
+                lookup_table=_lookup_table(device),
                 max_prompt_length=TensorType(
                     DType.uint32,
                     shape=[1],
@@ -2131,7 +2197,7 @@ class MHAKVCacheParams(KVCacheParams):
                     # Per-layer buffers alias ``kv_scales`` to a single-layer
                     # scale (mirrors ``_kv_blocks`` for the KV data).
                     shape=[
-                        page_dim,
+                        scale_page_dim,
                         *(
                             self.shape_per_layer_scale_block
                             if self.per_layer_buffers
@@ -2143,9 +2209,14 @@ class MHAKVCacheParams(KVCacheParams):
                 if self.quantized_kv_cache
                 else None,
                 # Present exactly when the scales are.
-                scales_page_stride_input=TensorType(
+                scales_page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
+                if self.quantized_kv_cache
+                else None,
+                # Scales share the values' block-id space, so their lookup table
+                # matches ``lookup_table``. Present exactly when the scales are.
+                scales_lookup_table=_lookup_table(device)
                 if self.quantized_kv_cache
                 else None,
                 attention_dispatch_metadata=self._attn_metadata_buffer(device),
@@ -2181,13 +2252,13 @@ class MHAKVCacheParams(KVCacheParams):
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
-            page_stride_input=page_stride,
+            page_stride=page_stride,
             cache_lengths=cache_lengths,
             lookup_table=lookup_table,
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
-            scales_page_stride_input=scales_page_stride,
+            scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=target_key.pack_into_buffer(
                 device, max_cache_valid_length
@@ -2302,6 +2373,20 @@ class MLAKVCacheParams(KVCacheParams):
         devices = self.devices_per_replica[replica_idx]
         # Sibling cache groups may size their page pools independently.
         page_dim = page_namespace + "total_num_pages"
+        # A Jenga pool tiles one slab at every leaf's own page size, so a
+        # quantized leaf holds more scale pages than value pages. A legacy pool
+        # binds the two counts equal, which a separate symbol still accepts.
+        scale_page_dim = page_namespace + "total_num_scale_pages"
+
+        def _lookup_table(device: DeviceRef) -> TensorType:
+            return TensorType(
+                DType.uint32,
+                shape=[
+                    prefix + "batch_size",
+                    prefix + page_namespace + "max_num_pages",
+                ],
+                device=device,
+            )
 
         return [
             KVCacheInputsPerDevice(
@@ -2311,7 +2396,7 @@ class MLAKVCacheParams(KVCacheParams):
                     device=device,
                 ),
                 # Read off the buffer's stride when the inputs are bound.
-                page_stride_input=TensorType(
+                page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 ),
                 cache_lengths=TensorType(
@@ -2319,14 +2404,7 @@ class MLAKVCacheParams(KVCacheParams):
                     shape=[prefix + "batch_size"],
                     device=device,
                 ),
-                lookup_table=TensorType(
-                    DType.uint32,
-                    shape=[
-                        prefix + "batch_size",
-                        prefix + page_namespace + "max_num_pages",
-                    ],
-                    device=device,
-                ),
+                lookup_table=_lookup_table(device),
                 max_prompt_length=TensorType(
                     DType.uint32,
                     shape=[1],
@@ -2339,15 +2417,20 @@ class MLAKVCacheParams(KVCacheParams):
                 ),
                 kv_scales=BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=[page_dim, *self.shape_per_scale_block],
+                    shape=[scale_page_dim, *self.shape_per_scale_block],
                     device=device,
                 )
                 if self.quantized_kv_cache
                 else None,
                 # Present exactly when the scales are.
-                scales_page_stride_input=TensorType(
+                scales_page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
+                if self.quantized_kv_cache
+                else None,
+                # Scales share the values' block-id space, so their lookup table
+                # matches ``lookup_table``. Present exactly when the scales are.
+                scales_lookup_table=_lookup_table(device)
                 if self.quantized_kv_cache
                 else None,
                 # MLA decode kernels read a 3-int dispatch buffer on the
@@ -2399,13 +2482,13 @@ class MLAKVCacheParams(KVCacheParams):
         assert draft_key is None or isinstance(draft_key, MLAAttnKey)
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
-            page_stride_input=page_stride,
+            page_stride=page_stride,
             cache_lengths=cache_lengths,
             lookup_table=lookup_table,
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
-            scales_page_stride_input=scales_page_stride,
+            scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=target_key.pack_into_buffer(
                 device, max_cache_valid_length
@@ -2573,26 +2656,62 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> RecurrentStateInputs[TensorType, BufferType]:
+    ) -> tuple[RecurrentStateInputsPerDevice[TensorType, BufferType], ...]:
         """Returns the symbolic inputs for the state leaves.
 
         ``namespace`` is unused: the region ids are already distinct.
         """
-        return RecurrentStateInputs.symbolic(
-            self.regions, self.devices_per_replica
-        )
+
+        def leaf(
+            region: RecurrentStateRegion, device: DeviceRef, batch_dim: str
+        ) -> RecurrentLeafInputs[TensorType, BufferType]:
+            pool_shape: list[str | int] = [region.rows_dim]
+            pool_shape.extend(region.row_shape)
+            rows_shape: list[str | int] = [batch_dim, region.num_layers]
+            return RecurrentLeafInputs(
+                pool=BufferType(region.dtype, shape=pool_shape, device=device),
+                live_row_ids=TensorType(
+                    DType.uint32, shape=rows_shape, device=device
+                ),
+            )
+
+        per_device: list[
+            RecurrentStateInputsPerDevice[TensorType, BufferType]
+        ] = []
+        for replica_idx, devices in enumerate(self.devices_per_replica):
+            batch_dim = f"replica_{replica_idx}_batch_size"
+            for device in devices:
+                per_device.append(
+                    RecurrentStateInputsPerDevice(
+                        leaves=tuple(
+                            leaf(region, device, batch_dim)
+                            for region in self.regions
+                        ),
+                    )
+                )
+        return tuple(per_device)
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> RecurrentStateInputs[TensorValue, BufferValue]:
-        return self.get_symbolic_inputs().unflatten(it)
+    ) -> tuple[RecurrentStateInputsPerDevice[TensorValue, BufferValue], ...]:
+        return tuple(
+            tree.leaves(
+                tree.unflatten(self._kv_symbolic_treedef, it, exact=False),
+                leaf=RecurrentStateInputsPerDevice,
+            )
+        )
 
     def build_runtime_inputs(
         self,
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> RecurrentStateInputs[Buffer, Buffer]:
+    ) -> tuple[RecurrentStateInputsPerDevice[Buffer, Buffer], ...]:
         """Gathers this forward's state rows, replica-major.
 
         ``buffers`` is unused: a state's pool is staged in the assignment
@@ -2615,7 +2734,6 @@ class RecurrentStateParams(CacheLeafParamInterface):
                         )
                     leaves.append(
                         RecurrentLeafInputs(
-                            region=region,
                             pool=staged[region.pool_key],
                             live_row_ids=staged[region.leaf_id],
                         )
@@ -2623,7 +2741,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
                 inputs.append(
                     RecurrentStateInputsPerDevice(leaves=tuple(leaves))
                 )
-        return RecurrentStateInputs(inputs=inputs)
+        return tuple(inputs)
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns one pool leaf per state leaf, each one state wide.
@@ -2918,24 +3036,32 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> MultiKVCacheInputs[TensorType, BufferType]:
+    ) -> dict[str, KVCacheInputs[TensorType, BufferType]]:
         """Returns the symbolic inputs for the KV cache tree.
 
         Each child inherits a distinct namespace so sibling groups' page-pool
         dims stay independent; nested subtrees compose the prefix.
         """
-        return MultiKVCacheInputs(
-            children={
-                k: p.get_symbolic_inputs(namespace=f"{namespace}{k}_")
-                for k, p in self.children.items()
-            },
+        # OrderedDict: the graph declares its inputs in child-declaration order
+        # (children, then state), and tree.flatten preserves an OrderedDict's
+        # order rather than sorting keys like a plain dict.
+        return OrderedDict(
+            (k, p.get_symbolic_inputs(namespace=f"{namespace}{k}_"))
+            for k, p in self.children.items()
         )
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> MultiKVCacheInputs[TensorValue, BufferValue]:
+    ) -> dict[str, KVCacheInputs[TensorValue, BufferValue]]:
         """Unflattens the KV cache inputs from a graph-input iterator."""
-        return self.get_symbolic_inputs().unflatten(it)
+        inputs = tree.unflatten(self._kv_symbolic_treedef, it, exact=False)
+        assert isinstance(inputs, dict)
+        return inputs
 
     def unflatten_basic_kv_tree(
         self, it: Iterator[Any]
@@ -2947,14 +3073,15 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
         Returns one entry per attention child, in declaration order.
         """
-        tree = self.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
+        kv_tree = self.unflatten_kv_inputs(it)
         out: list[list[KVCacheInputsPerDevice[TensorValue, BufferValue]]] = []
         for key in self._attention_children:
-            child = tree.children[key]
-            if not isinstance(child, KVCacheInputs):
+            child = kv_tree[key]
+            # A nested (height > 1) child unflattens to a dict subtree, not the
+            # flat per-device tuple this shortcut requires.
+            if not isinstance(child, tuple):
                 raise ValueError("Unable to flatten nested KV tree")
-            out.append(list(child.inputs))
+            out.append(tree.leaves(child, leaf=KVCacheInputsPerDevice))
         return tuple(out)
 
     @property
@@ -3025,7 +3152,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime KV-cache tree spanning all replicas.
 
         Each child builds itself from every replica's assignment plus that
@@ -3039,15 +3166,19 @@ class MultiKVCacheParams(KVCacheParamInterface):
         for buffer in buffers:
             assert isinstance(buffer, MultiKVCacheBuffer)
             multi_buffers.append(buffer)
-        return MultiKVCacheInputs(
-            children={
-                k: p.build_runtime_inputs(
+        # OrderedDict so the runtime tree flattens in the same
+        # child-declaration order the graph declared its inputs (see
+        # get_symbolic_inputs).
+        return OrderedDict(
+            (
+                k,
+                p.build_runtime_inputs(
                     assignments,
                     [b.children[k] for b in multi_buffers if k in b.children],
                     _prefix=_prefix + k + ".",
-                )
-                for k, p in self.children.items()
-            },
+                ),
+            )
+            for k, p in self.children.items()
         )
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:

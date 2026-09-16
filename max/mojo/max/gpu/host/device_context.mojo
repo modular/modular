@@ -4359,6 +4359,86 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         return HostBuffer[dtype](self, size)
 
     @inline(.always)
+    def wrap_host_memory[
+        origin: MutOrigin, //, dtype: DType
+    ](
+        self,
+        host_ptr: Pointer[Scalar[dtype], origin],
+        size: Int,
+    ) raises -> DeviceBuffer[dtype]:
+        """Makes a range of the caller's host memory accessible to this device.
+
+        The returned buffer grants access, not ownership. `host_ptr` stays the
+        caller's to keep mapped and to free, and dropping the buffer undoes
+        only the access.
+
+        Address the range through the returned buffer, not through `host_ptr`:
+        only on CUDA are the two the same address.
+
+        On CUDA and HIP the wrap page-locks (pins) the range
+        (`cuMemHostRegister` / `hipHostRegister`), which is what makes
+        transfers DMA-capable: they run on the copy engine and can overlap
+        compute, instead of being staged through a driver-owned pinned buffer.
+
+        The returned buffer does not keep `host_ptr`'s allocation alive: the
+        origin is cast away. Keep the owner live across every enqueued transfer
+        and kernel that touches the range, or its pages can be freed under
+        in-flight DMA.
+
+        Dropping the buffer queues the release rather than performing it, so
+        call `synchronize()` on every context that copied the range before
+        unmapping it.
+
+        Parameters:
+            origin: The origin of `host_ptr`, inferred at the call site.
+            dtype: The data type stored in the wrapped memory.
+
+        Args:
+            host_ptr: Base of the caller's host range.
+            size: The number of elements of `dtype` in the range.
+
+        Returns:
+            A `DeviceBuffer` addressing the wrapped range.
+
+        Raises:
+            If this device has no wrap primitive (only CUDA, HIP and Metal do),
+            if Metal rejects a base that is not page-aligned or a length that is
+            not a page multiple, or if a device graph is being recorded.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var wrapped = ctx.wrap_host_memory[.float32](host_ptr, 1024)
+            # Pass `wrapped` to a kernel, then drop it and synchronize before
+            # freeing `host_ptr`.
+        ```
+        """
+        comptime elem_size = size_of[dtype]()
+        var cpp_handle: _DeviceBufferPtr[mut=True] = {}
+        var device_ptr: Optional[DeviceBuffer[dtype]._DevicePtr] = {}
+
+        # const char *AsyncRT_DeviceContext_wrapHostMemory(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, void *host_ptr, size_t len, size_t elem_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_wrapHostMemory",
+                _CString[],
+            ](
+                Pointer(to=cpp_handle),
+                Pointer(to=device_ptr),
+                self._handle,
+                host_ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                c_size_t(size),
+                c_size_t(elem_size),
+            ),
+            location=call_location(),
+        )
+
+        return DeviceBuffer[dtype](cpp_handle, device_ptr.value())
+
+    @always_inline
     def compile_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,

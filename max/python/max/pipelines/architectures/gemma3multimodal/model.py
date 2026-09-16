@@ -20,6 +20,7 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -435,7 +436,7 @@ class Gemma3_MultiModalModel(
             *image_embeddings,
             *image_token_indices,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(model_outputs) == 3:

@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -38,8 +40,11 @@ from max.nn.comm import Allreduce, Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP as DenseMLP
 from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.moe import MoE, forward_moe_sharded_layers
@@ -50,6 +55,7 @@ from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from .layers.attention import HYV3Attention
 from .layers.moe_gate import HYV3TopKRouter
@@ -375,10 +381,8 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
                 data_parallel_splits,
             )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
-            values: list[SubgraphInput] = [
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
@@ -465,7 +469,7 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
 
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         ep_input_types: list[TensorType | BufferType] = []
         if self.ep_manager is not None:

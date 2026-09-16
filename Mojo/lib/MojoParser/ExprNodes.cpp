@@ -4730,7 +4730,7 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.resultArg = resultArg;
   argList.effects = effects;
   argList.isThin = isThin;
-  argList.isExperimentalParamTrait = isExperimentalParamTrait;
+  argList.isParsingClosure = !isThin && !effects.isCapturing();
   argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
 
   TypeCheckedFnSignature tcSignature(paramList, argList, originExpr,
@@ -4759,10 +4759,10 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
 
-  if (argList.isClosureFunctionType()) {
+  if (argList.isClosureTrait()) {
     ASTDecl *moduleDecl =
         emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>();
-    if (argList.isExperimentalParamTrait) {
+    if (useParametricClosureTrait()) {
       TraitType traitType = emitter.shared.declResolver->getCanonicalTrait(
           emitter.bindParamsToClosureTraitFromSig(signature));
       return emitter.emitResult(ASTType(traitType), this, dest);
@@ -5220,7 +5220,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
 
   // If we have a concrete struct type and a concrete index, use the direct path
   auto structType = sugarDynCast<LIT::StructType>(elementType);
-  ErrorOr<int64_t> indexValueOr = POP::getScalarIndexValue(indexAttr);
+  ErrorOr<int64_t> indexValueOr = getScalarIndexValue(indexAttr);
   if (structType && succeeded(indexValueOr)) {
     // RefStructGEROp requires the base to be a StructType: rebind away sugar.
     if (!isa<LIT::StructType>(structRef.getRValueType())) {

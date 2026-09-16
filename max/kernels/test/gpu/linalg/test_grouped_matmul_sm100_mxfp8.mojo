@@ -19,6 +19,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from linalg.grouped_matmul_sm100_1d1d import (
+    B200BlockScaledMatmulSmem,
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
@@ -55,6 +56,43 @@ def simple_init() -> Bool:
         if arg == "--simple-init":
             return True
     return False
+
+
+def test_legacy_n64_sfb_smem_size():
+    # `_blackwell_block_scaled_matmul_tma_umma_warp_specialized` rejects
+    # MMA_N outside (128, 256), so the SMEM sizing for a sub-atom N tile
+    # can only be checked on the storage struct directly.
+    comptime config = BlockScaledMatmulConfig[
+        DType.float8_e4m3fn,
+        DType.float8_e4m3fn,
+        DType.bfloat16,
+        MXFP8_SF_DTYPE,
+        MXFP8_SF_DTYPE,
+        True,
+    ](
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
+        cluster_shape=Index(1, 1, 1),
+        mma_shape=Index(128, 64, 32),
+        block_swizzle_size=8,
+        cta_group=1,
+        num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
+    )
+    comptime Smem = B200BlockScaledMatmulSmem[
+        DType.float8_e4m3fn,
+        DType.float8_e4m3fn,
+        DType.bfloat16,
+        MXFP8_SF_DTYPE,
+        MXFP8_SF_DTYPE,
+        True,
+        config=config,
+    ]
+    comptime expected_size = (
+        config.num_sf_k_tiles
+        * config.sf_block_atom_size
+        * config.num_pipeline_stages
+    )
+    comptime assert Smem.sfb_smem_size == expected_size
 
 
 def _test_kernel_impl[
@@ -613,6 +651,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
 
 def main() raises:
+    test_legacy_n64_sfb_smem_size()
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
         comptime out_dtype = DType.bfloat16

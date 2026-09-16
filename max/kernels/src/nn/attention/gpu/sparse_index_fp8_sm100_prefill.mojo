@@ -1256,9 +1256,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # not. The window is `KS_ALIGN` keys wider to cover the shift and
                 # the consumer skips the residual. (`k_row0` needs no such fix --
                 # a K row is a whole `depth`-wide key, so it is always aligned.)
-                var ks_row0 = Int(
-                    ks_operand.row_idx(UInt32(b), UInt32(it * Int32(BM_key)))
-                ) & ~(KS_ALIGN - 1)
+                var ks_row0, ks_blk = ks_operand.scale_tma_coords(
+                    UInt32(b), UInt32(it * Int32(BM_key))
+                )
                 var k_dst = TileTensor[
                     dtype, type_of(k_flat_layout), address_space=.SHARED
                 ](k_smem + s * UInt32(k_elems), k_flat_layout)
@@ -1279,7 +1279,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # bytes are summed into the one `expect_tx`, so the slot opens
                 # when the last byte of either copy lands and the consumer needs
                 # no wait of its own -- `s_full` already happens-after this.
-                ks_tma.async_copy_elect(ks_dst, k_full[s], (ks_row0, 0), e)
+                ks_tma.async_copy_elect(
+                    ks_dst, k_full[s], (Int(ks_row0), Int(ks_blk)), e
+                )
                 comptime if with_q:
                     var q_dst = TileTensor[
                         dtype, type_of(q_flat_layout), address_space=.SHARED

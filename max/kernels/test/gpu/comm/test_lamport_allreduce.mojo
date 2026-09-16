@@ -107,9 +107,6 @@ def lamport_allreduce_test[
     # (3 generations * ngpus slots * max-small-message).
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # The negative-zero bit pattern for this dtype, for the producer-sanitize
     # edge case.
@@ -140,13 +137,13 @@ def lamport_allreduce_test[
                 size_of[Signal]() + scratch_bytes
             )
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
         list_of_ctx[i].enqueue_copy(in_dev[i], host_buffers[i])
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
@@ -319,9 +316,6 @@ def lamport_mixed_size_test[
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](max_length))
@@ -332,12 +326,12 @@ def lamport_mixed_size_test[
                 size_of[Signal]() + scratch_bytes
             )
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Max-shaped output views + a single epilogue. Per-call `result` tensors are
     # length-shaped, so the kernel only generates coords < length, and the
@@ -509,9 +503,6 @@ def lamport_coexist_test[
     # scratch (ngpus * large message), which trails the struct.
     var scratch_bytes = ngpus * large_len * size_of[dtype]()
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var lfill = alloc[Scalar[dtype]](large_len)
     for j in range(large_len):
@@ -528,13 +519,13 @@ def lamport_coexist_test[
                 size_of[Signal]() + scratch_bytes
             )
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
         list_of_ctx[i].enqueue_copy(lin_dev[i], lfill)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime LType = TileTensor[
         dtype, type_of(row_major(large_len)), ImmutAnyOrigin
@@ -715,9 +706,6 @@ def lamport_unsynced_skew_test[
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for i in range(ngpus):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](total))
@@ -740,12 +728,12 @@ def lamport_unsynced_skew_test[
                 size_of[Signal]() + scratch_bytes
             )
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # One-time signal-buffer init; sync so every region is ready before any push.
     for i in range(ngpus):

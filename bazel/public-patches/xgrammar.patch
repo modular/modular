@@ -1,3 +1,98 @@
+diff --git a/cpp/fsm.cc b/cpp/fsm.cc
+index 1a7c343..efda0a4 100644
+--- a/cpp/fsm.cc
++++ b/cpp/fsm.cc
+@@ -1179,8 +1179,15 @@ Result<FSMWithStartEnd> FSMWithStartEnd::Intersect(
+   if (!lhs.IsLeaf() || !rhs.IsLeaf()) {
+     return ResultErr("Intersect only support leaf fsm!");
+   }
+-  auto lhs_dfa_raw = lhs.ToDFA();
+-  auto rhs_dfa_raw = rhs.ToDFA();
++  // An operand already flagged as a DFA is used as is, as Not and MinimizeDFA do.
++  auto to_dfa = [max_result_num_states](const FSMWithStartEnd& fsm) -> Result<FSMWithStartEnd> {
++    if (fsm.is_dfa_) {
++      return ResultOk(fsm.Copy());
++    }
++    return fsm.ToDFA(max_result_num_states);
++  };
++  auto lhs_dfa_raw = to_dfa(lhs);
++  auto rhs_dfa_raw = to_dfa(rhs);
+
+   if (lhs_dfa_raw.IsErr()) {
+     return lhs_dfa_raw;
+@@ -1216,6 +1223,9 @@ Result<FSMWithStartEnd> FSMWithStartEnd::Intersect(
+         int min_value = std::max(lhs_edge.min, rhs_edge.min);
+         int max_value = std::min(lhs_edge.max, rhs_edge.max);
+         if (state_map.find(std::make_pair(lhs_edge.target, rhs_edge.target)) == state_map.end()) {
++          if (result.NumStates() >= max_result_num_states) {
++            return ResultErr("The number of states exceeds the limit.");
++          }
+           state_map[{lhs_edge.target, rhs_edge.target}] = result.AddState();
+           queue.push({lhs_edge.target, rhs_edge.target});
+         }
+@@ -1229,6 +1239,45 @@ Result<FSMWithStartEnd> FSMWithStartEnd::Intersect(
+   return ResultOk(std::move(result));
+ }
+
++void FSMWithStartEnd::TrimEdgesToDeadStates() {
++  const int num_states = NumStates();
++  std::vector<std::vector<int>> predecessors(num_states);
++  for (int state = 0; state < num_states; ++state) {
++    for (const auto& edge : fsm_.GetEdges(state)) {
++      predecessors[edge.target].push_back(state);
++    }
++  }
++  std::vector<bool> can_reach_end(num_states, false);
++  std::queue<int> queue;
++  for (int state = 0; state < num_states; ++state) {
++    if (IsEndState(state)) {
++      can_reach_end[state] = true;
++      queue.push(state);
++    }
++  }
++  while (!queue.empty()) {
++    int state = queue.front();
++    queue.pop();
++    for (int pred : predecessors[state]) {
++      if (!can_reach_end[pred]) {
++        can_reach_end[pred] = true;
++        queue.push(pred);
++      }
++    }
++  }
++  for (int state = 0; state < num_states; ++state) {
++    auto& edges = fsm_.GetEdges(state);
++    edges.erase(
++        std::remove_if(
++            edges.begin(),
++            edges.end(),
++            [&](const FSMEdge& edge) { return !can_reach_end[edge.target]; }
++        ),
++        edges.end()
++    );
++  }
++}
++
+ bool FSMWithStartEnd::IsDFA() {
+   if (is_dfa_) {
+     return true;
+diff --git a/cpp/fsm.h b/cpp/fsm.h
+index 64a92a3..627d528 100644
+--- a/cpp/fsm.h
++++ b/cpp/fsm.h
+@@ -844,6 +844,12 @@ class FSMWithStartEnd : public FSMWithStartEndBase<FSM> {
+    */
+   FSMWithStartEnd MergeEquivalentStates(int max_num_states = 1e5) const;
+
++  /*!
++   * \brief Remove every edge into a state that cannot reach an end state.
++   * \details The dead states themselves stay, now unreachable, so state ids are preserved.
++   */
++  void TrimEdgesToDeadStates();
++
+   /*!
+    * \brief Transform the FSM to a DFA.
+    * \param max_result_num_states The maximum number of states in the DFA.
 diff --git a/cpp/fsm_builder.cc b/cpp/fsm_builder.cc
 index b620cc7..7f37319 100644
 --- a/cpp/fsm_builder.cc
@@ -441,10 +536,69 @@ index 0eb69c3..3925957 100644
    );
    if (print_converted_ebnf) {
      XGRAMMAR_LOG(INFO) << "Converted EBNF: " << ebnf_string << std::endl;
+diff --git a/cpp/grammar_builder.cc b/cpp/grammar_builder.cc
+index 3b02af8..0243e2c 100644
+--- a/cpp/grammar_builder.cc
++++ b/cpp/grammar_builder.cc
+@@ -135,7 +135,10 @@ int32_t GrammarBuilder::AddChoices(const std::vector<int32_t>& choices) {
+
+ int32_t GrammarBuilder::AddTagDispatch(const Grammar::Impl::TagDispatch& tag_dispatch) {
+   std::vector<int32_t> data;
+-  data.reserve(tag_dispatch.tag_rule_pairs.size() * 2 + 2);
++  data.reserve(
++      tag_dispatch.tag_rule_pairs.size() * 2 +
++      Grammar::Impl::TagDispatch::kTagDispatchExtraParameter
++  );
+   for (const auto& [tag, rule_id] : tag_dispatch.tag_rule_pairs) {
+     data.push_back(AddByteString(tag));
+     data.push_back(rule_id);
+@@ -146,6 +149,13 @@ int32_t GrammarBuilder::AddTagDispatch(const Grammar::Impl::TagDispatch& tag_dis
+     exclude_str_expr_ids.push_back(AddByteString(exclude_str));
+   }
+   data.push_back(AddChoices(exclude_str_expr_ids));
++  data.push_back(tag_dispatch.min_length);
++  data.push_back(tag_dispatch.max_length);
++  std::vector<int32_t> exclude_edge_expr_ids;
++  for (const auto& exclude_edge : tag_dispatch.exclude_edges) {
++    exclude_edge_expr_ids.push_back(AddByteString(exclude_edge));
++  }
++  data.push_back(AddChoices(exclude_edge_expr_ids));
+   return AddGrammarExpr(
+       {GrammarExprType::kTagDispatch, data.data(), static_cast<int32_t>(data.size())}
+   );
 diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
-index 5cf140d..5d7ef98 100644
+index 5cf140d..679ed93 100644
 --- a/cpp/grammar_compiler.cc
 +++ b/cpp/grammar_compiler.cc
+@@ -433,7 +433,9 @@ std::pair<bool, std::bitset<256>> GrammarMatcherForTokenMaskCache::GetSpeculativ
+   // If the initial rule is a tag dispatch, we will check if it can achieve its initial state.
+   const auto& rule = grammar_->GetRule(init_rule_id_);
+   const auto& rule_body = grammar_->GetGrammarExpr(rule.body_expr_id);
+-  if (rule_body.type == GrammarExprType::kTagDispatch) {
++  // A length-bounded dispatch never returns to its start state, so it takes the generic path.
++  if (rule_body.type == GrammarExprType::kTagDispatch &&
++      !grammar_->GetTagDispatch(rule.body_expr_id).IsConstrained()) {
+     std::bitset<256> speculative_mask;
+     XGRAMMAR_DCHECK(grammar_->per_rule_fsms[init_rule_id_].has_value());
+     const auto& fsm = grammar_->per_rule_fsms[init_rule_id_].value();
+@@ -522,13 +524,11 @@ bool GrammarMatcherForTokenMaskCache::GetTokenMaskWithFirstCharacterCheck(
+   int prev_matched_size = 0;
+   int last_rejected_range = 0;
+   const bool& is_exact_lookahead = grammar_->GetRule(init_rule_id_).is_exact_lookahead;
++  // Only an unconstrained TagDispatch has a second-slicing bitset (see TagDispatchOptimization).
+   std::optional<const DynamicBitset*> definite_accepted_bitset = std::nullopt;
+-  const bool is_tag_dispatch_rule =
+-      grammar_->GetGrammarExpr(grammar_->GetRule(init_rule_id_).body_expr_id).type ==
+-      Grammar::Impl::GrammarExprType::kTagDispatch;
+-  if (is_tag_dispatch_rule) {
+-    XGRAMMAR_DCHECK(tag_dispatch_rule_id_to_second_slicing_bitset_.count(init_rule_id_) > 0);
+-    definite_accepted_bitset = &tag_dispatch_rule_id_to_second_slicing_bitset_.at(init_rule_id_);
++  if (auto it = tag_dispatch_rule_id_to_second_slicing_bitset_.find(init_rule_id_);
++      it != tag_dispatch_rule_id_to_second_slicing_bitset_.end()) {
++    definite_accepted_bitset = &it->second;
+   }
+
+   const std::string* prev_token = nullptr;
 @@ -1013,7 +1013,9 @@ class GrammarCompilerSub {
        std::optional<std::pair<std::string, std::string>> separators,
        bool strict_mode,
@@ -478,7 +632,18 @@ index 5cf140d..5d7ef98 100644
    ));
  }
 
-@@ -1246,6 +1252,8 @@ class GrammarCompilerCacheKeys {
+@@ -1195,6 +1201,10 @@ void GrammarCompilerSub::TagDispatchOptimization(
+     XGRAMMAR_DCHECK(rule_body.type == GrammarExprType::kTagDispatch);
+     Grammar::Impl::TagDispatch tag_dispatch =
+         compiled_grammar_impl->GetGrammar()->GetTagDispatch(rule.body_expr_id);
++    // A length bound can reject a token by its length alone, so no token is definitely accepted.
++    if (tag_dispatch.IsConstrained()) {
++      continue;
++    }
+     const auto& sorted_decoded_vocab = tokenizer_info_.GetSortedDecodedVocab();
+     DynamicBitset definite_accepted_tokens_since_second_char(sorted_decoded_vocab.size());
+     for (int j = 0; j < static_cast<int32_t>(sorted_decoded_vocab.size()); j++) {
+@@ -1246,6 +1256,8 @@ class GrammarCompilerCacheKeys {
      bool strict_mode;
      std::optional<int> max_whitespace_cnt;
      bool any_order;
@@ -487,7 +652,7 @@ index 5cf140d..5d7ef98 100644
 
      XGRAMMAR_EQUAL_BY_MEMBERS(
          SchemaKey,
-@@ -1255,7 +1263,9 @@ class GrammarCompilerCacheKeys {
+@@ -1255,7 +1267,9 @@ class GrammarCompilerCacheKeys {
          &SchemaKey::separators,
          &SchemaKey::strict_mode,
          &SchemaKey::max_whitespace_cnt,
@@ -498,7 +663,7 @@ index 5cf140d..5d7ef98 100644
      );
    };
 
-@@ -1296,7 +1306,9 @@ XGRAMMAR_HASH_BY_MEMBERS(
+@@ -1296,7 +1310,9 @@ XGRAMMAR_HASH_BY_MEMBERS(
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::separators,
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::strict_mode,
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::max_whitespace_cnt,
@@ -509,7 +674,7 @@ index 5cf140d..5d7ef98 100644
  );
 
  XGRAMMAR_HASH_BY_MEMBERS(
-@@ -1362,7 +1374,9 @@ class GrammarCompiler::Impl {
+@@ -1362,7 +1378,9 @@ class GrammarCompiler::Impl {
        std::optional<std::pair<std::string, std::string>> separators,
        bool strict_mode,
        std::optional<int> max_whitespace_cnt,
@@ -520,7 +685,7 @@ index 5cf140d..5d7ef98 100644
    );
 
    CompiledGrammar CompileStructuralTag(const std::string& structural_tag_json);
-@@ -1421,10 +1435,18 @@ CompiledGrammar GrammarCompiler::Impl::Compute(const UnionKey& key) {
+@@ -1421,10 +1439,18 @@ CompiledGrammar GrammarCompiler::Impl::Compute(const UnionKey& key) {
            const auto& [ebnf_str, root_rule_name] = key;
            return this->no_cache_compiler_.CompileGrammar(ebnf_str, root_rule_name);
          } else if constexpr (std::is_same_v<KeyType, SchemaKey>) {
@@ -541,7 +706,7 @@ index 5cf140d..5d7ef98 100644
            );
          } else if constexpr (std::is_same_v<KeyType, StructuralTagKey>) {
            const auto& [structural_tag_json] = key;
-@@ -1456,15 +1478,33 @@ CompiledGrammar GrammarCompiler::Impl::CompileJSONSchema(
+@@ -1456,15 +1482,33 @@ CompiledGrammar GrammarCompiler::Impl::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
@@ -578,7 +743,7 @@ index 5cf140d..5d7ef98 100644
    });
  }
 
-@@ -1537,10 +1577,20 @@ CompiledGrammar GrammarCompiler::CompileJSONSchema(
+@@ -1537,10 +1581,20 @@ CompiledGrammar GrammarCompiler::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
@@ -602,18 +767,68 @@ index 5cf140d..5d7ef98 100644
  }
 
 diff --git a/cpp/grammar_functor.cc b/cpp/grammar_functor.cc
-index 4424aca..590aad2 100644
+index 4424aca..e1e2e7e 100644
 --- a/cpp/grammar_functor.cc
 +++ b/cpp/grammar_functor.cc
-@@ -7,6 +7,7 @@
+@@ -7,6 +7,8 @@
 
  #include <xgrammar/xgrammar.h>
 
 +#include <algorithm>
++#include <array>
  #include <bitset>
  #include <cstdint>
  #include <map>
-@@ -1114,6 +1115,9 @@ class GrammarFSMBuilderImpl {
+@@ -83,14 +85,11 @@ class SubGrammarAdderImpl : public GrammarMutator {
+   }
+
+   int32_t VisitTagDispatch(const GrammarExpr& grammar_expr) final {
+-    Grammar::Impl::TagDispatch old_tag_dispatch = base_grammar_->GetTagDispatch(grammar_expr);
+-    Grammar::Impl::TagDispatch new_tag_dispatch;
+-    for (const auto& [trigger, rule_id] : old_tag_dispatch.tag_rule_pairs) {
+-      new_tag_dispatch.tag_rule_pairs.emplace_back(trigger, new_rule_ids_names[rule_id].first);
++    Grammar::Impl::TagDispatch tag_dispatch = base_grammar_->GetTagDispatch(grammar_expr);
++    for (auto& [trigger, rule_id] : tag_dispatch.tag_rule_pairs) {
++      rule_id = new_rule_ids_names[rule_id].first;
+     }
+-    new_tag_dispatch.loop_after_dispatch = old_tag_dispatch.loop_after_dispatch;
+-    new_tag_dispatch.excludes = old_tag_dispatch.excludes;
+-    return builder_->AddTagDispatch(new_tag_dispatch);
++    return builder_->AddTagDispatch(tag_dispatch);
+   }
+
+   int32_t VisitTokenTagDispatch(const GrammarExpr& grammar_expr) final {
+@@ -927,8 +926,14 @@ class AllowEmptyRuleAnalyzerImpl : public GrammarVisitor<std::vector<int32_t>> {
+     for (int i = 0; i < static_cast<int>(base_grammar_->NumRules()); ++i) {
+       auto rule = base_grammar_->GetRule(i);
+       auto grammar_expr = base_grammar_->GetGrammarExpr(rule.body_expr_id);
+-      if (grammar_expr.type == GrammarExprType::kTagDispatch ||
+-          grammar_expr.type == GrammarExprType::kTokenTagDispatch) {
++      if (grammar_expr.type == GrammarExprType::kTagDispatch) {
++        // Free text may be empty unless a lower length bound says otherwise.
++        if (base_grammar_->GetTagDispatch(grammar_expr).min_length == 0) {
++          empty_rule_id_set->insert(i);
++        }
++        continue;
++      }
++      if (grammar_expr.type == GrammarExprType::kTokenTagDispatch) {
+         empty_rule_id_set->insert(i);
+         continue;
+       }
+@@ -989,10 +994,11 @@ class AllowEmptyRuleAnalyzerImpl : public GrammarVisitor<std::vector<int32_t>> {
+         auto rule = base_grammar_->GetRule(referer_rule_id);
+         auto grammar_expr = base_grammar_->GetGrammarExpr(rule.body_expr_id);
+
++        // A length-bounded TagDispatch has no rule references, so it is never a referer.
+         XGRAMMAR_DCHECK(
+             grammar_expr.type != GrammarExprType::kTagDispatch &&
+             grammar_expr.type != GrammarExprType::kTokenTagDispatch
+-        ) << "TagDispatch rules should already exist in empty_rule_id_set";
++        ) << "Nullable TagDispatch rules should already exist in empty_rule_id_set";
+
+         bool is_epsilon = std::any_of(grammar_expr.begin(), grammar_expr.end(), [&](int32_t i) {
+           auto seq_expr = base_grammar_->GetGrammarExpr(i);
+@@ -1114,12 +1120,21 @@ class GrammarFSMBuilderImpl {
    static std::optional<FSMWithStartEnd> Choices(const GrammarExpr& expr, const Grammar& grammar);
    static std::optional<FSMWithStartEnd> TagDispatch(const Grammar::Impl::TagDispatch& tag_dispatch);
    static void AddCharacterRange(FSMWithStartEnd& fsm, int from, int to, uint32_t min, uint32_t max);
@@ -623,7 +838,19 @@ index 4424aca..590aad2 100644
    /* Building tool functions.*/
    static std::optional<FSMWithStartEnd> BuildTagDispatch(
        const std::vector<std::pair<std::string, int>>& string_trigger_rules,
-@@ -1206,7 +1210,7 @@ void AddSameLengthCharacterRange(
+       bool loop_after_dispatch,
+       const std::vector<std::string>& excluded_strings
+   );
++  static Result<FSMWithStartEnd> TryBuildConstrainedTagDispatch(
++      const Grammar::Impl::TagDispatch& tag_dispatch
++  );
++  static FSMWithStartEnd BuildTextConstraintFSM(
++      int32_t min_length, int32_t max_length, const std::vector<std::string>& exclude_edges
++  );
+   static FSMWithStartEnd BuildNegativeCharacterClass(const GrammarExpr& expr);
+ };
+
+@@ -1206,7 +1221,7 @@ void AddSameLengthCharacterRange(
      if ((max & 0x00FFFF) != 0xBFBF) {
        int tmp_state_max = fsm.AddState();
        fsm.GetFsm().AddEdge(from, tmp_state_max, byte_max[2], byte_max[2]);
@@ -632,7 +859,7 @@ index 4424aca..590aad2 100644
      } else {
        byte_max[2]++;
      }
-@@ -1336,22 +1340,32 @@ void GrammarFSMBuilderImpl::AddCharacterRange(
+@@ -1336,22 +1351,32 @@ void GrammarFSMBuilderImpl::AddCharacterRange(
    return;
  }
 
@@ -673,7 +900,7 @@ index 4424aca..590aad2 100644
      }
    }
 
-@@ -1384,7 +1398,14 @@ FSMWithStartEnd GrammarFSMBuilderImpl::BuildNegativeCharacterClass(const Grammar
+@@ -1384,7 +1409,14 @@ FSMWithStartEnd GrammarFSMBuilderImpl::BuildNegativeCharacterClass(const Grammar
        i = right_bound;
      }
    }
@@ -689,7 +916,7 @@ index 4424aca..590aad2 100644
    return result_fsm;
  }
 
-@@ -1406,12 +1427,10 @@ FSMWithStartEnd GrammarFSMBuilderImpl::CharacterClass(const GrammarExpr& expr) {
+@@ -1406,12 +1438,10 @@ FSMWithStartEnd GrammarFSMBuilderImpl::CharacterClass(const GrammarExpr& expr) {
    }
    result_fsm.AddEndState(end_state);
    for (int i = 1; i < static_cast<int>(expr.size()); i += 2) {
@@ -706,6 +933,380 @@ index 4424aca..590aad2 100644
    }
    return result_fsm;
  }
+@@ -1649,9 +1679,220 @@ std::optional<FSMWithStartEnd> GrammarFSMBuilderImpl::BuildTagDispatch(
+   return FSMWithStartEnd(trie_fsm, start, ends);
+ }
+
++FSMWithStartEnd GrammarFSMBuilderImpl::BuildTextConstraintFSM(
++    int32_t min_length, int32_t max_length, const std::vector<std::string>& exclude_edges
++) {
++  // Bytes a UTF-8 lead byte announces, or 0 for a byte that cannot start a code point. The
++  // shared table admits the leads that can only begin an overlong form (0xC0, 0xC1) or a
++  // codepoint past U+10FFFF (0xF5..0xF7), so those are excluded here.
++  auto lead_length = [](int byte) {
++    if ((byte >= 0xC0 && byte <= 0xC1) || byte >= 0xF5) {
++      return 0;
++    }
++    auto first_byte = HandleUTF8FirstByte(static_cast<uint8_t>(byte));
++    return std::get<0>(first_byte) ? std::get<1>(first_byte) : 0;
++  };
++  auto is_continuation = [](int byte) { return byte >= 0x80 && byte <= 0xBF; };
++
++  // The edge sequences (one code point each) form a byte trie. A multi-byte sequence is
++  // followed through tracking states; a mismatch means an ordinary code point was read.
++  struct TrieNode {
++    std::array<int, 256> child;
++    bool leaf = false;
++    // Continuation bytes still owed by the code point this node is part of.
++    int remaining = 0;
++    int tracking_index = -1;
++    TrieNode() { child.fill(-1); }
++  };
++  std::vector<TrieNode> trie(1);
++  for (const auto& edge : exclude_edges) {
++    XGRAMMAR_DCHECK(
++        !edge.empty() && lead_length(static_cast<unsigned char>(edge[0])) ==
++                             static_cast<int>(edge.size())
++    );
++    int node = 0;
++    for (size_t i = 0; i < edge.size(); ++i) {
++      unsigned char byte = static_cast<unsigned char>(edge[i]);
++      if (trie[node].child[byte] == -1) {
++        trie[node].child[byte] = static_cast<int>(trie.size());
++        trie.emplace_back();
++        trie.back().remaining = static_cast<int>(edge.size() - i - 1);
++      }
++      node = trie[node].child[byte];
++    }
++    trie[node].leaf = true;
++  }
++  int num_tracking = 0;
++  for (size_t node = 1; node < trie.size(); ++node) {
++    if (!trie[node].leaf) {
++      trie[node].tracking_index = num_tracking++;
++    }
++  }
++
++  // Code points are counted at their lead byte and must be completed: a stray continuation
++  // byte or a truncated sequence has no transition. With no upper bound the count saturates
++  // once the lower bound is met, so nothing past it needs a state of its own.
++  const int32_t top = max_length == -1 ? std::max(min_length, 1) : max_length;
++  // State 0 is the empty text. Each count c >= 1 has an inner state (last code point
++  // ordinary, the only kind that accepts), an edge state (last code point excluded from the
++  // edges), three pending states (1..3 continuation bytes still owed) and one tracking state
++  // per inner trie node. A sequence begun at the very start has its own tracking states,
++  // since completing it there is forbidden rather than an edge.
++  const int per_count = 5 + num_tracking;
++  auto inner = [&](int32_t c) { return 1 + (c - 1) * per_count; };
++  auto edge = [&](int32_t c) { return inner(c) + 1; };
++  auto pending = [&](int32_t c, int owed) { return inner(c) + 1 + owed; };
++  auto track = [&](int32_t c, int k) { return inner(c) + 5 + k; };
++  auto track_start = [&](int k) { return 1 + top * per_count + k; };
++  const int num_states = 1 + top * per_count + num_tracking;
++  FSM fsm(num_states);
++  std::vector<bool> ends(num_states, false);
++  ends[0] = min_length == 0;
++  for (int32_t c = 1; c <= top; ++c) {
++    ends[inner(c)] = c >= min_length;
++  }
++
++  auto add_row = [&](int state, const std::array<int, 256>& target) {
++    for (int byte = 0; byte < 256;) {
++      int range_end = byte;
++      while (range_end + 1 < 256 && target[range_end + 1] == target[byte]) {
++        ++range_end;
++      }
++      if (target[byte] != FSM::kNoNextState) {
++        fsm.AddEdge(state, target[byte], byte, range_end);
++      }
++      byte = range_end + 1;
++    }
++  };
++  // Where a code point may begin: the empty text, an inner state or an edge state. Edge
++  // states at the upper bound end up with no exits and are trimmed by the caller.
++  auto boundary_row = [&](int state, int32_t count, bool at_start) {
++    const bool can_grow = max_length == -1 || count < max_length;
++    const int32_t next = (max_length == -1 && count == top) ? count : count + 1;
++    std::array<int, 256> target;
++    target.fill(FSM::kNoNextState);
++    if (!can_grow) {
++      add_row(state, target);
++      return;
++    }
++    for (int byte = 0; byte < 256; ++byte) {
++      const int length = lead_length(byte);
++      if (length == 0) continue;
++      int child = trie[0].child[byte];
++      if (child != -1) {
++        if (trie[child].leaf) {
++          target[byte] = at_start ? FSM::kNoNextState : edge(next);
++        } else {
++          int k = trie[child].tracking_index;
++          target[byte] = at_start ? track_start(k) : track(next, k);
++        }
++      } else if (length == 1) {
++        target[byte] = inner(next);
++      } else {
++        target[byte] = pending(next, length - 1);
++      }
++    }
++    add_row(state, target);
++  };
++  // Inside a candidate edge sequence: the byte either follows the trie or continues an
++  // ordinary code point with the same lead byte.
++  auto tracking_row = [&](int state, int32_t count, int node, bool from_start) {
++    std::array<int, 256> target;
++    target.fill(FSM::kNoNextState);
++    for (int byte = 0; byte < 256; ++byte) {
++      int child = trie[node].child[byte];
++      if (child != -1) {
++        if (trie[child].leaf) {
++          target[byte] = from_start ? FSM::kNoNextState : edge(count);
++        } else {
++          int k = trie[child].tracking_index;
++          target[byte] = from_start ? track_start(k) : track(count, k);
++        }
++      } else if (is_continuation(byte)) {
++        int owed = trie[node].remaining - 1;
++        target[byte] = owed == 0 ? inner(count) : pending(count, owed);
++      }
++    }
++    add_row(state, target);
++  };
++  auto pending_row = [&](int state, int32_t count, int owed) {
++    std::array<int, 256> target;
++    target.fill(FSM::kNoNextState);
++    for (int byte = 0x80; byte <= 0xBF; ++byte) {
++      target[byte] = owed == 1 ? inner(count) : pending(count, owed - 1);
++    }
++    add_row(state, target);
++  };
++  boundary_row(0, 0, /*at_start=*/true);
++  for (int32_t c = 1; c <= top; ++c) {
++    boundary_row(inner(c), c, /*at_start=*/false);
++    boundary_row(edge(c), c, /*at_start=*/false);
++    for (int owed = 1; owed <= 3; ++owed) {
++      pending_row(pending(c, owed), c, owed);
++    }
++  }
++  if (top > 0) {
++    for (size_t node = 1; node < trie.size(); ++node) {
++      if (trie[node].leaf) continue;
++      int k = trie[node].tracking_index;
++      for (int32_t c = 1; c <= top; ++c) {
++        tracking_row(track(c, k), c, static_cast<int>(node), /*from_start=*/false);
++      }
++      tracking_row(track_start(k), 1, static_cast<int>(node), /*from_start=*/true);
++    }
++  }
++  return FSMWithStartEnd(fsm, 0, ends, /*is_dfa=*/true);
++}
++
++Result<FSMWithStartEnd> GrammarFSMBuilderImpl::TryBuildConstrainedTagDispatch(
++    const Grammar::Impl::TagDispatch& tag_dispatch
++) {
++  XGRAMMAR_DCHECK(tag_dispatch.tag_rule_pairs.empty());
++  const int budget = Grammar::Impl::TagDispatch::kMaxConstrainedStates;
++  const std::string over_budget =
++      "TagDispatch length bound expands past " + std::to_string(budget) + " states";
++  // Every state of the constraint automaton survives into the product, so its size is
++  // checked before anything is allocated.
++  if (tag_dispatch.ConstrainedStateCount() > budget) {
++    return ResultErr(over_budget);
++  }
++  std::vector<int> end_states;
++  auto trie_result = TrieFSMBuilder::Build({}, tag_dispatch.excludes, &end_states, true, true);
++  if (!trie_result.has_value()) {
++    return ResultErr(std::string("Failed to build the exclusion automaton"));
++  }
++  // Every live state accepts: an excluded pattern's terminal is unreachable once the edges
++  // into it are gone. The Aho-Corasick automaton is deterministic with no epsilon edges, so
++  // the product below needs no determinization.
++  std::vector<bool> ends(trie_result->NumStates());
++  for (int state = 0; state < trie_result->NumStates(); ++state) {
++    ends[state] = !trie_result->IsEndState(state);
++  }
++  FSMWithStartEnd exclusion(
++      trie_result->GetFsm(), trie_result->GetStart(), ends, /*is_dfa=*/true
++  );
++  FSMWithStartEnd constraint = BuildTextConstraintFSM(
++      tag_dispatch.min_length, tag_dispatch.max_length, tag_dispatch.exclude_edges
++  );
++  auto product = FSMWithStartEnd::Intersect(exclusion, constraint, budget);
++  if (product.IsErr()) {
++    return ResultErr(over_budget);
++  }
++  FSMWithStartEnd result = std::move(product).Unwrap();
++  result.TrimEdgesToDeadStates();
++  return ResultOk(std::move(result));
++}
++
+ std::optional<FSMWithStartEnd> GrammarFSMBuilderImpl::TagDispatch(
+     const Grammar::Impl::TagDispatch& tag_dispatch
+ ) {
++  if (tag_dispatch.IsConstrained()) {
++    auto result = TryBuildConstrainedTagDispatch(tag_dispatch);
++    if (result.IsErr()) {
++      XGRAMMAR_LOG(FATAL) << result.ErrRef().what();
++    }
++    return std::move(result).Unwrap();
++  }
+   std::vector<std::pair<std::string, int>> string_trigger_rules(
+       tag_dispatch.tag_rule_pairs.begin(), tag_dispatch.tag_rule_pairs.end()
+   );
+@@ -2737,6 +2978,12 @@ std::optional<FSMWithStartEnd> GrammarFSMBuilder::TagDispatch(
+   return GrammarFSMBuilderImpl::TagDispatch(tag_dispatch);
+ }
+
++bool GrammarFSMBuilder::ConstrainedTagDispatchFits(
++    const Grammar::Impl::TagDispatch& tag_dispatch
++) {
++  return GrammarFSMBuilderImpl::TryBuildConstrainedTagDispatch(tag_dispatch).IsOk();
++}
++
+ std::vector<int32_t> AllowEmptyRuleAnalyzer::Apply(const Grammar& grammar) {
+   return AllowEmptyRuleAnalyzerImpl().Apply(grammar);
+ }
+diff --git a/cpp/grammar_functor.h b/cpp/grammar_functor.h
+index 2a88c4b..561517f 100644
+--- a/cpp/grammar_functor.h
++++ b/cpp/grammar_functor.h
+@@ -373,6 +373,13 @@ class GrammarFSMBuilder {
+   static std::optional<FSMWithStartEnd> Sequence(const GrammarExpr& expr, const Grammar& grammar);
+   static std::optional<FSMWithStartEnd> Choices(const GrammarExpr& expr, const Grammar& grammar);
+   static std::optional<FSMWithStartEnd> TagDispatch(const Grammar::Impl::TagDispatch& tag_dispatch);
++
++  /*!
++   * \brief Whether a constrained TagDispatch (length bounds or edge excludes, no tags) lowers
++   * within TagDispatch::kMaxConstrainedStates, so a caller can decide before building the
++   * grammar whether the constraint is affordable.
++   */
++  static bool ConstrainedTagDispatchFits(const Grammar::Impl::TagDispatch& tag_dispatch);
+ };
+
+ /*!
+diff --git a/cpp/grammar_impl.h b/cpp/grammar_impl.h
+index ed47619..b8ebf5c 100644
+--- a/cpp/grammar_impl.h
++++ b/cpp/grammar_impl.h
+@@ -10,6 +10,7 @@
+ #include <xgrammar/xgrammar.h>
+
+ #include <cstddef>
++#include <set>
+ #include <string>
+ #include <vector>
+
+@@ -120,7 +121,7 @@ class Grammar::Impl {
+     // data format: [grammar_expr_id0, grammar_expr_id1, ...]
+     kChoices,
+     // data format: [tag_expr0, rule_id0, tag_expr1, rule_id1, ..., loop_after_dispatch,
+-    // excluded_str_expr_id]
++    // excluded_str_expr_id, min_length, max_length, exclude_edges_expr_id]
+     kTagDispatch,
+     // data format: [rule_id, min_repeat_count, max_repeat_count]
+     kRepeat,
+@@ -197,43 +198,87 @@ class Grammar::Impl {
+     bool loop_after_dispatch;
+     /*! \brief The strings that are excluded by the tag dispatch. */
+     std::vector<std::string> excludes;
+-    static const int kTagDispatchExtraParameter = 2;
++    /*!
++     * \brief Lower bound on the code points (UTF-8 lead bytes) of free text the dispatch
++     * consumes. Only allowed without tag_rule_pairs.
++     */
++    int32_t min_length = 0;
++    /*! \brief Upper bound on the code points of free text; -1 means unbounded. */
++    int32_t max_length = -1;
++    /*! \brief Code points (each one UTF-8 sequence) that may not begin or end the free text. */
++    std::vector<std::string> exclude_edges;
++    /*! \brief Whether the free text carries a length bound or an edge exclusion. */
++    bool IsConstrained() const {
++      return min_length > 0 || max_length != -1 || !exclude_edges.empty();
++    }
++    /*!
++     * \brief Cap on the automaton a constrained dispatch lowers to. The compiler walks the
++     * vocabulary once per automaton state (about 2 ms per state on a 200k vocabulary with eight
++     * threads), so this bounds first-compile time as much as memory.
++     */
++    static const int kMaxConstrainedStates = 2048;
++    /*!
++     * \brief States the constraint automaton lowers to, saturating above
++     * kMaxConstrainedStates so an oversized bound cannot overflow the count. The layout is
++     * GrammarFSMBuilderImpl::BuildTextConstraintFSM's: one state for the empty text, five per
++     * counted code point plus one per inner node of the edge trie, and one tracking state per
++     * inner node for a sequence begun at the start.
++     */
++    int64_t ConstrainedStateCount() const {
++      const int64_t top = max_length == -1 ? (min_length > 1 ? min_length : 1) : max_length;
++      if (top > kMaxConstrainedStates) {
++        return kMaxConstrainedStates + 1;
++      }
++      std::set<std::string> prefixes;
++      for (const auto& edge : exclude_edges) {
++        for (size_t length = 1; length < edge.size(); ++length) {
++          prefixes.insert(edge.substr(0, length));
++        }
++      }
++      const int64_t num_tracking = static_cast<int64_t>(prefixes.size());
++      return 1 + top * (5 + num_tracking) + num_tracking;
++    }
++    static const int kTagDispatchExtraParameter = 5;
+   };
+
+   /*! \brief Get the tag dispatch from the grammar expr. */
+-  TagDispatch GetTagDispatch(const GrammarExpr& grammar_expr) {
++  TagDispatch GetTagDispatch(const GrammarExpr& grammar_expr) const {
+     XGRAMMAR_DCHECK(grammar_expr.type == GrammarExprType::kTagDispatch)
+         << "GrammarExpr is not a tag dispatch";
+
+     TagDispatch result;
+     XGRAMMAR_DCHECK(grammar_expr.size() >= TagDispatch::kTagDispatchExtraParameter);
+-    result.tag_rule_pairs.reserve(
+-        (grammar_expr.size() - TagDispatch::kTagDispatchExtraParameter) / 2
+-    );
++    const int extra_begin = grammar_expr.size() - TagDispatch::kTagDispatchExtraParameter;
++    result.tag_rule_pairs.reserve(extra_begin / 2);
+
+-    for (int i = 0; i < grammar_expr.size() - TagDispatch::kTagDispatchExtraParameter; i += 2) {
++    for (int i = 0; i < extra_begin; i += 2) {
+       auto tag_expr_id = grammar_expr[i];
+       auto rule_id = grammar_expr[i + 1];
+       result.tag_rule_pairs.push_back({GetByteString(tag_expr_id), rule_id});
+     }
+
+-    result.loop_after_dispatch = static_cast<bool>(
+-        grammar_expr[grammar_expr.size() - TagDispatch::kTagDispatchExtraParameter]
+-    );
++    result.loop_after_dispatch = static_cast<bool>(grammar_expr[extra_begin]);
+
+-    auto exclude_str_expr = GetGrammarExpr(
+-        grammar_expr[grammar_expr.size() - TagDispatch::kTagDispatchExtraParameter + 1]
+-    );
++    auto exclude_str_expr = GetGrammarExpr(grammar_expr[extra_begin + 1]);
+     XGRAMMAR_DCHECK(exclude_str_expr.type == GrammarExprType::kChoices);
+     result.excludes.reserve(exclude_str_expr.size());
+     for (int j = 0; j < exclude_str_expr.size(); j++) {
+       result.excludes.push_back(GetByteString(exclude_str_expr[j]));
+     }
++
++    result.min_length = grammar_expr[extra_begin + 2];
++    result.max_length = grammar_expr[extra_begin + 3];
++    auto exclude_edges_expr = GetGrammarExpr(grammar_expr[extra_begin + 4]);
++    XGRAMMAR_DCHECK(exclude_edges_expr.type == GrammarExprType::kChoices);
++    result.exclude_edges.reserve(exclude_edges_expr.size());
++    for (int j = 0; j < exclude_edges_expr.size(); j++) {
++      result.exclude_edges.push_back(GetByteString(exclude_edges_expr[j]));
++    }
+     return result;
+   }
+
+   /*! \brief Get the tag dispatch from the grammar expr with the given id. */
+-  TagDispatch GetTagDispatch(int32_t grammar_expr_id) {
++  TagDispatch GetTagDispatch(int32_t grammar_expr_id) const {
+     return GetTagDispatch(GetGrammarExpr(grammar_expr_id));
+   }
+
 diff --git a/cpp/grammar_matcher.cc b/cpp/grammar_matcher.cc
 index d68479f..360396f 100644
 --- a/cpp/grammar_matcher.cc
@@ -828,8 +1429,139 @@ index d68479f..360396f 100644
  std::string GrammarMatcher::Impl::FindJumpForwardString() {
    XGRAMMAR_CHECK(!IsStopTokenAccepted())
        << "GrammarMatcher has terminated after accepting the stop token, but is trying to "
+diff --git a/cpp/grammar_parser.cc b/cpp/grammar_parser.cc
+index 745393d..f20e218 100644
+--- a/cpp/grammar_parser.cc
++++ b/cpp/grammar_parser.cc
+@@ -934,7 +934,7 @@ int32_t EBNFParser::ParseTagDispatch() {
+   Grammar::Impl::TagDispatch tag_dispatch;
+
+   static const std::unordered_set<std::string> kValidNamedArgs = {
+-      "loop_after_dispatch", "excludes"
++      "loop_after_dispatch", "excludes", "min_length", "max_length", "exclude_edges"
+   };
+   for (const auto& [name, _] : args.named_arguments) {
+     if (kValidNamedArgs.count(name) == 0) {
+@@ -996,6 +996,88 @@ int32_t EBNFParser::ParseTagDispatch() {
+     }
+   }
+
++  // min_length / max_length — bounds on the free text, counted in code points
++  auto parse_length = [&](const char* name, int64_t default_value) -> int64_t {
++    auto it = args.named_arguments.find(name);
++    if (it == args.named_arguments.end()) {
++      return default_value;
++    }
++    if (auto int_node = std::get_if<MacroIR::IntegerNode>(it->second.get())) {
++      return int_node->value;
++    }
++    // The lexer treats a leading '-' as a name character, so a negative arrives as an identifier.
++    if (auto id_node = std::get_if<MacroIR::IdentifierNode>(it->second.get());
++        id_node != nullptr && id_node->name.size() > 1 && id_node->name[0] == '-' &&
++        std::all_of(id_node->name.begin() + 1, id_node->name.end(), [](unsigned char c) {
++          return std::isdigit(c) != 0;
++        })) {
++      return std::stoll(id_node->name);
++    }
++    ReportParseError(std::string(name) + " must be an integer literal", delta_element);
++  };
++  int64_t min_length = parse_length("min_length", 0);
++  int64_t max_length = parse_length("max_length", -1);
++  if (min_length < 0) {
++    ReportParseError("min_length must be non-negative", delta_element);
++  }
++  if (max_length < -1 || (max_length != -1 && max_length < min_length)) {
++    ReportParseError("max_length must be -1 or at least min_length", delta_element);
++  }
++  // The bound is also the size of the counter, so it is capped where the automaton is.
++  const int64_t budget = Grammar::Impl::TagDispatch::kMaxConstrainedStates;
++  if (min_length > budget || max_length > budget) {
++    ReportParseError(
++        "min_length and max_length must not exceed the automaton state budget of " +
++            std::to_string(budget),
++        delta_element
++    );
++  }
++  tag_dispatch.min_length = static_cast<int32_t>(min_length);
++  tag_dispatch.max_length = static_cast<int32_t>(max_length);
++
++  // exclude_edges — code points that may not begin or end the free text
++  if (auto it = args.named_arguments.find("exclude_edges"); it != args.named_arguments.end()) {
++    auto tuple_node = std::get_if<MacroIR::TupleNode>(it->second.get());
++    if (tuple_node == nullptr) {
++      ReportParseError("exclude_edges must be a tuple", delta_element);
++    }
++    for (const auto& element : tuple_node->elements) {
++      auto str_node = std::get_if<MacroIR::StringNode>(element.get());
++      if (str_node == nullptr || str_node->value.empty()) {
++        ReportParseError(
++            "Each exclude_edges element must be a single-character string literal",
++            delta_element
++        );
++      }
++      auto [codepoint, length] = ParseNextUTF8(str_node->value.c_str());
++      if (codepoint == CharHandlingError::kInvalidUTF8 ||
++          static_cast<size_t>(length) != str_node->value.size()) {
++        ReportParseError(
++            "Each exclude_edges element must be a single-character string literal",
++            delta_element
++        );
++      }
++      tag_dispatch.exclude_edges.push_back(str_node->value);
++    }
++  }
++
++  if (tag_dispatch.IsConstrained() && !tag_dispatch.tag_rule_pairs.empty()) {
++    ReportParseError(
++        "min_length, max_length and exclude_edges require a TagDispatch without tags",
++        delta_element
++    );
++  }
++
++  // The edge trie multiplies the counter's states, so the bound alone is not the whole size.
++  // Refusing here keeps the parser's verdict and the FSM builder's in agreement.
++  if (tag_dispatch.IsConstrained() && tag_dispatch.ConstrainedStateCount() > budget) {
++    ReportParseError(
++        "the length bound and exclude_edges expand past the automaton state budget of " +
++            std::to_string(budget),
++        delta_element
++    );
++  }
++
+   // Well-formedness checks: string excludes vs string triggers
+   for (const auto& excl_str : tag_dispatch.excludes) {
+     for (const auto& [trigger_str, _] : tag_dispatch.tag_rule_pairs) {
+diff --git a/cpp/grammar_printer.cc b/cpp/grammar_printer.cc
+index 8cfc6fd..b8e8cec 100644
+--- a/cpp/grammar_printer.cc
++++ b/cpp/grammar_printer.cc
+@@ -147,7 +147,23 @@ std::string GrammarPrinter::PrintTagDispatch(const GrammarExpr& grammar_expr) {
+     if (i > 0) result += ", ";
+     result += PrintString(tag_dispatch.excludes[i]);
+   }
+-  result += ")\n)";
++  result += ")";
++  // Defaults stay implicit so an unconstrained dispatch prints as it always has.
++  if (tag_dispatch.min_length != 0) {
++    result += ",\n" + indent + "min_length=" + std::to_string(tag_dispatch.min_length);
++  }
++  if (tag_dispatch.max_length != -1) {
++    result += ",\n" + indent + "max_length=" + std::to_string(tag_dispatch.max_length);
++  }
++  if (!tag_dispatch.exclude_edges.empty()) {
++    result += ",\n" + indent + "exclude_edges=(";
++    for (int i = 0; i < static_cast<int>(tag_dispatch.exclude_edges.size()); ++i) {
++      if (i > 0) result += ", ";
++      result += PrintString(tag_dispatch.exclude_edges[i]);
++    }
++    result += ")";
++  }
++  result += "\n)";
+   return result;
+ }
+
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..1f9d652 100644
+index da8b516..4bdeee9 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
 @@ -5,15 +5,20 @@
@@ -5062,7 +5794,7 @@ index da8b516..1f9d652 100644
        XMLToolCallingConverter converter(
            indent,
            separators,
-@@ -3391,7 +6241,13 @@ std::string JSONSchemaToEBNF(
+@@ -3391,7 +6241,14 @@ std::string JSONSchemaToEBNF(
            max_whitespace_cnt,
            ref_resolver,
            json_format,
@@ -5073,11 +5805,12 @@ index da8b516..1f9d652 100644
 +          additional_bare_key_terminal,
 +          bare_key_pattern_forbidden,
 +          std::move(xml_marker_token_ids),
-+          xml_tag_prefix
++          xml_tag_prefix,
++          reject_unsupported
        );
        return converter.Convert(spec);
      }
-@@ -3414,7 +6270,9 @@ std::string GenerateFloatRangeRegex(
+@@ -3414,7 +6271,9 @@ std::string GenerateFloatRangeRegex(
    );
  }
 
@@ -5088,7 +5821,7 @@ index da8b516..1f9d652 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3428,11 +6286,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+@@ -3428,11 +6287,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
        true,
        std::nullopt,
        JSONFormat::kQwenXML,
@@ -5107,7 +5840,7 @@ index da8b516..1f9d652 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3446,11 +6309,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -3446,11 +6310,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
        true,
        std::nullopt,
        JSONFormat::kMiniMaxXML,
@@ -5126,7 +5859,7 @@ index da8b516..1f9d652 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3464,11 +6332,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -3464,11 +6333,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
        true,
        std::nullopt,
        JSONFormat::kDeepSeekXML,
@@ -5145,7 +5878,7 @@ index da8b516..1f9d652 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3482,7 +6355,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+@@ -3482,7 +6356,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
        true,
        std::nullopt,
        JSONFormat::kGlmXML,
@@ -5659,33 +6392,43 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..342a65f 100644
+index 4f1cc65..e18eef1 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
-@@ -5,10 +5,14 @@
+@@ -5,10 +5,18 @@
   */
  #include "json_schema_converter_ext.h"
 
 +#include <picojson.h>
 +
 +#include <algorithm>
++#include <cctype>
  #include <unordered_map>
 
++#include "grammar_functor.h"
++#include "grammar_impl.h"
  #include "json_schema_converter.h"
  #include "regex_converter.h"
++#include "support/encoding.h"
 +#include "support/logging.h"
 
  namespace xgrammar {
 
-@@ -17,6 +21,7 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,6 +25,13 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
-+const std::string XMLToolCallingConverter::kXMLVariableNameTerminal = "[a-zA-Z_][a-zA-Z0-9_]*";
++// A generated key becomes an XML tag name, and XML's NameChar production admits
++// "-" and "." after the first character. Narrowing this to an identifier charset
++// silently rewrites a key the caller asked for: a schema-less object told to
++// carry "some-key" can only emit "someKey". Mirrors the bare-key terminal the
++// JSON path already uses.
++const std::string XMLToolCallingConverter::kXMLVariableNameTerminal =
++    "[a-zA-Z_][-a-zA-Z0-9_.]*";
  const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
      XMLToolCallingConverter::kKeyWrapperMap = {
          {JSONFormat::kQwenXML, {"<parameter=", ">", "", "</parameter>"}},
-@@ -28,6 +33,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
+@@ -28,6 +43,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
          {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
@@ -5700,7 +6443,7 @@ index 4f1cc65..342a65f 100644
  };
 
  XMLToolCallingConverter::XMLToolCallingConverter(
-@@ -37,19 +50,158 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+@@ -37,19 +60,168 @@ XMLToolCallingConverter::XMLToolCallingConverter(
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
      JSONFormat json_format,
@@ -5711,7 +6454,8 @@ index 4f1cc65..342a65f 100644
 +    std::string additional_bare_key_terminal,
 +    std::string bare_key_pattern_forbidden,
 +    std::vector<int32_t> xml_marker_token_ids,
-+    std::string xml_tag_prefix
++    std::string xml_tag_prefix,
++    bool reject_unsupported
  )
      : JSONSchemaConverter(
 -          indent, separators, any_whitespace, max_whitespace_cnt, ref_resolver, any_order
@@ -5730,7 +6474,8 @@ index 4f1cc65..342a65f 100644
 -      xml_wrapper_(kKeyWrapperMap.at(json_format)) {}
 +      xml_wrapper_(kKeyWrapperMap.at(json_format)),
 +      xml_marker_token_ids_(std::move(xml_marker_token_ids)),
-+      xml_tag_prefix_(std::move(xml_tag_prefix)) {
++      xml_tag_prefix_(std::move(xml_tag_prefix)),
++      reject_unsupported_(reject_unsupported) {
 +  xml_tag_prefix_literal_ = "\"" + JSONStrToPrintableStr(xml_tag_prefix_) + "\"";
 +  // A bare-value string runs up to a close delimiter: the tag-prefix when set,
 +  // else the wrapper's parameter_suffix, else a resolved kValueClose special
@@ -5780,8 +6525,9 @@ index 4f1cc65..342a65f 100644
 +  // Token-delimited markers frame the value with no surrounding whitespace
 +  // (the model emits the XML wire form tightly); whitespace could bleed into
 +  // a whitespace-sensitive value (e.g. `^\t$`) or fill an object value with
-+  // blanks.
-+  std::string whitespace = MarkerTokenId(kValueClose) >= 0 ? "" : GetWhitespacePattern();
++  // blanks. A length-bounded value is framed tightly for the same reason.
++  bool tight = MarkerTokenId(kValueClose) >= 0 || tight_value_rules_.count(value_rule) > 0;
++  std::string whitespace = tight ? "" : GetWhitespacePattern();
 +
 +  std::string value_open;
 +  std::string value_close;
@@ -5807,6 +6553,13 @@ index 4f1cc65..342a65f 100644
 +    result += " " + whitespace + " " + key_close;
 +  }
 +  return result;
++}
++
++const std::string& XMLToolCallingConverter::ValueCloseDelimiter() const {
++  // A bare value runs up to the delimiter that begins its close: the tag-prefix
++  // when tags are prefixed (the close is `tag-prefix "</key>"`), else the
++  // wrapper's parameter_suffix.
++  return xml_tag_prefix_.empty() ? xml_wrapper_.parameter_suffix : xml_tag_prefix_;
 +}
 +
 +std::string XMLToolCallingConverter::OpenTag(const std::string& tag) const {
@@ -5839,7 +6592,7 @@ index 4f1cc65..342a65f 100644
 +    int min_properties,
 +    int max_properties
 +) {
-+  std::string ws = GetWhitespacePattern();
++  std::string ws = tight_value_rules_.count(value_rule) > 0 ? "" : GetWhitespacePattern();
 +  GenerationContext key_ctx = MakeKeyContext(GenerationContext::Framing::kBare, kXMLVariableNameTerminal);
 +  std::string open_tag =
 +      "\"<\" " +
@@ -5863,7 +6616,7 @@ index 4f1cc65..342a65f 100644
    ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
 
    return ebnf_script_creator_.GetScript();
-@@ -63,41 +215,70 @@ void XMLToolCallingConverter::AddBasicRules() {
+@@ -63,41 +235,65 @@ void XMLToolCallingConverter::AddBasicRules() {
    JSONSchemaConverter::AddBasicRules();
    nested_object_level_ = 1;
    // The outer part, xml format, is at level 1.
@@ -5895,17 +6648,12 @@ index 4f1cc65..342a65f 100644
 +    }
 +    ebnf_script_creator_.AddRule(kXMLString, "ExcludeToken(" + exclude_args + ")*");
 +  } else {
-+    // A bare value runs up to the delimiter that begins its close: the tag-prefix
-+    // when tags are prefixed (the close is `tag-prefix "</key>"`), else the
-+    // wrapper's parameter_suffix.
-+    const std::string& value_close_delimiter =
-+        xml_tag_prefix_.empty() ? xml_wrapper_.parameter_suffix : xml_tag_prefix_;
 +    ebnf_script_creator_.AddRule(
 +        kXMLString,
 +        "TagDispatch("
 +        "loop_after_dispatch=false,"
 +        "excludes=(\"" +
-+            value_close_delimiter +
++            EscapeString(ValueCloseDelimiter()) +
 +            "\")"
 +            ")"
 +    );
@@ -5952,7 +6700,7 @@ index 4f1cc65..342a65f 100644
  }
 
  std::string XMLToolCallingConverter::GetKeyPattern() const {
-@@ -114,13 +295,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
+@@ -114,13 +310,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
    return kBasicAny;
  }
 
@@ -5964,7 +6712,8 @@ index 4f1cc65..342a65f 100644
 -    return GetKeyPattern();
 +    auto pattern = BuildBareAdditionalKeyPattern(kXMLVariableNameTerminal, properties, rule_name);
 +    return pattern.has_value() ? *pattern : GetKeyPattern();
-+  }
+   }
+-  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
 +  return JSONSchemaConverter::GetAdditionalKeyPattern(properties, rule_name);
 +}
 +
@@ -5976,13 +6725,12 @@ index 4f1cc65..342a65f 100644
 +        property_names, rule_name,
 +        MakeKeyContext(GenerationContext::Framing::kBare, kXMLVariableNameTerminal)
 +    );
-   }
--  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
++  }
 +  return JSONSchemaConverter::GetPropertyNamesKeyPattern(property_names, rule_name);
  }
 
  std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
-@@ -131,8 +325,11 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
+@@ -131,8 +340,11 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
  }
 
  std::string XMLToolCallingConverter::GenerateString(
@@ -5995,21 +6743,16 @@ index 4f1cc65..342a65f 100644
    if (nested_object_level_ <= 1) {
      // For XML format, use TagDispatch for strings
      if (!spec.pattern.has_value() && !spec.format.has_value() && spec.min_length == 0 &&
-@@ -155,46 +352,103 @@ std::string XMLToolCallingConverter::GenerateString(
+@@ -155,46 +367,246 @@ std::string XMLToolCallingConverter::GenerateString(
        return converted_regex;
      }
 
 -    // Check for length constraints
-+    // The bare value is a run of non-control bytes terminated by the value
-+    // close marker (appended by FormatProperty). When the close resolved to an
-+    // atomic special token, its bytes are masked out of byte content, so
-+    // [^\0-\x1f]{min,max} is unambiguous and both bounds hold. For a byte-literal
-+    // close (tag-prefix or wrapper suffix), the close bytes fall inside
-+    // [^\0-\x1f], so a "{min,max}" run can match into the delimiter: the Earley
-+    // parser tries the close literal at each position, but a value containing
-+    // the delimiter substring cannot be represented. Correctly excluding it
-+    // needs negative lookahead, which xgrammar lacks.
-+    // TODO(CENG-1061): support length-bounded values with a byte-literal close.
++    // The bare value runs up to the value close marker that FormatProperty
++    // appends. A close that resolved to an atomic special token has its bytes
++    // masked out of byte content, so a plain run is exact. A byte-literal close
++    // sits inside the run's alphabet, so the run has to exclude it while it
++    // counts.
      if (spec.min_length != 0 || spec.max_length != -1) {
 -      std::string char_pattern = "[^]";
 -      std::string repetition;
@@ -6021,21 +6764,169 @@ index 4f1cc65..342a65f 100644
 +      if (MarkerTokenId(kValueClose) >= 0) {
 +        const std::string ch = "[^\\0-\\x1f]";
 +        return ch + RepeatExpr(spec.min_length, spec.max_length);
-       }
--      return char_pattern + repetition;
-+      XGRAMMAR_LOG(FATAL)
-+          << "unsupported minLength/maxLength on a bare XML tool-call value "
-+          << "(needs a resolved value-close marker token)";
-     }
++      }
++      return BoundedBareValue(spec.min_length, spec.max_length, rule_name);
++    }
 +    // Only an unenforceable format reaches here (freeform/pattern/length all
 +    // returned above). Refuse it rather than fall through to the quoted base rule.
 +    XGRAMMAR_LOG(FATAL) << "unsupported string format for a bare XML tool-call value: "
 +                        << *spec.format;
++  }
++  return JSONSchemaConverter::GenerateString(spec, rule_name, ctx);
++}
++
++namespace {
++
++// Every code point Python's str.strip() removes, so a parser that strips reads back exactly
++// the counted run.
++const std::vector<std::string>& EdgeWhitespace() {
++  static const std::vector<std::string> kEdges = [] {
++    std::vector<std::string> edges;
++    for (TCodepoint codepoint : {0x09,   0x0A,   0x0B,   0x0C,   0x0D,   0x1C,   0x1D,   0x1E,
++                                 0x1F,   0x20,   0x85,   0xA0,   0x1680, 0x2000, 0x2001, 0x2002,
++                                 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A,
++                                 0x2028, 0x2029, 0x202F, 0x205F, 0x3000}) {
++      edges.push_back(CharToUTF8(codepoint));
++    }
++    return edges;
++  }();
++  return kEdges;
++}
++
++std::string EdgeWhitespaceTuple() {
++  std::string result = "(";
++  for (const auto& edge : EdgeWhitespace()) {
++    if (result.size() > 1) result += ", ";
++    result += "\"" + EscapeString(edge) + "\"";
++  }
++  return result + ")";
++}
++
++}  // namespace
++
++std::string XMLToolCallingConverter::BoundedBareValue(
++    int64_t min_length, int64_t max_length, const std::string& rule_name
++) {
++  const std::string& delim = ValueCloseDelimiter();
++  auto fits = [&](int64_t max) {
++    const int64_t budget = Grammar::Impl::TagDispatch::kMaxConstrainedStates;
++    if (min_length > budget || max > budget) {
++      return false;
++    }
++    Grammar::Impl::TagDispatch dispatch;
++    dispatch.loop_after_dispatch = false;
++    dispatch.excludes = {delim};
++    dispatch.min_length = static_cast<int32_t>(min_length);
++    dispatch.max_length = static_cast<int32_t>(max);
++    dispatch.exclude_edges = EdgeWhitespace();
++    return GrammarFSMBuilder::ConstrainedTagDispatchFits(dispatch);
++  };
++  // The compiler pays one token mask per automaton state, so a bound the automaton cannot
++  // afford is refused or relaxed to the part it can.
++  if (!fits(max_length)) {
++    if (reject_unsupported_) {
++      XGRAMMAR_LOG(FATAL) << "unsupported minLength/maxLength on a bare XML tool-call value: "
++                          << "the bound is too large to enforce";
++    }
++    if (max_length != -1 && fits(-1)) {
++      XGRAMMAR_LOG(WARNING) << "maxLength " << max_length
++                            << " on a bare XML tool-call value is too large to enforce; "
++                            << "keeping only minLength " << min_length;
++      max_length = -1;
++    } else {
++      XGRAMMAR_LOG(WARNING) << "minLength/maxLength on a bare XML tool-call value are too "
++                            << "large to enforce; decoding the value unbounded";
++      return kXMLString;
++    }
++  }
++  if (min_length == 0 && max_length == -1) {
++    return kXMLString;
++  }
++  tight_value_rules_.insert(rule_name);
++  std::string result =
++      "TagDispatch(loop_after_dispatch=false, excludes=(\"" + EscapeString(delim) + "\")";
++  if (min_length > 0) {
++    result += ", min_length=" + std::to_string(min_length);
++  }
++  if (max_length != -1) {
++    result += ", max_length=" + std::to_string(max_length);
++  }
++  result += ", exclude_edges=" + EdgeWhitespaceTuple() + ")";
++  return result;
++}
++
++void XMLToolCallingConverter::PropagateTightFraming(
++    const std::string& rule_name, const std::string& body
++) {
++  // Nothing is framed tightly until a bounded value registers, which is the common case.
++  if (tight_value_rules_.empty()) {
++    return;
++  }
++  // A union with a bounded alternative is framed tightly as a whole. Its other alternatives
++  // are scalars, which a parser that keeps framing whitespace would read verbatim as well.
++  size_t i = 0;
++  while (i < body.size()) {
++    unsigned char c = static_cast<unsigned char>(body[i]);
++    if (std::isalpha(c) || c == '_') {
++      size_t j = i;
++      while (j < body.size() &&
++             (std::isalnum(static_cast<unsigned char>(body[j])) || body[j] == '_')) {
++        ++j;
++      }
++      if (tight_value_rules_.count(body.substr(i, j - i)) > 0) {
++        tight_value_rules_.insert(rule_name);
++        return;
+       }
+-      return char_pattern + repetition;
++      i = j;
++    } else if (c == '"') {
++      ++i;
++      while (i < body.size() && body[i] != '"') {
++        i += body[i] == '\\' ? 2 : 1;
++      }
++      ++i;
++    } else {
++      ++i;
+     }
    }
 -  return JSONSchemaConverter::GenerateString(spec, rule_name);
-+  return JSONSchemaConverter::GenerateString(spec, rule_name, ctx);
  }
 
++std::string XMLToolCallingConverter::GenerateRef(
++    const RefSpec& spec, const std::string& rule_name, const GenerationContext& ctx
++) {
++  std::string body = JSONSchemaConverter::GenerateRef(spec, rule_name, ctx);
++  PropagateTightFraming(rule_name, body);
++  return body;
++}
++
++std::string XMLToolCallingConverter::GenerateAnyOf(
++    const AnyOfSpec& spec, const std::string& rule_name, const GenerationContext& ctx
++) {
++  std::string body = JSONSchemaConverter::GenerateAnyOf(spec, rule_name, ctx);
++  PropagateTightFraming(rule_name, body);
++  return body;
++}
++
++std::string XMLToolCallingConverter::GenerateAllOf(
++    const AllOfSpec& spec, const std::string& rule_name, const GenerationContext& ctx
++) {
++  // A single schema is generated under this rule's own name, so a bounded value in it
++  // registers the rule that FormatProperty sees.
++  if (spec.schemas.size() == 1) {
++    return GenerateFromSpec(spec.schemas[0], rule_name, ctx);
++  }
++  return JSONSchemaConverter::GenerateAllOf(spec, rule_name, ctx);
++}
++
++std::string XMLToolCallingConverter::GenerateTypeArray(
++    const TypeArraySpec& spec, const std::string& rule_name, const GenerationContext& ctx
++) {
++  std::string body = JSONSchemaConverter::GenerateTypeArray(spec, rule_name, ctx);
++  PropagateTightFraming(rule_name, body);
++  return body;
++}
++
 +std::string XMLToolCallingConverter::GetAnyStringRuleName() const { return kXMLString; }
 +
  std::string XMLToolCallingConverter::GenerateAny(
@@ -6114,7 +7005,7 @@ index 4f1cc65..342a65f 100644
    if (nested_object_level_ <= 1) {
      const std::string& val = spec.json_value;
      if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
-@@ -202,14 +456,17 @@ std::string XMLToolCallingConverter::GenerateConst(
+@@ -202,14 +614,17 @@ std::string XMLToolCallingConverter::GenerateConst(
      }
      return "\"" + val + "\"";
    }
@@ -6134,7 +7025,7 @@ index 4f1cc65..342a65f 100644
    if (nested_object_level_ <= 1) {
      std::string result;
      for (size_t i = 0; i < spec.json_values.size(); ++i) {
-@@ -225,12 +482,13 @@ std::string XMLToolCallingConverter::GenerateEnum(
+@@ -225,12 +640,13 @@ std::string XMLToolCallingConverter::GenerateEnum(
      }
      return result;
    }
@@ -6150,7 +7041,7 @@ index 4f1cc65..342a65f 100644
    }
    return JSONSchemaConverter::FormatPropertyKey(key);
  }
-@@ -239,15 +497,16 @@ std::string XMLToolCallingConverter::FormatProperty(
+@@ -239,15 +655,16 @@ std::string XMLToolCallingConverter::FormatProperty(
      const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
  ) {
    if (nested_object_level_ <= 1) {
@@ -6175,7 +7066,7 @@ index 4f1cc65..342a65f 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +518,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +676,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -6201,7 +7092,7 @@ index 4f1cc65..342a65f 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +535,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +693,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -6271,7 +7162,7 @@ index 4f1cc65..342a65f 100644
    return result;
  }
 
-@@ -289,14 +601,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +759,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
@@ -6289,21 +7180,23 @@ index 4f1cc65..342a65f 100644
 
  }  // namespace xgrammar
 diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
-index 8d778e0..3b640ba 100644
+index 8d778e0..b4397f9 100644
 --- a/cpp/json_schema_converter_ext.h
 +++ b/cpp/json_schema_converter_ext.h
-@@ -7,8 +7,10 @@
+@@ -7,8 +7,12 @@
  #ifndef XGRAMMAR_JSON_SCHEMA_CONVERTER_EXT_H_
  #define XGRAMMAR_JSON_SCHEMA_CONVERTER_EXT_H_
 
 +#include <cstdint>
++#include <string>
  #include <unordered_map>
++#include <unordered_set>
  #include <utility>
 +#include <vector>
 
  #include "json_schema_converter.h"
 
-@@ -30,7 +32,13 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -30,7 +34,14 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
        std::optional<int> max_whitespace_cnt,
        RefResolver ref_resolver = nullptr,
        JSONFormat json_format = JSONFormat::kQwenXML,
@@ -6314,11 +7207,12 @@ index 8d778e0..3b640ba 100644
 +      std::string additional_bare_key_terminal = "",
 +      std::string bare_key_pattern_forbidden = "",
 +      std::vector<int32_t> xml_marker_token_ids = {},
-+      std::string xml_tag_prefix = ""
++      std::string xml_tag_prefix = "",
++      bool reject_unsupported = false
    );
 
    /*! \brief Convert SchemaSpec to EBNF with XML format for root object. Note that this function is
-@@ -39,14 +47,25 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -39,14 +50,39 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
 
   protected:
    // Override methods for XML format
@@ -6342,6 +7236,20 @@ index 8d778e0..3b640ba 100644
 +  ) override;
 +  std::string GenerateEnum(
 +      const EnumSpec& spec, const std::string& rule_name, const GenerationContext& ctx
++  ) override;
++  // The wrapper generators are overridden only to carry a bounded value's tight framing
++  // up to the rule FormatProperty sees.
++  std::string GenerateRef(
++      const RefSpec& spec, const std::string& rule_name, const GenerationContext& ctx
++  ) override;
++  std::string GenerateAnyOf(
++      const AnyOfSpec& spec, const std::string& rule_name, const GenerationContext& ctx
++  ) override;
++  std::string GenerateAllOf(
++      const AllOfSpec& spec, const std::string& rule_name, const GenerationContext& ctx
++  ) override;
++  std::string GenerateTypeArray(
++      const TypeArraySpec& spec, const std::string& rule_name, const GenerationContext& ctx
    ) override;
 -  std::string GenerateAny(const AnySpec& spec, const std::string& rule_name) override;
 -  std::string GenerateArray(const ArraySpec& spec, const std::string& rule_name) override;
@@ -6350,7 +7258,7 @@ index 8d778e0..3b640ba 100644
 
    // Override format hooks
    std::string FormatPropertyKey(const std::string& key) override;
-@@ -65,9 +84,13 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -65,9 +101,13 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
 
    std::string GetKeyPattern() const override;
    std::string GetBasicAnyRuleName() const override;
@@ -6365,7 +7273,7 @@ index 8d778e0..3b640ba 100644
 
    std::string NextSeparator(bool is_end = false) override;
 
-@@ -76,13 +99,21 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -76,13 +116,21 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    void AddCache(const std::string& key, const std::string& value) override;
    std::optional<std::string> GetCache(const std::string& key) const override;
 
@@ -6388,7 +7296,7 @@ index 8d778e0..3b640ba 100644
    };
 
    static const std::unordered_map<JSONFormat, XMLWrapper> kKeyWrapperMap;
-@@ -90,10 +121,53 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -90,10 +138,73 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    static const std::string kXMLAny;
    static const std::string kXMLObject;
    static const std::string kXMLVariableName;
@@ -6414,6 +7322,20 @@ index 8d778e0..3b640ba 100644
 +      const std::string& key_close,
 +      const std::string& value_rule
 +  ) const;
++
++  // Rule body for a bare value with a byte-literal close and a length bound: the close
++  // delimiter excluded, the length counted, and no whitespace at either edge. Registers
++  // rule_name for tight framing. Falls back to what the state budget allows.
++  std::string BoundedBareValue(int64_t min_length, int64_t max_length, const std::string& rule_name);
++
++  // Marks rule_name for tight framing when body, an alias or a union of rules, reaches a
++  // rule already marked.
++  void PropagateTightFraming(const std::string& rule_name, const std::string& body);
++
++  // The byte literal that begins a bare value's close, and so the delimiter a
++  // bare-value run must not reach. Empty for a style whose close resolved to an
++  // atomic marker token instead.
++  const std::string& ValueCloseDelimiter() const;
 +
 +  std::string OpenTag(const std::string& tag) const;
 +  std::string CloseTag(const std::string& tag) const;
@@ -6441,6 +7363,12 @@ index 8d778e0..3b640ba 100644
 +
 +  const std::string xml_tag_prefix_;
 +  std::string xml_tag_prefix_literal_;
++  // Whether a bound the automaton cannot afford is refused rather than relaxed.
++  const bool reject_unsupported_;
++  // Value rules whose length bound covers exactly the bytes between the markers. They are
++  // framed with no whitespace, since a parser that keeps framing whitespace would read it as
++  // part of the value.
++  std::unordered_set<std::string> tight_value_rules_;
  };
 
  }  // namespace xgrammar
@@ -7722,6 +8650,19 @@ index decb412..acf1f66 100644
  inline std::string CharToUTF8(TCodepoint codepoint) {
    XGRAMMAR_DCHECK(codepoint <= 0x10FFFF) << "Invalid codepoint: " << codepoint;
    std::string utf8;
+diff --git a/cpp/support/json_serializer.h b/cpp/support/json_serializer.h
+index d2f78ed..389b3be 100644
+--- a/cpp/support/json_serializer.h
++++ b/cpp/support/json_serializer.h
+@@ -62,7 +62,7 @@ class SerializeVersion {
+    * \brief The current serialization version. When the serialization result of any object in
+    * XGrammar is changed, this version should be bumped.
+    */
+-  static constexpr const char kXGrammarSerializeVersion[] = "v14";
++  static constexpr const char kXGrammarSerializeVersion[] = "v15";
+ };
+
+ /*!
 diff --git a/cpp/tokenizer_info.cc b/cpp/tokenizer_info.cc
 index 24f5d27..f1406b3 100644
 --- a/cpp/tokenizer_info.cc

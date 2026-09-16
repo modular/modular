@@ -34,7 +34,10 @@ This version is still a work in progress.
   `--host` is now exposed for both paths and defaults `max serve --cascade` to
   `0.0.0.0`, matching `max serve`, instead of the Cascade entrypoint's
   `localhost` default.
-
+- Promoted pytree utilities out of experimental to stable `max.tree`.
+- Added the public `Tree` type alias in `max.tree` for nested pytree values.
+  Layer subgraph inputs are annotated with `Tree[Any]` instead of the
+  removed `SubgraphInput` alias.
 - Hardened decoding of client-supplied images. `Image.open` is now restricted
   to an explicit format allowlist (PNG, JPEG, WEBP, GIF, BMP, PPM, TIFF, TGA,
   and AVIF where the platform provides it), shrinking the native-decoder attack
@@ -60,6 +63,20 @@ This version is still a work in progress.
   image-count distribution table (and a decoded image-long-side-pixel table)
   when a workload has images. See the
   [image mixing quick-start guide](https://github.com/modular/modular/blob/main/max/python/max/benchmark/benchmarking_mixed_images.md).
+- `max benchmark`'s `--response-format` now reaches multi-turn workloads, which
+  previously logged a warning and dropped it. A constrained request or turn runs
+  without `ignore_eos`: a schema-shaped response ends where its schema is
+  satisfied, and generating past that point makes the server drop enforcement
+  for the remainder of the request. A chat session's running prompt length now
+  charges what each turn actually generated rather than the length it drew.
+- `max benchmark`'s `--response-format` now applies to a share of traffic rather
+  than all of it: `--response-format-fraction` (default 1.0) sets the fraction
+  of requests, or of eligible user turns, that are constrained, and
+  `--response-format-turn` (`every`, `first`, `last`) chooses which turns of a
+  chat session are eligible. The fraction is drawn per request and per turn, so
+  at the default `every` it lands directly on the share of requests that set
+  `response_format`; `first` and `last` narrow eligibility to one turn per
+  session, so the realized request share is correspondingly lower.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an
@@ -68,6 +85,11 @@ This version is still a work in progress.
   approximated with a parametric shape like `N`/`U`/`LN`. The `:weight`
   suffix is optional per entry (uniform when omitted), and weights don't need
   to sum to 1.
+- Added `DeviceContext.wrap_host_memory()` (Mojo): makes a caller-owned host
+  range device-accessible for as long as the returned `DeviceBuffer` lives. It
+  grants access, not ownership, and the range must be addressed through that
+  buffer rather than through the pointer passed in. CUDA, HIP and Metal only;
+  Metal also requires a page-aligned base and a page-multiple length.
 
 ### Inference server
 
@@ -81,6 +103,16 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- Added counters for how much traffic uses tool calling and structured
+  output: `maxserve.tool_call.requests` (the request declared tools, tagged
+  `choice`), `maxserve.tool_call.responses` (its response actually contained
+  a tool call), and `maxserve.structured_output.requests` (tagged `kind`).
+  The first two together show how often a declared tool inventory is used.
+- Added `maxserve.tool_call.tools_per_request`, a histogram of how many tools
+  a request declared. Tool schemas are rendered into the prompt, so this is
+  the explanatory variable behind a client's prompt length and grammar
+  compile cost.
+
 ### `max` CLI
 
 ### Python API
@@ -88,6 +120,14 @@ This version is still a work in progress.
 ### C API
 
 ## Kernels and GPU programming
+
+- Added `max.nn.kernels.keyed_uniform`, which draws one uniform value in
+  `[0, 1)` per row of a seed tensor. Every row is its own Philox key, so a
+  row's value is a function of its seed alone, not of the row's position or of
+  what else shares the launch. `ops.random.uniform` keys the whole tensor off
+  index 0 of the graph seed and walks the flat element index as its Philox
+  counter, so it cannot express that. Speculative decoding's accept coin uses
+  it to draw one uniform per (request, draft position).
 
 ## Breaking changes
 
@@ -100,6 +140,19 @@ This version is still a work in progress.
   external KV-cache connector is in use.
 
 ## Fixes
+
+- Fixed sampled tokens depending on which batch slot a request occupied. Every
+  draw from the fused token sampler — ordinary decode as well as speculative
+  verification — mixed the physical batch position into its RNG counter, so a
+  request that was preempted and re-admitted into a different slot, or that
+  simply shared a step with a different set of requests, drew a different token
+  from an unchanged seed. A request's RNG key is now derived from a stable hash
+  of its request id together with its own seed and generated-token count, and
+  the batch position no longer reaches the sampler at all. No distribution
+  changes, but the exact token emitted for a given seed does move, so output
+  pinned against a previous build will differ. Requests that pass the same
+  `seed` stay independent of one another, which was previously true only on one
+  of the three sampling routes.
 
 - Fixed the tiered KV cache connector leaking its `max_kv_tiered_*` disk
   offload directory on almost every shutdown. Deleting it relied on the model

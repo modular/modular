@@ -184,6 +184,19 @@ async def chat_session_driver(
         request_func_input.prompt = message_history
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
+        # Reassigned every turn, not just when set: one RequestFuncInput is
+        # reused for the whole session, so a constrained turn would otherwise
+        # constrain every turn after it.
+        turn_response_format = messages[content_idx].response_format
+        request_func_input.response_format = turn_response_format
+        # A constrained turn must let the grammar's stop token end it.
+        # Generating past a satisfied grammar makes the matcher reject the next
+        # token, and the server then disables enforcement for the rest of the
+        # request -- the turn would be reported as constrained while running
+        # mostly unconstrained. A schema-shaped response ends when the schema is
+        # satisfied anyway, so its length is the schema's to decide rather than
+        # the workload's output-length distribution. Ref DISTINF-499.
+        request_func_input.ignore_eos = turn_response_format is None
 
         if not applied_initial_sleep:
             applied_initial_sleep = True
@@ -237,6 +250,9 @@ async def chat_session_driver(
             # compare each measured turn against the previous one in-session.
             response.session_id = str(chat_session.id)
             response.turn_index = len(session_outputs)
+            response.response_format_constrained = (
+                turn_response_format is not None
+            )
             session_outputs.append(response)
 
         if not response.success:
@@ -253,7 +269,12 @@ async def chat_session_driver(
                 content=[TextContentBlock(text=response.generated_text)],
             )
         )
-        chat_len += output_len
+        # What the turn actually produced, not what it drew: a constrained turn
+        # stops at schema completion, so charging the drawn length would report
+        # a prompt_len the next turn never sends and compound it down the
+        # session. Falls back to the draw when the server reports no usage,
+        # which is exact for an ignore_eos turn.
+        chat_len += response.server_token_stats.completion_tokens or output_len
 
         if next_delay_ms := messages[content_idx + 1].delay_until_next_message:
             sleep_s = next_delay_ms / 1000

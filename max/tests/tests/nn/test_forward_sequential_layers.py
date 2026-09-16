@@ -29,7 +29,11 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    PagedCacheValues,
+    packed_page_stride,
+)
 from max.nn.layer import Module
 from max.nn.transformer import forward_sequential_layers
 
@@ -283,6 +287,7 @@ def test_structured_kv_collection_input(use_subgraphs: bool) -> None:
         kv_collections = [
             PagedCacheValues(
                 kv_blocks=main_graph.inputs[1].buffer,
+                page_stride=packed_page_stride(main_graph.inputs[1].buffer),
                 cache_lengths=main_graph.inputs[2].tensor,
                 lookup_table=main_graph.inputs[3].tensor,
                 max_prompt_length=main_graph.inputs[4].tensor,

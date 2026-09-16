@@ -329,6 +329,10 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     # retention can group/order turns within a session. None for single-turn.
     session_id: str | None = None
     turn_index: int | None = None
+    # Whether this request carried a response_format. Set by the driver, which
+    # is the last place holding both the input and the output -- metrics see
+    # only the outputs.
+    response_format_constrained: bool = False
 
 
 @dataclass

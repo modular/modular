@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -39,10 +40,7 @@ from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-)
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
     QuantizedMoE,
@@ -313,14 +311,16 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
             batch_context_lengths_tensor = batch_context_lengths[0]
 
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(kv_collections, KVCacheInputs)
+        kv_collections = tree.leaves(
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
+        )
 
         # Combine the per-device upstream KV collections into a single
         # mesh-distributed PagedCacheValues (one shard per device).
         if mesh is not None:
             kv_collection = PagedCacheValues.from_upstream(
-                kv_collections.inputs,
+                kv_collections,
                 PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
             )
         else:

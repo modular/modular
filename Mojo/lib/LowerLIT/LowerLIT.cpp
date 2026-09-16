@@ -407,6 +407,21 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   func.erase();
 }
 
+/// Capture the type of each `@__annotation` value as a type value, the same
+/// shape struct field types use. Stored alongside the values, it lowers into
+/// the KGEN type domain and so keeps the nominal type that lowering the value
+/// itself flattens away.
+static KGEN::ParameterExprArrayAttr
+annotationTypeValues(KGEN::ParameterExprArrayAttr annotations, Type typeType) {
+  if (!annotations || annotations.empty())
+    return {};
+  SmallVector<TypedAttr> types;
+  types.reserve(annotations.size());
+  for (TypedAttr value : annotations.getValue())
+    types.push_back(TypeParamAttr::get(value.getType(), typeType));
+  return KGEN::ParameterExprArrayAttr::get(annotations.getContext(), types);
+}
+
 LogicalResult
 LITLowerer::lowerStructDecl(StructDeclOp structDecl,
                             Block::iterator mainSymbolTablePosIter) {
@@ -443,6 +458,9 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 
   // Collect the struct fields.
   SmallVector<StructDefFieldAttr> fieldDecls;
+  SmallVector<Attribute> fieldAnnotations;
+  SmallVector<Attribute> fieldAnnotationTypes;
+  bool hasFieldAnnotations = false;
   for (auto [idx, field] : llvm::enumerate(structDecl.getFieldDecls())) {
     info.fields.emplace_back(field.getNameAttr(), field.getType());
     structDecls.fieldIndices.try_emplace({structName, field.getNameAttr()},
@@ -450,6 +468,18 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
     TypedAttr fieldTypeValue = TypeParamAttr::get(field.getType(), typeType);
     fieldDecls.push_back(
         StructDefFieldAttr::get(field.getNameAttr(), fieldTypeValue));
+
+    ParameterExprArrayAttr annotations = field.getAnnotationsAttr();
+    hasFieldAnnotations |= annotations && !annotations.empty();
+    fieldAnnotations.push_back(
+        annotations ? annotations : ParameterExprArrayAttr::get(ctx, {}));
+    // Must stay parallel with `fieldAnnotations`, and must not hold a null:
+    // a null element makes the attribute walker and its replacement disagree
+    // on the element count.
+    KGEN::ParameterExprArrayAttr types =
+        annotationTypeValues(annotations, typeType);
+    fieldAnnotationTypes.push_back(
+        types ? types : KGEN::ParameterExprArrayAttr::get(ctx, {}));
   }
 
   // Create struct-generator.
@@ -466,9 +496,14 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       structName, paramNames, paramValues, fieldDecls, info.isMemoryOnlyAttr);
 
   OpBuilder b(structDecl->getContext());
+  ParameterExprArrayAttr structAnnotations = structDecl.getAnnotationsAttr();
   auto structGen = StructGeneratorOp::create(
       b, info.loc, structName, /*sym_visibility=*/nullptr, info.decls,
-      structInstType, typeType);
+      structInstType, typeType, structAnnotations,
+      annotationTypeValues(structAnnotations, typeType),
+      hasFieldAnnotations ? ArrayAttr::get(ctx, fieldAnnotations) : nullptr,
+      hasFieldAnnotations ? ArrayAttr::get(ctx, fieldAnnotationTypes)
+                          : nullptr);
   Block *structGenBody = b.createBlock(&structGen.getRegion());
 
   for (Operation &member : llvm::make_early_inc_range(

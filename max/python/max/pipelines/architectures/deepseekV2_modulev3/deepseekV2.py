@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 import math
 
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -32,7 +33,7 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -212,8 +213,9 @@ class DeepseekV2(Module[..., tuple[Tensor, ...]]):
     ) -> tuple[Tensor, ...]:
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(symbolic_inputs, KVCacheInputs)
-        kv_collections = symbolic_inputs.inputs
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
+        )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )

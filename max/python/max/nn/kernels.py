@@ -478,21 +478,29 @@ def store_k_scale_cache_ragged(
         raise ValueError(
             "kv_collection.kv_scales is None, expected a buffer value"
         )
+    if kv_collection.scales_page_stride is None:
+        raise ValueError(
+            "kv_collection.scales_page_stride is None, expected a tensor value"
+        )
+    if kv_collection.scales_lookup_table is None:
+        raise ValueError(
+            "kv_collection.scales_lookup_table is None, expected a tensor value"
+        )
     ops.inplace_custom(
         "mo.kv_cache.store_k_scales.paged.ragged",
         device=x_k_scale.device,
         values=[
             x_k_scale,
             kv_collection.kv_blocks,
-            kv_collection.values_page_stride(),
+            kv_collection.page_stride,
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             input_row_offsets,
             kv_collection.max_prompt_length,
             kv_collection.max_cache_length,
             kv_collection.kv_scales,
-            kv_collection.scales_page_stride(),
-            kv_collection.scales_lookup_table or kv_collection.lookup_table,
+            kv_collection.scales_page_stride,
+            kv_collection.scales_lookup_table,
             layer_idx,
         ],
         parameters={
@@ -548,7 +556,7 @@ def _rope_split_store_ragged_unfused(
 
     # Store K and V to cache individually.
     kv_blocks = kv_collection.kv_blocks
-    page_stride = kv_collection.values_page_stride()
+    page_stride = kv_collection.page_stride
     cache_lengths = kv_collection.cache_lengths
     lookup_table = kv_collection.lookup_table
     max_prompt_length = kv_collection.max_prompt_length
@@ -2423,7 +2431,7 @@ def kv_cache_store_paged_ragged(
         values=[
             x_cache,
             kv_collection.kv_blocks,
-            kv_collection.values_page_stride(),
+            kv_collection.page_stride,
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             input_row_offsets,
@@ -2511,7 +2519,7 @@ def kv_cache_store_paged_padded(
         values=[
             x_cache,
             kv_collection.kv_blocks,
-            kv_collection.values_page_stride(),
+            kv_collection.page_stride,
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             valid_lengths,
@@ -4258,6 +4266,9 @@ def flare_mla_decode_ragged_scaled(
     else:
         output_last_dim = input.shape[2] - qk_rope_dim
 
+    # Scales arrive out of band (kv_scales/q_scales), so the collection itself
+    # is unquantized and the scale ops index by the values' lookup table.
+    assert kv_collection.kv_scales is None
     return ops.inplace_custom(
         "mo.mla.decode.ragged.paged.scaled",
         device=input.device,
@@ -4266,7 +4277,7 @@ def flare_mla_decode_ragged_scaled(
             input_row_offsets,
             *kv_collection.flatten_without_attention_dispatch_metadata(),
             kv_scales,
-            kv_collection.scales_lookup_table or kv_collection.lookup_table,
+            kv_collection.lookup_table,
             q_scales,
             layer_idx,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -9951,6 +9962,46 @@ def topk_topp_masked_probs(
     )[0].tensor
 
 
+def keyed_uniform(seed: TensorValue) -> TensorValue:
+    """Draws one uniform value in ``[0, 1)`` per row, keyed off that row's seed.
+
+    :func:`max.graph.ops.random.uniform` reads index 0 of the graph's seed
+    tensor and walks the flat element index as its Philox counter, so one
+    stream covers the whole tensor. Here each row is its own Philox key: rows
+    with equal seeds draw equal values, and a row's draw never depends on how
+    many rows share the launch or on where it sits among them.
+
+    Args:
+        seed: RNG seed per drawn value, uint64, of any shape.
+
+    Returns:
+        The drawn values, ``float32``, shaped like ``seed``.
+
+    Raises:
+        ValueError: If the seed is not a uint64 tensor.
+    """
+    if seed.dtype != DType.uint64:
+        raise ValueError(
+            f"keyed_uniform requires a uint64 seed, got {seed.dtype}"
+        )
+
+    # The kernel keys one Philox stream per row of a flat tensor. Flattening
+    # around it lets a caller keep the shape its seeds already have, which for
+    # the speculative accept coin is one seed per (request, draft position).
+    flat = seed if seed.rank == 1 else ops.reshape(seed, [-1])
+    drawn = ops.custom(
+        "sampler.keyed_uniform",
+        device=flat.device,
+        values=[flat],
+        out_types=[
+            TensorType(
+                dtype=DType.float32, shape=[flat.shape[0]], device=flat.device
+            )
+        ],
+    )[0].tensor
+    return drawn if seed.rank == 1 else ops.reshape(drawn, seed.shape)
+
+
 def gumbel_argmax_from_probs(
     probs: TensorValue, *, seed: TensorValue
 ) -> TensorValue:
@@ -11271,13 +11322,13 @@ def latent_sparse_attention_ragged(
             comp_indices,
             attn_sink,
             swa_collection.kv_blocks,
-            swa_collection.values_page_stride(),
+            swa_collection.page_stride,
             swa_collection.cache_lengths,
             swa_collection.lookup_table,
             swa_collection.max_prompt_length,
             swa_collection.max_cache_length,
             comp_collection.kv_blocks,
-            comp_collection.values_page_stride(),
+            comp_collection.page_stride,
             comp_collection.cache_lengths,
             comp_collection.lookup_table,
             comp_collection.max_prompt_length,

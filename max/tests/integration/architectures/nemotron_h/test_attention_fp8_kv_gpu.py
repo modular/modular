@@ -36,6 +36,7 @@ from typing import NamedTuple
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -167,7 +168,7 @@ def _build_attention(
         input_types=(input_type, input_row_offsets_type, *flattened_kv_types),
     ) as graph:
         x, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         graph.output(
             attention(
@@ -199,7 +200,7 @@ def _execute(
             Buffer.from_numpy(np.array([0, SEQ_LEN], dtype=np.uint32)).to(
                 device
             ),
-            *kv_runtime_inputs.flatten(),
+            *tree.leaves(kv_runtime_inputs),
         )[0]
     finally:
         kv_manager.release(batch[0])

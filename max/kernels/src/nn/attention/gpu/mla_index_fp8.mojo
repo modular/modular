@@ -640,6 +640,10 @@ def mla_indexer_ragged_float8_paged[
                 type_of(input_row_offsets.as_immut()).LayoutType,
                 num_heads,
                 depth,
+                OutputEngine=type_of(scores_tile).Engine,
+                QEngine=type_of(q).Engine,
+                QSEngine=type_of(q_s).Engine,
+                VLEngine=type_of(input_row_offsets.as_immut()).Engine,
             ]
 
             ctx.enqueue_function[kernel](

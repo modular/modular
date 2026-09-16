@@ -1,15 +1,25 @@
-:title: max.experimental.tree_utils
+:title: max.tree
 :type: module
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.experimental.tree_utils
-===========================
+max.tree
+========
 
-.. automodule:: max.experimental.tree_utils
+.. automodule:: max.tree
    :no-members:
 
-.. currentmodule:: max.experimental.tree_utils
+.. currentmodule:: max.tree
+
+Declare a node
+--------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   dataclass
 
 Flatten and rebuild
 -------------------

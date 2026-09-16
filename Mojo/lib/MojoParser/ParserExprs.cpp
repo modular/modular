@@ -1443,8 +1443,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
       copyArrayRef<ParsedArgument>(fnSignature.resultArg)[0],
-      fnSignature.effects, fnSignature.isThin,
-      fnSignature.isExperimentalParamTrait, fnSignature.thrownTypeExpr,
+      fnSignature.effects, fnSignature.isThin, fnSignature.thrownTypeExpr,
       originExpr, copyArrayRef<ParsedConstraint>(paramList.bodyConstraints),
       endLoc);
   return success();

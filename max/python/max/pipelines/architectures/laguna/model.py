@@ -213,9 +213,7 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
                 next(inputs_iter).buffer for _ in range(num_devices)
             ]
 
-            num_kv_inputs = len(
-                nn_model.kv_params.get_symbolic_inputs().flatten()
-            )
+            num_kv_inputs = len(nn_model.kv_params.flattened_kv_inputs())
             kv_cache_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
             kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
 

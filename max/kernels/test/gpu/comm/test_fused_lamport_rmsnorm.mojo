@@ -160,12 +160,6 @@ def rmsnorm_test[
     # lamport_state) but each rotates its own generation flag independently.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = alloc[Scalar[dtype]](K)
     for i in range(K):
@@ -206,18 +200,18 @@ def rmsnorm_test[
         )
         init_signal_buffer(sigs_ar_devbufs[g], list_of_ctx[g])
         init_signal_buffer(sigs_fused_devbufs[g], list_of_ctx[g])
-        rank_sigs_ar[g] = (
-            sigs_ar_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
-        rank_sigs_fused[g] = (
-            sigs_fused_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs_ar = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_ar_devbufs[i])
+    )
+    var rank_sigs_fused = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_fused_devbufs[i])
+    )
+
     for g in range(ngpus):
         list_of_ctx[g].synchronize()
 
@@ -377,12 +371,6 @@ def unsynced_skew_test[
     # Separate signal buffers per kernel path -- as in `rmsnorm_test`.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
-    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = alloc[Scalar[dtype]](K)
     for i in range(K):
@@ -419,18 +407,18 @@ def unsynced_skew_test[
         )
         init_signal_buffer(sigs_ar_devbufs[g], list_of_ctx[g])
         init_signal_buffer(sigs_fused_devbufs[g], list_of_ctx[g])
-        rank_sigs_ar[g] = (
-            sigs_ar_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
-        rank_sigs_fused[g] = (
-            sigs_fused_devbufs[g]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs_ar = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_ar_devbufs[i])
+    )
+    var rank_sigs_fused = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(sigs_fused_devbufs[i])
+    )
+
     for g in range(ngpus):
         list_of_ctx[g].synchronize()
 

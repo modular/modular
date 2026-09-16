@@ -16,7 +16,7 @@
   },
   {
     "source": "/serving/(.*)",
-    "dest": "/serve/",
+    "dest": "/serve/{0}",
     "status": 302
   },
   {

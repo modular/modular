@@ -111,17 +111,17 @@ def _test_pull[
 
     # Signal buffers.
     var signal_bufs = List[DeviceBuffer[.uint8]]()
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     for i in range(ngpus):
         var sig_buf = ctxs[i].create_buffer_sync[.uint8](size_of[Signal]())
         init_signal_buffer(sig_buf, ctxs[i])
         ctxs[i].synchronize()
-        rank_sigs[i] = (
-            sig_buf.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
-        )
         signal_bufs.append(sig_buf)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_bufs[i])
+    )
 
     # Launch scatter.
     comptime for i in range(ngpus):

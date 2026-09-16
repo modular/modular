@@ -77,11 +77,7 @@ from max.pipelines.speculative.unified_graph_ops import (
 from ..dflash2_qwen3_5 import DFlash2Qwen3_5
 from ..qwen3_5.layers.gated_deltanet import GatedDeltaReplayInputs
 from ..qwen3_5.qwen3_5 import Qwen3_5, Qwen3_5LinearAttentionBlock
-from ..qwen3_5.state_cache import (
-    CONV_LEAF_ID,
-    RECURRENT_LEAF_ID,
-    linear_state_regions,
-)
+from ..qwen3_5.state_cache import linear_state_regions
 from ..unified_mtp_qwen3_5.state_rollback import (
     accepted_row_plan,
     replay_state_pools,
@@ -248,14 +244,12 @@ class UnifiedDflash2Qwen3_5(Module):
             live_recurrent_row_ids,
             shadow_span,
         )
-        # The shadow's layout is this graph's own, so its rows are built here.
-        regions = {region.leaf_id: region for region in self.state_regions}
 
+        # The shadow's layout is this graph's own, so its rows are built here.
         def shadow_leaf(
-            leaf_id: str, pool: BufferValue, device: DeviceRef
+            pool: BufferValue, device: DeviceRef
         ) -> RecurrentLeafInputs[TensorValue, BufferValue]:
             return RecurrentLeafInputs(
-                region=regions[leaf_id],
                 pool=pool,
                 # The snapshot has already put the pre-verify state here, and
                 # the verify reads and writes it in place.
@@ -265,10 +259,8 @@ class UnifiedDflash2Qwen3_5(Module):
         shadow_state = [
             RecurrentStateInputsPerDevice(
                 leaves=(
-                    shadow_leaf(CONV_LEAF_ID, shadow_conv_pools[i], devices[i]),
-                    shadow_leaf(
-                        RECURRENT_LEAF_ID, shadow_recurrent_pools[i], devices[i]
-                    ),
+                    shadow_leaf(shadow_conv_pools[i], devices[i]),
+                    shadow_leaf(shadow_recurrent_pools[i], devices[i]),
                 ),
             )
             for i in range(n_devs)

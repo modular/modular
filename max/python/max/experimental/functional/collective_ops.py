@@ -25,6 +25,7 @@ import functools
 from collections.abc import Callable
 
 from max.driver import Accelerator, Device
+from max.experimental import _validation_hooks
 from max.experimental import tensor as _experimental_tensor
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
@@ -455,6 +456,7 @@ def transfer_to(
         mesh_device = target.mesh.devices[0]
         if t.device == mesh_device:
             return t
+        _validation_hooks.device_transfer("Tensor.to()", t, mesh_device)
         return Tensor(storage=t.driver_tensor.to(mesh_device))
 
     target_p = target.to_placements()
@@ -474,6 +476,9 @@ def transfer_to(
         single = t.local_shards[0]
         with ensure_context():
             if single.real:
+                _validation_hooks.device_transfer(
+                    "Tensor.to()", single, target_mesh.devices[0]
+                )
                 buf = single.driver_tensor.to(target_mesh.devices[0])
                 single = Tensor(storage=buf)
             else:

@@ -32,6 +32,7 @@ from __future__ import annotations
 import ml_dtypes
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -159,9 +160,7 @@ def _build_graph(
             inp = inp[:, HEAD_DIM : HEAD_DIM + Q_WIDTH]
             inp = inp.reshape([inp.shape[0], NUM_Q_HEADS, HEAD_DIM])
 
-        kv_collection = kv_params.unflatten_kv_inputs(
-            iter(g.inputs[5:])
-        ).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[5:]))[0]
         q = fused_qk_rms_norm_rope_ragged(
             kv_params,
             inp,
@@ -237,7 +236,7 @@ def _run(
         _to_device(_rope_freqs(rope_dim), dtype, device),
         _to_device(gamma, dtype, device),  # q_gamma
         _to_device(gamma, dtype, device),  # k_gamma
-        *kv_rt.flatten(),
+        *tree.leaves(kv_rt),
     ]
     (result,) = model.execute(*inputs)
     assert isinstance(result, Buffer)

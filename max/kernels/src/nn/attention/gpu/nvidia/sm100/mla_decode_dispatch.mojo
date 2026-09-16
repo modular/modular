@@ -3489,6 +3489,7 @@ def launch_mla_sm100_decode_sparse[
         has_attn_sink=has_attn_sink,
         has_extra_kv=has_extra_kv,
         has_variable_topk=has_variable_topk,
+        Engine=scalar_args_buf.Engine,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Sparse kernel needs extra SMEM beyond config.smem_used:
@@ -3661,6 +3662,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         has_variable_topk=has_variable_topk,
         fold_shared_index=fold_shared_index,
         q_len_fold=q_len_fold,
+        Engine=scalar_args_buf.Engine,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond the BF16-rope sparse kernel's budget:
@@ -3821,6 +3823,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
         has_attn_sink=has_attn_sink,
         has_extra_kv=has_extra_kv,
         has_variable_topk=has_variable_topk,
+        Engine=scalar_args_buf.Engine,
     ]
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
@@ -4002,6 +4005,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         has_variable_topk=has_variable_topk,
         fold_shared_index=fold_shared_index,
         q_len_fold=q_len_fold,
+        Engine=scalar_args_buf.Engine,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond config.smem_used (unified-gather native FP8, no

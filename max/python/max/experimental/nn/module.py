@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Generic
 from max.driver import CPU, Buffer, Device, DLPackArray
 from max.engine import CompiledModel as EngineCompiledModel
 from max.engine import Model
+from max.experimental import _validation_hooks
 from max.experimental import functional as F
 from max.experimental.nn._trace_context import ModuleTraceRealizationContext
 from max.experimental.realization_context import (
@@ -152,6 +153,9 @@ class CompiledModel(Generic[_P, _R]):
                 input_slots=self._input_slots,
                 signal_buffer_count=len(self._signal_buffers),
             ) from e
+        _validation_hooks.compiled_call(
+            self._engine_model, flat_args, raw_results
+        )
         return _reconstruct_outputs(
             raw_results, self._output_slots, self._unary
         )
@@ -164,7 +168,7 @@ class CompiledModel(Generic[_P, _R]):
         all_bufs: list[Any] = list(buffers)
         all_bufs.extend(self._signal_buffers)
         try:
-            return list(self._engine_model(*all_bufs))
+            results = list(self._engine_model(*all_bufs))
         except (TypeError, ValueError) as e:
             raise engine_call_error(
                 e,
@@ -174,6 +178,8 @@ class CompiledModel(Generic[_P, _R]):
                 input_slots=self._input_slots,
                 signal_buffer_count=len(self._signal_buffers),
             ) from e
+        _validation_hooks.compiled_call(self._engine_model, all_bufs, results)
+        return results
 
 
 class _DevicePinned:

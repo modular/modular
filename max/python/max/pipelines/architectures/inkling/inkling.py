@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -34,13 +35,12 @@ from max.graph import (
 from max.nn.comm import Signals
 from max.nn.embedding import Embedding, VocabParallelEmbedding
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import make_interleaved_gated_activation_fn
 from max.nn.norm import RMSNorm
@@ -56,6 +56,7 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tree import Tree
 
 from .layers.attention import InklingAttention, log_scaling_tau
 from .layers.moe import InklingGate, InklingMoE
@@ -322,14 +323,13 @@ def _subgraph_layer_groups(
 
 
 def kv_collections_by_key(
-    tree: MultiKVCacheInputs[TensorValue, BufferValue],
+    kv_tree: Mapping[str, object],
 ) -> dict[str, list[PagedCacheValues]]:
     """Groups an unflattened KV tree by attention flavor, then by rank."""
-    collections: dict[str, list[PagedCacheValues]] = {}
-    for key, child in tree.children.items():
-        assert isinstance(child, KVCacheInputs)
-        collections[key] = list(child.inputs)
-    return collections
+    return {
+        key: tree.leaves(child, leaf=KVCacheInputsPerDevice)
+        for key, child in kv_tree.items()
+    }
 
 
 class Inkling(Module):
@@ -493,7 +493,7 @@ class Inkling(Module):
 
         def inputs_for_layer(
             layer_idx: int, previous: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        ) -> list[Tree[Any]]:
             return [
                 previous,
                 kv_collections[self.layer_kv_keys[layer_idx]],

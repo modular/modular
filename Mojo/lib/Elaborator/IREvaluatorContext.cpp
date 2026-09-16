@@ -851,7 +851,7 @@ FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part,
                                                              bool reset) {
   // Get the two parts of the struct, StructExtract will fold.
   TypedAttr lengthAttr = StructExtractAttr::get(part, 1);
-  ErrorOr<int64_t> lengthOr = POP::getScalarIndexValue(lengthAttr);
+  ErrorOr<int64_t> lengthOr = getScalarIndexValue(lengthAttr);
   if (lengthOr.isError()) {
     emitError(
         {*errorLoc,

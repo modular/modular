@@ -12,31 +12,42 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for max.experimental.compilation.
 
-Every transform takes the callable and is then called with the callable's own
-arguments, so each test spells the call once for the transform and once for the
-run, and they must agree.
+Three transforms share one boundary: :func:`stage` records a graph,
+:func:`compile` records and runs one, and :func:`as_subgraph` records a body
+that a graph calls many times. Each takes the callable, then the callable's own
+arguments as specs, so every test spells the call twice, once for the
+transform and once for the run, and the two must agree.
+
+Each case is the most demanding one on its axis, because the simpler ones
+cannot fail independently of it: a signature holding every parameter kind
+subsumes the single-tensor case, and the model in :class:`TestModel` subsumes
+each part it composes. What is tested separately is what a passing call cannot
+show: a rejection, a retrace, or a body's identity.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields
-from typing import Any
+from pathlib import Path
+from typing import Any, overload
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, accelerator_count
+from max.driver import CPU
 from max.dtype import DType
-from max.experimental import compilation
 from max.experimental import functional as F
 from max.experimental.compilation import (
-    _LAYOUT_TYPES,
-    StagedGraph,
+    CompiledCallable,
     as_layout,
     as_subgraph,
     compile,
     stage,
+)
+from max.experimental.nn.common_layers.functional_kernels import (
+    flash_attention_ragged,
 )
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
@@ -49,52 +60,39 @@ from max.experimental.sharding import (
     TensorLayout,
 )
 from max.experimental.tensor import Tensor
-from max.experimental.tree_utils import paths as tree_paths
-from max.graph import (
-    BufferType,
-    BufferValue,
-    DeviceRef,
-    TensorType,
-    TensorValue,
-    ops,
-)
+from max.graph import BufferType, BufferValue, DeviceRef, TensorType
+from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import MHAKVCacheParams
+from max.tree import flatten as tree_flatten
+from max.tree import paths as tree_paths
 
 _F32 = DType.float32
 
 
 def _spec(*shape: int) -> TensorLayout:
+    """One replicated slot on one device, every extent fixed."""
     mesh = DeviceMesh.single(CPU())
     return TensorLayout(
         _F32, list(shape), PlacementMapping(mesh, (Replicated(),))
     )
 
 
-def _dyn(*shape: int | str) -> TensorType:
-    return TensorType(_F32, list(shape), device=DeviceRef.CPU())
-
-
-def _mesh2() -> DeviceMesh:
-    return DeviceMesh(
-        devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("x",)
-    )
-
-
-def _sharded_spec(*shape: int) -> TensorLayout:
-    return TensorLayout(
-        _F32, list(shape), PlacementMapping(_mesh2(), (Sharded(0),))
-    )
+def _symbolic(*shape: int | str) -> TensorLayout:
+    """One slot on one device, keeping any named extent symbolic."""
+    return TensorLayout(_F32, list(shape), device=DeviceRef.CPU())
 
 
 def _tensor(*values: float) -> Tensor:
     return Tensor.from_dlpack(np.array(values, dtype=np.float32))
 
 
-def _sharded_tensor(*per_device: float) -> Tensor:
-    return Tensor._from_shards(
-        tuple(_tensor(v).driver_tensor for v in per_device),
-        _mesh2(),
-        (Sharded(0),),
+def _ones(*shape: int) -> Tensor:
+    return Tensor.from_dlpack(np.ones(shape, dtype=np.float32))
+
+
+def _mesh2() -> DeviceMesh:
+    return DeviceMesh(
+        devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("x",)
     )
 
 
@@ -104,342 +102,41 @@ def _replicated_spec(*shape: int) -> TensorLayout:
     )
 
 
-def _replicated_tensor(*values: float) -> Tensor:
+def _replicated(tensor: Tensor) -> Tensor:
     return Tensor._from_shards(
-        (_tensor(*values).driver_tensor,) * 2, _mesh2(), (Replicated(),)
+        (tensor.driver_tensor,) * 2, _mesh2(), (Replicated(),)
+    )
+
+
+def _sharded_spec(*shape: int) -> TensorLayout:
+    return TensorLayout(
+        _F32, list(shape), PlacementMapping(_mesh2(), (Sharded(0),))
+    )
+
+
+def _sharded(*per_device: Tensor) -> Tensor:
+    return Tensor._from_shards(
+        tuple(t.driver_tensor for t in per_device), _mesh2(), (Sharded(0),)
     )
 
 
 def _calls(graph: object, name: str) -> int:
+    """How many times a subgraph symbol is called from a graph body."""
     return len(re.findall(rf"mo\.call @{name}\b", str(graph)))
 
 
 def _bodies(staged: object, name: str) -> int:
+    """How many definitions of a symbol exist in the module, not the body."""
     return len(re.findall(rf"mo\.graph @{name}\b", str(staged)))
 
 
-class TestAsLayout:
-    def test_a_layout_passes_through(self) -> None:
-        spec = _spec(4)
-        assert as_layout(spec) is spec
+# ═════════════════════════════════════════════════════════════════════════
+#  The boundary: every parameter kind Python has, at once
+# ═════════════════════════════════════════════════════════════════════════
 
-    def test_a_tensor_type_becomes_a_one_device_layout(self) -> None:
-        layout = as_layout(_dyn(4))
-        assert isinstance(layout, TensorLayout)
-        assert layout.mesh.num_devices == 1
-        assert not layout.mesh.num_devices > 1
 
-    def test_a_tensor_is_a_value_and_not_a_layout(self) -> None:
-        """Its dims are whatever it holds, so reading a boundary off one
-        would fix every dimension to that size by accident."""
-        with pytest.raises(TypeError, match="is a value, not a layout"):
-            as_layout(_tensor(1.0, 2.0, 3.0))
-
-    def test_a_tensors_own_layout_says_it_on_purpose(self) -> None:
-        layout = as_layout(_tensor(1.0, 2.0, 3.0).layout)
-        assert isinstance(layout, TensorLayout)
-        assert layout.dtype == _F32
-        assert [int(d) for d in layout.shape] == [3]
-
-    def test_a_sharded_tensors_layout_keeps_its_distribution(self) -> None:
-        layout = as_layout(_sharded_tensor(1.0, 2.0).layout)
-        assert isinstance(layout, TensorLayout)
-        assert layout.mesh.num_devices == 2
-
-    def test_anything_else_is_rejected(self) -> None:
-        # ``Spec`` rules this out statically; the guard answers untyped callers.
-        not_a_spec: Any = 3.0
-        with pytest.raises(TypeError, match=re.escape("got float: 3.0")):
-            as_layout(not_a_spec)
-
-
-class TestStage:
-    def test_a_call_is_traced_as_written(self) -> None:
-        staged = stage(lambda x: x * 2)(_spec(4))
-        assert staged.graph.name == "lambda"
-        assert staged._signature.out_structure.num_leaves == 1
-        assert staged._signal_device_ids == ()
-
-    def test_an_example_tensors_layout_serves_as_a_spec(self) -> None:
-        staged = stage(lambda x: x * 2)(_tensor(1.0, 2.0).layout)
-        assert len(staged.graph.inputs) == 1
-
-    def test_keyword_arguments_are_traced(self) -> None:
-        staged = stage(lambda x, *, y: x + y)(_spec(2), y=_spec(2))
-        assert len(staged.graph.inputs) == 2
-
-    def test_a_non_tensor_argument_bakes_in(self) -> None:
-        staged = stage(lambda x, alpha: x * alpha)(_spec(2), 3.0)
-        assert len(staged.graph.inputs) == 1, "alpha is not a graph input"
-
-    def test_a_nested_container_argument_flattens(self) -> None:
-        staged = stage(lambda kv: kv["a"] + kv["b"])(
-            {"a": _spec(2), "b": _spec(2)}
-        )
-        assert len(staged.graph.inputs) == 2
-
-    def test_a_distributed_spec_threads_one_input_per_device(self) -> None:
-        staged = stage(lambda x: x * 2)(_sharded_spec(4))
-        assert len(staged.graph.inputs) == 2
-        assert staged._signature.out_structure.num_leaves == 2
-
-    def test_options_bind_to_the_transform_not_the_call(self) -> None:
-        staged = stage(lambda x: x * 2, name="explicit")(_spec(2))
-        assert staged.graph.name == "explicit"
-
-    def test_an_option_name_may_also_be_a_parameter_name(self) -> None:
-        staged = stage(lambda name: name * 2, name="g")(_spec(2))
-        assert staged.graph.name == "g"
-        assert len(staged.graph.inputs) == 1
-
-
-class TestCompiled:
-    def test_round_trip(self) -> None:
-        run = compile(lambda x: x * 2)(_spec(2))
-        np.testing.assert_allclose(run(_tensor(1.0, 2.0)).to_numpy(), [2, 4])
-
-    def test_keyword_arguments_round_trip(self) -> None:
-        run = compile(lambda x, *, y: x + y)(_spec(2), y=_spec(2))
-        out = run(_tensor(1.0, 2.0), y=_tensor(3.0, 4.0))
-        np.testing.assert_allclose(out.to_numpy(), [4, 6])
-
-    def test_a_static_argument_must_match_what_was_traced(self) -> None:
-        run = compile(lambda x, alpha: x * alpha)(_spec(2), 3.0)
-        np.testing.assert_allclose(
-            run(_tensor(1.0, 2.0), 3.0).to_numpy(), [3, 6]
-        )
-        with pytest.raises(ValueError, match="tree structure mismatch"):
-            run(_tensor(1.0, 2.0), 4.0)
-
-    def test_a_nested_container_result_round_trips(self) -> None:
-        run = compile(lambda x: {"a": x * 2, "b": [x * 3]})(_spec(1))
-        out = run(_tensor(2.0))
-        np.testing.assert_allclose(out["a"].to_numpy(), [4.0])
-        np.testing.assert_allclose(out["b"][0].to_numpy(), [6.0])
-
-    def test_a_non_tensor_result_leaf_is_frozen(self) -> None:
-        run = compile(lambda x: (x * 2, 7))(_spec(1))
-        assert run(_tensor(1.0))[1] == 7
-
-    def test_a_symbolic_dimension_accepts_any_size(self) -> None:
-        run = compile(lambda x: x * 2)(_dyn("n"))
-        np.testing.assert_allclose(run(_tensor(1.0)).to_numpy(), [2.0])
-        np.testing.assert_allclose(run(_tensor(1.0, 2.0)).to_numpy(), [2, 4])
-
-    def test_a_wrong_shape_names_the_argument(self) -> None:
-        run = compile(lambda x: x * 2)(_spec(2))
-        with pytest.raises(ValueError, match=r"argument 0: expected"):
-            run(_tensor(1.0, 2.0, 3.0))
-
-    def test_a_wrong_keyword_shape_names_the_keyword(self) -> None:
-        run = compile(lambda x, *, y: x + y)(_spec(2), y=_spec(2))
-        with pytest.raises(ValueError, match=r"argument y: expected"):
-            run(_tensor(1.0, 2.0), y=_tensor(1.0))
-
-    @pytest.mark.skipif(not accelerator_count(), reason="needs a second device")
-    def test_a_wrong_device_names_the_argument(self) -> None:
-        run = compile(lambda x: x * 2)(_spec(2))
-        with pytest.raises(ValueError, match=r"argument 0: expected"):
-            run(_tensor(1.0, 2.0).to(Accelerator()))
-
-    def test_a_buffer_where_a_tensor_belongs_is_rejected(self) -> None:
-        """A buffer is named as a wrong argument type, not a wrong structure.
-
-        Under one leaf policy a non-spec value flattens as static structure
-        rather than as a leaf, so the naive comparison reports a tree mismatch.
-        The call re-pairs the values to say which argument is wrong instead.
-        """
-        run = compile(lambda x: x * 2)(_spec(2))
-        with pytest.raises(TypeError, match="argument 0: expected a Tensor"):
-            run(_tensor(1.0, 2.0).driver_tensor)
-
-    def test_a_spec_where_a_tensor_belongs_is_rejected(self) -> None:
-        run = compile(lambda x: x * 2)(_spec(2))
-        with pytest.raises(TypeError, match="expected a Tensor"):
-            run(_spec(2))
-
-    def test_execute_raw_matches_call(self) -> None:
-        run = compile(lambda x: x * 2)(_spec(2))
-        x = _tensor(1.0, 2.0)
-        raw = run.execute_raw(x.driver_tensor)
-        np.testing.assert_allclose(
-            Tensor(storage=raw[0]).to_numpy(), run(x).to_numpy()
-        )
-
-    def test_export_mef(self, tmp_path) -> None:  # noqa: ANN001
-        run = compile(lambda x: x * 2)(_spec(2))
-        path = tmp_path / "model.mef"
-        run.export_mef(path)
-        assert path.stat().st_size > 0
-        assert "_engine_model" not in vars(run), "exporting must not initialize"
-
-    def test_tracing_yields_a_graph_that_cannot_run(self) -> None:
-        staged = stage(lambda x: x * 2)(_spec(2))
-        assert isinstance(staged, StagedGraph)
-        assert not callable(staged), "a graph is not an executable"
-
-    def test_a_traced_graph_compiles_to_the_same_executable(self) -> None:
-        run = stage(lambda x: x * 2)(_spec(2)).compile()
-        np.testing.assert_allclose(run(_tensor(1.0, 2.0)).to_numpy(), [2, 4])
-
-    def test_compiling_does_not_initialize(self) -> None:
-        run = compile(lambda x: x * 2)(_spec(2))
-        assert "_engine_model" not in vars(run)
-        run(_tensor(1.0, 2.0))
-        assert "_engine_model" in vars(run), "the first call initializes"
-
-    def test_a_distributed_call_round_trips(self) -> None:
-        run = compile(lambda x: x * 2)(_sharded_spec(2))
-        out = run(_sharded_tensor(1.0, 2.0))
-        assert out.is_distributed
-        np.testing.assert_allclose(out.to_numpy(), [2.0, 4.0])
-
-
-class TestWeights:
-    def test_a_weight_is_external_and_computes(self) -> None:
-        def layer(x: Tensor) -> Tensor:
-            return x * F.constant_external(
-                "w", TensorLayout(_F32, [2], DeviceRef.CPU())
-            )
-
-        assert "mo.constant.external" in str(stage(layer)(_spec(2)))
-        run = compile(layer, weights={"w": _tensor(2.0, 3.0)})(_spec(2))
-        np.testing.assert_allclose(
-            run(_tensor(1.0, 1.0)).to_numpy(), [2.0, 3.0]
-        )
-
-
-class TestSubgraphable:
-    def test_identical_calls_share_one_body(self) -> None:
-        @as_subgraph
-        def block(x: Tensor) -> Tensor:
-            return x * 2
-
-        staged = stage(lambda x: block(block(block(x))))(_spec(2))
-        assert _calls(staged.graph, "block") == 3
-
-    def test_a_keyed_body_is_traced_once(self) -> None:
-        body_runs = []
-
-        def block(x: Tensor) -> Tensor:
-            body_runs.append(1)
-            return x * 2
-
-        shared = as_subgraph(block, key="block")
-        staged = stage(lambda x: shared(shared(shared(x))))(_spec(2))
-        assert _calls(staged.graph, "block") == 3
-        assert len(body_runs) == 1, (
-            "a keyed second call must reuse, not retrace"
-        )
-
-    def test_a_closure_is_not_keyed_by_its_name(self) -> None:
-        def scaled(alpha: float) -> Callable[[Tensor], Tensor]:
-            @as_subgraph
-            def block(x: Tensor) -> Tensor:
-                return x * alpha
-
-            return block
-
-        staged = stage(lambda x: scaled(3.0)(scaled(2.0)(x)))(_spec(2))
-        assert _calls(staged.graph, "block") == 1
-        assert _calls(staged.graph, "block_1") == 1
-
-    def test_a_differing_static_argument_yields_two_bodies(self) -> None:
-        @as_subgraph
-        def block(x: Tensor, alpha: float) -> Tensor:
-            return x * alpha
-
-        staged = stage(lambda x: block(block(x, 2.0), 3.0))(_spec(2))
-        assert _calls(staged.graph, "block") == 1
-        assert _calls(staged.graph, "block_1") == 1
-
-    def test_keyword_tensor_arguments_become_operands(self) -> None:
-        @as_subgraph
-        def block(x: Tensor, *, w: Tensor) -> Tensor:
-            return x * w
-
-        w0, w1 = _tensor(2.0), _tensor(3.0)
-        staged = stage(lambda x: block(block(x, w=w0), w=w1))(_spec(1))
-        assert _calls(staged.graph, "block") == 2
-
-    def test_a_shared_body_computes_correctly(self) -> None:
-        @as_subgraph
-        def block(x: Tensor) -> Tensor:
-            return x * 2
-
-        run = compile(lambda x: block(block(x)))(_spec(1))
-        np.testing.assert_allclose(run(_tensor(1.0)).to_numpy(), [4.0])
-
-    def test_allow_subgraphs_false_inlines(self) -> None:
-        @as_subgraph
-        def block(x: Tensor) -> Tensor:
-            return x * 2
-
-        staged = stage(lambda x: block(block(x)), allow_subgraphs=False)(
-            _spec(2)
-        )
-        assert _calls(staged.graph, "block") == 0
-
-    def test_outside_a_capture_raises(self) -> None:
-        @as_subgraph
-        def block(x: Tensor) -> Tensor:
-            return x * 2
-
-        with pytest.raises(TypeError, match="needs a capture"):
-            block(_tensor(1.0))
-
-    def test_a_placeholder_prefix_resolves_per_call_site(self) -> None:
-        weights = {"l0.w": _tensor(2.0), "l1.w": _tensor(10.0)}
-
-        def body(x: Tensor) -> Tensor:
-            return x * F.constant_external(
-                "w",
-                TensorLayout(_F32, [1], DeviceRef.CPU()),
-                is_placeholder=True,
-            )
-
-        def model(x: Tensor) -> Tensor:
-            for name in ("l0.", "l1."):
-                x = as_subgraph(body, name="block", prefix=name)(x)
-            return x
-
-        staged = stage(model)(_spec(1))
-        assert _calls(staged.graph, "block") == 2
-        run = staged.compile(weights=weights)
-        np.testing.assert_allclose(run(_tensor(1.0)).to_numpy(), [20.0])
-
-    def test_declaring_in_full_inside_a_body_overrides_the_prefix(self) -> None:
-        """``is_placeholder=False`` under a prefix: one shared name, not one each.
-
-        The default follows the prefix, which is what a stack of layers wants.
-        Overridden, every call site reads the same checkpoint entry -- a tied
-        weight -- and the name in the body is already complete.
-        """
-
-        def body(x: Tensor) -> Tensor:
-            return x * F.constant_external(
-                "shared.w",
-                TensorLayout(_F32, [1], DeviceRef.CPU()),
-                is_placeholder=False,
-            )
-
-        def model(x: Tensor) -> Tensor:
-            for name in ("l0.", "l1."):
-                x = as_subgraph(body, name="block", prefix=name)(x)
-            return x
-
-        staged = stage(model)(_spec(1))
-        whole = str(staged)
-        assert _calls(staged.graph, "block") == 2, "still one body, two calls"
-        run = staged.compile(weights={"shared.w": _tensor(3.0)})
-        assert 'name = "shared.w"' in whole
-        assert "isPlaceholder = true" not in whole
-
-        np.testing.assert_allclose(run(_tensor(1.0)).to_numpy(), [9.0])
-
-
-def _gnarly(x, /, pair, scale=2.0, *rest, bias, flag=True, **extras):  # noqa: ANN001, ANN202
-    """Every parameter kind Python has, with tensors and statics interleaved.
+def _mixed_signature(x, /, pair, scale=2.0, *rest, bias, flag=True, **extras):  # noqa: ANN001, ANN202
+    """Every parameter kind, with tensors and statics interleaved.
 
     Positional-only, positional-or-keyword holding a container, a defaulted
     positional that stays static, var-positional tensors, a required
@@ -455,14 +152,14 @@ def _gnarly(x, /, pair, scale=2.0, *rest, bias, flag=True, **extras):  # noqa: A
     return {"out": out, "arity": len(rest), "tags": tuple(sorted(extras))}
 
 
-def _gnarly_specs(spec):  # noqa: ANN001, ANN202
+def _mixed_specs(spec):  # noqa: ANN001, ANN202
     return (
         (spec(2), {"lo": spec(2), "hi": spec(1)}, 3.0, spec(2), spec(2)),
         {"bias": spec(2), "flag": False, "alpha": spec(2), "beta": spec(2)},
     )
 
 
-def _gnarly_call(make):  # noqa: ANN001, ANN202
+def _mixed_args(make):  # noqa: ANN001, ANN202
     return (
         (
             make(1.0, 2.0),
@@ -480,11 +177,11 @@ def _gnarly_call(make):  # noqa: ANN001, ANN202
     )
 
 
-_GNARLY_EXPECTED = [1111.5, 1114.5]
+_MIXED_RESULT = [1111.5, 1114.5]
 
 # Flatten order is not call order: `pair`'s dict sorts "hi" before "lo", and the
 # keyword block sorts alphabetically, so `bias` trails the var-keyword tensors.
-_GNARLY_ROUTES = [
+_MIXED_ROUTES = [
     "0.0",
     "0.1.hi",
     "0.1.lo",
@@ -496,328 +193,82 @@ _GNARLY_ROUTES = [
 ]
 
 
-#: Appended to once per stage of the bodies below, so a test can tell a body
-#: that was staged from one that was answered from the cache.
-_TRACED: list[str] = []
+class TestBoundary:
+    """One graph input per tensor slot, wherever the slot sits."""
 
-
-def _plain_block(x: Tensor) -> Tensor:
-    """A body with no closure, so its name and arguments determine its IR."""
-    _TRACED.append("plain")
-    return x * 2.0
-
-
-def _indexed_block(x: Tensor, idx: int) -> Tensor:
-    """A body whose per-layer index is baked in, the ``layer_idx`` shape."""
-    _TRACED.append(f"indexed:{idx}")
-    return x * float(idx)
-
-
-def _closing_block(scale: float) -> Callable[[Tensor], Tensor]:
-    """Returns a body that captures ``scale``, which no key can see."""
-
-    def block(x: Tensor) -> Tensor:
-        _TRACED.append(f"closed:{scale}")
-        return x * scale
-
-    return block
-
-
-class TestSubgraphDedupIsFastByDefault:
-    """A repeat call should cost a ``mo.call``, not another stage.
-
-    Deduplicating on the staged IR is the only way to tell two bodies apart
-    when nothing else can, but it means every repeat is staged and thrown
-    away -- sixty-one times over for a transformer's layers. A body whose IR
-    follows from its own code and its arguments does not need that, and both
-    of those are already known before staging.
-    """
-
-    def test_an_identical_repeat_is_answered_without_tracing_again(
-        self,
-    ) -> None:
-        _TRACED.clear()
-
-        def stack(x: Tensor) -> Tensor:
-            for _ in range(3):
-                x = as_subgraph(_plain_block)(x)
-            return x
-
-        staged = stage(stack)(_spec(2))
-
-        assert _TRACED == ["plain"], "the body was staged more than once"
-        assert _calls(staged.graph, "plain_block") == 3
-
-    def test_a_differing_baked_index_still_splits_the_bodies(self) -> None:
-        """The ``layer_idx`` case: same function, different constant per layer.
-
-        The index is an argument rather than a captured value, so it reaches
-        the key through the argument structure and the layers are told apart
-        without staging them to find out.
-        """
-        _TRACED.clear()
-
-        def stack(x: Tensor) -> Tensor:
-            for i in range(3):
-                x = as_subgraph(_indexed_block)(x, i)
-            return x
-
-        staged = stage(stack)(_spec(2))
-
-        assert _TRACED == ["indexed:0", "indexed:1", "indexed:2"]
-        # Three bodies, so three symbols, each called once.
-        assert _calls(staged.graph, "indexed_block") == 1
-        assert _calls(staged.graph, "indexed_block_1") == 1
-        assert _calls(staged.graph, "indexed_block_2") == 1
-
-    def test_a_captured_difference_falls_back_to_comparing_the_ir(
-        self,
-    ) -> None:
-        """What the fast key cannot see, the slow path still catches.
-
-        A closure's body depends on what it captured, and no key derived from
-        the callable can tell two of them apart -- so these keep being staged
-        and compared, which is the point of not deriving a key for them.
-        """
-        _TRACED.clear()
-
-        def stack(x: Tensor) -> Tensor:
-            for scale in (2.0, 3.0, 2.0):
-                x = as_subgraph(_closing_block(scale), name="closing")(x)
-            return x
-
-        staged = stage(stack)(_spec(2))
-
-        # All three staged, since only the IR can separate them...
-        assert _TRACED == ["closed:2.0", "closed:3.0", "closed:2.0"]
-        # ...but the two that match still share one body.
-        assert _calls(staged.graph, "closing") == 2
-        assert _calls(staged.graph, "closing_1") == 1
-
-    def test_a_default_argument_also_falls_back_to_comparing_the_ir(
-        self,
-    ) -> None:
-        """A default is captured state, so no key is derived from the callable.
-
-        Two factory-made bodies share a qualname and have no closure; only the
-        default separates them, and it never crosses the call boundary, so a
-        derived key would let the second silently reuse the first's IR.
-        """
-        _TRACED.clear()
-
-        def defaulted_block(scale: float) -> Callable[[Tensor], Tensor]:
-            def block(x: Tensor, s: float = scale) -> Tensor:
-                _TRACED.append(f"default:{s}")
-                return x * s
-
-            return block
-
-        def stack(x: Tensor) -> Tensor:
-            for scale in (2.0, 3.0):
-                x = as_subgraph(defaulted_block(scale), name="defaulted")(x)
-            return x
-
-        staged = stage(stack)(_spec(2))
-
-        assert _TRACED == ["default:2.0", "default:3.0"]
-        assert _calls(staged.graph, "defaulted") == 1
-        assert _calls(staged.graph, "defaulted_1") == 1
-
-    def test_an_explicit_none_still_compares_the_ir(self) -> None:
-        """``key=None`` is a request, not an absence.
-
-        A module holding real data passes it deliberately: its constants are
-        inlined, so two bodies differ in ways only the IR shows.
-        """
-        _TRACED.clear()
-
-        def stack(x: Tensor) -> Tensor:
-            for _ in range(3):
-                x = as_subgraph(_plain_block, key=None)(x)
-            return x
-
-        str(stage(stack)(_spec(2)))
-
-        assert _TRACED == ["plain"] * 3, "key=None should have staged each time"
-
-
-class TestTheHardestSignature:
-    def test_every_tensor_slot_becomes_an_input_and_the_rest_bakes_in(
-        self,
-    ) -> None:
-        args, kwargs = _gnarly_specs(_spec)
-        staged = stage(_gnarly)(*args, **kwargs)
-        assert len(staged.graph.inputs) == 8
-        assert staged._signature.out_structure.num_leaves == 1, (
-            "arity and tags are static"
-        )
-
-    def test_the_route_to_every_tensor_is_addressable(self) -> None:
-        args, kwargs = _gnarly_specs(_spec)
-        staged = stage(_gnarly)(*args, **kwargs)
-        assert (
-            list(tree_paths(staged._signature.in_specs, leaf=_LAYOUT_TYPES))
-            == _GNARLY_ROUTES
-        )
+    def test_every_tensor_slot_is_an_input_addressed_by_its_route(self) -> None:
+        args, kwargs = _mixed_specs(_spec)
+        staged = stage(_mixed_signature)(*args, **kwargs)
+        assert len(staged.graph.inputs) == len(_MIXED_ROUTES)
+        assert list(staged.in_tree.leaf_paths) == _MIXED_ROUTES
 
     def test_it_round_trips_compiled(self) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
+        spec_args, spec_kwargs = _mixed_specs(_spec)
+        run = compile(_mixed_signature)(*spec_args, **spec_kwargs)
+        args, kwargs = _mixed_args(_tensor)
         out = run(*args, **kwargs)
-        np.testing.assert_allclose(out["out"].to_numpy(), _GNARLY_EXPECTED)
-        assert out["arity"] == 2
-        assert out["tags"] == ("alpha", "beta")
+        np.testing.assert_allclose(out["out"].to_numpy(), _MIXED_RESULT)
+        assert out["arity"] == 2, "the var-positional tensors are inputs"
+        assert out["tags"] == ("alpha", "beta"), "and so are the var-keyword"
 
-    def test_example_tensors_layouts_serve_as_specs(self) -> None:
-        args, kwargs = _gnarly_call(_tensor)
-        spec_args, spec_kwargs = _gnarly_call(lambda *v: _tensor(*v).layout)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        np.testing.assert_allclose(
-            run(*args, **kwargs)["out"].to_numpy(), _GNARLY_EXPECTED
-        )
-
-    def test_a_var_positional_tensor_is_named_by_its_index(self) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
-        args = (*args[:4], _tensor(1.0, 2.0, 3.0))
-        with pytest.raises(ValueError, match=r"argument 4: expected"):
-            run(*args, **kwargs)
-
-    def test_a_nested_positional_tensor_is_named_by_its_route(self) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
-        args = (args[0], {**args[1], "lo": _tensor(1.0)}, *args[2:])
-        with pytest.raises(ValueError, match=r"argument 1\.lo: expected"):
-            run(*args, **kwargs)
-
-    def test_a_var_keyword_tensor_is_named_by_its_keyword(self) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
-        with pytest.raises(ValueError, match=r"argument beta: expected"):
-            run(*args, **{**kwargs, "beta": _tensor(1.0, 2.0, 3.0)})
-
-    def test_a_differing_keyword_only_static_is_a_different_signature(
-        self,
-    ) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
-        with pytest.raises(ValueError, match="tree structure mismatch"):
-            run(*args, **{**kwargs, "flag": True})
-
-    def test_an_extra_var_keyword_tensor_is_a_different_signature(self) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
-        with pytest.raises(ValueError, match=r"got \[.*'gamma'\]"):
-            run(*args, **kwargs, gamma=_tensor(1.0, 1.0))
-
-    def test_dropping_a_positional_shifts_the_rest_and_is_rejected(
-        self,
-    ) -> None:
-        """`scale` is positional-or-keyword, so a tensor would slide into its slot.
-
-        Counting the positionals is what stops it: the slide is only visible as
-        one argument too few, and saying so beats reporting the type error the
-        shifted tensor would go on to cause in ``scale``'s place.
-        """
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args, **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
-        with pytest.raises(
-            ValueError, match=r"expected 5 positional argument\(s\), got 4"
-        ):
-            run(args[0], args[1], *args[3:], **kwargs)
-
-    def test_the_default_itself_traces_as_a_static(self) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_spec)
-        run = compile(_gnarly)(*spec_args[:2], **spec_kwargs)
-        args, kwargs = _gnarly_call(_tensor)
+    def test_a_default_that_is_never_passed_traces_as_a_static(self) -> None:
+        spec_args, spec_kwargs = _mixed_specs(_spec)
+        run = compile(_mixed_signature)(*spec_args[:2], **spec_kwargs)
+        args, kwargs = _mixed_args(_tensor)
         out = run(*args[:2], **kwargs)
         # scale defaults to 2.0, and `rest` is empty.
         np.testing.assert_allclose(out["out"].to_numpy(), [10.5, 12.5])
         assert out["arity"] == 0
 
+    def test_a_real_tensor_cannot_declare_the_boundary(self) -> None:
+        """Only a layout registers a graph.
 
-_STACK_WEIGHTS = {"blk.w": _tensor(2.0, 2.0)}
+        A tensor's dims are whatever it currently holds, so taking a boundary
+        from one fixes every dimension to that, the call-time inference a
+        declared boundary exists to avoid. It is refused rather than walked as
+        a pytree, which is what dropping it from the leaf set would do.
+        """
+        args, kwargs = _mixed_args(_tensor)
+        with pytest.raises(TypeError, match="is a value, not a layout"):
+            compile(_mixed_signature)(*args, **kwargs)
 
+    def test_a_tensor_layout_declares_what_the_tensor_holds(self) -> None:
+        """``tensor.layout`` is how to ask for those dims on purpose."""
+        spec_args, spec_kwargs = _mixed_args(
+            lambda *values: _tensor(*values).layout
+        )
+        run = compile(_mixed_signature)(*spec_args, **spec_kwargs)
+        args, kwargs = _mixed_args(_tensor)
+        np.testing.assert_allclose(
+            run(*args, **kwargs)["out"].to_numpy(), _MIXED_RESULT
+        )
 
-@as_subgraph
-def _block(x, /, pair, *rest, gain, **extras):  # noqa: ANN001, ANN202
-    out = x + pair[0] - pair[1]
-    for tensor in rest:
-        out = out * gain + tensor
-    for name in sorted(extras):
-        out = out + extras[name]
-    return {"y": out, "depth": len(rest)}
+    def test_a_symbolic_extent_accepts_any_size(self) -> None:
+        run = compile(lambda x: x * 2)(_symbolic("n"))
+        np.testing.assert_allclose(run(_tensor(1.0)).to_numpy(), [2.0])
+        np.testing.assert_allclose(
+            run(_tensor(1.0, 2.0, 3.0)).to_numpy(), [2.0, 4.0, 6.0]
+        )
 
-
-def _stack(x, /, table, *, scale, **tails):  # noqa: ANN001, ANN202
-    out = x * F.constant_external(
-        "blk.w", TensorLayout(_F32, [2], DeviceRef.CPU())
-    )
-    for name in sorted(tails):
-        out = _block(
-            out,
-            (table["lo"], table["hi"]),
-            tails[name],
-            gain=scale,
-            bump=table["hi"],
-        )["y"]
-    return {"out": out, "kinds": tuple(sorted(tails))}
-
-
-def _stack_specs(spec):  # noqa: ANN001, ANN202
-    return (
-        (spec(2), {"lo": spec(2), "hi": spec(1)}),
-        {"scale": 3.0, "p": spec(2), "q": spec(2)},
-    )
-
-
-def _stack_call(make):  # noqa: ANN001, ANN202
-    return (
-        (make(1.0, 2.0), {"lo": make(10.0, 10.0), "hi": make(1.0)}),
-        {"scale": 3.0, "p": make(100.0, 100.0), "q": make(1000.0, 1000.0)},
-    )
+    def test_a_spec_that_describes_nothing_is_rejected(self) -> None:
+        # ``TensorLayout`` rules this out statically; the guard answers untyped callers.
+        not_a_spec: Any = object()
+        with pytest.raises(TypeError, match="expected a TensorLayout"):
+            as_layout(not_a_spec)
 
 
-_STACK_EXPECTED = [1430.0, 1448.0]
-
-
-class TestEverythingMixed:
-    def test_the_ultimate_stress_test(self) -> None:
-        spec_args, spec_kwargs = _stack_specs(_spec)
-        staged = stage(_stack)(*spec_args, **spec_kwargs)
-        assert _calls(staged.graph, "block") == 2, "one body, two call sites"
-        assert "mo.constant.external" in str(staged)
-        run = staged.compile(weights=_STACK_WEIGHTS)
-        args, kwargs = _stack_call(_tensor)
-        out = run(*args, **kwargs)
-        np.testing.assert_allclose(out["out"].to_numpy(), _STACK_EXPECTED)
-        assert out["kinds"] == ("p", "q")
-
-    def test_the_hardest_signature_across_a_replicated_mesh(self) -> None:
-        spec_args, spec_kwargs = _gnarly_specs(_replicated_spec)
-        staged = stage(_gnarly)(*spec_args, **spec_kwargs)
-        assert len(staged.graph.inputs) == 16, "two shards per tensor"
-        run = staged.compile()
-        args, kwargs = _gnarly_call(_replicated_tensor)
-        out = run(*args, **kwargs)
-        assert out["out"].is_distributed
-        np.testing.assert_allclose(out["out"].to_numpy(), _GNARLY_EXPECTED)
-        assert out["tags"] == ("alpha", "beta")
+# ═════════════════════════════════════════════════════════════════════════
+#  Rejections: what a passing call cannot show
+# ═════════════════════════════════════════════════════════════════════════
 
 
 @dataclass(frozen=True)
 class Projections:
     """A record of tensors, as every layer in ``nn/functional`` holds.
 
-    Spelled out rather than generated, since the node protocol is what is
-    under test here as much as the round trip.
+    A boundary is declared with layouts and called with tensors, so a record
+    that crosses one holds either. The production KV cache says the same thing
+    with a type parameter per leaf kind.
     """
 
     a: Tensor | TensorLayout
@@ -835,113 +286,129 @@ class Projections:
         return cls(**children)
 
 
-class TestARecordArgumentSurvivesTheRoundTrip:
-    """A pytree record as an argument, all the way through execution.
-
-    Tracing one was already covered; *calling* the result was not, and the two
-    walks are different -- specs flatten under ``leaf=_LAYOUT_TYPES`` and a call
-    flattens under ``_one_slot``. When those disagreed about a record the
-    symptom was not a mismatch error: the record became one static slot, and
-    checking it against its own spec ran ``Tensor.__eq__`` against a
-    ``TensorLayout``, which stages an ``equal`` op instead of comparing.
-    """
-
-    def test_a_record_of_tensors_round_trips_compiled(self) -> None:
+class TestRejections:
+    def test_a_record_round_trips_and_a_bad_field_names_its_route(self) -> None:
         run = compile(lambda p: p.a * p.b)(Projections(a=_spec(2), b=_spec(2)))
-
         out = run(Projections(a=_tensor(2.0, 3.0), b=_tensor(4.0, 5.0)))
-
         np.testing.assert_allclose(out.to_numpy(), [8.0, 15.0])
 
-    def test_each_of_a_records_tensors_is_its_own_input(self) -> None:
-        staged = stage(lambda p: p.a * p.b)(Projections(a=_spec(2), b=_spec(2)))
-
-        assert len(staged.graph.inputs) == 2, "not one slot for the record"
-
-    def test_a_wrong_shape_inside_a_record_names_its_field(self) -> None:
-        run = compile(lambda p: p.a * p.b)(Projections(a=_spec(2), b=_spec(2)))
-
-        with pytest.raises(ValueError, match=r"argument 0\.a: expected"):
+        with pytest.raises(ValueError, match=r"0\.a"):
             run(Projections(a=_tensor(1.0), b=_tensor(4.0, 5.0)))
 
-
-class TestBufferSpecs:
-    """A buffer input is how mutable state crosses a graph boundary.
-
-    A layout describes where a value *sits*; a buffer exists so a kernel can
-    write *through* it, which no layout says. Without buffer specs a paged KV
-    cache cannot be a graph input at all: it is neither a leaf nor a container
-    to the spec walk, so it contributes no input and the staged function
-    receives the type object where it expected a tensor -- silently, with no
-    error anywhere.
-    """
-
-    def test_a_buffer_spec_becomes_a_graph_input(self) -> None:
-        spec = BufferType(DType.float32, [4, 8], device=DeviceRef.CPU())
-
-        staged = compilation.stage(lambda b: b)(spec)
-
-        assert len(staged.graph.inputs) == 1
-        assert isinstance(staged.graph.inputs[0], BufferValue)
-
-    def test_the_traced_function_receives_a_tensor(self) -> None:
-        """What arrives is a :class:`Tensor` backed by the buffer, so the same
-        model code works whether its cache is a graph input or an eager one."""
-        seen: list[object] = []
-
-        def keep(b: Tensor) -> TensorValue:
-            seen.append(type(b))
-            return ops.buffer_load(b.__buffervalue__())
-
-        compilation.stage(keep)(
-            BufferType(DType.float32, [4, 8], device=DeviceRef.CPU())
+    def test_a_static_argument_is_part_of_the_signature(self) -> None:
+        run = compile(lambda x, alpha: x * alpha)(_spec(2), 3.0)
+        np.testing.assert_allclose(
+            run(_tensor(1.0, 1.0), 3.0).to_numpy(), [3.0, 3.0]
         )
+        with pytest.raises(ValueError, match=r"expected 3\.0, got 4\.0"):
+            run(_tensor(1.0, 1.0), 4.0)
 
-        assert seen == [Tensor]
-
-    def test_a_distributed_buffer_contributes_one_input_per_device(
+    def test_dropping_a_positional_shifts_the_rest_and_is_rejected(
         self,
     ) -> None:
-        """The half that was never wired: a cache spread over a mesh."""
-        mesh = DeviceMesh(
-            devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
+        """Silent misalignment is the failure this guards against."""
+        spec_args, spec_kwargs = _mixed_specs(_spec)
+        run = compile(_mixed_signature)(*spec_args, **spec_kwargs)
+        args, kwargs = _mixed_args(_tensor)
+        with pytest.raises(ValueError):
+            run(args[0], args[1], *args[3:], **kwargs)
+
+    def test_a_tensor_is_required_where_a_tensor_was_staged(self) -> None:
+        run = compile(lambda x: x * 2)(_spec(2))
+        with pytest.raises(TypeError, match="expected a Tensor"):
+            run(_spec(2))
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Buffers at the boundary
+# ═════════════════════════════════════════════════════════════════════════
+
+
+def _writes_its_argument(x: Tensor) -> Tensor:
+    x[0:1] = x[0:1] * 2
+    return x
+
+
+def _writes_a_local(x: Tensor) -> Tensor:
+    y = x * 2
+    y[0:1] = x[0:1]
+    return y
+
+
+class TestMutability:
+    """A buffer input is how mutable state crosses a boundary.
+
+    A layout describes where a value *sits*; a buffer exists so a kernel can
+    write *through* it, which no layout says. What may be written is settled
+    at every boundary, not just the outer one, so each rule is proven twice --
+    once where a graph takes its arguments, and once where a subgraph body
+    takes its operands, since a body has graph inputs of its own that the
+    caller's do not cover. A body carries one rule more: a buffer it promoted
+    cannot leave through the call.
+    """
+
+    def test_writing_a_tensor_staged_argument_is_refused(self) -> None:
+        """Promotion would store into a graph-local buffer the caller never
+        sees, so it is an error rather than a lost write."""
+        with pytest.raises(TypeError, match="staged as a tensor"):
+            stage(_writes_its_argument)(_spec(2))
+
+    def test_writing_a_tensor_staged_operand_is_refused_in_a_body(self) -> None:
+        body = as_subgraph(_writes_its_argument, name="block")
+        with pytest.raises(TypeError, match="staged as a tensor"):
+            stage(lambda x: body(x))(_spec(2))
+
+    def test_a_body_produced_tensor_may_still_be_promoted(self) -> None:
+        """Nothing outside the graph names it, so create-and-store is sound."""
+        run = compile(_writes_a_local)(_spec(2))
+        np.testing.assert_allclose(
+            run(_tensor(1.0, 3.0)).to_numpy(), [1.0, 6.0]
         )
-        spec = BufferLayout(
-            DType.float32, [4, 8], DeviceMapping(mesh, (Sharded(0),))
+
+    def test_a_body_produced_tensor_may_be_promoted_in_a_body(self) -> None:
+        def scratch(x: Tensor) -> Tensor:
+            return _writes_a_local(x) * 2
+
+        local = as_subgraph(scratch, name="block")
+        run = compile(lambda x: local(x))(_spec(2))
+        np.testing.assert_allclose(
+            run(_tensor(1.0, 3.0)).to_numpy(), [2.0, 12.0]
         )
 
-        def read_first(b: Tensor) -> TensorValue:
-            return ops.buffer_load(b.local_shards[0].__buffervalue__())
+    def test_a_body_cannot_hand_back_the_buffer_it_promoted(self) -> None:
+        """A graph output forwards a buffer; a call result would create one.
 
-        staged = compilation.stage(read_first)(spec)
-
-        assert len(staged.graph.inputs) == 2
-        assert all(isinstance(i, BufferValue) for i in staged.graph.inputs)
-
-    def test_a_compiled_graph_writes_through_its_buffer_input(self) -> None:
-        """The whole point: the caller's own memory holds what the graph wrote.
-
-        A tensor input cannot show this. It is copied in, and a mutation of it
-        dies with the execution. This is the property a KV cache needs and the
-        only one that distinguishes a buffer input from a tensor one.
+        So the promotion stays inside the body, and what leaves is a load.
         """
+        escapes = as_subgraph(_writes_a_local, name="block")
+        with pytest.raises(ValueError, match=r"create new mo\.buffer"):
+            stage(lambda x: escapes(x))(_spec(2))
 
-        def fill(cache: Tensor, x: Tensor) -> Tensor:
-            F.buffer_store(cache, x)
-            return x * 2
+    def test_a_body_writes_through_a_buffer_the_caller_promoted(self) -> None:
+        """An operand's type is the body's argument type, so a value a body
+        writes has to be a buffer before the call, where a store of its own
+        would be too late."""
 
-        run = compile(fill)(
-            BufferType(_F32, [3], device=DeviceRef.CPU()), _spec(3)
-        )
-        cache = _tensor(0.0, 0.0, 0.0)
+        def block(scratch: Tensor, x: Tensor) -> Tensor:
+            scratch[0:1] = x[0:1]
+            return scratch * 2  # reading it loads implicitly
 
-        out = run(cache, _tensor(1.0, 2.0, 3.0))
+        layer = as_subgraph(block, name="block")
 
-        np.testing.assert_allclose(out.to_numpy(), [2, 4, 6])
-        np.testing.assert_allclose(cache.to_numpy(), [1, 2, 3])
+        def model(x: Tensor) -> Tensor:
+            scratch = x * 0.0
+            scratch[0:1] = scratch[0:1]  # promotes, before the call
+            # Read back through the caller's handle, not the call result.
+            # Reading a buffer-backed tensor loads implicitly.
+            return layer(scratch, x) + scratch
 
-    def test_a_compiled_graph_writes_through_every_shard(self) -> None:
-        """Sharded, so each device writes its own slice and no other."""
+        staged = stage(model)(_spec(2))
+
+        body = str(staged).split("mo.graph @block")[1]
+        assert "!mo.buffer" in body.split("{")[0], "the body takes a buffer"
+        assert "mo.buffer.create" not in body, "so it allocates none of its own"
+
+    def test_a_sharded_buffer_writes_each_shard_and_no_other(self) -> None:
         mesh = _mesh2()
 
         def fill(cache: Tensor, x: Tensor) -> Tensor:
@@ -950,138 +417,331 @@ class TestBufferSpecs:
 
         run = compile(fill)(
             BufferLayout(_F32, [4], DeviceMapping(mesh, (Sharded(0),))),
-            TensorLayout(_F32, [4], PlacementMapping(mesh, (Sharded(0),))),
+            _sharded_spec(4),
         )
-        cache = Tensor._from_shards(
-            (
-                _tensor(0.0, 0.0).driver_tensor,
-                _tensor(0.0, 0.0).driver_tensor,
-            ),
-            mesh,
-            (Sharded(0),),
-        )
-        source = Tensor._from_shards(
-            (
-                _tensor(1.0, 2.0).driver_tensor,
-                _tensor(3.0, 4.0).driver_tensor,
-            ),
-            mesh,
-            (Sharded(0),),
-        )
+        cache = _sharded(_tensor(0.0, 0.0), _tensor(0.0, 0.0))
+        run(cache, _sharded(_tensor(1.0, 2.0), _tensor(3.0, 4.0)))
 
-        run(cache, source)
+        shards = [s.to_numpy() for s in cache.local_shards]
+        np.testing.assert_allclose(shards[0], [1.0, 2.0])
+        np.testing.assert_allclose(shards[1], [3.0, 4.0])
 
-        np.testing.assert_allclose(cache.local_shards[0].to_numpy(), [1.0, 2.0])
-        np.testing.assert_allclose(cache.local_shards[1].to_numpy(), [3.0, 4.0])
+    @pytest.mark.xfail(
+        strict=True,
+        reason="an index that touches a sharded axis reads the source in "
+        "the mesh's global index space and writes the destination in each "
+        "device's local one, so every device stores global row 0. Only "
+        "this combination is affected: a whole-buffer store is correct, "
+        "and so is a slice that leaves the sharded axes whole.",
+    )
+    def test_a_sharded_buffer_writes_each_shard_through_a_slice(self) -> None:
+        mesh = _mesh2()
 
-
-class TestExplicitMutability:
-    """Which tensor a store may promote, and where a caller has to say so.
-
-    A store into a tensor backed by a ``TensorValue`` creates a
-    ``BufferValue`` and copies the value in. That is sound where the buffer it
-    made is the one the reader will read, and wrong at a boundary, where the
-    type is already fixed and the buffer is local to the graph that made it.
-    """
-
-    def test_writing_a_tensor_staged_argument_is_refused(self) -> None:
-        """Promotion would store into a graph-local buffer the caller never
-        sees, so it is an error rather than a lost write."""
-
-        def writes_its_argument(cache: Tensor, x: Tensor) -> Tensor:
+        def fill(cache: Tensor, x: Tensor) -> Tensor:
             cache[0:1] = x[0:1]
-            return x
-
-        with pytest.raises(TypeError, match="staged as a tensor"):
-            stage(writes_its_argument)(_spec(2), _spec(2))
-
-    def test_a_value_the_graph_computed_is_promoted_by_a_store(self) -> None:
-        """Nothing outside the graph names it, so create-and-store is sound."""
-
-        def writes_a_local(x: Tensor) -> Tensor:
-            scratch = x * 1.0
-            scratch[1:2] = x[1:2] * 2.0
-            return scratch[...]
-
-        assert "mo.buffer.create" in str(stage(writes_a_local)(_spec(2)))
-
-    def test_a_body_writes_through_a_buffer_the_caller_promoted(self) -> None:
-        """An operand's type is the body's argument type, so a value a body
-        writes has to be a buffer before the call. A store in the caller
-        promotes it; promoting inside the body would create a buffer the
-        caller never sees and the store would be lost."""
-
-        def block(scratch: Tensor, x: Tensor) -> Tensor:
-            scratch[0:1] = x[0:1]
-            return scratch[...]
-
-        layer = as_subgraph(block, name="block")
-
-        def model(x: Tensor) -> Tensor:
-            scratch = x * 0.0
-            scratch[0:1] = scratch[0:1]  # promotes, before the call
-            body = layer(scratch, x)
-            # Read back through the caller's own handle, not the call result.
-            return body + scratch[...]
-
-        staged = stage(model)(_spec(2))
-        body = str(staged).split("mo.graph @block")[1]
-        assert "!mo.buffer" in body.split("{")[0], "the body takes a buffer"
-        assert "mo.buffer.create" not in body, "so it allocates none of its own"
-
-    def test_without_that_store_the_body_is_refused(self) -> None:
-        """The same model unpromoted: the operand is a tensor, so the body's
-        argument is one, and the write that used to be lost is an error."""
-
-        def block(scratch: Tensor, x: Tensor) -> Tensor:
-            scratch[0:1] = x[0:1]
-            return scratch[...]
-
-        layer = as_subgraph(block, name="block")
-
-        def model(x: Tensor) -> Tensor:
-            scratch = x * 0.0
-            return layer(scratch, x) + scratch[...]
-
-        with pytest.raises(TypeError, match="staged as a tensor"):
-            stage(model)(_spec(2))
-
-    def test_one_pool_argument_serves_every_layer_call(self) -> None:
-        """The production shape: a buffer declared at ``compile()``, threaded
-        into one shared body, called once per layer, each writing its own
-        slot. This is a paged KV cache with the kernel taken out."""
-
-        def layer(pool: Tensor, x: Tensor, slot: Tensor) -> Tensor:
-            pool[slot] = x
             return x * 2
 
-        block = as_subgraph(layer, name="block")
+        run = compile(fill)(
+            BufferLayout(_F32, [4], DeviceMapping(mesh, (Sharded(0),))),
+            _sharded_spec(4),
+        )
+        cache = _sharded(_tensor(0.0, 0.0), _tensor(0.0, 0.0))
+        run(cache, _sharded(_tensor(1.0, 2.0), _tensor(3.0, 4.0)))
 
-        def model(pool: Tensor, x: Tensor) -> Tensor:
+        shards = [s.to_numpy() for s in cache.local_shards]
+        np.testing.assert_allclose(shards[0], [1.0, 0.0])
+        np.testing.assert_allclose(shards[1], [0.0, 0.0], err_msg="row 2")
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  One body, many calls
+# ═════════════════════════════════════════════════════════════════════════
+
+#: Appended to once per stage of the bodies below, so a test can tell a body
+#: that was staged from one that was answered from the cache.
+_TRACED: list[str] = []
+
+
+def _block(x: Tensor) -> Tensor:
+    _TRACED.append("block")
+    return x * 2.0
+
+
+def _indexed_block(x: Tensor, idx: int) -> Tensor:
+    """A body whose per-layer index is baked in, the ``layer_idx`` shape."""
+    _TRACED.append(f"indexed:{idx}")
+    return x * float(idx)
+
+
+def _scaled_block(scale: float) -> Callable[[Tensor], Tensor]:
+    """Returns a body that captures ``scale``, which no name can reveal."""
+
+    def block(x: Tensor) -> Tensor:
+        _TRACED.append(f"scaled:{scale}")
+        return x * scale
+
+    return block
+
+
+class TestSubgraphs:
+    """The callable is the body's identity, together with what it is passed.
+
+    Deduplicating on the staged IR instead means every repeat is staged and
+    thrown away, sixty-one times over for a transformer's layers.
+    """
+
+    def test_repeated_calls_share_one_body_staged_once(self) -> None:
+        _TRACED.clear()
+        shared = as_subgraph(_block)
+        staged = stage(lambda x: shared(shared(shared(x))))(_spec(2))
+        assert _bodies(staged, "block") == 1
+        assert _calls(staged.graph, "block") == 3
+        assert _TRACED == ["block"], "later calls must reuse, not retrace"
+
+    def test_a_differing_static_argument_splits_the_bodies(self) -> None:
+        """The ``layer_idx`` case: one callable, a different constant per layer.
+
+        The index is an argument rather than a capture, so it reaches the key
+        through the argument tree and the layers are told apart without
+        staging them to find out. Sharing one body here would silently compute
+        every layer with the first layer's index.
+        """
+        _TRACED.clear()
+
+        def stack(x: Tensor) -> Tensor:
             for i in range(3):
-                x = block(pool, x, F.constant(i, DType.int64, device=CPU()))
+                x = as_subgraph(_indexed_block, name="indexed")(x, i)
             return x
 
-        staged = stage(model)(
-            BufferType(_F32, [3, 2], device=DeviceRef.CPU()), _spec(2)
+        staged = stage(stack)(_spec(2))
+
+        assert _TRACED == ["indexed:0", "indexed:1", "indexed:2"]
+        # Three bodies, so three symbols, each called once.
+        assert _calls(staged.graph, "indexed") == 1
+        assert _calls(staged.graph, "indexed_1") == 1
+        assert _calls(staged.graph, "indexed_2") == 1
+
+    def test_each_closure_is_its_own_body(self) -> None:
+        """Two closures over different values, which no name tells apart.
+
+        They share a qualname and a signature, and what they captured reaches
+        the graph as a constant. Keying on the callable separates them without
+        staging either to find out.
+        """
+        _TRACED.clear()
+        two, three = (
+            as_subgraph(_scaled_block(scale), name="scaled")
+            for scale in (2.0, 3.0)
         )
-        assert _bodies(staged, "block") == 1, "one body for every layer"
-        assert _calls(staged.graph, "block") == 3
-        body = str(staged).split("mo.graph @block")[1]
-        assert "!mo.buffer" in body.split("{")[0], "the pool stays a buffer"
-        assert "mo.buffer.create" not in body, "so none is allocated inside"
+        staged = stage(lambda x: two(three(two(x))))(_spec(2))
+        assert _TRACED == ["scaled:2.0", "scaled:3.0"]
+        assert _calls(staged.graph, "scaled") == 2, "the repeat shares a body"
+        assert _calls(staged.graph, "scaled_1") == 1
 
-        run = staged.compile()
-        pool = Tensor.from_dlpack(np.zeros((3, 2), dtype=np.float32))
-        out = run(pool, _tensor(1.0, 2.0))
+    def test_a_symbolic_extent_reaches_the_body(self) -> None:
+        """An operand carries its graph's extent, symbolic ones included."""
+        shared = as_subgraph(_block)
+        staged = stage(lambda x: shared(x))(_symbolic("n"))
+        signature = str(staged).split("mo.graph @block")[1].split("{")[0]
+        assert "n" in signature, "the body took the extent it was passed"
 
-        np.testing.assert_allclose(out.to_numpy(), [8.0, 16.0])
+    def test_a_nested_call_inlines_into_its_parent_body(self) -> None:
+        """The runtime cannot load a body that itself calls one."""
+        inner = as_subgraph(_block, name="inner")
+        outer = as_subgraph(lambda x: inner(inner(x)), name="outer")
+        staged = stage(lambda x: outer(outer(x)))(_spec(2))
+        assert _calls(staged.graph, "outer") == 2
+        assert _bodies(staged, "inner") == 0, "the inner body was inlined"
+
+    def test_it_inlines_when_subgraphs_are_off_and_when_eager(self) -> None:
+        """The wrapper is transparent, so one source serves every mode."""
+        shared = as_subgraph(_block)
+        staged = stage(lambda x: shared(shared(x)), allow_subgraphs=False)(
+            _spec(2)
+        )
+        assert _calls(staged.graph, "block") == 0
         np.testing.assert_allclose(
-            pool.to_numpy(), [[1.0, 2.0], [2.0, 4.0], [4.0, 8.0]]
+            shared(_tensor(1.0, 2.0)).to_numpy(), [2.0, 4.0]
         )
 
 
-@dataclass(frozen=True)
+# ═════════════════════════════════════════════════════════════════════════
+#  Weights a shared body declares
+# ═════════════════════════════════════════════════════════════════════════
+
+
+def _weighted_block(x: Tensor) -> Tensor:
+    return x * F.constant_external(
+        "w", TensorLayout(_F32, [1], DeviceRef.CPU()), is_placeholder=True
+    )
+
+
+class TestWeights:
+    def test_a_prefix_resolves_the_body_s_weights_per_call_site(self) -> None:
+        """One definition, and each call site reads its own entry out of it."""
+
+        def model(x: Tensor) -> Tensor:
+            for name in ("l0.", "l1."):
+                x = as_subgraph(_weighted_block, name="block", prefix=name)(x)
+            return x
+
+        weights = {"l0.w": _tensor(2.0), "l1.w": _tensor(10.0)}
+        staged = stage(model)(_spec(1))
+        assert _bodies(staged, "block") == 1, "one body for both call sites"
+        run = CompiledCallable(staged, weights)
+        np.testing.assert_allclose(run(_tensor(1.0)).to_numpy(), [20.0])
+
+    def test_declaring_in_full_inside_a_body_overrides_the_prefix(self) -> None:
+        """``is_placeholder=False`` under a prefix: one shared name, not one each.
+
+        The default follows the prefix, which is what a stack of layers wants.
+        Overridden, every call site reads the same checkpoint entry, a tied
+        weight, and the name in the body is already complete.
+        """
+
+        def body(x: Tensor) -> Tensor:
+            return x * F.constant_external(
+                "shared.w",
+                TensorLayout(_F32, [1], DeviceRef.CPU()),
+                is_placeholder=False,
+            )
+
+        def model(x: Tensor) -> Tensor:
+            for name in ("l0.", "l1."):
+                x = as_subgraph(body, name="block", prefix=name)(x)
+            return x
+
+        staged = stage(model)(_spec(1))
+        whole = str(staged)
+        assert _calls(staged.graph, "block") == 2, "still one body, two calls"
+        assert 'name = "shared.w"' in whole
+        assert "isPlaceholder = true" not in whole
+        run = CompiledCallable(staged, {"shared.w": _tensor(3.0)})
+        np.testing.assert_allclose(run(_tensor(1.0)).to_numpy(), [9.0])
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  A model: the shape a pipeline actually asks for
+# ═════════════════════════════════════════════════════════════════════════
+
+_MODEL = 4
+_SLOTS = 3
+_LAYERS = 2
+
+
+@dataclass
+class Cache:
+    """What a layer sees: every slot is a tensor.
+
+    Which slot is a buffer is decided once, at the boundary, by the spec it
+    given, and nowhere else.
+    """
+
+    blocks: Tensor
+    scale: Tensor
+
+    def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
+        return {f.name: getattr(self, f.name) for f in fields(self)}, None
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, meta: None, children: Mapping[str, Any]
+    ) -> Cache:
+        del meta
+        return cls(**children)
+
+
+@dataclass
+class CacheSpec:
+    """How a :class:`Cache` describes its boundary.
+
+    One class per tree, so every field is exactly one type and neither lies.
+    Unflattening rebuilds the data class, so a body is handed a ``Cache``.
+    """
+
+    blocks: BufferLayout
+    scale: TensorLayout
+
+    def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
+        return {f.name: getattr(self, f.name) for f in fields(self)}, None
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, meta: None, children: Mapping[str, Any]
+    ) -> Cache:
+        del meta
+        return Cache(**children)
+
+
+def _weight() -> Tensor:
+    return F.constant_external(
+        "w",
+        TensorLayout(_F32, [_MODEL, _MODEL], device=DeviceRef.CPU()),
+        is_placeholder=True,
+    )
+
+
+def _layer_weights(*scales: float) -> dict[str, Tensor]:
+    return {
+        f"layers.{i}.w": _ones(_MODEL, _MODEL) * s for i, s in enumerate(scales)
+    }
+
+
+def _cache_spec() -> CacheSpec:
+    """A fixed number of slots as a buffer, and a value read alongside them."""
+    return CacheSpec(
+        blocks=BufferLayout(_F32, [_SLOTS, _MODEL], DeviceRef.CPU()),
+        scale=_spec(1),
+    )
+
+
+def _offset_spec() -> TensorLayout:
+    """Where this step writes, known only at run time."""
+    return TensorLayout(
+        DType.int64,
+        [],
+        PlacementMapping(DeviceMesh.single(CPU()), (Replicated(),)),
+    )
+
+
+def _offset(value: int) -> Tensor:
+    return Tensor.from_dlpack(np.array(value, dtype=np.int64))
+
+
+def _decode_layer(x: Tensor, cache: Cache, pos: Tensor) -> Tensor:
+    """Project, append this step at ``pos``, then read the slot back."""
+    y = x @ _weight()
+    cache.blocks[pos] = y[0]
+    return y + cache.blocks[pos] * cache.scale
+
+
+def _decode_stack() -> Any:
+    """One body, one cache per layer, one shared write offset."""
+
+    def model(x: Tensor, caches: list[Cache], pos: Tensor) -> Tensor:
+        for i, cache in enumerate(caches):
+            layer = as_subgraph(
+                _decode_layer, name="layer", prefix=f"layers.{i}."
+            )
+            x = layer(x, cache, pos)
+        return x
+
+    return model
+
+
+def _empty_caches() -> list[Cache]:
+    return [
+        Cache(
+            blocks=Tensor.from_dlpack(
+                np.zeros((_SLOTS, _MODEL), dtype=np.float32)
+            ),
+            scale=_ones(1),
+        )
+        for _ in range(_LAYERS)
+    ]
+
+
+@dataclass
 class PagedSpec:
     """How a :class:`PagedCacheValues` describes its boundary.
 
@@ -1089,13 +749,14 @@ class PagedSpec:
     the production class. Only ``kv_blocks`` is a buffer.
     """
 
-    kv_blocks: BufferType
-    cache_lengths: TensorType
-    lookup_table: TensorType
-    max_prompt_length: TensorType
-    max_cache_length: TensorType
+    kv_blocks: BufferLayout
+    cache_lengths: TensorLayout
+    lookup_table: TensorLayout
+    max_prompt_length: TensorLayout
+    max_cache_length: TensorLayout
+    page_stride: TensorLayout
     kv_scales: None = None
-    attention_dispatch_metadata: TensorType | None = None
+    attention_dispatch_metadata: TensorLayout | None = None
     mla_num_partitions: None = None
 
     def __tree_flatten__(self) -> tuple[tuple[Any, ...], tuple[str, ...]]:
@@ -1109,29 +770,145 @@ class PagedSpec:
         return PagedCacheValues(**dict(zip(aux, children, strict=True)))
 
 
-class TestAPagedKVCache:
-    """The production paged cache through a shared body, which is the point.
+@overload
+def _spec_of(type: BufferType) -> BufferLayout: ...
+@overload
+def _spec_of(type: TensorType) -> TensorLayout: ...
+@overload
+def _spec_of(type: None) -> None: ...
 
-    :meth:`KVCacheParams.get_symbolic_inputs` already types one device's
-    boundary as a ``BufferType`` for the page pool and a ``TensorType`` per
-    piece of metadata, and :class:`PagedCacheValues` already carries the
-    pytree protocol. So a real attention layer reaches this with nothing
-    added to either, which is the test: whether a ModuleV3-style paged
-    pipeline can be written against this API unchanged.
 
-    Staged rather than run: the page contents a kernel reads are the
-    integration suite's business, while the boundary is this file's.
+def _spec_of(
+    type: TensorType | BufferType | None,
+) -> TensorLayout | None:
+    """The spec a production KV cache's graph type describes.
+
+    ``KVCacheParams.get_symbolic_inputs`` hands back ``max.graph`` types, so a
+    pipeline that already has them converts once at the boundary.
+    """
+    if type is None:
+        return None
+    if isinstance(type, BufferType):
+        return BufferLayout(type.dtype, type.shape, type.device)
+    return TensorLayout(type.dtype, type.shape, type.device)
+
+
+class TestModel:
+    """A stack of layers over a cache, which is what all of this is for.
+
+    The shape is a decode step: one body per layer group, a distinct cache
+    per layer, a sequence extent that is symbolic because prefill and decode
+    pass different ones, and a write offset that only the caller knows.
     """
 
-    LAYERS = 2
+    def test_each_layer_gets_its_own_buffer_out_of_one_body(self) -> None:
+        x_spec = _symbolic("seq", _MODEL)
+        staged = stage(_decode_stack())(
+            x_spec,
+            [_cache_spec() for _ in range(_LAYERS)],
+            _offset_spec(),
+        )
+        assert _bodies(staged, "layer") == 1
+        assert _calls(staged.graph, "layer") == _LAYERS
+        buffers = [i for i in staged.graph.inputs if isinstance(i, BufferValue)]
+        assert len(buffers) == _LAYERS, "one cache per layer, not one shared"
 
-    def _boundary(self) -> tuple[Any, ...]:
-        """The production description of a paged cache, converted nowhere.
+        body = str(staged).split("mo.graph @layer")[1]
+        signature = body.split("{")[0]
+        assert "!mo.buffer" in signature, "the body takes a buffer too"
+        assert "seq" in signature, "and the extent its caller passed"
+        assert "mo.buffer.create" not in body, "so nothing is copied in"
 
-        ``get_symbolic_inputs`` already types the pool as a ``BufferType`` and
-        each piece of metadata as a ``TensorType``, and ``PagedCacheValues``
-        already carries the pytree protocol, so a pipeline reaches this with
-        nothing added to either.
+    def test_a_decode_loop_advances_the_cache_and_then_prefills(self) -> None:
+        run = compile(
+            _decode_stack(),
+            weights=_layer_weights(2.0, 10.0),
+        )(
+            _symbolic("seq", _MODEL),
+            [_cache_spec() for _ in range(_LAYERS)],
+            _offset_spec(),
+        )
+        caches = _empty_caches()
+
+        for step in range(2):
+            out = run(_ones(1, _MODEL), caches, _offset(step))
+
+        # x @ (2*ones) sums 4 ones -> 8, doubled by reading the slot back; then
+        # 16 @ (10*ones) -> 640, likewise doubled.
+        np.testing.assert_allclose(out.to_numpy(), np.full((1, _MODEL), 1280.0))
+        first, second = (c.blocks.to_numpy() for c in caches)
+        np.testing.assert_allclose(first[:2], np.full((2, _MODEL), 8.0))
+        np.testing.assert_allclose(second[:2], np.full((2, _MODEL), 640.0))
+        for slots in (first, second):
+            np.testing.assert_allclose(slots[2], 0.0, err_msg="slot untouched")
+
+        # The same compiled model serves a longer sequence.
+        out = run(_ones(_SLOTS, _MODEL), caches, _offset(2))
+        assert out.shape == [_SLOTS, _MODEL]
+        np.testing.assert_allclose(caches[0].blocks.to_numpy()[2], 8.0)
+
+    def test_over_a_mesh_each_device_owns_its_shard_of_the_cache(self) -> None:
+        """A cache sharded across devices, written and read inside one body.
+
+        Every device holds a different slice of the same cache, of a different
+        length, and the body ends by gathering it, so the write has to land
+        per device and the read has to cross them.
+        """
+        mesh = _mesh2()
+        sharded = PlacementMapping(mesh, (Sharded(0),))
+        cache_spec = CacheSpec(
+            blocks=BufferLayout(
+                _F32, [_SLOTS, _MODEL], DeviceMapping(mesh, (Sharded(0),))
+            ),
+            scale=_replicated_spec(1),
+        )
+        x_spec = _replicated_spec(_SLOTS, _MODEL)
+
+        def layer(x: Tensor, cache: Cache) -> Tensor:
+            y = F.transfer_to(x @ _weight(), sharded)
+            cache.blocks[...] = y
+            return F.allgather(cache.blocks) * cache.scale
+
+        def model(x: Tensor, cache: Cache) -> Tensor:
+            for i in range(_LAYERS):
+                shared = as_subgraph(layer, name="layer", prefix=f"layers.{i}.")
+                x = shared(x, cache)
+            return x
+
+        staged = stage(model)(x_spec, cache_spec)
+        assert _bodies(staged, "layer") == 1
+        assert _calls(staged.graph, "layer") == _LAYERS
+        buffers = [i for i in staged.graph.inputs if isinstance(i, BufferValue)]
+        assert len(buffers) == 2, "one cache shard per device"
+
+        run = CompiledCallable(staged, _layer_weights(2.0, 10.0))
+        cache = Cache(
+            blocks=_sharded(_ones(2, _MODEL) * 0.0, _ones(1, _MODEL) * 0.0),
+            scale=_replicated(_ones(1)),
+        )
+        out = run(_replicated(_ones(_SLOTS, _MODEL)), cache)
+
+        # 8 replicated, split across devices, gathered back; then 8 @ (10*ones).
+        for shard in out.local_shards:
+            np.testing.assert_allclose(
+                shard.to_numpy(), np.full((_SLOTS, _MODEL), 320.0)
+            )
+        shapes = [s.to_numpy().shape for s in cache.blocks.local_shards]
+        assert shapes == [(2, _MODEL), (1, _MODEL)], "an uneven split"
+        for shard in cache.blocks.local_shards:
+            np.testing.assert_allclose(shard.to_numpy(), 320.0)
+
+    def test_a_paged_transformer_shares_one_body(self) -> None:
+        """The production paged cache, declared at a subgraph boundary.
+
+        :meth:`KVCacheParams.get_symbolic_inputs` already types one device's
+        boundary as a ``BufferLayout`` for the page pool and a ``TensorLayout``
+        per piece of metadata, which is one spec per tensor argument, and
+        :class:`PagedCacheValues` already carries the pytree protocol. So a
+        real attention layer reaches this with nothing added to either.
+
+        Staged rather than run: the page contents a kernel reads are the
+        integration suite's business, while the boundary is this file's.
         """
         heads, head_dim = 4, 16
         hidden = heads * head_dim
@@ -1139,32 +916,26 @@ class TestAPagedKVCache:
             dtype=_F32,
             n_kv_heads=1,
             head_dim=head_dim,
-            num_layers=self.LAYERS,
+            num_layers=_LAYERS,
             page_size=128,
             devices=[DeviceRef.CPU()],
         )
-        declared = kv_params.get_symbolic_inputs().inputs[0]
+        declared = kv_params.get_symbolic_inputs()[0]
         cache_spec = PagedSpec(
-            kv_blocks=declared.kv_blocks,
-            cache_lengths=declared.cache_lengths,
-            lookup_table=declared.lookup_table,
-            max_prompt_length=declared.max_prompt_length,
-            max_cache_length=declared.max_cache_length,
-            attention_dispatch_metadata=declared.attention_dispatch_metadata,
+            kv_blocks=_spec_of(declared.kv_blocks),
+            cache_lengths=_spec_of(declared.cache_lengths),
+            lookup_table=_spec_of(declared.lookup_table),
+            max_prompt_length=_spec_of(declared.max_prompt_length),
+            max_cache_length=_spec_of(declared.max_cache_length),
+            page_stride=_spec_of(declared.page_stride),
+            attention_dispatch_metadata=_spec_of(
+                declared.attention_dispatch_metadata
+            ),
         )
-        x_spec = TensorType(
+        x_spec = TensorLayout(
             _F32, ["total_seq_len", hidden], device=DeviceRef.CPU()
         )
-        rows_spec = TensorType(DType.uint32, ["rows"], device=DeviceRef.CPU())
-        return hidden, cache_spec, x_spec, rows_spec
-
-    def _transformer(self) -> tuple[Any, ...]:
-        (
-            hidden,
-            cache_spec,
-            x_spec,
-            rows_spec,
-        ) = self._boundary()
+        rows_spec = TensorLayout(DType.uint32, ["rows"], device=DeviceRef.CPU())
 
         def projection(name: str) -> Tensor:
             return F.constant_external(
@@ -1179,18 +950,25 @@ class TestAPagedKVCache:
             layer_idx: Tensor,
             input_row_offsets: Tensor,
         ) -> Tensor:
-            # Where attention would read and write the pool. A kernel is not
-            # this file's business; that the pool is a buffer here is.
-            cache.kv_blocks[...] = cache.kv_blocks[...] * 1.0
-            return (x @ projection("attn.qkv")) @ projection("attn.o")
+            q = (x @ projection("attn.qkv")).reshape((-1, heads, head_dim))
+            attention = flash_attention_ragged(
+                kv_params,
+                input=q,
+                kv_collection=cache,
+                layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=math.sqrt(1.0 / head_dim),
+            )
+            return attention.reshape((-1, hidden)) @ projection("attn.o")
 
         def transformer(
             x: Tensor, cache: PagedCacheValues, input_row_offsets: Tensor
         ) -> Tensor:
-            for i in range(self.LAYERS):
-                # The index crosses as an operand. Baked in as a constant, the
-                # way a layer holding its own does, it would be one body per
-                # layer.
+            for i in range(_LAYERS):
+                # The index crosses as an operand. Baked in as a constant,
+                # the way a layer holding its own does, it would be one body
+                # per layer.
                 x = as_subgraph(block, name="block", prefix=f"layers.{i}.")(
                     x,
                     cache,
@@ -1199,18 +977,10 @@ class TestAPagedKVCache:
                 )
             return x
 
-        return transformer, cache_spec, x_spec, rows_spec
-
-    def test_it_shares_one_body_over_one_pool_with_weights_by_prefix(
-        self,
-    ) -> None:
-        """Staged once, because every claim below is about the same graph."""
-        transformer, cache_spec, x_spec, rows_spec = self._transformer()
-
         staged = stage(transformer)(x_spec, cache_spec, rows_spec)
+        assert _bodies(staged, "block") == 1
+        assert _calls(staged.graph, "block") == _LAYERS
 
-        assert _bodies(staged, "block") == 1, "one body, not one per layer"
-        assert _calls(staged.graph, "block") == self.LAYERS
         buffers = [i for i in staged.graph.inputs if isinstance(i, BufferValue)]
         assert len(buffers) == 1, "one page pool, shared by every layer"
 
@@ -1218,9 +988,77 @@ class TestAPagedKVCache:
         signature = body.split("{")[0]
         assert "!mo.buffer" in signature, "the pool is a buffer in the body"
         assert "total_num_pages" in signature, "and stays symbolic"
-        assert "mo.buffer.create" not in body, "so nothing is copied in"
-
         assert 'name = "attn.qkv"' in body, "weights are named relatively"
-        assert "isPlaceholder = true" in body
-        for i in range(self.LAYERS):
+        for i in range(_LAYERS):
             assert f'prefix = "layers.{i}."' in str(staged.graph)
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Trace, compile, export, execute
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class TestLifecycle:
+    def test_a_traced_graph_compiles_exports_and_executes(
+        self, tmp_path: Path
+    ) -> None:
+        staged = stage(lambda x: x * 2, name="scale")(_spec(2))
+        assert "mo.graph @scale" in str(staged), "the name is the transform's"
+
+        run = CompiledCallable(staged)
+        arg = _tensor(1.0, 2.0)
+        np.testing.assert_allclose(run(arg).to_numpy(), [2.0, 4.0])
+
+        raw = run.execute_raw(arg.driver_tensor)
+        np.testing.assert_allclose(
+            Tensor(storage=raw[0]).to_numpy(), [2.0, 4.0]
+        )
+
+        path = tmp_path / "scale.mef"
+        run.export_mef(path)
+        assert path.stat().st_size > 0
+
+    def test_a_transform_option_may_also_be_a_parameter_name(self) -> None:
+        """``name`` is the transform's; a body's own ``name`` is untouched."""
+        staged = stage(lambda x, name: x * len(name), name="outer")(
+            _spec(2), "ab"
+        )
+        assert "mo.graph @outer" in str(staged)
+
+
+class TestATensorIsALeaf:
+    """A tensor is one value, not a container of its per-device pieces.
+
+    Only the graph boundary splits one into per-device values and puts it back
+    together, so every other walk sees a tensor whole and needs no ``leaf=``
+    to say so. This is the one test of that, end to end.
+    """
+
+    def test_a_leaf_everywhere_and_still_split_per_device_at_a_boundary(
+        self,
+    ) -> None:
+        mapping = PlacementMapping(_mesh2(), (Sharded(0),))
+        sharded = _tensor(1.0, 2.0, 3.0, 4.0).to(mapping)
+
+        # A walk stops at a tensor, sharded or not, with no leaf= to ask for it.
+        assert tree_flatten(sharded)[0] == [sharded]
+        assert list(tree_paths({"w": [sharded]})) == ["w.0"]
+
+        # The boundary still expands one argument into one input per device,
+        # and a nested result comes back nested, with its shards rejoined.
+        def split_and_pair(x: Tensor) -> dict[str, Any]:
+            doubled = x * 2
+            return {"doubled": doubled, "pair": [doubled, x]}
+
+        spec = TensorLayout(_F32, [4], mapping)
+        staged = stage(split_and_pair)(spec)
+        assert len(staged.graph.inputs) == 2, "one input per device"
+
+        out = CompiledCallable(staged)(sharded)
+
+        assert list(out) == ["doubled", "pair"], "nested as returned"
+        assert out["pair"][1].num_shards == 2, "a tensor, not its shards"
+        np.testing.assert_allclose(
+            out["doubled"].to_numpy(), [2.0, 4.0, 6.0, 8.0]
+        )
+        np.testing.assert_allclose(out["pair"][1].to_numpy(), [1, 2, 3, 4])

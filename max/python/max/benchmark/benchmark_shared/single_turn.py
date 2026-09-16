@@ -49,6 +49,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncInput,
     RequestDriver,
     RequestFuncInput,
+    RequestFuncOutput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
 )
@@ -269,6 +270,12 @@ async def run_single_turn_benchmark(
             except asyncio.TimeoutError:
                 return request_func_input.get_output_type()(
                     cancelled=True, request_submit_time=time.perf_counter()
+                )
+            if isinstance(output, RequestFuncOutput) and isinstance(
+                request_func_input, RequestFuncInput
+            ):
+                output.response_format_constrained = (
+                    request_func_input.response_format is not None
                 )
             return mark_cancelled_if_past_deadline(
                 output, benchmark_should_end_time

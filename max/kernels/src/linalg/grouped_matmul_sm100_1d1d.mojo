@@ -13,7 +13,7 @@
 
 """Provides block-scaled grouped GEMM for 1D×1D scale layouts on SM100 (B200) GPUs."""
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, simd_width_of, size_of
 
@@ -859,7 +859,7 @@ struct B200BlockScaledMatmulSmem[
     )
     comptime sfb_smem_size = (
         Self.config.num_sf_k_tiles
-        * (Self.MMA_N // SF_MN_GROUP_SIZE)
+        * (align_up(Self.MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE)
         * Self.config.sf_block_atom_size
         * Self.config.num_pipeline_stages
     )
@@ -1325,11 +1325,16 @@ def consumer_main_loop[
             ) * UInt32(SFB_NUM_COLS)
 
             # When MMA_N doesn't fill a full SF group (128), adjacent
-            # N-tiles share one group in TMEM. Odd tiles offset by 2
-            # columns to read their half.
+            # N-tiles share one group in TMEM. `work_tile_coord[1]` is an
+            # element offset, so the tile stride never enters.
             var sfb_tmem_adj: UInt32
             comptime if MMA_N in (64, 192):
-                sfb_tmem_adj = UInt32(umod(work_tile_coord[1], 2)) * 2
+                sfb_tmem_adj = UInt32(
+                    ufloordiv(
+                        umod(work_tile_coord[1], SF_MN_GROUP_SIZE),
+                        SF_ATOM_M[0],
+                    )
+                )
             else:
                 sfb_tmem_adj = UInt32(0)
 
@@ -1783,7 +1788,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ](ctx, sfa_4d)
 
     comptime sfb_tma_tile_shape = Index(
-        MMA_N // SF_MN_GROUP_SIZE,
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
@@ -2013,7 +2018,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     # For ld from TMEM, use same per-stage stride in column field.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = config.num_sf_k_tiles * (BM // 32)
-    comptime SFB_NUM_COLS = config.num_sf_k_tiles * (MMA_N // 32)
+    # `_copy_sf_to_tmem_tt` writes a whole atom's columns whatever MMA_N is,
+    # so a sub-atom MMA_N would overlap the next pipeline stage.
+    comptime SFB_NUM_COLS = config.num_sf_k_tiles * (
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // 32
+    )
     comptime stage_stride_cols = config.mma_shape[1]
 
     comptime assert (
@@ -2046,16 +2055,15 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
     ].to_layout()
 
-    # The typed form requires whole scale-factor atoms, which keeps it in step
-    # with the `BM // SF_MN_GROUP_SIZE` atom counts `sfa_smem_size` and
-    # `sfb_smem_size` use to size the buffers these layouts describe.
+    # The typed form requires whole scale-factor atoms. SFB rounds up because
+    # its physical storage always covers the complete atom containing MMA_N.
     comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         BM,
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
     ].to_layout()
     comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
-        MMA_N,
+        align_up(MMA_N, SF_MN_GROUP_SIZE),
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
     ].to_layout()

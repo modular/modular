@@ -29,6 +29,7 @@ import numpy as np
 
 # torch is a caller-supplied dep, see BUILD.bazel
 import torch  # type: ignore[import-not-found]
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -186,7 +187,7 @@ class RaggedAttentionHarness(
         execute_args: list[Buffer] = [
             input_tensor,
             row_offsets,
-            *kv_runtime.flatten(),
+            *tree.leaves(kv_runtime),
         ]
 
         return execute_args, batch

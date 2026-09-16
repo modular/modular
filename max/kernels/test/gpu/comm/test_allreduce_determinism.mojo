@@ -140,9 +140,6 @@ def allreduce_determinism_test[
     )
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
 
     for i in range(ngpus):
@@ -165,13 +162,13 @@ def allreduce_determinism_test[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
         list_of_ctx[i].enqueue_copy(in_dev[i], host_in[i])
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin

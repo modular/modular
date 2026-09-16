@@ -69,6 +69,9 @@ from max.benchmark.benchmark_shared.datasets.chat_judge import (
 from max.benchmark.benchmark_shared.datasets.image_augmentation import (
     augment_samples_with_images,
 )
+from max.benchmark.benchmark_shared.datasets.response_format_augmentation import (
+    augment_samples_with_response_format,
+)
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
     ChatSession,
@@ -1220,25 +1223,14 @@ def _sample_for_seed(
         chat=chat,
     )
 
-    # Inject response_format into all sampled requests if specified
     if args.response_format is not None:
-        response_format = parse_response_format(args.response_format)
-        if isinstance(samples, RequestSamples):
-            for request in samples.requests:
-                request.response_format = response_format
-                # A constrained response ends at its schema; pinning it to a
-                # drawn length only forces generation past that point.
-                request.ignore_eos = False
-            logger.info(
-                f"Injected response_format into {len(samples.requests)} "
-                "requests; cleared ignore_eos, so drawn output lengths now "
-                "cap rather than pin"
-            )
-        else:
-            logger.warning(
-                "response_format is only supported for single-turn benchmarks, "
-                "ignoring for multi-turn chat sessions"
-            )
+        augment_samples_with_response_format(
+            samples,
+            response_format=parse_response_format(args.response_format),
+            fraction=args.response_format_fraction,
+            turn=args.response_format_turn,
+            seed=seed,
+        )
 
     if args.image_fraction > 0:
         augment_samples_with_images(

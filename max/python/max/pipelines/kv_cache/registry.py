@@ -77,12 +77,6 @@ def _use_jenga_kv_cache(
             "Using legacy KV cache since Disaggregated Inference is enabled and Jenga KV cache is incompatible with this feature"
         )
         return False
-    if params.kv_connector_config.type.value == "dkv":
-        # TODO(SERVOPT-1526)
-        logger.info(
-            "Using legacy KV cache since DKV KVConnector is enabled and Jenga KV cache is incompatible with this feature"
-        )
-        return False
     logger.info(
         "Using Jenga KV cache. To fall back to using the legacy KV cache, set MODULAR_USE_LEGACY_KV_CACHE=1"
     )

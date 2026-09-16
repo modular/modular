@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import numpy as np
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -71,9 +72,7 @@ def test_kv_cache_store_ragged_executes() -> None:
         ],
     ) as graph:
         x_cache_in, input_row_offsets_in, *_kv_rest = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(
-            iter(graph.inputs[2:])
-        ).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(graph.inputs[2:]))[0]
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_ragged(
             kv_collection,
@@ -103,7 +102,7 @@ def test_kv_cache_store_ragged_executes() -> None:
     model(
         x_cache_data,
         offsets_data,
-        *runtime_inputs.flatten(),
+        *tree.leaves(runtime_inputs),
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -137,9 +136,7 @@ def test_kv_cache_store_padded_executes() -> None:
         ],
     ) as graph:
         x_cache_in, valid_lengths_in, *_kv_rest = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(
-            iter(graph.inputs[2:])
-        ).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(graph.inputs[2:]))[0]
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_padded(
             kv_collection,
@@ -166,7 +163,7 @@ def test_kv_cache_store_padded_executes() -> None:
     model(
         x_cache_data,
         lengths_data,
-        *runtime_inputs.flatten(),
+        *tree.leaves(runtime_inputs),
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -214,22 +211,20 @@ def test_store_k_scale_cache_executes() -> None:
         device=DeviceRef.GPU(),
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
 
     with Graph(
         "store_k_scale_cache",
         input_types=[
             x_k_scale_type,
             offsets_type,
-            *kv_symbolic_inputs.flatten(),
+            *tree.leaves(kv_symbolic_inputs),
         ],
     ) as graph:
         x_k_scale_in = graph.inputs[0].tensor
         input_row_offsets_in = graph.inputs[1].tensor
 
-        kv_collection = kv_params.unflatten_kv_inputs(
-            iter(graph.inputs[2:])
-        ).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(graph.inputs[2:]))[0]
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         store_k_scale_cache_ragged(
@@ -264,7 +259,7 @@ def test_store_k_scale_cache_executes() -> None:
     model(
         x_k_scale_data,
         offsets_data,
-        *runtime_inputs.flatten(),
+        *tree.leaves(runtime_inputs),
     )
 
     assert runtime_inputs.kv_scales.to_numpy().any()

@@ -49,7 +49,11 @@ from max.nn.kernels import (
     msa_sparse_attention_ragged_mxfp8,
     quantize_dynamic_block_scaled,
 )
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    PagedCacheValues,
+    packed_page_stride,
+)
 
 # MiniMax-M3 TP4 attention shape: 16 query heads over a single KV head,
 # head_dim 128, 128-token pages, 16 gathered blocks per token.
@@ -147,6 +151,7 @@ def _run_case(
             lut_in.tensor,
             max_p_in.tensor,
             max_c_in.tensor,
+            page_stride=packed_page_stride(blocks_in.buffer),
             attention_dispatch_metadata=scalar_args_in.tensor,
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())

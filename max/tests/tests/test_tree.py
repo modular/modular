@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.tree_utils.
+"""Tests for max.tree.
 
 One test per contract, with the facets of a contract as asserts inside it. The
 module is value-agnostic, so these use plain Python leaves and stand-in node
@@ -28,7 +28,7 @@ from types import MappingProxyType
 from typing import Any, NamedTuple
 
 import pytest
-from max.experimental.tree_utils import (
+from max.tree import (
     TreeDef,
     as_predicate,
     extend_path,
@@ -41,7 +41,8 @@ from max.experimental.tree_utils import (
     unflatten,
     update,
 )
-from max.experimental.tree_utils import map as tree_map
+from max.tree import dataclass as tree_dataclass
+from max.tree import map as tree_map
 
 # ═══ Node fixtures: one per shape the protocol allows ═════════════════════════
 
@@ -613,15 +614,14 @@ def test_map_structure_mismatch_names_the_paths() -> None:
         tree_map(lambda a, b: None, {"a": 1}, {"b": 1})
     message = str(excinfo.value)
     assert "tree argument 2" in message
-    assert "expected leaves at ['a']" in message
-    assert "got leaves at ['b']" in message
-    # When the paths agree, the structures are shown instead; the offending
-    # tree is named by position; a static payload is part of the structure.
-    with pytest.raises(ValueError, match="same paths"):
+    assert "expected keys ['a'], got ['b']" in message
+    # The first difference is named, wherever it sits; the offending tree is
+    # named by position; a static payload is part of the structure.
+    with pytest.raises(ValueError, match=r"'a': expected a tuple, got list"):
         tree_map(lambda a, b: None, {"a": (1,)}, {"a": [1]})
     with pytest.raises(ValueError, match="tree argument 3"):
         tree_map(lambda a, b, c: None, {"a": 1}, {"a": 2}, {"b": 3})
-    with pytest.raises(ValueError, match="same paths"):
+    with pytest.raises(ValueError, match=r"'n': expected 1, got 2"):
         tree_map(
             lambda a, b: None,
             {"w": Weight("w"), "n": 1},
@@ -824,6 +824,75 @@ def test_misbehaving_metadata_comparisons_are_absorbed() -> None:
     assert _struct({"n": payload}, leaf=Weight) == _struct(
         {"n": payload}, leaf=Weight
     )
+
+
+# ═══ dataclass ════════════════════════════════════════════════════════════════
+
+
+def test_dataclass_makes_a_dataclass_a_present_field_node() -> None:
+    @tree_dataclass
+    class Inner:
+        a: Any
+        b: Any = None
+
+    @tree_dataclass(frozen=True)
+    class Outer:
+        x: Any
+        inner: Inner
+        items: list[Any]
+        extra: Any = None
+
+    node = Outer(x=1, inner=Inner(a=2, b=3), items=[4, 5])
+    flat, treedef = flatten(node)
+    # Leaves are the present fields in declaration order, nested nodes recursed.
+    assert flat == [1, 2, 3, 4, 5]
+    assert unflatten(treedef, flat) == node
+    assert is_node(node)
+
+    # An unset optional is absent from the leaves, and falls back to its default
+    # on the way back -- at every nesting depth.
+    sparse = Outer(x=1, inner=Inner(a=2), items=[])
+    flat, treedef = flatten(sparse)
+    assert flat == [1, 2]
+    assert unflatten(treedef, flat) == sparse
+
+    # An already-decorated dataclass keeps its own configuration and only gains
+    # the protocol.
+    @tree_dataclass
+    @dataclass(frozen=True)
+    class Prebuilt:
+        p: Any
+
+    prebuilt = Prebuilt(7)
+    assert unflatten(*_flat(prebuilt)) == prebuilt
+
+
+def test_dataclass_restores_an_absent_field_to_none_not_its_default() -> None:
+    """A field is dropped only when it is None, so unflatten brings it back as
+    None rather than reapplying a non-None default it never held. Otherwise
+    setting a defaulted field to None would not survive the round trip."""
+
+    @tree_dataclass
+    class Foo:
+        x: Any = 5  # default is not None
+        y: Any = None
+
+    # Explicit None over a non-None default survives, and is not a leaf.
+    node = Foo(x=None, y=7)
+    flat, treedef = flatten(node)
+    assert flat == [7]
+    assert unflatten(treedef, flat) == Foo(x=None, y=7)
+
+    # A non-None default is present as a leaf, so it round-trips as itself.
+    assert unflatten(*_flat(Foo())) == Foo(x=5, y=None)
+
+    # A required field set to None is likewise restored, not a missing argument.
+    @tree_dataclass
+    class Bar:
+        a: Any
+        b: Any = None
+
+    assert unflatten(*_flat(Bar(a=None, b=2))) == Bar(a=None, b=2)
 
 
 # ═══ Errors from unflatten ════════════════════════════════════════════════════
@@ -1079,7 +1148,7 @@ def test_a_models_structure_is_a_compilation_cache_key() -> None:
     )
 
 
-# The transforms tree_utils leaves unbuilt on purpose (listed at the foot of
-# tree_utils.py) have their contracts recorded in the design doc alongside the
+# The transforms max.tree leaves unbuilt on purpose (listed at the foot of
+# tree.py) have their contracts recorded in the design doc alongside the
 # behaviour they would pin, so the tests for one come from there if a caller
 # ever appears for it.

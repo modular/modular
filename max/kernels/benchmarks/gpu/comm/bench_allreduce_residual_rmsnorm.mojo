@@ -589,9 +589,6 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 
     for i in range(ngpus):
@@ -619,12 +616,12 @@ def bench_allreduce_rmsnorm_fp8[
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # TileTensor views for allreduce.
     comptime InTensorType = TileTensor[

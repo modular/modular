@@ -116,6 +116,7 @@ def _blackwell_matmul_swiglu[
         c_type,
         transpose_b,
         config=config,
+        BiasEngine=BiasEngine,
     ]
 
     # Reshape rank-2 inputs to rank-3 for TMA (batch=1)
@@ -176,16 +177,16 @@ def _blackwell_matmul_swiglu[
     var c_gmem_ptr = c_out.ptr
     var c_gmem_stride = UInt32(Int(c_out.dim[1]()))
 
-    # Build 1D bias tile (real ptr when use_bias, dummy c_out ptr otherwise).
-    comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
-    var bias_1d_ptr: ImmutPtr
+    var bias_1d_tile: OptionalReg[KernelType.Bias1DTile]
     comptime if config.use_bias:
-        bias_1d_ptr = rebind[ImmutPtr](bias_tensor.value().ptr)
+        bias_1d_tile = KernelType.Bias1DTile(
+            bias_tensor.value()._unsafe_storage_cast[
+                to_origin=ImmutAnyOrigin
+            ](),
+            KernelType.Bias1DTileLayout,
+        )
     else:
-        bias_1d_ptr = rebind[ImmutPtr](c_out.ptr)
-    var bias_1d_tile = KernelType.Bias1DTile(
-        bias_1d_ptr, KernelType.Bias1DTileLayout
-    )
+        bias_1d_tile = None
 
     comptime cluster_tuple = StaticTuple[Int32, 3](
         Int32(config.cluster_shape[0]),
@@ -212,6 +213,7 @@ def _blackwell_matmul_swiglu[
         type_of(c_tma_op).desc_shape,
         transpose_b,
         config=config,
+        BiasEngine=BiasEngine,
         cluster_shape=cluster_tuple,
         pdl_level=pdl_level,
     ]

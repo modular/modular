@@ -412,15 +412,17 @@ def test_topk_topp_rng_offset_batch_invariant[
     """Regression test: the same request samples the same token regardless of
     its physical batch slot.
 
-    The kernel keys the RNG offset on the request's logical row (``row_idx``),
-    not the physical batch slot (``block_idx.x``). To exercise that, we point
-    every output slot at the SAME logical row via ``indices=[0, 0, ...]`` and
-    give that row a single seed. All slots therefore read identical probs and
-    use the identical per-row seed; the only thing that differs between slots is
-    ``block_idx.x``. A batch-invariant sampler must return the same token in
-    every slot. (Before the fix the offset was ``block_idx.x``, so the slots
-    diverged.) Uses a nucleus with several tokens so the draw actually selects
-    among candidates rather than collapsing to the argmax.
+    The per-row seed is the kernel's whole RNG key -- nothing derived from
+    `block_idx.x` reaches the Philox counter -- so slots carrying the same
+    distribution and the same seed must agree. Every row is given identical
+    probabilities and the identical seed, leaving `block_idx.x` as the only
+    difference between them. Keying the counter on the slot (as this kernel
+    once did) makes them diverge. Uses a nucleus with several tokens so the
+    draw actually selects among candidates rather than collapsing to the
+    argmax.
+
+    Decorrelating co-resident requests is the per-row seed's job, not the
+    counter's: callers derive each row's seed from a stable per-request id.
     """
     comptime batch_size = 8
     print(
@@ -446,32 +448,22 @@ def test_topk_topp_rng_offset_batch_invariant[
     var input_tensor = TileTensor(device_input, input_runtime_layout)
     var output_tensor = TileTensor(device_output, output_runtime_layout)
 
-    # Fill every row with normalized probabilities. Only logical row 0 is read
-    # (indices point all slots at it), but filling all rows keeps the layout
-    # well-defined.
+    # Every row gets row 0's distribution, so the rows differ only by slot.
     with device_input.map_to_host() as input_host:
         var input_host_tensor = TileTensor(input_host, input_runtime_layout)
         fill_random_for_test[dtype, normalized=True](input_host_tensor)
+        for b in range(1, batch_size):
+            for j in range(N):
+                input_host[b * N + j] = input_host[j]
 
-    # Single seed for logical row 0.
-    var seed_buf = ctx.enqueue_create_buffer[.uint64](1)
-    var seed_layout = row_major(Idx[1])
+    # One seed value, repeated: the same request key in every slot.
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](batch_size)
+    var seed_layout = row_major(batch_size)
     with seed_buf.map_to_host() as seed_host:
-        seed_host[0] = UInt64(12345)
+        for b in range(batch_size):
+            seed_host[b] = UInt64(12345)
     var seed_tt = (
         TileTensor(seed_buf, seed_layout).as_unsafe_any_origin().as_immut()
-    )
-
-    # indices = [0, 0, ..., 0]: every physical slot reads logical row 0.
-    var indices_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
-    var indices_layout = row_major(batch_size)
-    with indices_buf.map_to_host() as indices_host:
-        for b in range(batch_size):
-            indices_host[b] = Scalar[out_idx_type](0)
-    var indices_tt = (
-        TileTensor(indices_buf, indices_layout)
-        .as_unsafe_any_origin()
-        .as_immut()
     )
 
     topk_topp_sampling_from_prob[dtype, out_idx_type, block_size](
@@ -483,7 +475,6 @@ def test_topk_topp_rng_offset_batch_invariant[
         deterministic=False,
         rng_seed=seed_tt,
         rng_offset=0,
-        indices=indices_tt,
     )
 
     with device_output.map_to_host() as output_host:
@@ -1573,9 +1564,8 @@ def main() raises:
             ctx, batch_size=4, N=1024, K=20, p=0.9
         )
 
-        # Regression: the RNG offset must follow the request's logical row, not
-        # the physical batch slot, so a request samples the same token wherever
-        # it lands in the batch.
+        # Regression: nothing derived from the batch slot may reach the RNG
+        # counter, so a request samples the same token wherever it lands.
         test_topk_topp_rng_offset_batch_invariant[
             float32_dtype, DType.int32, default_block_size
         ](ctx, N=1024, K=50, p=0.9)

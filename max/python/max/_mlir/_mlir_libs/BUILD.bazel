@@ -40,19 +40,19 @@ modular_nanobind_extension(
 modular_generate_stubfiles(
     name = "_mlir",
     srcs = [":py_srcs"],
-    diff_test_failure_message = """
-A stubfile is out of sync with its generated counterpart.
-This is likely to occur when bumping LLVM, you can run
-'./utils/sync-stubfiles.sh' and commit the results.
-""",
     extension = ":_mlir.bindings",
     full_name = "max._mlir._mlir_libs._mlir",
+    generated_pyi_srcs = [
+        "_mlir/__init__.pyi",
+        "_mlir/ir.pyi",
+        "_mlir/passmanager.pyi",
+        "_mlir/rewrite.pyi",
+    ],
     header = """
 # ===----------------------------------------------------------------------=== #
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 """,
-    pyi_srcs = glob(["**/*.pyi"]),
     tags = [
         "no-mypy",
         "no-pydeps",  # Needs _mlir (invalid relative import) and max._mlir.ir (which would cause a circular dependency)

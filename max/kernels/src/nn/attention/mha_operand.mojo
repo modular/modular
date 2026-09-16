@@ -25,6 +25,7 @@ from kv_cache.types import (
     _populate_via_row_idx,
     create_flat_scale_tma_tile,
     flat_scale_window,
+    scale_align_elems,
     kv_num_sub_tiles,
     kv_sub_tile_rows,
     kv_tma_fold_chunks,
@@ -182,6 +183,31 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         ...
+
+    @inline(.always)
+    def scale_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row, block)` coordinate of a token's scale tile.
+
+        Defaults to the flat form, which is one block: the row is this
+        operand's own row index rounded down to the 16-byte unit a TMA box
+        must start on, and the block is 0. A paged operand overrides this,
+        because folding its block into the row makes the coordinate scale with
+        the whole pool rather than with one block.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row, and the block.
+        """
+        comptime align = scale_align_elems[Self.dtype]()
+        return (
+            Int32(self.row_idx(batch_idx, start_tok_idx) & ~UInt32(align - 1)),
+            Int32(0),
+        )
 
     @inline(.always)
     def populate[
@@ -938,6 +964,21 @@ struct KVCacheScalesMHAOperand[
         must too.
         """
         return self.cache.scale_row_idx(batch_idx, start_tok_idx)
+
+    @inline(.always)
+    def scale_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The paged `(row_in_block, block)` coordinate; see the cache's own.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return self.cache.scale_tma_coords(batch_idx, start_tok_idx)
 
     @inline(.always)
     def get_tma_row(self, encoded_index: Int32) -> Int32:

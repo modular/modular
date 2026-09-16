@@ -16,6 +16,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/SmallVector.h"
 
 using namespace M;
 using namespace HLCF;
@@ -207,7 +208,6 @@ struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
       if (thenTerm.getLabelAttr() != elseTerm.getLabelAttr())
         return failure();
     }
-    DictionaryAttr attrs = thenTerm->getAttrDictionary();
 
     // Create a new op and put a return right after it. We have to create a new
     // op because the number of results might differ from the original.
@@ -215,7 +215,8 @@ struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
         OpTy::create(rewriter, op.getLoc(),
                      op.getThenTerminator()->getOperandTypes(), op.getCond());
     TerminatorOpT::create(rewriter, op.getLoc(), TypeRange(),
-                          newOp->getResults(), attrs.getValue());
+                          newOp->getResults(), thenTerm.getProperties(),
+                          llvm::to_vector(thenTerm->getDiscardableAttrs()));
 
     // Move the 'then' block from the original op to the new one and replace
     // the return terminator with yield.

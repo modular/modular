@@ -551,6 +551,37 @@ def test_structured_output_grammar_rejection_counter() -> None:
         )  # Should not raise
 
 
+def test_tool_call_requests_counter() -> None:
+    """The tool-call usage counter records with a bounded 'choice' tag."""
+    common.configure_metrics(Settings())
+    assert "maxserve.tool_call.requests" in metrics.SERVE_METRICS
+    for choice in ("auto", "required", "named", "none", "other"):
+        metrics.METRICS.tool_call_requests(choice)  # Should not raise
+
+
+def test_tool_call_responses_counter() -> None:
+    """The emitted-tool-call counter records once per request, untagged."""
+    common.configure_metrics(Settings())
+    assert "maxserve.tool_call.responses" in metrics.SERVE_METRICS
+    metrics.METRICS.tool_call_responses()  # Should not raise
+
+
+def test_tool_call_tools_per_request_histogram() -> None:
+    """The declared-tool-count histogram records an untagged distribution."""
+    common.configure_metrics(Settings())
+    assert "maxserve.tool_call.tools_per_request" in metrics.SERVE_METRICS
+    for count in (1, 8, 64):
+        metrics.METRICS.tool_call_tools_per_request(count)  # Should not raise
+
+
+def test_structured_output_requests_counter() -> None:
+    """The structured-output usage counter records with a bounded 'kind' tag."""
+    common.configure_metrics(Settings())
+    assert "maxserve.structured_output.requests" in metrics.SERVE_METRICS
+    for kind in ("json_object", "json_schema"):
+        metrics.METRICS.structured_output_requests(kind)  # Should not raise
+
+
 def test_batch_metrics_with_batch_type_attribute() -> None:
     """Pins down the ``batch_type`` label on the new graduated batch histograms.
     ``maxserve.batch_prompt_throughput`` is representative of the batch-level

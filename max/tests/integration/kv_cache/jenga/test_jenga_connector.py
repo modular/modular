@@ -87,6 +87,7 @@ class FakeConnector:
         self.asynchronous = asynchronous
         self.loads: list[tuple[dict[str, list[int]], list[bytes], int]] = []
         self.offloads: list[tuple[dict[str, list[int]], list[bytes]]] = []
+        self.touches: list[tuple[list[bytes], int]] = []
         self.transfers: list[FakeTransfer] = []
 
     def load(
@@ -151,7 +152,7 @@ class FakeConnector:
     def touch(
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
     ) -> None:
-        return None
+        self.touches.append((list(block_hashes), replica_idx))
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
@@ -347,6 +348,11 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
     assert second.cached_prefix_length == len(reusable)
     assert second.cached_prefix_external_length == len(reusable) - 1
     assert second.tokens.processed_length == len(reusable)
+    # Recency covers the whole reused run, device hit AND connector onload,
+    # which is what BlockManager touches on the legacy path. Gating the touch
+    # on the device hit alone would skip it entirely under
+    # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, where there is never one.
+    assert connector.touches == [(list(reusable), 0)]
     # One contiguous row: the device page first, then the onloaded ones,
     # then whatever the forward still has to fill.
     row = manager.get_req_blocks_per_leaf(second)[FULL]
@@ -417,6 +423,14 @@ def test_last_level_cache_only_forces_every_hit_through_the_connector(
     assert second.cached_prefix_external_length == second.cached_prefix_length
     assert second.cached_prefix_length > 0
     assert connector.loads[-1][1] == list(offloaded[:-1])
+    # The recency touch must still fire with NO device hit. This is the
+    # regression guard for the call site's own rationale: gating it on
+    # `num_hit_blocks` instead of the reused run skips it entirely under
+    # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, which is exactly the
+    # configuration that leans on the connector hardest. No other test can see
+    # that mutation, because every other one has a device hit and the touch
+    # argument is byte-identical either way.
+    assert connector.touches == [(list(offloaded[:-1]), 0)]
 
 
 def test_alloc_drains_landed_transfers_so_pins_do_not_accumulate() -> None:
@@ -497,3 +511,76 @@ def test_swa_connector_onload_null_pads_and_skips_prefix_cache_commit() -> None:
         not block.is_null for block in pool.prefix_caches[SLIDING].values()
     )
     assert len(pool.prefix_caches[FULL]) == len(asked)
+
+
+def test_step_settles_offloads_before_committing() -> None:
+    """``step`` must run the post-forward offload barrier.
+
+    dKV's ``offload`` only acquires its slots and posts the writes; the blocks
+    stay ``Filling`` -- counted under ``g1_blocks`` but unreadable -- until
+    ``wait_for_offloads`` settles the transfers and registers them. Without the
+    barrier every read misses and the connector reports a 0% hit rate while dKV
+    appears to fill up.
+
+    Order matters as much as presence: the barrier settles the PREVIOUS
+    forward's offloads, so it has to run before this step commits new writes.
+    """
+    seen: list[int] = []
+    manager_box: list[JengaBlockManager] = []
+
+    class _BarrierRecorder(FakeConnector):
+        """Reads the prefix cache from INSIDE the offload barrier.
+
+        Sampling here is what lets the ordering half of this test fail.
+        Appending a marker after ``step`` returns cannot: the marker lands
+        after the whole call either way, whatever order ``step`` used inside.
+        """
+
+        def wait_for_offloads(self) -> None:
+            pool = manager_box[0].pools[0]
+            seen.append(
+                sum(len(cache) for cache in pool.prefix_caches.values())
+            )
+
+    connector = _BarrierRecorder([FULL])
+    manager = make_manager(connector)
+    manager_box.append(manager)
+
+    first = make_ctx([1, 2, 3, 4])
+    manager.claim(first)
+    manager.alloc(first)
+    first.update(9)
+    manager.step(first)
+    manager.offload(0)
+
+    pool = manager.pools[0]
+    after_first = sum(len(cache) for cache in pool.prefix_caches.values())
+    assert after_first, "step should have committed the filled run"
+    assert connector.offloads, "step should leave a committed run to offload"
+
+    # A second forward. Its barrier settles the FIRST forward's offloads, so it
+    # must run before this step's own commit and can only see what the first
+    # step published.
+    second = make_ctx([5, 6, 7, 8])
+    manager.claim(second)
+    manager.alloc(second)
+    second.update(9)
+    manager.step(second)
+
+    assert seen == [0, after_first], (
+        f"barrier saw {seen}; it must run before each step's commit "
+        f"(expected [0, {after_first}])"
+    )
+
+
+def test_step_without_a_connector_still_commits() -> None:
+    """A manager with no connector must not reach for a barrier."""
+    manager = make_manager(None)
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+
+    manager.release(ctx)

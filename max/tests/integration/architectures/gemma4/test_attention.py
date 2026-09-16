@@ -38,6 +38,7 @@ from conftest import (
     Gemma4RotaryEmbedding,
     Gemma4TextAttention,
 )
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -227,7 +228,7 @@ def execute_max_attention(
             Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
                 device
             ),
-            *kv_runtime_inputs.flatten(),
+            *tree.leaves(kv_runtime_inputs),
         ]
         output = compiled.execute(*execute_args)[0]
     finally:

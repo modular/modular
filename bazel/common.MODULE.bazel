@@ -756,6 +756,25 @@ rules_ts_ext.deps(
 )
 use_repo(rules_ts_ext, "npm_typescript")
 
+# Used by nanobind
+http_archive(
+    name = "robin_map",
+    build_file = "//bazel/public-patches:robin_map.BUILD",
+    sha256 = "7930dbf9634acfc02686d87f615c0f4f33135948130b8922331c16d90a03250c",
+    strip_prefix = "robin-map-1.4.0",
+    url = "https://github.com/Tessil/robin-map/archive/refs/tags/v1.4.0.tar.gz",
+)
+
+http_archive(
+    name = "nanobind",
+    build_file = "//bazel/public-patches:nanobind.BUILD",
+    integrity = "sha256-JdKEQXtOcml45y690w0nMM4WT89IFXlVS7KE4YmTodU=",
+    strip_prefix = "nanobind-eb2414ef2eda40f07fadaca400bdf9558ed121fe",
+    urls = [
+        "https://github.com/wjakob/nanobind/archive/eb2414ef2eda40f07fadaca400bdf9558ed121fe.tar.gz",
+    ],
+)
+
 # BEGIN GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES
 
 LOGIT_VERIFICATION_GOLDENS = [

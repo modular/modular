@@ -30,17 +30,18 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
-    RecurrentStateInputs,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -49,10 +50,11 @@ from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
     ATTN_CACHE_KEY,
     STATE_CACHE_KEY,
-    attn_cache,
     linear_state_regions,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
+    JengaKVCacheManager,
+)
 from test_common.context_utils import create_text_context
 
 HIDDEN = 64
@@ -70,9 +72,6 @@ LINEAR_VALUE_HEADS = 2
 # The recurrence kernel is only compiled for 128 x 128 heads.
 LINEAR_KEY_DIM = 128
 LINEAR_VALUE_DIM = 128
-CONV_DIM = 2 * LINEAR_KEY_HEADS * LINEAR_KEY_DIM + (
-    LINEAR_VALUE_HEADS * LINEAR_VALUE_DIM
-)
 
 
 def _config(target_layer_ids: list[int] | None) -> Qwen3_5Config:
@@ -154,6 +153,22 @@ def _with_state_regions(config: Qwen3_5Config) -> Qwen3_5Config:
     return config
 
 
+def _create_kv_manager(
+    params: KVCacheParamInterface, *, max_batch_size: int = 2
+) -> JengaKVCacheManager:
+    """Jenga manager over the full attn+state tree, matching production serve."""
+    tp_degree = params.tensor_parallel_degree
+    huge_page_bytes = max(
+        leaf.bytes_per_page // tp_degree for leaf in params.leaves().values()
+    )
+    num_huge_blocks = 32
+    return JengaKVCacheManager.create(
+        params=params,
+        available_bytes=num_huge_blocks * huge_page_bytes * len(params.devices),
+        max_batch_size=max_batch_size,
+    )
+
+
 def _run(
     target_layer_ids: list[int] | None,
     *,
@@ -197,19 +212,23 @@ def _run(
         tokens, row_offsets, return_n_logits, *rest = graph.inputs
         it = iter(rest)
         signal_buffers = [next(it).buffer]
-        tree = kv_tree.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
-        leaf = tree.children[ATTN_CACHE_KEY]
-        assert isinstance(leaf, KVCacheInputs)
-        state = tree.children[STATE_CACHE_KEY]
-        assert isinstance(state, RecurrentStateInputs)
+        kv_inputs = kv_tree.unflatten_kv_inputs(it)
+        assert isinstance(kv_inputs, dict)
+        leaf = kv_inputs[ATTN_CACHE_KEY]
+        assert (
+            isinstance(leaf, tuple)
+            and leaf
+            and isinstance(leaf[0], KVCacheInputsPerDevice)
+        )
+        state = kv_inputs[STATE_CACHE_KEY]
+        assert isinstance(state, tuple)
         outputs = model(
             tokens.tensor,
-            list(leaf.inputs),
+            tree.leaves(leaf, leaf=KVCacheInputsPerDevice),
             return_n_logits.tensor,
             row_offsets.tensor,
             signal_buffers,
-            list(state.inputs),
+            tree.leaves(state, leaf=RecurrentStateInputsPerDevice),
         )
         graph.output(*outputs)
 
@@ -218,47 +237,22 @@ def _run(
     def buf(x: np.ndarray) -> Buffer:
         return Buffer.from_numpy(np.ascontiguousarray(x)).to(device)
 
-    kv_manager = PagedKVCacheManager(
-        params=attn_cache(config.kv_params),
-        total_num_pages=8,
-        session=session,
-        max_batch_size=2,
-    )
+    kv_params = config.kv_params
+    assert isinstance(kv_params, MultiKVCacheParams)
+    kv_manager = _create_kv_manager(kv_params)
     ctx = create_text_context(
         np.arange(SEQ_LEN, dtype=np.int64), max_length=128
     )
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
-    kv_inputs = list(
-        kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0].flatten()
-    )
+    kv_runtime = kv_manager.runtime_inputs([[ctx]])
 
     results = compiled.execute(
         buf(np.arange(SEQ_LEN, dtype=np.int64)),
         buf(np.array([0, SEQ_LEN], dtype=np.uint32)),
         Buffer.from_numpy(np.array([1], dtype=np.int64)),
         *Signals.allocate([device]),
-        *kv_inputs,
-        # One pool per leaf, a block's layers being consecutive rows, then
-        # the rows each layer reads.
-        buf(
-            np.zeros(
-                (2 * NUM_LINEAR, CONV_DIM, CONV_KERNEL - 1), dtype=np.float32
-            )
-        ),
-        buf(
-            np.zeros(
-                (
-                    2 * NUM_LINEAR,
-                    LINEAR_VALUE_HEADS,
-                    LINEAR_KEY_DIM,
-                    LINEAR_VALUE_DIM,
-                ),
-                dtype=np.float32,
-            )
-        ),
-        buf(np.arange(NUM_LINEAR, dtype=np.uint32).reshape(1, NUM_LINEAR)),
-        buf(np.arange(NUM_LINEAR, dtype=np.uint32).reshape(1, NUM_LINEAR)),
+        *tree.leaves(kv_runtime),
     )
     # LAST_TOKEN logits, then one capture per tapped layer.
     return [np.array(r.to(CPU()).to_numpy()) for r in results[1:]]

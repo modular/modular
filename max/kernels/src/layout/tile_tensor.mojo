@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """TileTensor type for structured memory access with compile-time layout information."""
 
-from std.math import align_up, ceildiv
+from std.bit import log2_floor
+from std.math import align_up, ceildiv, nan
+from std.math.uutils import umod
 from std.sys import align_of, simd_width_of, is_gpu, size_of
 from std.os import abort
 
@@ -24,6 +26,7 @@ from std.memory import unsafe_stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
 from max.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
+from max.gpu.memory import CacheEviction, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout.layout_tensor import LayoutTensor
 from std.sys import prefetch
@@ -69,6 +72,21 @@ from .int_tuple import coord_to_int_tuple, _IntTupleToCoordLike
 @inline(.always)
 def _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
+
+
+@inline(.always)
+def _async_fill_value[dtype: DType, fill: Fill]() -> Optional[Scalar[dtype]]:
+    """Returns the value written to the bytes a masked async copy skips, or
+    `None` when `Fill.NONE` asks for those bytes to be left as they are."""
+    comptime if fill == Fill.NONE:
+        return None
+    elif fill == Fill.NAN:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "Fill.NAN requires a floating-point dtype"
+        return nan[dtype]()
+    else:
+        return Scalar[dtype](0)
 
 
 struct TileTensor[
@@ -1149,6 +1167,278 @@ struct TileTensor[
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (other._storage, other.layout),
         )
+
+    @inline(.always)
+    def copy_from_async[
+        is_masked: Bool = False,
+        swizzle: Optional[Swizzle] = None,
+        fill: Fill = Fill.NONE,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        src: TileTensor,
+        src_idx_bound: Scalar[src.linear_idx_type] = 0,
+        base_offset: Scalar[Self.linear_idx_type] = 0,
+    ) where Self.mut:
+        """Asynchronously copy data from another tensor to this tensor using GPU
+        hardware.
+
+        This method performs an asynchronous copy from the source tensor to this
+        tensor using GPU hardware acceleration. It's specifically designed for
+        copying data from global memory to shared memory in GPU kernels,
+        leveraging hardware-specific asynchronous copy mechanisms for improved
+        performance.
+
+        For optimal performance, you need to arrange the copy correctly. Use the
+        [`distribute()`](/api/mojo/layout/tile_tensor/TileTensor/#distribute)
+        method to create thread-local fragments of the source and destination
+        tensors, assigning each thread one or more elements to copy.
+
+        Optionally, use the
+        [`vectorize()`](/api/mojo/layout/tile_tensor/TileTensor/#vectorize)
+        method to get vectorized views of both tensors before calling
+        `distribute()`. This allows each thread to copy multiple elements of the
+        tensor. For example:
+
+        ```mojo
+        var fragment = tensor.vectorize[1, simd_width]().distribute[
+            thread_layout
+        ](thread_id)
+        ```
+
+        The copy operation is asynchronous, so you must call
+        [`async_copy_wait_all()`](/api/mojo/max/gpu/memory/memory/async_copy_wait_all/)
+        or
+        [`async_copy_wait_group()`](/api/mojo/max/gpu/memory/memory/async_copy_wait_group/)
+        to ensure the copy has completed before using the data.
+
+        Unlike `LayoutTensor`, a `TileTensor`'s logical element is always a
+        contiguous run of `element_size` scalars (the engine's
+        `element_width`), so there is no non-vectorizable element layout to
+        fall back on: every copy issues one `cp.async` per logical element.
+
+        Constraints:
+            - Destination must be in shared memory.
+            - Source must be in the generic or global address space.
+            - Source and destination data types must match.
+            - Element size must be 4, 8, or 16 bytes.
+            - Destination tensor must have a static layout.
+            - `Fill.NAN` requires a floating-point dtype and 16-byte elements.
+
+        Parameters:
+            is_masked: Whether to perform a masked copy, where elements outside
+                the `src_idx_bound` are not copied and are handled according to
+                `fill` instead.
+            swizzle: Optional swizzling function to rearrange the destination
+                indices, which can improve memory access patterns.
+            fill: What a masked copy does with the bytes it skips. `Fill.NONE`
+                leaves them untouched, so the destination keeps whatever it
+                already held. `Fill.ZERO` zeroes them, byte-granularly, so a
+                partially valid element is part copy and part zero.
+                `Fill.NAN` writes NaN, but only whole elements at a time: a
+                partially valid element is filled rather than partly copied.
+            eviction_policy: Cache eviction policy for the source data.
+
+        Args:
+            src: The source tensor to copy data from.
+            src_idx_bound: For masked copies, the upper bound index for valid
+                source elements.
+            base_offset: Base offset for swizzling calculations.
+
+        Example:
+
+        ```mojo
+        from layout import Idx, TileTensor, row_major
+        from layout.tile_tensor import stack_allocation
+        from max.gpu import thread_idx
+        from max.gpu.memory import async_copy_commit_group, async_copy_wait_all
+        from max.gpu.sync import barrier
+
+        def kernel(src_ptr: MutPointer[Float32, MutAnyOrigin]):
+            comptime thread_layout = row_major(Idx[2], Idx[2])
+
+            var src = TileTensor(src_ptr, row_major[4, 4]())
+            var smem = stack_allocation[
+                dtype = DType.float32, address_space = .SHARED
+            ](row_major[4, 4]())
+
+            # Each of the 4 threads copies its own 2x2 fragment.
+            var tid = thread_idx.x
+            smem.distribute[thread_layout](tid).copy_from_async(
+                src.distribute[thread_layout](tid)
+            )
+            async_copy_commit_group()
+            async_copy_wait_all()
+            barrier()
+            # ... read the shared tile
+        ```
+
+        Performance:
+
+        - Supports vectorized copies for 4, 8, or 16-byte elements for better
+            throughput.
+        - Can bypass L1 cache with appropriate eviction policies for specific
+            access patterns.
+        - Swizzling can improve memory access patterns and reduce bank
+            conflicts.
+
+        Notes:
+
+        - Asynchronous copies allow computation to overlap with memory
+            transfers.
+        - A synchronization barrier is required before using the copied data.
+        """
+        comptime assert (
+            Self.address_space == .SHARED
+        ), "Async is only supported for destinations in shared memory"
+
+        comptime assert (
+            src.address_space == AddressSpace.GENERIC
+            or src.address_space == AddressSpace.GLOBAL
+        ), (
+            "Async source must be in the generic or global address space;"
+            " cp.async reads from global memory"
+        )
+
+        comptime assert (
+            src.dtype == Self.dtype
+        ), "src dtype must be the same as dst dtype."
+
+        comptime assert (
+            Self.element_size == src.element_size
+        ), "copy_from_async should move data of the same element size"
+
+        # Eligibility for 4, 8, 16 bytes async load.
+        comptime element_size_bytes = size_of[Self.dtype]() * Self.element_size
+        comptime assert element_size_bytes in (
+            4,
+            8,
+            16,
+        ), "copy_from_async only allows 4, 8, 16 bytes element"
+
+        # The swizzle's `base` parameter sets how many least-significant bits
+        # of the offset are kept constant. cp.async requires the destination
+        # address to be aligned to `element_size` scalars, so the swizzle must
+        # not permute bits below `log2(element_size)`.
+        # `make_swizzle[..., access_size=element_size]` satisfies this; a
+        # hand-rolled `Swizzle(bits, base, shift)` with
+        # `base < log2_floor(element_size)` would silently produce misaligned
+        # offsets and trigger CUDA_ERROR_MISALIGNED_ADDRESS.
+        comptime if swizzle:
+            comptime assert swizzle.value().base >= log2_floor(
+                Self.element_size
+            ), (
+                "swizzle.base is too small for the requested element_size:"
+                " cp.async would receive misaligned offsets. Construct the"
+                " swizzle with `make_swizzle[..., access_size=element_size]`"
+                " (or a hand-rolled `Swizzle(bits, base, shift)` with"
+                " `base >= log2_floor(element_size)`)."
+            )
+
+        # Shared memory must always have a static layout.
+        comptime assert (
+            Self.LayoutType.all_dims_known
+        ), "dst tensor must have static layout"
+
+        comptime num_vecs = Self.LayoutType.static_product
+
+        comptime assert (
+            not src.LayoutType.shape_known
+            or src.LayoutType.static_product == num_vecs
+        ), "copy_from_async requires matching total element count"
+
+        # The trailing `bitcast` materializes both pointee types as a concrete
+        # `Scalar[Self.dtype]` so `async_copy`'s `dtype` parameter infers
+        # cleanly; without it the inferred dtype is a comptime expression that
+        # fails to unify across the two pointer arguments.
+        var dst_ptr = (
+            self.ptr.address_space_cast[.SHARED]()
+            .unsafe_mut_cast[True]()
+            .bitcast[Scalar[Self.dtype]]()
+        )
+        var src_ptr = src.ptr.address_space_cast[.GLOBAL]().bitcast[
+            Scalar[Self.dtype]
+        ]()
+
+        comptime for i in range(num_vecs):
+            var src_idx = src.layout[linear_idx_type=src.linear_idx_type](
+                Idx[i]
+            )
+            var dst_idx = self.layout[linear_idx_type=Self.linear_idx_type](
+                Idx[i]
+            )
+
+            var swizzled_idx: Scalar[Self.linear_idx_type]
+            comptime if swizzle:
+                comptime swizzle_fn = swizzle.value()
+                # The destination address is swizzled in absolute tile
+                # coordinates (`base_offset` + the in-window position), then
+                # rebased back onto the fragment. Only the in-window position
+                # is permuted, so the shuffle stays local to one window.
+                var dst_idx_base = umod(
+                    dst_idx, Scalar[Self.linear_idx_type](swizzle_fn.size())
+                )
+                swizzled_idx = (
+                    swizzle_fn(base_offset + dst_idx_base)
+                    + (dst_idx - dst_idx_base)
+                    - base_offset
+                )
+            else:
+                swizzled_idx = dst_idx
+
+            comptime if is_masked:
+                comptime fill_value = _async_fill_value[Self.dtype, fill]()
+                var in_bounds = Bool(src_idx < src_idx_bound)
+
+                comptime if not fill_value:
+                    # `Fill.NONE`: leave the skipped bytes as the caller left
+                    # them. `async_copy` only forwards `src_size` to the
+                    # hardware when it has a fill value to write, so a
+                    # zero-size copy would widen back to a full-width read of
+                    # out-of-bounds source; skip the instruction instead.
+                    if in_bounds:
+                        async_copy[
+                            element_size_bytes,
+                            eviction_policy=eviction_policy,
+                        ](src_ptr + src_idx, dst_ptr + swizzled_idx)
+                elif fill_value.value() == 0:
+                    # Zero fill is byte-granular: `cp.async` copies
+                    # `src_size` bytes and zeroes the rest of the element.
+                    async_copy[
+                        element_size_bytes,
+                        fill=fill_value,
+                        eviction_policy=eviction_policy,
+                    ](
+                        src_ptr + src_idx,
+                        dst_ptr + swizzled_idx,
+                        Int32(element_size_bytes) if in_bounds else 0,
+                    )
+                else:
+                    # A non-zero fill has no hardware path, so `cp.async`
+                    # predicates between a whole-element copy and a
+                    # whole-element store of the fill value. That makes it
+                    # all-or-nothing per element rather than byte-granular,
+                    # and 16-byte elements only.
+                    #
+                    # `cp.async` reads `predicate` and ignores `src_size`
+                    # here; the AMD/Apple emulation does the reverse. Pass
+                    # both so the element is either wholly copied or wholly
+                    # filled on every target.
+                    async_copy[
+                        element_size_bytes,
+                        fill=fill_value,
+                        eviction_policy=eviction_policy,
+                    ](
+                        src_ptr + src_idx,
+                        dst_ptr + swizzled_idx,
+                        Int32(element_size_bytes) if in_bounds else 0,
+                        predicate=in_bounds,
+                    )
+            else:
+                async_copy[
+                    element_size_bytes,
+                    eviction_policy=eviction_policy,
+                ](src_ptr + src_idx, dst_ptr + swizzled_idx)
 
     @__allow_legacy_custom_self_type
     def _distance(

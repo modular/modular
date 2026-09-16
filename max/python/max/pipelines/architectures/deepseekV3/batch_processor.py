@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3EpBatchProcessor,
 )
@@ -104,7 +104,7 @@ class DeepseekV3BatchProcessor(Llama3EpBatchProcessor):
     def prepare_initial_token_inputs(  # type: ignore[override]
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
         """Prepare batch inputs for a DeepseekV3 forward pass.

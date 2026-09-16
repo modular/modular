@@ -45,6 +45,7 @@ import numpy as np
 import pytest
 import torch
 from huggingface_hub import hf_hub_download, snapshot_download
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -418,7 +419,7 @@ class _StepHarness:
             Buffer.zeros(
                 shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=device
             ),
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
             Buffer.from_numpy(draft_tokens).to(device),
             Buffer.from_numpy(np.array([1], dtype=np.uint64)).to(device),
             Buffer.from_numpy(np.array([0.0], dtype=np.float32)).to(device),

@@ -57,7 +57,7 @@ kgen.func @add_si32(%arg0: !kgen.scalar<si32>) -> !kgen.scalar<si32> {
 
 // CHECK-LABEL: @add_f32
 kgen.func @add_f32(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
-  // CHECK: llvm.fadd %0, %0 {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.fadd %0, %0 fastmath<contract>
   %0 = pop.add %arg0, %arg0 : !kgen.scalar<f32>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -80,7 +80,7 @@ kgen.func @sub_si32(%arg0: !kgen.scalar<si32>, %arg1: !kgen.scalar<si32>) -> !kg
 kgen.func @sub_f32(%arg0: !kgen.scalar<f32>, %arg1: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
   // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
-  // CHECK: llvm.fsub [[ARG0]], [[ARG1]] {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.fsub [[ARG0]], [[ARG1]] fastmath<contract>
   %0 = pop.sub %arg0, %arg1 : !kgen.scalar<f32>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -102,7 +102,7 @@ kgen.func @mul_si32(%arg0: !kgen.scalar<si32>) -> !kgen.scalar<si32> {
 
 // CHECK-LABEL: @mul_f32
 kgen.func @mul_f32(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
-  // CHECK: llvm.fmul %0, %0 {fastmathFlags = #llvm.fastmath<contract>}
+  // CHECK: llvm.fmul %0, %0 fastmath<contract>
   %0 = pop.mul %arg0, %arg0 : !kgen.scalar<f32>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -252,7 +252,7 @@ kgen.func @load(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar<f32> {
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 kgen.func @load_with_alignment(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: llvm.load %[[PTR]]  {alignment = 128 : i64}
+  // CHECK: llvm.load %[[PTR]]  <alignment = 128>
   %0 = pop.load %p align<128> : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -261,7 +261,7 @@ kgen.func @load_with_alignment(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar<f
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 kgen.func @load_with_volatile(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: llvm.load volatile %[[PTR]]  {alignment = 128 : i64}
+  // CHECK: llvm.load volatile %[[PTR]]  <alignment = 128>
   %0 = pop.load volatile<1> %p align<128> : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -270,7 +270,7 @@ kgen.func @load_with_volatile(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar<f3
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 kgen.func @load_with_invariant(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: llvm.load %[[PTR]] invariant {alignment = 128 : i64}
+  // CHECK: llvm.load %[[PTR]] invariant <alignment = 128>
   %0 = pop.load invariant<1> %p align<128> : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -300,7 +300,7 @@ kgen.func @store(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar<si32>) {
 kgen.func @store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
-  // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64}
+  // CHECK: llvm.store %[[VAL]], %[[PTR]] <alignment = 128>
   pop.store %v, %p align<128> : !kgen.pointer<scalar<si32>>
   kgen.return
 }
@@ -311,7 +311,7 @@ kgen.func @store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scala
 kgen.func @store_with_volatile(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
-  // CHECK: llvm.store volatile %[[VAL]], %[[PTR]] {alignment = 128 : i64}
+  // CHECK: llvm.store volatile %[[VAL]], %[[PTR]] <alignment = 128>
   pop.store volatile<1> %v, %p align<128> : !kgen.pointer<scalar<si32>>
   kgen.return
 }
@@ -320,7 +320,7 @@ kgen.func @store_with_volatile(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 kgen.func @load_with_nontemporal(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
-  // CHECK: llvm.load %[[PTR]] {alignment = 128 : i64, nontemporal} : !llvm.ptr -> f32
+  // CHECK: llvm.load %[[PTR]] <alignment = 128, nontemporal> : !llvm.ptr -> f32
   %0 = pop.load nontemporal<1> %p align<128> : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !kgen.scalar<f32>
 }
@@ -331,7 +331,7 @@ kgen.func @load_with_nontemporal(%p: !kgen.pointer<scalar<f32>>) -> !kgen.scalar
 kgen.func @store_with_nontemporal(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
-  // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64, nontemporal} : i32, !llvm.ptr
+  // CHECK: llvm.store %[[VAL]], %[[PTR]] <alignment = 128, nontemporal> : i32, !llvm.ptr
   pop.store nontemporal<1> %v, %p align<128> : !kgen.pointer<scalar<si32>>
   kgen.return
 }
@@ -342,9 +342,9 @@ kgen.func @store_with_nontemporal(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.sca
 kgen.func @store_with_atomic(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar<si32>) {
   // CHECK-DAG: [[PTR:%.*]] = builtin.unrealized_conversion_cast [[ARG0]]
   // CHECK-DAG: [[VAL:%.*]] = builtin.unrealized_conversion_cast [[ARG1]]
-  // CHECK: llvm.store [[VAL]], [[PTR]] atomic release {alignment = 128 : i64}
+  // CHECK: llvm.store [[VAL]], [[PTR]] atomic release <alignment = 128>
   pop.store atomic release %v, %p align<128> : !kgen.pointer<scalar<si32>>
-  // CHECK: llvm.store [[VAL]], [[PTR]] atomic syncscope("agent") release {alignment = 128 : i64}
+  // CHECK: llvm.store [[VAL]], [[PTR]] atomic syncscope("agent") release <alignment = 128>
   pop.store atomic syncscope("agent") release %v, %p align<128> : !kgen.pointer<scalar<si32>>
   kgen.return
 }
@@ -828,16 +828,16 @@ kgen.func @atomic_cmpxchg(%ptr: !kgen.pointer<scalar<index>>,
   %3 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope("singlethread")
                     acq_rel monotonic : !kgen.pointer<scalar<index>>
 
-  // CHECK: llvm.cmpxchg {{.*}} acq_rel monotonic {alignment = 16 : i64}
+  // CHECK: llvm.cmpxchg {{.*}} acq_rel monotonic <alignment = 16>
   %4 = pop.atomic.cmpxchg %ptr, %cmp, %new acq_rel monotonic align 16 :
                     !kgen.pointer<scalar<index>>
 
   %stack_ptr = pop.stack_allocation 1 x scalar<index> align 16 marked
-  // CHECK: llvm.cmpxchg {{.*}} monotonic monotonic {alignment = 16 : i64}
+  // CHECK: llvm.cmpxchg {{.*}} monotonic monotonic <alignment = 16>
   %5 = pop.atomic.cmpxchg %stack_ptr, %cmp, %new monotonic monotonic :
                     !kgen.pointer<scalar<index>>
 
-  // CHECK: llvm.cmpxchg weak {{.*}} monotonic monotonic {alignment = 16 : i64}
+  // CHECK: llvm.cmpxchg weak {{.*}} monotonic monotonic <alignment = 16>
   %6 = pop.atomic.cmpxchg weak %stack_ptr, %cmp, %new monotonic monotonic :
                     !kgen.pointer<scalar<index>>
 

@@ -49,6 +49,7 @@ from .types import (
     PixelGenerationSampledRequest,
     SampledRequest,
     SharedContext,
+    TurnSelector,
 )
 from .vision_arena import VisionArenaBenchmarkDataset
 
@@ -91,6 +92,7 @@ __all__ = [
     "SyntheticPixelBenchmarkDataset",
     "ToolConfig",
     "TurnProfile",
+    "TurnSelector",
     "TurnTargets",
     "VisionArenaBenchmarkDataset",
     "tool_profiles_from_mapping",

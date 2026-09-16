@@ -17,6 +17,7 @@ modular_py_library(
     test_docstring_examples = True,
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:tree",
         "//max/python/max/_xgrammar",
         "//max/python/max/config",
         "//max/python/max/driver",

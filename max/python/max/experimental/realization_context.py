@@ -48,7 +48,6 @@ from __future__ import annotations
 import contextlib
 import functools
 import hashlib
-import logging
 import weakref
 from collections.abc import Callable, Generator, Sequence
 from types import TracebackType
@@ -130,55 +129,51 @@ def set_seed(value: int) -> None:
 # ─── Shared signal-buffer cache (allocated once per device set) ──────────
 
 
-# maxsize=4: one entry per unique device-set configuration.  Most users
-# have a single configuration; testing may use a few more.  On eviction
-# the next call re-allocates (expensive but correct).
+def _signal_bytes() -> int:
+    """Returns the size in bytes of one signal buffer."""
+    # Imported here because ``max.nn`` depends on this package.
+    from max.nn.comm.allreduce import (  # type: ignore[import-not-found]
+        Signals,
+    )
+
+    return Signals.NUM_BYTES
+
+
+def _allocate_signals(device_ids: tuple[int, ...]) -> list[driver.Buffer]:
+    """Allocates and initializes one signal buffer per device."""
+    from max.nn.comm.allreduce import Signals
+
+    return Signals.allocate([driver.Accelerator(id=i) for i in device_ids])
+
+
+def _signal_buffer_types(device_ids: tuple[int, ...]) -> list[BufferType]:
+    """Returns the graph input types of the signal buffers of ``device_ids``.
+
+    This allocates nothing. A graph declares the signal buffers as inputs
+    when it is built, which may happen on a machine without the devices.
+    """
+    return [
+        BufferType(
+            dtype=DType.uint8,
+            shape=(_signal_bytes(),),
+            device=DeviceRef.GPU(id=i),
+        )
+        for i in device_ids
+    ]
+
+
+# One entry per set of devices. Most programs use one set; tests may use a
+# few. An evicted entry is allocated again on the next call.
 @functools.lru_cache(maxsize=4)
 def _cached_signal_buffers(
     device_ids: tuple[int, ...],
 ) -> tuple[list[driver.Buffer], list[BufferType]]:
-    """Returns (runtime_buffers, buffer_types) for the given GPU device IDs.
+    """Returns the signal buffers and their types for the given devices.
 
-    Signal buffers are 1025 MB each — far too expensive to re-allocate per
-    eager graph.  ``lru_cache`` ensures they are allocated once for each
-    unique device set and reused for all subsequent graphs.
-
-    Using ``lru_cache`` on an immutable key (tuple of ints) is thread-safe
-    and avoids mutable module-level state.  In pytest-xdist each worker is
-    a separate process, so there are no cross-worker conflicts.
+    Signal buffers are large, so they are allocated once per set of devices
+    and shared by every graph that runs on those devices.
     """
-    # Signal buffers: 1 MB signal + 256 MB communication scratch per GPU.
-    # Must stay in sync with ``Signals.NUM_BYTES`` in ``max.nn.comm.allreduce``
-    # and the Mojo ``Signal`` struct size. 1 GiB scratch supports
-    # hidden_dim * max_batch_input_tokens * dtype_bytes up to ~1 GiB
-    # (e.g., Kimi-K2.5 at hidden_dim=20480, max_batch_input_tokens=16384).
-    _NUM_BYTES = (1 + 1024) * 1024 * 1024
-
-    try:
-        driver.enable_all_peer_access()
-    except RuntimeError:
-        logging.getLogger(__name__).warning(
-            "Failed to enable peer-to-peer GPU access. "
-            "Collective operations will fall back to slower paths."
-        )
-
-    accelerators = [driver.Accelerator(id=i) for i in device_ids]
-    runtime_bufs = [
-        driver.Buffer.zeros(
-            shape=(_NUM_BYTES,), dtype=DType.uint8, device=accel
-        )
-        for accel in accelerators
-    ]
-    for accel in accelerators:
-        accel.synchronize()
-
-    buf_types = [
-        BufferType(
-            dtype=DType.uint8, shape=(_NUM_BYTES,), device=DeviceRef.GPU(id=i)
-        )
-        for i in device_ids
-    ]
-    return runtime_bufs, buf_types
+    return _allocate_signals(device_ids), _signal_buffer_types(device_ids)
 
 
 def _make_unrealized(

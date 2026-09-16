@@ -35,6 +35,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -47,8 +48,7 @@ from max.graph import (
 )
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
-    KVCacheInputs,
-    MultiKVCacheInputs,
+    KVCacheInputsPerDevice,
     MultiKVCacheParams,
     PagedCacheValues,
 )
@@ -219,15 +219,15 @@ class UnifiedDSparkGemma4_31B(Module):
             next(it).buffer for _ in range(len(self.config.target.devices))
         ]
         kv_tree = self._unified_kv_params().unflatten_kv_inputs(it)
-        assert isinstance(kv_tree, MultiKVCacheInputs)
-        target_tree = kv_tree.children["target"]
-        assert isinstance(target_tree, MultiKVCacheInputs)
-        sliding_leaf = target_tree.children["sliding_attention"]
-        global_leaf = target_tree.children["full_attention"]
-        draft_leaf = kv_tree.children["draft"]
-        assert isinstance(sliding_leaf, KVCacheInputs)
-        assert isinstance(global_leaf, KVCacheInputs)
-        assert isinstance(draft_leaf, KVCacheInputs)
+        target_tree = kv_tree["target"]
+        assert isinstance(target_tree, dict)
+        sliding_leaf = tree.leaves(
+            target_tree["sliding_attention"], leaf=KVCacheInputsPerDevice
+        )
+        global_leaf = tree.leaves(
+            target_tree["full_attention"], leaf=KVCacheInputsPerDevice
+        )
+        draft_leaf = tree.leaves(kv_tree["draft"], leaf=KVCacheInputsPerDevice)
         draft_tokens = next(it)
         seed = next(it)
         temperature = next(it)
@@ -258,9 +258,9 @@ class UnifiedDSparkGemma4_31B(Module):
             draft_tokens=draft_tokens.tensor,
             return_n_logits=return_n_logits.tensor,
             signal_buffers=signal_buffers,
-            sliding_kv_collection=sliding_leaf.inputs[0],
-            global_kv_collection=global_leaf.inputs[0],
-            draft_kv_collection=draft_leaf.inputs[0],
+            sliding_kv_collection=sliding_leaf[0],
+            global_kv_collection=global_leaf[0],
+            draft_kv_collection=draft_leaf[0],
             seed=seed.tensor,
             temperature=temperature.tensor,
             top_k=top_k.tensor,

@@ -34,17 +34,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
-    RecurrentStateInputs,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -53,11 +54,12 @@ from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
     ATTN_CACHE_KEY,
     STATE_CACHE_KEY,
-    attn_cache,
     linear_state_regions,
 )
 from max.pipelines.context import TextContext, TokenBuffer
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
+    JengaKVCacheManager,
+)
 from max.pipelines.modeling.types import RequestID
 from transformers import Qwen3_5TextConfig
 from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5TextModel
@@ -91,9 +93,6 @@ LAYER_TYPES = [
 ]
 NUM_FULL = sum(t == "full_attention" for t in LAYER_TYPES)
 NUM_LINEAR = sum(t == "linear_attention" for t in LAYER_TYPES)
-CONV_DIM = 2 * LINEAR_KEY_HEADS * LINEAR_KEY_DIM + (
-    LINEAR_VALUE_HEADS * LINEAR_VALUE_DIM
-)
 TOKENS = np.arange(SEQ_LEN, dtype=np.int64)
 
 
@@ -238,6 +237,21 @@ def _with_state_regions(config: Qwen3_5Config) -> Qwen3_5Config:
     return config
 
 
+def _create_kv_manager(
+    params: KVCacheParamInterface, *, max_batch_size: int = 2
+) -> JengaKVCacheManager:
+    tp_degree = params.tensor_parallel_degree
+    huge_page_bytes = max(
+        leaf.bytes_per_page // tp_degree for leaf in params.leaves().values()
+    )
+    num_huge_blocks = 32
+    return JengaKVCacheManager.create(
+        params=params,
+        available_bytes=num_huge_blocks * huge_page_bytes * len(params.devices),
+        max_batch_size=max_batch_size,
+    )
+
+
 def _max_taps(
     weights: dict[str, np.ndarray],
     target_layer_ids: list[int],
@@ -280,19 +294,23 @@ def _max_taps(
         tokens, row_offsets, return_n_logits, *rest = graph.inputs
         it = iter(rest)
         signal_buffers = [next(it).buffer]
-        tree = config.kv_params.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
-        leaf = tree.children[ATTN_CACHE_KEY]
-        assert isinstance(leaf, KVCacheInputs)
-        state_inputs = tree.children[STATE_CACHE_KEY]
-        assert isinstance(state_inputs, RecurrentStateInputs)
+        kv_tree = config.kv_params.unflatten_kv_inputs(it)
+        assert isinstance(kv_tree, dict)
+        leaf = kv_tree[ATTN_CACHE_KEY]
+        assert (
+            isinstance(leaf, tuple)
+            and leaf
+            and isinstance(leaf[0], KVCacheInputsPerDevice)
+        )
+        state_inputs = kv_tree[STATE_CACHE_KEY]
+        assert isinstance(state_inputs, tuple)
         outputs = model(
             tokens.tensor,
-            list(leaf.inputs),
+            tree.leaves(leaf, leaf=KVCacheInputsPerDevice),
             return_n_logits.tensor,
             row_offsets.tensor,
             signal_buffers,
-            list(state_inputs.inputs),
+            tree.leaves(state_inputs, leaf=RecurrentStateInputsPerDevice),
         )
         graph.output(*outputs)
 
@@ -301,47 +319,22 @@ def _max_taps(
     def buf(x: np.ndarray) -> Buffer:
         return Buffer.from_numpy(np.ascontiguousarray(x)).to(device)
 
-    kv_manager = PagedKVCacheManager(
-        params=attn_cache(config.kv_params),
-        total_num_pages=8,
-        session=session,
-        max_batch_size=2,
-    )
+    kv_params = config.kv_params
+    assert isinstance(kv_params, MultiKVCacheParams)
+    kv_manager = _create_kv_manager(kv_params)
     ctx = TextContext(
         request_id=RequestID(), max_length=128, tokens=TokenBuffer(TOKENS)
     )
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
-    kv_inputs = list(
-        kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0].flatten()
-    )
+    kv_runtime = kv_manager.runtime_inputs([[ctx]])
 
     results = compiled.execute(
         buf(TOKENS),
         buf(np.array([0, SEQ_LEN], dtype=np.uint32)),
         Buffer.from_numpy(np.array([1], dtype=np.int64)),
         *Signals.allocate([device]),
-        *kv_inputs,
-        # One pool per leaf, a block's layers being consecutive rows, then
-        # the rows each layer reads.
-        buf(
-            np.zeros(
-                (2 * NUM_LINEAR, CONV_DIM, CONV_KERNEL - 1), dtype=np.float32
-            )
-        ),
-        buf(
-            np.zeros(
-                (
-                    2 * NUM_LINEAR,
-                    LINEAR_VALUE_HEADS,
-                    LINEAR_KEY_DIM,
-                    LINEAR_VALUE_DIM,
-                ),
-                dtype=np.float32,
-            )
-        ),
-        buf(np.arange(NUM_LINEAR, dtype=np.uint32).reshape(1, NUM_LINEAR)),
-        buf(np.arange(NUM_LINEAR, dtype=np.uint32).reshape(1, NUM_LINEAR)),
+        *tree.leaves(kv_runtime),
     )
     every = [np.array(r.to(CPU()).to_numpy()) for r in results]
     print(

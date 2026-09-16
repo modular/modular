@@ -19,6 +19,7 @@ import math
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -32,7 +33,10 @@ from max.nn import (
     WeightScaleSpec,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import KVCacheQuantizationConfig, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheQuantizationConfig,
+    MHAKVCacheParams,
+)
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers import Indexer
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -277,7 +281,7 @@ def run_max_indexer(
 
         indexer_k_collection = kv_params.unflatten_kv_inputs(
             iter(graph.inputs[3:])
-        ).inputs[0]
+        )[0]
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
@@ -303,7 +307,7 @@ def run_max_indexer(
         kv_manager.alloc(context)
         batch_contexts.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts])[0]
 
     x_flat = x.view(-1, dim)
     qr_flat = qr.view(-1, q_lora_rank)
@@ -328,7 +332,7 @@ def run_max_indexer(
         x_device,
         qr_device,
         input_row_offsets_device,
-        *kv_inputs.flatten(),
+        *tree.leaves(kv_inputs),
     )
 
     output_tensor = from_dlpack(output_result[0])

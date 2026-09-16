@@ -29,6 +29,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 _HIDDEN = 512
@@ -137,6 +138,7 @@ def _build_graph(device: DeviceRef) -> TensorValue:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
 
         tester = FusedQKVRaggedMatmulScaledMXFP8(
@@ -224,6 +226,7 @@ def test_fused_qkv_ragged_matmul_scaled_mxfp8_device_mismatch() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
         with pytest.raises(ValueError, match="same device"):
             fused_qkv_ragged_matmul_scaled_mxfp8(

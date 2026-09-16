@@ -1256,7 +1256,7 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
         cast<StringAttr>(adaptor.getConstraints()),
         cast<BoolAttr>(adaptor.getHasSideEffects()).getValue(),
         cast<BoolAttr>(adaptor.getIsStackAligned()).getValue(),
-        LLVM::TailCallKind::None,
+        LLVM::TailCallKind::None, /*convergent=*/false,
         LLVM::AsmDialectAttr::get(op->getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());
 
@@ -1506,10 +1506,9 @@ struct ConvertPOPCallLLVMIntrinsic
         return op.emitError("llvm.masked.load alignment must be an integer");
       }
 
-      // Create MaskedLoadOp with alignment as attribute
-      rewriter.replaceOpWithNewOp<LLVM::MaskedLoadOp>(op, types[0], ptr, mask,
-                                                      passthrough, alignAttr,
-                                                      /*nontemporal=*/nullptr);
+      rewriter.replaceOpWithNewOp<LLVM::MaskedLoadOp>(
+          op, types[0], ptr, mask, passthrough,
+          alignAttr.getValue().getZExtValue());
       return success();
     }
 
@@ -1541,9 +1540,8 @@ struct ConvertPOPCallLLVMIntrinsic
         return op.emitError("llvm.masked.store alignment must be an integer");
       }
 
-      // Create MaskedStoreOp with alignment as attribute
-      rewriter.replaceOpWithNewOp<LLVM::MaskedStoreOp>(op, value, ptr, mask,
-                                                       alignAttr);
+      rewriter.replaceOpWithNewOp<LLVM::MaskedStoreOp>(
+          op, value, ptr, mask, alignAttr.getValue().getZExtValue());
       return success();
     }
 

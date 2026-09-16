@@ -5,7 +5,7 @@ This directory includes most of the documentation at
 
 The only things not here are the `mojo` CLI pages and the Mojo Standard Library
 reference. The reference docs are generated from source files, which are located
-in the [/stdlib/std](../stdlib/std) directory.
+in the [Mojo/stdlib/std](../../stdlib/std) directory.
 
 ## Standard library API doc generation
 
@@ -19,8 +19,10 @@ sources in [`stdlib/std`](../../stdlib/std) as follows:
 2. **`mojo doc`** runs as part of that target and emits JSON describing public
    APIs.
 3. **`mojodoc_json_to_markdown`** (Python) turns that JSON into Markdown using
-   templates; see [`mojo_doc.bzl`](../../bazel/internal/mojo_doc.bzl) and
-   [`mojodoc_json_to_markdown.py`](../../bazel/internal/mojodoc_json_to_markdown.py).
+   templates; see
+   [`mojo_doc.bzl`](https://github.com/modular/modular/blob/main/bazel/internal/mojo_doc.bzl)
+   and
+   [`mojodoc_json_to_markdown.py`](https://github.com/modular/modular/blob/main/bazel/internal/mojodoc_json_to_markdown.py).
 4. This package’s [`BUILD.bazel`](BUILD.bazel) pulls
    `//Mojo/stdlib/std:docs` and puts it
    under `docs/std/` inside the site tarball with the manual and other
@@ -28,7 +30,7 @@ sources in [`stdlib/std`](../../stdlib/std) as follows:
 
 **Cross-links in generated Markdown:** ``mojo doc`` emits logical JSON paths
 (``/std/...``, ``/kernels/...``).
-[`mojodoc_api_href.py`](../../bazel/internal/mojodoc_api_href.py)
+[`mojodoc_api_href.py`](https://github.com/modular/modular/blob/main/bazel/internal/mojodoc_api_href.py)
 is the single place that knows the published site layout and rewrites them:
 stdlib → **mojolang.org** ``/docs/std/...``, kernels → **max.modular.com**
 ``/api/mojo/...``.
@@ -57,7 +59,7 @@ Be aware that we don't provide tools to generate a preview of the website,
 because the Mojo docs are built along with other content that's not included in
 this repo. As such, we recommend you preview your edits in an IDE that can
 render Markdown and MDX files, such as VS Code, including the
-[VS Code environment in GitHub](https://github.dev/modular/max/blob/main/).
+[VS Code environment in GitHub](https://github.dev/modular/modular/blob/main/).
 
 For more information about how to contribute, see the [Contributor
 Guide](../../CONTRIBUTING.md)

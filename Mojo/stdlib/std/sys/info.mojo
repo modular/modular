@@ -1036,7 +1036,7 @@ comptime _AMD_GCN_ARCHS: List[StaticString] = [
 
 @inline(.nodebug)
 def _is_amd_gcn() -> Bool:
-    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    """Returns True if the target triple of the compiler is an AMD GPU triple
     and we are compiling for any of the GCN (Graphics Core Next) architectures.
 
     Returns:
@@ -1058,7 +1058,7 @@ comptime _AMD_RDNA1_ARCHS: List[StaticString] = [
 
 @inline(.nodebug)
 def _is_amd_rdna1() -> Bool:
-    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    """Returns True if the target triple of the compiler is an AMD GPU triple
     and we are compiling for the any of the Radeon RX 5000 series
     sub-architectures:
 
@@ -1089,7 +1089,7 @@ comptime _AMD_RDNA2_ARCHS: List[StaticString] = [
 
 @inline(.nodebug)
 def _is_amd_rdna2() -> Bool:
-    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    """Returns True if the target triple of the compiler is an AMD GPU triple
     and we are compiling for the any of the Radeon RX 6000 series
     sub-architectures:
 
@@ -1124,7 +1124,7 @@ comptime _AMD_RDNA3_ARCHS: List[StaticString] = [
 
 @inline(.nodebug)
 def _is_amd_rdna3() -> Bool:
-    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    """Returns True if the target triple of the compiler is an AMD GPU triple
     and we are compiling for the any of the Radeon RX 7000 series
     sub-architectures:
 
@@ -1218,18 +1218,22 @@ def _is_amd_cdna() -> Bool:
 
 @inline(.nodebug)
 def is_amd_gpu() -> Bool:
-    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    """Returns True if the target triple of the compiler is an AMD GPU triple,
     False otherwise.
 
     Returns:
         True if the triple target is amdgpu and False otherwise.
     """
-    return is_triple["amdgcn-amd-amdhsa"]()
+    # Matches on the triple's canonical architecture rather than the whole
+    # triple: AMD names the subarch in the arch field, so there is one triple
+    # spelling per GPU, and LLVM canonicalises all of them -- including the
+    # legacy `amdgcn` -- to `amdgpu`.
+    return CompilationTarget._is_triple_arch["amdgpu"]()
 
 
 @inline(.nodebug)
 def is_amd_gpu[subarch: StaticString]() -> Bool:
-    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    """Returns True if the target triple of the compiler is an AMD GPU triple
     and we are compiling for the specified sub-architecture, False otherwise.
 
     Parameters:

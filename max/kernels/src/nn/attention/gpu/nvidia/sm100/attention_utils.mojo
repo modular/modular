@@ -2359,10 +2359,36 @@ def bulk_mma_ws_ts_partial[
 
 @inline(.always)
 def llvm_opaque_tid() -> UInt32:
-    """Returns the opaque thread ID via the `llvm.nvvm.read.ptx.sreg.tid.x` intrinsic.
+    """Returns `tid.x` via a read LLVM may not CSE with any other `tid.x` read.
+
+    The point is the NON-merging, not the value: a single hoisted `tid.x` read
+    leaves everything derived from it live across the `setmaxnreg` boundary,
+    where only the reported register count is available, and ptxas then spills
+    it. Keeping the read inside the warp-role branch keeps the derived
+    addresses on the consumer's side of the boundary.
+
+    Must be INLINE ASM, not `llvm_intrinsic[..., has_side_effect=True]`:
+    NVVM's `llvm.nvvm.read.ptx.sreg.tid.x` carries IntrNoMem/IntrSpeculatable
+    from its own definition, so a call-site side-effect marking does not stop
+    the merge. Measured 2026-09-15 on the trimmed fp8-d128-prefill vehicle: the
+    intrinsic form emitted exactly ONE `%tid.x` per kernel on every 2Q and 1Q
+    arm (so the marking was inert and the helper bought nothing), while this
+    form emits one per role branch -- 3 on the 2Q kernels, with a fresh
+    `S2R SR_TID.X` immediately after each `USETMAXREG.TRY_ALLOC`. Spill across
+    the vehicle's 69 kernels went 456 B -> 408 B, 12 kernels improved and none
+    regressed, with no register-count change: the 2Q bf16/fp8 bodies reached
+    0 B (0 B stack frame) from 4 B, and 1Q went 56->52 / 20->16 / 4->0.
+
+    VERIFY IN SASS, NOT SOURCE (this helper has silently regressed once): count
+    `%tid.x` in the emitted PTX -- more than one read means the marking
+    survived, exactly one means it was merged -- and check that an
+    `S2R ... SR_TID.X` appears on BOTH sides of `USETMAXREG.TRY_ALLOC`.
     """
-    return llvm_intrinsic[
-        "llvm.nvvm.read.ptx.sreg.tid.x", UInt32, has_side_effect=True
+    return inlined_assembly[
+        "mov.u32 $0, %tid.x;",
+        UInt32,
+        constraints="=r",
+        has_side_effect=True,
     ]()
 
 

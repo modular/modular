@@ -28,6 +28,7 @@ from _mla_sparse_test_utils import (
     paged_kv_from_flat_graph_inputs,
     random_weights,
 )
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -39,10 +40,9 @@ from max.nn.attention.multi_latent_attention_fp8 import (
 )
 from max.nn.kernels import mla_decode_graph
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
 )
 from max.nn.quant_config import (
@@ -171,7 +171,7 @@ def test_mla_decode_graph_sparse_smoke() -> None:
     topk_len_type = TensorType(DType.int32, ["batch"], DeviceRef.GPU())
     sink_type = TensorType(DType.float32, ["batch"], DeviceRef.GPU())
 
-    kv_sym = kv_params.get_symbolic_inputs().inputs[0].flatten()
+    kv_sym = tree.leaves(kv_params.get_symbolic_inputs()[0])
 
     def construct() -> Graph:
         with Graph(
@@ -326,7 +326,7 @@ def test_mla_decode_graph_sparse_bf16_smoke() -> None:
     topk_len_type = TensorType(DType.int32, ["batch"], DeviceRef.GPU())
     sink_type = TensorType(DType.float32, ["batch"], DeviceRef.GPU())
 
-    kv_sym = kv_params.get_symbolic_inputs().inputs[0].flatten()
+    kv_sym = tree.leaves(kv_params.get_symbolic_inputs()[0])
 
     def construct() -> Graph:
         with Graph(
@@ -511,9 +511,9 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
         max_batch_size=32,
     )
 
-    len_mla_kv = len(mla_kv_params.get_symbolic_inputs().inputs[0].flatten())
+    len_mla_kv = len(tree.leaves(mla_kv_params.get_symbolic_inputs()[0]))
     len_indexer_kv = len(
-        indexer_kv_params.get_symbolic_inputs().inputs[0].flatten()
+        tree.leaves(indexer_kv_params.get_symbolic_inputs()[0])
     )
     kv_sym = list(multi_kv.flattened_kv_inputs())
     hidden_type = TensorType(
@@ -582,11 +582,19 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
 
     kv_manager.alloc(context)
     kv_ri_pref = kv_manager.runtime_inputs([batch])
-    assert isinstance(kv_ri_pref, MultiKVCacheInputs)
-    mla_pref = kv_ri_pref.children["mla"]
-    idx_pref = kv_ri_pref.children["indexer"]
-    assert isinstance(mla_pref, KVCacheInputs)
-    assert isinstance(idx_pref, KVCacheInputs)
+    assert isinstance(kv_ri_pref, dict)
+    mla_pref = kv_ri_pref["mla"]
+    idx_pref = kv_ri_pref["indexer"]
+    assert (
+        isinstance(mla_pref, tuple)
+        and mla_pref
+        and isinstance(mla_pref[0], KVCacheInputsPerDevice)
+    )
+    assert (
+        isinstance(idx_pref, tuple)
+        and idx_pref
+        and isinstance(idx_pref[0], KVCacheInputsPerDevice)
+    )
 
     t_pref = (
         torch.randn((prefill_len, hidden_size), dtype=torch.float32) * 0.02
@@ -595,7 +603,7 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     row_prefill = Buffer.from_numpy(
         np.array([0, prefill_len], dtype=np.uint32)
     ).to(device)
-    kv_list = kv_ri_pref.flatten()
+    kv_list = tree.leaves(kv_ri_pref)
     pref_results = model.execute(hidden_prefill, row_prefill, *kv_list)
     out_pref = pref_results[0]
     _run_check(out_pref, prefill_len)
@@ -616,18 +624,26 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
 
     kv_manager.alloc(context)
     kv_ri_dec = kv_manager.runtime_inputs([batch])
-    assert isinstance(kv_ri_dec, MultiKVCacheInputs)
-    mla_dec = kv_ri_dec.children["mla"]
-    idx_dec = kv_ri_dec.children["indexer"]
-    assert isinstance(mla_dec, KVCacheInputs)
-    assert isinstance(idx_dec, KVCacheInputs)
+    assert isinstance(kv_ri_dec, dict)
+    mla_dec = kv_ri_dec["mla"]
+    idx_dec = kv_ri_dec["indexer"]
+    assert (
+        isinstance(mla_dec, tuple)
+        and mla_dec
+        and isinstance(mla_dec[0], KVCacheInputsPerDevice)
+    )
+    assert (
+        isinstance(idx_dec, tuple)
+        and idx_dec
+        and isinstance(idx_dec[0], KVCacheInputsPerDevice)
+    )
 
     t_dec = (torch.randn((1, hidden_size), dtype=torch.float32) * 0.02).to(
         torch.bfloat16
     )
     hidden_dec = Buffer.from_dlpack(t_dec).to(device)
     row_dec = Buffer.from_numpy(np.array([0, 1], dtype=np.uint32)).to(device)
-    kv_dec = kv_ri_dec.flatten()
+    kv_dec = tree.leaves(kv_ri_dec)
     out_dec = model.execute(hidden_dec, row_dec, *kv_dec)[0]
     _run_check(out_dec, 1)
 

@@ -26,6 +26,5 @@ Modules
    experimental.nn.rope
    experimental.sharding
    experimental.tensor
-   experimental.tree_utils
    experimental.testing
    experimental.torch

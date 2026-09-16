@@ -56,7 +56,6 @@ Recurrent state
    RecurrentKVLeafRegion
    RecurrentLeafInputs
    RecurrentStateBuffer
-   RecurrentStateInputs
    RecurrentStateInputsPerDevice
    RecurrentStateParams
    RecurrentStateRegion

@@ -608,6 +608,22 @@ class TextGenAggregates(_CompletedRunBase):
         default=None, json_schema_extra={"phase": "decode"}
     )
 
+    # ``ttft_ms`` / ``tpot_ms`` restricted to the requests that carried a
+    # ``response_format`` and to those that did not; the constrained-decoding
+    # cost is the gap between them. Each pair is ``None`` unless both its
+    # halves have samples.
+    ttft_ms_constrained: StandardPercentileMetrics | None = None
+    ttft_ms_unconstrained: StandardPercentileMetrics | None = None
+    tpot_ms_constrained: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
+    )
+    tpot_ms_unconstrained: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
+    )
+    # Share of the measured requests that carried a ``response_format``, over
+    # the same window as ``ttft_ms`` and the other aggregates.
+    constrained_request_rate: float | None = None
+
     max_input: int
     max_output: int
     max_total: int
@@ -696,10 +712,16 @@ class TextGenAggregates(_CompletedRunBase):
             if pm is not None:
                 d.update(pm.to_flat_dict(name))
                 d.update(pm.confidence_to_flat_dict(name))
+        if self.constrained_request_rate is not None:
+            d["constrained_request_rate"] = self.constrained_request_rate
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
+            ("ttft_ms_constrained", self.ttft_ms_constrained),
+            ("ttft_ms_unconstrained", self.ttft_ms_unconstrained),
+            ("tpot_ms_constrained", self.tpot_ms_constrained),
+            ("tpot_ms_unconstrained", self.tpot_ms_unconstrained),
         ]:
             if spm is not None:
                 d.update(spm.to_flat_dict(name))
@@ -746,6 +768,10 @@ class TextGenAggregates(_CompletedRunBase):
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
             ("step_tpot_ms", self.step_tpot_ms),
+            ("ttft_ms_constrained", self.ttft_ms_constrained),
+            ("ttft_ms_unconstrained", self.ttft_ms_unconstrained),
+            ("tpot_ms_constrained", self.tpot_ms_constrained),
+            ("tpot_ms_unconstrained", self.tpot_ms_unconstrained),
         ]:
             # ``None`` means the metric had no samples this iteration
             # (e.g. decode metrics on a prefill-only run); the empty case
@@ -791,6 +817,12 @@ class TextGenAggregates(_CompletedRunBase):
             ("tpot_ms", self.tpot_ms),
             ("output_throughput", self.output_throughput),
             ("step_tpot_ms", self.step_tpot_ms),
+            # A mix ratio starves one side by construction, and that side is
+            # the one whose comparison cannot be trusted.
+            ("ttft_ms_constrained", self.ttft_ms_constrained),
+            ("ttft_ms_unconstrained", self.ttft_ms_unconstrained),
+            ("tpot_ms_constrained", self.tpot_ms_constrained),
+            ("tpot_ms_unconstrained", self.tpot_ms_unconstrained),
         ]:
             if metric is None:
                 continue
@@ -1176,6 +1208,9 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         total_generated_outputs=(
             pixel_data.total_generated_outputs if pixel_data else None
         ),
+        constrained_request_rate=(
+            text_data.constrained_request_rate if text_data else None
+        ),
     )
 
     gpu_stats = (
@@ -1202,6 +1237,10 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
             tpot_ms=text_data.tpot_ms,
             itl_ms=text_data.itl_ms,
             step_tpot_ms=text_data.step_tpot_ms,
+            ttft_ms_constrained=text_data.ttft_ms_constrained,
+            ttft_ms_unconstrained=text_data.ttft_ms_unconstrained,
+            tpot_ms_constrained=text_data.tpot_ms_constrained,
+            tpot_ms_unconstrained=text_data.tpot_ms_unconstrained,
         )
         throughput_stats = ThroughputStatsGroup(
             input_throughput=text_data.input_throughput,

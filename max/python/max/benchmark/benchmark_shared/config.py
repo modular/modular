@@ -25,7 +25,12 @@ from max.config import ConfigFileModel
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .backend_names import Backend
-from .datasets import DatasetMode, DistributionParameter, ImageTurn
+from .datasets import (
+    DatasetMode,
+    DistributionParameter,
+    ImageTurn,
+    TurnSelector,
+)
 from .utils import int_or_none, parse_comma_separated
 
 # Fixed default seed for the workload generator and request sampling. Scheduled
@@ -571,7 +576,39 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description=(
             "JSON response format for structured output. Can be a JSON string "
             "or '@path/to/schema.json' to load from file. "
-            'Example: \'{"type": "json_schema", "json_schema": {...}}\''
+            'Example: \'{"type": "json_schema", "json_schema": {...}}\'. '
+            "Applied to the share of traffic --response-format-fraction "
+            "selects, except chat-judge workloads, whose driver builds its "
+            "own requests. Constrained requests run without ignore_eos, so a "
+            "drawn output length caps them rather than pinning them."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or of eligible user "
+            "turns (multi-turn) that --response-format constrains. Drawn per "
+            "request/turn, so at the default --response-format-turn every it "
+            "lands directly on the share of requests that set response_format "
+            "-- the quantity production reports. 'first' and 'last' narrow "
+            "eligibility to one turn per session, so the realized request "
+            "share is correspondingly lower. Defaults to 1.0, so "
+            "--response-format alone still constrains everything."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format_turn: TurnSelector = Field(
+        default="every",
+        description=(
+            "Which user turns of a multi-turn chat session "
+            "--response-format-fraction may constrain: 'every', 'first', or "
+            "'last'. Ignored for single-turn requests."
         ),
         json_schema_extra={"group": "Output Control"},
     )

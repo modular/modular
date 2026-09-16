@@ -186,5 +186,5 @@ class Llama4(Transformer):
             TensorType(
                 DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
             ),
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         )

@@ -20,12 +20,15 @@ from collections.abc import Callable, Sequence
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+)
 from test_common.modular_graph_test import modular_graph_test
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -81,15 +84,13 @@ def test_kv_cache_ragged_attention(
             input_types=[
                 input_type,
                 input_row_offsets_type,
-                *kv_symbolic_inputs.flatten(),
+                *tree.leaves(kv_symbolic_inputs),
             ],
         ) as g:
             input, input_row_offsets, *kv_inputs = g.inputs
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(kv_inputs)
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
             result = flash_attention_ragged(
                 kv_params,
                 input=input.tensor,
@@ -129,7 +130,10 @@ def test_kv_cache_ragged_attention(
         provided_inputs={
             1: input_row_offsets,
             # The KV tail starts at slot 2; let its own order place the rest.
-            **{2 + i: buf for i, buf in enumerate(kv_runtime_inputs.flatten())},
+            **{
+                2 + i: buf
+                for i, buf in enumerate(tree.leaves(kv_runtime_inputs))
+            },
         },
     )
     def test_runs_without_nan(

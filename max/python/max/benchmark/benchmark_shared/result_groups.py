@@ -63,6 +63,7 @@ class SummaryGroup(BaseModel):
     mean_tpot_ms: float | None = None
     mean_itl_ms: float | None = None
     total_generated_outputs: int | None = None
+    constrained_request_rate: float | None = None
 
 
 class GpuStatsGroup(BaseModel):
@@ -89,6 +90,13 @@ class LatencyStatsGroup(BaseModel):
     tpot_ms: PercentileMetrics | None = None
     itl_ms: PercentileMetrics | None = None
     step_tpot_ms: PercentileMetrics | None = None
+    # ``ttft_ms`` / ``tpot_ms`` restricted to the constrained and unconstrained
+    # halves of a mixed structured-output run. Each pair is ``None`` unless
+    # both its halves have samples.
+    ttft_ms_constrained: PercentileMetrics | None = None
+    ttft_ms_unconstrained: PercentileMetrics | None = None
+    tpot_ms_constrained: PercentileMetrics | None = None
+    tpot_ms_unconstrained: PercentileMetrics | None = None
 
 
 class ThroughputStatsGroup(BaseModel):

@@ -77,6 +77,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import (
     CPU,
     Buffer,
@@ -108,10 +109,7 @@ from max.nn import kernels
 from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheInputsPerDevice,
-    MultiKVCacheInputs,
-    RecurrentStateInputs,
     spec_decode_cache_slack,
 )
 from max.nn.transformer import ReturnLogits
@@ -176,6 +174,7 @@ from dataclasses import dataclass
 from max.pipelines.sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
+    request_row_seed,
     token_sampler,
 )
 
@@ -303,7 +302,7 @@ def _contiguous_prefix_3d(
 class _UnifiedSpecDecodeInputs(Protocol):
     tokens: Buffer
     input_row_offsets: Buffer
-    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer]
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer]
 
     draft_tokens: Buffer | None
     draft_probs_full: Buffer | None
@@ -466,7 +465,7 @@ class SpecDecodeState:
 
     persistent_seed: Buffer
     """Persistent ``[total_max_batch]`` uint64 seed values, one per request,
-    derived from ``sampling_params.seed + len(tokens)``."""
+    derived by :func:`~max.pipelines.sampling.request_row_seed`."""
 
     batch_metrics: _SpeculativeDecodingMetrics | None = None
     """Per-batch metrics for the most recently completed batch."""
@@ -1013,12 +1012,12 @@ _Tensor = TypeVar("_Tensor")
 _Buffer = TypeVar("_Buffer")
 
 
-@dataclass
+@tree.dataclass(kw_only=True)
 class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     curr_draft_tokens: _Tensor
-    data_parallel_splits: _Tensor | None
+    data_parallel_splits: _Tensor | None = None
     curr_cache_lengths: Sequence[_Tensor]
-    signal_buffers: Sequence[_Buffer] | None
+    signal_buffers: Sequence[_Buffer] | None = None
     prev_generated_draft_tokens: _Tensor
     prev_draft_tokens: _Tensor
     prev_num_accepted_draft_tokens: _Tensor
@@ -1029,58 +1028,8 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     """Previous batch's ``next_draft_probs_full`` device tensor, paired with
     ``prev_generated_draft_tokens``."""
 
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        return [
-            self.curr_draft_tokens,
-            *(
-                (self.data_parallel_splits,)
-                if self.data_parallel_splits is not None
-                else ()
-            ),
-            *self.curr_cache_lengths,
-            *(self.signal_buffers if self.signal_buffers is not None else ()),
-            self.prev_generated_draft_tokens,
-            self.prev_draft_tokens,
-            self.prev_num_accepted_draft_tokens,
-            *(
-                (self.curr_draft_probs_full,)
-                if self.curr_draft_probs_full is not None
-                else ()
-            ),
-            *(
-                (self.prev_generated_draft_probs_full,)
-                if self.prev_generated_draft_probs_full is not None
-                else ()
-            ),
-        ]
 
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> _RealizeFutureTokenSpecDecodeInputs[Any, Any]:
-        return _RealizeFutureTokenSpecDecodeInputs(
-            curr_draft_tokens=next(it),
-            data_parallel_splits=next(it)
-            if self.data_parallel_splits is not None
-            else None,
-            curr_cache_lengths=[
-                next(it) for _ in range(len(self.curr_cache_lengths))
-            ],
-            signal_buffers=[next(it) for _ in range(len(self.signal_buffers))]
-            if self.signal_buffers is not None
-            else None,
-            prev_generated_draft_tokens=next(it),
-            prev_draft_tokens=next(it),
-            prev_num_accepted_draft_tokens=next(it),
-            curr_draft_probs_full=next(it)
-            if self.curr_draft_probs_full is not None
-            else None,
-            prev_generated_draft_probs_full=next(it)
-            if self.prev_generated_draft_probs_full is not None
-            else None,
-        )
-
-
-@dataclass
+@tree.dataclass
 class _RealizeFutureTokenInputs(Generic[_Tensor, _Buffer]):
     prev_to_curr_map: _Tensor
     curr_to_prev_map: _Tensor
@@ -1091,34 +1040,6 @@ class _RealizeFutureTokenInputs(Generic[_Tensor, _Buffer]):
     spec_decode: (
         _RealizeFutureTokenSpecDecodeInputs[_Tensor, _Buffer] | None
     ) = None
-
-    def flatten(self) -> list[_Tensor | _Buffer]:
-        return [
-            self.prev_to_curr_map,
-            self.curr_to_prev_map,
-            self.curr_tokens,
-            self.curr_input_row_offsets,
-            self.prev_generated_tokens,
-            *(
-                self.spec_decode.flatten()
-                if self.spec_decode is not None
-                else ()
-            ),
-        ]
-
-    def unflatten(
-        self, it: Iterator[Any]
-    ) -> _RealizeFutureTokenInputs[Any, Any]:
-        return _RealizeFutureTokenInputs(
-            prev_to_curr_map=next(it),
-            curr_to_prev_map=next(it),
-            curr_tokens=next(it),
-            curr_input_row_offsets=next(it),
-            prev_generated_tokens=next(it),
-            spec_decode=self.spec_decode.unflatten(it)
-            if self.spec_decode is not None
-            else None,
-        )
 
 
 def build_realize_future_token_graph(
@@ -1261,12 +1182,12 @@ def build_realize_future_token_graph(
         ),
         spec_decode=spec_decode_input_types,
     )
+    flat_input_types, input_treedef = tree.flatten(input_types)
     with Graph(
         "realize_future_token_graph",
-        input_types=input_types.flatten(),
+        input_types=flat_input_types,
     ) as graph:
-        it = iter(graph.inputs)
-        input_values = input_types.unflatten(it)
+        input_values = tree.unflatten(input_treedef, graph.inputs)
 
         curr_to_prev_map = ops.unsqueeze(input_values.curr_to_prev_map, axis=-1)
         prev_to_curr_map = ops.unsqueeze(input_values.prev_to_curr_map, axis=-1)
@@ -1613,29 +1534,17 @@ class RealizeFutureTokenProcessor:
             "RealizeFutureTokenProcessor is None but there are tokens to scatter."
         )
 
-        # Traverse the KV tree and collect the KV cache inputs per device.
-        def _recurse_kv_tree(
-            kv: KVCacheInputsInterface[Any, Any],
-            kv_collections: list[KVCacheInputsPerDevice[Buffer, Buffer]],
-        ) -> None:
-            if isinstance(kv, KVCacheInputs):
-                kv_collections.extend(kv.inputs)
-            elif isinstance(kv, MultiKVCacheInputs):
-                for child in kv.children.values():
-                    _recurse_kv_tree(child, kv_collections)
-            elif isinstance(kv, RecurrentStateInputs):
-                # No cache length and no page for the scatter to address.
-                pass
-            else:
-                raise ValueError(f"Unexpected KV cache input type: {type(kv)}")
-
         kv_collections: list[KVCacheInputsPerDevice[Buffer, Buffer]] = []
 
         if self._num_speculative_tokens > 0:
             assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
             assert prev_batch.spec_decode is not None
             assert model_inputs.kv_cache_inputs is not None
-            _recurse_kv_tree(model_inputs.kv_cache_inputs, kv_collections)
+            kv_collections.extend(
+                tree.leaves(
+                    model_inputs.kv_cache_inputs, leaf=KVCacheInputsPerDevice
+                )
+            )
 
             cache_lengths = [
                 kv.cache_lengths for kv in kv_collections[: self._num_devices]
@@ -1718,7 +1627,7 @@ class RealizeFutureTokenProcessor:
             spec_decode=spec_decode,
         )
 
-        out = self._graph.execute(*my_inputs.flatten())
+        out = self._graph.execute(*tree.leaves(my_inputs))
 
         # Execute the realize_future_tokens kernel.
         if my_inputs.spec_decode is not None:
@@ -2667,16 +2576,11 @@ class OverlapTextGenerationPipeline(
             np.array(float(top_p_np.min()), dtype=np.float32)
         )
 
-        # Per-request seed mirrors the production sampler at
-        # `SamplerInputs.create` (sampling_logits_processor.py:610-619):
-        # seed[i] = sampling_params.seed + len(context.tokens). Adding the
-        # current token count gives a fresh effective Philox seed per
-        # decoding step without needing in-graph seed mutation.
+        # Shares `request_row_seed` with the production sampler at
+        # `SamplerInputs.create`, so a request keeps its key whichever of the
+        # two paths samples it.
         seed_np = np.fromiter(
-            (
-                ctx.sampling_params.seed + len(ctx.tokens)
-                for ctx in context_batch
-            ),
+            (request_row_seed(ctx) for ctx in context_batch),
             dtype=np.uint64,
             count=batch_size,
         )

@@ -556,6 +556,7 @@ def rejection_sampler_with_residuals(
                 target_logits.tensor,
                 target_logit_offsets.tensor,
                 full_draft_logits.tensor,
+                seed.tensor,
                 rejection_rand.tensor if debug else None,
                 residual_rand.tensor if debug else None,
             )

@@ -1314,6 +1314,87 @@ def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
 }
 
 //===----------------------------------------------------------------------===//
+// StructAnnotationTypesAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructAnnotationTypesAttr : KGEN_ExprAttr<"StructAnnotationTypes",
+    "struct_annotation_types",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Get the types of a struct's `@__annotation` values.";
+  let description = [{
+    The `#kgen.struct_annotation_types` attribute returns the types of the
+    values attached to a struct with `@__annotation` as a param_list. A
+    negative `fieldIndex` selects the struct's own annotations, otherwise it
+    selects the annotations on the field at that index.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_annotation_types<#MyStruct, -1> : !kgen.param_list<!kgen.type>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "TypedAttr":$fieldIndex,
+    AttributeSelfTypeParameter<"", "ParamListType">:$type
+  );
+
+  let assemblyFormat = [{
+    `<` custom<TypeParamValue>($typeValue) `,`
+    custom<ColonTypeParamValue>($fieldIndex) `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructAnnotationAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructAnnotationAttr : KGEN_ExprAttr<"StructAnnotation",
+    "struct_annotation",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Get one of a struct's `@__annotation` values.";
+  let description = [{
+    The `#kgen.struct_annotation` attribute returns the value at `index` of
+    the list attached to a struct with `@__annotation`. A negative
+    `fieldIndex` selects the struct's own annotations, otherwise it selects
+    the annotations on the field at that index.
+
+    The attribute's own type is derived, as the `index`th element of
+    `#kgen.struct_annotation_types` for the same struct and field, so it does
+    not appear in the syntax. Only `annotationListType` has to be spelled: the
+    element trait it carries names Mojo traits, which KGEN cannot look up
+    itself. Writing it this way lets the whole reader be expressed as an
+    `__mlir_attr` in the standard library, with no dedicated parser node.
+
+    Example:
+
+    ```mlir
+    #kgen.struct_annotation<#MyStruct, -1, 0, !kgen.param_list<!AnyType>>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "TypedAttr":$fieldIndex,
+    "TypedAttr":$index,
+    "ParamListType":$annotationListType
+  );
+
+  let assemblyFormat = [{
+    `<` custom<TypeParamValue>($typeValue) `,`
+    custom<ColonTypeParamValue>($fieldIndex) `,`
+    custom<ColonTypeParamValue>($index) `,` $annotationListType `>`
+  }];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // StructFieldNamesAttr
 //===----------------------------------------------------------------------===//
 

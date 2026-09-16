@@ -25,7 +25,7 @@ import json
 import math
 import sys
 import time
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pytest
@@ -3517,6 +3517,412 @@ def test_xml_root_declared_key_excluded_from_additional_branch() -> None:
     compiled = _compiler().compile_structural_tag(tag)
     assert _accepts(compiled, "<parameter=foo>1</parameter>")
     assert not _accepts(compiled, "<parameter=foo>x</parameter>")
+
+
+_XmlStyle = Literal[
+    "qwen_xml", "minimax_xml", "deepseek_xml", "glm_xml", "minimax_m3_xml"
+]
+_M3_PREFIX = "]<]minimax[>["
+
+
+def _xml_length_schema(
+    min_length: int, max_length: int | None
+) -> dict[str, Any]:
+    state: dict[str, Any] = {"type": "string", "minLength": min_length}
+    if max_length is not None:
+        state["maxLength"] = max_length
+    return {
+        "type": "object",
+        "properties": {"state": state},
+        "required": ["state"],
+    }
+
+
+def _compile_xml_length(
+    min_length: int,
+    max_length: int | None,
+    *,
+    style: _XmlStyle = "qwen_xml",
+    xml_tag_prefix: str = "",
+    reject_unsupported: bool = False,
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=_xml_length_schema(min_length, max_length),
+            style=style,
+            xml_tag_prefix=xml_tag_prefix,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+def _qwen_state(value: str) -> str:
+    return f"<parameter=state>{value}</parameter>"
+
+
+def _m3_state(value: str) -> str:
+    return f"{_M3_PREFIX}<state>{value}{_M3_PREFIX}</state>"
+
+
+def test_xml_bare_value_length_bound_exact() -> None:
+    # A bare XML value is a byte run closed by a literal (`</parameter>`), not
+    # by a quote, so the bound has to be counted against the run while the
+    # run is kept from spelling the delimiter.
+    compiled = _compile_xml_length(2, 2)
+    assert _accepts(compiled, _qwen_state("NY"))
+    assert not _accepts(compiled, _qwen_state("N"))
+    assert not _accepts(compiled, _qwen_state("NYC"))
+
+
+def test_xml_tag_prefix_bare_value_length_bound_exact() -> None:
+    # Tag-prefixed style: the close is `prefix</key>`, so the delimiter that
+    # ends the value is the prefix itself.
+    compiled = _compile_xml_length(
+        2, 2, style="minimax_m3_xml", xml_tag_prefix=_M3_PREFIX
+    )
+    assert _accepts(compiled, _m3_state("NY"))
+    assert not _accepts(compiled, _m3_state("N"))
+    assert not _accepts(compiled, _m3_state("NYC"))
+
+
+def test_xml_bare_value_bound_longer_than_delimiter() -> None:
+    # The bound may exceed the delimiter's length: the exclusion automaton, not
+    # the bound, keeps the delimiter out of the run.
+    compiled = _compile_xml_length(1, 64)
+    assert _accepts(compiled, _qwen_state("a" * 64))
+    assert not _accepts(compiled, _qwen_state("a" * 65))
+    # A prefix of the delimiter is ordinary content.
+    assert _accepts(compiled, _qwen_state("a</param b"))
+    # The delimiter itself ends the value, so what follows is not a value.
+    assert not _accepts(compiled, _qwen_state("ab</parameter>cd"))
+
+
+def test_xml_bare_value_bound_is_framed_tightly() -> None:
+    # Framing whitespace is part of the value to a parser that keeps it
+    # (MiniMax-M3), so a bounded value gets none.
+    compiled = _compile_xml_length(
+        2, 2, style="minimax_m3_xml", xml_tag_prefix=_M3_PREFIX
+    )
+    assert not _accepts(compiled, _m3_state("\nNY\n"))
+    assert not _accepts(compiled, _m3_state(" NY"))
+    qwen = _compile_xml_length(2, 2)
+    assert not _accepts(qwen, _qwen_state("\nNY\n"))
+    # An unbounded value keeps its framing.
+    loose = _compile_xml_length(0, None)
+    assert _accepts(loose, _qwen_state("\nNY\n"))
+
+
+def test_xml_bare_value_bound_rejects_edge_whitespace() -> None:
+    # A parser that strips would read an all-space run as "", below minLength,
+    # so whitespace may not begin or end the run. Inside it is content.
+    compiled = _compile_xml_length(2, 2)
+    assert not _accepts(compiled, _qwen_state("  "))
+    assert not _accepts(compiled, _qwen_state(" N"))
+    assert not _accepts(compiled, _qwen_state("N "))
+    three = _compile_xml_length(3, 3)
+    assert _accepts(three, _qwen_state("N Y"))
+    assert _accepts(three, _qwen_state("N\tY"))
+    assert not _accepts(three, _qwen_state("\tNY"))
+    assert not _accepts(three, _qwen_state("NY\x1f"))
+
+
+def test_xml_bare_value_bound_rejects_unicode_edge_whitespace() -> None:
+    # Python's str.strip() also removes multi-byte whitespace, so those code
+    # points are excluded from the edges too, and still count when inside.
+    compiled = _compile_xml_length(2, 2)
+    for space in ("\u00a0", "\u2003", "\u3000", "\u0085"):
+        assert not _accepts(compiled, _qwen_state(f"{space}N"))
+        assert not _accepts(compiled, _qwen_state(f"N{space}"))
+    three = _compile_xml_length(3, 3)
+    assert _accepts(three, _qwen_state("N\u00a0Y"))
+    assert _accepts(three, _qwen_state("N\u3000Y"))
+    # A code point that merely shares a lead byte with a whitespace character.
+    assert _accepts(compiled, _qwen_state("\u00e9N"))
+    assert _accepts(compiled, _qwen_state("N\u2014"))
+
+
+def test_xml_bare_value_bound_masks_tokens_by_remaining_length() -> None:
+    # The compiled token masks, not just byte acceptance, honor the bound.
+    compiled = _compile_xml_length(2, 2)
+    matcher = xgr.GrammarMatcher(compiled)
+    assert matcher.accept_string("<parameter=state>a")
+    bitmask = xgr.allocate_token_bitmask(1, len(_VOCAB))
+    matcher.fill_next_token_bitmask(bitmask)
+    allowed = {
+        tok for tok in _VOCAB if _gemma_bit_set(bitmask[0], _VOCAB.index(tok))
+    }
+    assert {"a", "b", "1"} <= allowed
+    assert not {" ", "true", "null"} & allowed
+    assert matcher.accept_string("b")
+    matcher.fill_next_token_bitmask(bitmask)
+    assert not any(
+        _gemma_bit_set(bitmask[0], i) for i in range(len(_VOCAB) - 1)
+    )
+
+
+def _compile_xml_property(
+    state: dict[str, Any],
+    *,
+    style: _XmlStyle = "qwen_xml",
+    xml_tag_prefix: str = "",
+    defs: dict[str, Any] | None = None,
+) -> xgr.CompiledGrammar:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"state": state},
+        "required": ["state"],
+    }
+    if defs is not None:
+        schema["$defs"] = defs
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema, style=style, xml_tag_prefix=xml_tag_prefix
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+_BOUNDED = {"type": "string", "minLength": 2, "maxLength": 2}
+
+
+def test_xml_bound_through_ref_is_framed_tightly() -> None:
+    compiled = _compile_xml_property(
+        {"$ref": "#/$defs/code"},
+        style="minimax_m3_xml",
+        xml_tag_prefix=_M3_PREFIX,
+        defs={"code": _BOUNDED},
+    )
+    assert _accepts(compiled, _m3_state("NY"))
+    assert not _accepts(compiled, _m3_state("\nNY\n"))
+    assert not _accepts(compiled, _m3_state("NYC"))
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"anyOf": [_BOUNDED, {"type": "null"}]},
+        {"type": ["string", "null"], "minLength": 2, "maxLength": 2},
+        {"allOf": [_BOUNDED]},
+    ],
+    ids=["anyOf", "type-array", "allOf"],
+)
+def test_xml_bound_through_wrapper_is_framed_tightly(
+    state: dict[str, Any],
+) -> None:
+    # A wrapper rule that reaches a bounded value is framed tightly as a whole.
+    compiled = _compile_xml_property(state)
+    assert _accepts(compiled, _qwen_state("NY"))
+    assert not _accepts(compiled, _qwen_state("\nNY\n"))
+    assert not _accepts(compiled, _qwen_state("NYC"))
+
+
+_BYTE_VOCAB = [chr(c) for c in range(32, 127)] + [
+    "<0xC3>",
+    "<0xA9>",
+    "<0x80>",
+    "<eos>",
+]
+_BYTE_ID = {tok: i for i, tok in enumerate(_BYTE_VOCAB)}
+
+
+def _byte_fallback_matcher(state: dict[str, Any]) -> xgr.GrammarMatcher:
+    info = xgr.TokenizerInfo(
+        _BYTE_VOCAB,
+        vocab_type=xgr.VocabType.BYTE_FALLBACK,
+        stop_token_ids=[_BYTE_ID["<eos>"]],
+    )
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"state": state},
+                "required": ["state"],
+            },
+            style="qwen_xml",
+        )
+    )
+    compiled = xgr.GrammarCompiler(info).compile_structural_tag(tag)
+    return xgr.GrammarMatcher(compiled)
+
+
+def _accept_tokens(matcher: xgr.GrammarMatcher, tokens: list[str]) -> bool:
+    return all(matcher.accept_token(_BYTE_ID[tok]) for tok in tokens)
+
+
+def test_xml_bare_value_bound_counts_split_byte_tokens_as_one() -> None:
+    # A byte-fallback tokenizer emits one code point as several tokens; the
+    # counter charges it once, and only accepts it whole.
+    open_tag = list("<parameter=state>")
+    close_tag = list("</parameter>")
+    m = _byte_fallback_matcher(
+        {"type": "string", "minLength": 1, "maxLength": 1}
+    )
+    assert _accept_tokens(m, open_tag + ["<0xC3>", "<0xA9>"] + close_tag)
+    assert m.is_completed()
+    # A stray continuation byte is not a character.
+    m = _byte_fallback_matcher(
+        {"type": "string", "minLength": 2, "maxLength": 2}
+    )
+    assert _accept_tokens(m, open_tag + ["a"])
+    assert not m.accept_token(_BYTE_ID["<0x80>"])
+    # A truncated sequence cannot be closed.
+    m = _byte_fallback_matcher(
+        {"type": "string", "minLength": 1, "maxLength": 1}
+    )
+    assert _accept_tokens(m, open_tag + ["<0xC3>"])
+    assert not m.accept_token(_BYTE_ID["<"])
+
+
+def test_xml_additional_property_bound_is_framed_tightly() -> None:
+    compiled = _compiler().compile_structural_tag(
+        xgr.StructuralTag(
+            format=JSONSchemaFormat(
+                json_schema={
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 2,
+                    },
+                },
+                style="qwen_xml",
+            )
+        )
+    )
+    assert _accepts(compiled, "<parameter=foo>NY</parameter>")
+    assert not _accepts(compiled, "<parameter=foo>\nNY\n</parameter>")
+    assert not _accepts(compiled, "<parameter=foo>NYC</parameter>")
+
+
+def test_xml_bare_value_bound_counts_code_points() -> None:
+    # JSON Schema counts code points; the automaton counts UTF-8 lead bytes.
+    compiled = _compile_xml_length(2, 2)
+    assert _accepts(compiled, _qwen_state("日本"))
+    assert not _accepts(compiled, _qwen_state("日本語"))
+    six = _compile_xml_length(6, 6)
+    assert not _accepts(six, _qwen_state("日本"))
+    assert _accepts(six, _qwen_state("日本語日本語"))
+
+
+def test_xml_bare_value_bound_deepseek_delimiter_length() -> None:
+    # deepseek_xml's close is 22 bytes but 18 code points. Bounds around that
+    # length are exact either way, since the delimiter is excluded rather than
+    # out-counted.
+    # \uff5c is the fullwidth vertical line, spelled as an escape so the
+    # delimiter stays byte-exact without an ambiguous literal in source.
+    open_tag = '<\uff5cDSML\uff5cparameter name="state" string="true">'
+    close_tag = "</\uff5cDSML\uff5cparameter>"
+    assert len(close_tag.encode()) == 22 and len(close_tag) == 18
+    for max_length in (18, 19, 21):
+        compiled = _compile_xml_length(1, max_length, style="deepseek_xml")
+        assert _accepts(compiled, f"{open_tag}{'a' * max_length}{close_tag}")
+        assert not _accepts(
+            compiled, f"{open_tag}{'a' * (max_length + 1)}{close_tag}"
+        )
+
+
+def test_xml_bare_value_min_length_only() -> None:
+    compiled = _compile_xml_length(3, None)
+    assert _accepts(compiled, _qwen_state("abc"))
+    assert _accepts(compiled, _qwen_state("a" * 200))
+    assert not _accepts(compiled, _qwen_state("ab"))
+
+
+def test_xml_bare_value_zero_min_length_allows_empty() -> None:
+    compiled = _compile_xml_length(0, 2)
+    assert _accepts(compiled, _qwen_state(""))
+    assert _accepts(compiled, _qwen_state("NY"))
+    assert not _accepts(compiled, _qwen_state("NYC"))
+    assert not _accepts(_compile_xml_length(1, 2), _qwen_state(""))
+
+
+def test_xml_bare_value_bound_past_budget_keeps_min_length() -> None:
+    # Each automaton state costs a token mask at compile time, so an upper
+    # bound the budget cannot afford is dropped with a warning; the lower bound
+    # still holds. A strict caller is refused instead.
+    compiled = _compile_xml_length(2, 100_000)
+    assert _accepts(compiled, _qwen_state("NY"))
+    assert _accepts(compiled, _qwen_state("a" * 500))
+    assert not _accepts(compiled, _qwen_state("N"))
+    with pytest.raises(Exception, match="too large to enforce"):
+        _compile_xml_length(2, 100_000, reject_unsupported=True)
+    # A lower bound past the budget leaves the value unbounded.
+    loose = _compile_xml_length(100_000, None)
+    assert _accepts(loose, _qwen_state("N"))
+
+
+def test_xml_bare_value_bound_near_budget_compiles() -> None:
+    # 13 trie states x (2 * 70 + 1) constraint states sits just under the cap.
+    compiled = _compile_xml_length(1, 70)
+    assert _accepts(compiled, _qwen_state("a" * 70))
+    assert not _accepts(compiled, _qwen_state("a" * 71))
+
+
+def test_tag_dispatch_length_bound_ebnf() -> None:
+    # The primitive behind the bare-value bound, spelled directly.
+    ebnf = (
+        'root ::= "[" body "]"\n'
+        'body ::= TagDispatch(loop_after_dispatch=false, excludes=("]"), '
+        'min_length=1, max_length=3, exclude_edges=(" ",))\n'
+    )
+    compiled = _compiler().compile_grammar(ebnf)
+    assert _accepts(compiled, "[ab]")
+    assert _accepts(compiled, "[a b]")
+    assert not _accepts(compiled, "[]")
+    assert not _accepts(compiled, "[abcd]")
+    assert not _accepts(compiled, "[ a]")
+    assert not _accepts(compiled, "[a ]")
+    # A multi-byte code point is one edge character.
+    nbsp = _compiler().compile_grammar(
+        'root ::= "[" body "]"\n'
+        'body ::= TagDispatch(loop_after_dispatch=false, excludes=("]"), '
+        'min_length=1, exclude_edges=("\\u00a0",))\n'
+    )
+    assert _accepts(nbsp, "[a\u00a0b]")
+    assert not _accepts(nbsp, "[\u00a0b]")
+    assert not _accepts(nbsp, "[a\u00a0]")
+    # -1 spells the default upper bound.
+    unbounded = _compiler().compile_grammar(
+        'root ::= "[" body "]"\n'
+        'body ::= TagDispatch(loop_after_dispatch=false, excludes=("]"), '
+        "min_length=2, max_length=-1)\n"
+    )
+    assert _accepts(unbounded, "[" + "a" * 50 + "]")
+    assert not _accepts(unbounded, "[a]")
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (
+            '("<a>", root), min_length=1',
+            "require a TagDispatch without tags",
+        ),
+        ("min_length=2, max_length=1", "max_length must be -1 or at least"),
+        ("min_length=-2", "min_length must be non-negative"),
+        ("max_length=1000000", "state budget"),
+        ("min_length=1000000", "state budget"),
+        ('exclude_edges=("ab",)', "single-character string literal"),
+        ("min_length=true", "must be an integer literal"),
+    ],
+)
+def test_tag_dispatch_length_bound_ebnf_rejects(
+    args: str, message: str
+) -> None:
+    ebnf = f"root ::= TagDispatch({args})\n"
+    with pytest.raises(Exception, match=message):
+        _compiler().compile_grammar(ebnf)
+
+
+def test_tag_dispatch_many_edges_rejected_before_allocation() -> None:
+    # The edge trie multiplies the counter's states, so a small bound with
+    # many edge code points is refused by the same budget as a large bound.
+    # Spacing the code points by 64 gives each its own three-byte prefix.
+    edges = ", ".join(f'"{chr(0x10000 + 64 * i)}"' for i in range(1500))
+    ebnf = f"root ::= TagDispatch(min_length=1, exclude_edges=({edges}))\n"
+    with pytest.raises(Exception, match="state budget"):
+        _compiler().compile_grammar(ebnf)
 
 
 def test_bare_key_alphabet_overlapping_key_terminator_rejected() -> None:

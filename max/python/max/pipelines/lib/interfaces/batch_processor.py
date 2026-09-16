@@ -40,7 +40,7 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext
@@ -210,7 +210,7 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares inputs for the first execution step of a batch."""
@@ -295,7 +295,7 @@ class SingleReplicaRaggedBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica Graph-path batch."""
@@ -323,7 +323,7 @@ class SingleReplicaRaggedBatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         signal_buffers: list[Buffer],
     ) -> InputsT:
         """Constructs architecture-specific model inputs."""
@@ -360,7 +360,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica ModuleV3 batch.
@@ -397,7 +397,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> InputsT:
         """Constructs architecture-specific model inputs."""
         raise NotImplementedError(
@@ -478,7 +478,7 @@ def ragged_kv_symbolic_inputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     if include_signal_buffers:
         signals = Signals(devices=device_refs)
         return [
@@ -517,7 +517,7 @@ def modulev3_ragged_kv_symbolic_inputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         return_n_logits_type,
@@ -597,7 +597,7 @@ class UnifiedSpecDecodeBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> SpecDecodeInputsT:
         """Prepares ragged token inputs with persistent buffers and a per-step seed."""
@@ -660,7 +660,7 @@ class UnifiedSpecDecodeBatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         seed: Buffer,
         structured_output: bool,
     ) -> SpecDecodeInputsT:
@@ -716,7 +716,7 @@ class SingleReplicaEmbeddingBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica embedding batch."""
@@ -807,7 +807,7 @@ class PaddedEncoderBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares padded token and attention-mask inputs for one replica."""
@@ -878,7 +878,7 @@ def modulev3_gemma_multimodal_language_symbolic_inputs(
     return_n_logits_type = TensorType(
         DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         return_n_logits_type,
@@ -916,7 +916,7 @@ def modulev3_idefics3_language_symbolic_inputs(
         shape=["total_image_tokens"],
         device=device_ref,
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         input_row_offsets_type,
