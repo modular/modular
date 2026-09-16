@@ -167,26 +167,16 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         device slab is sized from ``available_bytes // len(params.devices)``.
         """
         leaves = params.leaves()
-        # A paged leaf declares a replica-wide page (a TP multiplier) but a
-        # slab lives on one device; a row-addressed leaf is already
-        # per-device.
-        tp_degree = params.tensor_parallel_degree
-        bytes_per_page: dict[str, int] = {}
-        row_bytes: dict[str, int] = {}
-        for leaf_id, leaf in leaves.items():
-            # The planner wants an entry per cache; a row-addressed leaf
-            # reports 1 and so constrains nothing.
-            row_bytes[leaf_id] = leaf.row_bytes
-            if leaf.group_id.is_recurrent():
-                bytes_per_page[leaf_id] = leaf.bytes_per_page
-                continue
-            if leaf.bytes_per_page % tp_degree != 0:
-                raise ValueError(
-                    "Jenga leaf page size must be divisible by tensor "
-                    f"parallel degree {tp_degree}, found {leaf.bytes_per_page} "
-                    f"for {leaf_id}"
-                )
-            bytes_per_page[leaf_id] = leaf.bytes_per_page // tp_degree
+        # Every leaf reports what one device holds, which is what a slab
+        # tiles in.
+        bytes_per_page = {
+            leaf_id: leaf.bytes_per_page for leaf_id, leaf in leaves.items()
+        }
+        # The planner wants an entry per cache; a row-addressed leaf reports
+        # 1 and so constrains nothing.
+        row_bytes = {
+            leaf_id: leaf.row_bytes for leaf_id, leaf in leaves.items()
+        }
         n_devices = len(params.devices)
         if n_devices < 1:
             raise ValueError("Jenga KV cache requires at least one device")

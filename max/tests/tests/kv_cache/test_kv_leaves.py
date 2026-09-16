@@ -296,3 +296,52 @@ def test_a_hybrid_cache_still_divides_memory_into_blocks() -> None:
         )
         > 0
     )
+
+
+def test_a_leaf_page_is_what_one_device_holds() -> None:
+    """``bytes_per_block`` counts a replica; a leaf counts one device.
+
+    The pool tiles a slab that lives on one device, so the leaf is the one
+    that has to be per-device. MHA shards its heads, so the replica-wide
+    figure is the same at either degree and only the leaf's share moves.
+    """
+    tp1 = _params(quantized=False)
+    tp4 = _params(quantized=False, tp=4)
+
+    (leaf1,) = tp1.leaves().values()
+    (leaf4,) = tp4.leaves().values()
+
+    assert tp4.bytes_per_block == tp1.bytes_per_block
+    assert leaf1.bytes_per_page == tp1.bytes_per_block
+    assert leaf4.bytes_per_page * 4 == tp4.bytes_per_block
+
+
+def test_state_and_attention_leaves_agree_on_units_at_tp() -> None:
+    """A hybrid tiles one slab, so both kinds must mean the same thing.
+
+    The state's rows already hold one device's shard of the heads, and the
+    attention leaf now reports the same way, so nothing downstream has to
+    ask which kind it is holding.
+    """
+    attn = _params(quantized=False, tp=4)
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id="conv_state",
+                num_layers=2,
+                row_shape=(8, 3),
+                dtype=DType.float32,
+            ),
+        ),
+        devices=attn.devices,
+    )
+    root = MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+    pages = {
+        leaf_id: leaf.bytes_per_page for leaf_id, leaf in root.leaves().items()
+    }
+    attn_page = next(v for k, v in pages.items() if k.startswith("attn."))
+    state_page = next(v for k, v in pages.items() if "conv_state" in k)
+
+    assert attn_page == attn.bytes_per_block // attn.tensor_parallel_degree
+    assert state_page == state.bytes_per_state

@@ -647,13 +647,14 @@ def test_kv_budget_is_split_across_devices(
 
 
 def test_tp_huge_pages_use_per_device_page_size() -> None:
-    """TP inflates ``leaf.bytes_per_page`` to the replica total. Each device
-    slab is one shard, so huge-page count must use the per-device stride.
+    """A leaf reports what one device holds, and a slab is one device's.
+
+    So the budget the pool tiles is that page times the devices sharing it,
+    and the count it reaches is the pages one device was given.
     """
     params = make_leaf(n_kv_heads=2, data_parallel_degree=1, n_devices=2)
     assert params.tensor_parallel_degree == 2
-    replica_page = next(iter(params.leaves().values())).bytes_per_page
-    per_device_page = replica_page // 2
+    per_device_page = next(iter(params.leaves().values())).bytes_per_page
     mgr = JengaKVCacheManager.create(
         params=params,
         available_bytes=8 * per_device_page * 2,
@@ -665,8 +666,7 @@ def test_tp_huge_pages_use_per_device_page_size() -> None:
 def test_mixed_dp_tp_splits_budget_and_uses_per_device_pages() -> None:
     params = make_leaf(n_kv_heads=2, data_parallel_degree=2, n_devices=4)
     assert params.tensor_parallel_degree == 2
-    replica_page = next(iter(params.leaves().values())).bytes_per_page
-    per_device_page = replica_page // 2
+    per_device_page = next(iter(params.leaves().values())).bytes_per_page
     mgr = JengaKVCacheManager.create(
         params=params,
         available_bytes=8 * per_device_page * 4,

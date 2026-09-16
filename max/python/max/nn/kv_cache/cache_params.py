@@ -1949,23 +1949,31 @@ class KVCacheParams(KVCacheParamInterface):
         return _prefix + str(self.group_id)
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
-        """Returns the leaves of the KV cache."""
+        """Returns the leaves of the KV cache.
+
+        A leaf reports what one device holds, the unit a slab tiles in, where
+        :attr:`bytes_per_block` counts a block across the whole replica. The
+        division is exact: that figure is this one times the degree.
+        """
         leaf_id = self.leaf_id(_prefix)
         leaves = {
             leaf_id: PagedKVLeafRegion(
                 leaf_id=leaf_id,
                 group_id=self.group_id,
-                bytes_per_page=self.bytes_per_value_block,
+                bytes_per_page=self.bytes_per_value_block
+                // self.tensor_parallel_degree,
                 row_bytes=self.row_bytes,
                 page_size=self.page_size,
             )
         }
 
         if self.quantized_kv_cache:
-            leaves[_scales_leaf_id(leaf_id)] = PagedKVLeafRegion(
-                leaf_id=_scales_leaf_id(leaf_id),
+            scales_id = _scales_leaf_id(leaf_id)
+            leaves[scales_id] = PagedKVLeafRegion(
+                leaf_id=scales_id,
                 group_id=self.group_id,
-                bytes_per_page=self.bytes_per_scale_block,
+                bytes_per_page=self.bytes_per_scale_block
+                // self.tensor_parallel_degree,
                 row_bytes=math.lcm(
                     self.scale_row_bytes, _SCALE_TMA_ALIGN_BYTES
                 ),
