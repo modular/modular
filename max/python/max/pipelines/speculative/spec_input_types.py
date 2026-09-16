@@ -81,16 +81,24 @@ def build_spec_decode_input_types(
     *,
     kv_params: KVCacheParamInterface,
     ep_input_types: Sequence[TensorType | BufferType] = (),
+    leading_input_types: Sequence[TensorType | BufferType] = (),
 ) -> tuple[TensorType | BufferType, ...]:
     """Builds the canonical unified spec-decode graph input signature.
 
-    Order: tokens, [vision], device_offsets, [host_offsets], return_n_logits,
+    Order: [leading], tokens, [vision], device_offsets, [host_offsets],
+    return_n_logits,
     [data_parallel_splits], [signals], kv_cache_tree,
     [batch_context_lengths, ep], draft_tokens, [draft_probs_full], seed,
     temperature, top_k,
     max_k, top_p, min_top_p, [in_thinking_phase], [bitmask triple]. Bracketed
     groups are gated by the spec flags; the tail mirrors
     ``UnifiedSpecDecodeInputs._spec_decode_tail_buffers``.
+
+    ``leading_input_types`` sits ahead of ``tokens`` rather than past the
+    tail. A model needs it when a non-spec-decode graph for the same target
+    already declares that group first and the two signatures have to stay
+    interchangeable -- MiniMax-M3's indexer score scratch, which its base
+    backbone declares ahead of everything else.
 
     ``kv_params`` is the unified ``{"target", "draft"}`` KV tree; its flattened
     inputs (target leaf then draft leaf) carry both caches' blocks and dispatch
@@ -100,7 +108,8 @@ def build_spec_decode_input_types(
     device_ref = devices[0]
 
     all_input_types: list[TensorType | BufferType] = [
-        TensorType(DType.int64, shape=["total_seq_len"], device=device_ref)
+        *leading_input_types,
+        TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),
     ]
 
     if spec.enable_vision:
@@ -277,6 +286,10 @@ class SpecDecodeGraphInputs:
     batch_context_lengths: list[TensorValue] = field(default_factory=list)
     ep_inputs: list[Value[Any]] = field(default_factory=list)
 
+    leading: list[Value[Any]] = field(default_factory=list)
+    """Inputs ahead of ``tokens``, for a model that declares its own group
+    first. Empty unless the signature declared one."""
+
     trailing: list[Value[Any]] = field(default_factory=list)
     """Inputs past the canonical tail, for a model that appends its own
     group. Empty unless the decode allowed trailing."""
@@ -431,6 +444,7 @@ def decode_spec_decode_input_values(
     *,
     kv_params: KVCacheParamInterface,
     num_ep_inputs: int = 0,
+    num_leading_inputs: int = 0,
     allow_trailing: bool = False,
 ) -> SpecDecodeGraphInputs:
     """Decodes a unified spec-decode graph's positional inputs by name.
@@ -445,6 +459,10 @@ def decode_spec_decode_input_values(
             unflatten the KV group.
         num_ep_inputs: Number of expert-parallel inputs the target declared,
             i.e. ``len(ep_input_types)`` as passed to the builder.
+        num_leading_inputs: Number of inputs the signature declared ahead of
+            ``tokens``, i.e. ``len(leading_input_types)`` as passed to the
+            builder. A count rather than a flag, because these sit before
+            every anchor the decode could otherwise resynchronize on.
         allow_trailing: Accept inputs past the canonical tail and return them
             as :attr:`SpecDecodeGraphInputs.trailing`, for a model that
             appends its own group. Off by default so an unexpected leftover
@@ -462,6 +480,7 @@ def decode_spec_decode_input_values(
     it: Iterator[Value[Any]] = iter(graph_inputs)
     take = partial(_next_input, it, decoding="the canonical inputs")
 
+    leading = [take() for _ in range(num_leading_inputs)]
     tokens = take().tensor
 
     vision_embeddings: list[TensorValue] = []
@@ -523,6 +542,7 @@ def decode_spec_decode_input_values(
         signal_buffers=signal_buffers,
         batch_context_lengths=batch_context_lengths,
         ep_inputs=ep_inputs,
+        leading=leading,
         trailing=trailing,
     )
 
@@ -556,6 +576,14 @@ class SpecDecodeGraphSignature:
         """The target's expert-parallel inputs; empty when EP is off."""
         return ()
 
+    def leading_input_types(self) -> Sequence[TensorType | BufferType]:
+        """This model's own group ahead of ``tokens``; empty for most models.
+
+        Both directions read it, so the count the decode skips is always the
+        count the signature declared.
+        """
+        return ()
+
     @property
     def has_trailing_inputs(self) -> bool:
         """Whether this model appends its own group past the canonical tail."""
@@ -585,6 +613,7 @@ class SpecDecodeGraphSignature:
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             ep_input_types=self.ep_input_types(),
+            leading_input_types=self.leading_input_types(),
         )
 
     def decode_inputs(
@@ -598,5 +627,6 @@ class SpecDecodeGraphSignature:
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             num_ep_inputs=len(self.ep_input_types()),
+            num_leading_inputs=len(self.leading_input_types()),
             allow_trailing=self.has_trailing_inputs,
         )
