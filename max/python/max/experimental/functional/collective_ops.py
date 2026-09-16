@@ -24,8 +24,8 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
+from max import _validation_hooks
 from max.driver import Accelerator, Device
-from max.experimental import _validation_hooks
 from max.experimental import tensor as _experimental_tensor
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (

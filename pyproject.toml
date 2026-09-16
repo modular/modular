@@ -197,6 +197,12 @@ follow_imports = "skip"
 module = "cyclopts.*"
 ignore_missing_imports = true
 
+# Allow missing imports in `_validation_hooks` to avoid circular dependencies.
+# This file to add eager validation hooks in various parts of MAX.
+[[tool.mypy.overrides]]
+module = "max._validation_hooks"
+disable_error_code = ["import-not-found"]
+
 # Private MiniMax-M3 graph hooks diverge from the shared load_model template
 # signatures; suppress only the files that inherit those hooks.
 [[tool.mypy.overrides]]

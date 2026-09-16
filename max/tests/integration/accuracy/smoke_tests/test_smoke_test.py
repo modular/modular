@@ -270,6 +270,31 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     assert "--trust-remote-code" not in cmd
 
 
+def test_max_ci_validates_every_request(monkeypatch: MonkeyPatch) -> None:
+    """A smoke run built from the checkout validates requests, not just init."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: True)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max-ci", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" in cmd
+    assert cmd[cmd.index("--eager-usage-validator") + 1] == "enabled"
+
+
+def test_released_max_does_not_get_eager_usage_validator(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """The flag is newer than the wheels ``max`` installs, so it stays off."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" not in cmd
+
+
 def test_merge_serve_extra_args_appends_when_absent() -> None:
     args = ["prog", "model", "--framework", "max-ci"]
     merged = smoke_test.merge_serve_extra_args(

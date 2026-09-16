@@ -19,15 +19,15 @@ import contextlib
 import logging
 import os
 import sys
-from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from types import TracebackType
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
-from max.driver import Buffer
-from max.experimental import _validation_hooks
-from max.experimental._validation_hooks import active_validator
+from max import _validation_hooks
+from max._validation_hooks import active_validator
+from max.driver import Buffer, Device
+from max.engine import Model
 from max.experimental.realization_context import (
     EagerRealizationContext,
     set_default_realization_context,
@@ -39,12 +39,14 @@ __all__ = [
     "active_validator",
 ]
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger("max.pipelines")
 
 # Packages to pass over when finding the call site in the stack trace.
 _FRAMEWORK_MODULES = (
     "max._core",
+    "max._validation_hooks",
     "max.driver",
+    "max.engine",
     "max.experimental",
     "max.graph",
     "asyncio",
@@ -53,8 +55,17 @@ _FRAMEWORK_MODULES = (
     "functools",
 )
 
-# Maximum number of call sites to list per category.
+# Maximum number of reported findings per category.
 _MAX_REPORTED = 20
+
+
+class _Reportable(Protocol):
+    """A finding that remembers whether the validator has logged it."""
+
+    reported: bool
+
+
+_Finding = TypeVar("_Finding", bound=_Reportable)
 
 
 def _call_site() -> str:
@@ -101,6 +112,7 @@ class _EagerSite:
 
     site: str
     count: int = 0
+    reported: bool = False
 
 
 @dataclass
@@ -112,6 +124,7 @@ class _GraphBreak:
     site: str
     materialized: int
     count: int = 0
+    reported: bool = False
 
 
 @dataclass
@@ -122,11 +135,27 @@ class _TrackedTransfer:
     site: str
     description: str
     count: int = 0
+    reported: bool = False
+
+
+@dataclass
+class _UnreadOutput:
+    """A compiled-call output that went unread for a whole scope."""
+
+    graph: int
+    index: int
+    description: str
+    site: str
+    reported: bool = False
 
 
 @dataclass(frozen=True)
 class _PendingOutput:
-    """A compiled-call output awaiting evidence that something reads it."""
+    """A compiled-call output awaiting evidence that something reads it.
+
+    A question, not yet a finding: most are answered by the next op that
+    reads the buffer. Only what a scope ends still holding becomes one.
+    """
 
     graph: int
     index: int
@@ -140,12 +169,18 @@ class _PendingOutput:
     finding.
     """
 
+    def unread(self) -> _UnreadOutput:
+        """Returns the finding this output becomes if nothing reads it."""
+        return _UnreadOutput(
+            self.graph, self.index, self.description, self.site
+        )
+
 
 @dataclass(frozen=True)
 class _TrackedGraph:
-    """A compiled model that is tracked by the scope."""
+    """A compiled model that the validator has seen called."""
 
-    model: Any
+    model: Model
     """Retained so no later object lands on the same ``id``."""
 
     name: str
@@ -155,41 +190,27 @@ class _TrackedGraph:
 
 @dataclass
 class _Findings:
-    """Everything one validation scope observed."""
+    """Every finding a validator has made, for as long as it lives.
+
+    One entry per call site, so re-entering the validator -- which a
+    pipeline does once per execution -- adds to what is here rather than
+    starting it over.
+    """
 
     eager: dict[str, _EagerSite] = field(default_factory=dict)
     breaks: dict[tuple[int, int, str], _GraphBreak] = field(
         default_factory=dict
     )
-    outputs: dict[int, _PendingOutput] = field(default_factory=dict)
-    """Outputs still awaiting a reader, dropped as soon as one turns up."""
+    outputs: dict[tuple[int, int, str], _UnreadOutput] = field(
+        default_factory=dict
+    )
 
     transfers: dict[tuple[str, str], _TrackedTransfer] = field(
         default_factory=dict
     )
-    graphs: dict[int, _TrackedGraph] = field(default_factory=dict)
-    """Every compiled model the scope called, keyed by ``id``."""
-
     eager_total: int = 0
     transfer_total: int = 0
-    """Executions and transfers seen, including any past the call-site cap."""
-
-    dropped: Counter[str] = field(default_factory=Counter)
-    """Call sites a category had to leave out, so the report can say so."""
-
-    def empty(self) -> bool:
-        return not (self.eager or self.breaks or self.outputs or self.transfers)
-
-    def display(self, graph: int) -> str:
-        """Returns the name of a graph, disambiguating models that share the same name."""
-        found = self.graphs.get(graph)
-        if found is None:
-            return "<unknown>"
-        collides = any(
-            other.name == found.name and other.ordinal != found.ordinal
-            for other in self.graphs.values()
-        )
-        return f"{found.name}#{found.ordinal}" if collides else found.name
+    """Executions and transfers seen, whether or not their site is reported."""
 
 
 class _ValidatingRealizationContext(EagerRealizationContext):
@@ -256,6 +277,10 @@ class EagerUsageValidator:
         self._enabled = enabled
         self.label = label
         self._findings = _Findings()
+        self._pending_outputs: dict[int, _PendingOutput] = {}
+        """Compiled model outputs that have been materialized but not read."""
+        self._graphs: dict[int, _TrackedGraph] = {}
+        """The models called within this scope."""
         self._last_graph: int | None = None
         self._last_graph_outputs = 0
         self._allow_eager = 0
@@ -276,7 +301,9 @@ class EagerUsageValidator:
             return self
         with contextlib.ExitStack() as stack:
             if not self._exits:
-                self._findings = _Findings()
+                # The findings outlive the scope; the working set does not.
+                self._pending_outputs.clear()
+                self._graphs.clear()
                 self._last_graph = None
                 self._last_graph_outputs = 0
                 stack.enter_context(_validation_hooks.register(self))
@@ -301,7 +328,11 @@ class EagerUsageValidator:
             return
         self._exits.pop().close()
         if not self._exits and exc is None:
-            self._report_findings()
+            # Mark any leftover outputs that were never consumed.
+            for pending in self._pending_outputs.values():
+                key = (pending.graph, pending.index, pending.site)
+                self._findings.outputs.setdefault(key, pending.unread())
+            _report_findings(self.label, self._findings, self._graphs)
 
     def __enter__(self) -> EagerUsageValidator:
         return self.enter()
@@ -376,8 +407,7 @@ class EagerUsageValidator:
         del reason
         self._mark_used(output)
 
-    # Called from max.experimental._validation_hooks, which holds the
-    # instrumentation these answer to.
+    # The following methods are called from max._validation_hooks.
 
     def _realized(self, site: str, sources: Sequence[Tensor]) -> None:
         """Records one eager realization, called by the installed context."""
@@ -386,70 +416,52 @@ class EagerUsageValidator:
             return
         findings = self._findings
         findings.eager_total += 1
-        eager_site = findings.eager.get(site)
-        if eager_site is None:
-            if len(findings.eager) >= _MAX_REPORTED:
-                findings.dropped["eager"] += 1
-                return
-            eager_site = _EagerSite(site)
+        eager_site = findings.eager.get(site) or _EagerSite(site)
         findings.eager[site] = replace(eager_site, count=eager_site.count + 1)
 
-    def _device_transfer(self, api: str, tensor: Any, dest: Any) -> None:
+    def _device_transfer(self, api: str, tensor: Tensor, dest: Device) -> None:
         self._mark_used(tensor)
-        if self._allow_transfer or not isinstance(tensor, Tensor):
+        if self._allow_transfer:
             return
-        # ``Tensor.device`` raises for a distributed tensor, and ``item()``
-        # and ``to_numpy()`` report before they reach their own handling of
-        # that case. Every shard of a distributed read starts somewhere, so
-        # the first one answers whether the host is about to be involved.
         source = tensor._mapping.mesh.devices[0]
-        if source.is_host or (dest is not None and not dest.is_host):
+        # We only want to warn transfers from device to host, so skip
+        # other types of transfers.
+        if source.is_host or not dest.is_host:
             return
         site = _call_site()
         described = _describe(tensor)
         self._findings.transfer_total += 1
         key = (api, site)
-        found = self._findings.transfers.get(key)
-        if found is None:
-            if len(self._findings.transfers) >= _MAX_REPORTED:
-                self._findings.dropped["transfers"] += 1
-                return
-            found = _TrackedTransfer(api, site, described)
+        found = self._findings.transfers.get(key) or _TrackedTransfer(
+            api, site, described
+        )
         self._findings.transfers[key] = replace(found, count=found.count + 1)
 
-    def _compiled_call(self, model: Any, args: Any, outputs: Any) -> None:
+    def _compiled_call(
+        self, engine_model: Model, args: Any, outputs: Any
+    ) -> None:
         self._mark_used(args)
         site = _call_site()
-        graph = self._register_graph(model)
+        graph = self._register_compiled_graph(engine_model)
         if (
             self._last_graph is not None
             and self._last_graph != graph
             and not self._allow_break
         ):
             key = (self._last_graph, graph, site)
-            found = self._findings.breaks.get(key)
-            if found is None:
-                if len(self._findings.breaks) < _MAX_REPORTED:
-                    found = _GraphBreak(
-                        self._last_graph,
-                        graph,
-                        site,
-                        self._last_graph_outputs,
-                    )
-                else:
-                    self._findings.dropped["breaks"] += 1
-            if found is not None:
-                self._findings.breaks[key] = replace(
-                    found, count=found.count + 1
-                )
+            found = self._findings.breaks.get(key) or _GraphBreak(
+                self._last_graph, graph, site, self._last_graph_outputs
+            )
+            self._findings.breaks[key] = replace(found, count=found.count + 1)
 
         registered = 0
         for index, buffer in enumerate(_buffers(outputs)):
             registered += 1
-            if len(self._findings.outputs) >= _MAX_REPORTED:
-                self._findings.dropped["outputs"] += 1
+            # Not a report cap but a memory one: a pending output pins its
+            # buffer until something reads it.
+            if len(self._pending_outputs) >= _MAX_REPORTED:
                 continue
-            self._findings.outputs[id(buffer)] = _PendingOutput(
+            self._pending_outputs[id(buffer)] = _PendingOutput(
                 graph=graph,
                 index=index,
                 description=_describe(buffer),
@@ -459,107 +471,145 @@ class EagerUsageValidator:
         self._last_graph = graph
         self._last_graph_outputs = registered
 
-    def _register_graph(self, model: Any) -> int:
-        """Registers a compiled model and returns the id identifying it."""
-        key = id(model)
-        graphs = self._findings.graphs
-        if key not in graphs:
-            name = model.name
-            ordinal = sum(1 for g in graphs.values() if g.name == name) + 1
-            graphs[key] = _TrackedGraph(model=model, name=name, ordinal=ordinal)
+    def _register_compiled_graph(self, engine_model: Model) -> int:
+        """Registers a compiled graph and returns the id identifying it."""
+        key = id(engine_model)
+        if key not in self._graphs:
+            name = engine_model.name
+            ordinal = (
+                sum(1 for g in self._graphs.values() if g.name == name) + 1
+            )
+            self._graphs[key] = _TrackedGraph(
+                model=engine_model, name=name, ordinal=ordinal
+            )
         return key
 
     def _mark_used(self, values: Any) -> None:
         """Marks compiled outputs reachable from ``values`` as read."""
-        if not self._findings.outputs:
+        if not self._pending_outputs:
             return
         for buffer in _buffers(values):
-            self._findings.outputs.pop(id(buffer), None)
+            self._pending_outputs.pop(id(buffer), None)
 
-    # Reporting.
 
-    def _report_findings(self) -> None:
-        findings = self._findings
-        if findings.empty():
-            return
-        scope = f" during {self.label}" if self.label else ""
-        lines = [f"Eager usage validator found{scope}:"]
-        lines.extend(self._eager_warning())
-        lines.extend(self._graph_break_warning())
-        lines.extend(self._unused_output_lines())
-        lines.extend(self._transfer_warning())
-        if len(lines) > 1:
-            _logger.warning("\n".join(lines))
+def _report_findings(
+    label: str,
+    findings: _Findings,
+    graphs: dict[int, _TrackedGraph],
+) -> None:
+    scope = f" during {label}" if label else ""
+    lines = [f"Eager usage validator found{scope}:"]
+    lines.extend(_eager_warning(findings))
+    lines.extend(_graph_break_warning(findings, graphs))
+    lines.extend(_unused_output_lines(findings, graphs))
+    lines.extend(_transfer_warning(findings))
+    if len(lines) > 1:
+        _logger.warning("\n".join(lines))
 
-    def _dropped_line(self, category: str) -> list[str]:
-        dropped = self._findings.dropped[category]
-        return [f"    (and {dropped} more call site(s))"] if dropped else []
 
-    def _eager_warning(self) -> list[str]:
-        eager_sites = sorted(
-            self._findings.eager.values(), key=lambda t: -t.count
-        )
-        if not eager_sites:
-            return []
-        lines = [
-            f"  {self._findings.eager_total} eager execution(s). Each "
-            "compiles and launches a graph of its own, so nothing fuses "
-            "across them; move the work into a compiled function, or mark "
-            "it with `eager_validator.allow_eager(reason=...)`.",
-        ]
-        lines.extend(f"    {site.site} x{site.count}" for site in eager_sites)
-        return lines + self._dropped_line("eager")
+def _graph_name(graphs: dict[int, _TrackedGraph], graph: int) -> str:
+    """Returns the name of a graph."""
+    found = graphs.get(graph)
+    if found is None:
+        return "<unknown>"
+    collides = any(
+        other.name == found.name and other.ordinal != found.ordinal
+        for other in graphs.values()
+    )
+    return f"{found.name}#{found.ordinal}" if collides else found.name
 
-    def _graph_break_warning(self) -> list[str]:
-        findings = self._findings
-        if not findings.breaks:
-            return []
-        lines = [
-            "  Execution crossed a compiled-graph boundary. Each crossing "
-            "materializes the tensors between the graphs and blocks fusion "
-            "across them; compile the pieces as one graph, or mark the "
-            "boundary with `eager_validator.graph_break(reason=...)`.",
-        ]
-        lines.extend(
-            f"    {findings.display(found.source)} -> "
-            f"{findings.display(found.target)} at {found.site} "
-            f"({found.materialized} tensor(s) materialized, x{found.count})"
-            for found in findings.breaks.values()
-        )
-        return lines + self._dropped_line("breaks")
 
-    def _unused_output_lines(self) -> list[str]:
-        findings = self._findings
-        unused = list(findings.outputs.values())
-        if not unused:
-            return []
-        lines = [
-            "  Compiled-graph outputs were materialized and never read. Drop "
-            "them from the graph's outputs, or mark them with "
-            "`eager_validator.discard_output(output, reason=...)`.",
-        ]
-        lines.extend(
-            f"    {findings.display(pending.graph)} output[{pending.index}] "
-            f"{pending.description} produced at {pending.site}"
-            for pending in unused
-        )
-        return lines + self._dropped_line("outputs")
+def _eager_warning(findings: _Findings) -> list[str]:
+    eager_sites = sorted(findings.eager.values(), key=lambda t: -t.count)
+    lines = _format_findings(
+        eager_sites, lambda site: f"    {site.site} x{site.count}"
+    )
+    if not lines:
+        return []
+    return [
+        f"  {findings.eager_total} eager execution(s). Each "
+        "compiles and launches a graph of its own, so nothing fuses "
+        "across them; move the work into a compiled function, or mark "
+        "it with `eager_validator.allow_eager(reason=...)`.",
+        *lines,
+    ]
 
-    def _transfer_warning(self) -> list[str]:
-        transfers = sorted(
-            self._findings.transfers.values(), key=lambda t: -t.count
-        )
-        if not transfers:
-            return []
-        lines = [
-            f"  {self._findings.transfer_total} device-to-host transfer(s). "
-            "Each one waits on the accelerator before the host can go on; "
-            "keep the value on device, or mark the call site with "
-            "`eager_validator.allow_device_transfer(reason=...)`.",
-        ]
-        lines.extend(
+
+def _graph_break_warning(
+    findings: _Findings, graphs: dict[int, _TrackedGraph]
+) -> list[str]:
+    lines = _format_findings(
+        findings.breaks.values(),
+        lambda found: (
+            f"    {_graph_name(graphs, found.source)} -> "
+            f"{_graph_name(graphs, found.target)} at {found.site} "
+            f"({found.materialized} tensor(s) materialized, "
+            f"x{found.count})"
+        ),
+    )
+    if not lines:
+        return []
+    return [
+        "  Execution crossed a compiled-graph boundary. Each crossing "
+        "materializes the tensors between the graphs and blocks fusion "
+        "across them; compile the pieces as one graph, or mark the "
+        "boundary with `eager_validator.graph_break(reason=...)`.",
+        *lines,
+    ]
+
+
+def _unused_output_lines(
+    findings: _Findings, graphs: dict[int, _TrackedGraph]
+) -> list[str]:
+    lines = _format_findings(
+        findings.outputs.values(),
+        lambda unread: (
+            f"    {_graph_name(graphs, unread.graph)} "
+            f"output[{unread.index}] {unread.description} "
+            f"produced at {unread.site}"
+        ),
+    )
+    if not lines:
+        return []
+    return [
+        "  Compiled-graph outputs were materialized and never read. Drop "
+        "them from the graph's outputs, or mark them with "
+        "`eager_validator.discard_output(output, reason=...)`.",
+        *lines,
+    ]
+
+
+def _transfer_warning(findings: _Findings) -> list[str]:
+    transfers = sorted(findings.transfers.values(), key=lambda t: -t.count)
+    lines = _format_findings(
+        transfers,
+        lambda transfer: (
             f"    {transfer.api} at {transfer.site} copies "
             f"{transfer.description} x{transfer.count}"
-            for transfer in transfers
-        )
-        return lines + self._dropped_line("transfers")
+        ),
+    )
+    if not lines:
+        return []
+    return [
+        f"  {findings.transfer_total} device-to-host transfer(s). "
+        "Each one waits on the accelerator before the host can go on; "
+        "keep the value on device, or mark the call site with "
+        "`eager_validator.allow_device_transfer(reason=...)`.",
+        *lines,
+    ]
+
+
+def _format_findings(
+    findings: Iterable[_Finding],
+    describe: Callable[[_Finding], str],
+) -> list[str]:
+    """Filters and formats a list of findings into a list of strings."""
+    lines: list[str] = []
+    for finding in findings:
+        if finding.reported:
+            continue
+        if len(lines) >= _MAX_REPORTED:
+            break
+        finding.reported = True
+        lines.append(describe(finding))
+    return lines

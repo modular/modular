@@ -137,6 +137,9 @@ from max.pipelines.lib.vision_encoder_cache import (
     VisionEncoderCache,
     as_vision_context_batches,
 )
+from max.pipelines.modeling.eager_validation import (
+    eager_usage_validator,
+)
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -1835,17 +1838,25 @@ class OverlapTextGenerationPipeline(
             return_logits = ReturnLogits.VARIABLE
         else:
             return_logits = ReturnLogits.LAST_TOKEN
-        self._pipeline_model: PipelineModelWithKVCache[Any] = pipeline_model(
-            pipeline_config=self._pipeline_config,
-            session=session,
-            devices=self._devices,
-            kv_cache_config=model_config.kv_cache,
-            weights=load_weights(weight_paths),
-            adapter=weight_adapters.get(weights_format(weight_paths)),
-            return_logits=return_logits,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
+        self._request_validator = eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "execution"
         )
+        with eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "initialization"
+        ):
+            self._pipeline_model: PipelineModelWithKVCache[Any] = (
+                pipeline_model(
+                    pipeline_config=self._pipeline_config,
+                    session=session,
+                    devices=self._devices,
+                    kv_cache_config=model_config.kv_cache,
+                    weights=load_weights(weight_paths),
+                    adapter=weight_adapters.get(weights_format(weight_paths)),
+                    return_logits=return_logits,
+                    max_batch_size=max_batch_size,
+                    memory_plan=memory_plan,
+                )
+            )
 
         available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
@@ -3861,6 +3872,13 @@ class OverlapTextGenerationPipeline(
             A dictionary of request IDs to outputs. The outputs do not correspond
             to the requests in the input batch. Instead they are from the previous batch.
         """
+        with self._request_validator:
+            return self._execute(inputs)
+
+    def _execute(
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         if inputs.enable_log_probs:
             raise ValueError(
                 "Log probabilities are not supported with overlap pipeline"

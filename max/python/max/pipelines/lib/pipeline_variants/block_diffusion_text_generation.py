@@ -123,7 +123,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         host = Buffer.from_numpy(np.zeros((rows * cols,), dtype=np.uint16))
         return host.view(DType.bfloat16, [rows, cols]).to(self._devices[0])
 
-    def execute(
+    def _execute(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Runs one canvas: encoder commit, denoising loop, finalize."""

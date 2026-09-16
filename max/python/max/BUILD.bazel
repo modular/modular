@@ -154,6 +154,17 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "_validation_hooks",
+    srcs = ["_validation_hooks.py"],
+    ignore_unresolved_imports = [
+        "max.driver.Device",
+        "max.engine.Model",
+        "max.experimental.tensor.Tensor",
+        "max.experimental.validation.EagerUsageValidator",
+    ],
+)
+
 alias(
     name = "tensor",
     actual = "//max/python/max/experimental",

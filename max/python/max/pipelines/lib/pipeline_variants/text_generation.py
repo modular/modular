@@ -60,6 +60,9 @@ from max.pipelines.lib.vision_encoder_cache import (
     VisionEncoderCache,
     as_vision_context_batches,
 )
+from max.pipelines.modeling.eager_validation import (
+    eager_usage_validator,
+)
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineOutputsDict,
@@ -218,19 +221,25 @@ class TextGenerationPipeline(
             raise ValueError(
                 f"TextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
             )
-        self._pipeline_model = pipeline_model(
-            pipeline_config=self._pipeline_config,
-            session=session,
-            devices=self._devices,
-            kv_cache_config=model_config.kv_cache,
-            weights=load_weights(weight_paths),
-            adapter=weight_adapters.get(weights_format(weight_paths)),
-            return_logits=ReturnLogits.ALL
-            if self._pipeline_config.model.enable_echo
-            else ReturnLogits.LAST_TOKEN,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
+        self._request_validator = eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "execution"
         )
+        with eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "initialization"
+        ):
+            self._pipeline_model = pipeline_model(
+                pipeline_config=self._pipeline_config,
+                session=session,
+                devices=self._devices,
+                kv_cache_config=model_config.kv_cache,
+                weights=load_weights(weight_paths),
+                adapter=weight_adapters.get(weights_format(weight_paths)),
+                return_logits=ReturnLogits.ALL
+                if self._pipeline_config.model.enable_echo
+                else ReturnLogits.LAST_TOKEN,
+                max_batch_size=max_batch_size,
+                memory_plan=memory_plan,
+            )
 
         available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
@@ -501,6 +510,13 @@ class TextGenerationPipeline(
         Executes the graph for a single decode step, samples the next token,
         then decodes and returns the generated tokens.
         """
+        with self._request_validator:
+            return self._execute(inputs)
+
+    def _execute(
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         # Prepare the batch.
         model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 

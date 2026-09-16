@@ -27,6 +27,7 @@ from typing import Any, BinaryIO, Literal, cast
 from unittest import mock
 
 import numpy as np
+from max import _validation_hooks
 from max._core.engine import CompiledModels as _CompiledModels
 from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
@@ -142,6 +143,7 @@ def _Model_execute(self: Model, *args: InputType) -> list[Buffer]:
             )
 
         input_impls.append(buffer)
+    _validation_hooks.mark_used(input_impls)
     return self._execute_device_tensors(input_impls)
 
 

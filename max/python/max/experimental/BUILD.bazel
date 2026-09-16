@@ -8,7 +8,6 @@ modular_py_library(
         "__init__.py",
         "_passes.py",
         "_tensor_repr.py",
-        "_validation_hooks.py",
         "compilation.py",
         "compile_pool.py",
         "custom.py",
@@ -40,10 +39,8 @@ modular_py_library(
     # clamps every test to 800s and the slowest shard ran ~730s on
     # CPU-only CI with 6 shards, so shard to stay well under it.
     docstring_example_shard_count = 8,
-    # engine is used via engine.api.InferenceSession in realization_context.py
     # interpreter is used via lazy import in realization_context.py
     ignore_extra_deps = [
-        "//max/python/max/engine",
         "//max/python/max:interpreter",
     ],
     # Imported late in realization_context.py; declaring it would be a cycle.
@@ -52,6 +49,7 @@ modular_py_library(
     deps = [
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",
+        "//max/python/max:_validation_hooks",
         "//max/python/max:interpreter",
         "//max/python/max:tree",
         "//max/python/max/driver",

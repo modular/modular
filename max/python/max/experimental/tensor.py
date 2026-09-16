@@ -109,10 +109,9 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias, cast
 
-from max import driver, graph
+from max import _validation_hooks, driver, graph
 from max.driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
-from max.experimental import _validation_hooks
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,

@@ -20,9 +20,10 @@ from collections.abc import Iterator
 
 import numpy as np
 import pytest
+from max import _validation_hooks as hooks
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental import _validation_hooks as hooks
+from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental import realization_context
 from max.experimental.compilation import CompiledCallable, compile
@@ -30,7 +31,7 @@ from max.experimental.sharding import NoReshard, mode
 from max.experimental.sharding.mode import current_solver
 from max.experimental.tensor import Tensor
 from max.experimental.validation import EagerUsageValidator
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.modeling.eager_validation import eager_validator
 
 _F32 = DType.float32
@@ -44,7 +45,7 @@ def _ones(*shape: int) -> Tensor:
     return Tensor.ones(list(shape), dtype=_F32, device=CPU())
 
 
-_VALIDATION_LOGGER = "max.experimental.validation"
+_VALIDATION_LOGGER = "max.pipelines"
 
 
 class _ValidatorLog:
@@ -185,11 +186,15 @@ def test_graph_break_hatch_suppresses_the_boundary(
 def test_an_output_nothing_reads_is_reported(warnings: _ValidatorLog) -> None:
     double = compile(_double)(_spec(2, 2))
 
+    x = _ones(2, 2)
     with EagerUsageValidator():
-        double(_ones(2, 2))
+        double(x)
 
     assert len(warnings.messages) == 1
     assert "never read" in warnings.messages[0]
+    # The reader needs the call that produced it, not a frame inside the
+    # validator's own plumbing.
+    assert "test_eager_usage_validator.py" in warnings.messages[0]
 
 
 def test_an_output_a_later_op_reads_is_not_reported(
@@ -201,6 +206,50 @@ def test_an_output_a_later_op_reads_is_not_reported(
     with EagerUsageValidator() as validator:
         with validator.allow_eager(reason="consumption, not eagerness"):
             F.add(double(x), y)
+
+    assert not warnings.messages
+
+
+def test_an_output_a_graph_api_model_reads_is_not_reported(
+    warnings: _ValidatorLog,
+) -> None:
+    """The pipelines' token sampler is a graph-API model reading ModuleV3 logits.
+
+    Nothing reports that read but the engine's own execute path, so without it
+    every ModuleV3 text pipeline looked like it produced logits nothing wanted.
+    """
+    double = compile(_double)(_spec(2, 2))
+    with Graph("sampler", input_types=[_spec(2, 2)]) as graph:
+        graph.output(-graph.inputs[0].tensor)
+    sampler = InferenceSession().load(graph)
+
+    x = _ones(2, 2)
+    with EagerUsageValidator():
+        sampler(double(x).driver_tensor)
+
+    assert not warnings.messages
+
+
+def test_a_hatch_on_the_first_graph_suppresses_the_boundary(
+    warnings: _ValidatorLog,
+) -> None:
+    """Declaring the graph that ends a chain is enough to excuse the crossing.
+
+    The boundary is reported at the call that *enters* the second graph, so a
+    hatch around the first looks like it should miss it. It does not: leaving
+    the block starts a fresh chain. This is the shape a conditional
+    sub-model wants, as in the gemma3 vision tower, where the second call is
+    unconditional and should not be wrapped.
+    """
+    double = compile(_double)(_spec(2, 2))
+    negate = compile(_negate)(_spec(2, 2))
+
+    x = _ones(2, 2)
+    with EagerUsageValidator() as validator:
+        with validator.graph_break(reason="the tower is its own graph"):
+            mid = double(x)
+        out = negate(mid)
+        validator.discard_output(out, reason="the test never reads it")
 
     assert not warnings.messages
 
@@ -309,6 +358,48 @@ def test_a_reentered_scope_reports_once(
     assert len(warnings.messages) == 1
     # Not x2: re-entering must not install the instrumentation twice.
     assert "1 eager execution(s)" in warnings.messages[0]
+
+
+def _add_at_one_site(x: Tensor) -> Tensor:
+    """Adds from a fixed line, so every call reports the same call site."""
+    return F.add(x, x)
+
+
+def test_a_site_already_named_is_not_named_again(
+    warnings: _ValidatorLog,
+) -> None:
+    """A pipeline enters one validator per execution; repeats are not news."""
+    validator = EagerUsageValidator()
+    x = _ones(2, 2)
+
+    with validator:
+        _add_at_one_site(x)
+    with validator:
+        _add_at_one_site(x)
+
+    assert len(warnings.messages) == 1
+
+
+def test_a_new_site_is_named_however_late_it_turns_up(
+    warnings: _ValidatorLog,
+) -> None:
+    """Silence on the familiar must not cost the report a fresh finding."""
+    validator = EagerUsageValidator()
+    x = _ones(2, 2)
+
+    with validator:
+        _add_at_one_site(x)
+    with validator:
+        _add_at_one_site(x)
+        F.sub(x, x)
+
+    first, second = warnings.messages
+    (already_named,) = [
+        line for line in first.splitlines() if line.startswith("    ")
+    ]
+    sites = [line for line in second.splitlines() if line.startswith("    ")]
+    assert sites != [already_named]
+    assert len(sites) == 1
 
 
 def test_enabled_is_fixed_at_construction() -> None:

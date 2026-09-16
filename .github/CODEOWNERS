@@ -130,6 +130,7 @@
 /max/python/max/_interpreter_ops/ @modular/max-sdk
 /max/python/max/_kv_cache_ops/ @modular/max-serve @modular/max-sdk
 /max/python/max/_mlir_context.py @modular/max-sdk
+/max/python/max/_validation_hooks.py @modular/max-sdk
 /max/python/max/_mlir/ @modular/max-sdk
 /max/python/max/_xgrammar/ @modular/max-serve @modular/max-sdk
 /max/python/max/benchmark @modular/max-sdk @modular/max-serve

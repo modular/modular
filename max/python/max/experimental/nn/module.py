@@ -22,10 +22,10 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Generic
 
+from max import _validation_hooks
 from max.driver import CPU, Buffer, Device, DLPackArray
 from max.engine import CompiledModel as EngineCompiledModel
 from max.engine import Model
-from max.experimental import _validation_hooks
 from max.experimental import functional as F
 from max.experimental.nn._trace_context import ModuleTraceRealizationContext
 from max.experimental.realization_context import (

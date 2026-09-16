@@ -14,7 +14,9 @@
 """Eager usage validation hook trackers.
 
 Breaks the circular dependency between the validator and the methods that
-require safeguards.
+require safeguards. Dependency-free on purpose: ``max.experimental`` builds on
+``max.engine``, so a hook module inside the former is out of the latter's
+reach.
 """
 
 from __future__ import annotations
@@ -25,6 +27,9 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from max.driver import Device
+    from max.engine import Model
+    from max.experimental.tensor import Tensor
     from max.experimental.validation import EagerUsageValidator
 
 VALIDATORS: ContextVar[tuple[EagerUsageValidator, ...]] = ContextVar(
@@ -49,13 +54,13 @@ def register(validator: EagerUsageValidator) -> Iterator[None]:
         VALIDATORS.reset(token)
 
 
-def device_transfer(api: str, tensor: Any, dest: Any) -> None:
+def device_transfer(api: str, tensor: Tensor, dest: Device) -> None:
     """Reports a transfer that may synchronize an accelerator with the host."""
     if validator := active_validator():
         validator._device_transfer(api, tensor, dest)
 
 
-def compiled_call(model: Any, args: Any = (), outputs: Any = ()) -> None:
+def compiled_call(model: Model, args: Any = (), outputs: Any = ()) -> None:
     """Reports a call into a compiled graph.
 
     Args:
@@ -67,3 +72,15 @@ def compiled_call(model: Any, args: Any = (), outputs: Any = ()) -> None:
     """
     if validator := active_validator():
         validator._compiled_call(model, args, outputs)
+
+
+def mark_used(values: Any) -> None:
+    """Reports values consumed by a call the validator cannot otherwise see.
+
+    A compiled output is only excused by evidence that something reads it, and
+    the validator sees a read only where a hook reports one. Call this from a
+    consumer that is not itself worth reporting, so that a compiled output
+    feeding it does not look abandoned.
+    """
+    if validator := active_validator():
+        validator._mark_used(values)

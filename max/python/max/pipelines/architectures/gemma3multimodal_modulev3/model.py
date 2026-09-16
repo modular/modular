@@ -38,6 +38,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.modeling.eager_validation import eager_validator
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3MultiModalModuleV3BatchProcessor
@@ -197,7 +198,10 @@ class Gemma3MultiModalModelV3(
             assert self.vision_model is not None
             assert model_inputs.pixel_values is not None
 
-            vision_output = self.vision_model(model_inputs.pixel_values)
+            with eager_validator.graph_break(
+                reason="the tower runs only for a prefill carrying images"
+            ):
+                vision_output = self.vision_model(model_inputs.pixel_values)
             image_embeddings = cast(Buffer, vision_output[0].driver_tensor)
 
             assert model_inputs.image_token_indices is not None

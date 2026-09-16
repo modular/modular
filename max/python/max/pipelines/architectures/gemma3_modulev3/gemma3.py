@@ -173,7 +173,7 @@ class Gemma3TextModel(
         if self.tie_word_embeddings:
             outputs = F.matmul(h, F.transpose(self.embed_tokens.weight, -1, -2))
             outputs = F.allgather(outputs, tensor_axis=-1)
-            return F.cast(outputs, DType.float32)
+            return F.cast(outputs.local_shards[0], DType.float32)
         assert self.lm_head is not None
         return F.cast(self.lm_head(h), DType.float32)
 

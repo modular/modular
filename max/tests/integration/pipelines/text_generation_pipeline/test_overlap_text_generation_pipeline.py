@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, call, patch
 import numpy as np
 import pytest
 from llguidance import LLMatcher
+from max.experimental.validation import EagerUsageValidator
 from max.pipelines.context import (
     ImageMetadata,
     StructuredOutputRegionDelimiters,
@@ -132,6 +133,7 @@ def test_throws_if_enable_log_probs() -> None:
     pipeline = OverlapTextGenerationPipeline.__new__(
         OverlapTextGenerationPipeline
     )
+    pipeline._request_validator = EagerUsageValidator(enabled=False)
     request_id = RequestID()
     ctx = TextContext(
         request_id=request_id,
@@ -166,6 +168,7 @@ def test_forward_launched_before_sampling_processor_build() -> None:
     pipeline._prev_batch = None
     pipeline._disable_overlap = False
     pipeline._kv_manager = MagicMock()
+    pipeline._request_validator = EagerUsageValidator(enabled=False)
 
     call_order: list[str] = []
 

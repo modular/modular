@@ -416,6 +416,11 @@ def get_server_cmd(
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
     MAX = ["serve", "--pretty-print-config"]
+    # A smoke test is where an eager or host-transfer footgun should surface,
+    # so validate each request too and not just initialization. max-ci only:
+    # the flag is newer than the wheels the ``max`` framework installs.
+    if framework == "max-ci":
+        MAX += ["--eager-usage-validator", "enabled"]
 
     if gpu_count > 1:
         if recipe is not None:
