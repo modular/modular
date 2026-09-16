@@ -114,6 +114,16 @@ This version is still a work in progress.
 - `Span` has a new `unsafe_deinit_elements()` method, which destroys every
   element in place and leaves the memory uninitialized.
 
+- `Span` has new methods for initializing a span of `MaybeUninit[T]` elements
+  and viewing the result as a span of `T`:
+
+  - `unsafe_init_with()` initializes each element with the result of calling a
+    function with that element's index.
+  - `unsafe_init_copy_from()` copies from another span.
+    `unsafe_init_move_from()` moves out of another span.
+  - `unsafe_assume_init()` reinterprets the span as initialized, for memory
+    that was initialized some other way.
+
 ## Tooling changes
 
 ## Removed

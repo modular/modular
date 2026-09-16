@@ -183,6 +183,32 @@ def assert_equal[
 
 
 @inline(.always)
+def assert_equal[
+    T: Equatable & Writable
+](lhs: ImmSpan[T, _], rhs: ImmSpan[T, _], msg: String = "") raises:
+    """Asserts that two spans are equal.
+
+    Parameters:
+        T: The element type of both spans.
+
+    Args:
+        lhs: The left-hand side span.
+        rhs: The right-hand side span.
+        msg: The message to be printed if the assertion fails.
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=call_location(),
+        )
+
+
+@inline(.always)
 def assert_equal(
     lhs: StringSlice,
     rhs: StringSlice,

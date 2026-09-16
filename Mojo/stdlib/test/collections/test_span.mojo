@@ -13,8 +13,19 @@
 
 from std.testing import TestSuite
 from std.testing import assert_equal, assert_raises, assert_true, assert_false
-from test_utils import DelCounter, MoveOnly, check_write_to
-from std.memory import forget_deinit
+from test_utils import (
+    CopyCounter,
+    DelCounter,
+    MoveCounter,
+    MoveOnly,
+    check_write_to,
+)
+from std.memory import MaybeUninit, forget_deinit
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 from std.math import iota
 from std.hashlib import Hasher
 
@@ -692,6 +703,96 @@ def test_unsafe_deinit_elements_trivial() raises:
 
     Span(array).unsafe_deinit_elements()
     assert_equal(count, 0)
+
+
+def test_unsafe_assume_init() raises:
+    var array = Array[MaybeUninit[Int], 3]()
+    var uninit = Span(array)
+    for i in range(len(uninit)):
+        uninit[i].write(i + 1)
+
+    assert_equal(uninit.unsafe_assume_init(), Span([1, 2, 3]))
+
+
+def test_unsafe_init_with() raises:
+    var array = Array[MaybeUninit[Int], 5]()
+    var initialized = Span(array).unsafe_init_with(
+        lambda (i: Int) -> Int: i * i
+    )
+
+    assert_equal(initialized, Span([0, 1, 4, 9, 16]))
+
+
+def test_unsafe_init_with_empty() raises:
+    var array = Array[MaybeUninit[Int], 4]()
+    var initialized = Span(array)[:0].unsafe_init_with(
+        lambda (i: Int) -> Int: i
+    )
+
+    assert_equal(len(initialized), 0)
+
+
+def test_unsafe_init_copy_from() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var array = Array[MaybeUninit[Int], 3]()
+    var copied = Span(array).unsafe_init_copy_from(source)
+
+    assert_equal(copied, Span(source))
+
+
+def test_unsafe_init_copy_from_empty() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var array = Array[MaybeUninit[Int], 3]()
+    var copied = Span(array)[:0].unsafe_init_copy_from(Span(source)[:0])
+
+    assert_equal(len(copied), 0)
+
+
+def test_unsafe_init_copy_from_non_trivial() raises:
+    var source: Array[CopyCounter[Int], 2] = [CopyCounter(1), CopyCounter(2)]
+    var uninit = Array[MaybeUninit[CopyCounter[Int]], 2]()
+    var copied = Span(uninit).unsafe_init_copy_from(source)
+
+    assert_equal(len(copied), 2)
+    assert_equal(copied[0].value, 1)
+    assert_equal(copied[1].value, 2)
+
+    # Each element went through `CopyCounter.__init__(copy=)` exactly once.
+    assert_equal(copied[0].copy_count, 1)
+    assert_equal(copied[1].copy_count, 1)
+
+    # The source is untouched by a copy.
+    assert_equal(source[0].copy_count, 0)
+
+
+def test_unsafe_init_move_from() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var uninit = Array[MaybeUninit[Int], 3]()
+    var moved = Span(uninit).unsafe_init_move_from(source)
+
+    assert_equal(moved, Span([1, 2, 3]))
+
+
+def test_unsafe_init_move_from_empty() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var uninit = Array[MaybeUninit[Int], 3]()
+    var moved = Span(uninit)[:0].unsafe_init_move_from(Span(source)[:0])
+
+    assert_equal(len(moved), 0)
+
+
+def test_unsafe_init_move_from_non_trivial() raises:
+    var source: Array[MoveCounter[Int], 2] = [MoveCounter(1), MoveCounter(2)]
+    var uninit = Array[MaybeUninit[MoveCounter[Int]], 2]()
+    var moved = Span(uninit).unsafe_init_move_from(source)
+
+    assert_equal(len(moved), 2)
+    assert_equal(moved[0].value, 1)
+    assert_equal(moved[1].value, 2)
+
+    # Every element of `source` was moved out of, so its deinitializer must
+    # not run over the uninitialized storage left behind.
+    forget_deinit(source^)
 
 
 def main() raises:
