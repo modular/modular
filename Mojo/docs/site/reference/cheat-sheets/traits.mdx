@@ -1,0 +1,376 @@
+---
+title: Mojo traits cheat sheet
+sidebar_label: Traits
+description: "What each standard library trait does, when you need it, and where it bites."
+hide_title: true
+hide_table_of_contents: true
+compiler_verified: "2026-08-17, Mojo 1.0.0 (ed45d567)"
+last_updated: "2026-08-17 (1.0.0 audit)"
+build_version: "1.1.0dev"
+---
+
+import {
+  Sheet,
+  Panel,
+} from '@site/src/components/CheatSheets/sheet';
+
+{/* markdownlint-disable MD033 MD034 */}
+
+<Sheet slug="traits">
+
+## Lifecycle
+
+<Panel title="AnyType" summary="the root; every type conforms automatically" source="traits/anytype.mojo">
+
+no requirements
+
+</Panel>
+
+<Panel title="Deinitable" summary="has an implicit destructor, called at last use" source="traits/deinitable.mojo" table="requires">
+
+| Signature                          | Remark            |
+|------------------------------------|-------------------|
+| `__deinit__(deinit self, /)`       | provided          |
+| `comptime __del__is_trivial: Bool` | compile-time flag |
+
+Automatically added to every eligible type (all fields are also **Deinitable**). When the type is trivial, Mojo skips the destructor.
+
+</Panel>
+
+<Panel title="Movable" summary="transfer ownership; enables the ^ operator" source="traits/movable.mojo" table="requires">
+
+| Signature                                  | Remark            |
+|--------------------------------------------|-------------------|
+| `__init__(out self, *, deinit move: Self)` | provided          |
+| `comptime __move_ctor_is_trivial: Bool`    | compile-time flag |
+
+Required to store a type in **List**, **Optional**, or **Variant**, or to return it by move.
+
+</Panel>
+
+<Panel title="Copyable" summary="explicit copy" source="traits/copyable.mojo" table="requires">
+
+**Refines:** Movable
+
+| Signature                               | Remark            |
+|-----------------------------------------|-------------------|
+| `__init__(out self, *, copy: Self)`     | provided          |
+| `copy(self) -> Self`                    | provided          |
+| `comptime __copy_ctor_is_trivial: Bool` | compile-time flag |
+
+The copy constructor is synthesized if all fields are **Copyable**.
+
+</Panel>
+
+<Panel title="ImplicitlyCopyable" summary="(MARKER) lets copies be inserted implicitly" source="traits/copyable.mojo">
+
+**Refines:** Copyable &lt; Movable · no new requirements
+
+Can mask logical errors and hide code reasoning. Prefer **Movable** or **Copyable**.
+
+</Panel>
+
+<Panel title="Defaultable" summary="create with no arguments" source="builtin/value.mojo" table="requires">
+
+| Signature            | Remark |
+|----------------------|--------|
+| `__init__(out self)` |        |
+
+Reach for this when you need parameterized default-construction without arguments.
+
+</Panel>
+
+<Panel title="RegisterPassable" summary="(MARKER) stored in registers, not memory; no stable address or identity" source="builtin/value.mojo">
+
+**Refines:** Movable · no requirements (marker)
+
+No stable address: you can't take the address of **self** in imm-convention methods. **Identifiable** is meaningless for these types.
+
+Moved trivially; all fields must also conform.
+
+</Panel>
+
+<Panel title="TrivialRegisterPassable" summary="(MARKER) register-passable, copyable by moving bits, no side effects" source="builtin/value.mojo">
+
+**Refines:** ImplicitlyCopyable &lt; Copyable &lt; Movable, Deinitable, RegisterPassable · no requirements (marker)
+
+A type whose values are treated as basic bit patterns. No constructors or destructors needed. All fields must also conform.
+
+</Panel>
+
+## Format
+
+<Panel title="Writable" summary="format itself as text; works with print(), String(), format strings" source="format/__init__.mojo" table="requires">
+
+| Signature                                       | Remark   |
+|-------------------------------------------------|----------|
+| `write_to(self, mut writer: Some[Writer])`      | provided |
+| `write_repr_to(self, mut writer: Some[Writer])` | provided |
+
+If all fields conform, you inherit both methods through reflection.
+
+</Panel>
+
+<Panel title="Writer" summary="a destination for a custom output target" source="format/__init__.mojo" table="requires">
+
+String, FileHandle, FileDescriptor conform
+
+| Signature                                    | Remark   |
+|----------------------------------------------|----------|
+| `write_string(mut self, string: StringSpan)` |          |
+| `write[*Ts: Writable](mut self, *args: *Ts)` | provided |
+
+Use for loggers, network streams, string builders, etc.
+
+</Panel>
+
+## Testing
+
+<Panel title="Strategy" summary="produces random inputs for property-based tests" source="testing/prop/strategy/__init__.mojo" table="requires">
+
+**Refines:** Deinitable, Movable
+
+| Signature                                            | Remark          |
+|------------------------------------------------------|-----------------|
+| `Value: Copyable & Deinitable`                       | associated type |
+| `value(mut self, mut rng: Rng) raises -> Self.Value` |                 |
+
+Allows strategies to carry and advance state between draws. **value()** draws one sample from the random number generator.
+
+</Panel>
+
+## Accelerator traits
+
+<Panel title="DevicePassable" summary="marks a type as passable to an accelerator" source="builtin/device_passable.mojo" table="requires">
+
+| Signature                             | Remark             |
+|---------------------------------------|--------------------|
+| `comptime device_type: AnyType`       | the on-device type |
+| `_to_device_type(self, mut enc, ...)` | DeviceContext hook |
+
+A host type implements this so it can be handed to a GPU or other accelerator. **DeviceContext** calls the conversion hook to turn host into device at kernel launch.
+
+</Panel>
+
+<Panel title="DeviceTypeEncoder" summary="encodes host values into device layout" source="builtin/device_passable.mojo" table="requires">
+
+| Signature                          | Remark                            |
+|------------------------------------|-----------------------------------|
+| `target() -> _TargetType`          | device target                     |
+| `encode_device_ptr(mut self, ...)` | required                          |
+| `encode[T](mut self, value, dst)`  | provided (+ fields, tuple, array) |
+
+Encodes a value's fields into the accelerator's data layout.
+
+</Panel>
+
+## Compare & hash
+
+<Panel title="Equatable" summary="equality; enables == and !=" source="builtin/comparable.mojo" table="requires">
+
+| Signature                           | Remark   |
+|-------------------------------------|----------|
+| `__eq__(self, other: Self) -> Bool` | provided |
+| `__ne__(self, other: Self) -> Bool` | provided |
+
+Don't use with floating-point values (use **isclose()**). **NaN != NaN**.
+
+Mojo provides a fieldwise default. Override for caches, internal metadata, and custom behavior.
+
+</Panel>
+
+<Panel title="Comparable" summary="ordered comparison; &lt; &gt; ≤ ≥, and sort()" source="builtin/comparable.mojo" table="requires">
+
+**Refines:** Equatable
+
+| Signature                         | Remark   |
+|-----------------------------------|----------|
+| `__lt__(self, rhs: Self) -> Bool` |          |
+| `__gt__(self, rhs: Self) -> Bool` | provided |
+| `__le__(self, rhs: Self) -> Bool` | provided |
+| `__ge__(self, rhs: Self) -> Bool` | provided |
+
+Implement **\_\_lt\_\_()** unless it's expensive. If so, override all four.
+
+</Panel>
+
+<Panel title="Hashable" summary="produces a hash; needed for Dict keys and Set elements" source="hashlib/hash.mojo" table="requires">
+
+KeyElement = Hashable + Equatable + Movable
+
+| Signature                                  | Remark   |
+|--------------------------------------------|----------|
+| `__hash__(self, mut hasher: Some[Hasher])` | provided |
+
+</Panel>
+
+<Panel title="Hasher" summary="implements a hash algorithm (the algorithm, not a hashable type)" source="hashlib/hasher.mojo" table="requires">
+
+| Signature                                           | Remark |
+|-----------------------------------------------------|--------|
+| `__init__(out self)`                                |        |
+| `_update_with_bytes(mut self, data: Span[Byte, _])` |        |
+| `_update_with_simd(mut self, value: SIMD[_,_])`     |        |
+| `update(mut self, value: Some[Hashable])`           |        |
+| `finish(var self) -> UInt64`                        |        |
+
+Hashers remain alive after finalization. All three update methods are required.
+
+</Panel>
+
+<Panel title="Identifiable" summary="identity; same-object test, enables is / is not" source="builtin/identifiable.mojo" table="requires">
+
+| Signature                            | Remark   |
+|--------------------------------------|----------|
+| `__is__(self, rhs: Self) -> Bool`    |          |
+| `__isnot__(self, rhs: Self) -> Bool` | provided |
+
+Excludes register-passable types, which don't have stable addresses.
+
+</Panel>
+
+## Convert
+
+<Panel title="Boolable, Intable, Floatable" summary="convert with Bool(), Int(), Float64()" source="builtin/bool.mojo · builtin/int.mojo · builtin/floatable.mojo" table="requires">
+
+| Signature                           | Remark           |
+|-------------------------------------|------------------|
+| `__bool__(self) -> Bool`            | Boolable         |
+| `__int__(self) -> Int`              | Intable          |
+| `__int__(self) raises -> Int`       | IntableRaising   |
+| `__float__(self) -> Float64`        | Floatable        |
+| `__float__(self) raises -> Float64` | FloatableRaising |
+
+If the method raises, use the Raising variant.
+
+Boolable unlocks if / while / and / or usage.
+
+</Panel>
+
+## Math
+
+<Panel title="Absable, Powable, Roundable" summary="unary math operators" source="math/math.mojo" table="requires">
+
+| Signature                               | Remark                             |
+|-----------------------------------------|------------------------------------|
+| `__abs__(self) -> Self`                 | **Absable** · abs()                |
+| `__pow__(self, exp: Self) -> Self`      | **Powable** · pow(), `**`          |
+| `__round__(self) -> Self`               | **Roundable** · round()            |
+| `__round__(self, ndigits: Int) -> Self` | **Roundable** · round(), precision |
+
+</Panel>
+
+<Panel title="Ceilable, Floorable, Truncable" summary="round toward a bound" source="math/math.mojo" table="requires">
+
+| Signature                 | Remark                  |
+|---------------------------|-------------------------|
+| `__ceil__(self) -> Self`  | **Ceilable** · ceil()   |
+| `__floor__(self) -> Self` | **Floorable** · floor() |
+| `__trunc__(self) -> Self` | **Truncable** · trunc() |
+
+</Panel>
+
+<Panel title="CeilDivable, CeilDivableRaising" summary="ceiling division (rounds up instead of down)" source="math/math.mojo" table="requires">
+
+| Signature                                             | Remark             |
+|-------------------------------------------------------|--------------------|
+| `__ceildiv__(self, denominator: Self) -> Self`        | CeilDivable        |
+| `__ceildiv__(self, denominator: Self) raises -> Self` | CeilDivableRaising |
+
+</Panel>
+
+<Panel title="DivModable" summary="combined division and modulo; enables divmod()" source="math/math.mojo" table="requires">
+
+**Refines:** ImplicitlyCopyable &lt; Copyable &lt; Movable
+
+| Signature                                                  | Remark |
+|------------------------------------------------------------|--------|
+| `__divmod__(self, denominator: Self) -> Tuple[Self, Self]` |        |
+
+Math outlier. The tuple is (quotient, remainder).
+
+</Panel>
+
+## Iterate
+
+<Panel title="Sized, SizedRaising" summary="has a length; enables len()" source="builtin/len.mojo" table="requires">
+
+| Signature                     | Remark       |
+|-------------------------------|--------------|
+| `__len__(self) -> Int`        | Sized        |
+| `__len__(self) raises -> Int` | SizedRaising |
+
+</Panel>
+
+<Panel title="Iterable" summary="iterate by borrowing" source="iter/__init__.mojo" table="requires">
+
+| Signature                                                                                   | Remark          |
+|---------------------------------------------------------------------------------------------|-----------------|
+| `IteratorType[iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]]: Iterator` | associated type |
+| `__iter__(ref self) -> Self.IteratorType[origin_of(self)]`                                  |                 |
+
+Parameterized on mutability and origin. Yields references tied to the source lifetime.
+
+</Panel>
+
+<Panel title="IterableOwned" summary="iterate by consuming and owning" source="iter/__init__.mojo" table="requires">
+
+| Signature                                      | Remark          |
+|------------------------------------------------|-----------------|
+| `IteratorOwnedType: Iterator`                  | associated type |
+| `__iter__(var self) -> Self.IteratorOwnedType` |                 |
+
+No origin tracking.
+
+</Panel>
+
+<Panel title="Iterator" summary="produces elements one at a time; the for-loop workhorse" source="iter/__init__.mojo" table="requires">
+
+**Refines:** Deinitable, Movable
+
+| Signature                                                 | Remark          |
+|-----------------------------------------------------------|-----------------|
+| `Element: Movable`                                        | associated type |
+| `__next__(mut self) raises StopIteration -> Self.Element` |                 |
+| `bounds(self) -> Tuple[Int, Optional[Int]]`               | provided        |
+| `nth(var self, n: Int) -> Optional[Self.Element]`         | provided        |
+
+Requires an **Iterable** on the collection, and **Iterator** on the iterator. Don't rely on **bounds()** for safety checks. It's a hint.
+
+Typed raises (**StopIteration**).
+
+</Panel>
+
+## Interop
+
+<Panel title="PathLike" summary="represents a file system path" source="os/pathlike.mojo" table="requires">
+
+Path conforms
+
+| Signature                    | Remark |
+|------------------------------|--------|
+| `__fspath__(self) -> String` |        |
+
+</Panel>
+
+<Panel title="ConvertibleToPython" summary="can be sent to Python" source="python/conversions.mojo" table="requires">
+
+**Refines:** Deinitable
+
+| Signature                                           | Remark |
+|-----------------------------------------------------|--------|
+| `to_python_object(var self) raises -> PythonObject` |        |
+
+</Panel>
+
+<Panel title="ConvertibleFromPython" summary="can be created from a Python object" source="python/conversions.mojo" table="requires">
+
+**Refines:** Copyable &lt; Movable, Deinitable
+
+| Signature                                        | Remark |
+|--------------------------------------------------|--------|
+| `__init__(out self, *, py: PythonObject) raises` |        |
+
+</Panel>
+
+</Sheet>

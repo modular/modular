@@ -1,0 +1,235 @@
+---
+title: Mojo ownership cheat sheet
+sidebar_label: Ownership
+description: "Who owns a value, and how it passes between functions."
+hide_title: true
+hide_table_of_contents: true
+compiler_verified: "2026-08-17, Mojo 1.0.0 (ed45d567)"
+last_updated: "2026-08-17 (1.0.0 audit)"
+build_version: "1.1.0dev"
+---
+
+import {
+  Sheet,
+  Panel,
+  Yes,
+  No,
+  Partial,
+} from '@site/src/components/CheatSheets/sheet';
+
+{/* markdownlint-disable MD033 MD034 */}
+
+<Sheet slug="ownership">
+
+<Panel title="The model">
+
+Value ownership is fundamental to Mojo. Every value has exactly one owner,
+and how values move between owners runs through the whole language.
+
+You encounter ownership in two situations: **variables** and **function calls**.
+
+Variables can own or reference a value. **Argument conventions** describe how a
+function uses a value: read-only, reference, mutable, owned, produced, or consumed.
+
+</Panel>
+
+<Panel title="var owns, ref refers">
+
+```mojo
+var data: List[Int] = [1, 2, 3] # owns the list
+ref view = data[0] # a 2nd name, no copy
+view = 9 # writes through to data
+print(data) # [9, 2, 3]
+```
+
+**var** always means "I own this." **ref** means "this is a view
+into someone else's value." A struct's **var** field owns its value and a struct
+type owns its fields.
+
+</Panel>
+
+<Panel title="Var assignment" table="dec">
+
+A **var** assignment uses the right-hand
+side's policy: it determines whether the value is materialized, constructed, copied,
+or transferred. A call or expression returning a value constructs; one returning a
+reference copies out the referenced value.
+
+| You write                             | The var takes ownership of      |
+|---------------------------------------|---------------------------------|
+| 5.0 / "Hello" / [1, 2, 3] (a literal) | a materialized literal          |
+| SomeType()                            | a freshly constructed value     |
+| some_value (ImplicitlyCopyable)       | an implicit copy                |
+| some_value.copy() (Copyable)          | an explicit copy                |
+| some_value^ (Movable)                 | the source's value, transferred |
+| some_ref                              | a copy of the referenced value  |
+
+A copy doesn't change a value's ownership. Only **^** moves the
+value to a new owner.
+
+</Panel>
+
+<Panel title="Argument conventions on self" table="types">
+
+| Convention  | Meaning                      |
+|-------------|------------------------------|
+| self        | imm (immutable)              |
+| mut self    | modify the instance          |
+| out self    | build it (in \_\_init\_\_()) |
+| deinit self | destroy the instance         |
+| ref self    | parametric mutability        |
+
+</Panel>
+
+<Panel title="Transfer ownership with ^">
+
+```mojo
+def exclaim(var s: String):
+    s += "!"
+    print(s)
+
+var g = "Hello"
+exclaim(g) # copy: g still usable
+exclaim(g^) # transfer: g uninitialized
+# print(g) # error: used after transfer
+```
+
+The **var** argument takes ownership of the original only with
+**^**; a plain call implicitly copies (**String** is **ImplicitlyCopyable**),
+so **g** stays usable. Either value, the copy or the transferred original, ends its
+lifetime after the **print** (its last use). The same **^** drains a
+collection in a loop: **for var x in items^** moves each element out.
+
+</Panel>
+
+<Panel title="Call sites: passing values" table="dec">
+
+| You write   | Into a var arg                              |
+|-------------|---------------------------------------------|
+| f(x)        | implicit copy (**ImplicitlyCopyable** only) |
+| f(x.copy()) | explicit copy                               |
+| f(x^)       | transfer; x uninitialized after             |
+
+A borrowing argument (**imm**, **mut**, **ref**) has no **^** lever:
+you write **f(x)**, and it views the value in place.
+
+</Panel>
+
+<Panel title="Origins on references">
+
+```mojo
+def first[T: Movable](ref xs: List[T]) -> ref[xs[0]] T:
+    return xs[0]
+
+ref x = first(xs) # len(xs) known to be > 0
+```
+
+A **ref** return carries an **origin** so the compiler tracks
+where it points, whether it stays valid, and whether access is mutable. Values are
+destroyed at last use; a live **ref** keeps the value it refers to alive.
+
+</Panel>
+
+<Panel title="Argument conventions: the decision table" table="dec">
+
+| Convention | Owns it?                           | Mutable?                      | Caller keeps it?                    | Reach for it when                                 |
+|------------|------------------------------------|-------------------------------|-------------------------------------|---------------------------------------------------|
+| (imm)      | <No />                             | <No />                        | <Yes />                             | reading a value without changing it (the default) |
+| mut        | <No />                             | <Yes />                       | <Yes />                             | changing the caller's value in place              |
+| var        | <Yes>(own copy)</Yes>              | <Yes />                       | <Partial>yes, unless ^</Partial>    | you need a local, mutable copy                    |
+| out        | <Yes>(becomes the value)</Yes>     | <Yes />                       | <Partial>it is the result</Partial> | returning by name instead of -&gt;                |
+| deinit     | <Yes>(consumes)</Yes>              | <Yes />                       | <No />                              | destructors and the source of a move              |
+| ref        | <No>(refers)</No>                  | <Partial>parametric</Partial> | <Yes />                             | returning or holding a reference with an origin   |
+
+A convention sits before the argument name: **def f(mut x: Int)**. With
+no convention, an argument is a read-only borrow: a view into a value you don't own.
+**mut** makes it a writable view.
+
+</Panel>
+
+<Panel title="Literals">
+
+```mojo
+var i = 5 # Int, machine width (default)
+var i32: Int32 = 5 # SIMD[DType.int32, 1]
+```
+
+Literals are produced by the lexer, not built by a constructor. Each
+compile-time type (**IntLiteral**, **FloatLiteral**, **StringLiteral**)
+materializes into a runtime value. By default, integer literals are **Int**, floats are
+**Float64**, and strings are **String**. Use type annotations for specific types like
+**Byte** (**UInt8**), **Int16**, or **BFloat16**.
+
+</Panel>
+
+<Panel title="Trivial values">
+
+Trivial register types (**Int**, **Float64**,
+**SIMD**) are **ImplicitlyCopyable** with no destructor. A copy is a register copy;
+**^** is a no-op (the compiler warns transfer has no effect); there's nothing to
+destroy. The rules still apply, they just compile to register moves or nothing.
+
+</Panel>
+
+<Panel title="Mutability" table="types">
+
+Values aren't mutable or immutable. Access is.
+
+| Name | Meaning                                      |
+|------|----------------------------------------------|
+| var  | always mutable                               |
+| ref  | inherits the mutability of what it refers to |
+
+</Panel>
+
+<Panel title="Lifecycle methods" table="types">
+
+| Method                                        | Meaning   |
+|-----------------------------------------------|-----------|
+| \_\_init\_\_(out self, …)                     | construct |
+| \_\_init\_\_(out self, \*, copy: Self)        | copy      |
+| \_\_init\_\_(out self, \*, deinit move: Self) | move      |
+| \_\_deinit\_\_(deinit self)                   | destroy   |
+
+Copy, move, and destructors can't raise. The var assignment table shows
+which one each assignment runs.
+
+</Panel>
+
+<Panel title="Non-owning views">
+
+```mojo
+var data: List[String] = ["a", "b", "c", "d", "e"]
+var s = data[1:3] # a Span view, no copy: [b, c]
+s[0] = "X" # writes through: data is [a, X, c, d, e]
+
+var text = "Hello, World!"
+var hi = text[codepoint=0:5] # a StringSpan view: "Hello"
+```
+
+A view is a non-owning window into a buffer someone else owns. **Span**
+views contiguous elements; **StringSpan** views UTF-8 text. Like **ref**, a view
+carries an origin, so the compiler keeps the source alive and tracks whether the view
+stays valid.
+
+</Panel>
+
+<Panel title="Returns: handing a value out" table="dec">
+
+| You write           | What it does                           |
+|---------------------|----------------------------------------|
+| return x            | copy out (when **ImplicitlyCopyable**) |
+| return x.copy()     | copy out                               |
+| return x^           | transfer out                           |
+| -&gt; T             | return a value                         |
+| -&gt; ref[origin] T | return a reference                     |
+
+Like a var assignment, **return x** copies; when **x** is at its
+last use the compiler moves it instead (you own it, so it can be moved).
+
+No **-&gt; T^**: the **^** goes on the returned value in
+**return x^**, not on the return type.
+
+</Panel>
+
+</Sheet>
