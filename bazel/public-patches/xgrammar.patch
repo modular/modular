@@ -6392,7 +6392,7 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..0661662 100644
+index 4f1cc65..e18eef1 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
 @@ -5,10 +5,18 @@
@@ -6414,15 +6414,21 @@ index 4f1cc65..0661662 100644
 
  namespace xgrammar {
 
-@@ -17,6 +25,7 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,6 +25,13 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
-+const std::string XMLToolCallingConverter::kXMLVariableNameTerminal = "[a-zA-Z_][a-zA-Z0-9_]*";
++// A generated key becomes an XML tag name, and XML's NameChar production admits
++// "-" and "." after the first character. Narrowing this to an identifier charset
++// silently rewrites a key the caller asked for: a schema-less object told to
++// carry "some-key" can only emit "someKey". Mirrors the bare-key terminal the
++// JSON path already uses.
++const std::string XMLToolCallingConverter::kXMLVariableNameTerminal =
++    "[a-zA-Z_][-a-zA-Z0-9_.]*";
  const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
      XMLToolCallingConverter::kKeyWrapperMap = {
          {JSONFormat::kQwenXML, {"<parameter=", ">", "", "</parameter>"}},
-@@ -28,6 +37,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
+@@ -28,6 +43,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
          {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
@@ -6437,7 +6443,7 @@ index 4f1cc65..0661662 100644
  };
 
  XMLToolCallingConverter::XMLToolCallingConverter(
-@@ -37,19 +54,168 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+@@ -37,19 +60,168 @@ XMLToolCallingConverter::XMLToolCallingConverter(
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
      JSONFormat json_format,
@@ -6610,7 +6616,7 @@ index 4f1cc65..0661662 100644
    ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
 
    return ebnf_script_creator_.GetScript();
-@@ -63,41 +229,65 @@ void XMLToolCallingConverter::AddBasicRules() {
+@@ -63,41 +235,65 @@ void XMLToolCallingConverter::AddBasicRules() {
    JSONSchemaConverter::AddBasicRules();
    nested_object_level_ = 1;
    // The outer part, xml format, is at level 1.
@@ -6694,7 +6700,7 @@ index 4f1cc65..0661662 100644
  }
 
  std::string XMLToolCallingConverter::GetKeyPattern() const {
-@@ -114,13 +304,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
+@@ -114,13 +310,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
    return kBasicAny;
  }
 
@@ -6724,7 +6730,7 @@ index 4f1cc65..0661662 100644
  }
 
  std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
-@@ -131,8 +334,11 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
+@@ -131,8 +340,11 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
  }
 
  std::string XMLToolCallingConverter::GenerateString(
@@ -6737,7 +6743,7 @@ index 4f1cc65..0661662 100644
    if (nested_object_level_ <= 1) {
      // For XML format, use TagDispatch for strings
      if (!spec.pattern.has_value() && !spec.format.has_value() && spec.min_length == 0 &&
-@@ -155,46 +361,246 @@ std::string XMLToolCallingConverter::GenerateString(
+@@ -155,46 +367,246 @@ std::string XMLToolCallingConverter::GenerateString(
        return converted_regex;
      }
 
@@ -6999,7 +7005,7 @@ index 4f1cc65..0661662 100644
    if (nested_object_level_ <= 1) {
      const std::string& val = spec.json_value;
      if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
-@@ -202,14 +608,17 @@ std::string XMLToolCallingConverter::GenerateConst(
+@@ -202,14 +614,17 @@ std::string XMLToolCallingConverter::GenerateConst(
      }
      return "\"" + val + "\"";
    }
@@ -7019,7 +7025,7 @@ index 4f1cc65..0661662 100644
    if (nested_object_level_ <= 1) {
      std::string result;
      for (size_t i = 0; i < spec.json_values.size(); ++i) {
-@@ -225,12 +634,13 @@ std::string XMLToolCallingConverter::GenerateEnum(
+@@ -225,12 +640,13 @@ std::string XMLToolCallingConverter::GenerateEnum(
      }
      return result;
    }
@@ -7035,7 +7041,7 @@ index 4f1cc65..0661662 100644
    }
    return JSONSchemaConverter::FormatPropertyKey(key);
  }
-@@ -239,15 +649,16 @@ std::string XMLToolCallingConverter::FormatProperty(
+@@ -239,15 +655,16 @@ std::string XMLToolCallingConverter::FormatProperty(
      const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
  ) {
    if (nested_object_level_ <= 1) {
@@ -7060,7 +7066,7 @@ index 4f1cc65..0661662 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +670,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +676,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -7086,7 +7092,7 @@ index 4f1cc65..0661662 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +687,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +693,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -7156,7 +7162,7 @@ index 4f1cc65..0661662 100644
    return result;
  }
 
-@@ -289,14 +753,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +759,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
