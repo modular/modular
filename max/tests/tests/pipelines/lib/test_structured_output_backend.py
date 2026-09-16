@@ -240,11 +240,41 @@ _WS_SCHEMA = json.dumps(
 )
 
 
-def _make_helper(backend_name: str, **kwargs: Any) -> StructuredOutputHelper:
-    # The TikToken-shaped fake exercises both backends: llguidance cannot
-    # infer a decoder from the WordLevel HF fake, but both backends accept
-    # the byte-level adapter path.
-    delegate = _FakeTikTokenTokenizer()
+# Structural tokens a framing's grammar references by token id rather than by
+# byte literal. Its vocab has to hold them or the tag will not compile, so
+# ``_make_helper`` gives that framing a word-level fake carrying them; the
+# byte-level fake covers every other framing. The ids follow this order.
+_TOKENS_BY_MODEL_FORMAT: dict[str, tuple[str, ...]] = {
+    # MiniMax-M3's envelope is built from single tokens.
+    "minimax_m3": ("<tool_call>", "</tool_call>", "]<]minimax[>["),
+}
+
+
+def _make_helper(
+    backend_name: str, model_format: str | None = None, **kwargs: Any
+) -> StructuredOutputHelper:
+    """A helper for ``backend_name`` whose vocab ``model_format`` can compile.
+
+    A framing listed in :data:`_TOKENS_BY_MODEL_FORMAT` gets a word-level fake
+    holding its structural tokens. Every other framing -- and every caller that
+    names none -- gets the TikToken-shaped fake, which exercises both backends:
+    llguidance cannot infer a decoder from the WordLevel HF fake, but both
+    backends accept the byte-level adapter path.
+    """
+    markers = _TOKENS_BY_MODEL_FORMAT.get(model_format or "", ())
+    delegate: Any
+    if markers:
+        vocab = {chr(i): i for i in range(_N_VOCAB)}
+        vocab.update({tok: _N_VOCAB + n for n, tok in enumerate(markers)})
+        delegate = PreTrainedTokenizerFast(
+            tokenizer_object=Tokenizer(
+                WordLevel(vocab=vocab, unk_token=chr(1))
+            ),
+            eos_token=chr(0),
+            unk_token=chr(1),
+        )
+    else:
+        delegate = _FakeTikTokenTokenizer()
     pipeline_tokenizer = MagicMock()
     pipeline_tokenizer.delegate = delegate
     pipeline_tokenizer.eos_token_ids = {delegate.eos_token_id}
@@ -340,37 +370,6 @@ _XML_TOOL_FORMATS = ("glm_4_7", "minimax", "minimax_m3")
 # declares either as its XGRAMMAR_FORMAT -- the DeepSeek parsers read a
 # JSON-argument envelope instead -- so nothing routes to them today.
 
-# MiniMax-M3's envelope is built from single tokens, so its grammar needs a
-# vocab that holds them; the byte-level fake covers every other framing.
-_M3_TOKENS = ("<tool_call>", "</tool_call>", "]<]minimax[>[")
-
-
-def _minimax_m3_helper() -> StructuredOutputHelper:
-    """A helper whose vocab carries MiniMax-M3's structural tokens."""
-    vocab = {chr(i): i for i in range(_N_VOCAB)}
-    vocab.update({tok: _N_VOCAB + n for n, tok in enumerate(_M3_TOKENS)})
-    delegate = PreTrainedTokenizerFast(
-        tokenizer_object=Tokenizer(WordLevel(vocab=vocab, unk_token=chr(1))),
-        eos_token=chr(0),
-        unk_token=chr(1),
-    )
-    pipeline_tokenizer = MagicMock()
-    pipeline_tokenizer.delegate = delegate
-    pipeline_tokenizer.eos_token_ids = {delegate.eos_token_id}
-    return StructuredOutputHelper.from_tokenizer(
-        cast("PipelineTokenizer[Any, Any, Any]", pipeline_tokenizer),
-        enable_structured_output=True,
-        backend_name="xgrammar",
-    )
-
-
-def _helper_for(model_format: str) -> StructuredOutputHelper:
-    return (
-        _minimax_m3_helper()
-        if model_format == "minimax_m3"
-        else _make_helper("xgrammar")
-    )
-
 
 def _tool_matcher(
     helper: StructuredOutputHelper,
@@ -423,9 +422,9 @@ def _xml_tool_wire(
 
 
 def _consume_wire(matcher: Any, model_format: str, wire: str) -> int:
-    """Bytes of ``wire`` the matcher accepts, feeding M3's markers as tokens."""
+    """Bytes of ``wire`` the matcher accepts, feeding markers as tokens."""
     i = consumed = 0
-    markers = _M3_TOKENS if model_format == "minimax_m3" else ()
+    markers = _TOKENS_BY_MODEL_FORMAT.get(model_format, ())
     while i < len(wire):
         token_id, width = ord(wire[i]), 1
         for n, marker in enumerate(markers):
@@ -475,7 +474,7 @@ def test_container_enum_compiles_for_every_tool_format(
     affected; ``kimi`` is the JSON-framed control that never was.
     """
     _tool_matcher(
-        _helper_for(model_format),
+        _make_helper("xgrammar", model_format),
         model_format,
         "apply_preset",
         _CONTAINER_ENUM_SCHEMA,
@@ -491,7 +490,7 @@ def test_container_enum_is_refused_where_it_has_no_wire_form() -> None:
     """
     with pytest.raises(RuntimeError, match="no wire form"):
         _tool_matcher(
-            _minimax_m3_helper(),
+            _make_helper("xgrammar", "minimax_m3"),
             "minimax_m3",
             "apply_preset",
             _CONTAINER_ENUM_SCHEMA,
@@ -509,7 +508,7 @@ def test_container_enum_constrains_to_the_declared_literals(
     A container literal is re-serialized as compact JSON inside the XML value
     markers, matching how a nested object-typed property is already emitted.
     """
-    helper = _helper_for(model_format)
+    helper = _make_helper("xgrammar", model_format)
 
     declared = _xml_tool_wire(
         model_format,
@@ -622,7 +621,7 @@ def test_integer_terminal_admits_an_exponent_but_no_fraction(
     This terminal is not XML-specific -- it is the one every framing shares --
     so ``response_format`` carried the same hole as tool calls.
     """
-    helper = _helper_for(framing)
+    helper = _make_helper("xgrammar", framing)
     wire = _integer_wire(framing, literal)
     matcher = _integer_matcher(helper, framing)
     consumed = _consume_wire(matcher, framing, wire)
