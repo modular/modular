@@ -692,6 +692,10 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         """Returns aggregated metrics across all replicas."""
         return self.metrics
 
+    def take_metrics_aggregated(self) -> KVCacheMetrics:
+        """Reads and clears aggregated metrics across all replicas."""
+        return self.take_metrics()
+
     def block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the device KV cache block occupancy for the given replica."""
         return self.huge_block_count(replica_idx)

@@ -360,7 +360,8 @@ def test_metrics_are_reported_and_reset() -> None:
 
     assert mgr.get_metrics_aggregated().input_tokens == 3
 
-    mgr.reset_metrics()
+    # take_metrics_aggregated returns the sampled window and resets in one step.
+    assert mgr.take_metrics_aggregated().input_tokens == 3
 
     assert mgr.get_metrics_aggregated() == KVCacheMetrics()
 

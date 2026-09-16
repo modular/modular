@@ -1567,7 +1567,7 @@ def test_metrics_split_prompt_tokens_into_hits_and_misses() -> None:
     assert bm.metrics.cache_tokens == 0
     assert bm.metrics.input_tokens == 4
 
-    bm.reset_metrics()
+    bm.take_metrics()
 
     # Same prompt: three blocks are adopted and only the tail is recomputed.
     again = make_ctx(num_tokens=4)
@@ -1617,7 +1617,7 @@ def test_a_hit_counts_a_position_once_not_once_per_leaf() -> None:
     bm.claim(warm)
     decode(bm, warm)
     bm.release(warm)
-    bm.reset_metrics()
+    bm.take_metrics()
 
     again = make_ctx(num_tokens=4)
     bm.claim(again)
@@ -1627,14 +1627,15 @@ def test_a_hit_counts_a_position_once_not_once_per_leaf() -> None:
     assert bm.metrics.cache_tokens == 3
 
 
-def test_reset_metrics_zeroes_the_counters() -> None:
+def test_take_metrics_returns_and_zeroes_the_counters() -> None:
     bm = make_manager({FULL: full(ratio=1)}, block_size=1)
     ctx = make_ctx(num_tokens=4)
     bm.claim(ctx)
     bm.alloc(ctx)
     assert bm.metrics.input_tokens == 4
 
-    bm.reset_metrics()
+    # take_metrics returns the sampled window and zeroes it in one step.
+    assert bm.take_metrics().input_tokens == 4
 
     assert bm.metrics == KVCacheMetrics()
 
@@ -1642,9 +1643,15 @@ def test_reset_metrics_zeroes_the_counters() -> None:
 def test_metrics_include_connector_metrics() -> None:
     connector = MagicMock(spec=KVConnector)
     connector.metrics = KVCacheMetrics(input_tokens=6)
-    connector.reset_metrics.side_effect = lambda: setattr(
-        connector, "metrics", KVCacheMetrics()
-    )
+
+    # take_metrics returns the current connector metrics and clears them in one
+    # step, mirroring the real connector's atomic read-and-reset.
+    def _take_connector_metrics() -> KVCacheMetrics:
+        taken = connector.metrics
+        connector.metrics = KVCacheMetrics()
+        return taken
+
+    connector.take_metrics.side_effect = _take_connector_metrics
 
     bm = make_manager({FULL: full(ratio=1)}, block_size=1, connector=connector)
     ctx = make_ctx(num_tokens=4)
@@ -1653,10 +1660,11 @@ def test_metrics_include_connector_metrics() -> None:
 
     assert bm.metrics.input_tokens == 10
 
-    bm.reset_metrics()
+    taken = bm.take_metrics()
 
+    assert taken.input_tokens == 10
     assert bm.metrics == KVCacheMetrics()
-    connector.reset_metrics.assert_called_once()
+    connector.take_metrics.assert_called_once()
 
 
 # ===--------------------------------------------------------------------=== #

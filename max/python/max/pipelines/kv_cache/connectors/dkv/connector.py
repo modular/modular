@@ -93,7 +93,7 @@ class _DkvClient(Protocol):
 
     def metrics(self) -> Mapping[str, Any]: ...
 
-    def reset_metrics(self) -> None: ...
+    def take_metrics(self) -> Mapping[str, Any]: ...
 
     def broadcast_peer_count(self) -> int: ...
 
@@ -1073,7 +1073,7 @@ class DKVConnector(KVConnector):
         # fails model load rather than serving with a partial dKV.
         # ``self._clients[replica_idx][leaf_id]`` is one client per leaf per DP
         # replica: ``load`` / ``offload`` / ``touch`` index both, and the
-        # client-wide fan-outs (wait_for_*, metrics, reset_metrics) iterate
+        # client-wide fan-outs (wait_for_*, metrics, take_metrics) iterate
         # every client of every replica.
         self._clients: list[dict[str, _DkvClient]] = []
         # Each client registers its replica's FULL TP GPU set (that leaf's units
@@ -1684,22 +1684,24 @@ class DKVConnector(KVConnector):
         # No-op: dKV manages its own external block lifecycle server-side.
         pass
 
-    def reset_metrics(self) -> None:
-        """Clear Rust-side transfer counters after the scheduler samples a batch."""
-        for clients in self._clients:
-            for client in clients.values():
-                client.reset_metrics()
-
     @property
     def metrics(self) -> KVCacheMetrics:
+        return self._aggregate_metrics(lambda client: client.metrics())
+
+    def take_metrics(self) -> KVCacheMetrics:
+        return self._aggregate_metrics(lambda client: client.take_metrics())
+
+    def _aggregate_metrics(
+        self, snapshot: Callable[[_DkvClient], Mapping[str, Any]]
+    ) -> KVCacheMetrics:
         total = KVCacheMetrics()
         for clients in self._clients:
             leaf_clients = list(clients.values())
-            # One snapshot per client. metrics() crosses into Rust and the
-            # scheduler calls this every batch, so reading twice would double
-            # the FFI cost and could straddle a reconnect, pairing a
-            # connected flag with transfer counts from a different moment.
-            snapshots = [client.metrics() for client in leaf_clients]
+            # One snapshot per client. It crosses into Rust and the scheduler
+            # calls this every batch, so reading twice would double the FFI cost
+            # and could straddle a reconnect, pairing a connected flag with
+            # transfer counts from a different moment.
+            snapshots = [snapshot(client) for client in leaf_clients]
             # dkv_total_clients counts DP REPLICAS, not leaf clients. It
             # predates the per-leaf split and the scheduler reports it as "how
             # many replicas are up"; counting leaves instead would multiply
@@ -1749,7 +1751,7 @@ class DKVConnector(KVConnector):
                     ],
                     nixl_write_latency_count=m["write_transfer_latency_count"],
                     # Cross-node pull. Ordinary per-window deltas that
-                    # reset_metrics clears, unlike the health keys above, so
+                    # take_metrics clears, unlike the health keys above, so
                     # they fold in the same way as the transfer keys: per leaf
                     # client, because each leaf pulls its own bytes from its
                     # own peers. The dict also carries attached_peers, a level

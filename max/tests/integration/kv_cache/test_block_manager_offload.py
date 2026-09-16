@@ -137,9 +137,11 @@ class RecordingConnector:
             d2h_bytes_copied=self._d2h_bytes_copied,
         )
 
-    def reset_metrics(self) -> None:
+    def take_metrics(self) -> KVCacheMetrics:
+        metrics = self.metrics
         self._h2d_bytes_copied = 0
         self._d2h_bytes_copied = 0
+        return metrics
 
 
 class _ExternalTierConnector(RecordingConnector):
@@ -422,21 +424,24 @@ def test_offload_preserves_multi_run_order() -> None:
     ]
 
 
-def test_reset_metrics_clears_connector_transfer_counters() -> None:
-    """Per-batch telemetry must reset connector H2D/D2H counters after sampling.
+def test_take_metrics_clears_connector_transfer_counters() -> None:
+    """Per-batch telemetry reads and resets connector H2D/D2H counters at once.
 
-    Without this, ``get_metrics_aggregated()`` returns lifetime cumulative
-    totals and Datadog counter.add() double-counts across batches (MXSERV-203).
+    Without the reset, ``take_metrics`` would return lifetime cumulative totals
+    and Datadog counter.add() would double-count across batches (MXSERV-203);
+    folding the read and reset into one call also closes the window where a
+    transfer landing between a separate read and reset would be lost.
     """
     bm, connector = _make_block_manager()
     connector._d2h_bytes_copied = 5
     connector._h2d_bytes_copied = 2
 
-    assert bm.metrics.d2h_bytes_copied == 5
-    assert bm.metrics.h2d_bytes_copied == 2
+    # The single call returns the sampled window and clears it.
+    taken = bm.take_metrics()
+    assert taken.d2h_bytes_copied == 5
+    assert taken.h2d_bytes_copied == 2
 
-    bm.reset_metrics()
-
+    # A follow-up read sees zero until new transfers land.
     assert bm.metrics.d2h_bytes_copied == 0
     assert bm.metrics.h2d_bytes_copied == 0
 

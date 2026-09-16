@@ -49,7 +49,7 @@ def test_touch_returns_none_and_never_raises() -> None:
     # ``RustTierConnector`` needs device buffers and the Rust extension to fully
     # construct (see the GPU connector tests), but ``touch`` ignores instance
     # state, so exercise it on an uninitialized instance -- the same ``__new__``
-    # pattern used in ``test_kv_connector_reset_metrics.py`` -- to prove it is a
+    # pattern used in ``test_kv_connector_take_metrics.py`` -- to prove it is a
     # no-op that never raises.
     tier_connector = RustTierConnector.__new__(RustTierConnector)
     tier_connector.touch([b"\x01" * 8])

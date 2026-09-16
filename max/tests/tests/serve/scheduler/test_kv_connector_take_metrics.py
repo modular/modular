@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Regression tests for per-batch KV connector metric reset (MXSERV-203)."""
+"""Regression tests for per-batch KV connector metric take/reset (MXSERV-203)."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ class _CountingConnector:
         self._disk_bytes_read = 0
         # dKV health that mirrors the real connector, so connected and total
         # are a live level and reconnect_attempts is a lifetime counter that
-        # reset_metrics deliberately does not clear.
+        # take_metrics deliberately does not clear.
         self._connected_clients = 0
         self._total_clients = 0
         self._reconnect_attempts = 0
@@ -105,17 +105,20 @@ class _CountingConnector:
             dkv_reconnect_attempts=self._reconnect_attempts,
         )
 
-    def reset_metrics(self) -> None:
-        # Only the per-batch transfer counters reset. The health fields are a
-        # live level and a lifetime counter, so they are intentionally left
-        # alone here, mirroring the real dKV connector.
+    def take_metrics(self) -> KVCacheMetrics:
+        # Reads the current window and clears only the per-batch transfer
+        # counters in one step. The health fields are a live level and a
+        # lifetime counter, so they are intentionally left alone here,
+        # mirroring the real dKV connector.
+        metrics = self.metrics
         self._h2d_bytes_copied = 0
         self._d2h_bytes_copied = 0
         self._disk_bytes_written = 0
         self._disk_bytes_read = 0
+        return metrics
 
 
-def test_block_manager_reset_metrics_clears_connector_counters() -> None:
+def test_block_manager_take_metrics_clears_connector_counters() -> None:
     connector = _CountingConnector()
     connector._d2h_bytes_copied = 5
     connector._h2d_bytes_copied = 2
@@ -126,11 +129,12 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
         connector=connector,
     )
 
-    assert bm.metrics.d2h_bytes_copied == 5
-    assert bm.metrics.h2d_bytes_copied == 2
+    # The single call returns the sampled window and clears it.
+    taken = bm.take_metrics()
+    assert taken.d2h_bytes_copied == 5
+    assert taken.h2d_bytes_copied == 2
 
-    bm.reset_metrics()
-
+    # A follow-up read sees zero until new transfers land.
     assert bm.metrics.d2h_bytes_copied == 0
     assert bm.metrics.h2d_bytes_copied == 0
 
@@ -139,10 +143,11 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
 
 
 def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
-    """Models BatchMetrics.create(): sample aggregated metrics, then reset.
+    """Models BatchMetrics.create(): take aggregated metrics per batch.
 
     Before MXSERV-203, batch 2 would report 8 (5+3 cumulative) because
-    connector counters were never reset. Telemetry must emit 5 then 3.
+    connector counters were never reset. ``take_metrics`` samples and resets
+    in one step, so telemetry emits 5 then 3.
     """
     connector = _CountingConnector()
     bm = BlockManager(
@@ -155,9 +160,7 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     def sample_and_reset(d2h_delta: int, h2d_delta: int) -> KVCacheMetrics:
         connector._d2h_bytes_copied += d2h_delta
         connector._h2d_bytes_copied += h2d_delta
-        sampled = bm.metrics
-        bm.reset_metrics()
-        return sampled
+        return bm.take_metrics()
 
     batch_one = sample_and_reset(d2h_delta=5, h2d_delta=2)
     batch_two = sample_and_reset(d2h_delta=3, h2d_delta=0)
@@ -173,8 +176,8 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     assert otel_counter_total != 5 + 8  # pre-fix cumulative double-count
 
 
-def test_null_connector_reset_metrics_is_noop() -> None:
-    NullConnector().reset_metrics()
+def test_null_connector_take_metrics_is_noop() -> None:
+    assert NullConnector().take_metrics() == KVCacheMetrics()
 
 
 def test_kv_cache_metrics_add_sums_dkv_health_fields() -> None:
@@ -277,7 +280,7 @@ def test_dkv_health_persists_across_sample_and_reset() -> None:
     """dKV health is a level and a cumulative value, not a per-batch delta.
 
     The connector reports connected and reconnect_attempts live and does not
-    clear them on reset_metrics, so every batch reads the current level and the
+    clear them on take_metrics, so every batch reads the current level and the
     running cumulative total. This is why they export as gauges rather than
     counters, because a counter fed the cumulative value each batch would
     double-count.
@@ -293,11 +296,10 @@ def test_dkv_health_persists_across_sample_and_reset() -> None:
         connector=connector,
     )
 
-    batch_one = bm.metrics
-    bm.reset_metrics()
+    batch_one = bm.take_metrics()
     batch_two = bm.metrics
 
-    # reset_metrics did not clear the health fields, so both samples agree
+    # take_metrics did not clear the health fields, so both samples agree
     for batch in (batch_one, batch_two):
         assert batch.dkv_connected_clients == 1
         assert batch.dkv_total_clients == 2

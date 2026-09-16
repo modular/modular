@@ -124,8 +124,8 @@ class PagedKVCacheManagerInterface(ABC):
         """Returns whether the request is claimed on any replica."""
 
     @abstractmethod
-    def reset_metrics(self) -> None:
-        """Resets metrics for the block manager."""
+    def take_metrics_aggregated(self) -> KVCacheMetrics:
+        """Reads and clears aggregated metrics across all replicas."""
 
     @abstractmethod
     def reset_prefix_cache(self) -> None:

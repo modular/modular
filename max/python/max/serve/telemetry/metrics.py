@@ -448,7 +448,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="attempts",
         description="Cumulative dKV reconnect attempts across all clients, reported as a gauge of the current lifetime total.",
     ),  # type: ignore
-    # Cross-node pull. Counters, not gauges: reset_metrics clears these every
+    # Cross-node pull. Counters, not gauges: take_metrics clears these every
     # batch, so each publish carries that window's delta. Mach exports the same
     # set under dkv.connector.peer_attach_count, peer_drop_count,
     # peer_load_count and hint_rejected_count, splitting success from failure

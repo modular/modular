@@ -440,6 +440,6 @@ class KVConnector(Protocol):
         """Transfer metrics for this connector. Returns empty metrics by default."""
         return KVCacheMetrics()
 
-    def reset_metrics(self) -> None:
-        """Reset per-batch transfer counters after the scheduler samples them."""
-        return
+    def take_metrics(self) -> KVCacheMetrics:
+        """Reads and clears the per-batch transfer counters."""
+        return KVCacheMetrics()

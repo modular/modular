@@ -664,11 +664,13 @@ class JengaBlockManager:
             metrics += self._connector.metrics
         return metrics
 
-    def reset_metrics(self) -> None:
-        """Resets the block manager's metrics to zero."""
+    def take_metrics(self) -> KVCacheMetrics:
+        """Reads and clears this manager's and its connector's metrics."""
+        metrics = self._metrics
         self._metrics = KVCacheMetrics()
         if self._connector is not None:
-            self._connector.reset_metrics()
+            metrics += self._connector.take_metrics()
+        return metrics
 
     @property
     def effective_max_seq_length(self) -> int | None:

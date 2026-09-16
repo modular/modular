@@ -97,7 +97,7 @@ class KVCacheMetrics:
 
     # dKV external-tier health. These are a level and a lifetime-cumulative
     # counter read live from the connector rather than per-batch transfer
-    # deltas, so they export as gauges and reset_metrics does not clear them.
+    # deltas, so they export as gauges and take_metrics does not clear them.
     dkv_connected_clients: int = 0
     """Number of dKV data-parallel replicas fully connected to the external tier.
 
@@ -124,7 +124,7 @@ class KVCacheMetrics:
     """
 
     # Cross-node pull. Per-window deltas like nixl_read_blocks and the latency
-    # pairs, so they sum and reset_metrics clears them, unlike the three dKV
+    # pairs, so they sum and take_metrics clears them, unlike the three dKV
     # health keys above. The connector's ConnectorMetrics is the canonical
     # account of each one's unit.
     dkv_peer_attaches: int = 0

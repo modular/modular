@@ -155,7 +155,8 @@ class _AsyncConnector:
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
 
-    def reset_metrics(self) -> None: ...
+    def take_metrics(self) -> KVCacheMetrics:
+        return self.metrics
 
 
 def _make_block_manager() -> tuple[BlockManager, _AsyncConnector]:

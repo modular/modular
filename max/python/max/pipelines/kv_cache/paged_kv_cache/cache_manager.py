@@ -820,9 +820,9 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         """Returns whether the request is claimed on any replica."""
         return ctx.request_id in self._block_manager.req_to_replica
 
-    def reset_metrics(self) -> None:
-        """Resets metrics for the block manager."""
-        self._block_manager.reset_metrics()
+    def take_metrics_aggregated(self) -> KVCacheMetrics:
+        """Reads and clears aggregated metrics across all replicas."""
+        return self._block_manager.take_metrics()
 
     def reset_prefix_cache(self) -> None:
         """Resets the device prefix caches and every connector's tiers."""

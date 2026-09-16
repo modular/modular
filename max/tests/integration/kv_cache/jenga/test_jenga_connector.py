@@ -171,12 +171,12 @@ class FakeConnector:
     def shutdown(self) -> None:
         return None
 
-    def reset_metrics(self) -> None:
-        return None
-
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
+
+    def take_metrics(self) -> KVCacheMetrics:
+        return self.metrics
 
     @property
     def host_byte_count(self) -> ByteCount:

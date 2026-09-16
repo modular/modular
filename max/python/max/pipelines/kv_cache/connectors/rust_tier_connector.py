@@ -519,9 +519,9 @@ class RustTierConnector(KVConnector):
     def reset_prefix_cache(self) -> None:
         self._rust.reset_prefix_cache()
 
-    @property
-    def metrics(self) -> KVCacheMetrics:
-        h2d, d2h, disk_read, disk_write = self._rust.metrics()
+    def _wrap_rust_metrics(
+        self, h2d: int, d2h: int, disk_read: int, disk_write: int
+    ) -> KVCacheMetrics:
         return KVCacheMetrics(
             h2d_bytes_copied=h2d,
             d2h_bytes_copied=d2h,
@@ -530,5 +530,9 @@ class RustTierConnector(KVConnector):
             inflight_disk_ops=self._rust.inflight_disk_ops(),
         )
 
-    def reset_metrics(self) -> None:
-        self._rust.reset_metrics()
+    @property
+    def metrics(self) -> KVCacheMetrics:
+        return self._wrap_rust_metrics(*self._rust.metrics())
+
+    def take_metrics(self) -> KVCacheMetrics:
+        return self._wrap_rust_metrics(*self._rust.take_metrics())

@@ -370,7 +370,7 @@ class BatchMetrics:
             ]
             total_host_kv_bytes = sum(bc.total for bc in host_byte_counts)
 
-            metrics_agg = kv_cache.get_metrics_aggregated()
+            metrics_agg = kv_cache.take_metrics_aggregated()
 
             if total_host_kv_bytes > 0:
                 used_host_kv_bytes = sum(bc.used for bc in host_byte_counts)
@@ -405,24 +405,23 @@ class BatchMetrics:
             nixl_write_gib_per_s = metrics_agg.nixl_write_gib_per_s
             nixl_read_latency_max_ms = metrics_agg.nixl_read_latency_max_ms
 
-            # dKV external-tier health. Read before reset_metrics like the
-            # metrics above, though the connector reports these live and does
-            # not clear them on reset.
+            # dKV external-tier health. The connector reports these live and
+            # take_metrics_aggregated leaves them in place, unlike the per-window
+            # deltas above; the snapshot carries their current level.
             dkv_connected_clients = metrics_agg.dkv_connected_clients
             dkv_total_clients = metrics_agg.dkv_total_clients
             dkv_reconnect_attempts = metrics_agg.dkv_reconnect_attempts
             dkv_read_blocks = metrics_agg.nixl_read_blocks
             dkv_read_bytes = metrics_agg.nixl_read_bytes
 
-            # Cross-node pull, read before reset_metrics clears it.
+            # Cross-node pull. Per-window deltas that take_metrics_aggregated
+            # cleared as it read them into this snapshot.
             dkv_peer_attaches = metrics_agg.dkv_peer_attaches
             dkv_peer_attach_failures = metrics_agg.dkv_peer_attach_failures
             dkv_peers_dropped = metrics_agg.dkv_peers_dropped
             dkv_peer_loads = metrics_agg.dkv_peer_loads
             dkv_peer_load_failures = metrics_agg.dkv_peer_load_failures
             dkv_hints_rejected = metrics_agg.dkv_hints_rejected
-
-            kv_cache.reset_metrics()
 
         # Capture per-request KV cache hit rates for newly admitted requests.
         # The block manager set ``cached_prefix_length`` on each context's
@@ -1106,10 +1105,10 @@ class BatchMetrics:
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
         # Its own guard, not the cache-hit clause: this is a per-window delta
-        # that ``reset_metrics`` clears after every batch, so a window published
-        # under a different batch type would lose its count for good. Keyed on a
-        # tier being attached rather than on it moving blocks, so a dead tier
-        # reads a flat zero instead of nothing.
+        # that ``take_metrics_aggregated`` clears after every batch, so a window
+        # published under a different batch type would lose its count for good.
+        # Keyed on a tier being attached rather than on it moving blocks, so a
+        # dead tier reads a flat zero instead of nothing.
         if self.dkv_read_blocks > 0 or self.dkv_total_clients > 0:
             METRICS.dkv_read_blocks(self.dkv_read_blocks)
 

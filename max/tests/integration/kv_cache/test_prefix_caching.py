@@ -727,8 +727,8 @@ def run_and_check_num_cached_tokens(
     ctx: TextAndVisionContext,
     do_step: bool = True,
 ) -> int:
-    # reset cache_tokens to 0
-    kv_manager.reset_metrics()
+    # take (and discard) metrics to reset cache_tokens to 0
+    kv_manager.take_metrics_aggregated()
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
     kv_manager.runtime_inputs([[ctx]])

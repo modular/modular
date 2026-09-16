@@ -1285,10 +1285,11 @@ class BlockManager:
         """Returns combined metrics for this manager and its connector."""
         return self._metrics + self.connector.metrics
 
-    def reset_metrics(self) -> None:
-        """Resets block-manager and connector transfer metrics to zero."""
+    def take_metrics(self) -> KVCacheMetrics:
+        """Reads and clears block-manager and connector transfer metrics."""
+        own = self._metrics
         self._metrics = KVCacheMetrics()
-        self.connector.reset_metrics()
+        return own + self.connector.take_metrics()
 
     @traced
     def assert_runtime_invariants(self, ctx: TextContext) -> None:
