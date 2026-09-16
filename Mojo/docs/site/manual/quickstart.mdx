@@ -21,7 +21,7 @@ Before starting:
 - [Install Mojo](/install/) in a `pixi` or `uv` environment.
 - Open a terminal and make sure `mojo` is in your path or environment.
 
-As you work through this tour, look for *Checkpoint* items. They connect
+As you work through this tour, look for *Takeaways* items. They connect
 new Mojo syntax to concepts you may already know from other languages.
 
 ## Hello Mojo
@@ -41,7 +41,7 @@ Run it:
 mojo analyzer.mojo
 ```
 
-### Checkpoint
+### Takeaways
 
 - If you see "Temperature Analyzer", your setup works.
 - All Mojo executables use `main()` as their entry point.
@@ -72,13 +72,19 @@ def main():
         print(t"  Day {index + 1}: {temps[index]}°C")
 ```
 
-### Checkpoint
+### Takeaways
 
 - This loop uses indexes. Normally you iterate over elements.
+
 - The `t"..."` prefix creates a *template string*. Braces `{}` interpolate
   expressions into the output. This avoids memory allocations for
   intermediate values.
-- Mojo also has a `while` loop.
+
+:::tip Worth knowing
+
+Mojo also has a `while` loop.
+
+:::
 
 ## Functions
 
@@ -103,7 +109,7 @@ Call the function by adding this to the end of `main()`:
     print(t"Average: {round(avg, 2)}°C")
 ```
 
-### Checkpoint
+### Takeaways
 
 - Mojo's `def` functions don't raise by default.
 - `round()` returns `avg` rounded to two decimal places.
@@ -168,7 +174,7 @@ Wrap failable code in `try-except` for error handling:
 To test the error, replace `temps` with `[]`.
 Confirm that your app errors with "No temperature data".
 
-### Checkpoint
+### Takeaways
 
 - Each `try` statement requires at least one `except` or `finally` clause.
 - An `else` clause runs only if no error occurs.

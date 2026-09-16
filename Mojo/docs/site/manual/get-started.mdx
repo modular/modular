@@ -15,7 +15,7 @@ need to rush it.
 
 Whether you arrive from, say, C++ or Python, you'll encounter unfamiliar
 syntax like transfer operators and compile-time variables. Read the
-*Checkpoint* items to map these new features to concepts you already know.
+*Takeaways* items to map these new features to concepts you already know.
 
 Run the code in your terminal and watch the grid evolve over time. As you
 build the game, you'll learn the Mojo syntax you need to start writing
@@ -83,13 +83,15 @@ X.X.....
 ........
 ```
 
-### Checkpoint
+### Takeaways
 
 - All variable declarations like `count` and `num_cols` start with `var`.
 - `var` bindings are mutable by default.
 - The `to_index` *lambda expression* defines a small local function that
   converts coordinates to a list index. Lambdas are short anonymous
   functions that evaluate a single expression.
+
+:::tip Worth knowing
 
 When assigning contents, a list expression sets the values:
 
@@ -110,6 +112,8 @@ Parentheses supply run-time *arguments*:
 print(value)
 Grid[8, 8]()
 ```
+
+:::
 
 ## Add reusable printing
 
@@ -149,7 +153,7 @@ Call `print_grid()` from `main()` and confirm the output:
 print_grid(glider_grid, num_cols)
 ```
 
-### Checkpoint
+### Takeaways
 
 - Comprehensions are a shorthand for creating lists and other
   collections.`print_grid()` uses a list comprehension to transform each
@@ -194,7 +198,7 @@ def main():
 
 Now you can convert coordinates to indices and indices to coordinates.
 
-### Checkpoint
+### Takeaways
 
 - `comptime` declarations are evaluated at compile time before the code
   runs. This lets Mojo optimize and generate efficient machine code.
@@ -240,12 +244,15 @@ value before the initializer returns.
 Here, `count` comes from the grid dimensions, and `cells` starts as a list
 of zeros.
 
-### Checkpoint
+### Takeaways
 
 - `Grid` uses both compile-time parameters and runtime fields.
 - `Self.num_cols` and `Self.num_rows` belong to the parameterized type.
 - `self.cells` and `self.count` belong to one `Grid` instance.
 - This `Grid` needs custom initialization, so it defines `__init__()`.
+
+:::tip Worth knowing
+
   Normally, if an initializer just assigns arguments directly to fields,
   add `@fieldwise_init` to the struct instead. Mojo generates that
   initializer for you. For example, in an alternate implementation
@@ -260,6 +267,8 @@ of zeros.
       var num_cols: Int
       var num_rows: Int
   ```
+
+:::
 
 ## Add grid operations
 
@@ -290,7 +299,7 @@ Put the following content into your `Grid` struct:
         return self.cells[Self.to_index(coord[0], coord[1])]
 ```
 
-### Checkpoint
+### Takeaways
 
 - `Self.to_index()` accesses a type member. The lambda `to_index()` belongs
   to `Grid`. Uppercase `Self` refers to the type.
@@ -300,7 +309,7 @@ Put the following content into your `Grid` struct:
 - `__getitem__()` and `__setitem__()` define indexing behavior, so a `Grid`
   can use `grid[coord]` notation.
 
-Don't add this anywhere. It's a preview of how this all works from the
+Don't add this anywhere. It's just a preview of how this all works from the
 call site:
 
 ```mojo
@@ -439,7 +448,7 @@ random_grid.print_grid()
 You don't have to add this code except to test it. You can remove it
 afterwards.
 
-### Checkpoint
+### Takeaways
 
 - This static method still needs `Grid` parameters, namely 8 and 8.
 - Each neighboring cell has a 25% chance of becoming live. Adjust
@@ -529,7 +538,7 @@ cell based on its neighbors:
         self.next_cells = tmp^  # Every cell is written, so this is safe
 ```
 
-### Checkpoint
+### Takeaways
 
 - The algorithm progresses in integer order, excluding edges.
 - Live cells offset by -1, to exclude them from the count.
@@ -562,12 +571,21 @@ def main():
         grid = Grid[gridw, gridh].random_grid(grid_count)
 ```
 
-### Checkpoint
+### Takeaways
 
 - `comptime` declarations let you set constants.
 - The odd characters in the print statement are ANSI escape codes.
   You'll see the updates generation-by-generation. Keep your terminal
   at a minimum of 80x24 for best results.
+
+:::tip Worth knowing
+
+Mojo uses semicolons to separate statements, not to end them. One
+statement per line is the usual form. This listing pairs them to stay
+compact.
+
+:::
+
 - Mojo uses semicolons to separate statements, not to end them. One
   statement per line is the usual form. This listing pairs them to stay
   compact.
