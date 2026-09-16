@@ -39,6 +39,15 @@ from typing_extensions import override
 from ..qwen3_5.model import _SCALE_SUFFIXES, Qwen3_5Model
 from ..qwen3_5.model_config import Qwen3_5Config
 from ..qwen3_5.state_cache import attn_cache
+from .spec_adapters import (
+    LIVE_CONV_POOLS,
+    LIVE_CONV_ROW_IDS,
+    LIVE_RECURRENT_POOLS,
+    LIVE_RECURRENT_ROW_IDS,
+    POSITION_IDS,
+    SHADOW_CONV_POOLS,
+    SHADOW_RECURRENT_POOLS,
+)
 from .unified_mtp_qwen3_5 import UnifiedMTPQwen3_5
 
 logger = logging.getLogger("max.pipelines")
@@ -264,13 +273,13 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 position_ids = next(trailing).tensor
 
             outputs = nn_model(
-                tokens=graph_inputs.tokens,
-                input_row_offsets=graph_inputs.input_row_offsets,
-                draft_tokens=graph_inputs.draft_tokens,
-                signal_buffers=graph_inputs.signal_buffers,
-                target_kv=graph_inputs.kv("target"),
-                draft_kv=graph_inputs.kv("draft"),
+                graph_inputs.tokens,
+                graph_inputs.input_row_offsets,
+                graph_inputs.draft_tokens,
+                kv_collections=graph_inputs.kv("target"),
+                draft_kv_collections=graph_inputs.kv("draft"),
                 return_n_logits=graph_inputs.return_n_logits,
+                signal_buffers=graph_inputs.signal_buffers,
                 host_input_row_offsets=graph_inputs.host_offsets,
                 data_parallel_splits=graph_inputs.dp_splits,
                 seed=graph_inputs.seed,
@@ -280,16 +289,18 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 top_p=graph_inputs.top_p,
                 min_top_p=graph_inputs.min_top_p,
                 in_thinking_phase=graph_inputs.thinking_phase,
-                live_conv_pools=live_conv_pools,
-                live_recurrent_pools=live_recurrent_pools,
-                live_conv_row_ids=live_conv_row_ids,
-                live_recurrent_row_ids=live_recurrent_row_ids,
-                shadow_conv_pools=shadow_conv_pools,
-                shadow_recurrent_pools=shadow_recurrent_pools,
                 pinned_bitmask=graph_inputs.pinned_bitmask,
                 wait_payload=graph_inputs.wait_payload,
                 device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
-                position_ids=position_ids,
+                extra={
+                    LIVE_CONV_POOLS: live_conv_pools,
+                    LIVE_RECURRENT_POOLS: live_recurrent_pools,
+                    LIVE_CONV_ROW_IDS: live_conv_row_ids,
+                    LIVE_RECURRENT_ROW_IDS: live_recurrent_row_ids,
+                    SHADOW_CONV_POOLS: shadow_conv_pools,
+                    SHADOW_RECURRENT_POOLS: shadow_recurrent_pools,
+                    POSITION_IDS: position_ids,
+                },
             )
             graph.output(*outputs)
 

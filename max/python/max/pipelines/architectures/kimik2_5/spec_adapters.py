@@ -92,8 +92,8 @@ class KimiK25Target:
                 batch.kv_collections,
                 batch.return_n_logits,
                 list(batch.merged_offsets_per_dev),
-                batch.host_merged_offsets,
-                batch.data_parallel_splits,
+                batch.dist.host_merged_offsets,
+                batch.dist.data_parallel_splits,
                 batch.batch_context_lengths,
                 batch.ep_inputs,
             )
@@ -104,8 +104,8 @@ class KimiK25Target:
                 batch.kv_collections,
                 batch.return_n_logits,
                 batch.merged_offsets_per_dev,
-                batch.host_merged_offsets,
-                batch.data_parallel_splits,
+                batch.dist.host_merged_offsets,
+                batch.dist.data_parallel_splits,
                 batch.batch_context_lengths,
                 batch.ep_inputs,
             )

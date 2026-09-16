@@ -57,8 +57,15 @@ from max.pipelines.architectures.unified_dflash_kimi_k25.model import (
     UnifiedDflashKimiK25Inputs,
     UnifiedDflashKimiK25Model,
 )
+from max.pipelines.architectures.unified_dflash_kimi_k25.model_config import (
+    UnifiedDflashKimiK25Config,
+)
+from max.pipelines.architectures.unified_dflash_kimi_k25.spec_adapters import (
+    DFlashKimiK25Target,
+)
 from max.pipelines.architectures.unified_dflash_kimi_k25.unified_dflash_kimi_k25 import (
     UnifiedDflashKimiK25,
+    dflash_kimi_k25_input_spec,
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import InputModality
@@ -109,33 +116,37 @@ def _graph_input_types(
     """The fused graph's declared input arity, with KV inputs zeroed out
     (matching the ``kv_cache_inputs=None`` model inputs on the buffers side).
 
-    The module's own ``input_spec`` and ``ep_input_types`` read only the
-    target's device list, DP degree, hidden size, EP manager and
-    structured-output flag, so a duck-typed stand-in reaches both without
-    building the target + draft modules. Those two are the whole of what the
-    module contributes to its signature -- ``SpecDecodeGraphSignature`` builds
-    the rest, which is what this calls directly below.
+    ``dflash_kimi_k25_input_spec`` reads only the target's device list, DP
+    degree and hidden size, and the driver forwards ``ep_input_types`` to its
+    target adapter, which reads only the EP manager -- so duck-typed stand-ins
+    reach both without building the target + draft modules. Those two are the whole of what the architecture contributes to
+    its signature -- ``build_spec_decode_input_types`` builds the rest, which
+    is what this calls directly below.
     """
+    config = cast(
+        UnifiedDflashKimiK25Config,
+        SimpleNamespace(
+            target=SimpleNamespace(
+                devices=[DeviceRef("gpu", i) for i in range(n_devices)],
+                data_parallel_degree=1,
+                hidden_size=_HIDDEN_SIZE,
+            )
+        ),
+    )
     stand_in = cast(
         UnifiedDflashKimiK25,
         SimpleNamespace(
-            config=SimpleNamespace(
-                target=SimpleNamespace(
-                    devices=[DeviceRef("gpu", i) for i in range(n_devices)],
-                    data_parallel_degree=1,
-                    hidden_size=_HIDDEN_SIZE,
-                )
-            ),
-            target=SimpleNamespace(ep_manager=None),
-            enable_structured_output=enable_structured_output,
+            _target=DFlashKimiK25Target(
+                cast(Any, SimpleNamespace(ep_manager=None))
+            )
         ),
     )
     kv_params = MagicMock()
     kv_params.flattened_kv_inputs.return_value = []
-    # ``input_spec`` is a property, so reach it off the class dict.
-    input_spec = vars(UnifiedDflashKimiK25)["input_spec"].fget(stand_in)
     return build_spec_decode_input_types(
-        input_spec,
+        dflash_kimi_k25_input_spec(
+            config, enable_structured_output=enable_structured_output
+        ),
         kv_params=kv_params,
         ep_input_types=UnifiedDflashKimiK25.ep_input_types(stand_in),
     )

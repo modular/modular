@@ -42,13 +42,17 @@ from max.nn.sampling.rejection_sampler import AcceptanceSampler
 from typing_extensions import override
 
 from .config import MAGIC_DRAFT_TOKEN_ID, SpeculativeConfig
-from .ragged_token_merger import RaggedTokenMerger, _shape_to_scalar
+from .ragged_token_merger import (
+    RaggedTokenMerger,
+    _shape_to_scalar,
+    compute_host_merged_offsets,
+)
 from .spec_input_types import (
     SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
 )
 from .spec_target import SpecDecodeTarget
-from .unified_graph_ops import apply_overlap_bitmask
+from .unified_graph_ops import apply_overlap_bitmask, broadcast_per_device
 
 __all__ = [
     "Accepted",
@@ -56,7 +60,26 @@ __all__ = [
     "BlockCaches",
     "BlockDriver",
     "BlockProposer",
+    "local_row_offsets",
 ]
+
+
+def local_row_offsets(
+    offsets: TensorValue, splits: TensorValue, replica: int, dim_name: str
+) -> TensorValue:
+    """One replica's slice of a ragged offset vector, rebased to zero.
+
+    A ragged offset vector has one entry more than it has rows, so a replica
+    owning rows ``[start, end)`` needs entries ``[start, end]``; and the
+    tensors it indexes hold only its own rows, so the slice is shifted to
+    start at zero. Every data-parallel slice in a block graph is this.
+    """
+    start = splits[replica]
+    local = ops.slice_tensor(
+        offsets, [(slice(start, splits[replica + 1] + 1), dim_name)]
+    )
+    return local - offsets[start]
+
 
 _TargetHiddenT = TypeVar("_TargetHiddenT", contravariant=True)
 """The target's captured-hidden payload, opaque to the driver.
@@ -64,6 +87,13 @@ _TargetHiddenT = TypeVar("_TargetHiddenT", contravariant=True)
 Handed from :meth:`SpecDecodeTarget.verify` straight to
 :meth:`BlockProposer.materialize`. Contravariant because it is only ever
 consumed here -- nothing on this side hands it back out.
+"""
+
+_BlockHiddenT = TypeVar("_BlockHiddenT")
+"""The draft's block hidden states, opaque to the driver.
+
+Handed from :meth:`BlockProposer.forward_block` straight to
+:meth:`BlockProposer.head`.
 """
 
 
@@ -94,6 +124,35 @@ class BlockBatch:
     merged_tokens: TensorValue
     merged_offsets: TensorValue
     merged_offsets_per_dev: list[TensorValue]
+
+    host_merged_offsets: TensorValue | None
+    """CPU mirror of :attr:`merged_offsets`, letting a sharded target size its
+    collectives without waiting on the device."""
+    data_parallel_splits: TensorValue | None
+    """Per-replica batch boundaries, ``None`` on a single-replica graph."""
+    data_parallel_degree: int
+    batch_context_lengths: list[TensorValue]
+    """Per-device cache-length tensors, for a target with a sparse-attention
+    budget to size."""
+
+    vision_embeddings: list[TensorValue]
+    """Per-device merged vision embeddings, empty for a text-only target.
+
+    A vision target scatters these into the merged sequence before running its
+    stack."""
+    vision_scatter_indices: list[TensorValue]
+    """Per-device merge positions for :attr:`vision_embeddings`."""
+
+    @property
+    def devices_per_replica(self) -> int:
+        """How many devices share one data-parallel replica's rows."""
+        return self.n_devs // self.data_parallel_degree
+
+    @property
+    def replica_of(self) -> list[int]:
+        """Which replica owns each device's rows, by device index."""
+        per_replica = self.devices_per_replica
+        return [i // per_replica for i in range(self.n_devs)]
 
     @property
     def n_devs(self) -> int:
@@ -145,7 +204,7 @@ class BlockCaches:
     block: list[PagedCacheValues]
 
 
-class BlockProposer(Protocol[_TargetHiddenT]):
+class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT]):
     """A draft that emits all ``K - 1`` proposals from one parallel forward."""
 
     block_size: int
@@ -181,12 +240,12 @@ class BlockProposer(Protocol[_TargetHiddenT]):
         embeds: list[TensorValue],
         offsets: list[TensorValue],
         block_kv: list[PagedCacheValues],
-    ) -> TensorValue:
+    ) -> _BlockHiddenT:
         """Runs the draft over the whole block; returns its hidden states."""
         ...
 
     def head(
-        self, batch: BlockBatch, block_hs: TensorValue, accepted: Accepted
+        self, batch: BlockBatch, block_hs: _BlockHiddenT, accepted: Accepted
     ) -> TensorValue:
         """Turns the block's hidden states into ``[batch_size, K - 1]`` tokens.
 
@@ -197,13 +256,15 @@ class BlockProposer(Protocol[_TargetHiddenT]):
         ...
 
 
-class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
+class BlockDriver(
+    SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT, _BlockHiddenT]
+):
     """Merge -> verify -> mask -> accept -> materialize -> block -> head."""
 
     def __init__(
         self,
         target: SpecDecodeTarget[BlockBatch, _TargetHiddenT],
-        proposer: BlockProposer[_TargetHiddenT],
+        proposer: BlockProposer[_TargetHiddenT, _BlockHiddenT],
         *,
         target_model: Module,
         draft_model: Module,
@@ -211,6 +272,7 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
         speculative_config: SpeculativeConfig,
         enable_structured_output: bool = False,
         relaxed_acceptance: bool = False,
+        ctx_at_draft_cache_length: bool = False,
     ) -> None:
         super().__init__()
         self._target = target
@@ -219,10 +281,12 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
             input_spec, enable_structured_output=enable_structured_output
         )
         self.devices = self._input_spec.devices
+        self.data_parallel_degree = self._input_spec.data_parallel_degree
+        # Where the draft materializes the target's context KV; the two caches
+        # normally advance together.
+        self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
         self.block_size = proposer.block_size
-        # A block draft's budget is its width, less the anchor slot unless the
-        # anchor predicts -- never the config's step count directly.
         self.num_speculative_tokens = self.block_size - (
             0 if proposer.samples_from_anchor else 1
         )
@@ -251,18 +315,6 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
         self.merger = RaggedTokenMerger(self.devices[0])
         self.draft = draft_model
 
-    def _per_dev(
-        self, value: TensorValue, signal_buffers: list[BufferValue]
-    ) -> list[TensorValue]:
-        """One entry per device, broadcasting only when there is more than one.
-
-        A ``distributed=False`` graph declares no signal buffers, so it cannot
-        broadcast; at one device the list is the value itself.
-        """
-        if len(self.devices) == 1:
-            return [value]
-        return ops.distributed_broadcast(value, signal_buffers)
-
     def __call__(
         self,
         tokens: TensorValue,
@@ -281,6 +333,11 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
         passthrough_kv: Mapping[str, list[PagedCacheValues]] | None = None,
         in_thinking_phase: TensorValue | None = None,
         ep_inputs: list[Value[Any]] | None = None,
+        host_input_row_offsets: TensorValue | None = None,
+        data_parallel_splits: TensorValue | None = None,
+        batch_context_lengths: list[TensorValue] | None = None,
+        vision_embeddings: list[TensorValue] | None = None,
+        vision_scatter_indices: list[TensorValue] | None = None,
         pinned_bitmask: TensorValue | None = None,
         wait_payload: BufferValue | None = None,
         device_bitmask_scratch: BufferValue | None = None,
@@ -306,6 +363,13 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
             passthrough_kv: Target cache leaves past the primary one.
             in_thinking_phase: Per-row flag enabling relaxed acceptance.
             ep_inputs: Expert-parallel collective inputs, or None.
+            host_input_row_offsets: CPU mirror of ``input_row_offsets``; None
+                unless the signature is distributed, as with the two below.
+            data_parallel_splits: Per-replica batch boundaries, on CPU.
+            batch_context_lengths: Per-device cache-length tensors.
+            vision_embeddings: Per-device merged vision embeddings; only a
+                vision target reads them.
+            vision_scatter_indices: Merge positions for the above.
             pinned_bitmask: Structured-output bitmask staged on the host.
             wait_payload: Host-side gate for the bitmask transfer.
             device_bitmask_scratch: Device buffer the bitmask lands in.
@@ -334,15 +398,24 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
             ep_inputs=ep_inputs,
             merged_tokens=merged_tokens,
             merged_offsets=merged_offsets,
-            merged_offsets_per_dev=self._per_dev(merged_offsets, signals),
+            merged_offsets_per_dev=broadcast_per_device(
+                merged_offsets, signals, len(self.devices)
+            ),
+            host_merged_offsets=(
+                compute_host_merged_offsets(
+                    host_input_row_offsets, draft_tokens
+                )
+                if host_input_row_offsets is not None
+                else None
+            ),
+            data_parallel_splits=data_parallel_splits,
+            data_parallel_degree=self.data_parallel_degree,
+            batch_context_lengths=batch_context_lengths or [],
+            vision_embeddings=vision_embeddings or [],
+            vision_scatter_indices=vision_scatter_indices or [],
         )
 
-        # The draft materializes the target's context KV at the position the
-        # target's primary leaf held before this iteration.
-        pre_cache_lengths = [
-            ops.rebind(kv.cache_lengths, ["batch_size"])
-            for kv in kv_collections
-        ]
+        pre_cache_lengths = self._pre_cache_lengths(batch)
 
         verified = self._target.verify(batch)
         target_logits, target_hidden = verified.logits, verified.hidden
@@ -488,6 +561,56 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
             is_prefill=is_prefill,
         )
 
+    def _pre_cache_lengths(self, batch: BlockBatch) -> list[TensorValue]:
+        """Where the draft materializes the target's context KV.
+
+        Read before the verify for the reading, though these are graph inputs
+        and so hold the pre-iteration lengths whenever they are read.
+        """
+        source = (
+            batch.draft_kv_collections
+            if self._ctx_at_draft_cache_length
+            else batch.kv_collections
+        )
+        if self.data_parallel_degree > 1:
+            # A device's cache lengths cover its replica's rows, so the global
+            # name would be a false assertion.
+            return [kv.cache_lengths for kv in source]
+        return [ops.rebind(kv.cache_lengths, ["batch_size"]) for kv in source]
+
+    def _commit_lengths_per_device(
+        self, batch: BlockBatch, commit_lengths: TensorValue
+    ) -> list[TensorValue]:
+        """The commit counts each device needs, for its own rows.
+
+        The accept runs on device 0, so under tensor parallelism the counts
+        still have to reach the others; under data parallelism each device
+        also keeps only the rows its replica owns.
+        """
+        per_dev = broadcast_per_device(
+            commit_lengths, batch.signal_buffers, batch.n_devs
+        )
+        if batch.data_parallel_degree == 1:
+            return per_dev
+
+        splits = batch.data_parallel_splits
+        assert splits is not None, (
+            "a data-parallel block graph must pass data_parallel_splits"
+        )
+        local: list[TensorValue] = []
+        for i, replica in enumerate(batch.replica_of):
+            rows = ops.slice_tensor(
+                per_dev[i],
+                [
+                    (
+                        slice(splits[replica], splits[replica + 1]),
+                        f"block_commit_split_{i}",
+                    )
+                ],
+            )
+            local.append(ops.rebind(rows, [f"replica_{replica}_batch_size"]))
+        return local
+
     def _block_caches(
         self,
         batch: BlockBatch,
@@ -495,6 +618,7 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
         commit_lengths: TensorValue,
     ) -> BlockCaches:
         """The draft cache at the context position and at the block position."""
+        commit_per_dev = self._commit_lengths_per_device(batch, commit_lengths)
         ctx = [
             replace(kv, cache_lengths=pre)
             for kv, pre in zip(
@@ -502,9 +626,12 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
             )
         ]
         block = [
-            replace(kv, cache_lengths=pre + commit_lengths)
-            for kv, pre in zip(
-                batch.draft_kv_collections, pre_cache_lengths, strict=True
+            replace(kv, cache_lengths=pre + commit)
+            for kv, pre, commit in zip(
+                batch.draft_kv_collections,
+                pre_cache_lengths,
+                commit_per_dev,
+                strict=True,
             )
         ]
         return BlockCaches(ctx=ctx, block=block)
@@ -538,6 +665,15 @@ class BlockDriver(SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]):
             * ops.constant(k, DType.uint32, device=dev)
             for dev in self.devices
         ]
+        if batch.data_parallel_degree > 1:
+            splits = batch.data_parallel_splits
+            assert splits is not None
+            offsets = [
+                local_row_offsets(
+                    offsets[i], splits, replica, f"block_offset_split_{i}"
+                )
+                for i, replica in enumerate(batch.replica_of)
+            ]
         return block_ids.reshape((-1,)), offsets
 
     @override

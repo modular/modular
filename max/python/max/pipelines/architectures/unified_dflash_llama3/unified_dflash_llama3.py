@@ -26,7 +26,7 @@ from .model_config import UnifiedDflashLlama3Config
 from .spec_adapters import DFlashLlama3Proposer, DFlashLlama3Target
 
 
-class UnifiedDflashLlama3(BlockDriver[TensorValue]):
+class UnifiedDflashLlama3(BlockDriver[TensorValue, TensorValue]):
     """DFlash + Llama3: merge, verify, materialize the context KV, block.
 
     Single device throughout -- Llama3 uses no collectives, so the graph

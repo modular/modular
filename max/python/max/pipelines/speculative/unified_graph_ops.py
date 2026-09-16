@@ -34,10 +34,26 @@ from .ragged_token_merger import (
 __all__ = [
     "accept_and_pick_next_tokens",
     "apply_overlap_bitmask",
+    "broadcast_per_device",
     "gather_accepted_hidden_states",
     "merge_tokens_and_host_offsets",
     "shift_corrected_tokens",
 ]
+
+
+def broadcast_per_device(
+    value: TensorValue,
+    signal_buffers: Sequence[BufferValue],
+    n_devs: int,
+) -> list[TensorValue]:
+    """One entry per device, broadcasting only when there is more than one.
+
+    A ``distributed=False`` graph declares no signal buffers and so cannot
+    broadcast at all; at one device the per-device list is the value itself.
+    """
+    if n_devs == 1:
+        return [value]
+    return ops.distributed_broadcast(value, list(signal_buffers))
 
 
 def gather_accepted_hidden_states(
@@ -48,8 +64,8 @@ def gather_accepted_hidden_states(
     num_accepted: TensorValue,
     num_draft_tokens: Dim,
     data_parallel_degree: int,
-    data_parallel_splits: TensorValue,
-    signal_buffers: list[BufferValue],
+    data_parallel_splits: TensorValue | None,
+    signal_buffers: Sequence[BufferValue],
     device: DeviceRef,
     split_prefix: str,
 ) -> list[TensorValue]:
@@ -66,12 +82,13 @@ def gather_accepted_hidden_states(
     # either slice by DP splits (DP mode, each device holds its local batch
     # shard) or gather directly (TP mode, each device holds a full replica).
     last_accepted_idx_i64 = last_accepted_idx.cast(DType.int64)
-    last_accepted_idx_per_dev = ops.distributed_broadcast(
-        last_accepted_idx_i64, signal_buffers
+    last_accepted_idx_per_dev = broadcast_per_device(
+        last_accepted_idx_i64, signal_buffers, n_devs
     )
 
     draft_hs: list[TensorValue] = []
     if data_parallel_degree > 1:
+        assert data_parallel_splits is not None
         tp_degree = n_devs // data_parallel_degree
         for i in range(n_devs):
             replica = i // tp_degree
@@ -142,16 +159,22 @@ def merge_tokens_and_host_offsets(
     tokens: TensorValue,
     input_row_offsets: TensorValue,
     draft_tokens: TensorValue,
-    host_input_row_offsets: TensorValue,
-) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Merge prompt + draft tokens and compute the CPU-side merged offsets."""
+    host_input_row_offsets: TensorValue | None,
+) -> tuple[TensorValue, TensorValue, TensorValue | None]:
+    """Merge prompt + draft tokens and compute the CPU-side merged offsets.
+
+    The host mirror is ``None`` for a single-device graph, whose signature
+    declares no host offsets to mirror.
+    """
     merged_tokens, merged_offsets = merger(
         tokens, input_row_offsets, draft_tokens
     )
     merged_tokens = ops.rebind(merged_tokens, ["merged_seq_len"])
     merged_offsets = ops.rebind(merged_offsets, ["input_row_offsets_len"])
-    host_merged_offsets = compute_host_merged_offsets(
-        host_input_row_offsets, draft_tokens
+    host_merged_offsets = (
+        compute_host_merged_offsets(host_input_row_offsets, draft_tokens)
+        if host_input_row_offsets is not None
+        else None
     )
     return merged_tokens, merged_offsets, host_merged_offsets
 

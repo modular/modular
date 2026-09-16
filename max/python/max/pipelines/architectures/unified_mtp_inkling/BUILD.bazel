@@ -6,7 +6,6 @@ modular_py_library(
     name = "unified_mtp_inkling",
     srcs = glob(["**/*.py"]),
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max:_core",

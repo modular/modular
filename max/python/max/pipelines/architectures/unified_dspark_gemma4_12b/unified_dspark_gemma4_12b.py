@@ -29,7 +29,7 @@ from .spec_adapters import DSparkGemma4_12BProposer
 __all__ = ["UnifiedDSparkGemma4_12B"]
 
 
-class UnifiedDSparkGemma4_12B(BlockDriver[TensorValue]):
+class UnifiedDSparkGemma4_12B(BlockDriver[TensorValue, TensorValue]):
     """Spark + Gemma4-12B: the dense block draft on the block driver
 
     DSpark drafts at every block position: the anchor predicts draft 1,

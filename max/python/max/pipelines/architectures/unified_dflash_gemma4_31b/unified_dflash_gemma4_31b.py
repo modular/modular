@@ -29,7 +29,7 @@ from .spec_adapters import DFlashGemma4_31BProposer
 __all__ = ["SLIDING_KV", "UnifiedDflashGemma4_31B"]
 
 
-class UnifiedDflashGemma4_31B(BlockDriver[TensorValue]):
+class UnifiedDflashGemma4_31B(BlockDriver[TensorValue, TensorValue]):
     """Flash + Gemma4-31B: the block draft wired to the block driver
 
     The block reuses the target's embedding and ``lm_head``; the phases

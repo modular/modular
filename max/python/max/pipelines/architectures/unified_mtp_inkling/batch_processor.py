@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import numpy as np
 from max.driver import Buffer
 from max.engine import Model
 from max.nn.kv_cache import KVCacheInputs
@@ -86,12 +85,6 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
         for context in context_batch:
             draft_cache.claim(context.request_id)
 
-        lengths = np.fromiter(
-            (context.tokens.active_length for context in context_batch),
-            dtype=np.int64,
-            count=len(context_batch),
-        )
-
         return UnifiedMTPInklingInputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
@@ -104,9 +97,6 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
             has_initial_state=has_initial_state,
             conv_pools=conv_pools,
             kv_cache_inputs=kv_cache_inputs,
-            host_input_row_offsets=Buffer.from_numpy(
-                np.cumsum([0, *lengths], dtype=np.uint32)
-            ),
             draft_conv_pools=self._draft_conv_pools,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,

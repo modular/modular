@@ -30,7 +30,7 @@ from .spec_adapters import DSparkGemma4_31BProposer
 __all__ = ["SLIDING_KV", "UnifiedDSparkGemma4_31B"]
 
 
-class UnifiedDSparkGemma4_31B(BlockDriver[TensorValue]):
+class UnifiedDSparkGemma4_31B(BlockDriver[TensorValue, TensorValue]):
     """Spark + Gemma4-31B: the Speculators block draft on the block driver
 
     The draft ships its own embedding, head and d2t map, so it reuses

@@ -10,151 +10,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unified EAGLE nn.Module: merge + target forward + rejection + shift + draft."""
+"""Unified EAGLE Llama3: the shared sequential driver plus this pair's adapters."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass, replace
-from typing import Any
-
-from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    DeviceRef,
-    Graph,
-    ProfileScopeColor,
-    TensorValue,
-    Value,
-    ops,
-)
-from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    MultiKVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import (
-    AcceptanceSampler,
-    _reshape_target_logits,
-)
-from max.pipelines.speculative.ragged_token_merger import (
-    RaggedTokenMerger,
-    _shape_to_scalar,
-)
-from max.pipelines.speculative.spec_input_types import (
-    SpecDecodeGraphSignature,
-    SpecDecodeInputTypeSpec,
-)
-from max.pipelines.speculative.unified_graph_ops import (
-    accept_and_pick_next_tokens,
-    apply_overlap_bitmask,
-    shift_corrected_tokens,
-)
+from max.graph import TensorValue
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.pipelines.speculative.driver import SequentialDriver
+from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from typing_extensions import override
 
 from ..eagle_llama3.eagle_llama3 import EagleLlama3
 from ..llama3.llama3 import Llama3
 from .model_config import UnifiedEagleLlama3Config
+from .spec_adapters import EagleLlama3Proposer, Llama3Target
+
+__all__ = ["UnifiedEagleLlama3"]
 
 
-@dataclass
-class UnifiedEagleLlama3Values:
-    tokens: TensorValue
-    input_row_offsets: TensorValue
-    draft_tokens: TensorValue
-    return_n_logits: TensorValue
-    kv_collection: PagedCacheValues
-    draft_kv_collection: PagedCacheValues
-    seed: TensorValue
-    temperature: TensorValue
-    top_k: TensorValue
-    max_k: TensorValue
-    top_p: TensorValue
-    min_top_p: TensorValue
-    pinned_bitmask: TensorValue | None = None
-    """Pinned-host bitmask for constrained decoding.
+class UnifiedEagleLlama3(SequentialDriver[TensorValue]):
+    """Fused Llama3 target + EAGLE draft on a single device."""
 
-    Shape: ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
-    Position i contains the valid-token mask given the FSM state after
-    consuming draft[0:i-1]; position ``num_speculative_tokens`` is for
-    the bonus token. Read by an in-graph H2D into
-    :attr:`device_bitmask_scratch` after the ``mo.wait_host_value_with_dep``
-    op observes the host callback's release-store of the completion
-    flag. ``None`` when structured output is disabled (graph compiled
-    without the bitmask triple).
-    """
-
-    wait_payload: BufferValue | None = None
-    """CPU ``int64[2]`` payload consumed by
-    ``mo.wait_host_value_with_dep`` (``[CompletionFlag._unsafe_ptr,
-    1]``). Owned by :class:`StructuredOutputOverlapState`."""
-
-    device_bitmask_scratch: BufferValue | None = None
-    """Device scratch buffer that receives the in-graph H2D from
-    :attr:`pinned_bitmask`; the acceptance sampler reads from it."""
-
-
-class UnifiedEagleLlama3(SpecDecodeGraphSignature, Module):
-    """Fused nn.Module: merge + target forward + greedy rejection + shift + draft."""
+    target: Llama3
+    draft: EagleLlama3
 
     def __init__(self, config: UnifiedEagleLlama3Config) -> None:
-        super().__init__()
-
-        self.config = config
-        num_draft_steps = config.speculative_config.num_speculative_tokens
-        # Unset resolves to the eagle default at SpeculativeConfig
-        # construction.
-        assert num_draft_steps is not None
-        self.num_draft_steps = num_draft_steps
-        self.acceptance_sampler = AcceptanceSampler(
-            synthetic_acceptance_rate=config.speculative_config.synthetic_acceptance_rate,
-            num_draft_steps=self.num_draft_steps,
-            use_stochastic=True,
-        )
-        self.num_devices = 1
-
         # TODO: support distributed llama3 model
         if len(config.target.devices) != 1:
             raise ValueError("UnifiedEagleLlama3 only supports a single device")
 
-        self.target = Llama3(config.target)
-        self.draft = EagleLlama3(config.draft)
-        self.merger = RaggedTokenMerger(config.target.devices[0])
-
-    def _unflatten_graph_inputs(
-        self,
-        inputs: Sequence[Value[Any]],
-    ) -> UnifiedEagleLlama3Values:
-        graph_inputs = self.decode_inputs(inputs)
-        return UnifiedEagleLlama3Values(
-            tokens=graph_inputs.tokens,
-            input_row_offsets=graph_inputs.input_row_offsets,
-            draft_tokens=graph_inputs.draft_tokens,
-            return_n_logits=graph_inputs.return_n_logits,
-            kv_collection=graph_inputs.kv("target")[0],
-            draft_kv_collection=graph_inputs.kv("draft")[0],
-            seed=graph_inputs.seed,
-            temperature=graph_inputs.temperature,
-            top_k=graph_inputs.top_k,
-            max_k=graph_inputs.max_k,
-            top_p=graph_inputs.top_p,
-            min_top_p=graph_inputs.min_top_p,
-            pinned_bitmask=graph_inputs.pinned_bitmask,
-            wait_payload=graph_inputs.wait_payload,
-            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        target = Llama3(config.target)
+        draft = EagleLlama3(config.draft)
+        super().__init__(
+            Llama3Target(target),
+            EagleLlama3Proposer(draft, config.draft.hidden_size),
+            target_model=target,
+            draft_model=draft,
+            input_spec=SpecDecodeInputTypeSpec(
+                devices=config.target.devices,
+                distributed=False,
+            ),
+            speculative_config=config.speculative_config,
+            enable_structured_output=config.enable_structured_output,
         )
-
-    @override
-    @property
-    def input_spec(self) -> SpecDecodeInputTypeSpec:
-        """Single-device EAGLE graph, bitmask triple when enabled."""
-        return SpecDecodeInputTypeSpec(
-            devices=self.config.target.devices,
-            distributed=False,
-            enable_structured_output=self.config.enable_structured_output,
-        )
+        self.config = config
 
     @override
     @property
@@ -164,231 +63,4 @@ class UnifiedEagleLlama3(SpecDecodeGraphSignature, Module):
                 "target": self.config.target.kv_params,
                 "draft": self.config.draft.kv_params,
             }
-        )
-
-    def __call__(
-        self,
-        inputs: UnifiedEagleLlama3Values,
-    ) -> tuple[TensorValue, ...]:
-        # Notation:
-        #   B   = batch_size
-        #   S   = total_seq_len   (ragged sum of prompt lengths)
-        #   K   = num_draft_tokens_to_verify (K is either 0 or num_speculative_tokens)
-        #   V   = vocab_size
-        #   H   = hidden_size
-        #
-        # inputs.tokens           : [S]
-        # inputs.input_row_offsets: [B+1]
-        # inputs.draft_tokens     : [B, K]
-        # inputs.return_n_logits  : [1] (CPU)
-        tokens = inputs.tokens
-        input_row_offsets = inputs.input_row_offsets
-        draft_tokens = inputs.draft_tokens
-        return_n_logits = inputs.return_n_logits
-        kv_collection = inputs.kv_collection
-        draft_kv_collection = inputs.draft_kv_collection
-
-        device = tokens.device
-        graph = Graph.current
-
-        # --- Target step: verify the draft tokens from the previous round ---
-        with graph.profile_scope(
-            "target_forward", color=ProfileScopeColor.ORANGE
-        ):
-            # merged_tokens : [S+B*K]
-            # merged_offsets: [B+1]
-            merged_tokens, merged_offsets = self.merger(
-                tokens, input_row_offsets, draft_tokens
-            )
-            # Rebind to clean symbolic dims so downstream reshapes in
-            # Llama3's attention layers can simplify element counts.
-            merged_tokens = merged_tokens.rebind(["merged_seq_len"])
-            merged_offsets = merged_offsets.rebind(["input_row_offsets_len"])
-
-            target_outputs = self.target(
-                merged_tokens,
-                kv_collection,
-                return_n_logits,
-                merged_offsets,
-            )
-            # logits       : [B*(K+1), V] (K+1 logits per request)
-            # hidden_states: [S+B*K, H]. ``extract_hs`` flattens per-device
-            # hs into positional tuple elements; single-device here so the
-            # hs is at index 3.
-            logits = target_outputs[1]
-            hidden_states = target_outputs[3]
-
-            hidden_dim = hidden_states.shape[1]
-
-        # --- Accept/reject the draft tokens and sample the next token ---
-        with graph.profile_scope(
-            "verify_and_sample", color=ProfileScopeColor.ORANGE
-        ):
-            effective_bitmasks = apply_overlap_bitmask(
-                inputs.pinned_bitmask,
-                inputs.wait_payload,
-                inputs.device_bitmask_scratch,
-                num_steps=draft_tokens.shape[1],
-                device=device,
-            )
-
-            # num_accepted_draft_tokens: [B] (index of first rejected step, 0..K)
-            # recovered                : [B, K]  (target argmax at each draft position)
-            # bonus                    : [B, 1]  (target argmax at the +1 position)
-            seed_scalar = inputs.seed[0]
-            num_accepted_draft_tokens, recovered, bonus, next_tokens = (
-                accept_and_pick_next_tokens(
-                    self.acceptance_sampler,
-                    draft_tokens,
-                    logits,
-                    seed=seed_scalar,
-                    temperature=inputs.temperature,
-                    top_k=inputs.top_k,
-                    max_k=inputs.max_k,
-                    top_p=inputs.top_p,
-                    min_top_p=inputs.min_top_p,
-                    token_bitmasks=effective_bitmasks,
-                )
-            )
-
-        # --- Draft steps: generate the next round's speculative tokens ---
-        with graph.profile_scope(
-            "draft_forward", color=ProfileScopeColor.ORANGE
-        ):
-            num_draft_sentinel_gpu = _shape_to_scalar(
-                draft_tokens.shape[1], device
-            )
-
-            shifted_corrected = shift_corrected_tokens(
-                self.merger, tokens, input_row_offsets, recovered, bonus
-            )
-
-            # --- Draft step 0 ---
-            with graph.profile_scope("draft_step_0"):
-                # Hack the return_hidden_states, return_logits and reset it to
-                # match the target model.
-                self.draft.return_hidden_states = ReturnHiddenStates.ALL
-                self.draft.return_logits = ReturnLogits.VARIABLE
-                draft_outputs = self.draft(
-                    shifted_corrected,  # [S+B*K]
-                    draft_kv_collection,
-                    return_n_logits,
-                    merged_offsets,  # [B+1]
-                    hidden_states,  # [S+B*K, H]
-                )
-                self.draft.return_hidden_states = ReturnHiddenStates.LAST
-                self.draft.return_logits = ReturnLogits.LAST_TOKEN
-
-                # logits       : [B*(K+1), V] (K+1 logits per request)
-                # hidden_states: [S+B*K, H] (single-device, single TensorValue).
-                logits = draft_outputs[1]
-                hs = draft_outputs[3]
-
-                last_idx = merged_offsets[1:] - 1
-                last_accepted_idx = (
-                    ops.rebind(last_idx, ["batch_size"])
-                    - num_draft_sentinel_gpu.broadcast_to(["batch_size"])
-                    + num_accepted_draft_tokens
-                )
-                draft_hs = ops.gather(hs, last_accepted_idx, axis=0)
-
-                # Sample the first draft token
-                logits = _reshape_target_logits(logits)
-                # tokens: [B, K+1]
-                tokens = ops.squeeze(ops.argmax(logits, axis=-1), axis=-1)
-
-                next_draft_tokens = ops.gather_nd(
-                    tokens,
-                    ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
-                    batch_dims=1,
-                )
-
-            # Compute the new kv cache collection
-            prev_cache_lengths = ops.rebind(
-                draft_kv_collection.cache_lengths, ["batch_size"]
-            )
-            input_lengths = input_row_offsets[1:] - input_row_offsets[:-1]
-            cache_lengths = (
-                prev_cache_lengths
-                + ops.rebind(input_lengths, ["batch_size"])
-                + num_accepted_draft_tokens.cast(DType.uint32)
-            )
-
-            # Prepare the new input_row_offsets (all reqs have 1 token)
-            input_row_offsets = ops.range(
-                start=0,
-                stop=input_row_offsets.shape[0],
-                out_dim="input_row_offsets_len",
-                device=device,
-                dtype=DType.uint32,
-            )
-
-            one = ops.constant(1, DType.uint32, DeviceRef.CPU()).broadcast_to(
-                [1]
-            )
-
-            # Set up the max cache length for the next step.
-            # Assume that all tokens are accepted in this calculation.
-            # Confusingly max_cache_length != max(cache_lengths). Instead
-            # max_cache_length is more like max_total_seq_len including
-            # cached and input tokens.
-            orig_max_cache_length = draft_kv_collection.max_cache_length
-            max_cache_length = orig_max_cache_length + 1
-
-            # draft_return_n_logits: [1] (CPU)
-            draft_return_n_logits = ops.constant(
-                1, DType.int64, DeviceRef.CPU()
-            ).broadcast_to([1])
-
-            draft_kv_collection = replace(
-                draft_kv_collection,
-                max_prompt_length=one,
-                max_cache_length=orig_max_cache_length,
-                attention_dispatch_metadata=draft_kv_collection.draft_attention_dispatch_metadata,
-            )
-
-            # --- Draft steps 1..N-1 ---
-            all_draft_tokens = [next_draft_tokens]
-            for i in range(1, self.num_draft_steps):
-                with graph.profile_scope(f"draft_step_{i}"):
-                    next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
-                    draft_hs = draft_hs.rebind(["batch_size", hidden_dim])
-
-                    draft_kv_collection = replace(
-                        draft_kv_collection, cache_lengths=cache_lengths
-                    )
-
-                    draft_outputs = self.draft(
-                        next_draft_tokens,
-                        draft_kv_collection,
-                        draft_return_n_logits,
-                        input_row_offsets,
-                        draft_hs,
-                    )
-                    logits = draft_outputs[0]
-                    draft_hs = draft_outputs[1]
-
-                    next_draft_tokens = ops.argmax(logits, axis=-1).reshape(
-                        [-1]
-                    )
-
-                    # Store the new tokens for this step
-                    all_draft_tokens.append(
-                        ops.rebind(next_draft_tokens, ["batch_size"])
-                    )
-
-                    # Increment cache length for the next step
-                    cache_lengths = cache_lengths + 1
-                    max_cache_length = max_cache_length + 1
-
-            # next_draft_tokens: [B, num_draft_steps]
-            if len(all_draft_tokens) > 1:
-                next_draft_tokens = ops.stack(all_draft_tokens, axis=-1)
-            else:
-                next_draft_tokens = ops.unsqueeze(all_draft_tokens[0], -1)
-
-        return (
-            num_accepted_draft_tokens,  # [B]
-            next_tokens,  # [B]
-            next_draft_tokens,  # [B, num_draft_steps]
         )

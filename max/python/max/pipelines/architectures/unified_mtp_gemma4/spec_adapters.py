@@ -121,7 +121,7 @@ class Gemma4MTPProposer:
             return_n_logits=batch.return_n_logits,
             input_row_offsets=batch.query_offsets_per_dev,
             kv_input_row_offsets=batch.merged_offsets_per_dev,
-            q_max_seq_len=_host_q_max_seq_len(batch.host_query_offsets),
+            q_max_seq_len=_host_q_max_seq_len(batch.dist.host_query_offsets),
         )
         self.draft.return_hidden_states = self.step_hidden_mode
         self.draft.return_logits = ReturnLogits.LAST_TOKEN

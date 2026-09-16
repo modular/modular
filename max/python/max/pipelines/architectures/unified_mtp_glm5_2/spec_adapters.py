@@ -63,8 +63,8 @@ class Glm5_2Target:
             # ``DeepseekV3_2.__call__`` broadcasts internally, so this target
             # takes the merged tensor rather than the per-device list.
             batch.merged_offsets,
-            batch.host_merged_offsets,
-            batch.data_parallel_splits,
+            batch.dist.host_merged_offsets,
+            batch.dist.data_parallel_splits,
             batch.batch_context_lengths,
             batch.ep_inputs,
         )
@@ -122,8 +122,8 @@ class Glm5_2MTPProposer:
             batch.passthrough_kv[INDEXER_DRAFT_KV],
             batch.return_n_logits,
             batch.query_offsets_per_dev,
-            batch.host_query_offsets,
-            batch.data_parallel_splits,
+            batch.dist.host_query_offsets,
+            batch.dist.data_parallel_splits,
             batch.batch_context_lengths,
             batch.ep_inputs,
             prev_topk_indices=None,
@@ -159,8 +159,8 @@ class Glm5_2MTPProposer:
             batch.passthrough_kv[INDEXER_DRAFT_KV],
             batch.return_n_logits,
             batch.query_offsets_per_dev,
-            batch.host_query_offsets,
-            batch.data_parallel_splits,
+            batch.dist.host_query_offsets,
+            batch.dist.data_parallel_splits,
             batch.batch_context_lengths,
             batch.ep_inputs,
             prev_topk_indices=draft_input.reuse,

@@ -69,6 +69,7 @@ from .spec_target import SpecDecodeTarget
 from .unified_graph_ops import (
     accept_and_pick_next_tokens,
     apply_overlap_bitmask,
+    broadcast_per_device,
     gather_accepted_hidden_states,
     merge_tokens_and_host_offsets,
     shift_corrected_tokens,
@@ -77,6 +78,7 @@ from .unified_graph_ops import (
 __all__ = [
     "CarryDimNames",
     "DecodeKVSwap",
+    "DistributedInputs",
     "DraftCache",
     "DraftStepInput",
     "Proposed",
@@ -85,6 +87,26 @@ __all__ = [
     "SequentialDriver",
     "SequentialProposer",
 ]
+
+
+@dataclass(frozen=True)
+class DistributedInputs:
+    """The CPU-side inputs only a ``distributed=True`` signature declares.
+
+    They arrive together or not at all, and a model that reads one reads all
+    of them: the host offset mirrors let a sharded model size its collectives
+    without waiting on the device, and the splits say which rows each replica
+    owns. Grouping them is what lets a single-device graph -- the unified
+    EAGLE and DFlash ones -- run the same driver while declaring none.
+    """
+
+    host_input_row_offsets: TensorValue
+    host_merged_offsets: TensorValue
+    """CPU mirror of :attr:`SequentialBatch.merged_offsets`."""
+    host_query_offsets: TensorValue
+    """CPU mirror of :attr:`SequentialBatch.query_offsets_per_dev`."""
+    data_parallel_splits: TensorValue
+    """Per-replica batch boundaries."""
 
 
 @dataclass(frozen=True)
@@ -120,8 +142,8 @@ class SequentialBatch:
     a RoPE position rather than a write pointer and the collections keep the
     lengths they came in with."""
     return_n_logits: TensorValue
-    host_input_row_offsets: TensorValue
-    data_parallel_splits: TensorValue
+    distributed: DistributedInputs | None
+    """The distributed-only inputs, ``None`` on a single-device graph."""
     batch_context_lengths: list[TensorValue]
     ep_inputs: list[Value[Any]] | None
     devices: Sequence[DeviceRef]
@@ -138,7 +160,6 @@ class SequentialBatch:
 
     merged_tokens: TensorValue
     merged_offsets: TensorValue
-    host_merged_offsets: TensorValue
     merged_offsets_per_dev: list[TensorValue]
     """The verify window's offsets, on every device. Stable across the loop."""
 
@@ -149,8 +170,35 @@ class SequentialBatch:
     sequence; a one-token-per-request ramp for steps 1..K-1. A draft that
     cross-attends into the target's cache needs both these and the stable
     :attr:`merged_offsets_per_dev`, which is why they are separate fields."""
-    host_query_offsets: TensorValue
-    """CPU mirror of :attr:`query_offsets_per_dev`."""
+
+    extra: Mapping[str, Any]
+    """Graph inputs the driver carries but never reads, keyed by the model.
+
+    A model whose signature declares inputs outside the canonical set reaches
+    them from its adapters through here, rather than the driver growing a
+    field per model for values none of its phases understand."""
+
+    num_accepted: TensorValue | None
+    """How many draft tokens each request accepted, ``None`` before the accept.
+
+    Set for the whole propose phase, so a draft can derive per-step state from
+    the position it continues from, without the driver knowing what that
+    state is."""
+
+    @property
+    def dist(self) -> DistributedInputs:
+        """:attr:`distributed`, for a model that requires it.
+
+        A sharded target or draft cannot run without the host mirrors and the
+        splits, so reaching for them on a single-device graph is a wiring
+        mistake rather than something to fall back from.
+        """
+        if self.distributed is None:
+            raise ValueError(
+                "this model reads the distributed spec-decode inputs, but its"
+                " graph signature declares none (distributed=False)"
+            )
+        return self.distributed
 
     @property
     def n_devs(self) -> int:
@@ -200,13 +248,23 @@ class Proposed:
     consumes.
     """
 
-    logits: TensorValue
+    logits: TensorValue | None
+    """Logits over this call's query, ``None`` only alongside :attr:`token`."""
     hidden: list[TensorValue]
     reuse: list[TensorValue] = field(default_factory=list)
     """Per-device work step 0 did that every later step reuses unchanged.
 
     Read from the prefill only. A later step returns nothing here, because
     reusing step 0's result is the point."""
+
+    carry: list[TensorValue] = field(default_factory=list)
+    """Step 0's hidden state, already gathered at each accepted position.
+
+    Empty for a draft that hands back its whole verified window and lets the
+    driver do the gather"""
+
+    token: TensorValue | None = None
+    """Step 0's proposed token, for a draft that produced :attr:`carry`."""
 
 
 class DecodeKVSwap(Enum):
@@ -224,6 +282,12 @@ class DecodeKVSwap(Enum):
     MAX_PROMPT_LENGTH_ONE = "max_prompt_length_one"
     DRAFT_ATTENTION_DISPATCH_METADATA = "draft_attention_dispatch_metadata"
     DRAFT_MLA_NUM_PARTITIONS = "draft_mla_num_partitions"
+
+    ZERO_CACHE_LENGTHS = "zero_cache_lengths"
+    """Start each step's window at zero: no past to attend over.
+
+    Applied by the driver for :attr:`DraftCache.PER_DEPTH` rather than
+    declared, since it only ever means that."""
 
 
 @dataclass(frozen=True)
@@ -250,8 +314,11 @@ class ReuseSpec:
 class CarryDimNames:
     """How the driver names the carried hidden state's batch dim per step."""
 
-    prefix: str
-    """Names the carry dims ``{prefix}{step}_batch``."""
+    prefix: str = ""
+    """Names the carry dims ``{prefix}{step}_batch``.
+
+    Empty keeps the batch's own ``batch_size`` dim, which is what a draft
+    whose step output is already batch-shaped wants."""
     per_device: bool = False
     """Whether the name also carries the device index.
 
@@ -276,6 +343,13 @@ class DraftCache(Enum):
     reaching the draft as :attr:`SequentialBatch.draft_cache_lengths` rather
     than being substituted into the collections, which would lengthen the
     window it attends over."""
+    PER_DEPTH = "per_depth"
+    """Each depth owns a cache and writes a single token into it.
+
+    A step's window therefore starts empty rather than extending the one
+    before it, so the driver zeroes the lengths instead of advancing them.
+    Declaring the ownership is what selects that; a draft cannot ask for the
+    zeroing and the advance at once."""
 
 
 class SequentialProposer(Protocol[_TargetHiddenT]):
@@ -342,6 +416,7 @@ class SequentialDriver(
         speculative_config: SpeculativeConfig | None = None,
         enable_structured_output: bool = False,
         use_greedy_acceptance: bool = False,
+        num_draft_steps: int | None = None,
         per_row_acceptance_seed: bool = False,
         draft_proposal: Literal["argmax", "sampled"] = "argmax",
         vocab_size: int | None = None,
@@ -382,11 +457,18 @@ class SequentialDriver(
                 f"{self.data_parallel_degree}. Set"
                 " CarryDimNames(per_device=True)."
             )
+
+        # A draft whose depth count comes from the checkpoint passes it
+        # explicitly.
         self.num_draft_steps = (
-            speculative_config.num_speculative_tokens
-            if speculative_config is not None
-            and speculative_config.num_speculative_tokens is not None
-            else 1
+            num_draft_steps
+            if num_draft_steps is not None
+            else (
+                speculative_config.num_speculative_tokens
+                if speculative_config is not None
+                and speculative_config.num_speculative_tokens is not None
+                else 1
+            )
         )
 
         if use_greedy_acceptance and speculative_config is not None:
@@ -468,12 +550,13 @@ class SequentialDriver(
         tokens: TensorValue,
         input_row_offsets: TensorValue,
         draft_tokens: TensorValue,
-        signal_buffers: list[BufferValue],
+        *,
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
-        host_input_row_offsets: TensorValue,
-        data_parallel_splits: TensorValue,
-        batch_context_lengths: list[TensorValue],
+        signal_buffers: list[BufferValue] | None = None,
+        host_input_row_offsets: TensorValue | None = None,
+        data_parallel_splits: TensorValue | None = None,
+        batch_context_lengths: list[TensorValue] | None = None,
         seed: TensorValue,
         temperature: TensorValue,
         top_k: TensorValue,
@@ -489,6 +572,7 @@ class SequentialDriver(
         pinned_bitmask: TensorValue | None = None,
         wait_payload: BufferValue | None = None,
         device_bitmask_scratch: BufferValue | None = None,
+        extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Runs one spec-decode iteration: verify K drafts, propose K more.
@@ -499,11 +583,13 @@ class SequentialDriver(
             input_row_offsets: ``[batch + 1]`` exclusive prefix sum of the
                 per-request sequence lengths, on device 0.
             draft_tokens: ``[batch, K]`` proposals from the previous iteration.
-            signal_buffers: One buffer per device for collective signaling.
             kv_collections: Per-device target caches.
             return_n_logits: How many tokens of logits the target returns.
+            signal_buffers: One buffer per device for collective signaling;
+                None on a single-device graph, which declares none.
             host_input_row_offsets: CPU mirror of ``input_row_offsets``, used
-                to compute the merged offsets without a device sync.
+                to compute the merged offsets without a device sync. None
+                unless the signature is distributed, along with the two below.
             data_parallel_splits: Per-replica batch boundaries, on CPU.
             batch_context_lengths: Per-device cache-length tensors.
             seed: Per-row RNG seed for the acceptance sampler.
@@ -523,6 +609,8 @@ class SequentialDriver(
             pinned_bitmask: Structured-output bitmask staged on the host.
             wait_payload: Host-side gate for the bitmask transfer.
             device_bitmask_scratch: Device buffer the bitmask lands in.
+            extra: This model's own graph inputs, reaching its adapters
+                through :attr:`SequentialBatch.extra` untouched.
             draft_probs_full: ``[batch, K, vocab_size]`` distributions the
                 previous iteration's draft drew its proposals from. Required
                 iff the driver was built with ``draft_proposal="sampled"``,
@@ -542,6 +630,7 @@ class SequentialDriver(
         with Graph.current.profile_scope(
             "target_forward", color=ProfileScopeColor.ORANGE
         ):
+            signals = signal_buffers or []
             merged_tokens, merged_offsets, host_merged_offsets = (
                 merge_tokens_and_host_offsets(
                     self.merger,
@@ -552,11 +641,29 @@ class SequentialDriver(
                 )
             )
 
+            distributed: DistributedInputs | None = None
+            if self._input_spec.distributed:
+                if (
+                    host_input_row_offsets is None
+                    or data_parallel_splits is None
+                ):
+                    raise ValueError(
+                        "a distributed spec-decode graph must pass"
+                        " host_input_row_offsets and data_parallel_splits"
+                    )
+                assert host_merged_offsets is not None
+                distributed = DistributedInputs(
+                    host_input_row_offsets=host_input_row_offsets,
+                    host_merged_offsets=host_merged_offsets,
+                    host_query_offsets=host_merged_offsets,
+                    data_parallel_splits=data_parallel_splits,
+                )
+
             # Broadcast merged_offsets once and reuse the per-device list for
             # target, draft step 0 and the accept-position gather, rather than
             # each running the broadcast itself.
-            merged_offsets_per_dev = ops.distributed_broadcast(
-                merged_offsets, signal_buffers
+            merged_offsets_per_dev = broadcast_per_device(
+                merged_offsets, signals, len(self.devices)
             )
 
             assert draft_kv_collections is not None
@@ -564,7 +671,7 @@ class SequentialDriver(
                 tokens=tokens,
                 input_row_offsets=input_row_offsets,
                 draft_tokens=draft_tokens,
-                signal_buffers=signal_buffers,
+                signal_buffers=signals,
                 kv_collections=kv_collections,
                 draft_kv_collections=draft_kv_collections,
                 passthrough_kv=passthrough_kv or {},
@@ -572,20 +679,19 @@ class SequentialDriver(
                     kv.cache_lengths for kv in draft_kv_collections
                 ],
                 return_n_logits=return_n_logits,
-                host_input_row_offsets=host_input_row_offsets,
-                data_parallel_splits=data_parallel_splits,
-                batch_context_lengths=batch_context_lengths,
+                distributed=distributed,
+                batch_context_lengths=batch_context_lengths or [],
                 ep_inputs=ep_inputs,
                 devices=self.devices,
                 data_parallel_degree=self.data_parallel_degree,
                 merged_tokens=merged_tokens,
                 merged_offsets=merged_offsets,
-                host_merged_offsets=host_merged_offsets,
                 merged_offsets_per_dev=merged_offsets_per_dev,
                 query_offsets_per_dev=merged_offsets_per_dev,
-                host_query_offsets=host_merged_offsets,
                 vision_embeddings=vision_embeddings or [],
                 vision_scatter_indices=vision_scatter_indices or [],
+                extra=extra or {},
+                num_accepted=None,
             )
 
             verified = self._target.verify(batch)
@@ -757,59 +863,82 @@ class SequentialDriver(
             and the matching ``[batch_size, vocab_size]`` distributions under
             ``draft_proposal="sampled"`` (``None`` otherwise).
         """
+        batch = replace(batch, num_accepted=num_accepted)
         sampled = self._draft_proposal == "sampled"
         with Graph.current.profile_scope("draft_step_0"):
             prefill = self._proposer.prefill(
                 batch, shifted_corrected, target_hidden
             )
 
-            draft_logits_3d = _reshape_target_logits(prefill.logits)
-            gather_idx = ops.unsqueeze(num_accepted, axis=-1)
-            all_draft_dists: list[TensorValue] | None = None
-            if sampled:
-                assert self._vocab_size is not None
-                # Gather the accepted row before sampling, so only [batch,
-                # vocab] reaches the kernel rather than all batch * (K+1) rows.
-                # Token and distribution come out of one call, so they cannot
-                # disagree.
-                accepted_logits = ops.gather_nd(
-                    draft_logits_3d, gather_idx, batch_dims=1
-                ).rebind(["batch_size", self._vocab_size])
-                next_draft_tokens, next_draft_dist = (
-                    topk_fused_sampling_with_dist(
-                        accepted_logits,
-                        top_k=top_k,
-                        temperature=temperature,
-                        top_p=top_p,
-                        seed=seed,
-                    )
-                )
-                next_draft_tokens = next_draft_tokens.reshape([-1])
-                all_draft_dists = [
-                    ops.rebind(
-                        next_draft_dist, ["batch_size", self._vocab_size]
-                    )
-                ]
-            else:
-                draft_argmax = ops.squeeze(
-                    ops.argmax(draft_logits_3d, axis=-1), axis=-1
-                )
-                next_draft_tokens = ops.gather_nd(
-                    draft_argmax, gather_idx, batch_dims=1
-                ).reshape([-1])
-
-            carry_hidden = gather_accepted_hidden_states(
-                prefill.hidden,
-                merged_offsets=batch.merged_offsets,
-                merged_offsets_per_dev=batch.merged_offsets_per_dev,
-                num_accepted=num_accepted,
-                num_draft_tokens=batch.num_draft_tokens,
-                data_parallel_degree=self.data_parallel_degree,
-                data_parallel_splits=batch.data_parallel_splits,
-                signal_buffers=batch.signal_buffers,
-                device=batch.device0,
-                split_prefix=self._proposer.split_prefix,
+            splits = (
+                batch.distributed.data_parallel_splits
+                if batch.distributed is not None
+                else None
             )
+
+            all_draft_dists: list[TensorValue] | None = None
+            if prefill.token is not None:
+                if sampled:
+                    raise ValueError(
+                        f"{type(self._proposer).__name__} gathers its own"
+                        " step-0 token, so the driver never sees the"
+                        " distribution it came from;"
+                        " draft_proposal='sampled' needs a prefill that"
+                        " returns logits over its window"
+                    )
+                next_draft_tokens = prefill.token
+                carry_hidden = prefill.carry
+            else:
+                assert prefill.logits is not None, (
+                    "a prefill must return either logits over its window or a"
+                    " gathered carry plus the token read off it"
+                )
+                draft_logits_3d = _reshape_target_logits(prefill.logits)
+                gather_idx = ops.unsqueeze(num_accepted, axis=-1)
+                if sampled:
+                    assert self._vocab_size is not None
+                    # Gather the accepted row before sampling, so only [batch,
+                    # vocab] reaches the kernel rather than all batch * (K+1)
+                    # rows. Token and distribution come out of one call, so
+                    # they cannot disagree.
+                    accepted_logits = ops.gather_nd(
+                        draft_logits_3d, gather_idx, batch_dims=1
+                    ).rebind(["batch_size", self._vocab_size])
+                    next_draft_tokens, next_draft_dist = (
+                        topk_fused_sampling_with_dist(
+                            accepted_logits,
+                            top_k=top_k,
+                            temperature=temperature,
+                            top_p=top_p,
+                            seed=seed,
+                        )
+                    )
+                    next_draft_tokens = next_draft_tokens.reshape([-1])
+                    all_draft_dists = [
+                        ops.rebind(
+                            next_draft_dist,
+                            ["batch_size", self._vocab_size],
+                        )
+                    ]
+                else:
+                    draft_argmax = ops.squeeze(
+                        ops.argmax(draft_logits_3d, axis=-1), axis=-1
+                    )
+                    next_draft_tokens = ops.gather_nd(
+                        draft_argmax, gather_idx, batch_dims=1
+                    ).reshape([-1])
+                carry_hidden = gather_accepted_hidden_states(
+                    prefill.hidden,
+                    merged_offsets=batch.merged_offsets,
+                    merged_offsets_per_dev=batch.merged_offsets_per_dev,
+                    num_accepted=num_accepted,
+                    num_draft_tokens=batch.num_draft_tokens,
+                    data_parallel_degree=self.data_parallel_degree,
+                    data_parallel_splits=splits,
+                    signal_buffers=batch.signal_buffers,
+                    device=batch.device0,
+                    split_prefix=self._proposer.split_prefix,
+                )
 
             # Gathered at the same accepted positions as the hidden carry.
             carry_reuse: list[TensorValue] = []
@@ -821,7 +950,7 @@ class SequentialDriver(
                     num_accepted=num_accepted,
                     num_draft_tokens=batch.num_draft_tokens,
                     data_parallel_degree=self.data_parallel_degree,
-                    data_parallel_splits=batch.data_parallel_splits,
+                    data_parallel_splits=splits,
                     signal_buffers=batch.signal_buffers,
                     device=batch.device0,
                     split_prefix=reuse_spec.split_prefix,
@@ -837,13 +966,29 @@ class SequentialDriver(
             input_lengths + num_accepted.cast(DType.int64)
         ).rebind(["batch_size"])
 
-        use_comm = len(self.devices) > 1
-        cache_lengths_per_dev = increment_cache_lengths_from_counts(
-            accepted_lengths,
-            batch.data_parallel_splits,
-            [kv.cache_lengths for kv in batch.draft_kv_collections],
-            batch.signal_buffers if use_comm else None,
-        )
+        if splits is not None:
+            use_comm = len(self.devices) > 1
+            cache_lengths_per_dev = increment_cache_lengths_from_counts(
+                accepted_lengths,
+                splits,
+                [kv.cache_lengths for kv in batch.draft_kv_collections],
+                batch.signal_buffers if use_comm else None,
+            )
+        else:
+            # Without splits every device holds the whole batch, so there is no
+            # local range to slice.
+            accepted_per_dev = broadcast_per_device(
+                accepted_lengths, batch.signal_buffers, len(self.devices)
+            )
+            cache_lengths_per_dev = [
+                kv.cache_lengths
+                + accepted.cast(kv.cache_lengths.dtype).rebind(
+                    kv.cache_lengths.shape
+                )
+                for kv, accepted in zip(
+                    batch.draft_kv_collections, accepted_per_dev, strict=True
+                )
+            ]
 
         draft_return_n_logits = ops.constant(
             1, DType.int64, DeviceRef.CPU()
@@ -858,15 +1003,22 @@ class SequentialDriver(
         )
         # Broadcast once so the draft can skip its own broadcast for every
         # step of the multi-step loop.
-        decode_offsets_per_dev = ops.distributed_broadcast(
-            decode_offsets, batch.signal_buffers
+        decode_offsets_per_dev = broadcast_per_device(
+            decode_offsets, batch.signal_buffers, len(self.devices)
         )
-        host_decode_offsets = ops.range(
-            start=0,
-            stop=batch.input_row_offsets.shape[0],
-            out_dim="input_row_offsets_len",
-            device=DeviceRef.CPU(),
-            dtype=DType.uint32,
+        decode_distributed = (
+            replace(
+                batch.distributed,
+                host_query_offsets=ops.range(
+                    start=0,
+                    stop=batch.input_row_offsets.shape[0],
+                    out_dim="input_row_offsets_len",
+                    device=DeviceRef.CPU(),
+                    dtype=DType.uint32,
+                ),
+            )
+            if batch.distributed is not None
+            else None
         )
 
         decode_kv = self._apply_decode_swaps(batch.draft_kv_collections)
@@ -900,7 +1052,7 @@ class SequentialDriver(
             return_n_logits=draft_return_n_logits,
             passthrough_kv=decode_passthrough_kv,
             query_offsets_per_dev=decode_offsets_per_dev,
-            host_query_offsets=host_decode_offsets,
+            distributed=decode_distributed,
         )
 
         batch_context_lengths = batch.batch_context_lengths
@@ -926,6 +1078,10 @@ class SequentialDriver(
 
                 proposed = self._proposer.step(step_batch, draft_input, index)
 
+                assert proposed.logits is not None, (
+                    "a draft step must return logits; only the prefill may hand"
+                    " back a token instead"
+                )
                 if sampled:
                     assert self._vocab_size is not None
                     assert all_draft_dists is not None
@@ -958,7 +1114,7 @@ class SequentialDriver(
                 draft_input = DraftStepInput(
                     tokens=next_draft_tokens,
                     hidden=self._slice_step_hidden(
-                        proposed.hidden, index + 1, batch.data_parallel_splits
+                        proposed.hidden, index + 1, splits
                     ),
                     reuse=draft_input.reuse,
                 )
@@ -977,6 +1133,8 @@ class SequentialDriver(
     ) -> list[PagedCacheValues]:
         """Retarget the draft caches to a ``q = 1`` dispatch for the loop."""
         swaps = self._proposer.decode_swaps
+        if self._proposer.draft_cache is DraftCache.PER_DEPTH:
+            swaps = (*swaps, DecodeKVSwap.ZERO_CACHE_LENGTHS)
         if not swaps:
             return list(draft_kv_collections)
 
@@ -992,6 +1150,15 @@ class SequentialDriver(
                 )
             if DecodeKVSwap.DRAFT_MLA_NUM_PARTITIONS in swaps:
                 change["mla_num_partitions"] = kv.draft_mla_num_partitions
+            if DecodeKVSwap.ZERO_CACHE_LENGTHS in swaps:
+                change["cache_lengths"] = ops.broadcast_to(
+                    ops.constant(
+                        0,
+                        kv.cache_lengths.dtype,
+                        kv.cache_lengths.device,
+                    ),
+                    kv.cache_lengths.shape,
+                )
             return replace(kv, **change)
 
         return [swapped(kv) for kv in draft_kv_collections]
@@ -1029,6 +1196,8 @@ class SequentialDriver(
     def _carry_dim(self, index: int, device: int) -> str:
         """Name the carry's batch dim for one step on one device."""
         names = self._proposer.carry_dim_names
+        if not names.prefix:
+            return "batch_size"
         if not names.per_device:
             return f"{names.prefix}{index}_batch"
         return f"{names.prefix}{index}_batch_dev_{device}"
@@ -1037,7 +1206,7 @@ class SequentialDriver(
         self,
         hidden: list[TensorValue],
         next_index: int,
-        splits: TensorValue,
+        splits: TensorValue | None,
     ) -> list[TensorValue]:
         """Take each device's own rows out of a step's hidden output.
 
@@ -1061,6 +1230,7 @@ class SequentialDriver(
             # TP / single-device: each device already holds a full replica.
             return list(hidden)
 
+        assert splits is not None
         tp_degree = len(self.devices) // self.data_parallel_degree
         return [
             ops.slice_tensor(

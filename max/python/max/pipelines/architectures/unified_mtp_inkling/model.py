@@ -29,11 +29,7 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.modeling.types import RequestID
-from max.pipelines.speculative import (
-    DraftAliases,
-    decode_spec_decode_tail,
-    validate_draft_state_dict,
-)
+from max.pipelines.speculative import DraftAliases, validate_draft_state_dict
 from typing_extensions import override
 
 from ..inkling.batch_processor import InklingInputs
@@ -48,6 +44,19 @@ from ..inkling.state_cache import InklingConvStateCache
 from ..inkling.weight_adapters import VISION_PREFIX
 from .batch_processor import UnifiedMTPInklingBatchProcessor
 from .inkling_mtp import InklingMultiTokenPredictor
+from .spec_adapters import (
+    DRAFT_CONV_POOLS,
+    DRAFT_PRIMARY_KV,
+    HAS_INITIAL_STATE,
+    IMAGE_EMBEDDINGS,
+    IMAGE_INDICES,
+    POSITIONS,
+    SLOT_IDX,
+    TARGET_AUX_KV,
+    TARGET_CONV_POOLS,
+    TARGET_PRIMARY_KV,
+    split_kv_by_flavor,
+)
 from .unified_mtp_inkling import UnifiedMTPInkling
 
 
@@ -55,29 +64,33 @@ from .unified_mtp_inkling import UnifiedMTPInkling
 class UnifiedMTPInklingInputs(UnifiedSpecDecodeInputs, InklingInputs):
     """Inputs for the unified Inkling MTP graph."""
 
-    host_input_row_offsets: Buffer
     draft_conv_pools: list[Buffer]
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
-        prefix = (
+        canonical = (
             self.tokens,
             self.input_row_offsets,
-            self.positions,
-            self.host_input_row_offsets,
             self.return_n_logits,
-            self.image_embeddings,
-            self.image_indices,
             *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
+        )
+        # Inkling's own inputs trail the canonical tail; see
+        # ``UnifiedMTPInkling.input_types``.
+        trailing = (
+            self.positions,
+            self.image_embeddings,
+            self.image_indices,
             *self.slot_idx,
             *self.has_initial_state,
             *self.conv_pools,
             *self.draft_conv_pools,
         )
-        return prefix + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=True
+        return (
+            canonical
+            + self._spec_decode_tail_buffers(include_in_thinking_phase=True)
+            + trailing
         )
 
 
@@ -231,78 +244,71 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
         }
         kv_params = self.kv_params
         n_devs = len(self.devices)
-        num_signals = n_devs if n_devs > 1 else 0
 
         with Graph(
             "inkling_with_mtp_graph",
             input_types=nn_model.input_types(kv_params),
             module=module,
         ) as graph:
-            (
-                tokens,
-                input_row_offsets,
-                positions,
-                host_input_row_offsets,
-                return_n_logits,
-                image_embeddings,
-                image_indices,
-                *variadic,
-            ) = graph.inputs
-            variadic_iter = iter(variadic)
-            signal_buffers = [
-                next(variadic_iter).buffer for _ in range(num_signals)
-            ]
-            kv_tree = kv_params.unflatten_kv_inputs(variadic_iter)
+            graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
+            kv_tree = graph_inputs.kv_tree
             assert isinstance(kv_tree, Mapping)
             target_tree = kv_tree["target"]
             draft_tree = kv_tree["draft"]
             assert isinstance(target_tree, Mapping)
             assert isinstance(draft_tree, Mapping)
-            target_kv = kv_collections_by_key(target_tree)
-            draft_kv = kv_collections_by_key(draft_tree)
-            slot_idx = [next(variadic_iter).tensor for _ in range(n_devs)]
-            has_initial_state = [
-                next(variadic_iter).tensor for _ in range(n_devs)
-            ]
+            target_key, target_primary, target_aux = split_kv_by_flavor(
+                kv_collections_by_key(target_tree)
+            )
+            draft_key, draft_primary, draft_aux = split_kv_by_flavor(
+                kv_collections_by_key(draft_tree)
+            )
+
+            # Inkling's own inputs, in the order ``input_types`` appends them.
+            trailing = iter(graph_inputs.trailing)
+            positions = next(trailing).tensor
+            image_embeddings = next(trailing).tensor
+            image_indices = next(trailing).tensor
+            slot_idx = [next(trailing).tensor for _ in range(n_devs)]
+            has_initial_state = [next(trailing).tensor for _ in range(n_devs)]
             target_conv_pools = nn_model.target.conv_layout.take_pools(
-                variadic_iter, n_devs
+                trailing, n_devs
             )
             draft_conv_pools = nn_model.draft.conv_layout.take_pools(
-                variadic_iter, n_devs
+                trailing, n_devs
             )
-            # Inkling's head is its own shape, so only the tail is shared.
-            tail = decode_spec_decode_tail(variadic_iter, nn_model.input_spec)
-            # The spec sets ``include_in_thinking_phase``, so the tail
-            # always carries it; the field is optional only because the
-            # shared decode serves architectures that omit the input.
-            assert tail.in_thinking_phase is not None
 
             outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                positions=positions.tensor,
-                draft_tokens=tail.draft_tokens,
-                image_embeddings=image_embeddings.tensor,
-                image_indices=image_indices.tensor,
-                signal_buffers=signal_buffers,
-                target_kv=target_kv,
-                draft_kv=draft_kv,
-                return_n_logits=return_n_logits.tensor,
-                host_input_row_offsets=host_input_row_offsets.tensor,
-                slot_idx=slot_idx,
-                has_initial_state=has_initial_state,
-                target_conv_pools=target_conv_pools,
-                draft_conv_pools=draft_conv_pools,
-                seed=tail.seed,
-                temperature=tail.temperature,
-                top_k=tail.top_k,
-                max_k=tail.max_k,
-                top_p=tail.top_p,
-                min_top_p=tail.min_top_p,
-                in_thinking_phase=tail.in_thinking_phase,
-                pinned_bitmask=tail.pinned_bitmask,
-                wait_payload=tail.wait_payload,
-                device_bitmask_scratch=tail.device_bitmask_scratch,
+                graph_inputs.tokens,
+                graph_inputs.input_row_offsets,
+                graph_inputs.draft_tokens,
+                kv_collections=target_primary,
+                draft_kv_collections=draft_primary,
+                passthrough_kv=draft_aux,
+                return_n_logits=graph_inputs.return_n_logits,
+                signal_buffers=graph_inputs.signal_buffers,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+                extra={
+                    POSITIONS: positions,
+                    IMAGE_EMBEDDINGS: image_embeddings,
+                    IMAGE_INDICES: image_indices,
+                    SLOT_IDX: slot_idx,
+                    HAS_INITIAL_STATE: has_initial_state,
+                    TARGET_CONV_POOLS: target_conv_pools,
+                    DRAFT_CONV_POOLS: draft_conv_pools,
+                    TARGET_PRIMARY_KV: target_key,
+                    TARGET_AUX_KV: target_aux,
+                    DRAFT_PRIMARY_KV: draft_key,
+                },
             )
             graph.output(*outputs)
 
