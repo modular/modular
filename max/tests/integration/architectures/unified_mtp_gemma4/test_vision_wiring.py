@@ -44,6 +44,9 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.architectures.gemma4.context import Gemma4Context
+from max.pipelines.architectures.gemma4.model_config import (
+    Gemma4ForConditionalGenerationConfig,
+)
 from max.pipelines.architectures.unified_mtp_gemma4 import (
     unified_mtp_gemma4_arch,
 )
@@ -55,14 +58,12 @@ from max.pipelines.architectures.unified_mtp_gemma4.model import (
     UnifiedMTPGemma4Model,
 )
 from max.pipelines.architectures.unified_mtp_gemma4.unified_mtp_gemma4 import (
-    UnifiedMTPGemma4,
+    gemma4_mtp_input_spec,
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.context.context import TokenBuffer
 from max.pipelines.modeling.types import InputModality
-from max.pipelines.speculative.spec_input_types import (
-    build_spec_decode_input_types,
-)
+from max.pipelines.speculative import build_spec_decode_input_types
 
 _HIDDEN_SIZE = 128
 
@@ -162,25 +163,19 @@ def test_mtp_graph_declares_per_device_vision_inputs() -> None:
     n_devices = 2
     devices = [DeviceRef("gpu", i) for i in range(n_devices)]
 
-    # Duck-typed ``self`` exposing only what ``input_types`` reads; avoids
-    # constructing the full target + draft modules. Cast for the type checker
-    # since we deliberately pass a stand-in to the unbound method.
-    fake_self = cast(
-        UnifiedMTPGemma4,
+    # Duck-typed config exposing only what the spec reads.
+    config = cast(
+        Gemma4ForConditionalGenerationConfig,
         SimpleNamespace(
-            config=SimpleNamespace(
-                devices=devices,
-                text_config=SimpleNamespace(hidden_size=_HIDDEN_SIZE),
-            ),
-            enable_structured_output=False,
+            devices=devices,
+            text_config=SimpleNamespace(hidden_size=_HIDDEN_SIZE),
         ),
     )
     kv_params = MagicMock()
     kv_params.flattened_kv_inputs.return_value = []
 
-    # ``input_spec`` is a property, so reach it off the class dict.
     input_types = build_spec_decode_input_types(
-        vars(UnifiedMTPGemma4)["input_spec"].fget(fake_self),
+        gemma4_mtp_input_spec(config, enable_structured_output=False),
         kv_params=kv_params,
     )
 

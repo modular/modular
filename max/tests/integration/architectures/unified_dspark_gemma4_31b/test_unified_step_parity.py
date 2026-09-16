@@ -58,6 +58,9 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     PagedCacheValues,
 )
+from max.pipelines.architectures.gemma4.block_spec_adapters import (
+    SLIDING_KV,
+)
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
@@ -356,8 +359,29 @@ class _StepHarness:
             "unified_dspark_gemma4_31b_step_parity",
             input_types=nn_model.input_types(),
         ) as graph:
-            values = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(values)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "full_attention"),
+                passthrough_kv={
+                    SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+                },
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.in_thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
             assert len(outputs) == 3
             recorded = nn_model.recorded
             graph.output(

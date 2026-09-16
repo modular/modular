@@ -69,8 +69,9 @@ class SpecDecodeInputTypeSpec:
     enable_sampled_draft_proposal: bool = False
     """Declare the ``draft_probs_full`` input: the distribution the draft
     sampled its token from, which the acceptance test's residual subtracts and
-    reads ``q`` out of. Requires ``vocab_size``. Only the MiniMax-M3 unified
-    pipelines set this today."""
+    reads ``q`` out of. Requires ``vocab_size``. Set by the MiniMax-M3 unified
+    pipelines and, through :class:`SequentialDriver`, by any driver built with
+    ``draft_proposal="sampled"``."""
     vocab_size: int | None = None
     """Static vocabulary size, required by ``enable_sampled_draft_proposal``."""
 

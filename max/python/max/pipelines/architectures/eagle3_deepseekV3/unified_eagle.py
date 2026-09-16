@@ -14,9 +14,13 @@
 
 from __future__ import annotations
 
+from max.graph import TensorValue
 from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.speculative.config import SpeculativeConfig
-from max.pipelines.speculative.driver import SequentialDriver
+from max.pipelines.speculative.driver import (
+    CarryDimNames,
+    SequentialDriver,
+)
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
@@ -25,18 +29,18 @@ from ..deepseekV3.spec_adapters import DeepseekV3MLAProposer, DeepseekV3Target
 from .eagle3_draft import Eagle3DeepseekV3
 
 
-class Eagle3DeepseekV3Proposer(DeepseekV3MLAProposer):
+class Eagle3DeepseekV3Proposer(DeepseekV3MLAProposer[list[TensorValue]]):
     """The Eagle3 draft, proposing one token per step."""
 
     split_prefix = "eagle3"
-    carry_dim_prefix = "draft_step"
+    carry_dim_names = CarryDimNames(prefix="draft_step", per_device=True)
     # Steps 1..K run in decode mode (one token per batch element), where
     # ALL-hs == LAST-hs. ALL returns per-device hidden states directly,
     # avoiding the LAST path's allgather, and needs no per-replica slice.
     step_hidden_mode = ReturnHiddenStates.ALL
 
 
-class Eagle3DeepseekV3Unified(SequentialDriver):
+class Eagle3DeepseekV3Unified(SequentialDriver[list[TensorValue]]):
     """Fused nn.Module: merge + target forward + rejection + shift.
 
     The target returns concatenated hidden states from 3 intermediate layers

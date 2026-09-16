@@ -106,15 +106,17 @@ def _fake_pipeline_model(n_devices: int) -> Any:
 def _graph_input_types(
     n_devices: int, *, enable_structured_output: bool = False
 ) -> tuple[Any, ...]:
-    """The fused graph's declared input arity, from the real ``input_types``
-    with KV inputs zeroed out (matching the ``kv_cache_inputs=None`` model
-    inputs on the buffers side).
+    """The fused graph's declared input arity, with KV inputs zeroed out
+    (matching the ``kv_cache_inputs=None`` model inputs on the buffers side).
 
-    ``input_types`` reads only the target's device list, DP degree, hidden size,
-    EP manager and structured-output flag, so a duck-typed stand-in avoids
-    building the target + draft modules.
+    The module's own ``input_spec`` and ``ep_input_types`` read only the
+    target's device list, DP degree, hidden size, EP manager and
+    structured-output flag, so a duck-typed stand-in reaches both without
+    building the target + draft modules. Those two are the whole of what the
+    module contributes to its signature -- ``SpecDecodeGraphSignature`` builds
+    the rest, which is what this calls directly below.
     """
-    fake_self = cast(
+    stand_in = cast(
         UnifiedDflashKimiK25,
         SimpleNamespace(
             config=SimpleNamespace(
@@ -131,10 +133,11 @@ def _graph_input_types(
     kv_params = MagicMock()
     kv_params.flattened_kv_inputs.return_value = []
     # ``input_spec`` is a property, so reach it off the class dict.
+    input_spec = vars(UnifiedDflashKimiK25)["input_spec"].fget(stand_in)
     return build_spec_decode_input_types(
-        vars(UnifiedDflashKimiK25)["input_spec"].fget(fake_self),
+        input_spec,
         kv_params=kv_params,
-        ep_input_types=UnifiedDflashKimiK25.ep_input_types(fake_self),
+        ep_input_types=UnifiedDflashKimiK25.ep_input_types(stand_in),
     )
 
 

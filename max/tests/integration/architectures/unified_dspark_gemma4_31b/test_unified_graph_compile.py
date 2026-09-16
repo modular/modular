@@ -16,7 +16,7 @@ Builds the full merge -> target -> reject -> materialize -> block ->
 markov graph at REAL 31B dimensions (60-layer 5:1 sliding/full target with
 16 sliding + 4 global KV heads, 5-layer 16x256 draft, 262k/32k vocabs) with
 synthetic (zero) weights, and compiles it on GPU. Guards the
-graph-signature contract (`input_types` vs `_unflatten_graph_inputs` over
+graph-signature contract (`input_types` vs `decode_inputs` over
 the nested {target: {sliding, full}, draft} KV tree), the anchor-slot drop
 (block_size 8 -> 7 drafts), and the three-output spec-decode ABI.
 
@@ -39,6 +39,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.pipelines.architectures.gemma4.block_spec_adapters import (
+    SLIDING_KV,
+)
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
@@ -247,8 +250,29 @@ def test_unified_dspark_31b_graph_compiles(
         "unified_dspark_gemma4_31b_test",
         input_types=nn_model.input_types(),
     ) as graph:
-        values = nn_model._unflatten_graph_inputs(graph.inputs)
-        outputs = nn_model(values)
+        graph_inputs = nn_model.decode_inputs(graph.inputs)
+        outputs = nn_model(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            signal_buffers=graph_inputs.signal_buffers,
+            kv_collections=graph_inputs.kv("target", "full_attention"),
+            passthrough_kv={
+                SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+            },
+            draft_kv_collections=graph_inputs.kv("draft"),
+            return_n_logits=graph_inputs.return_n_logits,
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.in_thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        )
         assert len(outputs) == 3
         next_draft_tokens = outputs[2]
         # One draft per mask slot: the anchor slot is dropped.
@@ -296,8 +320,29 @@ def test_unified_dspark_31b_graph_stages_at_configured_k(
         f"unified_dspark_gemma4_31b_k{num_speculative_tokens}_test",
         input_types=nn_model.input_types(),
     ) as graph:
-        values = nn_model._unflatten_graph_inputs(graph.inputs)
-        outputs = nn_model(values)
+        graph_inputs = nn_model.decode_inputs(graph.inputs)
+        outputs = nn_model(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            signal_buffers=graph_inputs.signal_buffers,
+            kv_collections=graph_inputs.kv("target", "full_attention"),
+            passthrough_kv={
+                SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+            },
+            draft_kv_collections=graph_inputs.kv("draft"),
+            return_n_logits=graph_inputs.return_n_logits,
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.in_thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        )
         assert len(outputs) == 3
         next_draft_tokens = outputs[2]
         assert int(next_draft_tokens.shape[1]) == num_speculative_tokens
@@ -326,10 +371,31 @@ def test_unified_dspark_31b_graph_stages_with_structured_output() -> None:
         "unified_dspark_gemma4_31b_so_test",
         input_types=nn_model.input_types(),
     ) as graph:
-        values = nn_model._unflatten_graph_inputs(graph.inputs)
-        assert values.pinned_bitmask is not None
-        assert values.wait_payload is not None
-        assert values.device_bitmask_scratch is not None
-        outputs = nn_model(values)
+        graph_inputs = nn_model.decode_inputs(graph.inputs)
+        assert graph_inputs.pinned_bitmask is not None
+        assert graph_inputs.wait_payload is not None
+        assert graph_inputs.device_bitmask_scratch is not None
+        outputs = nn_model(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            signal_buffers=graph_inputs.signal_buffers,
+            kv_collections=graph_inputs.kv("target", "full_attention"),
+            passthrough_kv={
+                SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+            },
+            draft_kv_collections=graph_inputs.kv("draft"),
+            return_n_logits=graph_inputs.return_n_logits,
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.in_thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        )
         assert len(outputs) == 3
         graph.output(*outputs)

@@ -21,18 +21,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, TypeVar
+from typing import Generic, Protocol, TypeVar
 
 from max.graph import BufferType, TensorType, TensorValue
 
 __all__ = ["SpecDecodeTarget", "Verified"]
+
+_TargetHiddenT = TypeVar("_TargetHiddenT")
+"""The target's hidden-state payload, opaque to whichever driver carries it."""
 
 _BatchT = TypeVar("_BatchT", contravariant=True)
 """The driver's batch type. Contravariant: ``verify`` only consumes it."""
 
 
 @dataclass(frozen=True)
-class Verified:
+class Verified(Generic[_TargetHiddenT]):
     """What the target contributes: verification logits and hidden states.
 
     Naming the two results is the point. The target output tuple is
@@ -43,13 +46,13 @@ class Verified:
     """
 
     logits: TensorValue
-    hidden: list[TensorValue]
+    hidden: _TargetHiddenT
 
 
-class SpecDecodeTarget(Protocol[_BatchT]):
+class SpecDecodeTarget(Protocol[_BatchT, _TargetHiddenT]):
     """The target model's entry point and output layout."""
 
-    def verify(self, batch: _BatchT) -> Verified:
+    def verify(self, batch: _BatchT) -> Verified[_TargetHiddenT]:
         """Runs the target over the merged prompt + draft tokens."""
         ...
 

@@ -290,8 +290,21 @@ class UnifiedDflashLlama3Model(
             "unified_dflash_llama3",
             input_types=nn_model.input_types(),
         ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                kv_collections=graph_inputs.kv("target"),
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+            )
             graph.output(*outputs)
 
         return graph, weights_registry

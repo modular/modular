@@ -46,6 +46,7 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
+from ..gemma4.block_spec_adapters import SLIDING_KV
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..llama3.weight_adapters import _convert_safetensor_with_model_config
 from ..unified_eagle_llama3.weight_adapters import (
@@ -291,8 +292,29 @@ class UnifiedDflashGemma4_31BModel(
             "unified_dflash_gemma4_31b",
             input_types=nn_model.input_types(),
         ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "full_attention"),
+                passthrough_kv={
+                    SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+                },
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
             graph.output(*outputs)
 
         return graph, weights_registry

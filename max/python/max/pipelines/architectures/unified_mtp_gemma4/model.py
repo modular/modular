@@ -68,6 +68,7 @@ from ..gemma4.weight_adapters import (
 from ..gemma4_assistant.gemma4_assistant import Gemma4Assistant
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig
 from .batch_processor import UnifiedMTPGemma4BatchProcessor
+from .spec_adapters import GLOBAL_KV
 from .unified_mtp_gemma4 import UnifiedMTPGemma4
 from .weight_adapters import convert_unified_safetensor_state_dict
 
@@ -264,9 +265,18 @@ class UnifiedMTPGemma4Model(
         spec_cfg = self.pipeline_config.speculative
         assert spec_cfg is not None
 
+        assert isinstance(self._target_sliding_kv_params, KVCacheParams)
+        assert isinstance(self._target_global_kv_params, KVCacheParams)
+        draft = Gemma4Assistant(
+            self._draft_config,
+            target_layer_types=self._target_layer_types,
+            target_sliding_kv_params=self._target_sliding_kv_params,
+            target_global_kv_params=self._target_global_kv_params,
+        )
         nn_model = UnifiedMTPGemma4(
             model_config,
             self._draft_config,
+            draft,
             speculative_config=spec_cfg,
             enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             use_greedy_acceptance=spec_cfg.use_greedy_acceptance,
@@ -275,14 +285,6 @@ class UnifiedMTPGemma4Model(
         nn_model.target.return_logits = ReturnLogits.VARIABLE
         nn_model.target.return_hidden_states = ReturnHiddenStates.ALL_NORMALIZED
 
-        assert isinstance(self._target_sliding_kv_params, KVCacheParams)
-        assert isinstance(self._target_global_kv_params, KVCacheParams)
-        nn_model.draft = Gemma4Assistant(
-            self._draft_config,
-            target_layer_types=self._target_layer_types,
-            target_sliding_kv_params=self._target_sliding_kv_params,
-            target_global_kv_params=self._target_global_kv_params,
-        )
         # Share the target's embed_tokens for the concat(embed, hidden)
         # input step.  The assistant's own 1024-dim draft_embed_tokens
         # and tied lm_head are loaded from the assistant checkpoint.
@@ -311,12 +313,14 @@ class UnifiedMTPGemma4Model(
             outputs = nn_model(
                 tokens=graph_inputs.tokens,
                 input_row_offsets=graph_inputs.input_row_offsets,
-                image_embeddings=graph_inputs.vision_embeddings,
-                image_token_indices=graph_inputs.vision_scatter_indices,
+                vision_embeddings=graph_inputs.vision_embeddings,
+                vision_scatter_indices=graph_inputs.vision_scatter_indices,
                 draft_tokens=graph_inputs.draft_tokens,
                 signal_buffers=graph_inputs.signal_buffers,
-                sliding_kv_collections=graph_inputs.kv("sliding_attention"),
-                global_kv_collections=graph_inputs.kv("full_attention"),
+                # The draft cross-attends into the target's sliding cache.
+                kv_collections=graph_inputs.kv("sliding_attention"),
+                draft_kv_collections=graph_inputs.kv("sliding_attention"),
+                passthrough_kv={GLOBAL_KV: graph_inputs.kv("full_attention")},
                 return_n_logits=graph_inputs.return_n_logits,
                 host_input_row_offsets=graph_inputs.host_offsets,
                 data_parallel_splits=graph_inputs.dp_splits,

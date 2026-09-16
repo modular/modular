@@ -6,7 +6,6 @@ modular_py_library(
     name = "unified_dflash_gemma4_31b",
     srcs = glob(["**/*.py"]),
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max:tree",

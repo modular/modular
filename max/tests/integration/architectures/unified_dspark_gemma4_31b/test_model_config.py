@@ -50,6 +50,10 @@ from max.nn.kv_cache import (
 )
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.gemma4.block_spec_adapters import (
+    SLIDING_KV,
+    block_dispatch_metadata,
+)
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
@@ -73,7 +77,6 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
 )
 from max.pipelines.architectures.unified_dspark_gemma4_31b.unified_dspark_gemma4_31b import (
     UnifiedDSparkGemma4_31B,
-    _block_dispatch_metadata,
 )
 from max.pipelines.kv_cache import KVCacheConfig, cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig
@@ -830,7 +833,7 @@ def test_inputs_buffer_tail_matches_graph_signature(
             _make_unified_real(_parse(_raw())),
             enable_structured_output=structured_output,
         )
-        n_kv = len(module._unified_kv_params().flattened_kv_inputs())
+        n_kv = len(module.signature_kv_params.flattened_kv_inputs())
         inputs = _make_placeholder_inputs(structured_output=structured_output)
         assert len(inputs.buffers) == len(module.input_types()) - n_kv
 
@@ -975,13 +978,35 @@ def test_block_forward_rebuilds_attention_dispatch_metadata(
         "unified_dspark_gemma4_31b_block_meta_test",
         input_types=nn_model.input_types(),
     ) as graph:
-        values = nn_model._unflatten_graph_inputs(graph.inputs)
-        graph.output(*nn_model(values))
+        graph_inputs = nn_model.decode_inputs(graph.inputs)
+        outputs = nn_model(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            signal_buffers=graph_inputs.signal_buffers,
+            kv_collections=graph_inputs.kv("target", "full_attention"),
+            passthrough_kv={
+                SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+            },
+            draft_kv_collections=graph_inputs.kv("draft"),
+            return_n_logits=graph_inputs.return_n_logits,
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.in_thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        )
+        graph.output(*outputs)
 
     assert len(captured) == 1
     block_kv = captured[0]
     block_meta = block_kv.attention_dispatch_metadata
-    leaf_meta = values.draft_kv_collection.attention_dispatch_metadata
+    leaf_meta = graph_inputs.kv("draft")[0].attention_dispatch_metadata
     assert block_meta is not None
     assert leaf_meta is not None
     assert block_meta._mlir_value != leaf_meta._mlir_value
@@ -990,7 +1015,7 @@ def test_block_forward_rebuilds_attention_dispatch_metadata(
     # The paired query-width bound must be block-width too.
     assert (
         block_kv.max_prompt_length._mlir_value
-        != values.draft_kv_collection.max_prompt_length._mlir_value
+        != graph_inputs.kv("draft")[0].max_prompt_length._mlir_value
     )
 
 
@@ -1004,7 +1029,7 @@ def test_block_dispatch_metadata_rebuild_content() -> None:
         input_types=(TensorType(DType.int64, [4], DeviceRef.CPU()),),
     ) as graph:
         (meta,) = graph.inputs
-        graph.output(_block_dispatch_metadata(meta.tensor, 8))
+        graph.output(block_dispatch_metadata(meta.tensor, 8))
 
     session = InferenceSession(devices=[CPU()])
     compiled = session.load(graph)

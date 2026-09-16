@@ -14,9 +14,13 @@
 
 from __future__ import annotations
 
+from max.graph import TensorValue
 from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.speculative.config import SpeculativeConfig
-from max.pipelines.speculative.driver import SequentialDriver
+from max.pipelines.speculative.driver import (
+    CarryDimNames,
+    SequentialDriver,
+)
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
@@ -26,11 +30,11 @@ from ..deepseekV3_nextn.deepseekV3_nextn import DeepseekV3NextN
 from ..deepseekV3_nextn.model_config import DeepseekV3NextNConfig
 
 
-class MTPDeepseekV3Proposer(DeepseekV3MLAProposer):
+class MTPDeepseekV3Proposer(DeepseekV3MLAProposer[list[TensorValue]]):
     """The NextN head, proposing one token per step."""
 
     split_prefix = "mtp"
-    carry_dim_prefix = "mtp_step"
+    carry_dim_names = CarryDimNames(prefix="mtp_step", per_device=True)
     # Steps 1..K use LAST_PER_DEVICE. The underlying LAST path's internal
     # allgather acts as a collective fence between successive draft
     # invocations -- without it, the draft's EP/MoE dispatch leaves pending
@@ -42,7 +46,7 @@ class MTPDeepseekV3Proposer(DeepseekV3MLAProposer):
     draft_takes_ep_inputs = True
 
 
-class UnifiedMTPDeepseekV3(SequentialDriver):
+class UnifiedMTPDeepseekV3(SequentialDriver[list[TensorValue]]):
     """Fused nn.Module: merge + target forward + rejection + shift.
 
     The loop lives in :class:`SequentialDriver`; this class only names the

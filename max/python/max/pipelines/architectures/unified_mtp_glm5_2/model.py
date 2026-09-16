@@ -43,6 +43,7 @@ from ..deepseekV3_2.model_config import DeepseekV3_2Config
 from ..deepseekV3_2_nextn.model_config import DeepseekV3_2NextNConfig
 from ..glm5_1.model import Glm5_1Model
 from .batch_processor import UnifiedMTPGlm5_2BatchProcessor
+from .spec_adapters import INDEXER_DRAFT_KV, INDEXER_TARGET_KV
 from .unified_mtp_glm5_2 import UnifiedMTPGlm5_2
 
 logger = logging.getLogger("max.pipelines")
@@ -271,10 +272,12 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 input_row_offsets=graph_inputs.input_row_offsets,
                 draft_tokens=graph_inputs.draft_tokens,
                 signal_buffers=graph_inputs.signal_buffers,
-                target_mla_kv=graph_inputs.kv("target", "mla"),
-                target_indexer_kv=graph_inputs.kv("target", "indexer"),
-                draft_mla_kv=graph_inputs.kv("draft", "mla"),
-                draft_indexer_kv=graph_inputs.kv("draft", "indexer"),
+                kv_collections=graph_inputs.kv("target", "mla"),
+                draft_kv_collections=graph_inputs.kv("draft", "mla"),
+                passthrough_kv={
+                    INDEXER_TARGET_KV: graph_inputs.kv("target", "indexer"),
+                    INDEXER_DRAFT_KV: graph_inputs.kv("draft", "indexer"),
+                },
                 return_n_logits=graph_inputs.return_n_logits,
                 host_input_row_offsets=graph_inputs.host_offsets,
                 data_parallel_splits=graph_inputs.dp_splits,
