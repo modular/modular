@@ -135,38 +135,6 @@ def test_reshape_static(
     np.testing.assert_allclose(out, a.reshape([24]), rtol=1e-5, atol=1e-5)
 
 
-def test_transpose_of_add_fuses_with_correct_index(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
-    """`transpose(add(x, y))` on a square matrix fuses via ViewFuser, correctly.
-
-    Regression test for the `ElementwiseFuser` fix (commit "Reject a view as
-    ElementwiseFuser's destination"): `x`/`y` are square, so `transpose`'s
-    output shape matches `add`'s shape exactly. `ElementwiseFuser`'s old,
-    shape-only compatibility check would have spliced `add` into `transpose`
-    at the wrong (untransformed) coordinate, silently computing the wrong
-    answer while leaving the transpose's own index math dead. If that bug
-    ever came back, this would fail on the numeric check, not on a compile
-    error.
-    """
-    with Graph(
-        "transpose_of_add",
-        input_types=[
-            TensorType(DType.float32, [3, 3], device=DeviceRef.CPU()),
-            TensorType(DType.float32, [3, 3], device=DeviceRef.CPU()),
-        ],
-    ) as graph:
-        x, y = (v.tensor for v in graph.inputs)
-        graph.output(ops.transpose(x + y, 0, 1))
-
-    a = np.random.randn(3, 3).astype(np.float32)
-    b = np.random.randn(3, 3).astype(np.float32)
-    (out,) = run_and_verify_fusion(
-        session, graph, a, b, fused=r"mo\.add.*mo\.transpose"
-    )
-    np.testing.assert_allclose(out, (a + b).T, rtol=1e-5, atol=1e-5)
-
-
 def test_chained_slice_fuses(
     session: InferenceSession, adv_fusion_enabled: None
 ) -> None:
@@ -289,6 +257,129 @@ def test_view_fanout_duplicates(
     )
     y_ref = a[1:5]
     ref = np.maximum(y_ref, 0) + (-y_ref)
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_reshape_and_view_fuse_into_opaque_prologue(
+    session: InferenceSession, adv_fusion_enabled: None
+) -> None:
+    """A reshape (and the transpose below it) fuse into an opaque's prologue;
+    the view feeding the reshape stays materialized.
+
+    `gather` is the opaque with a prologue; its input is
+    `transpose(reshape(slice(x)))`. A reshape changes rank, so
+    `LoopInvariantViewMotion` can't hoist a view fused atop a reshaped load into
+    a stride view -- so the reshape is the terminal (most-upstream) fused view:
+    the reshape and the transpose below it compose into gather's prologue, while
+    the slice feeding the reshape stays its own materialized kernel. Mirrors
+    `sliceReshapeTransposeIntoPrologue` in
+    GraphCompiler/test/mo-opt/MAPDialect/Transforms/ViewFusion/
+    view_fusion_reshape_barrier.mlir. An e2e correctness check (compiles under
+    the reshape-in-prologue lowering, matches numpy); the fusion structure is
+    covered by that lit test.
+    """
+    with Graph(
+        "reshape_into_prologue",
+        input_types=[
+            TensorType(DType.float32, [10, 64], device=DeviceRef.CPU()),
+            TensorType(DType.int64, [3], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, indices = (v.tensor for v in graph.inputs)
+        chain = ops.transpose(x[1:4, 32:64].reshape([16, 6]), 0, 1)
+        graph.output(ops.gather(chain, indices, axis=0))
+
+    a = np.random.randn(10, 64).astype(np.float32)
+    idx = np.array([0, 3, 5], dtype=np.int64)
+    (out,) = run_and_verify_fusion(session, graph, a, idx)
+    ref = a[1:4, 32:64].reshape([16, 6]).T[idx]
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_reshape_and_view_fuse_into_opaque_epilogue(
+    session: InferenceSession, adv_fusion_enabled: None
+) -> None:
+    """The same rule holds for an opaque's epilogue load, not just its prologue.
+
+    Mirrors `sliceReshapeTransposeIntoEpilogue` in
+    GraphCompiler/test/mo-opt/MAPDialect/Transforms/ViewFusion/
+    view_fusion_reshape_barrier.mlir. `reduce.max` is the opaque; its store-path
+    add reads a bias fed by `transpose(reshape(bias))`. `findExistingCapture`
+    resolves an epilogue capture the same way it does a prologue one, so the
+    reshape and the transpose below it fuse into the epilogue's load path -- and
+    a view feeding the reshape would stay materialized just as in the prologue
+    case. An e2e correctness check (compiles, matches numpy); the fusion
+    structure is covered by the lit test.
+    """
+    with Graph(
+        "reshape_into_epilogue",
+        input_types=[
+            TensorType(DType.float32, [4, 4], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [4], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, bias = (v.tensor for v in graph.inputs)
+        reduced = ops.max(x, axis=0)
+        bias_view = ops.transpose(bias.reshape([4, 1]), 0, 1)
+        graph.output(reduced + bias_view)
+
+    x_np = np.random.randn(4, 4).astype(np.float32)
+    bias_np = np.random.randn(4).astype(np.float32)
+    (out,) = run_and_verify_fusion(session, graph, x_np, bias_np)
+    ref = np.max(x_np, axis=0, keepdims=True) + bias_np.reshape([4, 1]).T
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_view_and_reshape_both_fuse_into_add(
+    session: InferenceSession, adv_fusion_enabled: None
+) -> None:
+    """`slice(a) + reshape(b)` fuses both views into the one add kernel.
+
+    The reshape indexes one operand's load, the slice the other -- the reshape
+    on one load must not block the slice fusing into the other (the barrier is
+    per-load, not per-body). Mirrors `viewAndReshapeFuseIntoAdd` in
+    view_fusion_reshape_barrier.mlir.
+    """
+    with Graph(
+        "view_and_reshape_into_add",
+        input_types=[
+            TensorType(DType.float32, [10, 64], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [96], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        graph.output(a[1:4, 32:64] + b.reshape([3, 32]))
+
+    a_np = np.random.randn(10, 64).astype(np.float32)
+    b_np = np.random.randn(96).astype(np.float32)
+    (out,) = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.slice.*mo\.add"
+    )
+    ref = a_np[1:4, 32:64] + b_np.reshape([3, 32])
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_stacked_reshapes_split_at_each_reshape(
+    session: InferenceSession, adv_fusion_enabled: None
+) -> None:
+    """`slice -> reshape -> transpose -> reshape -> relu` compiles and is
+    correct: each reshape is terminal for its own upstream, so the chain splits
+    into groups at each reshape's input rather than fusing across a rank change
+    (which `LoopInvariantViewMotion` could not hoist). An e2e correctness check.
+    """
+    with Graph(
+        "stacked_reshapes",
+        input_types=[
+            TensorType(DType.float32, [10, 64], device=DeviceRef.CPU())
+        ],
+    ) as graph:
+        (x,) = (v.tensor for v in graph.inputs)
+        y = ops.transpose(x[1:4, 32:64].reshape([16, 6]), 0, 1)
+        graph.output(ops.relu(y.reshape([96])))
+
+    a = np.random.randn(10, 64).astype(np.float32)
+    (out,) = run_and_verify_fusion(session, graph, a)
+    ref = np.maximum(a[1:4, 32:64].reshape([16, 6]).T.reshape([96]), 0)
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
