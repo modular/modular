@@ -35,20 +35,17 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
-from max import tree
 from max.dtype import DType
 from max.graph import (
-    BufferType,
     BufferValue,
     DeviceRef,
-    TensorType,
     TensorValue,
     Value,
     ops,
 )
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
 )
@@ -64,10 +61,11 @@ from max.pipelines.speculative.ragged_token_merger import (
     _shape_to_scalar,
 )
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from max.pipelines.speculative.unified_graph_ops import apply_overlap_bitmask
+from typing_extensions import override
 
 from ..dspark_draft.dspark_speculators_draft import DSparkSpeculatorsDraft
 from ..gemma4.gemma4 import Gemma4TextModel
@@ -125,7 +123,7 @@ class UnifiedDSparkGemma4_31BValues:
     device_bitmask_scratch: BufferValue | None = None
 
 
-class UnifiedDSparkGemma4_31B(Module):
+class UnifiedDSparkGemma4_31B(SpecDecodeGraphSignature, Module):
     """Fused module: merge → target → reject → materialize → draft block."""
 
     def __init__(
@@ -211,84 +209,49 @@ class UnifiedDSparkGemma4_31B(Module):
         self,
         inputs: Sequence[Value[Any]],
     ) -> UnifiedDSparkGemma4_31BValues:
-        it = iter(inputs)
-        tokens = next(it)
-        input_row_offsets = next(it)
-        return_n_logits = next(it)
-        signal_buffers = [
-            next(it).buffer for _ in range(len(self.config.target.devices))
-        ]
-        kv_tree = self._unified_kv_params().unflatten_kv_inputs(it)
-        target_tree = kv_tree["target"]
-        assert isinstance(target_tree, dict)
-        sliding_leaf = tree.leaves(
-            target_tree["sliding_attention"], leaf=KVCacheInputsPerDevice
-        )
-        global_leaf = tree.leaves(
-            target_tree["full_attention"], leaf=KVCacheInputsPerDevice
-        )
-        draft_leaf = tree.leaves(kv_tree["draft"], leaf=KVCacheInputsPerDevice)
-        draft_tokens = next(it)
-        seed = next(it)
-        temperature = next(it)
-        top_k = next(it)
-        max_k = next(it)
-        top_p = next(it)
-        min_top_p = next(it)
-        in_thinking_phase = next(it)
-        pinned_bitmask: TensorValue | None = None
-        wait_payload: BufferValue | None = None
-        device_bitmask_scratch: BufferValue | None = None
-        if self.enable_structured_output:
-            pinned_bitmask = next(it).tensor
-            wait_payload = next(it).buffer
-            device_bitmask_scratch = next(it).buffer
-        # Every declared input must be consumed: a declared-but-unconsumed
-        # trailing input keeps the arity valid at execute while the feature
-        # it carries is silently dead.
-        sentinel = object()
-        assert next(it, sentinel) is sentinel, (
-            "input_types() and _unflatten_graph_inputs disagree: unconsumed"
-            " graph inputs remain"
-        )
-
+        graph_inputs = self.decode_inputs(inputs)
         return UnifiedDSparkGemma4_31BValues(
-            tokens=tokens.tensor,
-            input_row_offsets=input_row_offsets.tensor,
-            draft_tokens=draft_tokens.tensor,
-            return_n_logits=return_n_logits.tensor,
-            signal_buffers=signal_buffers,
-            sliding_kv_collection=sliding_leaf[0],
-            global_kv_collection=global_leaf[0],
-            draft_kv_collection=draft_leaf[0],
-            seed=seed.tensor,
-            temperature=temperature.tensor,
-            top_k=top_k.tensor,
-            max_k=max_k.tensor,
-            top_p=top_p.tensor,
-            min_top_p=min_top_p.tensor,
-            in_thinking_phase=in_thinking_phase.tensor,
-            pinned_bitmask=pinned_bitmask,
-            wait_payload=wait_payload,
-            device_bitmask_scratch=device_bitmask_scratch,
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            return_n_logits=graph_inputs.return_n_logits,
+            signal_buffers=graph_inputs.signal_buffers,
+            sliding_kv_collection=graph_inputs.kv(
+                "target", "sliding_attention"
+            )[0],
+            global_kv_collection=graph_inputs.kv("target", "full_attention")[0],
+            draft_kv_collection=graph_inputs.kv("draft")[0],
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
         )
 
-    def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Single-device DSpark graph. See
-        :func:`build_spec_decode_input_types` for the canonical ordering.
-        Signal buffers are declared even though the graph is single-device:
-        Gemma4's embedding/lm_head layers use collectives unconditionally.
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        """Single-device DSpark graph. Signal buffers are declared even
+        though the graph is single-device: Gemma4's embedding/lm_head layers
+        use collectives unconditionally.
         """
-        return build_spec_decode_input_types(
-            SpecDecodeInputTypeSpec(
-                distributed=False,
-                include_signal_buffers=True,
-                include_in_thinking_phase=True,
-                enable_structured_output=self.enable_structured_output,
-            ),
+        return SpecDecodeInputTypeSpec(
             devices=self.config.target.devices,
-            kv_params=self._unified_kv_params(),
+            distributed=False,
+            include_signal_buffers=True,
+            include_in_thinking_phase=True,
+            enable_structured_output=self.enable_structured_output,
         )
+
+    @override
+    @property
+    def signature_kv_params(self) -> KVCacheParamInterface:
+        return self._unified_kv_params()
 
     def _empty_vision_inputs(self) -> tuple[TensorValue, TensorValue]:
         """Zero-row image embeddings + scatter indices for the text-only

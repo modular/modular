@@ -19,8 +19,12 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from max.dtype import DType
-from max.graph import BufferType, TensorType, TensorValue, Value, ops
-from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
+from max.graph import TensorValue, Value, ops
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
 from max.nn.transformer.transformer import (
@@ -33,9 +37,10 @@ from max.pipelines.speculative.ragged_token_merger import (
     _shape_to_scalar,
 )
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
+from typing_extensions import override
 
 from ..dflash_llama3 import DFlashLlama3
 from ..llama3.llama3 import Llama3
@@ -58,7 +63,7 @@ class UnifiedDflashLlama3Values:
     min_top_p: TensorValue
 
 
-class UnifiedDflashLlama3(Module):
+class UnifiedDflashLlama3(SpecDecodeGraphSignature, Module):
     """Fused module: merge → target → reject → materialize → draft block."""
 
     def __init__(self, config: UnifiedDflashLlama3Config) -> None:
@@ -87,57 +92,38 @@ class UnifiedDflashLlama3(Module):
         self,
         inputs: Sequence[Value[Any]],
     ) -> UnifiedDflashLlama3Values:
-        it = iter(inputs)
-        tokens = next(it)
-        input_row_offsets = next(it)
-        return_n_logits = next(it)
-        kv_params = MultiKVCacheParams.from_params(
+        graph_inputs = self.decode_inputs(inputs)
+        return UnifiedDflashLlama3Values(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            return_n_logits=graph_inputs.return_n_logits,
+            kv_collection=graph_inputs.kv("target")[0],
+            draft_kv_collection=graph_inputs.kv("draft")[0],
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+        )
+
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        """Single-device DFlash graph."""
+        return SpecDecodeInputTypeSpec(
+            devices=self.config.target.devices, distributed=False
+        )
+
+    @override
+    @property
+    def signature_kv_params(self) -> KVCacheParamInterface:
+        return MultiKVCacheParams.from_params(
             {
                 "target": self.config.target.kv_params,
                 "draft": self.config.draft.kv_params,
             }
-        )
-        target_kv_collections, draft_kv_collections = (
-            kv_params.unflatten_basic_kv_tree(it)
-        )
-        target_kv_collection = target_kv_collections[0]
-        draft_kv_collection = draft_kv_collections[0]
-        draft_tokens = next(it)
-        seed = next(it)
-        temperature = next(it)
-        top_k = next(it)
-        max_k = next(it)
-        top_p = next(it)
-        min_top_p = next(it)
-
-        return UnifiedDflashLlama3Values(
-            tokens=tokens.tensor,
-            input_row_offsets=input_row_offsets.tensor,
-            draft_tokens=draft_tokens.tensor,
-            return_n_logits=return_n_logits.tensor,
-            kv_collection=target_kv_collection,
-            draft_kv_collection=draft_kv_collection,
-            seed=seed.tensor,
-            temperature=temperature.tensor,
-            top_k=top_k.tensor,
-            max_k=max_k.tensor,
-            top_p=top_p.tensor,
-            min_top_p=min_top_p.tensor,
-        )
-
-    def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Single-device dflash graph. See
-        :func:`build_spec_decode_input_types` for the canonical ordering.
-        """
-        return build_spec_decode_input_types(
-            SpecDecodeInputTypeSpec(distributed=False),
-            devices=self.config.target.devices,
-            kv_params=MultiKVCacheParams.from_params(
-                {
-                    "target": self.config.target.kv_params,
-                    "draft": self.config.draft.kv_params,
-                }
-            ),
         )
 
     def __call__(

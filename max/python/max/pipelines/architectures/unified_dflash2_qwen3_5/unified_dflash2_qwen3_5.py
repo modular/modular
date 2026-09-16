@@ -569,12 +569,12 @@ class UnifiedDflash2Qwen3_5(Module):
         devices = config.devices
         spec_types = build_spec_decode_input_types(
             SpecDecodeInputTypeSpec(
+                devices=devices,
                 distributed=True,
                 data_parallel_degree=1,
                 include_in_thinking_phase=True,
                 enable_structured_output=self.enable_structured_output,
             ),
-            devices=devices,
             kv_params=kv_params,
         )
 

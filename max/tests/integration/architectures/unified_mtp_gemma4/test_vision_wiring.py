@@ -60,6 +60,9 @@ from max.pipelines.architectures.unified_mtp_gemma4.unified_mtp_gemma4 import (
 from max.pipelines.context import ImageMetadata
 from max.pipelines.context.context import TokenBuffer
 from max.pipelines.modeling.types import InputModality
+from max.pipelines.speculative.spec_input_types import (
+    build_spec_decode_input_types,
+)
 
 _HIDDEN_SIZE = 128
 
@@ -175,7 +178,11 @@ def test_mtp_graph_declares_per_device_vision_inputs() -> None:
     kv_params = MagicMock()
     kv_params.flattened_kv_inputs.return_value = []
 
-    input_types = UnifiedMTPGemma4.input_types(fake_self, kv_params)
+    # ``input_spec`` is a property, so reach it off the class dict.
+    input_types = build_spec_decode_input_types(
+        vars(UnifiedMTPGemma4)["input_spec"].fget(fake_self),
+        kv_params=kv_params,
+    )
 
     # tokens, then per-device image embeddings, then per-device scatter indices.
     image_embeddings = input_types[1 : 1 + n_devices]

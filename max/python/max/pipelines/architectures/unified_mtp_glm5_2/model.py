@@ -18,23 +18,22 @@ import logging
 from dataclasses import dataclass, fields, replace
 from typing import Any, ClassVar
 
-from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferValue, Graph, TensorValue, Value
+from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParams,
-    MultiKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
+)
+from max.pipelines.speculative import (
+    DraftAliases,
+    validate_draft_state_dict,
 )
 from typing_extensions import override
 
@@ -245,21 +244,13 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             self._draft_state_dict, weight_alignment=1, strict=False
         )
 
-        draft_expected = set(nn_model.draft.raw_state_dict().keys())
-        draft_provided = set(self._draft_state_dict.keys())
-        shared_prefixes = ("embed_tokens.", "lm_head.")
-        missing = {
-            k
-            for k in draft_expected - draft_provided
-            if not k.startswith(shared_prefixes)
-        }
-        extra = draft_provided - draft_expected
-        if missing:
-            raise ValueError(
-                f"Draft model has unloaded non-shared weights: {sorted(missing)}"
-            )
-        if extra:
-            logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")
+        # The NextN head ships in the target checkpoint, so the draft
+        # inherits both.
+        validate_draft_state_dict(
+            nn_model.draft.raw_state_dict().keys(),
+            self._draft_state_dict.keys(),
+            DraftAliases(always=("embed_tokens.", "lm_head.")),
+        )
 
         weights_registry = {
             **nn_model.draft.state_dict(),
@@ -273,102 +264,33 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             "glm5_2_with_mtp_graph",
             input_types=nn_model.input_types(kv_params),
         ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
-
-            variadic_args_iter = iter(variadic_args)
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            kv_tree = kv_params.unflatten_kv_inputs(variadic_args_iter)
-            assert isinstance(kv_tree, dict)
-            target_tree = kv_tree["target"]
-            draft_tree = kv_tree["draft"]
-            assert isinstance(target_tree, dict)
-            assert isinstance(draft_tree, dict)
-            target_mla_kv = tree.leaves(
-                target_tree["mla"], leaf=KVCacheInputsPerDevice
-            )
-            target_indexer_kv = tree.leaves(
-                target_tree["indexer"], leaf=KVCacheInputsPerDevice
-            )
-            draft_mla_kv = tree.leaves(
-                draft_tree["mla"], leaf=KVCacheInputsPerDevice
-            )
-            draft_indexer_kv = tree.leaves(
-                draft_tree["indexer"], leaf=KVCacheInputsPerDevice
-            )
-
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            target_ep_inputs: list[Value[Any]] | None = None
-            if nn_model.target.ep_manager is not None:
-                n_target_ep = len(nn_model.target.ep_manager.input_types())
-                target_ep_inputs = [
-                    next(variadic_args_iter) for _ in range(n_target_ep)
-                ]
-
-            draft_tokens = next(variadic_args_iter).tensor
-
-            # draft_probs_full rides immediately after draft_tokens in the
-            # canonical spec-decode ordering; a miss here silently shifts every
-            # downstream input.
-            draft_probs_full_graph: TensorValue | None = None
-            if nn_model.sampled_draft_proposal:
-                draft_probs_full_graph = next(variadic_args_iter).tensor
-
-            seed = next(variadic_args_iter).tensor
-            temperature = next(variadic_args_iter).tensor
-            top_k = next(variadic_args_iter).tensor
-            max_k = next(variadic_args_iter).tensor
-            top_p = next(variadic_args_iter).tensor
-            min_top_p = next(variadic_args_iter).tensor
-            in_thinking_phase = next(variadic_args_iter).tensor
-
-            pinned_bitmask_graph: TensorValue | None = None
-            wait_payload_graph: BufferValue | None = None
-            device_bitmask_scratch_graph: BufferValue | None = None
-            if nn_model.enable_structured_output:
-                pinned_bitmask_graph = next(variadic_args_iter).tensor
-                wait_payload_graph = next(variadic_args_iter).buffer
-                device_bitmask_scratch_graph = next(variadic_args_iter).buffer
+            graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
 
             outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=devices_input_row_offsets.tensor,
-                draft_tokens=draft_tokens,
-                signal_buffers=signal_buffers,
-                target_mla_kv=target_mla_kv,
-                target_indexer_kv=target_indexer_kv,
-                draft_mla_kv=draft_mla_kv,
-                draft_indexer_kv=draft_indexer_kv,
-                return_n_logits=return_n_logits.tensor,
-                host_input_row_offsets=host_input_row_offsets.tensor,
-                data_parallel_splits=data_parallel_splits.tensor,
-                batch_context_lengths=batch_context_lengths,
-                seed=seed,
-                temperature=temperature,
-                top_k=top_k,
-                max_k=max_k,
-                top_p=top_p,
-                min_top_p=min_top_p,
-                in_thinking_phase=in_thinking_phase,
-                ep_inputs=target_ep_inputs,
-                pinned_bitmask=pinned_bitmask_graph,
-                wait_payload=wait_payload_graph,
-                device_bitmask_scratch=device_bitmask_scratch_graph,
-                draft_probs_full=draft_probs_full_graph,
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                target_mla_kv=graph_inputs.kv("target", "mla"),
+                target_indexer_kv=graph_inputs.kv("target", "indexer"),
+                draft_mla_kv=graph_inputs.kv("draft", "mla"),
+                draft_indexer_kv=graph_inputs.kv("draft", "indexer"),
+                return_n_logits=graph_inputs.return_n_logits,
+                host_input_row_offsets=graph_inputs.host_offsets,
+                data_parallel_splits=graph_inputs.dp_splits,
+                batch_context_lengths=graph_inputs.batch_context_lengths,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                ep_inputs=graph_inputs.ep_inputs or None,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+                draft_probs_full=graph_inputs.draft_probs_full,
             )
 
             graph.output(*outputs)

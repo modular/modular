@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.deepseekV3.batch_processor import (
-    DeepseekV3BatchProcessor,
+    DeepseekV3BatchProcessorBase,
 )
 from max.pipelines.context import TextContext
 
@@ -28,7 +28,9 @@ if TYPE_CHECKING:
     from .model import DeepseekV3NextNInputs
 
 
-class DeepseekV3NextNBatchProcessor(DeepseekV3BatchProcessor):
+class DeepseekV3NextNBatchProcessor(
+    DeepseekV3BatchProcessorBase["DeepseekV3NextNInputs"]
+):
     """Ragged batching for the DeepseekV3 NextN (MTP draft) model.
 
     Inherits the base DeepseekV3 batching logic but overrides the
@@ -58,29 +60,29 @@ class DeepseekV3NextNBatchProcessor(DeepseekV3BatchProcessor):
                     self._batch_context_lengths[0][0].item()
                 )
 
-    def prepare_initial_token_inputs(  # type: ignore[override]
+    def _make_mla_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
     ) -> DeepseekV3NextNInputs:
-        """Prepare batch inputs for a DeepseekV3 NextN forward pass."""
         from .model import DeepseekV3NextNInputs
 
-        base = super().prepare_initial_token_inputs(
-            replica_batches,
+        return DeepseekV3NextNInputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
+            batch_context_lengths=batch_context_lengths,
+            signal_buffers=signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
-        )
-        return DeepseekV3NextNInputs(
-            tokens=base.tokens,
-            hidden_states=None,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
+            data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
         )

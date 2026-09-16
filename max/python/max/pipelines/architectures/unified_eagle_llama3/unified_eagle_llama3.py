@@ -20,18 +20,20 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import (
-    BufferType,
     BufferValue,
     DeviceRef,
     Graph,
     ProfileScopeColor,
-    TensorType,
     TensorValue,
     Value,
     ops,
 )
 from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -42,14 +44,15 @@ from max.pipelines.speculative.ragged_token_merger import (
     _shape_to_scalar,
 )
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from max.pipelines.speculative.unified_graph_ops import (
     accept_and_pick_next_tokens,
     apply_overlap_bitmask,
     shift_corrected_tokens,
 )
+from typing_extensions import override
 
 from ..eagle_llama3.eagle_llama3 import EagleLlama3
 from ..llama3.llama3 import Llama3
@@ -93,7 +96,7 @@ class UnifiedEagleLlama3Values:
     :attr:`pinned_bitmask`; the acceptance sampler reads from it."""
 
 
-class UnifiedEagleLlama3(Module):
+class UnifiedEagleLlama3(SpecDecodeGraphSignature, Module):
     """Fused nn.Module: merge + target forward + greedy rejection + shift + draft."""
 
     def __init__(self, config: UnifiedEagleLlama3Config) -> None:
@@ -124,83 +127,43 @@ class UnifiedEagleLlama3(Module):
         self,
         inputs: Sequence[Value[Any]],
     ) -> UnifiedEagleLlama3Values:
-        # Use an iterator to consume inputs sequentially, avoiding a hardcoded
-        # count that would break if the kv cache structure changes.
-        it = iter(inputs)
+        graph_inputs = self.decode_inputs(inputs)
+        return UnifiedEagleLlama3Values(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            return_n_logits=graph_inputs.return_n_logits,
+            kv_collection=graph_inputs.kv("target")[0],
+            draft_kv_collection=graph_inputs.kv("draft")[0],
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        )
 
-        tokens = next(it)
-        input_row_offsets = next(it)
-        return_n_logits = next(it)
-        kv_params = MultiKVCacheParams.from_params(
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        """Single-device EAGLE graph, bitmask triple when enabled."""
+        return SpecDecodeInputTypeSpec(
+            devices=self.config.target.devices,
+            distributed=False,
+            enable_structured_output=self.config.enable_structured_output,
+        )
+
+    @override
+    @property
+    def signature_kv_params(self) -> KVCacheParamInterface:
+        return MultiKVCacheParams.from_params(
             {
                 "target": self.config.target.kv_params,
                 "draft": self.config.draft.kv_params,
             }
-        )
-        target_kv_collections, draft_kv_collections = (
-            kv_params.unflatten_basic_kv_tree(it)
-        )
-        target_kv_collection = target_kv_collections[0]
-        draft_kv_collection = draft_kv_collections[0]
-        # draft model inputs
-        draft_tokens = next(it)
-        # stochastic acceptance seed (uint64 [batch_size] on the primary device)
-        seed = next(it)
-        # sampling params for stochastic acceptance
-        temperature = next(it)
-        top_k = next(it)
-        max_k = next(it)
-        top_p = next(it)
-        min_top_p = next(it)
-        # Optional constrained-decoding bitmask triple (appended when
-        # structured output is enabled). The triple is bound by the
-        # OverlapTextGenerationPipeline from
-        # :class:`StructuredOutputOverlapState`.
-        pinned_bitmask_in: TensorValue | None = None
-        wait_payload_in: BufferValue | None = None
-        device_bitmask_scratch_in: BufferValue | None = None
-        if self.config.enable_structured_output:
-            pinned_bitmask_in = next(it).tensor
-            wait_payload_in = next(it).buffer
-            device_bitmask_scratch_in = next(it).buffer
-
-        return UnifiedEagleLlama3Values(
-            tokens=tokens.tensor,
-            input_row_offsets=input_row_offsets.tensor,
-            draft_tokens=draft_tokens.tensor,
-            return_n_logits=return_n_logits.tensor,
-            kv_collection=target_kv_collection,
-            draft_kv_collection=draft_kv_collection,
-            seed=seed.tensor,
-            temperature=temperature.tensor,
-            top_k=top_k.tensor,
-            max_k=max_k.tensor,
-            top_p=top_p.tensor,
-            min_top_p=min_top_p.tensor,
-            pinned_bitmask=pinned_bitmask_in,
-            wait_payload=wait_payload_in,
-            device_bitmask_scratch=device_bitmask_scratch_in,
-        )
-
-    def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Input types for the unified graph.
-
-        Single-device eagle graph that appends the structured-output bitmask
-        triple when ``config.enable_structured_output`` is set. See
-        :func:`build_spec_decode_input_types` for the canonical ordering.
-        """
-        return build_spec_decode_input_types(
-            SpecDecodeInputTypeSpec(
-                distributed=False,
-                enable_structured_output=self.config.enable_structured_output,
-            ),
-            devices=self.config.target.devices,
-            kv_params=MultiKVCacheParams.from_params(
-                {
-                    "target": self.config.target.kv_params,
-                    "draft": self.config.draft.kv_params,
-                }
-            ),
         )
 
     def __call__(

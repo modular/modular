@@ -89,7 +89,8 @@ class Layer:
     each layer to support testing, debugging or profiling.
     """
 
-    def __init_subclass__(cls):
+    def __init_subclass__(cls, **kwargs: Any):
+        super().__init_subclass__(**kwargs)
         if cls.__name__ == "Module":
             # Module subclasses Layer, but we don't want to apply
             # _call_with_hooks to it.

@@ -377,6 +377,19 @@ class UnifiedMTPInkling(Module):
         logits = outputs[0]
         return logits, ops.argmax(logits, axis=-1)
 
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        """Only the tail of this spec is canonical.
+
+        :meth:`input_types` builds Inkling's head by hand.
+        """
+        return SpecDecodeInputTypeSpec(
+            devices=self.config.devices,
+            distributed=len(self.config.devices) > 1,
+            include_in_thinking_phase=True,
+            enable_structured_output=self.enable_structured_output,
+        )
+
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
@@ -424,16 +437,7 @@ class UnifiedMTPInkling(Module):
             *self.target.conv_layout.buffer_types(devices),
             *self.draft.conv_layout.buffer_types(devices),
         ]
-        types.extend(
-            spec_decode_tail_input_types(
-                SpecDecodeInputTypeSpec(
-                    distributed=n_devs > 1,
-                    include_in_thinking_phase=True,
-                    enable_structured_output=self.enable_structured_output,
-                ),
-                device,
-            )
-        )
+        types.extend(spec_decode_tail_input_types(self.input_spec, device))
         return tuple(types)
 
 

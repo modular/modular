@@ -60,8 +60,8 @@ from max.pipelines.speculative.ragged_token_merger import (
     _shape_to_scalar,
 )
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from max.pipelines.speculative.unified_graph_ops import (
     accept_and_pick_next_tokens,
@@ -70,6 +70,7 @@ from max.pipelines.speculative.unified_graph_ops import (
     merge_tokens_and_host_offsets,
     shift_corrected_tokens,
 )
+from typing_extensions import override
 
 from ..qwen3_5.layers.gated_deltanet import GatedDeltaReplayInputs
 from ..qwen3_5.model_config import Qwen3_5Config
@@ -84,7 +85,7 @@ from .state_rollback import (
 )
 
 
-class UnifiedMTPQwen3_5(Module):
+class UnifiedMTPQwen3_5(SpecDecodeGraphSignature, Module):
     """Fused module: merge + target verify + state rollback + draft chain."""
 
     def __init__(
@@ -424,8 +425,26 @@ class UnifiedMTPQwen3_5(Module):
         logits = self.target.lm_head(draft_hs, signal_buffers)[0]
         return ops.argmax(logits, axis=-1).reshape([-1])
 
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        return SpecDecodeInputTypeSpec(
+            devices=self.config.devices,
+            distributed=True,
+            data_parallel_degree=1,
+            include_in_thinking_phase=True,
+            enable_structured_output=self.enable_structured_output,
+        )
+
+    @override
+    @property
+    def has_trailing_inputs(self) -> bool:
+        # The state-pool tail below.
+        return True
+
+    @override
     def input_types(
-        self, kv_params: KVCacheParamInterface
+        self, kv_params: KVCacheParamInterface | None = None
     ) -> tuple[TensorType | BufferType, ...]:
         """Canonical spec-decode signature plus the Qwen state-pool tail.
 
@@ -441,16 +460,7 @@ class UnifiedMTPQwen3_5(Module):
         """
         config = self.config
         devices = config.devices
-        spec_types = build_spec_decode_input_types(
-            SpecDecodeInputTypeSpec(
-                distributed=True,
-                data_parallel_degree=1,
-                include_in_thinking_phase=True,
-                enable_structured_output=self.enable_structured_output,
-            ),
-            devices=devices,
-            kv_params=kv_params,
-        )
+        spec_types = super().input_types(kv_params)
 
         tail: list[TensorType | BufferType] = []
         for region in self.state_regions:

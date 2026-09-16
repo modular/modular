@@ -21,21 +21,23 @@ import numpy as np
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheInputs
 
-from ..kimik2_5.batch_processor import KimiK2_5BatchProcessor
+from ..kimik2_5.batch_processor import KimiK2_5BatchProcessorBase
 from ..kimik2_5.context import KimiK2_5TextAndVisionContext
 
 if TYPE_CHECKING:
     from .model import UnifiedDflashKimiK25Inputs
 
 
-class UnifiedDflashKimiK25BatchProcessor(KimiK2_5BatchProcessor):
+class UnifiedDflashKimiK25BatchProcessor(
+    KimiK2_5BatchProcessorBase["UnifiedDflashKimiK25Inputs"]
+):
     """Extends KimiK2_5BatchProcessor with DFlash seed and draft token wiring.
 
     The parent class handles all vision-encoder and token-tensor preparation.
-    This subclass wraps the resulting :class:`KimiK2_5ModelInputs` into the
-    wider :class:`UnifiedDflashKimiK25Inputs` dataclass by appending a
-    monotonically-increasing seed buffer.  ``draft_tokens`` are left *None*
-    here and populated downstream by the speculative-decoding driver.
+    This subclass builds the wider :class:`UnifiedDflashKimiK25Inputs` instead
+    of :class:`KimiK2_5ModelInputs`, adding a monotonically-increasing seed
+    buffer. ``draft_tokens`` is *None* except on the steps where the
+    speculative-decoding driver passes one in.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -57,7 +59,7 @@ class UnifiedDflashKimiK25BatchProcessor(KimiK2_5BatchProcessor):
         draft_tokens: Buffer | None = None,
         **kwargs: Any,
     ) -> UnifiedDflashKimiK25Inputs:
-        """Build base KimiK2.5 inputs then wrap with DFlash draft fields.
+        """Build base KimiK2.5 inputs then attach this step's draft tokens.
 
         Args:
             replica_batches: Per-DP-rank context batches.
@@ -70,24 +72,41 @@ class UnifiedDflashKimiK25BatchProcessor(KimiK2_5BatchProcessor):
         Returns:
             :class:`UnifiedDflashKimiK25Inputs` ready for ``execute``.
         """
-        base = super().prepare_initial_token_inputs(
+        # _make_mla_inputs cannot see this call's draft_tokens.
+        inputs = super().prepare_initial_token_inputs(
             replica_batches,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
+        inputs.draft_tokens = draft_tokens
+        return inputs
+
+    def _make_mla_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
+    ) -> UnifiedDflashKimiK25Inputs:
         from .model import UnifiedDflashKimiK25Inputs
 
         return UnifiedDflashKimiK25Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
-            draft_tokens=draft_tokens,
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
+            batch_context_lengths=batch_context_lengths,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+            data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
+            draft_tokens=None,
             seed=self._next_seed(),
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
         )

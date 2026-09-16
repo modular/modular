@@ -7,6 +7,7 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     test_docstring_examples = True,
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/config",
         "//max/python/max/dtype",
         "//max/python/max/graph",

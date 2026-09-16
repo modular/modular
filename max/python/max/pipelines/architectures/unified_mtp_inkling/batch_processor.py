@@ -63,18 +63,24 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
             for pool in draft_state_cache.pools(device_idx)
         ]
 
-    def prepare_initial_token_inputs(
+    def _make_inkling_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
+        *,
+        context_batch: Sequence[TextAndVisionContext],
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        positions: Buffer,
+        return_n_logits: Buffer,
+        image_embeddings: Buffer,
+        image_indices: Buffer,
+        signal_buffers: list[Buffer],
+        slot_idx: list[Buffer],
+        has_initial_state: list[Buffer],
+        conv_pools: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
     ) -> UnifiedMTPInklingInputs:
         from .model import UnifiedMTPInklingInputs
 
-        base = super().prepare_initial_token_inputs(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
-        context_batch = [ctx for batch in replica_batches for ctx in batch]
         draft_cache = self._draft_state_cache
         assert draft_cache is not None
         for context in context_batch:
@@ -85,23 +91,23 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
             dtype=np.int64,
             count=len(context_batch),
         )
-        host_input_row_offsets = Buffer.from_numpy(
-            np.cumsum([0, *lengths], dtype=np.uint32)
-        )
+
         return UnifiedMTPInklingInputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            positions=base.positions,
-            return_n_logits=base.return_n_logits,
-            host_input_row_offsets=host_input_row_offsets,
-            image_embeddings=base.image_embeddings,
-            image_indices=base.image_indices,
-            signal_buffers=base.signal_buffers,
-            slot_idx=base.slot_idx,
-            has_initial_state=base.has_initial_state,
-            conv_pools=base.conv_pools,
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            positions=positions,
+            return_n_logits=return_n_logits,
+            image_embeddings=image_embeddings,
+            image_indices=image_indices,
+            signal_buffers=signal_buffers,
+            slot_idx=slot_idx,
+            has_initial_state=has_initial_state,
+            conv_pools=conv_pools,
+            kv_cache_inputs=kv_cache_inputs,
+            host_input_row_offsets=Buffer.from_numpy(
+                np.cumsum([0, *lengths], dtype=np.uint32)
+            ),
             draft_conv_pools=self._draft_conv_pools,
-            kv_cache_inputs=base.kv_cache_inputs,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
         )

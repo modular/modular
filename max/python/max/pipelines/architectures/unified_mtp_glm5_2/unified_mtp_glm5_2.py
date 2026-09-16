@@ -26,6 +26,7 @@ Two structural differences:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -40,7 +41,7 @@ from max.graph import (
     ops,
 )
 from max.nn.kernels import topk_fused_sampling_with_dist
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -55,8 +56,8 @@ from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.ragged_token_merger import RaggedTokenMerger
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from max.pipelines.speculative.unified_graph_ops import (
     accept_and_pick_next_tokens,
@@ -65,6 +66,7 @@ from max.pipelines.speculative.unified_graph_ops import (
     merge_tokens_and_host_offsets,
     shift_corrected_tokens,
 )
+from typing_extensions import override
 
 from ..deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from ..deepseekV3_2.model_config import DeepseekV3_2Config
@@ -72,7 +74,7 @@ from ..deepseekV3_2_nextn.deepseekV3_2_nextn import DeepseekV3_2NextN
 from ..deepseekV3_2_nextn.model_config import DeepseekV3_2NextNConfig
 
 
-class UnifiedMTPGlm5_2(Module):
+class UnifiedMTPGlm5_2(SpecDecodeGraphSignature, Module):
     """Fused nn.Module: merge + V3.2 target + greedy rejection + sparse draft."""
 
     def __init__(
@@ -522,16 +524,11 @@ class UnifiedMTPGlm5_2(Module):
             new_token,
         )
 
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        """Input types for the GLM-5.2 with-MTP graph.
-
-        ``kv_params`` is the nested ``{target: {mla, indexer}, draft: {mla,
-        indexer}}`` tree; its flattened inputs carry all four caches. See
-        :func:`build_spec_decode_input_types` for the canonical ordering.
-        """
-        spec = SpecDecodeInputTypeSpec(
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        return SpecDecodeInputTypeSpec(
+            devices=self.config.devices,
             distributed=True,
             data_parallel_degree=self.config.data_parallel_degree,
             include_in_thinking_phase=True,
@@ -539,14 +536,9 @@ class UnifiedMTPGlm5_2(Module):
             enable_sampled_draft_proposal=self.sampled_draft_proposal,
             vocab_size=self.config.vocab_size,
         )
-        ep_input_types = (
-            self.target.ep_manager.input_types()
-            if self.target.ep_manager is not None
-            else ()
-        )
-        return build_spec_decode_input_types(
-            spec,
-            devices=self.config.devices,
-            kv_params=kv_params,
-            ep_input_types=ep_input_types,
-        )
+
+    @override
+    def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        if self.target.ep_manager is None:
+            return ()
+        return self.target.ep_manager.input_types()

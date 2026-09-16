@@ -14,25 +14,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.deepseekV3.batch_processor import (
-    DeepseekV3BatchProcessor,
+    DeepseekV3BatchProcessorBase,
 )
-from max.pipelines.architectures.deepseekV3.model import DeepseekV3Inputs
-from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces import ArchConfig, BatchProcessorRuntime
+from max.pipelines.lib.interfaces.batch_processor import InputsT
 
 if TYPE_CHECKING:
     from .mha_pipeline import Eagle3MHADeepseekV3Inputs
     from .model import Eagle3DeepseekV3Inputs
 
 
-class _Eagle3DeepseekV3BatchProcessorBase(DeepseekV3BatchProcessor):
+class _Eagle3DeepseekV3BatchProcessorBase(
+    DeepseekV3BatchProcessorBase[InputsT]
+):
     """Shared Eagle3 batching: DeepseekV3 inputs plus seed and draft slot."""
 
     def __init__(
@@ -50,73 +50,73 @@ class _Eagle3DeepseekV3BatchProcessorBase(DeepseekV3BatchProcessor):
             np.array([self._seed_counter], dtype=np.uint64)
         ).to(self.runtime.devices[0])
 
-    def _prepare_deepseek_base(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
-        return_n_logits: int,
-    ) -> DeepseekV3Inputs:
-        return super().prepare_initial_token_inputs(
-            replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
 
-
-class Eagle3DeepseekV3BatchProcessor(_Eagle3DeepseekV3BatchProcessorBase):
+class Eagle3DeepseekV3BatchProcessor(
+    _Eagle3DeepseekV3BatchProcessorBase["Eagle3DeepseekV3Inputs"]
+):
     """Ragged batching for the Eagle3 + DeepseekV3 unified (MLA-draft) model."""
 
-    def prepare_initial_token_inputs(  # type: ignore[override]
+    def _make_mla_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
     ) -> Eagle3DeepseekV3Inputs:
         from .model import Eagle3DeepseekV3Inputs
 
-        base = self._prepare_deepseek_base(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
         return Eagle3DeepseekV3Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
+            batch_context_lengths=batch_context_lengths,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+            data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
             draft_tokens=None,
             seed=self._next_seed(),
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
         )
 
 
-class Eagle3MHADeepseekV3BatchProcessor(_Eagle3DeepseekV3BatchProcessorBase):
+class Eagle3MHADeepseekV3BatchProcessor(
+    _Eagle3DeepseekV3BatchProcessorBase["Eagle3MHADeepseekV3Inputs"]
+):
     """Ragged batching for the Eagle3 MHA-draft + DeepseekV3 unified model."""
 
-    def prepare_initial_token_inputs(  # type: ignore[override]
+    def _make_mla_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
     ) -> Eagle3MHADeepseekV3Inputs:
         from .mha_pipeline import Eagle3MHADeepseekV3Inputs
 
-        base = self._prepare_deepseek_base(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
         return Eagle3MHADeepseekV3Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
+            batch_context_lengths=batch_context_lengths,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+            data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
             draft_tokens=None,
             seed=self._next_seed(),
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,

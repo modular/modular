@@ -23,6 +23,7 @@ Mirrors :class:`Eagle3KimiK25Unified` but:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -36,7 +37,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -51,8 +52,8 @@ from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.ragged_token_merger import RaggedTokenMerger
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from max.pipelines.speculative.unified_graph_ops import (
     accept_and_pick_next_tokens,
@@ -61,6 +62,7 @@ from max.pipelines.speculative.unified_graph_ops import (
     merge_tokens_and_host_offsets,
     shift_corrected_tokens,
 )
+from typing_extensions import override
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -70,7 +72,7 @@ from ..eagle_common.eagle_mha_draft import (
 )
 
 
-class Eagle3MHAKimiK25Unified(Module):
+class Eagle3MHAKimiK25Unified(SpecDecodeGraphSignature, Module):
     """Fused: merge + target (MLA) forward + rejection + shift + MHA draft.
 
     The target forwards as a standard distributed DeepseekV3 (MLA). The
@@ -418,23 +420,19 @@ class Eagle3MHAKimiK25Unified(Module):
             new_token,
         )
 
-    def input_types(
-        self,
-        kv_params: MultiKVCacheParams,
-    ) -> tuple[TensorType | BufferType, ...]:
-        """Input types for the unified MHA-draft graph.
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        """Distributed (DP + signals + EP) MHA-draft graph, optional vision,
+        the per-row ``in_thinking_phase`` flag and the bitmask triple.
 
-        ``kv_params`` is the unified ``{"target", "draft"}`` tree. The target
-        leaf is MLA; the draft leaf is MHA and carries its own per-device
-        blocks, cache lengths, lookup table, and dispatch metadata (the qN
-        verify slot plus the q1 decode slot), so the graph-capture branch can
-        populate MHA geometry for the draft independently of the target's MLA
-        geometry. Optionally prepends per-device vision inputs and carries the
-        per-row ``in_thinking_phase`` flag plus the structured-output bitmask
-        triple. See :func:`build_spec_decode_input_types` for the canonical
-        ordering.
+        The draft leaf of the KV tree is MHA and carries its own per-device
+        blocks, cache lengths, lookup table and dispatch metadata (the qN
+        verify slot plus the q1 decode slot), so graph capture can populate
+        MHA geometry for the draft independently of the target's MLA geometry.
         """
-        spec = SpecDecodeInputTypeSpec(
+        return SpecDecodeInputTypeSpec(
+            devices=self.config.devices,
             distributed=True,
             data_parallel_degree=self.config.data_parallel_degree,
             enable_vision=self.enable_vision,
@@ -442,17 +440,12 @@ class Eagle3MHAKimiK25Unified(Module):
             include_in_thinking_phase=True,
             enable_structured_output=self.enable_structured_output,
         )
-        ep_input_types = (
-            self.target.ep_manager.input_types()
-            if self.target.ep_manager is not None
-            else ()
-        )
-        return build_spec_decode_input_types(
-            spec,
-            devices=self.config.devices,
-            kv_params=kv_params,
-            ep_input_types=ep_input_types,
-        )
+
+    @override
+    def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        if self.target.ep_manager is None:
+            return ()
+        return self.target.ep_manager.input_types()
 
 
 # TODO(SERVOPT-1437): This is a temporary patch, until we have a proper way

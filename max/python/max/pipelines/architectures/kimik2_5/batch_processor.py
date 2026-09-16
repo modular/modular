@@ -29,10 +29,11 @@ from max.graph.buffer_utils import cast_tensor_to
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.deepseekV3.batch_processor import (
-    DeepseekV3BatchProcessor,
+    DeepseekV3BatchProcessorBase,
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.interfaces.batch_processor import (
+    InputsT,
     ragged_kv_symbolic_inputs,
 )
 from max.pipelines.lib.vision_encoder_cache import concat_device_buffers
@@ -47,8 +48,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger("max.pipelines")
 
 
-class KimiK2_5BatchProcessor(DeepseekV3BatchProcessor):
-    """Ragged batching with vision encoder cache for Kimi-K2.5 models."""
+class KimiK2_5BatchProcessorBase(DeepseekV3BatchProcessorBase[InputsT]):
+    """Ragged batching with vision encoder cache for Kimi-K2.5 models.
+
+    Generic in the ``*Inputs`` type so the DFlash variant can build its own
+    subclass.
+    """
 
     _model_config: KimiK2_5Config | None = None
     _vision_model: Model | None = None
@@ -78,44 +83,6 @@ class KimiK2_5BatchProcessor(DeepseekV3BatchProcessor):
             kv_params=kv_params,
             device_refs=device_refs,
             include_signal_buffers=True,
-        )
-
-    def prepare_initial_token_inputs(  # type: ignore[override]
-        self,
-        replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> KimiK2_5ModelInputs:
-        """Prepare inputs for the first execution pass of KimiK2.5.
-
-        Images are selected, encoded (see ``encode_uncached_chunked``), and
-        cached by the pipeline-owned ``VisionEncoderCache`` between prep and
-        execute; this processor only builds the text inputs.
-        """
-        assert self._model_config is not None, (
-            "model_config must be bound; call bind_model_config() after load_model()"
-        )
-        assert self._vision_model is not None
-        assert self._session is not None
-
-        base = super().prepare_initial_token_inputs(
-            replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-
-        from .model import KimiK2_5ModelInputs
-
-        return KimiK2_5ModelInputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
         )
 
     def _collect_uncached_image_inputs(
@@ -480,3 +447,34 @@ class KimiK2_5BatchProcessor(DeepseekV3BatchProcessor):
             self._patches_in_image(entry) // merge_sq for entry in per_image
         ]
         return vision_embeds, token_counts
+
+
+class KimiK2_5BatchProcessor(KimiK2_5BatchProcessorBase["KimiK2_5ModelInputs"]):
+    """Kimi-K2.5 batching that builds :class:`KimiK2_5ModelInputs`."""
+
+    def _make_mla_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
+    ) -> KimiK2_5ModelInputs:
+        from .model import KimiK2_5ModelInputs
+
+        return KimiK2_5ModelInputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
+            batch_context_lengths=batch_context_lengths,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+            data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
+        )

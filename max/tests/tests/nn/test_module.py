@@ -12,12 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for max.nn.Module."""
 
+from typing import Generic, TypeVar, get_args, get_origin
+
 import numpy as np
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, SymbolicDim, Weight
 from max.nn import Module
+
+_T = TypeVar("_T")
 
 
 class TestLayer(Module):
@@ -36,6 +40,27 @@ class TestModel(Module):
 
     def __call__(self):
         return self.layer() * 2
+
+
+def test_generic_module_is_subscriptable() -> None:
+    """A Module that is also Generic keeps the parameters Generic records.
+
+    Without ``Layer.__init_subclass__`` chaining to ``super()`` the subscript
+    below raises AttributeError at import.
+    """
+
+    class GenericModule(Module, Generic[_T]):
+        def __call__(self, value: _T) -> _T:
+            return value
+
+    alias = GenericModule[int]
+    assert get_origin(alias) is GenericModule
+    assert get_args(alias) == (int,)
+
+    class ConcreteModule(GenericModule[int]):
+        pass
+
+    assert ConcreteModule()(3) == 3
 
 
 def test_state_dict(session: InferenceSession) -> None:

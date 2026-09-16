@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -22,11 +23,14 @@ from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
-    Llama3EpBatchProcessor,
+    Llama3EpBatchProcessorBase,
 )
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
-from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
+from max.pipelines.lib.interfaces.batch_processor import (
+    BatchProcessorRuntime,
+    InputsT,
+)
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 
@@ -34,10 +38,10 @@ if TYPE_CHECKING:
     from .model import DeepseekV3Inputs
 
 
-class DeepseekV3BatchProcessor(Llama3EpBatchProcessor):
+class DeepseekV3BatchProcessorBase(Llama3EpBatchProcessorBase[InputsT]):
     """Ragged batching for DeepseekV3 with MLA context lengths and EP MoE.
 
-    Extends :class:`Llama3EpBatchProcessor` with:
+    Extends :class:`Llama3EpBatchProcessorBase` with:
 
     - Per-device preallocated ``batch_context_lengths`` buffers that track
       page-aligned KV context length for MLA prefill.
@@ -101,12 +105,12 @@ class DeepseekV3BatchProcessor(Llama3EpBatchProcessor):
                     self._batch_context_lengths[0][0].item()
                 )
 
-    def prepare_initial_token_inputs(  # type: ignore[override]
+    def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
-    ) -> DeepseekV3Inputs:
+    ) -> InputsT:
         """Prepare batch inputs for a DeepseekV3 forward pass.
 
         Args:
@@ -120,8 +124,6 @@ class DeepseekV3BatchProcessor(Llama3EpBatchProcessor):
             :class:`DeepseekV3Inputs` with tokens, row offsets, host offsets,
             batch context lengths, DP splits, signal buffers, and EP buffers.
         """
-        from .model import DeepseekV3Inputs
-
         dp = self.runtime.pipeline_config.model.data_parallel_degree
         if len(replica_batches) != dp:
             raise ValueError(
@@ -205,7 +207,7 @@ class DeepseekV3BatchProcessor(Llama3EpBatchProcessor):
             compute_data_parallel_splits(replica_batches)
         )
 
-        return DeepseekV3Inputs(
+        return self._make_mla_inputs(
             tokens=tokens,
             input_row_offsets=device_input_row_offsets,
             host_input_row_offsets=host_input_row_offsets,
@@ -217,4 +219,53 @@ class DeepseekV3BatchProcessor(Llama3EpBatchProcessor):
             ),
             data_parallel_splits=data_parallel_splits,
             ep_inputs=self._ep_inputs(),
+        )
+
+    @abstractmethod
+    def _make_mla_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
+    ) -> InputsT:
+        """Constructs this processor's ``*Inputs`` from the batched fields."""
+
+
+class DeepseekV3BatchProcessor(
+    DeepseekV3BatchProcessorBase["DeepseekV3Inputs"]
+):
+    """DeepseekV3 batching that builds :class:`DeepseekV3Inputs`."""
+
+    def _make_mla_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
+    ) -> DeepseekV3Inputs:
+        from .model import DeepseekV3Inputs
+
+        return DeepseekV3Inputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
+            batch_context_lengths=batch_context_lengths,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+            data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
         )

@@ -43,7 +43,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -53,12 +53,13 @@ from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
+from typing_extensions import override
 
 from .config import SpeculativeConfig
 from .ragged_token_merger import RaggedTokenMerger
 from .spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from .spec_target import SpecDecodeTarget
 from .unified_graph_ops import (
@@ -202,7 +203,7 @@ class SequentialProposer(Protocol):
         ...
 
 
-class SequentialDriver(Module):
+class SequentialDriver(SpecDecodeGraphSignature, Module):
     """Drives the sequential speculative-decoding loop.
 
     Each iteration runs merge, verify, mask, accept, shift, propose,
@@ -216,8 +217,6 @@ class SequentialDriver(Module):
         *,
         target_model: Module,
         draft_model: Module,
-        devices: Sequence[DeviceRef],
-        data_parallel_degree: int,
         input_spec: SpecDecodeInputTypeSpec,
         speculative_config: SpeculativeConfig | None = None,
         enable_structured_output: bool = False,
@@ -225,19 +224,20 @@ class SequentialDriver(Module):
         super().__init__()
         self._target = target
         self._proposer = proposer
-        self.devices = devices
-        self.data_parallel_degree = data_parallel_degree
+        self._input_spec = replace(
+            input_spec,
+            include_in_thinking_phase=proposer.uses_thinking_phase,
+            enable_structured_output=enable_structured_output,
+        )
+        # Both come off the spec, so signature and loop share one device set.
+        self.devices = self._input_spec.devices
+        self.data_parallel_degree = self._input_spec.data_parallel_degree
         self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
             if speculative_config is not None
             and speculative_config.num_speculative_tokens is not None
             else 1
-        )
-        self._input_spec = replace(
-            input_spec,
-            include_in_thinking_phase=proposer.uses_thinking_phase,
-            enable_structured_output=enable_structured_output,
         )
 
         # Relaxed acceptance is the in-thinking-phase feature; a proposer that
@@ -266,7 +266,7 @@ class SequentialDriver(Module):
         # Registered under the names the hand-written modules used, so the
         # state_dict keys and the weights registry are unchanged.
         self.target = target_model
-        self.merger = RaggedTokenMerger(devices[0])
+        self.merger = RaggedTokenMerger(self.devices[0])
         self.draft = draft_model
 
     def __call__(
@@ -643,16 +643,11 @@ class SequentialDriver(Module):
             for i in range(len(self.devices))
         ]
 
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        """Builds the unified spec-decode graph signature.
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        return self._input_spec
 
-        See ``build_spec_decode_input_types`` for the canonical ordering.
-        """
-        return build_spec_decode_input_types(
-            self._input_spec,
-            devices=self.devices,
-            kv_params=kv_params,
-            ep_input_types=self._target.ep_input_types(),
-        )
+    @override
+    def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        return self._target.ep_input_types()

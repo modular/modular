@@ -77,7 +77,10 @@ from max.profiler import traced
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Inputs
-from .batch_processor import KimiK2_5BatchProcessor
+from .batch_processor import (
+    KimiK2_5BatchProcessor,
+    KimiK2_5BatchProcessorBase,
+)
 from .context import KimiK2_5TextAndVisionContext
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
@@ -159,7 +162,7 @@ class KimiK2_5Model(
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
     model_config_cls: ClassVar[type[Any]] = KimiK2_5Config
-    batch_processor_cls: ClassVar[type[KimiK2_5BatchProcessor]] = (
+    batch_processor_cls: ClassVar[type[KimiK2_5BatchProcessorBase[Any]]] = (
         KimiK2_5BatchProcessor
     )
 
@@ -217,7 +220,7 @@ class KimiK2_5Model(
         self.vision_model, self.language_model = self.load_model(session)
 
         if self._batch_processor is not None:
-            assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
+            assert isinstance(self._batch_processor, KimiK2_5BatchProcessorBase)
             assert self.model_config is not None
             self._batch_processor.bind_model_config(self.model_config)
             assert self.vision_model is not None
@@ -782,7 +785,7 @@ class KimiK2_5Model(
         per-image order) stays encapsulated in the batch processor; the cache
         only ever sees the per-image-ordered output.
         """
-        assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
+        assert isinstance(self._batch_processor, KimiK2_5BatchProcessorBase)
         embeddings, token_counts = (
             self._batch_processor.encode_uncached_chunked(selection)
         )

@@ -19,16 +19,14 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import (
-    BufferType,
     BufferValue,
     DeviceRef,
     Graph,
     ProfileScopeColor,
-    TensorType,
     TensorValue,
     ops,
 )
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -47,8 +45,8 @@ from max.pipelines.speculative.ragged_token_merger import (
     _shape_to_scalar,
 )
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from max.pipelines.speculative.unified_graph_ops import (
     accept_and_pick_next_tokens,
@@ -57,13 +55,14 @@ from max.pipelines.speculative.unified_graph_ops import (
     merge_tokens_and_host_offsets,
     shift_corrected_tokens,
 )
+from typing_extensions import override
 
 from ..gemma4.gemma4 import Gemma4TextModel
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig
 
 
-class UnifiedMTPGemma4(Module):
+class UnifiedMTPGemma4(SpecDecodeGraphSignature, Module):
     """Fused nn.Module: merge + target forward + greedy rejection + shift.
 
     Composes RaggedTokenMerger, Gemma4TextModel (target), Gemma4Assistant
@@ -456,25 +455,18 @@ class UnifiedMTPGemma4(Module):
             new_token,
         )
 
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        """Input types for the unified MTP Gemma4 graph.
-
-        Distributed (signals + DP splits) graph with the per-row
-        ``in_thinking_phase`` flag, appending the structured-output bitmask
-        triple when enabled. See :func:`build_spec_decode_input_types` for the
-        canonical ordering.
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        """Distributed (signals + DP splits) vision graph with the per-row
+        ``in_thinking_phase`` flag and the structured-output bitmask triple.
         """
-        return build_spec_decode_input_types(
-            SpecDecodeInputTypeSpec(
-                distributed=True,
-                data_parallel_degree=1,
-                enable_vision=True,
-                vision_hidden_size=self.config.text_config.hidden_size,
-                include_in_thinking_phase=True,
-                enable_structured_output=self.enable_structured_output,
-            ),
+        return SpecDecodeInputTypeSpec(
             devices=self.config.devices,
-            kv_params=kv_params,
+            distributed=True,
+            data_parallel_degree=1,
+            enable_vision=True,
+            vision_hidden_size=self.config.text_config.hidden_size,
+            include_in_thinking_phase=True,
+            enable_structured_output=self.enable_structured_output,
         )

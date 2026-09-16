@@ -14,15 +14,14 @@
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from itertools import islice
 from typing import Any, ClassVar
 
 from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
-from max.graph import BufferValue, Graph, Module, TensorValue
+from max.graph import Graph, Module
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
@@ -30,6 +29,11 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.modeling.types import RequestID
+from max.pipelines.speculative import (
+    DraftAliases,
+    decode_spec_decode_tail,
+    validate_draft_state_dict,
+)
 from typing_extensions import override
 
 from ..inkling.batch_processor import InklingInputs
@@ -45,8 +49,6 @@ from ..inkling.weight_adapters import VISION_PREFIX
 from .batch_processor import UnifiedMTPInklingBatchProcessor
 from .inkling_mtp import InklingMultiTokenPredictor
 from .unified_mtp_inkling import UnifiedMTPInkling
-
-logger = logging.getLogger("max.pipelines")
 
 
 @dataclass(kw_only=True)
@@ -216,20 +218,12 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
         self._nn_model = nn_model.target
         self._fused_nn_model = nn_model
 
-        draft_expected = set(nn_model.draft.raw_state_dict().keys())
-        draft_provided = set(self._draft_state_dict.keys())
-        missing = {
-            k
-            for k in draft_expected - draft_provided
-            if not k.startswith("embed.")
-        }
-        extra = draft_provided - draft_expected
-        if missing:
-            raise ValueError(
-                f"Draft model has unloaded non-shared weights: {sorted(missing)}"
-            )
-        if extra:
-            logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")
+        # Inkling names its embedding ``embed``, not ``embed_tokens``.
+        validate_draft_state_dict(
+            nn_model.draft.raw_state_dict().keys(),
+            self._draft_state_dict.keys(),
+            DraftAliases(always=("embed.",)),
+        )
 
         weights_registry = {
             **nn_model.draft.state_dict(),
@@ -259,11 +253,11 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
                 next(variadic_iter).buffer for _ in range(num_signals)
             ]
             kv_tree = kv_params.unflatten_kv_inputs(variadic_iter)
-            assert isinstance(kv_tree, dict)
+            assert isinstance(kv_tree, Mapping)
             target_tree = kv_tree["target"]
             draft_tree = kv_tree["draft"]
-            assert isinstance(target_tree, dict)
-            assert isinstance(draft_tree, dict)
+            assert isinstance(target_tree, Mapping)
+            assert isinstance(draft_tree, Mapping)
             target_kv = kv_collections_by_key(target_tree)
             draft_kv = kv_collections_by_key(draft_tree)
             slot_idx = [next(variadic_iter).tensor for _ in range(n_devs)]
@@ -276,29 +270,18 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
             draft_conv_pools = nn_model.draft.conv_layout.take_pools(
                 variadic_iter, n_devs
             )
-            (
-                draft_tokens,
-                seed,
-                temperature,
-                top_k,
-                max_k,
-                top_p,
-                min_top_p,
-                in_thinking_phase,
-            ) = [value.tensor for value in islice(variadic_iter, 8)]
-            pinned_bitmask: TensorValue | None = None
-            wait_payload: BufferValue | None = None
-            device_bitmask_scratch: BufferValue | None = None
-            if nn_model.enable_structured_output:
-                pinned_bitmask = next(variadic_iter).tensor
-                wait_payload = next(variadic_iter).buffer
-                device_bitmask_scratch = next(variadic_iter).buffer
+            # Inkling's head is its own shape, so only the tail is shared.
+            tail = decode_spec_decode_tail(variadic_iter, nn_model.input_spec)
+            # The spec sets ``include_in_thinking_phase``, so the tail
+            # always carries it; the field is optional only because the
+            # shared decode serves architectures that omit the input.
+            assert tail.in_thinking_phase is not None
 
             outputs = nn_model(
                 tokens=tokens.tensor,
                 input_row_offsets=input_row_offsets.tensor,
                 positions=positions.tensor,
-                draft_tokens=draft_tokens,
+                draft_tokens=tail.draft_tokens,
                 image_embeddings=image_embeddings.tensor,
                 image_indices=image_indices.tensor,
                 signal_buffers=signal_buffers,
@@ -310,16 +293,16 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
                 has_initial_state=has_initial_state,
                 target_conv_pools=target_conv_pools,
                 draft_conv_pools=draft_conv_pools,
-                seed=seed,
-                temperature=temperature,
-                top_k=top_k,
-                max_k=max_k,
-                top_p=top_p,
-                min_top_p=min_top_p,
-                in_thinking_phase=in_thinking_phase,
-                pinned_bitmask=pinned_bitmask,
-                wait_payload=wait_payload,
-                device_bitmask_scratch=device_bitmask_scratch,
+                seed=tail.seed,
+                temperature=tail.temperature,
+                top_k=tail.top_k,
+                max_k=tail.max_k,
+                top_p=tail.top_p,
+                min_top_p=tail.min_top_p,
+                in_thinking_phase=tail.in_thinking_phase,
+                pinned_bitmask=tail.pinned_bitmask,
+                wait_payload=tail.wait_payload,
+                device_bitmask_scratch=tail.device_bitmask_scratch,
             )
             graph.output(*outputs)
 

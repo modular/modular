@@ -34,7 +34,10 @@ from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
-from .batch_processor import DeepseekV3BatchProcessor
+from .batch_processor import (
+    DeepseekV3BatchProcessor,
+    DeepseekV3BatchProcessorBase,
+)
 from .deepseekV3 import DeepseekV3
 from .memory_planner import (
     _ep_max_rank_send_tokens_for_pipeline,
@@ -84,7 +87,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV3Config
-    batch_processor_cls: ClassVar[type[DeepseekV3BatchProcessor]] = (
+    batch_processor_cls: ClassVar[type[DeepseekV3BatchProcessorBase[Any]]] = (
         DeepseekV3BatchProcessor
     )
 

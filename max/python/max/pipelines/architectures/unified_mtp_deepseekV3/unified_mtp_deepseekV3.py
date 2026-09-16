@@ -67,9 +67,8 @@ class UnifiedMTPDeepseekV3(SequentialDriver):
             MTPDeepseekV3Proposer(draft),
             target_model=target,
             draft_model=draft,
-            devices=config.devices,
-            data_parallel_degree=config.data_parallel_degree,
             input_spec=SpecDecodeInputTypeSpec(
+                devices=config.devices,
                 distributed=True,
                 data_parallel_degree=config.data_parallel_degree,
             ),

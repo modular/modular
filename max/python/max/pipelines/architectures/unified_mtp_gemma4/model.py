@@ -301,85 +301,36 @@ class UnifiedMTPGemma4Model(
         )
         weights_registry = nn_model.state_dict()
 
-        n_devs = len(self.devices)
         with Graph(
             "gemma4_with_mtp_graph",
             input_types=nn_model.input_types(self.kv_params),
             module=module,
         ) as graph:
-            graph_inputs = iter(graph.inputs)
-            tokens = next(graph_inputs)
-            # Vision embeds + scatter indices follow tokens, matching
-            # build_spec_decode_input_types(enable_vision=True).
-            image_embeddings = [
-                next(graph_inputs).tensor for _ in range(n_devs)
-            ]
-            image_token_indices = [
-                next(graph_inputs).tensor for _ in range(n_devs)
-            ]
-            device_input_row_offsets = next(graph_inputs)
-            host_input_row_offsets = next(graph_inputs)
-            return_n_logits = next(graph_inputs)
-            data_parallel_splits = next(graph_inputs)
-            variadic_args = list(graph_inputs)
-
-            variadic_args_iter = iter(variadic_args)
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            # Unflatten the hybrid {sliding, global} KV tree.
-            sliding_kv_collections, global_kv_collections = (
-                self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
-            )
-
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            draft_tokens = next(variadic_args_iter).tensor
-
-            seed = next(variadic_args_iter).tensor
-            temperature = next(variadic_args_iter).tensor
-            top_k = next(variadic_args_iter).tensor
-            max_k = next(variadic_args_iter).tensor
-            top_p = next(variadic_args_iter).tensor
-            min_top_p = next(variadic_args_iter).tensor
-            in_thinking_phase = next(variadic_args_iter).tensor
-
-            pinned_bitmask_graph = None
-            wait_payload_graph = None
-            device_bitmask_scratch_graph = None
-            if nn_model.enable_structured_output:
-                pinned_bitmask_graph = next(variadic_args_iter).tensor
-                wait_payload_graph = next(variadic_args_iter).buffer
-                device_bitmask_scratch_graph = next(variadic_args_iter).buffer
+            graph_inputs = nn_model.decode_inputs(graph.inputs, self.kv_params)
 
             outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=device_input_row_offsets.tensor,
-                image_embeddings=image_embeddings,
-                image_token_indices=image_token_indices,
-                draft_tokens=draft_tokens,
-                signal_buffers=signal_buffers,
-                sliding_kv_collections=sliding_kv_collections,
-                global_kv_collections=global_kv_collections,
-                return_n_logits=return_n_logits.tensor,
-                host_input_row_offsets=host_input_row_offsets.tensor,
-                data_parallel_splits=data_parallel_splits.tensor,
-                batch_context_lengths=batch_context_lengths,
-                seed=seed,
-                temperature=temperature,
-                top_k=top_k,
-                max_k=max_k,
-                top_p=top_p,
-                min_top_p=min_top_p,
-                in_thinking_phase=in_thinking_phase,
-                pinned_bitmask=pinned_bitmask_graph,
-                wait_payload=wait_payload_graph,
-                device_bitmask_scratch=device_bitmask_scratch_graph,
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                image_embeddings=graph_inputs.vision_embeddings,
+                image_token_indices=graph_inputs.vision_scatter_indices,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                sliding_kv_collections=graph_inputs.kv("sliding_attention"),
+                global_kv_collections=graph_inputs.kv("full_attention"),
+                return_n_logits=graph_inputs.return_n_logits,
+                host_input_row_offsets=graph_inputs.host_offsets,
+                data_parallel_splits=graph_inputs.dp_splits,
+                batch_context_lengths=graph_inputs.batch_context_lengths,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
             )
 
             graph.output(*outputs)

@@ -28,6 +28,7 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
+    InputsT,
     RaggedBatchProcessor,
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
@@ -40,8 +41,16 @@ if TYPE_CHECKING:
     from .model import Llama3Inputs
 
 
-class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
-    """Ragged batching with pinned host buffers and optional DP / LoRA."""
+class Llama3BatchProcessorBase(RaggedBatchProcessor[TextContext, InputsT]):
+    """Ragged batching with pinned host buffers and optional DP / LoRA.
+
+    Generic in the ``*Inputs`` type so a model whose inputs are a sibling of
+    :class:`Llama3Inputs` rather than a subclass -- the whole DeepSeek V3
+    family -- can reuse this batching without claiming to produce
+    :class:`Llama3Inputs`. Subclasses bind ``InputsT`` and implement
+    :meth:`_make_inputs`; :class:`Llama3BatchProcessor` is the binding for
+    models that do produce :class:`Llama3Inputs`.
+    """
 
     def _stage_ragged_token_inputs(
         self,
@@ -120,8 +129,7 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
-    ) -> Llama3Inputs:
-        from .model import Llama3Inputs
+    ) -> InputsT:
 
         dp = self.runtime.pipeline_config.model.data_parallel_degree
         if len(replica_batches) != dp:
@@ -147,13 +155,28 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         else:
             data_parallel_splits = None
 
-        return Llama3Inputs(
+        return self._make_inputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
             return_n_logits=return_n_logits_tensor,
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
             data_parallel_splits=data_parallel_splits,
+        )
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        data_parallel_splits: Buffer | None,
+    ) -> InputsT:
+        """Constructs this processor's ``*Inputs`` from the batched fields."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement _make_inputs"
         )
 
     def process_outputs(
@@ -166,7 +189,32 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         )
 
 
-class Llama3EpBatchProcessor(Llama3BatchProcessor):
+class Llama3BatchProcessor(Llama3BatchProcessorBase["Llama3Inputs"]):
+    """Ragged batching for models whose inputs are :class:`Llama3Inputs`."""
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        data_parallel_splits: Buffer | None,
+    ) -> Llama3Inputs:
+        from .model import Llama3Inputs
+
+        return Llama3Inputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            return_n_logits=return_n_logits,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            data_parallel_splits=data_parallel_splits,
+        )
+
+
+class Llama3EpBatchProcessorBase(Llama3BatchProcessorBase[InputsT]):
     """Llama3 batching extended with EP MoE communication buffers."""
 
     def __init__(
@@ -237,3 +285,9 @@ class Llama3EpBatchProcessor(Llama3BatchProcessor):
             self._ep_inputs(),
             self._host_input_row_offsets_for_dp(host_row_offsets, dp),
         )
+
+
+class Llama3EpBatchProcessor(
+    Llama3EpBatchProcessorBase["Llama3Inputs"], Llama3BatchProcessor
+):
+    """EP MoE batching for models whose inputs are :class:`Llama3Inputs`."""

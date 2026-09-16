@@ -17,14 +17,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
-from typing import Any
 
 from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, Graph, Module, TensorValue, Value
+from max.graph import Graph, Module
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import (
@@ -43,6 +42,7 @@ from max.pipelines.lib.interfaces import (
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
+from max.pipelines.speculative import DraftAliases, validate_draft_state_dict
 from typing_extensions import override
 
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -225,34 +225,22 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
             draft_state_dict, weight_alignment=1, strict=False
         )
 
-        draft_expected = set(nn_model.draft.raw_state_dict().keys())
-        draft_provided = set(draft_state_dict.keys())
-        shared_prefixes = ("embed_tokens.", "lm_head.")
-        missing = {
-            k
-            for k in draft_expected - draft_provided
-            if not k.startswith(shared_prefixes)
-        }
-        extra = draft_provided - draft_expected
-        if missing:
-            raise ValueError(
-                f"Draft model has unloaded non-shared weights: {sorted(missing)}"
-            )
-        if extra:
-            logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")
+        # A draft checkpoint with its own ``lm_head`` loads it; one without
+        # inherits the target's.
+        aliased = validate_draft_state_dict(
+            nn_model.draft.raw_state_dict().keys(),
+            draft_state_dict.keys(),
+            DraftAliases(always=("embed_tokens.",), when_absent=("lm_head.",)),
+        )
 
         # Capture concrete draft weights before renaming; ``state_dict()``
         # resets weight.name back to the module-path key.
         draft_weights_registry = nn_model.draft.state_dict()
 
-        draft_lm_head_shared = "lm_head.weight" not in draft_state_dict
-
         # Rename non-shared draft Weights so graph-level names are unique
         # (e.g. "draft.norm.weight" vs "norm.weight" from target).
         for name, weight in nn_model.draft.raw_state_dict().items():
-            if name.startswith("embed_tokens."):
-                continue
-            if draft_lm_head_shared and name.startswith("lm_head."):
+            if name.startswith(aliased):
                 continue
             weight.name = f"draft.{name}"
 
@@ -275,9 +263,7 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         self.state_dict = dict(self.nn_model.state_dict())
         self.state_dict.update(nn_model.target.state_dict())
         for k, v in draft_weights_registry.items():
-            if k.startswith("embed_tokens."):
-                continue
-            if draft_lm_head_shared and k.startswith("lm_head."):
+            if k.startswith(aliased):
                 continue
             self.state_dict[f"draft.{k}"] = v
 
@@ -292,100 +278,34 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 input_types=nn_model.input_types(self.kv_params),
                 module=graph_module,
             ) as graph:
-                (
-                    tokens,
-                    *rest_inputs,
-                ) = graph.inputs
-
-                rest_iter = iter(rest_inputs)
-                n_devices = len(self.devices)
-                # Image embeddings + scatter indices (per device) appear
-                # right after ``tokens`` in the graph's input_types. Match
-                # the same ordering when destructuring inputs here.
-                image_embeddings_in = [
-                    next(rest_iter).tensor for _ in range(n_devices)
-                ]
-                image_token_indices_in = [
-                    next(rest_iter).tensor for _ in range(n_devices)
-                ]
-                devices_input_row_offsets = next(rest_iter)
-                host_input_row_offsets = next(rest_iter)
-                return_n_logits = next(rest_iter)
-                data_parallel_splits = next(rest_iter)
-                variadic_args = list(rest_iter)
-
-                variadic_args_iter = iter(variadic_args)
-                signal_buffers = [
-                    next(variadic_args_iter).buffer
-                    for _ in range(len(self.devices))
-                ]
-
-                kv_caches_per_dev, draft_kv_collections = (
-                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
+                graph_inputs = nn_model.decode_inputs(
+                    graph.inputs, self.kv_params
                 )
 
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                target_ep_inputs: list[Value[Any]] | None = None
-                if nn_model.target.ep_manager is not None:
-                    n_target_ep = len(nn_model.target.ep_manager.input_types())
-                    target_ep_inputs = [
-                        next(variadic_args_iter) for _ in range(n_target_ep)
-                    ]
-
-                draft_tokens = next(variadic_args_iter).tensor
-
-                seed = next(variadic_args_iter).tensor
-                temperature = next(variadic_args_iter).tensor
-                top_k = next(variadic_args_iter).tensor
-                max_k = next(variadic_args_iter).tensor
-                top_p = next(variadic_args_iter).tensor
-                min_top_p = next(variadic_args_iter).tensor
-                in_thinking_phase = next(variadic_args_iter).tensor
-
-                # Optional bitmask input(s) — present only when structured
-                # output is enabled (matches the conditional in
-                # input_types()). When the overlap path is on, the single
-                # device-side bitmask tensor is replaced by a (pinned,
-                # wait_payload, device_scratch) triple consumed by the
-                # in-graph wait + H2D.
-                pinned_bitmask_graph: TensorValue | None = None
-                wait_payload_graph: BufferValue | None = None
-                device_bitmask_scratch_graph: BufferValue | None = None
-                if nn_model.enable_structured_output:
-                    pinned_bitmask_graph = next(variadic_args_iter).tensor
-                    wait_payload_graph = next(variadic_args_iter).buffer
-                    device_bitmask_scratch_graph = next(
-                        variadic_args_iter
-                    ).buffer
-
                 outputs = nn_model(
-                    tokens=tokens.tensor,
-                    input_row_offsets=devices_input_row_offsets.tensor,
-                    draft_tokens=draft_tokens.tensor,
-                    signal_buffers=signal_buffers,
-                    kv_collections=kv_caches_per_dev,
-                    return_n_logits=return_n_logits.tensor,
-                    host_input_row_offsets=host_input_row_offsets.tensor,
-                    data_parallel_splits=data_parallel_splits.tensor,
-                    batch_context_lengths=batch_context_lengths,
-                    seed=seed,
-                    temperature=temperature,
-                    top_k=top_k,
-                    max_k=max_k,
-                    top_p=top_p,
-                    min_top_p=min_top_p,
-                    in_thinking_phase=in_thinking_phase,
-                    image_embeddings=image_embeddings_in,
-                    image_token_indices=image_token_indices_in,
-                    ep_inputs=target_ep_inputs,
-                    draft_kv_collections=draft_kv_collections,
-                    pinned_bitmask=pinned_bitmask_graph,
-                    wait_payload=wait_payload_graph,
-                    device_bitmask_scratch=device_bitmask_scratch_graph,
+                    tokens=graph_inputs.tokens,
+                    input_row_offsets=graph_inputs.input_row_offsets,
+                    draft_tokens=graph_inputs.draft_tokens,
+                    signal_buffers=graph_inputs.signal_buffers,
+                    kv_collections=graph_inputs.kv("target"),
+                    return_n_logits=graph_inputs.return_n_logits,
+                    host_input_row_offsets=graph_inputs.host_offsets,
+                    data_parallel_splits=graph_inputs.dp_splits,
+                    batch_context_lengths=graph_inputs.batch_context_lengths,
+                    seed=graph_inputs.seed,
+                    temperature=graph_inputs.temperature,
+                    top_k=graph_inputs.top_k,
+                    max_k=graph_inputs.max_k,
+                    top_p=graph_inputs.top_p,
+                    min_top_p=graph_inputs.min_top_p,
+                    in_thinking_phase=graph_inputs.thinking_phase,
+                    image_embeddings=graph_inputs.vision_embeddings,
+                    image_token_indices=graph_inputs.vision_scatter_indices,
+                    ep_inputs=graph_inputs.ep_inputs or None,
+                    draft_kv_collections=graph_inputs.kv("draft"),
+                    pinned_bitmask=graph_inputs.pinned_bitmask,
+                    wait_payload=graph_inputs.wait_payload,
+                    device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
                 )
                 graph.output(*outputs)
 

@@ -24,7 +24,6 @@ from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue
 from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -239,54 +238,17 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         with Graph(
             GRAPH_NAME, input_types=nn_model.input_types(kv_params)
         ) as graph:
-            (
-                tokens,
-                input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *rest,
-            ) = graph.inputs
-            it = iter(rest)
-            signal_buffers = [next(it).buffer for _ in range(num_devices)]
-
-            kv_tree = kv_params.unflatten_kv_inputs(it)
-            assert isinstance(kv_tree, dict)
-            target_leaf = tree.leaves(
-                kv_tree["target"], leaf=KVCacheInputsPerDevice
-            )
-            draft_leaf = tree.leaves(
-                kv_tree["draft"], leaf=KVCacheInputsPerDevice
-            )
-
-            # Consumed by the canonical signature but unused: Qwen3.5 has no
-            # sparse-attention budget to bound.
-            for _ in range(num_devices):
-                next(it)
-
-            draft_tokens = next(it).tensor
-            seed = next(it).tensor
-            temperature = next(it).tensor
-            top_k = next(it).tensor
-            max_k = next(it).tensor
-            top_p = next(it).tensor
-            min_top_p = next(it).tensor
-            in_thinking_phase = next(it).tensor
-
-            pinned_bitmask: TensorValue | None = None
-            wait_payload: BufferValue | None = None
-            device_bitmask_scratch: BufferValue | None = None
-            if nn_model.enable_structured_output:
-                pinned_bitmask = next(it).tensor
-                wait_payload = next(it).buffer
-                device_bitmask_scratch = next(it).buffer
+            graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
+            # Qwen3.5 declares no sparse-attention budget, so
+            # batch_context_lengths goes unread.
+            trailing = iter(graph_inputs.trailing)
 
             # The state tail, in the order ``input_types`` declares it.
             def per_device_buffers() -> list[BufferValue]:
-                return [next(it).buffer for _ in range(num_devices)]
+                return [next(trailing).buffer for _ in range(num_devices)]
 
             def per_device_tensors() -> list[TensorValue]:
-                return [next(it).tensor for _ in range(num_devices)]
+                return [next(trailing).tensor for _ in range(num_devices)]
 
             live_conv_pools = per_device_buffers()
             live_recurrent_pools = per_device_buffers()
@@ -299,34 +261,34 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             # M-RoPE, so it is consumed after the whole state tail.
             position_ids: TensorValue | None = None
             if nn_model.target.mrope_enabled:
-                position_ids = next(it).tensor
+                position_ids = next(trailing).tensor
 
             outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                draft_tokens=draft_tokens,
-                signal_buffers=signal_buffers,
-                target_kv=list(target_leaf),
-                draft_kv=list(draft_leaf),
-                return_n_logits=return_n_logits.tensor,
-                host_input_row_offsets=host_input_row_offsets.tensor,
-                data_parallel_splits=data_parallel_splits.tensor,
-                seed=seed,
-                temperature=temperature,
-                top_k=top_k,
-                max_k=max_k,
-                top_p=top_p,
-                min_top_p=min_top_p,
-                in_thinking_phase=in_thinking_phase,
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                target_kv=graph_inputs.kv("target"),
+                draft_kv=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                host_input_row_offsets=graph_inputs.host_offsets,
+                data_parallel_splits=graph_inputs.dp_splits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
                 live_conv_pools=live_conv_pools,
                 live_recurrent_pools=live_recurrent_pools,
                 live_conv_row_ids=live_conv_row_ids,
                 live_recurrent_row_ids=live_recurrent_row_ids,
                 shadow_conv_pools=shadow_conv_pools,
                 shadow_recurrent_pools=shadow_recurrent_pools,
-                pinned_bitmask=pinned_bitmask,
-                wait_payload=wait_payload,
-                device_bitmask_scratch=device_bitmask_scratch,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
                 position_ids=position_ids,
             )
             graph.output(*outputs)

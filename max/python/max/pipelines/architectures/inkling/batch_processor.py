@@ -153,7 +153,8 @@ class InklingBatchProcessor(
 
         image_embeddings, image_indices = self._image_operands(context_batch)
 
-        return InklingInputs(
+        return self._make_inkling_inputs(
+            context_batch=context_batch,
             tokens=tokens,
             input_row_offsets=input_row_offsets,
             positions=positions,
@@ -164,6 +165,37 @@ class InklingBatchProcessor(
             slot_idx=slot_idx,
             has_initial_state=has_initial_state,
             conv_pools=self._conv_pools,
+            kv_cache_inputs=kv_cache_inputs,
+        )
+
+    def _make_inkling_inputs(
+        self,
+        *,
+        context_batch: Sequence[TextAndVisionContext],
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        positions: Buffer,
+        return_n_logits: Buffer,
+        image_embeddings: Buffer,
+        image_indices: Buffer,
+        signal_buffers: list[Buffer],
+        slot_idx: list[Buffer],
+        has_initial_state: list[Buffer],
+        conv_pools: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+    ) -> InklingInputs:
+        """Constructs this processor's ``*Inputs`` from the batched fields."""
+        return InklingInputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            positions=positions,
+            return_n_logits=return_n_logits,
+            image_embeddings=image_embeddings,
+            image_indices=image_indices,
+            signal_buffers=signal_buffers,
+            slot_idx=slot_idx,
+            has_initial_state=has_initial_state,
+            conv_pools=conv_pools,
             kv_cache_inputs=kv_cache_inputs,
         )
 

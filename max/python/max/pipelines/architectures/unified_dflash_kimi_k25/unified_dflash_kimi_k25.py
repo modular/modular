@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -26,7 +27,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
 from max.nn.transformer.transformer import (
@@ -41,17 +42,39 @@ from max.pipelines.speculative.ragged_token_merger import (
     compute_host_merged_offsets,
 )
 from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
-    build_spec_decode_input_types,
 )
 from max.pipelines.speculative.unified_graph_ops import apply_overlap_bitmask
+from typing_extensions import override
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..dflash_kimi_k25 import DFlashKimiK25
 from .model_config import UnifiedDflashKimiK25Config
 
+__all__ = ["UnifiedDflashKimiK25", "dflash_kimi_k25_input_spec"]
 
-class UnifiedDflashKimiK25(Module):
+
+def dflash_kimi_k25_input_spec(
+    config: UnifiedDflashKimiK25Config,
+    *,
+    enable_structured_output: bool = False,
+) -> SpecDecodeInputTypeSpec:
+    """The graph signature's shape: distributed, data-parallel, with vision.
+
+    A function so the signature can be built from a config alone.
+    """
+    return SpecDecodeInputTypeSpec(
+        devices=config.target.devices,
+        distributed=True,
+        data_parallel_degree=config.target.data_parallel_degree,
+        enable_vision=True,
+        vision_hidden_size=config.target.hidden_size,
+        enable_structured_output=enable_structured_output,
+    )
+
+
+class UnifiedDflashKimiK25(SpecDecodeGraphSignature, Module):
     """Fused: merge -> target (MLA) -> reject -> materialize -> draft block."""
 
     def __init__(
@@ -391,33 +414,15 @@ class UnifiedDflashKimiK25(Module):
 
         return (num_accepted_out, next_tokens, next_draft_tokens)
 
-    def input_types(
-        self, kv_params: MultiKVCacheParams
-    ) -> tuple[TensorType | BufferType, ...]:
-        """Input types mirror :class:`Eagle3MHAKimiK25Unified.input_types`.
+    @override
+    @property
+    def input_spec(self) -> SpecDecodeInputTypeSpec:
+        return dflash_kimi_k25_input_spec(
+            self.config, enable_structured_output=self.enable_structured_output
+        )
 
-        ``kv_params`` is the unified ``{"target", "draft"}`` tree; the target
-        leaf is MLA and the draft leaf is MHA, each carrying its own blocks
-        and dispatch metadata. Distributed (DP + signals + EP) MHA-draft graph
-        with vision (no in-thinking-phase) that appends the structured-output
-        bitmask triple when ``enable_structured_output`` is set. See
-        :func:`build_spec_decode_input_types` for the canonical ordering.
-        """
-        spec = SpecDecodeInputTypeSpec(
-            distributed=True,
-            data_parallel_degree=self.config.target.data_parallel_degree,
-            enable_vision=True,
-            vision_hidden_size=self.config.target.hidden_size,
-            enable_structured_output=self.enable_structured_output,
-        )
-        ep_input_types = (
-            self.target.ep_manager.input_types()
-            if self.target.ep_manager is not None
-            else ()
-        )
-        return build_spec_decode_input_types(
-            spec,
-            devices=self.config.target.devices,
-            kv_params=kv_params,
-            ep_input_types=ep_input_types,
-        )
+    @override
+    def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        if self.target.ep_manager is None:
+            return ()
+        return self.target.ep_manager.input_types()

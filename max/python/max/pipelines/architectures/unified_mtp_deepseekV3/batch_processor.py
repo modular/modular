@@ -14,21 +14,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.deepseekV3.batch_processor import (
-    DeepseekV3BatchProcessor,
+    DeepseekV3BatchProcessorBase,
 )
-from max.pipelines.context import TextContext
 
 if TYPE_CHECKING:
     from .model import UnifiedMTPDeepseekV3Inputs
 
 
-class UnifiedMTPDeepseekV3BatchProcessor(DeepseekV3BatchProcessor):
+class UnifiedMTPDeepseekV3BatchProcessor(
+    DeepseekV3BatchProcessorBase["UnifiedMTPDeepseekV3Inputs"]
+):
     """Ragged batching for unified MTP DeepseekV3.
 
     Extends :class:`DeepseekV3BatchProcessor` to return
@@ -37,46 +37,31 @@ class UnifiedMTPDeepseekV3BatchProcessor(DeepseekV3BatchProcessor):
     the overlap pipeline fills it in after this call returns.
     """
 
-    def prepare_initial_token_inputs(  # type: ignore[override]
+    def _make_mla_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        host_input_row_offsets: Buffer,
+        batch_context_lengths: list[Buffer],
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        return_n_logits: Buffer,
+        data_parallel_splits: Buffer,
+        ep_inputs: tuple[Buffer, ...],
     ) -> UnifiedMTPDeepseekV3Inputs:
-        """Prepare batch inputs for a UnifiedMTPDeepseekV3 forward pass.
-
-        Delegates to :class:`DeepseekV3BatchProcessor` for the standard token
-        and KV inputs, then wraps the result in
-        :class:`UnifiedMTPDeepseekV3Inputs`.  ``draft_tokens`` is left as
-        ``None``; the overlap pipeline assigns it after this method returns.
-
-        Args:
-            replica_batches: One inner list per DP replica containing the
-                :class:`TextContext` objects for that shard.
-            kv_cache_inputs: Optional KV cache inputs (may be ``None`` during
-                compilation warm-up).
-            return_n_logits: Number of per-token logit rows to return.
-
-        Returns:
-            :class:`UnifiedMTPDeepseekV3Inputs` with all standard DeepseekV3
-            fields populated and ``draft_tokens=None``.
-        """
         from .model import UnifiedMTPDeepseekV3Inputs
 
-        base = super().prepare_initial_token_inputs(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
-
         return UnifiedMTPDeepseekV3Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
+            batch_context_lengths=batch_context_lengths,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+            data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
         )
