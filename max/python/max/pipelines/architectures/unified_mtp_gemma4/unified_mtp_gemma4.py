@@ -80,9 +80,6 @@ class UnifiedMTPGemma4(SequentialDriver[list[TensorValue]]):
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,
             use_greedy_acceptance=use_greedy_acceptance,
-            # Per-row seeds: each row is keyed off its own, never a
-            # co-resident's.
-            per_row_acceptance_seed=True,
         )
         self.config = config
         self._draft_config = draft_config

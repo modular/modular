@@ -417,7 +417,6 @@ class SequentialDriver(
         enable_structured_output: bool = False,
         use_greedy_acceptance: bool = False,
         num_draft_steps: int | None = None,
-        per_row_acceptance_seed: bool = False,
         draft_proposal: Literal["argmax", "sampled"] = "argmax",
         vocab_size: int | None = None,
     ) -> None:
@@ -442,7 +441,6 @@ class SequentialDriver(
         self.devices = self._input_spec.devices
         self.data_parallel_degree = self._input_spec.data_parallel_degree
         self.enable_structured_output = enable_structured_output
-        self._per_row_acceptance_seed = per_row_acceptance_seed
 
         # The one contradiction the declarations cannot rule out, being between
         # a proposer's flag and how the driver was built.
@@ -493,14 +491,6 @@ class SequentialDriver(
                 raise ValueError(
                     "draft_proposal='sampled' is incompatible with "
                     "use_greedy_acceptance"
-                )
-            if per_row_acceptance_seed:
-                # The sampled verdict's residual draws come off one batch-level
-                # RNG stream, so it has no per-row seed path -- see
-                # stochastic_acceptance_sampler.
-                raise ValueError(
-                    "draft_proposal='sampled' is incompatible with "
-                    "per_row_acceptance_seed"
                 )
             if speculative_config is not None:
                 if speculative_config.synthetic_acceptance_rate is not None:
@@ -707,19 +697,19 @@ class SequentialDriver(
                 device=batch.device0,
             )
 
-            # ``seed`` is the ``[batch_size]`` uint64 buffer feeding
-            # ``topk_fused_sampling`` per row. Under argmax proposals the
-            # verdict *is* that draw, so the seed picks the committed token: a
-            # rank-0 seed keys row ``b`` position ``p`` off ``seed[0] + (b *
-            # positions + p) * gamma``, the full tensor keys each row off its
-            # own. Either way the committed marginal is the truncated target
-            # distribution, so this buys reproducibility, not accuracy.
+            # Both verdicts draw per row, so the full ``[batch_size]`` tensor
+            # goes through whole. The argmax verdict *is* a draw from the
+            # truncated target distribution -- acceptance is "the draft token
+            # equals the sample" -- so the seed picks the committed token at
+            # every position; the sampled verdict keys its accept coin per
+            # request and draft position. Slicing to row 0 here would put the
+            # batch back on one request's key.
             num_accepted, recovered, bonus, next_tokens = (
                 accept_and_pick_next_tokens(
                     self.acceptance_sampler,
                     draft_tokens,
                     verified.logits,
-                    seed=seed if self._per_row_acceptance_seed else seed[0],
+                    seed=seed,
                     temperature=temperature,
                     top_k=top_k,
                     max_k=max_k,

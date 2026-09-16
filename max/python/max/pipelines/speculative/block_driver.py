@@ -339,7 +339,6 @@ class BlockDriver(
         enable_structured_output: bool = False,
         relaxed_acceptance: bool = False,
         ctx_at_draft_cache_length: bool = False,
-        per_row_acceptance_seed: bool = False,
     ) -> None:
         super().__init__()
         self._target = target
@@ -353,7 +352,6 @@ class BlockDriver(
         # normally advance together.
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
-        self._per_row_acceptance_seed = per_row_acceptance_seed
         self.block_size = proposer.block_size
         self.num_speculative_tokens = self.block_size - (
             0 if proposer.samples_from_anchor else 1
@@ -559,7 +557,7 @@ class BlockDriver(
         num_accepted, recovered, bonus = self.acceptance_sampler(
             batch.draft_tokens,
             target_logits,
-            seed=seed if self._per_row_acceptance_seed else seed[0],
+            seed=seed,
             temperature=temperature,
             top_k=top_k,
             max_k=max_k,

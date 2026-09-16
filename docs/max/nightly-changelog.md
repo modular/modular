@@ -50,6 +50,17 @@ This version is still a work in progress.
 - Added the public `Tree` type alias in `max.tree` for nested pytree values.
   Layer subgraph inputs are annotated with `Tree[Any]` instead of the
   removed `SubgraphInput` alias.
+- Every unified speculative-decoding architecture now passes its full
+  `[batch_size]` per-row seed tensor to acceptance sampling, instead of only
+  the architectures that opted in. Both verdicts consume it per row: the argmax
+  verdict is itself a draw from the truncated target distribution — a draft
+  token is accepted when it equals the sample — so the seed decides the
+  committed token at every position, while `draft_proposal="sampled"` keys its
+  accept coin per request and draft position. Keying each row off its own seed
+  means a row's tokens no longer depend on its position in the batch, on how
+  many requests share it, or on the batch's verify width. The committed
+  distribution is unchanged either way, so this buys reproducibility rather
+  than accuracy, and a single-row batch is unchanged.
 - Hardened decoding of client-supplied images. `Image.open` is now restricted
   to an explicit format allowlist (PNG, JPEG, WEBP, GIF, BMP, PPM, TIFF, TGA,
   and AVIF where the platform provides it), shrinking the native-decoder attack

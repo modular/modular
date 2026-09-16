@@ -115,9 +115,6 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,
             relaxed_acceptance=True,
-            # Each row's acceptance is keyed off its own seed, never a
-            # co-resident's.
-            per_row_acceptance_seed=True,
         )
         self.config = config
         self.target_layer_ids = list(config.target_layer_ids)
