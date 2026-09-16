@@ -49,6 +49,8 @@ class UnifiedMTPInklingMemoryPlanner(InklingMemoryPlanner):
         max_batch_size = (
             pipeline_config.runtime.max_batch_size or _DEFAULT_BATCH_SIZE
         )
+        # Only the draft's: it zeroes these every forward, so they are
+        # scratch outside the KV pool rather than state drawn from it.
         return (
             target_bytes + tp_size * max_batch_size * layout.bytes_per_request()
         )

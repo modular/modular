@@ -48,19 +48,18 @@ from max.pipelines.speculative.spec_target import Verified
 
 from ..inkling.inkling import Inkling
 from ..inkling.model_config import InklingConfig
+from ..inkling.state_cache import ConvSite
 from .inkling_mtp import InklingMultiTokenPredictor
 
 __all__ = [
     "DRAFT_CONV_POOLS",
     "DRAFT_PRIMARY_KV",
-    "HAS_INITIAL_STATE",
     "IMAGE_EMBEDDINGS",
     "IMAGE_INDICES",
     "POSITIONS",
-    "SLOT_IDX",
     "TARGET_AUX_KV",
-    "TARGET_CONV_POOLS",
     "TARGET_PRIMARY_KV",
+    "TARGET_STATE",
     "InklingMTPProposer",
     "InklingTarget",
     "split_kv_by_flavor",
@@ -69,9 +68,8 @@ __all__ = [
 POSITIONS = "positions"
 IMAGE_EMBEDDINGS = "image_embeddings"
 IMAGE_INDICES = "image_indices"
-SLOT_IDX = "slot_idx"
-HAS_INITIAL_STATE = "has_initial_state"
-TARGET_CONV_POOLS = "target_conv_pools"
+TARGET_STATE = "target_state"
+"""The backbone's conv-state leaves, drawn from the recurrent cache group."""
 DRAFT_CONV_POOLS = "draft_conv_pools"
 TARGET_AUX_KV = "target_passthrough_kv"
 """Every target cache leaf but the primary one, which rides ``kv_collections``.
@@ -106,6 +104,38 @@ def split_kv_by_flavor(
         by_flavor[keys[0]],
         {key: by_flavor[key] for key in keys[1:]},
     )
+
+
+def draft_row_inputs(
+    row_offsets: Sequence[TensorValue],
+) -> tuple[list[list[TensorValue]], list[TensorValue]]:
+    """Rows the draft convolves in, and its always-absent conv history.
+
+    The pools are zeroed every forward, so nothing distinguishes one row
+    from another beyond being a batch item's own -- position serves.
+    """
+    rows: list[list[TensorValue]] = []
+    has_state: list[TensorValue] = []
+    for offsets in row_offsets:
+        batch_size = offsets.shape[0] - 1
+        row = ops.range(
+            ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+            ops.cast(batch_size, DType.uint32),
+            ops.constant(1, DType.uint32, device=DeviceRef.CPU()),
+            out_dim=batch_size,
+            device=offsets.device,
+            dtype=DType.uint32,
+        )
+        rows.append([row] * len(ConvSite))
+        has_state.append(
+            ops.broadcast_to(
+                ops.constant(False, DType.bool, device=DeviceRef.CPU()).to(
+                    offsets.device
+                ),
+                [batch_size],
+            )
+        )
+    return rows, has_state
 
 
 def zero_conv_pools(pools: Sequence[Sequence[BufferValue]]) -> None:
@@ -213,9 +243,7 @@ class InklingTarget:
             batch.extra[IMAGE_INDICES],
             batch.signal_buffers,
             self.kv_by_flavor(batch),
-            batch.extra[SLOT_IDX],
-            batch.extra[HAS_INITIAL_STATE],
-            batch.extra[TARGET_CONV_POOLS],
+            batch.extra[TARGET_STATE],
         )
         # VARIABLE logits + ALL_NORMALIZED hidden states ->
         # (last_logits, logits, offsets, hidden per device...).
@@ -320,6 +348,9 @@ class InklingMTPProposer:
     ) -> Proposed:
         conv_pools = batch.extra[DRAFT_CONV_POOLS]
         zero_conv_pools(conv_pools)
+        draft_rows, draft_has_state = draft_row_inputs(
+            batch.query_offsets_per_dev
+        )
         hidden = self.draft.forward_depth(
             0,
             self.draft.embed_tokens(tokens, batch.signal_buffers),
@@ -328,8 +359,8 @@ class InklingMTPProposer:
             batch.query_offsets_per_dev,
             self.target.merged_positions(batch),
             conv_pools,
-            batch.extra[SLOT_IDX],
-            batch.extra[HAS_INITIAL_STATE],
+            draft_rows,
+            draft_has_state,
             batch.signal_buffers,
         )
         return Proposed(
@@ -341,6 +372,9 @@ class InklingMTPProposer:
         self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
     ) -> Proposed:
         step_dim = f"{self.carry_dim_names.prefix}{index}_batch"
+        draft_rows, draft_has_state = draft_row_inputs(
+            batch.query_offsets_per_dev
+        )
         embeds = [
             embed.rebind([step_dim, self.hidden_dim])
             for embed in self.draft.embed_tokens(
@@ -355,8 +389,8 @@ class InklingMTPProposer:
             batch.query_offsets_per_dev,
             self._decode_positions(batch, index).rebind([step_dim]),
             batch.extra[DRAFT_CONV_POOLS],
-            batch.extra[SLOT_IDX],
-            batch.extra[HAS_INITIAL_STATE],
+            draft_rows,
+            draft_has_state,
             batch.signal_buffers,
         )
         return Proposed(

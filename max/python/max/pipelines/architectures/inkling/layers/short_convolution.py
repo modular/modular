@@ -115,15 +115,16 @@ class ShortConvolution(Module, Shardable):
         self,
         x: TensorValue,
         conv_state_pool: BufferValue,
-        slot_idx: TensorValue,
+        conv_row: TensorValue,
         input_row_offsets: TensorValue,
         has_initial_state: TensorValue,
     ) -> TensorValue:
         """Returns ``x + conv(x)``; updates ``conv_state_pool`` in place.
 
-        ``has_initial_state`` is false for a request's first chunk, which has
-        no convolution history: the kernel then reads zeros instead of the
-        slot, so the slot never has to be cleared on admission.
+        ``has_initial_state`` says whether to read the row's stored history.
+        The cache group wipes a fresh request's row and copies a resumed one
+        into it before the forward runs, so reading a wiped row is the zero
+        padding a first chunk wants.
         """
         device = x.device
         channels, _, kernel_size = self.weight.shape
@@ -139,7 +140,7 @@ class ShortConvolution(Module, Shardable):
             ),
             conv_state_pool,
             ops.cast(input_row_offsets, DType.int32),
-            ops.cast(slot_idx, DType.int32),
+            ops.cast(conv_row, DType.int32),
             has_initial_state,
             activation="none",
             channels_last=True,

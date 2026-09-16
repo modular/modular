@@ -22,13 +22,15 @@ from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.graph import Graph, Module
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import (
+    MultiKVCacheParams,
+    RecurrentStateInputsPerDevice,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
-from max.pipelines.modeling.types import RequestID
 from max.pipelines.speculative import DraftAliases, validate_draft_state_dict
 from typing_extensions import override
 
@@ -36,25 +38,24 @@ from ..inkling.batch_processor import InklingInputs
 from ..inkling.inkling import kv_collections_by_key
 from ..inkling.model import InklingModel
 from ..inkling.model_config import (
+    STATE_CACHE_KEY,
     InklingConfig,
     nest_inkling_mtp_kv_params,
     parse_inkling_mtp_config,
 )
-from ..inkling.state_cache import InklingConvStateCache
+from ..inkling.state_cache import InklingConvScratchPools
 from ..inkling.weight_adapters import VISION_PREFIX
 from .batch_processor import UnifiedMTPInklingBatchProcessor
 from .inkling_mtp import InklingMultiTokenPredictor
 from .spec_adapters import (
     DRAFT_CONV_POOLS,
     DRAFT_PRIMARY_KV,
-    HAS_INITIAL_STATE,
     IMAGE_EMBEDDINGS,
     IMAGE_INDICES,
     POSITIONS,
-    SLOT_IDX,
     TARGET_AUX_KV,
-    TARGET_CONV_POOLS,
     TARGET_PRIMARY_KV,
+    TARGET_STATE,
     split_kv_by_flavor,
 )
 from .unified_mtp_inkling import UnifiedMTPInkling
@@ -82,9 +83,6 @@ class UnifiedMTPInklingInputs(UnifiedSpecDecodeInputs, InklingInputs):
             self.positions,
             self.image_embeddings,
             self.image_indices,
-            *self.slot_idx,
-            *self.has_initial_state,
-            *self.conv_pools,
             *self.draft_conv_pools,
         )
         return (
@@ -103,13 +101,13 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
 
     _draft_state_dict: dict[str, Any]
     _n_mtp_depths: int
-    _draft_state_cache: InklingConvStateCache | None
+    _draft_scratch: InklingConvScratchPools | None
     _fused_nn_model: UnifiedMTPInkling
 
     def __init__(self, *args, **kwargs):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.ALL_NORMALIZED
-        self._draft_state_cache = None
+        self._draft_scratch = None
         super().__init__(*args, **kwargs)
 
     @override
@@ -180,7 +178,7 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
         max_batch_size = self.max_batch_size
         assert max_batch_size is not None
         draft_layout = self._fused_nn_model.draft.conv_layout
-        self._draft_state_cache = InklingConvStateCache(
+        self._draft_scratch = InklingConvScratchPools(
             draft_layout,
             max_slots=max_batch_size,
             devices=self.devices,
@@ -188,14 +186,7 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
         assert isinstance(
             self._batch_processor, UnifiedMTPInklingBatchProcessor
         )
-        self._batch_processor.bind_runtime_state(
-            self._state_cache, model, self._draft_state_cache
-        )
-
-    def release(self, request_id: RequestID) -> None:
-        super().release(request_id)
-        if self._draft_state_cache is not None:
-            self._draft_state_cache.release(request_id)
+        self._batch_processor.bind_runtime_state(model, self._draft_scratch)
 
     @override
     def _build_language_graph(
@@ -263,17 +254,19 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
             draft_key, draft_primary, draft_aux = split_kv_by_flavor(
                 kv_collections_by_key(draft_tree)
             )
+            assert STATE_CACHE_KEY in kv_tree, (
+                "Inkling always convolves; the cache declared no conv-state"
+                " child"
+            )
+            state = tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            )
 
             # Inkling's own inputs, in the order ``input_types`` appends them.
             trailing = iter(graph_inputs.trailing)
             positions = next(trailing).tensor
             image_embeddings = next(trailing).tensor
             image_indices = next(trailing).tensor
-            slot_idx = [next(trailing).tensor for _ in range(n_devs)]
-            has_initial_state = [next(trailing).tensor for _ in range(n_devs)]
-            target_conv_pools = nn_model.target.conv_layout.take_pools(
-                trailing, n_devs
-            )
             draft_conv_pools = nn_model.draft.conv_layout.take_pools(
                 trailing, n_devs
             )
@@ -301,9 +294,7 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
                     POSITIONS: positions,
                     IMAGE_EMBEDDINGS: image_embeddings,
                     IMAGE_INDICES: image_indices,
-                    SLOT_IDX: slot_idx,
-                    HAS_INITIAL_STATE: has_initial_state,
-                    TARGET_CONV_POOLS: target_conv_pools,
+                    TARGET_STATE: state,
                     DRAFT_CONV_POOLS: draft_conv_pools,
                     TARGET_PRIMARY_KV: target_key,
                     TARGET_AUX_KV: target_aux,

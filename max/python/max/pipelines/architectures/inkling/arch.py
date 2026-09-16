@@ -46,8 +46,6 @@ inkling_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: convert_safetensor_state_dict,
     },
-    # Prefix caching not yet supported for SSM/hybrid models.
-    required_arguments={"enable_prefix_caching": False},
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
     memory_planner=InklingMemoryPlanner,

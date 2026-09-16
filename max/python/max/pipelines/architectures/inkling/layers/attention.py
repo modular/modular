@@ -155,8 +155,9 @@ class InklingAttention(Module, Shardable):
         input_row_offsets: TensorValue,
         log_scaling: TensorValue,
         k_conv_pool: BufferValue,
+        k_conv_row: TensorValue,
         v_conv_pool: BufferValue,
-        slot_idx: TensorValue,
+        v_conv_row: TensorValue,
         has_initial_state: TensorValue,
         cache_layer_idx: TensorValue,
     ) -> TensorValue:
@@ -170,10 +171,10 @@ class InklingAttention(Module, Shardable):
         q, k, v, r = ops.split(qkvr, [q_dim, k_dim, v_dim, r_dim], axis=-1)
 
         k = self.k_sconv(
-            k, k_conv_pool, slot_idx, input_row_offsets, has_initial_state
+            k, k_conv_pool, k_conv_row, input_row_offsets, has_initial_state
         )
         v = self.v_sconv(
-            v, v_conv_pool, slot_idx, input_row_offsets, has_initial_state
+            v, v_conv_pool, v_conv_row, input_row_offsets, has_initial_state
         )
 
         q = self.q_norm(

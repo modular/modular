@@ -25,7 +25,7 @@ from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 
 from ..inkling.batch_processor import InklingBatchProcessor
-from ..inkling.state_cache import InklingConvStateCache
+from ..inkling.state_cache import InklingConvScratchPools
 
 if TYPE_CHECKING:
     from .model import UnifiedMTPInklingInputs
@@ -42,24 +42,21 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
-        self._draft_state_cache: InklingConvStateCache | None = None
         self._draft_conv_pools: list[Buffer] = []
 
     def bind_runtime_state(
         self,
-        state_cache: InklingConvStateCache | None,
         vision_model: Model,
-        draft_state_cache: InklingConvStateCache | None = None,
+        draft_scratch: InklingConvScratchPools | None = None,
     ) -> None:
-        super().bind_runtime_state(state_cache, vision_model)
-        self._draft_state_cache = draft_state_cache
-        if draft_state_cache is None:
+        super().bind_runtime_state(vision_model)
+        if draft_scratch is None:
             self._draft_conv_pools = []
             return
         self._draft_conv_pools = [
             pool
             for device_idx in range(len(self.runtime.devices))
-            for pool in draft_state_cache.pools(device_idx)
+            for pool in draft_scratch.pools(device_idx)
         ]
 
     def _make_inkling_inputs(
@@ -73,17 +70,9 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
         image_embeddings: Buffer,
         image_indices: Buffer,
         signal_buffers: list[Buffer],
-        slot_idx: list[Buffer],
-        has_initial_state: list[Buffer],
-        conv_pools: list[Buffer],
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
     ) -> UnifiedMTPInklingInputs:
         from .model import UnifiedMTPInklingInputs
-
-        draft_cache = self._draft_state_cache
-        assert draft_cache is not None
-        for context in context_batch:
-            draft_cache.claim(context.request_id)
 
         return UnifiedMTPInklingInputs(
             tokens=tokens,
@@ -93,9 +82,6 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
             image_embeddings=image_embeddings,
             image_indices=image_indices,
             signal_buffers=signal_buffers,
-            slot_idx=slot_idx,
-            has_initial_state=has_initial_state,
-            conv_pools=conv_pools,
             kv_cache_inputs=kv_cache_inputs,
             draft_conv_pools=self._draft_conv_pools,
             draft_tokens=None,

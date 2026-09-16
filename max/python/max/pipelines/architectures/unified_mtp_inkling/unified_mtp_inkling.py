@@ -112,14 +112,8 @@ class UnifiedMTPInkling(SequentialDriver[list[TensorValue]]):
             TensorType(
                 DType.int32, shape=["total_image_tokens"], device=device
             ),
-            *(
-                TensorType(DType.uint32, shape=["batch_size"], device=dev)
-                for dev in devices
-            ),
-            *(
-                TensorType(DType.bool, shape=["batch_size"], device=dev)
-                for dev in devices
-            ),
-            *self.target.conv_layout.buffer_types(devices),
+            # The backbone's conv state is a child of the cache tree, so it
+            # arrives with the canonical inputs; only the draft's scratch
+            # pools trail.
             *self.draft.conv_layout.buffer_types(devices),
         )

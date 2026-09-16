@@ -38,7 +38,6 @@ from max.pipelines.lib.vision_batching import (
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 
 from .model_config import InklingConfig
-from .state_cache import InklingConvStateCache
 
 
 @dataclass
@@ -55,11 +54,6 @@ class InklingInputs(ModelInputs):
     """Token-stream row each vision row replaces; negative entries are skipped."""
 
     signal_buffers: list[Buffer]
-    slot_idx: list[Buffer]
-    has_initial_state: list[Buffer]
-    """Per device, whether each request has convolution history to read."""
-    conv_pools: list[Buffer]
-    """Per device, one pool per convolution site per layer, mutated in place."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -72,17 +66,19 @@ class InklingInputs(ModelInputs):
             self.image_embeddings,
             self.image_indices,
             *self.signal_buffers,
+            # The conv state rides inside the cache tree, so one walk
+            # covers the attention pages and the state leaves both.
             *tree.leaves(self.kv_cache_inputs),
-            *self.slot_idx,
-            *self.has_initial_state,
-            *self.conv_pools,
         )
 
 
 class InklingBatchProcessor(
     SingleReplicaRaggedBatchProcessor[TextAndVisionContext, InklingInputs]
 ):
-    """Ragged batching with Inkling's convolution slots and vision operands."""
+    """Ragged batching with Inkling's vision operands.
+
+    The cache manager claims each request's conv-state row before this runs.
+    """
 
     def __init__(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
@@ -91,28 +87,14 @@ class InklingBatchProcessor(
         assert isinstance(config, InklingConfig)
         self._hidden_size = config.text_config.hidden_size
         self._dtype = config.dtype
-        self._state_cache: InklingConvStateCache | None = None
         self._vision_model: Model | None = None
-        self._conv_pools: list[Buffer] = []
         self._signal_buffers = list(runtime.signal_buffers)
         self._return_n_logits_buffers: dict[int, Buffer] = {}
         self._no_images: tuple[Buffer, Buffer] | None = None
 
-    def bind_runtime_state(
-        self,
-        state_cache: InklingConvStateCache | None,
-        vision_model: Model,
-    ) -> None:
+    def bind_runtime_state(self, vision_model: Model) -> None:
         """Hands over what only exists once the model is compiled and loaded."""
-        self._state_cache = state_cache
         self._vision_model = vision_model
-        if state_cache is None:
-            return
-        self._conv_pools = [
-            pool
-            for device_idx in range(len(self.runtime.devices))
-            for pool in state_cache.pools(device_idx)
-        ]
 
     def prepare_initial_token_inputs(
         self,
@@ -123,17 +105,6 @@ class InklingBatchProcessor(
         context_batch = single_replica_context_batch(
             replica_batches, processor_name=type(self).__qualname__
         )
-        state_cache = self._state_cache
-        assert state_cache is not None
-
-        request_ids = [context.request_id for context in context_batch]
-        for request_id in request_ids:
-            state_cache.claim(request_id)
-        slot_idx, has_initial_state = state_cache.admission_inputs_for(
-            request_ids,
-            [context.tokens.processed_length == 0 for context in context_batch],
-        )
-
         tokens, input_row_offsets, positions = self._stage_token_inputs(
             context_batch
         )
@@ -162,9 +133,6 @@ class InklingBatchProcessor(
             image_embeddings=image_embeddings,
             image_indices=image_indices,
             signal_buffers=self._signal_buffers,
-            slot_idx=slot_idx,
-            has_initial_state=has_initial_state,
-            conv_pools=self._conv_pools,
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -179,9 +147,6 @@ class InklingBatchProcessor(
         image_embeddings: Buffer,
         image_indices: Buffer,
         signal_buffers: list[Buffer],
-        slot_idx: list[Buffer],
-        has_initial_state: list[Buffer],
-        conv_pools: list[Buffer],
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
     ) -> InklingInputs:
         """Constructs this processor's ``*Inputs`` from the batched fields."""
@@ -193,9 +158,6 @@ class InklingBatchProcessor(
             image_embeddings=image_embeddings,
             image_indices=image_indices,
             signal_buffers=signal_buffers,
-            slot_idx=slot_idx,
-            has_initial_state=has_initial_state,
-            conv_pools=conv_pools,
             kv_cache_inputs=kv_cache_inputs,
         )
 

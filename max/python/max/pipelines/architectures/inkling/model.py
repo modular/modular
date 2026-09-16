@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from max.driver import Device, is_virtual_device_mode
+from max.driver import Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph, Module
 from max.graph.weights import Weights, WeightsAdapter
@@ -32,14 +32,12 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
-from max.pipelines.modeling.types import RequestID
 from typing_extensions import override
 
 from .batch_processor import InklingBatchProcessor, InklingInputs
 from .inkling import Inkling
 from .layers.vision import InklingVisionModel
 from .model_config import InklingConfig
-from .state_cache import InklingConvStateCache
 from .weight_adapters import VISION_PREFIX
 
 
@@ -84,7 +82,6 @@ class InklingModel(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self._state_cache: InklingConvStateCache | None = None
         # The vision tower is only ever called through the batch processor,
         # which _wire_batch_processor hands it to.
         _, self.model = self.load_model(session)
@@ -94,20 +91,9 @@ class InklingModel(
         self, model: Any = None, model_config: Any = None
     ) -> None:
         super()._wire_batch_processor(model, model_config)
-        # Compile-only runs cannot allocate on a virtual device.
-        if not is_virtual_device_mode():
-            # The memory-plan-resolved batch size, not the runtime config's
-            # (often None).
-            max_batch_size = self.max_batch_size
-            assert max_batch_size is not None
-            self._state_cache = InklingConvStateCache(
-                self._nn_model.conv_layout,
-                max_slots=max_batch_size,
-                devices=self.devices,
-            )
         assert isinstance(model, Model)
         assert isinstance(self._batch_processor, InklingBatchProcessor)
-        self._batch_processor.bind_runtime_state(self._state_cache, model)
+        self._batch_processor.bind_runtime_state(model)
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
@@ -181,17 +167,3 @@ class InklingModel(
 
         assert self._batch_processor is not None
         return self._batch_processor.process_outputs(model_outputs)
-
-    def release(self, request_id: RequestID) -> None:
-        """Drops the request's convolution state, freeing its slot."""
-        if self._state_cache is not None:
-            self._state_cache.release(request_id)
-
-    def release_warmup_state(self, request_ids: list[RequestID]) -> None:
-        """Frees the slots a graph-capture warmup probe claimed.
-
-        Without this the second probe finds no free slot and serving never
-        starts.
-        """
-        for request_id in request_ids:
-            self.release(request_id)
