@@ -205,6 +205,7 @@
 /max/tests/tests/test_tree.py @modular/max-sdk
 /max/tests/tests/mojo_runtime_foreign_thread_subprocess.py @modular/runtime
 /max/tests/tests/test_mojo_runtime_foreign_thread.py @modular/runtime
+/max/examples/gpu-functions/ @modular/mojo-docs
 /.github/ @modular/sdlc
 /utils @modular/max-sdk
 /utils/local_transformers_setup/ @modular/max-serve

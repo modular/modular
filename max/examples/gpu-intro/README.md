@@ -6,7 +6,7 @@ project, which is an implementation of a simple vector addition GPU kernel using
 Mojo. Please refer to the tutorial for an explanation of the code and concepts.
 
 This example requires a [supported
-GPU](https://max.modular.com/faq/#gpu-requirements) to run the kernel. If
+GPU](https://max.modular.com/packages/#gpu-compatibility) to run the kernel. If
 your system doesn't have a supported GPU, you can compile the program but the
 only output you'll see when you run it is:
 
@@ -23,6 +23,9 @@ This directory contains the following files:
 
 - `pixi.toml` is a [Pixi](https://pixi.sh)
   project file containing the project dependencies and task definitions.
+
+- `BUILD.bazel` is a Bazel BUILD file for building and running the example with
+  the [Bazel](https://bazel.build/) build system.
 
 ## Run the code
 

@@ -10,7 +10,7 @@ ops](../custom_ops/) that run on both CPUs and GPUs.
 
 > [!IMPORTANT]
 > These examples require a [compatible
-> GPU](https://max.modular.com/faq/#gpu-requirements).
+> GPU](https://max.modular.com/packages/#gpu-compatibility).
 
 The examples include the following:
 
@@ -36,7 +36,7 @@ The examples include the following:
 ## Setup
 
 1. Make sure your system includes a [compatible
-GPU](https://max.modular.com/faq/#gpu-requirements).
+   GPU](https://max.modular.com/packages/#gpu-compatibility).
 
 2. If you don't have [`pixi`](https://pixi.sh/latest/), install it:
 
@@ -82,7 +82,7 @@ mojo reduction.mojo
 ## Example walkthroughs
 
 Writing individual thread-based functions in Mojo is powered by the [`gpu`
-module](https://docs.modular.com/api/mojo/max/gpu/), which handles all the
+module](https://max.modular.com/api/mojo/max/gpu/), which handles all the
 hardware-specific details of allocating and transferring memory between host
 and accelerator, as well as compilation and execution of accelerator-targeted
 functions.
@@ -110,78 +110,94 @@ addition of each element in two vectors. Here's how it works in our
 
 1. Define the vector addition function.
 
-    The function itself is very simple, running once per thread, adding each
-    element in the two input vectors that correspond to that thread ID, and
-    storing the result in the output vector at the matching location.
+    The function itself is very simple, running once per thread. Each thread
+    adds the elements of the two input vectors at its own global thread ID and
+    stores the result in the output vector at the matching location. The
+    bounds check keeps the threads in the last block from writing past the end
+    of the vector.
 
     ```mojo
     def vector_addition(
         lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
         rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
         out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+        size_dev: Int32,
     ):
-        tid = thread_idx.x
-        out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
+        var size = Int(size_dev)
+        var global_tid = global_idx.x
+        if global_tid < size:
+            out_tensor[global_tid] = (
+                lhs_tensor[global_tid] + rhs_tensor[global_tid]
+            )
     ```
 
 1. Obtain a reference to the accelerator (GPU) context.
 
     ```mojo
-    ctx = DeviceContext()
+    var ctx = DeviceContext()
     ```
 
 1. Allocate input and output vectors.
 
-    Buffers for the left-hand-side and right-hand-side vectors need to be
-    allocated on the GPU and initialized with values.
+    The element type, the vector width, the block size, and the memory layout
+    are all compile-time constants declared at the top of the file:
 
     ```mojo
-    alias float_dtype = DType.float32
-    alias VECTOR_WIDTH = 10
+    comptime float_dtype = DType.float32
+    comptime VECTOR_WIDTH = 10
+    comptime BLOCK_SIZE = 5
+    comptime layout = row_major[VECTOR_WIDTH]()
+    ```
 
-    lhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
-    rhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
+    Buffers for the left-hand-side and right-hand-side vectors, plus a buffer
+    to hold the result, are allocated on the GPU. The two inputs are filled
+    with values, and each buffer is then wrapped in a `TileTensor` that
+    describes how to index it:
+
+    ```mojo
+    var lhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
+    var rhs_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
+    var out_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
 
     lhs_buffer.enqueue_fill(1.25)
     rhs_buffer.enqueue_fill(2.5)
 
-    lhs_tensor = lhs_tensor.move_to(gpu_device)
-    rhs_tensor = rhs_tensor.move_to(gpu_device)
-    ```
-
-    A buffer to hold the result of the calculation is allocated on the GPU:
-
-    ```mojo
-    out_buffer = ctx.enqueue_create_buffer[float_dtype](VECTOR_WIDTH)
+    var lhs_tensor = TileTensor(lhs_buffer, layout)
+    var rhs_tensor = TileTensor(rhs_buffer, layout)
+    var out_tensor = TileTensor(out_buffer, layout)
     ```
 
 1. Compile and dispatch the function.
 
     The actual `vector_addition()` function we want to run on the GPU is
-    compiled and dispatched across a grid, divided into blocks of threads. All
-    arguments to this GPU function are provided here, in an order that
-    corresponds to their location in the function signature. Note that in Mojo,
-    the GPU function is compiled for the GPU at the time of compilation of the
-    Mojo file containing it.
+    compiled and dispatched across a grid, divided into blocks of threads. The
+    grid is sized so that the blocks cover the whole vector, rounding up for
+    any remainder. All arguments to this GPU function are provided here, in an
+    order that corresponds to their location in the function signature. Note
+    that in Mojo, the GPU function is compiled for the GPU at the time of
+    compilation of the Mojo file containing it.
 
     ```mojo
+    var grid_dim = ceildiv(VECTOR_WIDTH, BLOCK_SIZE)
+
     ctx.enqueue_function[vector_addition](
         lhs_tensor,
         rhs_tensor,
         out_tensor,
-        grid_dim=1,
-        block_dim=VECTOR_WIDTH,
+        Int32(VECTOR_WIDTH),
+        grid_dim=grid_dim,
+        block_dim=BLOCK_SIZE,
     )
     ```
 
 1. Return the results.
 
-    Finally, the results of the calculation are moved from the GPU back to the
+    Finally, the results of the calculation are mapped from the GPU back to the
     host to be examined:
 
     ```mojo
     with out_buffer.map_to_host() as host_buffer:
-        host_tensor = TileTensor(host_buffer, layout)
+        var host_tensor = TileTensor(host_buffer, layout)
         print("Resulting vector:", host_tensor)
     ```
 
@@ -198,9 +214,9 @@ and other parameters to see how the calculation scales.
 ### Conversion of a color image to grayscale
 
 The `grayscale.mojo` example shows how to convert a red-green-blue (RGB) color
-image into grayscale. This uses a rank-3 tensor to host the 2-D image and the
-color channels at each pixel. The inputs start with three color channels, and
-the output has only a single grayscale channel.
+image into grayscale. The input is a rank-3 tensor holding the 2-D image plus
+the three color channels at each pixel. The output is a rank-2 tensor, because
+each pixel of the result needs only a single grayscale value.
 
 The calculation performed is a common reduction to luminance using weighted
 values for the three channels:
@@ -216,27 +232,27 @@ def color_to_grayscale(
     rgb_tensor: TileTensor[int_dtype, type_of(rgb_layout), MutAnyOrigin],
     gray_tensor: TileTensor[int_dtype, type_of(gray_layout), MutAnyOrigin],
 ):
-    row = global_idx.y
-    col = global_idx.x
+    var row = global_idx.y
+    var col = global_idx.x
 
     if col < WIDTH and row < HEIGHT:
-        red = rgb_tensor[row, col, 0].cast[float_dtype]()
-        green = rgb_tensor[row, col, 1].cast[float_dtype]()
-        blue = rgb_tensor[row, col, 2].cast[float_dtype]()
-        gray = 0.21 * red + 0.71 * green + 0.07 * blue
+        var red = rgb_tensor[row, col, 0].cast[float_dtype]()
+        var green = rgb_tensor[row, col, 1].cast[float_dtype]()
+        var blue = rgb_tensor[row, col, 2].cast[float_dtype]()
+        var gray = 0.21 * red + 0.71 * green + 0.07 * blue
 
-        gray_tensor[row, col, 0] = gray.cast[int_dtype]()
+        gray_tensor[row, col] = gray.cast[int_dtype]()
 ```
 
-The setup, compilation, and execution of this function is much the same as in
-the previous example, but in this case we're using rank-3 instead of rank-1
-buffers to hold the values. Also, we dispatch the function over a 2-D grid
-of block, which looks like the following:
+The setup, compilation, and execution of this function are much the same as in
+the previous example, but the tensors are rank-3 and rank-2 rather than the
+rank-1 vectors used there. The function is also dispatched over a 2-D grid of
+blocks, which looks like the following:
 
 ```mojo
-alias BLOCK_SIZE = 16
-num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
-num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
+comptime BLOCK_SIZE = 16
+var num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
+var num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
 
 ctx.enqueue_function[color_to_grayscale](
     rgb_tensor,
@@ -252,9 +268,9 @@ To run this example, run this command:
 pixi run mojo grayscale.mojo
 ```
 
-This will show a grid of numbers representing the grayscale values for a single
-color broadcast across a simple input image. Try changing the image and block
-sizes to see how this scales on the GPU.
+This shows a grid of numbers representing the grayscale values for a simple
+input image whose channel intensities increase across each row and column. Try
+changing the image and block sizes to see how this scales on the GPU.
 
 ### Naive matrix multiplication
 
@@ -268,12 +284,12 @@ def naive_matrix_multiplication(
     n: TileTensor[float_dtype, type_of(n_layout), MutAnyOrigin],
     p: TileTensor[float_dtype, type_of(p_layout), MutAnyOrigin],
 ):
-    row = global_idx.y
-    col = global_idx.x
+    var row = global_idx.y
+    var col = global_idx.x
 
-    m_dim = Int(p.dim[0]())
-    n_dim = Int(p.dim[1]())
-    k_dim = Int(m.dim[1]())
+    var m_dim = Int(p.dim[0]())
+    var n_dim = Int(p.dim[1]())
+    var k_dim = Int(m.dim[1]())
 
     if row < m_dim and col < n_dim:
         for j_index in range(k_dim):
@@ -298,9 +314,9 @@ the sizes of the matrices and how they are dispatched on the GPU.
 
 The `mandelbrot.mojo` example shows a slightly more complex calculation:
 [the Mandelbrot set fractal](https://en.wikipedia.org/wiki/Mandelbrot_set).
-This custom operation takes no input tensors, only a set of scalar arguments,
-and returns a 2-D matrix of integer values representing the number of
-iterations it took to escape at that location in complex number space.
+This function takes no input tensors. It writes into a single output tensor: a
+2-D grid of integer values representing the number of iterations it took to
+escape at that location in complex number space.
 
 The per-thread GPU function for this is as follows:
 
@@ -308,23 +324,24 @@ The per-thread GPU function for this is as follows:
 def mandelbrot(
     tensor: TileTensor[int_dtype, type_of(layout), MutAnyOrigin],
 ):
-    row = global_idx.y
-    col = global_idx.x
+    var row = global_idx.y
+    var col = global_idx.x
 
-    alias SCALE_X = (MAX_X - MIN_X) / GRID_WIDTH
-    alias SCALE_Y = (MAX_Y - MIN_Y) / GRID_HEIGHT
+    comptime SCALE_X = (MAX_X - MIN_X) / GRID_WIDTH
+    comptime SCALE_Y = (MAX_Y - MIN_Y) / GRID_HEIGHT
 
-    cx = MIN_X + Float32(col) * SCALE_X
-    cy = MIN_Y + Float32(row) * SCALE_Y
-    c = ComplexSIMD[float_dtype, 1](cx, cy)
-    z = ComplexSIMD[float_dtype, 1](0, 0)
-    iters = Scalar[int_dtype](0)
+    var cx = MIN_X + Float32(col) * SCALE_X
+    var cy = MIN_Y + Float32(row) * SCALE_Y
+    var c = ComplexScalar[float_dtype](cx, cy)
 
-    var in_set_mask = Scalar[DType.bool](True)
+    var z = ComplexScalar[float_dtype](0, 0)
+    var iters = Scalar[int_dtype](0)
+
+    var in_set_mask = Scalar[.bool](True)
     for _ in range(MAX_ITERATIONS):
         if not any(in_set_mask):
             break
-        in_set_mask = z.squared_norm() <= 4
+        in_set_mask = z.squared_norm().le(4)
         iters = in_set_mask.select(iters + 1, iters)
         z = z.squared_add(c)
 
@@ -333,23 +350,29 @@ def mandelbrot(
 
 This begins by calculating the complex number which represents a given location
 in the output grid (C). Then, starting from `Z=0`, the calculation `Z=Z^2 + C`
-is iteratively calculated until Z exceeds 4, the threshold we're using for when
-Z will escape the set. This occurs up until a maximum number of iterations,
-and the number of iterations to escape (or not, if the maximum is hit) is then
-returned for each location in the grid.
+is iteratively calculated until the squared magnitude of Z exceeds 4, the
+threshold we're using for when Z will escape the set. This occurs up until a
+maximum number of iterations, and the number of iterations to escape (or not,
+if the maximum is hit) is then written out for each location in the grid.
 
 The area to examine in complex space, the resolution of the grid, and the
-maximum number of iterations are all provided as constants:
+maximum number of iterations are all provided as compile-time constants at the
+top of the file:
 
 ```mojo
-alias MIN_X: Scalar[float_dtype] = -2.0
-alias MAX_X: Scalar[float_dtype] = 0.7
-alias MIN_Y: Scalar[float_dtype] = -1.12
-alias MAX_Y: Scalar[float_dtype] = 1.12
-alias SCALE_X = (MAX_X - MIN_X) / GRID_WIDTH
-alias SCALE_Y = (MAX_Y - MIN_Y) / GRID_HEIGHT
-alias MAX_ITERATIONS = 100
+comptime GRID_WIDTH = 60
+comptime GRID_HEIGHT = 25
+
+comptime MIN_X: Scalar[float_dtype] = -2.0
+comptime MAX_X: Scalar[float_dtype] = 0.7
+comptime MIN_Y: Scalar[float_dtype] = -1.12
+comptime MAX_Y: Scalar[float_dtype] = 1.12
+
+comptime MAX_ITERATIONS = 100
 ```
+
+The `SCALE_X` and `SCALE_Y` values used in the function above are derived from
+these, also at compile time.
 
 Try it with this command:
 
@@ -391,10 +414,10 @@ calculation:
 Try changing the various parameters above to produce different resolution
 grids, or look into different areas in the complex number space.
 
-## Next Steps
+## Next steps
 
 - See our [tutorial to get started with GPU
-programming](https://mojolang.org/docs/manual/gpu/intro-tutorial).
+  programming](https://max.modular.com/gpu/intro-tutorial/).
 
 - Learn GPU programming by solving increasingly challenging [GPU
-puzzles](https://builds.modular.com/puzzles/introduction.html).
+  puzzles](https://puzzles.modular.com/introduction.html).

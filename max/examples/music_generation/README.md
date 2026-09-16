@@ -5,7 +5,7 @@ sings a song from two texts: a caption describing how the music should sound,
 and lyrics with section tags such as `[verse]` and `[chorus]`. This example
 renders one, either in your own process or through a running MAX server.
 
-The [audio generation guide](https://docs.modular.com/serve/audio-generation)
+The [audio generation guide](https://max.modular.com/serve/audio-generation/)
 covers the endpoint and the prompt format in more depth; this example is the
 script that goes with it.
 
@@ -17,7 +17,7 @@ rather than one long generation. The bundled song is 2 minutes 45 seconds, and
 
 ## Requirements
 
-A [MAX-compatible GPU](https://docs.modular.com/faq/#gpu-requirements). The
+A [MAX-compatible GPU](https://max.modular.com/packages/#gpu-compatibility). The
 checkpoint is roughly 28 GiB of weights across its autoregressive, diffusion
 and vocoder stages, which is more than a 22 GiB card holds at once — the model
 loads and frees each stage in turn, so a card that size is enough, and the
