@@ -117,8 +117,15 @@ class DeepseekV3_2Config(DeepseekV3Config):
         # Per-token FP8 KV scales use float32 storage; required for
         # ``KVCacheParams.quantized_kv_cache``, runtime ``kv_scales`` buffers,
         # and ``store_k_scale_cache`` in the indexer path.
+        #
+        # The granularity is the head dim itself: the indexer quantizes its
+        # keys over the whole head, so it stores one scale per token. A finer
+        # granularity would give the page more slots per token than there are
+        # scales to fill them.
+        indexer_head_dim = huggingface_config.index_head_dim
         indexer_kvcache_quant_config = KVCacheQuantizationConfig(
-            scale_dtype=DType.float32, quantization_granularity=32
+            scale_dtype=DType.float32,
+            quantization_granularity=indexer_head_dim,
         )
         assert isinstance(mla_kv_params, KVCacheParams)
 
@@ -134,7 +141,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             dtype=indexer_cache_dtype,
             # Similar to MLA, the indexer's k-cache uses a single KV head.
             n_kv_heads=1,
-            head_dim=huggingface_config.index_head_dim,
+            head_dim=indexer_head_dim,
             num_layers=mla_kv_params.num_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
