@@ -52,6 +52,9 @@
 # False-on-unknown contract). "wombat42" contains none of the vendor-relevant
 # substrings, so it also guards against loose-substring false positives.
 # RUN: %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=none %s -o %t
+# RUN: not %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=unknown %s -o %t 2>&1 | FileCheck %s --check-prefix=UNKNOWN-TARGET
+#
+# UNKNOWN-TARGET: GPU architecture 'wombat42' is not supported.
 
 from std.sys import (
     get_defined_string,
@@ -59,6 +62,7 @@ from std.sys import (
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
 )
+from std._gpu.host.info import GPUInfo
 
 
 def main():
@@ -102,5 +106,8 @@ def main():
         comptime assert (
             not has_apple_gpu_accelerator()
         ), "did not expect an Apple accelerator"
+    elif expect == "unknown":
+        comptime info = GPUInfo.from_name["wombat42"]()
+        comptime assert info.name == "wombat42"
     else:
         comptime assert False, "unknown EXPECT value"
