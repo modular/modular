@@ -15,12 +15,12 @@
 
 
 @fieldwise_init
-struct Foo[T: Writable](def(x: T)):
+struct Foo[T: Writable](def(T)):
     def __call__(mut self, arg: Self.T):
         print("via struct:", arg)
 
 
-def call_int[T: def(x: Int)](mut closure: T):
+def call_int[T: def(Int)](mut closure: T):
     closure.__call__(1)
 
 

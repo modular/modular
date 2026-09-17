@@ -1419,6 +1419,17 @@ LIT::reduceTraitCompositionSymbols(SharedState &shared,
   return reduced;
 }
 
+TraitSymbolAttr LIT::extractClosureSymbol(SharedState &shared,
+                                          TraitType trait) {
+  if (!trait)
+    return nullptr;
+
+  for (TraitSymbolAttr symbol : trait.getTraitSymbols())
+    if (shared.isUniversalParametricClosureTrait(symbol))
+      return symbol;
+  return nullptr;
+}
+
 TraitType
 LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
                                   ArrayRef<ConstraintAttr> assumptions) {

@@ -213,9 +213,13 @@ public:
                                                 ASTDecl *declScope,
                                                 bool *scopeDependent = nullptr);
 
-  /// Same, additionally collecting the problematic constraints so a diagnosing
-  /// caller can name them. An upcast to a trait is decided by a conformance
-  /// query, so a rejection reports exactly what that query would have.
+  FailureOr<PValue> emitClosureTraitConversion(ASTExprAnd<CValue> valueExpr,
+                                               TraitType trait);
+
+  /// Same, additionally collecting the problematic constraints so a
+  /// diagnosing caller can name them. An upcast to a trait is decided by a
+  /// conformance query, so a rejection reports exactly what that query
+  /// would have.
   static FailureOr<ConstraintResult>
   canMetaTypeUpCastToWithDetails(SharedState &shared, SMLoc loc,
                                  ASTType fromType, ASTType toType,

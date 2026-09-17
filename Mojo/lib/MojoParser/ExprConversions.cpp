@@ -1759,15 +1759,34 @@ static FailureOr<TraitType> verifyClosureTrait(SharedState &shared,
                                                ASTType concreteType,
                                                TraitType trait,
                                                ASTDecl *declScope) {
+  // FIXME: we only handle case where the target type only have one closure
+  // trait, we need to be more smart to extend it for N:M mapping.
+  bool seenUniParamTrait = false;
   SmallVector<TraitSymbolAttr> toCheck;
-  for (const auto &symbol : trait.getSymbols()) {
+  for (TraitSymbolAttr tgt : trait.getSymbols()) {
+    if (shared.isUniversalParametricClosureTrait(tgt)) {
+      if (seenUniParamTrait)
+        return failure();
+      seenUniParamTrait = true;
+
+      auto sourceTrait = concreteType.getProvidedTrait(shared);
+      if (TraitSymbolAttr src = extractClosureSymbol(shared, sourceTrait)) {
+        FnTypeGeneratorType srcSig = shared.getClosureFnSigWithoutSelf(src);
+        FnTypeGeneratorType tgtSig = shared.getClosureFnSigWithoutSelf(tgt);
+        SyntheticNode node(declScope->getLoc());
+        if (!canConvertFunctionTypes(srcSig, tgtSig, &node, *declScope))
+          return failure();
+      }
+      continue;
+    }
+
     auto &symbolDecl =
-        shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
+        shared.declResolver->getDeclForTypeSymbol(tgt.getSymbol());
     auto traitDeclOp =
         dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
     if (!traitDeclOp || !traitDeclOp.getDefinesClosure()) {
       // Non closure traits are checked separately.
-      toCheck.push_back(symbol);
+      toCheck.push_back(tgt);
       continue;
     }
 
@@ -1780,10 +1799,47 @@ static FailureOr<TraitType> verifyClosureTrait(SharedState &shared,
     if (sugarIsa<TraitType>(concreteType) &&
         failed(shared.closureEmitter->isTraitCompatibleWith(
             concreteType, traitDeclOp, declScope)))
-      toCheck.push_back(symbol); // maybe don't need extension.
+      toCheck.push_back(tgt); // maybe don't need extension.
   }
 
   return TraitType::get(shared.getContext(), toCheck);
+}
+
+// NOTE: this must be alined with verifyClosureTrait.
+FailureOr<PValue>
+IREmitter::emitClosureTraitConversion(ASTExprAnd<CValue> valueExpr,
+                                      TraitType trait) {
+  // FIXME: we only handle case where the target type only have one closure
+  // trait, we need to be more smart to extend it for N:M mapping.
+  bool seenUniParamTrait = false;
+  SmallVector<TraitSymbolAttr> toCheck;
+  for (TraitSymbolAttr tgt : trait.getSymbols()) {
+    if (!shared.isUniversalParametricClosureTrait(tgt))
+      continue;
+
+    if (seenUniParamTrait) {
+      emitError(valueExpr.expr->getLoc(), "can not convert");
+      return PValue();
+    }
+    seenUniParamTrait = true;
+
+    auto sourceTrait = valueExpr.ir.getRValueType().getProvidedTrait(shared);
+    if (TraitSymbolAttr src = extractClosureSymbol(shared, sourceTrait)) {
+      FnTypeGeneratorType srcSig = shared.getClosureFnSigWithoutSelf(src);
+      FnTypeGeneratorType tgtSig = shared.getClosureFnSigWithoutSelf(tgt);
+      if (canZeroCostConvertFnTypes(srcSig, tgtSig))
+        return PValue(UpcastAttr::get(trait, valueExpr.ir.getIfPValue()));
+
+      if (canConvertFunctionTypes(srcSig, tgtSig, valueExpr.expr, declScope)) {
+        // Insert extension.
+        llvm_unreachable("not implement");
+      }
+
+      emitError(valueExpr.expr->getLoc(), "can not convert");
+      return PValue();
+    }
+  }
+  return failure();
 }
 
 // Returns the upcastability verdict (`yes`/`no`/`unknown`) for converting a
@@ -2209,6 +2265,7 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
     // FnTypeGeneratorType is still a non-struct type...
     return bindNonStructTypeToTrait(valueExpr, anyTrait.getTraitType());
   };
+
   // Emit metatype conversions to trait types if the metatype implements
   // the specified trait.
   if (auto anyTrait = sugarDynCast<AnyTraitType>(toType.extractMetaType())) {
@@ -2222,6 +2279,8 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
             fromType.extractMetaType())) {
       // Augment the witness table of closure wrapper with rebind if
       // necessary. We do this for every closure trait in the type.
+      //
+      // TODO: delete this!
       for (const auto &symbol : trait.getSymbols()) {
         auto &symbolDecl =
             shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
@@ -2246,8 +2305,13 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
           }
         }
       }
-      // Conversions from structs or traits.
-      return emitMetaTypeToTraitConversion(valueExpr, trait);
+
+      auto closureConvert = emitClosureTraitConversion(valueExpr, trait);
+      // Inapplicable, fails back to the simple case.
+      if (failed(closureConvert))
+        return emitMetaTypeToTraitConversion(valueExpr, trait);
+
+      return closureConvert;
     }
 
     if (auto fnGen =
