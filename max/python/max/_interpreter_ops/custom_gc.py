@@ -33,7 +33,13 @@ from max._interpreter_ops import gc_compile
 from max._mlir_context import in_default_mlir_context
 from max.driver import Device
 from max.dtype import DType
-from max.experimental.custom import CustomOp, DTypeVar, TemplateType
+from max.experimental.custom import (
+    CustomOp,
+    DTypeVar,
+    TemplateType,
+    _frozen_params,
+    _ParamKey,
+)
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.graph import _resolved_custom_extensions
 
@@ -54,6 +60,7 @@ class BindingKey:
     """
 
     symbol: str
+    params: _ParamKey
     operands: tuple[_TypeKey, ...]
     results: tuple[_TypeKey, ...]
     lib_hashes: tuple[str, ...]
@@ -113,9 +120,9 @@ def _key(
     """Builds the cache key for a binding of *binding_types*.
 
     Keys both halves of the signature: nothing else distinguishes two defs
-    sharing a kernel symbol and extensions but different declared ``inputs``
-    or ``outputs``. The device isn't a separate field, since each type
-    already carries its own.
+    sharing a kernel symbol, params, and extensions but different declared
+    ``inputs`` or ``outputs``. The device isn't a separate field, since each
+    type already carries its own.
 
     Hashes *extensions* plus the process-global overlay, the libraries
     :func:`_compile`'s ``Graph`` actually links: on *extensions* alone, a
@@ -126,6 +133,7 @@ def _key(
     sym_types, out_types = binding_types
     return BindingKey(
         symbol=defn.name,
+        params=_frozen_params(defn.parameters),
         operands=tuple(_type_key(t) for t in sym_types),
         results=tuple(_type_key(t) for t in out_types),
         lib_hashes=_lib_hashes(
@@ -208,9 +216,11 @@ def _binding_types(
     """Returns one binding's (symbolic input types, symbolic output types).
 
     The declared signature *is* the binding signature, so this reads
-    ``defn.inputs``/``defn.outputs`` as-is, never minting a fresh name.
-    Depends only on dtype and rank, never a concrete dim, which is what lets
-    one binding serve every shape of a given rank. :func:`binding_for` evaluates this once per
+    ``defn.inputs``/``defn.outputs`` (the RESOLVED signature -- a ``Param``
+    already folded to a static, never the pre-resolution ``declared_*``
+    snapshot) as-is, never minting a fresh name. Depends only on dtype and
+    rank, never a concrete dim, which is what lets one binding serve every
+    shape of a given rank. :func:`binding_for` evaluates this once per
     dispatch and hands the result to both :func:`_key` and :func:`_compile`.
     """
     device = in_types[0].device
@@ -253,6 +263,13 @@ def _compile(
     would compile without error but leave it unbound.
     """
     sym_types, out_types = binding_types
+    # Drops nothing at runtime (`defn` already staged, so no value is `None`);
+    # it narrows the type to what `ops.custom` accepts, as `_stage` does.
+    params = {
+        name: value
+        for name, value in defn.parameters.items()
+        if value is not None
+    }
     graph = Graph(
         _graph_name(key),
         input_types=sym_types,
@@ -264,6 +281,7 @@ def _compile(
             DeviceRef.from_device(device),
             list(graph.inputs),
             out_types=out_types,
+            parameters=params or None,
         )
         graph.output(*results)
     session = gc_compile.session_for(device)

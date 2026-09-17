@@ -62,10 +62,10 @@ __all__ = [
 _SPEC_ATTR_KEY = "max.custom_op_def"
 
 #: Keyed by content token (see `CustomOp.token`), not kernel
-#: name: two defs can share a name with different signatures, and
-#: name-keying would let one overwrite another's already-staged ops.
-#: Content-keying also means identical redeclarations share one entry. Holds
-#: strong references and never shrinks.
+#: name: two ops can share a name with different params or signatures,
+#: and name-keying would let one overwrite another's already-staged ops.
+#: Content-keying also means identical redeclarations share one entry.
+#: Holds strong references and never shrinks.
 #: TODO(pprovins): a program constructing genuinely distinct declarations in
 #: a loop grows this registry without limit. Revisit if a workload hits it;
 #: weak values are not the fix, since entry lifetime would then decide which
@@ -90,9 +90,9 @@ class TemplateType:
 
     ``dtype`` is a concrete :class:`~max.dtype.DType` or a :class:`DTypeVar`;
     entries sharing a variable must agree on the actual dtype at call time.
-    ``shape`` holds :class:`Symbol`s, statics, or expressions over them; its
-    length is the entry's rank. There is no device: the op takes its device
-    from its operands at each call.
+    ``shape`` holds :class:`Symbol`s, :class:`Param`s, statics, or expressions
+    over them; its length is the entry's rank. There is no device: the op takes
+    its device from its operands at each call.
 
     Instances are immutable: :class:`CustomOp` validates a signature once
     at declaration, so an entry must not change underneath it afterwards.
@@ -111,6 +111,40 @@ class TemplateType:
             )
         object.__setattr__(self, "dtype", dtype)
         object.__setattr__(self, "shape", tuple(Dim(dim) for dim in shape))
+
+
+#: Namespace `Param`'s parameter symbols live under, keeping them disjoint
+#: from the dim names a graph uses.
+_PARAM_DIM_PREFIX = "__param_"
+
+
+class Param(SymbolicDim):
+    """A named kernel parameter, usable directly in dim expressions.
+
+    Subclassing :class:`~max.graph.SymbolicDim` lets a parameter take part
+    in ordinary ``Dim`` arithmetic (``Param("g") // 2``). Its symbol is
+    namespaced, so ``Param("g")`` and a graph dim named ``g`` are different
+    symbols and nothing but a ``Param`` can be resolved to a parameter's
+    value by accident. The type alone can't carry that guarantee, since dim
+    arithmetic folds through MLIR and reconstructs operands as plain symbols.
+
+    Means something different by position: in an input template it's a
+    static pin (the actual dim must equal ``self.parameters[name]``); in
+    an output expression it's substituted to the parameter's concrete
+    value.
+    """
+
+    def __init__(self, name: str | Param) -> None:
+        # `Dim(param)` hands back the same instance and Python re-runs this
+        # on it, so prefixing has to be idempotent.
+        if isinstance(name, Param):
+            name = name.param_name
+        super().__init__(f"{_PARAM_DIM_PREFIX}{name}")
+
+    @property
+    def param_name(self) -> str:
+        """The declared parameter name, without the namespace prefix."""
+        return self.name.removeprefix(_PARAM_DIM_PREFIX)
 
 
 #: Namespace a signature's own dims live under, keeping them disjoint from
@@ -152,6 +186,34 @@ class DTypeVar:
     """A dtype variable: inputs sharing one must agree at call time."""
 
     name: str
+
+
+#: Canonicalized, hashable, order-independent param-dict key; see
+#: `_frozen_params`.
+_ParamKey = tuple[tuple[str, str, object], ...]
+
+
+def _frozen_params(
+    params: Mapping[str, bool | int | str | DType | None],
+) -> _ParamKey:
+    """Canonicalizes a param dict into a hashable, order-independent key.
+
+    Each entry carries its value's type name, because ``ops.custom`` lowers
+    ``bool``, ``int``, ``str`` and ``DType`` to four different MLIR
+    attributes (see ``_parameter_attribute``) while a key over the values
+    alone collapses two of those pairs: ``DType.float32`` and ``"float32"``
+    share a spelling, and ``True`` and ``1`` compare and hash equal.
+    """
+    return tuple(
+        sorted(
+            (
+                name,
+                type(value).__name__,
+                value.name if isinstance(value, DType) else value,
+            )
+            for name, value in params.items()
+        )
+    )
 
 
 def _dtype_key(dtype: DType | DTypeVar) -> str:
@@ -215,6 +277,54 @@ def _resolve_extension(path: Path) -> Path:
     return path
 
 
+def _resolve_parameters(
+    inputs: Mapping[str, TemplateType],
+    outputs: Sequence[TemplateType],
+    parameters: Mapping[str, bool | int | str | DType | None],
+) -> tuple[
+    dict[str, TemplateType],
+    tuple[TemplateType, ...],
+    dict[tuple[str, int], str],
+]:
+    """Substitutes valued parameters into a declared signature.
+
+    Parameters are compile-time, so a valued one can always be folded away
+    here, in an input template (pinning a dim) as well as an output
+    expression. What remains unresolved afterward is exactly what makes an
+    op uncallable (see :attr:`CustomOp.is_complete`).
+
+    Returns:
+        The resolved inputs and outputs, plus which input dims a
+        :class:`Param` pinned, recorded before the fold erases it so
+        :meth:`CustomOp._unify` can still name the parameter in a mismatch
+        error.
+    """
+    substitutions = {
+        f"{_PARAM_DIM_PREFIX}{name}": value
+        for name, value in parameters.items()
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
+    if not substitutions:
+        return dict(inputs), tuple(outputs), {}
+
+    def resolved(spec: TemplateType) -> TemplateType:
+        return TemplateType(
+            spec.dtype, [d.substitute(substitutions) for d in spec.shape]
+        )
+
+    pinned = {
+        (key, j): dim.param_name
+        for key, spec in inputs.items()
+        for j, dim in enumerate(spec.shape)
+        if isinstance(dim, Param) and dim.name in substitutions
+    }
+    return (
+        {key: resolved(spec) for key, spec in inputs.items()},
+        tuple(resolved(spec) for spec in outputs),
+        pinned,
+    )
+
+
 @dataclass(frozen=True)
 class CustomOp:
     """A declared custom op; call it eagerly or in a graph.
@@ -266,6 +376,24 @@ class CustomOp:
     outputs: tuple[TemplateType, ...]
     #: Kernel packages, already compiled to binaries.
     extensions: tuple[Path, ...]
+    #: Compile-time parameters passed to the kernel. ``None`` declares one
+    #: without giving it a value yet (see :attr:`is_complete`).
+    parameters: Mapping[str, bool | int | str | DType | None] = field(
+        hash=False
+    )
+    #: The signature as declared, before valued parameters were folded
+    #: into ``inputs``/``outputs``, so :meth:`__getitem__` can re-specialize
+    #: a :class:`Param`. Derived from the fields above, so not compared.
+    declared_inputs: Mapping[str, TemplateType] = field(
+        hash=False, compare=False
+    )
+    declared_outputs: tuple[TemplateType, ...] = field(compare=False)
+    #: Input dims a :class:`Param` pinned before folding, by (operand, dim
+    #: index), so a static-mismatch error in :meth:`_unify` can still name
+    #: the parameter -- by then the dim is a bare static.
+    pinned_params: Mapping[tuple[str, int], str] = field(
+        hash=False, compare=False
+    )
 
     @cached_property
     def __signature__(self) -> inspect.Signature:
@@ -297,16 +425,17 @@ class CustomOp:
         ``executor._eager_model_cache_key`` hashes.
 
         Covers exactly what a resolved op is read for: kernel symbol,
-        signature, and the extension paths ``custom_gc.binding_for`` links
-        against. Kernel library CONTENT is deliberately absent: both
-        consumers already hash it themselves -- ``BindingKey.lib_hashes`` on
-        the interpreter path, and ``_eager_model_cache_key``'s
-        resolved-library component alongside the ASM hash on the compile
-        path -- so a kernel edit is covered without reading every library
-        file at every declaration.
+        parameters, resolved signature, and the extension paths
+        ``custom_gc.binding_for`` links against. Kernel library CONTENT is
+        deliberately absent: both consumers already hash it themselves --
+        ``BindingKey.lib_hashes`` on the interpreter path, and
+        ``_eager_model_cache_key``'s resolved-library component alongside the
+        ASM hash on the compile path -- so a kernel edit is covered without
+        reading every library file at every declaration.
         """
         digest = _digest(
             self.name,
+            repr(_frozen_params(self.parameters)),
             _signature_key(self.inputs, self.outputs),
             repr([str(path) for path in self.extensions]),
         )
@@ -315,16 +444,20 @@ class CustomOp:
     def _check_signature(self) -> None:
         """Rejects any dim a signature is not allowed to name.
 
-        Every dim must reduce to statics or :class:`Symbol`s. Because dim
-        arithmetic erases the Python subclass, the test is on the namespaced
-        name, which is exactly what a :class:`Symbol` contributes and nothing
-        else can.
+        Every dim must reduce to statics, :class:`Symbol`s, or :class:`Param`s.
+        Because dim arithmetic erases the Python subclass, the test is on the
+        namespaced name, which is exactly what a :class:`Symbol` or
+        :class:`Param` contributes and nothing else can.
 
         An input dim must additionally be a bare :class:`Symbol` or a static,
-        never an expression over one: ``Symbol("m") // 2`` is unresolvable,
-        since :meth:`_unify` cannot solve it for ``m``. An output dim keeps
-        the looser rule, since it only ever gets substituted into, never
-        solved.
+        never an expression over one: an int-valued :class:`Param` is already
+        folded to a static by :func:`_resolve_parameters`, so what remains is
+        either unresolvable (``Symbol("m") // 2``, which :meth:`_unify` cannot
+        solve for ``m``) or a ``Param`` :meth:`_unify` has no value to bind.
+        An output dim keeps the looser rule, since it only ever gets
+        substituted into, never solved -- but a ``Param`` naming a value that
+        can never fold (see :meth:`_check_dim_param_value`) is refused on
+        both sides.
         """
         entries = [
             (f"input {key!r}", spec) for key, spec in self.inputs.items()
@@ -332,12 +465,19 @@ class CustomOp:
         for where, spec in entries:
             for j, dim in enumerate(spec.shape):
                 for symbol in dim.parameters:
+                    if symbol.name.startswith(_PARAM_DIM_PREFIX):
+                        self._check_dim_param_value(
+                            where,
+                            j,
+                            symbol.name.removeprefix(_PARAM_DIM_PREFIX),
+                        )
+                        continue
                     if symbol.name.startswith(_SYMBOL_PREFIX):
                         continue
                     raise TypeError(
                         f"custom op {self.name!r}: {where} dim {j} uses "
                         f"{symbol.name!r}, which is not a signature dim; use "
-                        "custom.Symbol or a static"
+                        "custom.Symbol, a Param, or a static"
                     )
         for key, spec in self.inputs.items():
             for j, dim in enumerate(spec.shape):
@@ -346,9 +486,85 @@ class CustomOp:
                 raise TypeError(
                     f"custom op {self.name!r}: input {key!r} dim {j} "
                     f"({dim}) is not directly bindable; an input dim "
-                    "must be a plain custom.Symbol or a static, not an "
-                    "algebraic expression"
+                    "must be a plain custom.Symbol or a static, not a "
+                    "Param or an algebraic expression"
                 )
+
+    def _check_dim_param_value(self, where: str, j: int, name: str) -> None:
+        """Refuses a dim naming a parameter whose value can never fold.
+
+        :func:`_resolve_parameters` only folds an int (never a bool), so a
+        ``str``- or ``DType``-valued parameter named by a dim is a dead end:
+        the dim keeps its ``Param`` symbol forever, and
+        :meth:`_unresolved_parameters` then reports a parameter that has a
+        value as having none. An unvalued parameter is left alone: it is the
+        ordinary incomplete case :meth:`__getitem__` can still resolve.
+        """
+        value = self.parameters.get(name)
+        if value is None or (
+            isinstance(value, int) and not isinstance(value, bool)
+        ):
+            return
+        raise TypeError(
+            f"custom op {self.name!r}: {where} dim {j}: Param({name!r}) is "
+            f"{type(value).__name__}-valued ({value!r}); only int-valued "
+            "parameters can appear in a dim"
+        )
+
+    @property
+    def is_complete(self) -> bool:
+        """Whether the signature has no unresolved :class:`Param` left.
+
+        ``False`` means at least one parameter a dim names, or one declared
+        bare, has no value, so the def cannot be staged (see :meth:`_stage`)
+        until it is given one, either at declaration or through
+        :meth:`__getitem__`. A parameter whose value could never fold into a
+        dim is refused at declaration (see :meth:`_check_dim_param_value`)
+        rather than stranding a def here with no remedy.
+        """
+        return not self._unresolved_parameters()
+
+    def _unresolved_parameters(self) -> list[str]:
+        """Parameter names with no value: as a dim symbol, or declared bare.
+
+        A dim-symbol scan alone would miss a declared parameter that names no
+        dim at all -- an expert id or a kernel flag the kernel body reads
+        directly -- so every ``None``-valued entry in ``parameters`` is
+        reported too.
+        """
+        names = {
+            name for name, value in self.parameters.items() if value is None
+        }
+        for spec in [*self.inputs.values(), *self.outputs]:
+            for dim in spec.shape:
+                for symbol in dim.parameters:
+                    if symbol.name.startswith(_PARAM_DIM_PREFIX):
+                        names.add(symbol.name.removeprefix(_PARAM_DIM_PREFIX))
+        return sorted(names)
+
+    def __getitem__(
+        self, params: Mapping[str, bool | int | str | DType | None]
+    ) -> CustomOp:
+        """Returns a derived op specialized with per-call *params*.
+
+        Merges *params* into this op's own parameters and declares the
+        result afresh, so the merged params are re-validated and the derived
+        op gets its own token: a later specialization cannot overwrite this
+        one's registry entry. Repeated subscripts with the same merged params
+        return equal ops sharing one token, and so one compiled binding.
+
+        Declares from the *declared* (pre-resolution) signature: this op's
+        ``inputs``/``outputs`` may already have folded a :class:`Param` into
+        a static value, leaving nothing for the derived op to re-resolve to a
+        different one.
+        """
+        return declare(
+            self.name,
+            inputs=self.declared_inputs,
+            outputs=self.declared_outputs,
+            parameters={**self.parameters, **params},
+            custom_extensions=self.extensions,
+        )
 
     def _check_reserved_dim_names(self, in_types: Sequence[Type[Any]]) -> None:
         """Rejects an incoming dim inside the signature's own namespace.
@@ -415,6 +631,13 @@ class CustomOp:
             ):
                 if isinstance(declared, StaticDim):
                     if declared != got:
+                        pinned = self.pinned_params.get((key, j))
+                        if pinned is not None:
+                            raise ValueError(
+                                f"custom op {self.name!r}: input {key!r} "
+                                f"dim {j}: Param({pinned!r}) pins this dim "
+                                f"to {int(declared)}, got {got}"
+                            )
                         raise ValueError(
                             f"custom op {self.name!r}: input {key!r} dim {j} "
                             f"must equal static {int(declared)}: got {got}"
@@ -449,6 +672,12 @@ class CustomOp:
 
     def _stage(self, values: Sequence[TensorValue]) -> list[TensorValue]:
         """Stages the op into the current graph and returns its outputs."""
+        if unresolved := self._unresolved_parameters():
+            raise ValueError(
+                f"custom op {self.name!r}: parameter(s) "
+                f"{', '.join(unresolved)} have no value; supply them at "
+                "definition or with op[{...}]"
+            )
         bindings = self._unify([value.type for value in values])
         device = self._op_device(values)
         out_types = [
@@ -459,8 +688,19 @@ class CustomOp:
             )
             for spec in self.outputs
         ]
+        # Drops nothing at runtime (the guard above refused any `None`); it
+        # narrows `_parameters` to the value union `ops.custom` declares.
+        params = {
+            key: value
+            for key, value in self.parameters.items()
+            if value is not None
+        }
         results = ops.custom(
-            self.name, device, list(values), out_types=out_types
+            self.name,
+            device,
+            list(values),
+            out_types=out_types,
+            parameters=params or None,
         )
         if results:
             op = results[0]._mlir_value.owner
@@ -557,6 +797,7 @@ def declare(
     *,
     inputs: Mapping[str, TemplateType],
     outputs: Sequence[TemplateType],
+    parameters: Mapping[str, bool | int | str | DType | None] | None = None,
     custom_extensions: Sequence[Path | str] = (),
 ) -> CustomOp:
     """Declares a custom op from its signature.
@@ -570,7 +811,12 @@ def declare(
             in diagnostics and accepted as a keyword at call time. Iteration
             order is operand order.
         outputs: One :class:`TemplateType` per result. Dims may only be
-            statics, :class:`Symbol`s, or expressions over them.
+            statics, :class:`Symbol`s, :class:`Param`s, or expressions over
+            them.
+        parameters: Compile-time parameters passed to the kernel. A value of
+            ``None`` declares the parameter without giving it one yet,
+            leaving any :class:`Param` naming it unresolved (see
+            :attr:`CustomOp.is_complete`).
         custom_extensions: Paths to the Mojo packages defining the kernel.
 
     Returns:
@@ -578,7 +824,8 @@ def declare(
 
     Raises:
         ValueError: If ``inputs`` or ``outputs`` is empty.
-        TypeError: If a dim names a symbol that is not a :class:`Symbol`.
+        TypeError: If a dim names a symbol that is neither a :class:`Symbol`
+            nor a :class:`Param`.
         MojoCompilationError: If a source package fails to compile.
     """
     if not inputs:
@@ -589,15 +836,25 @@ def declare(
         raise ValueError(
             f"custom op {name!r}: a signature needs at least one output"
         )
+    declared_inputs = dict(inputs)
+    declared_outputs = tuple(outputs)
+    params = dict(parameters or {})
+    resolved_inputs, resolved_outputs, pinned = _resolve_parameters(
+        declared_inputs, declared_outputs, params
+    )
     op = CustomOp(
         name,
-        dict(inputs),
-        tuple(outputs),
+        resolved_inputs,
+        resolved_outputs,
         tuple(_resolve_extension(Path(p)) for p in custom_extensions),
+        params,
+        declared_inputs,
+        declared_outputs,
+        pinned,
     )
     op._check_signature()
-    # Anything sharing a content token declares the same kernel and
-    # signature, so it is interchangeable with this op for every purpose a
-    # resolved op is read for.
+    # Anything sharing a content token declares the same kernel, parameters
+    # and signature, so it is interchangeable with this op for every purpose
+    # a resolved op is read for.
     _SPEC_REGISTRY[op.token] = op
     return op

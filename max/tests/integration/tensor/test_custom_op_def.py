@@ -43,6 +43,7 @@ from max.graph import (
     Dim,
     DimLike,
     Graph,
+    StaticDim,
     TensorType,
     TensorValue,
     default_custom_extensions_scope,
@@ -108,18 +109,28 @@ def make_downsample() -> C.CustomOp:
     )
 
 
-def make_copy() -> C.CustomOp:
-    """``mxf353_downsample`` with dim 1 undivided: an elementwise copy.
+def make_downsample_by(divisor: int) -> C.CustomOp:
+    """``mxf353_downsample`` with dim 1 divided by *divisor* instead of 2.
 
-    The kernel copies elementwise over the OUTPUT's own dims, so an
-    undivided declaration is as correct as a halved one and gives the
-    composition tests a shape-preserving op.
+    The kernel copies elementwise over the OUTPUT's own dims, so any divisor
+    produces a correct result, letting two signatures share one kernel.
     """
     n, w, c = C.Symbols("n", "w", "c")
     return C.declare(
         "mxf353_downsample",
         inputs={"x": C.TemplateType(DType.float32, [n, w, c])},
-        outputs=[C.TemplateType(DType.float32, [n, w, c])],
+        outputs=[C.TemplateType(DType.float32, [n, w // divisor, c])],
+        custom_extensions=[KERNELS],
+    )
+
+
+def make_scale(factor: int = 4, rank: int = 1) -> C.CustomOp:
+    dims = list(C.Symbols(*(f"d{i}" for i in range(rank))))
+    return C.declare(
+        "mxf353_scale",
+        inputs={"x": C.TemplateType(DType.float32, dims)},
+        outputs=[C.TemplateType(DType.float32, dims)],
+        parameters={"factor": factor},
         custom_extensions=[KERNELS],
     )
 
@@ -142,32 +153,29 @@ def make_q8_like(dtype_var: str = "A") -> C.CustomOp:
     )
 
 
-def make_downsample_by(divisor: int) -> C.CustomOp:
-    """``mxf353_downsample`` with dim 1 divided by *divisor* instead of 2.
-
-    The kernel copies elementwise over the OUTPUT's own dims, so any divisor
-    produces a correct result, letting two signatures share one kernel.
-    """
-    n, w, c = C.Symbols("n", "w", "c")
+def make_pinned_scale(factor: int = 4) -> C.CustomOp:
+    """`mxf353_scale` with its input dim pinned to `Param("factor")`: the
+    actual input's dim 0 must equal the declared `factor` parameter."""
     return C.declare(
-        "mxf353_downsample",
-        inputs={"x": C.TemplateType(DType.float32, [n, w, c])},
-        outputs=[C.TemplateType(DType.float32, [n, w // divisor, c])],
+        "mxf353_scale",
+        inputs={"x": C.TemplateType(DType.float32, [C.Param("factor")])},
+        outputs=[C.TemplateType(DType.float32, [C.Param("factor")])],
+        parameters={"factor": factor},
         custom_extensions=[KERNELS],
     )
 
 
-def make_downsample_from(width: int) -> C.CustomOp:
-    """``mxf353_downsample`` accepting only inputs whose dim 1 is *width*.
-
-    Shares result types with ``make_downsample_by(width // 4)``, so the two
-    differ in nothing but their INPUT template.
-    """
-    n, c = C.Symbols("n", "c")
+def make_group_pack(group_size: int = 4) -> C.CustomOp:
+    """`w:[rows, cols] -> out:[rows, cols // group_size]`, an output dim
+    expression resolving `Param("group_size")` to its declared value."""
+    rows, cols = C.Symbols("rows", "cols")
     return C.declare(
-        "mxf353_downsample",
-        inputs={"x": C.TemplateType(DType.float32, [n, width, c])},
-        outputs=[C.TemplateType(DType.float32, [n, width // 4, c])],
+        "mxf353_group_pack",
+        inputs={"w": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[
+            C.TemplateType(DType.float32, [rows, cols // C.Param("group_size")])
+        ],
+        parameters={"group_size": group_size},
         custom_extensions=[KERNELS],
     )
 
@@ -241,12 +249,23 @@ def test_dual_context_eager_and_graph_staging() -> None:
 # --- custom_gc: binding cache for CustomOp-declared ops (MXF-353) --------
 
 
-def test_binding_key_reflects_result_types() -> None:
-    """`BindingKey` folds in the declared result types, not just the operand
-    types: a collision regression, a kernel shared by signatures with
-    different result types must never alias one binding. The key stays over
-    SYMBOLIC input types too, so this can't smuggle shape back in."""
+def test_binding_key_reflects_params_and_result_types() -> None:
+    """`BindingKey` folds in params and declared result types, not just
+    operand types: two collision regressions, a kernel shared by signatures
+    with different params or different result types must never alias one
+    binding. The key stays over SYMBOLIC input types too, so this can't
+    smuggle shape back in."""
     cpu = CPU()
+
+    scale4, scale8 = make_scale(4), make_scale(8)
+    in4 = [_f32(4)]
+    key4 = custom_gc.make_key(scale4, in4, [KERNELS])
+    assert key4 != custom_gc.make_key(scale8, in4, [KERNELS])
+    out4 = custom_gc.binding_for(scale4, cpu, in4, [KERNELS])(
+        _full(2.0, 4).driver_tensor
+    )[0]
+    _assert_values([8.0, 8.0, 8.0, 8.0], Tensor(storage=out4))
+
     half, third = make_downsample_by(2), make_downsample_by(3)
     in12 = [_f32(2, 12, 3)]
     assert custom_gc.make_key(half, in12, [KERNELS]) != custom_gc.make_key(
@@ -267,19 +286,19 @@ def test_binding_key_reflects_result_types() -> None:
 
 def test_binding_key_reflects_input_template() -> None:
     """The key is derived from the BINDING's signature, so a template that
-    pins an input dim to a static can't alias the def that leaves the same
-    dim symbolic: they compile different graphs (one static-shaped, one
-    rank-polymorphic) from the same kernel, result types and extensions, so
-    nothing else in the key would tell them apart."""
+    pins an input dim to a parameter value can't alias the untemplated def
+    that leaves the same dim symbolic: they compile different graphs (one
+    static-shaped, one rank-polymorphic) from the same kernel, params, and
+    extensions, so nothing else in the key would tell them apart."""
     cpu = CPU()
-    plain, pinned = make_downsample_by(4), make_downsample_from(8)
-    in8 = [_f32(2, 8, 3)]
+    plain, pinned = make_scale(4), make_pinned_scale(4)
+    in4 = [_f32(4)]
 
-    assert custom_gc.make_key(plain, in8, [KERNELS]) != custom_gc.make_key(
-        pinned, in8, [KERNELS]
+    assert custom_gc.make_key(plain, in4, [KERNELS]) != custom_gc.make_key(
+        pinned, in4, [KERNELS]
     )
-    custom_gc.binding_for(plain, cpu, in8, [KERNELS])
-    custom_gc.binding_for(pinned, cpu, in8, [KERNELS])
+    custom_gc.binding_for(plain, cpu, in4, [KERNELS])
+    custom_gc.binding_for(pinned, cpu, in4, [KERNELS])
     assert len(custom_gc._CACHE) == 2
 
 
@@ -344,9 +363,9 @@ def test_binding_cache_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     ``engine.Model`` and its MEF buffer, so an unbounded cache leaks for a
     process that keeps declaring new signatures."""
     monkeypatch.setattr(custom_gc, "_CACHE_MAX_SIZE", 2)
-    cpu, in12 = CPU(), [_f32(2, 12, 3)]
-    for divisor in (2, 3, 4):
-        custom_gc.binding_for(make_downsample_by(divisor), cpu, in12, [KERNELS])
+    cpu, in4 = CPU(), [_f32(4)]
+    for factor in (2, 4, 8):
+        custom_gc.binding_for(make_scale(factor), cpu, in4, [KERNELS])
         assert len(custom_gc._CACHE) <= 2
     # Exactly at the bound, so the three distinct keys really did evict one
     # rather than aliasing onto a single entry.
@@ -361,16 +380,16 @@ def test_binding_cache_evicts_least_recently_used(
     only thing making this an LRU rather than an insertion-order FIFO, and
     deleting it leaves every other assertion in this suite passing."""
     monkeypatch.setattr(custom_gc, "_CACHE_MAX_SIZE", 2)
-    cpu, in12 = CPU(), [_f32(2, 12, 3)]
-    first, second, third = (make_downsample_by(d) for d in (2, 3, 4))
+    cpu, in4 = CPU(), [_f32(4)]
+    first, second, third = make_scale(2), make_scale(4), make_scale(8)
     keys = [
-        custom_gc.make_key(defn, in12, [KERNELS])
+        custom_gc.make_key(defn, in4, [KERNELS])
         for defn in (first, second, third)
     ]
-    custom_gc.binding_for(first, cpu, in12, [KERNELS])
-    custom_gc.binding_for(second, cpu, in12, [KERNELS])
-    custom_gc.binding_for(first, cpu, in12, [KERNELS])
-    custom_gc.binding_for(third, cpu, in12, [KERNELS])
+    custom_gc.binding_for(first, cpu, in4, [KERNELS])
+    custom_gc.binding_for(second, cpu, in4, [KERNELS])
+    custom_gc.binding_for(first, cpu, in4, [KERNELS])
+    custom_gc.binding_for(third, cpu, in4, [KERNELS])
     assert keys[0] in custom_gc._CACHE
     assert keys[1] not in custom_gc._CACHE
     assert keys[2] in custom_gc._CACHE
@@ -381,7 +400,8 @@ def test_declared_tier_scenario(
 ) -> None:
     """One declared-tier pass through the interpreter binding cache:
     rank-polymorphic reuse under exactly-one-compile discipline,
-    redeclaration dedup, and the multi-output list branch."""
+    redeclaration dedup, a `__getitem__` param specialization with its own
+    binding + numerics, and the multi-output list branch."""
     compiles = _spy_on_compiles(monkeypatch)
 
     op = make_downsample()
@@ -400,13 +420,18 @@ def test_declared_tier_scenario(
     assert compiles[0] == 1
     assert len(custom_gc._CACHE) == 1
 
-    # A different declaration over the same kernel mints its OWN binding with
-    # its own correct numerics.
-    third = make_downsample_by(3)
-    y3 = _one_tensor(third(_full(2.0, 1, 9, 1)))
-    _assert_values([[[2.0], [2.0], [2.0]]], y3)
-    assert compiles[0] == 2
-    assert len(custom_gc._CACHE) == 2
+    # A `__getitem__` param specialization mints its OWN binding with its own
+    # correct numerics; repeated subscripts with the same params declare an
+    # equal op with the same token, so they dedup onto one binding.
+    base = make_scale(2)
+    derived = base[{"factor": 3}]
+    assert derived is not base and derived.token != base.token
+    assert base.parameters["factor"] == 2 and derived.parameters["factor"] == 3
+    assert base[{"factor": 3}] == derived
+    x = _full(2.0, 4)
+    _assert_values([6.0, 6.0, 6.0, 6.0], _one_tensor(derived(x)))
+    _assert_values([4.0, 4.0, 4.0, 4.0], _one_tensor(base(x)))
+    assert compiles[0] == 3  # +1 downsample, +1 base, +1 derived
 
     # `_single_or_list`'s list branch: a 2-output kernel's eager call returns
     # a `list[Tensor]`, not a bare `Tensor`. Shape [1]: the kernel writes
@@ -425,6 +450,64 @@ def test_declared_tier_scenario(
     assert isinstance(outs, list) and len(outs) == 2
     _assert_values([4.0], _one_tensor(outs[0]))
     _assert_values([8.0], _one_tensor(outs[1]))
+
+
+def test_distinct_defns_same_kernel_do_not_collide(
+    force_interpreter_only: None,
+) -> None:
+    """Two `CustomOp`s sharing a kernel name but different params must
+    each execute with THEIR OWN params. Regression: the token used to be
+    the bare kernel name, so ``_SPEC_REGISTRY``'s last-write-wins keying let
+    ``make_scale(8)`` overwrite the entry a staged ``make_scale(4)`` needed."""
+    op4, op8 = make_scale(4), make_scale(8)
+    x = Tensor.ones([4], dtype=DType.float32, device=CPU())
+    _assert_values([4.0, 4.0, 4.0, 4.0], _one_tensor(op4(x)))
+    _assert_values([8.0, 8.0, 8.0, 8.0], _one_tensor(op8(x)))
+
+
+def test_spec_token_is_derived_from_the_declaration() -> None:
+    """The registry token is a digest of the def's identity, not a counter.
+
+    The token is stamped into a discardable attribute, which prints into the
+    module ASM ``executor._eager_model_cache_key`` hashes: a counter gave two
+    identical declarations different ASM (so two compiles of one graph), and
+    made a def's token depend on how many unrelated defs were constructed
+    first. A parameter value is part of the identity, so specializations still
+    get their own tokens and their own registry entries.
+    """
+    op = make_downsample()
+    unrelated = make_scale(4)
+    again = make_downsample()
+    assert again is not op
+    assert again.token == op.token
+    # One registry entry for both, and either instance serves: they declare the
+    # same kernel, parameters and signature.
+    assert C._SPEC_REGISTRY[op.token] is again
+    assert unrelated.token != op.token
+    assert make_scale(8).token != unrelated.token
+    assert make_pinned_scale(4).token != unrelated.token
+
+
+def test_identical_redeclarations_share_one_eager_cache_key() -> None:
+    """Two identical declarations stage byte-identical IR, so the compile
+    fallback compiles the graph once instead of once per declaration.
+
+    This is the consequence the token's content derivation exists for: the
+    stamped token prints into the ASM ``_eager_model_cache_key`` hashes, and
+    nothing else about these two graphs differs.
+    """
+
+    def cache_key(defn: C.CustomOp) -> executor.EagerCacheKey:
+        with Graph(
+            "g_token_asm",
+            input_types=[_f32(2, 8, 3)],
+            custom_extensions=[KERNELS],
+        ) as g:
+            g.output(_one_value(defn(g.inputs[0].tensor)))
+        return executor._eager_model_cache_key(g)
+
+    assert cache_key(make_downsample()) == cache_key(make_downsample())
+    assert cache_key(make_scale(4, rank=3)) != cache_key(make_scale(8, rank=3))
 
 
 def test_resolve_spec_refuses_a_disagreeing_def() -> None:
@@ -446,7 +529,7 @@ def test_resolve_spec_refuses_a_disagreeing_def() -> None:
 
     # A token for a different kernel: what replaying a serialized graph in a
     # process whose registry holds different defs can produce.
-    other_kernel = make_q8_like().token
+    other_kernel = make_scale(4).token
     staged.discardable_attributes[C._SPEC_ATTR_KEY] = builtin.StringAttr(
         other_kernel
     )
@@ -646,14 +729,19 @@ def test_check_realized_shape_raises(
     assert not isinstance(excinfo.value, executor.UnsupportedGraphError)
 
 
-# --- Signature grammar: Symbol/TemplateType, unification, dtype variables ---
+# --- Declaration template grammar -------------------------------------------
+#
+# TemplateType dtype variables, cross-input plain-symbol equality
+# constraints, Param (usable in dim expressions and input pins), and
+# CustomOp.__getitem__ per-call parameter specialization.
 
 
 def test_signature_symbols_are_namespaced_and_idempotent() -> None:
     """A signature symbol carries a reserved name so it can never be confused
     with a caller's dim, and re-wrapping it does not prefix twice.
 
-    `Dim(x)` returns the same instance and Python re-runs `__init__` on it.
+    `Dim(x)` returns the same instance and Python re-runs `__init__` on it,
+    which is how `Param` once acquired a doubled prefix.
     """
     rows, k = C.Symbols("rows", "k")
     assert rows.name == "__co_rows"
@@ -701,7 +789,7 @@ def test_custom_op_is_immutable() -> None:
     with pytest.raises(dataclasses.FrozenInstanceError):
         op.name = "other"  # type: ignore[misc]
     assert op == make_downsample()
-    assert op != make_copy()
+    assert op != make_downsample_by(3)
 
 
 def test_source_extensions_compile_at_declaration() -> None:
@@ -744,6 +832,19 @@ def test_declared_signature_is_stored_and_checked() -> None:
             outputs=[C.TemplateType(DType.uint8, [rows, Dim("cols")])],
             custom_extensions=[KERNELS],
         )
+
+
+def test_binding_types_come_from_the_signature() -> None:
+    """The binding's symbolic types are the declared signature, not names
+    synthesized per call, so one binding serves every shape of that rank."""
+    op = _quantize_signature()
+    sym_in, sym_out = custom_gc._binding_types(op, [_f32(2, 32)])
+    assert [str(d) for d in sym_in[0].shape] == ["__co_rows", "__co_k"]
+    assert [str(d) for d in sym_out[0].shape] == ["__co_rows", "__co_k // 2"]
+    assert [str(d) for d in sym_out[1].shape] == ["__co_rows", "__co_k // 16"]
+    assert custom_gc.make_key(op, [_f32(2, 32)], [KERNELS]) == (
+        custom_gc.make_key(op, [_f32(8, 64)], [KERNELS])
+    )
 
 
 def test_repeated_symbol_is_equality_constraint() -> None:
@@ -808,38 +909,175 @@ def test_unify_binds_symbols_and_enforces_agreement() -> None:
         )
 
 
-def test_static_input_dim_must_match() -> None:
-    """A static in an input template is a hard constraint, not a hint."""
-    (c,) = C.Symbols("c")
-    op = C.declare(
-        "mxf353_downsample",
-        inputs={"x": C.TemplateType(DType.float32, [2, 8, c])},
-        outputs=[C.TemplateType(DType.float32, [2, 4, c])],
-        custom_extensions=[KERNELS],
-    )
-    _assert_values([[[0.0] * 3] * 4] * 2, _one_tensor(op(_zeros(2, 8, 3))))
-    with pytest.raises(ValueError, match=r"dim 1 must equal static 8: got 6"):
-        op(_zeros(2, 6, 3))
+def test_param_in_input_dim_pins_static() -> None:
+    op = make_pinned_scale(4)
+    # Input-side resolution folded `Param("factor")` straight into a static,
+    # independent of anything a call does downstream.
+    assert [int(d) for d in op.inputs["x"].shape] == [4]
+    out = _one_tensor(op(_full(2.0, 4)))
+    _assert_values([8.0, 8.0, 8.0, 8.0], out)
+    with pytest.raises(ValueError, match=r"factor.*4.*5"):
+        op(_full(2.0, 5))
 
 
-def test_output_dtype_var_must_be_bound_by_an_input() -> None:
-    (m,) = C.Symbols("m")
-    op = C.declare(
-        "mxf353_downsample",
-        inputs={"x": C.TemplateType(DType.float32, [m])},
-        outputs=[C.TemplateType(C.DTypeVar("U"), [m])],
+def test_param_in_output_dim_resolves(force_interpreter_only: None) -> None:
+    """A `Param` in an output-dim expression resolves through the
+    interpreter end to end, and the compiled binding's input types
+    (`_binding_types`) share one `Dim` object for a repeated plain symbol,
+    while a `Param`-pinned dim has already been folded to a `StaticDim` of
+    its declared value."""
+    op = make_group_pack(4)
+    w = Tensor.arange(16, dtype=DType.float32, device=CPU()).reshape([2, 8])
+    y = _one_tensor(op(w))
+    assert [int(d) for d in y.shape] == [2, 2]
+    _assert_values([[0.0, 4.0], [8.0, 12.0]], y)
+    assert len(custom_gc._CACHE) == 1
+
+    (k,) = C.Symbols("k")
+    templated = C.declare(
+        "mxf353_scale",
+        inputs={
+            "a": C.TemplateType(DType.float32, [k]),
+            "b": C.TemplateType(DType.float32, [k]),
+            "c": C.TemplateType(DType.float32, [C.Param("factor")]),
+        },
+        outputs=[C.TemplateType(DType.float32, [k])],
+        parameters={"factor": 4},
         custom_extensions=[KERNELS],
     )
-    with pytest.raises(TypeError, match=r"'U' is bound by no input"):
+    in_types = [_f32(4)] * 3
+    sym_in, _ = custom_gc._binding_types(templated, in_types)
+    assert sym_in[0].shape[0] is sym_in[1].shape[0]  # shared "k" -> same Dim
+    assert isinstance(sym_in[2].shape[0], StaticDim)
+    assert int(sym_in[2].shape[0]) == 4
+
+
+def test_parameters_resolve_at_construction() -> None:
+    """A `Param` in a signature is substituted when the def is built, so a
+    specialization stores concrete dims and a bad value fails at the subscript.
+    """
+    rows, cols = C.Symbols("rows", "cols")
+    base = C.declare(
+        "mxf353_group_pack",
+        inputs={"w": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[
+            C.TemplateType(DType.float32, [rows, cols // C.Param("group_size")])
+        ],
+        parameters={"group_size": 4},
+        custom_extensions=[KERNELS],
+    )
+    assert [str(d) for d in base.outputs[0].shape] == [
+        "__co_rows",
+        "__co_cols // 4",
+    ]
+    assert base.is_complete
+
+    derived = base[{"group_size": 8}]
+    assert [str(d) for d in derived.outputs[0].shape] == [
+        "__co_rows",
+        "__co_cols // 8",
+    ]
+
+    with pytest.raises(ZeroDivisionError):
+        base[{"group_size": 0}]
+
+
+def test_unvalued_parameter_leaves_def_incomplete() -> None:
+    """A declared-but-unvalued parameter cannot be resolved, so the def is not
+    callable and says so before any kernel work happens."""
+    rows, cols = C.Symbols("rows", "cols")
+    op = C.declare(
+        "mxf353_group_pack",
+        inputs={"w": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[
+            C.TemplateType(DType.float32, [rows, cols // C.Param("group_size")])
+        ],
+        parameters={"group_size": None},
+        custom_extensions=[KERNELS],
+    )
+    assert not op.is_complete
+    with pytest.raises(ValueError, match="group_size"):
+        op(_zeros(2, 8))
+
+
+def test_none_valued_parameter_absent_from_any_dim_is_unresolved() -> None:
+    """A declared parameter may name no dim at all -- a kernel flag or id
+    read only by the kernel body -- so completeness can't rely solely on
+    scanning dims for `__param_` symbols; the bare declaration itself must
+    be checked."""
+    (rows,) = C.Symbols("rows")
+    op = C.declare(
+        "mxf353_scale",
+        inputs={"x": C.TemplateType(DType.float32, [rows])},
+        outputs=[C.TemplateType(DType.float32, [rows])],
+        parameters={"factor": 4, "mode": None},
+        custom_extensions=[KERNELS],
+    )
+    assert not op.is_complete
+    with pytest.raises(ValueError, match="mode"):
         op(_zeros(4))
 
 
-# --- Definition/call grammar errors -----------------------------------------
+def test_str_and_dtype_valued_parameters_track_completeness() -> None:
+    """`_resolve_parameters`'s substitution only ever folds an int value, so a
+    `str`- or `DType`-typed parameter's completeness rests entirely on
+    `_unresolved_parameters`'s direct scan over `_parameters`, never on a dim
+    appearing anywhere. `None` must still mark it unresolved, and giving it
+    the real (non-int) value must clear that -- for both types, since a
+    `DType` value additionally has to survive `_frozen_params`'s
+    canonicalization instead of an int's `sorted`-comparable one.
+    """
+    (rows,) = C.Symbols("rows")
+    op = C.declare(
+        "mxf353_scale",
+        inputs={"x": C.TemplateType(DType.float32, [rows])},
+        outputs=[C.TemplateType(DType.float32, [rows])],
+        parameters={"factor": 4, "mode": None, "compute_dtype": None},
+        custom_extensions=[KERNELS],
+    )
+    assert not op.is_complete
 
-# Every entry here is a definition- or call-time refusal, so the shared
-# `mxf353_downsample` inputs below never reach a kernel; the call-shaped rows
-# (arity, mixing eager and staged values) raise there instead.
+    resolved = op[{"mode": "fast", "compute_dtype": DType.bfloat16}]
+    assert resolved.is_complete
+    assert resolved.parameters["mode"] == "fast"
+    assert resolved.parameters["compute_dtype"] == DType.bfloat16
+
+
+def test_param_key_separates_value_types() -> None:
+    """`ops.custom` lowers a `DType`, a `str`, a `bool` and an `int` to four
+    different MLIR attributes, so a key that keeps only the value would stage
+    the wrong one: `DType.float32` and `"float32"` share a spelling, and
+    `True` and `1` compare and hash equal. Both the derived-def cache and the
+    binding key are that key, so each is checked."""
+    (rows,) = C.Symbols("rows")
+    op = C.declare(
+        "mxf353_scale",
+        inputs={"x": C.TemplateType(DType.float32, [rows])},
+        outputs=[C.TemplateType(DType.float32, [rows])],
+        parameters={"factor": 4, "compute_dtype": None, "flag": None},
+        custom_extensions=[KERNELS],
+    )
+    in4 = [_f32(4)]
+    for valued, spelled in (
+        ({"compute_dtype": DType.float32}, {"compute_dtype": "float32"}),
+        ({"flag": True}, {"flag": 1}),
+    ):
+        first, second = op[valued], op[spelled]
+        assert first is not second
+        assert C._frozen_params(first.parameters) != C._frozen_params(
+            second.parameters
+        )
+        assert custom_gc.make_key(first, in4, [KERNELS]) != custom_gc.make_key(
+            second, in4, [KERNELS]
+        )
+
+
+# Table-driven definition-time and call-time grammar errors. Ids double as the
+# doc: a foreign name, not a declared `custom.Symbol`, is refused at definition
+# wherever the signature names it. What only a call can catch (arity, mixing
+# eager and staged values) raises there instead.
 _DS_N, _DS_W, _DS_C = C.Symbols("n", "w", "c")
+(_DS_K,) = C.Symbols("k")
 _DS_INPUTS = {"x": C.TemplateType(DType.float32, [_DS_N, _DS_W, _DS_C])}
 
 
@@ -884,7 +1122,7 @@ def _algebraic_input_dim() -> C.CustomOp:
     definition rather than tripping an assertion at the first call."""
     (m,) = C.Symbols("m")
     return C.declare(
-        "mxf353_downsample",
+        "mxf353_scale",
         inputs={"x": C.TemplateType(DType.float32, [m // 2])},
         outputs=[C.TemplateType(DType.float32, [m // 2])],
         custom_extensions=[KERNELS],
@@ -905,20 +1143,9 @@ _GRAMMAR_ERRORS: list[
         ValueError,
         "at least one input",
         lambda: C.declare(
-            "mxf353_downsample",
+            "mxf353_scale",
             inputs={},
             outputs=[C.TemplateType(DType.float32, [1])],
-            custom_extensions=[KERNELS],
-        ),
-    ),
-    (
-        "zero_outputs",
-        ValueError,
-        "at least one output",
-        lambda: C.declare(
-            "mxf353_downsample",
-            inputs=_DS_INPUTS,
-            outputs=[],
             custom_extensions=[KERNELS],
         ),
     ),
@@ -929,11 +1156,79 @@ _GRAMMAR_ERRORS: list[
         _mixed_args_call,
     ),
     (
+        # Spelled in `Param`'s namespace but not a `Param`, so nothing pins it
+        # and it reaches the input-bindability check as an unsolvable symbol.
+        "param_namespace_spelling_is_not_a_param",
+        TypeError,
+        r"__param_factor.*not directly bindable",
+        lambda: C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, ["__param_factor"])},
+            outputs=[C.TemplateType(DType.float32, ["__param_factor"])],
+            custom_extensions=[KERNELS],
+        ),
+    ),
+    (
+        "param_references_missing_parameter",
+        TypeError,
+        "bogus",
+        lambda: C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, [C.Param("bogus")])},
+            outputs=[C.TemplateType(DType.float32, [C.Param("bogus")])],
+            parameters={"factor": 4},
+            custom_extensions=[KERNELS],
+        ),
+    ),
+    (
+        "bool_valued_param_in_input_dim",
+        TypeError,
+        "bool",
+        lambda: C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, [C.Param("flag")])},
+            outputs=[C.TemplateType(DType.float32, [C.Param("flag")])],
+            parameters={"flag": True},
+            custom_extensions=[KERNELS],
+        ),
+    ),
+    (
+        # An output `Param` only ever gets substituted into, so a value that
+        # `_resolve_parameters` cannot fold leaves the dim unresolvable for
+        # good: without this refusal the def constructs, then every call --
+        # including `op[{"mode": "fast"}](x)` -- reports "mode has no value"
+        # and names a remedy the caller already applied.
+        "str_valued_param_in_output_dim",
+        TypeError,
+        r"output 0 dim 0: Param\('mode'\) is str-valued",
+        lambda: C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, [_DS_K])},
+            outputs=[C.TemplateType(DType.float32, [C.Param("mode")])],
+            parameters={"mode": "fast"},
+            custom_extensions=[KERNELS],
+        ),
+    ),
+    (
+        # A bool is excluded from folding too, and the refusal reaches a
+        # `Param` buried in an output expression, not just a bare one.
+        "bool_valued_param_inside_output_dim_expression",
+        TypeError,
+        r"output 0 dim 0: Param\('flag'\) is bool-valued",
+        lambda: C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, [_DS_K])},
+            outputs=[C.TemplateType(DType.float32, [_DS_K // C.Param("flag")])],
+            parameters={"flag": True},
+            custom_extensions=[KERNELS],
+        ),
+    ),
+    (
         "algebraic_dim_in_input_template",
         TypeError,
         "not a signature dim",
         lambda: C.declare(
-            "mxf353_downsample",
+            "mxf353_scale",
             inputs={"x": C.TemplateType(DType.float32, [Dim("m") + 1])},
             outputs=[C.TemplateType(DType.float32, [Dim("m") + 1])],
             custom_extensions=[KERNELS],
@@ -1003,21 +1298,28 @@ def test_grammar_accepts_valid_definitions() -> None:
         outputs=[C.TemplateType(DType.float32, [n, w // 2, c])],
         custom_extensions=[KERNELS],
     )
-    # A static input dim alongside a symbolic one is equally legitimate.
+    # A `Param` input dim names its own parameter, so no collision.
+    make_pinned_scale(4)
+    # A parameter and a signature symbol may share a spelling: `Symbol` and
+    # `Param` each namespace their own symbol, so neither resolves to the
+    # other.
+    (factor_dim,) = C.Symbols("factor")
     C.declare(
-        "mxf353_downsample",
-        inputs={"x": C.TemplateType(DType.float32, [2, w, c])},
-        outputs=[C.TemplateType(DType.float32, [2, w // 2, c])],
+        "mxf353_scale",
+        inputs={"x": C.TemplateType(DType.float32, [factor_dim])},
+        outputs=[C.TemplateType(DType.float32, [factor_dim])],
+        parameters={"factor": 4},
         custom_extensions=[KERNELS],
     )
-    x = Tensor.arange(24, dtype=DType.float32, device=CPU()).reshape([2, 4, 3])
-    _assert_values(
-        [
-            [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]],
-            [[12.0, 13.0, 14.0], [15.0, 16.0, 17.0]],
-        ],
-        _one_tensor(make_downsample()(x)),
+    # Ordinary parameter names outside the reserved fresh-dim namespace
+    # ("factor", "group_size") keep working end to end.
+    _assert_values([8.0] * 4, _one_tensor(make_scale(4)(_full(2.0, 4))))
+    packed = _one_tensor(
+        make_group_pack(4)(
+            Tensor.arange(16, dtype=DType.float32, device=CPU()).reshape([2, 8])
+        )
     )
+    _assert_values([[0.0, 4.0], [8.0, 12.0]], packed)
 
 
 def test_incoming_dim_in_reserved_namespace_is_refused() -> None:
@@ -1025,9 +1327,10 @@ def test_incoming_dim_in_reserved_namespace_is_refused() -> None:
     ambiguity is refused at the boundary rather than resolved."""
     rows, cols = C.Symbols("rows", "cols")
     op = C.declare(
-        "mxf353_downsample",
+        "mxf353_scale",
         inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
         outputs=[C.TemplateType(DType.float32, [rows, cols])],
+        parameters={"factor": 4},
         custom_extensions=[KERNELS],
     )
     graph = Graph(
@@ -1045,9 +1348,9 @@ def test_incoming_dim_in_reserved_namespace_is_refused() -> None:
 
 def test_signature_and_functional_composition_scenario() -> None:
     """`inspect.signature` synthesis (the declared `inputs` keys, not
-    `__call__`'s bare `*args`) and `F.functional` composition -- single-device
-    parity plus SPMD dispatch across a CPU-simulated 2-device mesh -- against
-    the same declared signatures."""
+    `__call__`'s bare `*args`), `__getitem__` inheritance, and `F.functional`
+    composition -- single-device parity plus SPMD dispatch across a
+    CPU-simulated 2-device mesh -- against the same declared signatures."""
     downsample_sig = inspect.signature(make_downsample())
     assert list(downsample_sig.parameters) == ["x"]
     assert downsample_sig.parameters["x"].annotation == Tensor | TensorValue
@@ -1063,9 +1366,15 @@ def test_signature_and_functional_composition_scenario() -> None:
         for p in multi_arg_sig.parameters.values()
     )
 
-    op = make_copy()
+    base = make_scale(2)
+    derived = base[{"factor": 3}]
+    base_sig, derived_sig = inspect.signature(base), inspect.signature(derived)
+    assert list(derived_sig.parameters) == list(base_sig.parameters)
+    assert derived_sig.return_annotation == base_sig.return_annotation
+
+    op = make_scale(4)
     wrapped = F.functional(op)
-    x = _full(2.0, 2, 4, 3)
+    x = _full(2.0, 4)
     _assert_values(_one_tensor(op(x)), _one_tensor(wrapped(x)))
     wrapped_sig = inspect.signature(wrapped)
     assert list(wrapped_sig.parameters) == ["x"]
@@ -1094,14 +1403,14 @@ def test_signature_and_functional_composition_scenario() -> None:
         TypeError, match=r"mxf353_q8_like.*unexpected keyword argument 'c'"
     ):
         q8(a=a, b=b, c=b)
-    _assert_values(_one_tensor(op(x)), _one_tensor(wrapped(x=x)))
+    _assert_values([8.0] * 4, _one_tensor(wrapped(x=x)))
 
     mesh = DeviceMesh(
         devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
     )
     sharded_op = F.functional(op, rule=unary_rule)
     sharded_x = F.transfer_to(
-        _full(2.0, 2, 4, 3), PlacementMapping(mesh, (Sharded(0),))
+        _full(2.0, 8), PlacementMapping(mesh, (Sharded(0),))
     )
     result = sharded_op(sharded_x)
     assert result.is_distributed
@@ -1110,4 +1419,4 @@ def test_signature_and_functional_composition_scenario() -> None:
     # convert against, so each shard is checked on its own.
     assert len(result.local_shards) == 2
     for shard in result.local_shards:
-        _assert_values([[[2.0] * 3] * 4], shard)
+        _assert_values([8.0] * 4, shard)
