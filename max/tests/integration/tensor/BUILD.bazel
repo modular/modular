@@ -16,6 +16,7 @@ modular_eager_py_test(
             "test_cond_symbolic_dim_gpu.py",
             # Composite-executor machinery tests; split out below.
             "test_custom_cache_timing.py",
+            "test_custom_op_def_gpu.py",
             "test_flashinfer_fp4_gemm.py",
             "test_from_dim.py",
             "test_functional_custom.py",
@@ -43,6 +44,7 @@ modular_eager_py_test(
     imports = ["."],
     per_test_shard_count = {
         "test_custom_op_def.py": 2,
+        "test_custom_op_def_contexts.py": 2,
         "test_functional_other.py": 10,
     },
     target_compatible_with = select({
@@ -132,6 +134,51 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/experimental/nn",
         "//max/python/max/experimental/testing",
+    ],
+)
+
+modular_eager_py_test(
+    name = "test_custom_op_def_gpu",
+    size = "large",
+    srcs = ["test_custom_op_def_gpu.py"],
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+        "//max/tests/integration/tensor/testdata/custom_op_def_kernels",
+    ] + select({
+        "//:b200_gpu": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm100"],
+        "//:h100_gpu": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm90"],
+        "//conditions:default": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm80"],
+    }),
+    env = {
+        # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem),
+        # matching the sibling CPU suite above.
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
+        "MODULAR_CUSTOM_OP_DEF_KERNELS_PATH": "$(rootpath //max/tests/integration/tensor/testdata/custom_op_def_kernels)",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    } | select({
+        "//:b200_gpu": {"CUBIN_PATH": "$(location //max/kernels/test/gpu/device_context:vec_add_cubin_sm100)"},
+        "//:h100_gpu": {"CUBIN_PATH": "$(location //max/kernels/test/gpu/device_context:vec_add_cubin_sm90)"},
+        "//conditions:default": {"CUBIN_PATH": "$(location //max/kernels/test/gpu/device_context:vec_add_cubin_sm80)"},
+    }),
+    imports = ["."],
+    shard_count = 2,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        # FIXME: MOCO-2411
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:nvidia_gpu"],
+    }),
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/testing",
+        "//max/python/max/graph",
     ],
 )
 

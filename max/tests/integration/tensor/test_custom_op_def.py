@@ -44,6 +44,7 @@ from max.graph import (
     DimLike,
     Graph,
     StaticDim,
+    SymbolicDim,
     TensorType,
     TensorValue,
     default_custom_extensions_scope,
@@ -76,6 +77,22 @@ def _one_value(result: _CustomOpResult) -> TensorValue:
     `TensorValue`."""
     assert isinstance(result, TensorValue)
     return result
+
+
+def _two_tensors(result: _CustomOpResult) -> tuple[Tensor, Tensor]:
+    """Narrows an eager two-output result to a pair of `Tensor`s."""
+    assert isinstance(result, list) and len(result) == 2
+    first, second = result
+    assert isinstance(first, Tensor) and isinstance(second, Tensor)
+    return first, second
+
+
+def _two_values(result: _CustomOpResult) -> tuple[TensorValue, TensorValue]:
+    """Narrows a graph-staged two-output result to a pair of `TensorValue`s."""
+    assert isinstance(result, list) and len(result) == 2
+    first, second = result
+    assert isinstance(first, TensorValue) and isinstance(second, TensorValue)
+    return first, second
 
 
 def _assert_values(expected: Any, actual: Tensor) -> None:
@@ -420,7 +437,7 @@ def test_declared_tier_scenario(
     assert compiles[0] == 1
     assert len(custom_gc._CACHE) == 1
 
-    # A `__getitem__` param specialization mints its OWN binding with its own
+    # A `__getitem__` param specialization gets its OWN binding with its own
     # correct numerics; repeated subscripts with the same params declare an
     # equal op with the same token, so they dedup onto one binding.
     base = make_scale(2)
@@ -1073,9 +1090,10 @@ def test_param_key_separates_value_types() -> None:
 
 
 # Table-driven definition-time and call-time grammar errors. Ids double as the
-# doc: a foreign name, not a declared `custom.Symbol`, is refused at definition
-# wherever the signature names it. What only a call can catch (arity, mixing
-# eager and staged values) raises there instead.
+# doc: an unbound signature symbol needs a shape function (GEX-4034, else
+# process-fatal); a foreign name, not a declared `custom.Symbol`, is refused at
+# definition wherever the signature names it. What only a call can catch
+# (arity, mixing eager and staged values) raises there instead.
 _DS_N, _DS_W, _DS_C = C.Symbols("n", "w", "c")
 (_DS_K,) = C.Symbols("k")
 _DS_INPUTS = {"x": C.TemplateType(DType.float32, [_DS_N, _DS_W, _DS_C])}
@@ -1129,6 +1147,19 @@ def _algebraic_input_dim() -> C.CustomOp:
     )
 
 
+def _unbound_symbol_inside_algebraic_out_dim() -> C.CustomOp:
+    """An unbound signature symbol ("k", bound by no input) used inside an
+    algebraic output expression: `mxf353_filter` registers a shape function,
+    so this is refused for burying the symbol, not for lacking one."""
+    rows, cols, k = C.Symbols("rows", "cols", "k")
+    return C.declare(
+        "mxf353_filter",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[C.TemplateType(DType.float32, [k + 1, cols])],
+        custom_extensions=[KERNELS],
+    )
+
+
 _GRAMMAR_ERRORS: list[
     tuple[str, type[Exception], str, Callable[[], object]]
 ] = [
@@ -1165,6 +1196,20 @@ _GRAMMAR_ERRORS: list[
             "mxf353_scale",
             inputs={"x": C.TemplateType(DType.float32, ["__param_factor"])},
             outputs=[C.TemplateType(DType.float32, ["__param_factor"])],
+            custom_extensions=[KERNELS],
+        ),
+    ),
+    (
+        # Only `custom.Symbol` and `Param` contribute signature dims, even
+        # though the same spelling is deliberately allowed to arrive as an
+        # operand dim (`test_incoming_dim_in_reserved_namespace_is_refused`).
+        "dyn_namespace_spelling_is_not_a_signature_dim",
+        TypeError,
+        r"__dyn_0_k.*not a signature dim",
+        lambda: C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, ["__dyn_0_k"])},
+            outputs=[C.TemplateType(DType.float32, ["__dyn_0_k"])],
             custom_extensions=[KERNELS],
         ),
     ),
@@ -1241,9 +1286,15 @@ _GRAMMAR_ERRORS: list[
         _algebraic_input_dim,
     ),
     (
-        # `Dim("cc")` occupies the position a signature symbol could legally
-        # hold, but only the declaration mechanism, not the spelling, makes a
-        # dim a signature dim.
+        "unbound_output_symbol_without_shape_function_at_definition",
+        ValueError,
+        r"mxf353_downsample.*shape function",
+        lambda: _ds([C.TemplateType(DType.float32, [_DS_K, _DS_C])]),
+    ),
+    (
+        # `Dim("cc")` occupies the position an unbound signature symbol could
+        # legally hold, but only the declaration mechanism, not the spelling,
+        # makes a dim a signature dim.
         "foreign_dim_typo_at_definition",
         TypeError,
         r"cc.*not a signature dim",
@@ -1272,6 +1323,12 @@ _GRAMMAR_ERRORS: list[
         TypeError,
         r"cc.*not a signature dim",
         lambda: _ds([C.TemplateType(DType.float32, [Dim("cc") + 1, _DS_C])]),
+    ),
+    (
+        "unbound_symbol_inside_algebraic_out_dim_even_with_shape_function",
+        ValueError,
+        r"k.*must appear bare",
+        _unbound_symbol_inside_algebraic_out_dim,
     ),
 ]
 
@@ -1311,7 +1368,16 @@ def test_grammar_accepts_valid_definitions() -> None:
         parameters={"factor": 4},
         custom_extensions=[KERNELS],
     )
-    # Ordinary parameter names outside the reserved fresh-dim namespace
+    # mxf353_filter registers a real shape function, so a bare unbound
+    # signature symbol ("k", bound by no input) is a legitimate declaration.
+    rows, cols, k = C.Symbols("rows", "cols", "k")
+    C.declare(
+        "mxf353_filter",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[C.TemplateType(DType.float32, [k, cols])],
+        custom_extensions=[KERNELS],
+    )
+    # Ordinary parameter names outside the reserved allocated-dim namespace
     # ("factor", "group_size") keep working end to end.
     _assert_values([8.0] * 4, _one_tensor(make_scale(4)(_full(2.0, 4))))
     packed = _one_tensor(
@@ -1322,9 +1388,309 @@ def test_grammar_accepts_valid_definitions() -> None:
     _assert_values([[0.0, 4.0], [8.0, 12.0]], packed)
 
 
+def _dynamic_filter(name: str = "k") -> C.CustomOp:
+    """A data-dependent def whose output row count is an unbound
+    `custom.Symbol(name)` -- bound by no input, so only the kernel's shape
+    function (which `mxf353_filter` registers) can size it."""
+    rows, cols = C.Symbols("rows", "cols")
+    return C.declare(
+        "mxf353_filter",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[C.TemplateType(DType.float32, [C.Symbol(name), cols])],
+        custom_extensions=[KERNELS],
+    )
+
+
+@pytest.mark.parametrize("distinct_defs", [False, True], ids=["one", "many"])
+def test_restaged_dynamic_dims_are_independent(distinct_defs: bool) -> None:
+    """Every staging of a data-dependent dim gets its own symbol.
+
+    Sharing one would leave the later op undeclared and claiming the
+    earlier one's row count, since a graph only declares dim names it
+    doesn't already have. Holds both for one def staged repeatedly and for
+    separate defs that happen to name their dynamic dim the same.
+    """
+    ops_ = [_dynamic_filter() for _ in range(3)] if distinct_defs else None
+    op = _dynamic_filter()
+    g = Graph(
+        "g_restaged_dynamic",
+        input_types=[_f32(f"rows{i}", "cols") for i in range(3)],
+        custom_extensions=[KERNELS],
+    )
+    with g:
+        outs = [
+            _one_value((ops_[i] if ops_ else op)(g.inputs[i].tensor))
+            for i in range(3)
+        ]
+        g.output(*outs)
+    rows = [str(o.shape[0]) for o in outs]
+    assert len(set(rows)) == 3, rows
+    assert all("mxf353_filter" in r for r in rows), rows
+    # `SymbolicDim` refuses a dotted name, so an unsanitized kernel-name
+    # fragment would raise here rather than reach the graph.
+    allocated = C._allocate_unbound_dim(
+        C.Symbol("k"), frozenset(), g, "ep.dispatch.fp8"
+    )
+    assert isinstance(allocated, SymbolicDim)
+    assert "_ep_dispatch_fp8_" in allocated.name
+    # Each op needs its own `outputParamDecls`; a shared symbol left all
+    # but the first with none.
+    assert str(g).count("mo.custom<() -> ") == 3
+
+
+def test_dynamic_out_with_shape_function_executes(
+    force_interpreter_only: None,
+) -> None:
+    """End to end: `mxf353_filter` copies rows whose first column is
+    positive, and its output row count is genuinely data-dependent: known
+    only by reading the realized buffer, never from the operand shapes alone.
+    """
+    rows, cols, k = C.Symbols("rows", "cols", "k")
+    op = C.declare(
+        "mxf353_filter",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[C.TemplateType(DType.float32, [k, cols])],
+        custom_extensions=[KERNELS],
+    )
+    x = Tensor(
+        [[1.0, 2.0], [-1.0, 5.0], [3.0, 4.0], [-2.0, 9.0]],
+        dtype=DType.float32,
+        device=CPU(),
+    )
+    y = _one_tensor(op(x))
+    # Rows 0 and 2 have a positive first column, read off the realized shape.
+    assert int(y.shape[0]) == 2
+    _assert_values([[1.0, 2.0], [3.0, 4.0]], y)
+
+
+def test_unbound_output_symbol_is_data_dependent() -> None:
+    """A signature symbol no input binds can only come from the kernel, so it
+    requires a shape function and is allocated per staging."""
+    rows, cols, selected = C.Symbols("rows", "cols", "selected")
+
+    # mxf353_downsample registers no shape function.
+    with pytest.raises(ValueError, match="shape function"):
+        C.declare(
+            "mxf353_downsample",
+            inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+            outputs=[C.TemplateType(DType.float32, [selected, cols])],
+            custom_extensions=[KERNELS],
+        )
+
+    # mxf353_filter does register one.
+    op = C.declare(
+        "mxf353_filter",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[C.TemplateType(DType.float32, [selected, cols])],
+        custom_extensions=[KERNELS],
+    )
+    with Graph(
+        "g_unbound",
+        input_types=[_f32("r0", "c"), _f32("r1", "c")],
+        custom_extensions=[KERNELS],
+    ) as g:
+        first = _one_value(op(g.inputs[0].tensor))
+        second = _one_value(op(g.inputs[1].tensor))
+        g.output(first, second)
+    names = [str(first.shape[0]), str(second.shape[0])]
+    assert len(set(names)) == 2, names
+    assert all("mxf353_filter" in n for n in names)
+    assert str(first.shape[1]) == "c"
+
+
+def test_shape_function_resolves_through_overlay_extensions() -> None:
+    """A data-dependent def whose kernel arrives only through the
+    process-global overlay must construct: the shape-function probe has to
+    resolve the same libraries the compiled graph links against, or it
+    refuses a def the binding would have compiled fine."""
+    rows, cols, selected = C.Symbols("rows", "cols", "selected")
+    with default_custom_extensions_scope(KERNELS):
+        op = C.declare(
+            "mxf353_filter",
+            inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+            outputs=[C.TemplateType(DType.float32, [selected, cols])],
+        )
+    assert [str(d) for d in op.outputs[0].shape] == [
+        "__co_selected",
+        "__co_cols",
+    ]
+
+
+def test_data_dependent_dim_feeds_a_downstream_op(
+    force_interpreter_only: None,
+) -> None:
+    """An allocated dim is unknown only at the op that produces it.
+
+    Downstream it is an ordinary bound symbol, which is what lets a filtered or
+    routed row count flow into another op. `cols` is 32 so the quantizer's block
+    and pair divisions both hold.
+    """
+    rows, cols, selected = C.Symbols("rows", "cols", "selected")
+    filter_op = C.declare(
+        "mxf353_filter",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[C.TemplateType(DType.float32, [selected, cols])],
+        custom_extensions=[KERNELS],
+    )
+    quantize = C.declare(
+        "mxf353_nvfp4_quantize",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[
+            C.TemplateType(DType.uint8, [rows, cols // 2]),
+            C.TemplateType(DType.float32, [rows, cols // 16]),
+        ],
+        custom_extensions=[KERNELS],
+    )
+    values = [[1.0] * 32, [-1.0] * 32, [3.0] * 32, [-2.0] * 32]
+    routed = _one_tensor(
+        filter_op(Tensor(values, dtype=DType.float32, device=CPU()))
+    )
+    assert int(routed.shape[0]) == 2
+    packed, scales = _two_tensors(quantize(routed))
+    assert [int(d) for d in packed.shape] == [2, 16]
+    assert [int(d) for d in scales.shape] == [2, 2]
+
+
+def test_data_dependent_dim_feeds_a_downstream_op_staged() -> None:
+    """Same composition as the eager test above, but staged rather than
+    realized -- and only this form actually exercises the fix.
+
+    The eager call above realizes `routed` (a concrete `[2, 32]` shape)
+    before `quantize` is ever invoked, since `CustomOp.__call__`'s
+    eager path runs inside an `EagerRealizationContext` whose `__exit__`
+    calls `realize_all()`; `quantize` there only ever sees static operand
+    dims, so `_check_reserved_dim_names` is never reached and the eager
+    test would pass unchanged even without the `__dyn_`/`__co_` prefix
+    split. Staged inside one `Graph`, `routed`'s allocated dim is still
+    symbolic when `quantize` consumes it, which is the case that check
+    guards.
+    """
+    rows, cols, selected = C.Symbols("rows", "cols", "selected")
+    filter_op = C.declare(
+        "mxf353_filter",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[C.TemplateType(DType.float32, [selected, cols])],
+        custom_extensions=[KERNELS],
+    )
+    quantize = C.declare(
+        "mxf353_nvfp4_quantize",
+        inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+        outputs=[
+            C.TemplateType(DType.uint8, [rows, cols // 2]),
+            C.TemplateType(DType.float32, [rows, cols // 16]),
+        ],
+        custom_extensions=[KERNELS],
+    )
+    with Graph(
+        "g_data_dependent_feeds_downstream",
+        input_types=[_f32("in_rows", 32)],
+        custom_extensions=[KERNELS],
+    ) as g:
+        routed = _one_value(filter_op(g.inputs[0].tensor))
+        # Still symbolic, and allocated (not a caller-authored name): this is
+        # the exact dim `_check_reserved_dim_names` must let through.
+        assert str(routed.shape[0]).startswith("__dyn_")
+        packed, scales = _two_values(quantize(routed))
+        g.output(packed, scales)
+    # `quantize`'s own `rows` bound to `routed`'s allocated row dim, not
+    # refused as a caller-authored name in the reserved namespace.
+    assert str(packed.shape[0]) == str(routed.shape[0])
+    assert str(scales.shape[0]) == str(routed.shape[0])
+    # `cols` is bound to the caller's static 32, so both divisions fold
+    # to concrete ints at staging time, same as the eager test's values.
+    assert str(packed.shape[1]) == "16"
+    assert str(scales.shape[1]) == "2"
+
+
+def test_compiled_data_dependent_output_feeds_downstream_op() -> None:
+    """The same composition compiled and executed, checked on realized data.
+
+    Only a compiled graph makes an allocated name load-bearing. The staged test
+    above stops at graph construction, and neither the eager nor the
+    interpreter path ever sees one: `custom_gc._binding_types` builds its
+    binding straight from the declared signature, where the data-dependent
+    dim is still `__co_k`. Here `_set_output_param_decls` declares the
+    allocated name and the kernel's shape function is what fills it in at
+    runtime.
+
+    Staging the filter twice, over inputs with different filtered row counts,
+    also pins the allocation's uniqueness on that path: a single shared name
+    would leave the second op undeclared and sized by the first op's row count.
+    """
+    filter_op = _dynamic_filter()
+    scale = make_scale(3, rank=2)
+    graph = Graph(
+        "g_compiled_data_dependent",
+        input_types=[_f32("rows_a", "cols_a"), _f32("rows_b", "cols_b")],
+        custom_extensions=[KERNELS],
+    )
+    with graph:
+        first = _one_value(filter_op(graph.inputs[0].tensor))
+        second = _one_value(filter_op(graph.inputs[1].tensor))
+        graph.output(_one_value(scale(first)), _one_value(scale(second)))
+    model = engine.InferenceSession(devices=[CPU()]).load(graph)
+
+    a = Tensor(
+        [[1.0, 2.0], [-1.0, 5.0], [3.0, 4.0], [-2.0, 9.0]],
+        dtype=DType.float32,
+        device=CPU(),
+    )
+    b = Tensor(
+        [[2.0, 1.0], [5.0, 1.0], [-1.0, 7.0], [4.0, 2.0]],
+        dtype=DType.float32,
+        device=CPU(),
+    )
+    out_a, out_b = model.execute(a.driver_tensor, b.driver_tensor)
+    # Two of `a`'s rows and three of `b`'s have a positive first column, so
+    # the two results are sized by the kernel rather than by anything the
+    # caller passed in, and by a different amount each.
+    _assert_values([[3.0, 6.0], [9.0, 12.0]], Tensor(storage=out_a))
+    _assert_values(
+        [[6.0, 3.0], [15.0, 3.0], [12.0, 6.0]], Tensor(storage=out_b)
+    )
+
+
+def test_shared_data_dependent_symbol_across_outputs_is_refused() -> None:
+    """The same unbound symbol naming two outputs is a legitimate thing to
+    want -- one runtime quantity sizing both -- but the graph compiler emits
+    one shape-function invocation per result, so the second would redeclare
+    the first's parameter. Refused at definition, naming the op, the
+    symbol, and the workaround."""
+    rows, cols, selected = C.Symbols("rows", "cols", "selected")
+    with pytest.raises(ValueError, match=r"selected.*more than one output"):
+        C.declare(
+            "mxf353_filter",
+            inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+            outputs=[
+                C.TemplateType(DType.float32, [selected, cols]),
+                C.TemplateType(DType.int32, [selected]),
+            ],
+            custom_extensions=[KERNELS],
+        )
+
+
+def test_shared_data_dependent_symbol_within_one_output_is_refused() -> None:
+    """The same reasoning that refuses a data-dependent symbol repeated
+    across outputs applies within a single output too: `[selected,
+    selected]` would otherwise allocate two independent dims per staging and
+    silently discard the declared equality."""
+    rows, cols, selected = C.Symbols("rows", "cols", "selected")
+    with pytest.raises(ValueError, match=r"selected.*more than one dim"):
+        C.declare(
+            "mxf353_filter",
+            inputs={"x": C.TemplateType(DType.float32, [rows, cols])},
+            outputs=[C.TemplateType(DType.float32, [selected, selected])],
+            custom_extensions=[KERNELS],
+        )
+
+
 def test_incoming_dim_in_reserved_namespace_is_refused() -> None:
     """A caller may name a dim like a declared signature symbol; the
-    ambiguity is refused at the boundary rather than resolved."""
+    ambiguity is refused at the boundary rather than resolved. A dim
+    imitating a *allocated* data-dependent name lives in a different
+    namespace (`_DYN_PREFIX`) and is refused at allocation instead, only when
+    it collides -- see `test_data_dependent_dim_feeds_a_downstream_op_staged`
+    and `test_aliased_allocated_dim_is_refused`."""
     rows, cols = C.Symbols("rows", "cols")
     op = C.declare(
         "mxf353_scale",

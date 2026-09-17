@@ -819,6 +819,7 @@ class Graph:
             if isinstance(dim, SymbolicDim)
         )
         self._context_state = []
+        self._data_dependent_dims = 0
         self._should_verify_ops = True
 
         with _location() as loc:
@@ -1487,6 +1488,7 @@ class Graph:
 
     def _load_mlir(self, path: Path) -> None:
         self._context_state = []
+        self._data_dependent_dims = 0
         with open(path) as f:
             context = default_mlir_context()
             with _location():
@@ -1518,7 +1520,19 @@ class Graph:
 
         Returns:
             A new :class:`Graph` wrapping a deep copy of this graph's module.
+
+        Raises:
+            ValueError: If a custom op in this graph has a data-dependent
+                output dim; a copy would restart their per-graph numbering
+                (see :meth:`_allocate_data_dependent_ordinal`).
         """
+        if self._data_dependent_dims:
+            raise ValueError(
+                f"graph {self.name!r} cannot be copied: it holds "
+                f"{self._data_dependent_dims} data-dependent custom op output "
+                "dim(s), whose numbering a copy would restart under the same "
+                "graph name"
+            )
         module = self._module.clone()
         assert isinstance(module, builtin.ModuleOp)
         copied = Graph.__new__(Graph)
@@ -1530,7 +1544,19 @@ class Graph:
         # module body block.
         copied._mlir_op = mlir.Operation._CAPICreate(module.body[0]._CAPIPtr)
         copied._kernel_library = self._kernel_library
+        copied._data_dependent_dims = 0
         return copied
+
+    def _allocate_data_dependent_ordinal(self) -> int:
+        """Returns the next ordinal for a data-dependent custom op output dim.
+
+        Restarts at zero per graph so generated dim names are stable across
+        processes for IR cache keys; :meth:`copy` refuses a graph that has
+        allocated any, since a copy would restart the sequence.
+        """
+        index = self._data_dependent_dims
+        self._data_dependent_dims = index + 1
+        return index
 
     def add_weight(
         # TODO(GEX-2121): Remove `force_initial_weight_on_host`

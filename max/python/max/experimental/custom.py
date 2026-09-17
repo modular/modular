@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from collections.abc import Mapping, Sequence
+import re
+from collections.abc import Container, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -30,6 +31,7 @@ from typing import Any, TypeVar
 
 from max._core import Operation
 from max._core.dialects import builtin
+from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental.functional import _load_custom_extensions
 from max.experimental.realization_context import ensure_context
@@ -39,6 +41,7 @@ from max.graph import (
     Dim,
     DimLike,
     Graph,
+    KernelLibrary,
     StaticDim,
     SymbolicDim,
     TensorType,
@@ -46,6 +49,7 @@ from max.graph import (
     Type,
     ops,
 )
+from max.graph.graph import _resolved_custom_extensions
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
 __all__ = [
@@ -113,8 +117,7 @@ class TemplateType:
         object.__setattr__(self, "shape", tuple(Dim(dim) for dim in shape))
 
 
-#: Namespace `Param`'s parameter symbols live under, keeping them disjoint
-#: from the dim names a graph uses.
+#: Namespace `Param`'s parameter symbols live under, disjoint from graph dims.
 _PARAM_DIM_PREFIX = "__param_"
 
 
@@ -250,6 +253,15 @@ def _signature_key(
     )
 
 
+#: Namespace for allocated data-dependent dims; operands may carry one.
+_DYN_PREFIX = "__dyn_"
+
+
+def _dim_name_fragment(name: str) -> str:
+    """Makes *name* embeddable in a dim symbol; lossy, the digest is unique."""
+    return re.sub(r"\W", "_", name)
+
+
 def _digest(*fields: str) -> str:
     """Digests *fields*, distinctly for every distinct field tuple.
 
@@ -260,10 +272,34 @@ def _digest(*fields: str) -> str:
 
     Uses ``hashlib``, never the builtin ``hash()``: ``hash()`` is salted per
     process for ``str``, and callers here need names that are identical run to
-    run.
+    run (see :meth:`Graph._allocate_data_dependent_ordinal` on IR cache
+    hits).
     """
     encoded = "".join(f"{len(field)}:{field}" for field in fields)
     return hashlib.blake2b(encoded.encode(), digest_size=8).hexdigest()
+
+
+def _allocate_unbound_dim(
+    dim: Dim, bound: Container[str], graph: Graph, kernel: str
+) -> Dim:
+    """Allocates a unique per-graph dim for a symbol no input bound."""
+    if not isinstance(dim, Symbol) or dim.name in bound:
+        return dim
+    index = graph._allocate_data_dependent_ordinal()
+    graph_fragment = _dim_name_fragment(graph.name)
+    kernel_fragment = _dim_name_fragment(kernel)
+    symbol_name = dim.symbol_name
+    name = (
+        f"{_DYN_PREFIX}{graph_fragment}_{kernel_fragment}_{index}_"
+        f"{symbol_name}_{_digest(graph.name, kernel, str(index), symbol_name)}"
+    )
+    if name in graph._params:
+        raise TypeError(
+            f"custom op {kernel!r}: graph {graph.name!r} already holds a dim "
+            f"named {name!r}, which is the name this staging allocates for "
+            f"data-dependent dim {symbol_name!r}; rename the dim"
+        )
+    return SymbolicDim(name)
 
 
 def _resolve_extension(path: Path) -> Path:
@@ -511,6 +547,80 @@ class CustomOp:
             "parameters can appear in a dim"
         )
 
+    def _check_unbound_outputs(self) -> None:
+        """Requires a shape function for any output dim no input binds."""
+        has_shape_function: bool | None = None
+        first_seen: dict[str, tuple[int, int]] = {}
+        for i, j, dim, symbol in self._unbound_output_symbols():
+            if not isinstance(dim, Symbol):
+                raise ValueError(
+                    f"custom op {self.name!r}: output {i} dim {j} "
+                    f"symbol {symbol.name!r} is data-dependent and "
+                    "must appear bare, not inside an expression"
+                )
+            # GEX-2198: lift once the compiler shares one shape call.
+            self._check_symbol_used_once(first_seen, i, j, dim)
+            if has_shape_function is None:
+                has_shape_function = self._has_shape_function()
+            if not has_shape_function:
+                raise ValueError(
+                    f"kernel {self.name!r} declares data-dependent "
+                    f"output {i} dim {symbol.name!r} but registers "
+                    "no shape function; register one with "
+                    "@extensibility.register_shape_function (see "
+                    "'Declare the output shape' at "
+                    "docs.modular.com/max/develop/build-custom-ops)"
+                )
+
+    def _unbound_output_symbols(
+        self,
+    ) -> Iterator[tuple[int, int, Dim, SymbolicDim]]:
+        """Yields ``(i, j, dim, symbol)`` per unbound data-dependent dim."""
+        bound = {
+            symbol.name
+            for spec in self.inputs.values()
+            for dim in spec.shape
+            for symbol in dim.parameters
+        }
+        for i, spec in enumerate(self.outputs):
+            for j, dim in enumerate(spec.shape):
+                for symbol in dim.parameters:
+                    if not symbol.name.startswith(_SYMBOL_PREFIX):
+                        continue
+                    if symbol.name in bound:
+                        continue
+                    yield i, j, dim, symbol
+
+    def _check_symbol_used_once(
+        self,
+        first_seen: dict[str, tuple[int, int]],
+        i: int,
+        j: int,
+        dim: Symbol,
+    ) -> None:
+        """Refuses a data-dependent symbol that names a second output dim."""
+        earlier_i, earlier_j = first_seen.setdefault(dim.name, (i, j))
+        if (earlier_i, earlier_j) == (i, j):
+            return
+        if earlier_i == i:
+            raise ValueError(
+                f"custom op {self.name!r}: data-dependent "
+                f"symbol {dim.symbol_name!r} appears in "
+                f"more than one dim of output {i} (dim "
+                f"{earlier_j} and dim {j}); use a "
+                "distinct symbol per dim, and "
+                "ops.rebind downstream if the two must "
+                "be equal"
+            )
+        raise ValueError(
+            f"custom op {self.name!r}: data-dependent "
+            f"symbol {dim.symbol_name!r} appears in more "
+            f"than one output (output {earlier_i} and "
+            f"output {i}); use a distinct symbol per "
+            f"output, and ops.rebind downstream if the "
+            "two must be equal"
+        )
+
     @property
     def is_complete(self) -> bool:
         """Whether the signature has no unresolved :class:`Param` left.
@@ -541,6 +651,13 @@ class CustomOp:
                     if symbol.name.startswith(_PARAM_DIM_PREFIX):
                         names.add(symbol.name.removeprefix(_PARAM_DIM_PREFIX))
         return sorted(names)
+
+    @in_default_mlir_context
+    def _has_shape_function(self) -> bool:
+        """Whether the kernel (overlay included) registers a shape function."""
+        library = KernelLibrary()
+        library.load_paths(_resolved_custom_extensions(self.extensions))
+        return library.has_shape_function(self.name)
 
     def __getitem__(
         self, params: Mapping[str, bool | int | str | DType | None]
@@ -679,11 +796,17 @@ class CustomOp:
                 "definition or with op[{...}]"
             )
         bindings = self._unify([value.type for value in values])
+        graph = Graph.current
         device = self._op_device(values)
         out_types = [
             TensorType(
                 self._result_dtype(spec, values),
-                [dim.substitute(bindings) for dim in spec.shape],
+                [
+                    _allocate_unbound_dim(
+                        dim.substitute(bindings), bindings, graph, self.name
+                    )
+                    for dim in spec.shape
+                ],
                 device,
             )
             for spec in self.outputs
@@ -812,7 +935,11 @@ def declare(
             order is operand order.
         outputs: One :class:`TemplateType` per result. Dims may only be
             statics, :class:`Symbol`s, :class:`Param`s, or expressions over
-            them.
+            them. A :class:`Symbol` no input binds is data-dependent: the
+            kernel must register a shape function with
+            ``@extensibility.register_shape_function`` (see the "Declare the
+            output shape" section of
+            https://docs.modular.com/max/develop/build-custom-ops).
         parameters: Compile-time parameters passed to the kernel. A value of
             ``None`` declares the parameter without giving it one yet,
             leaving any :class:`Param` naming it unresolved (see
@@ -853,6 +980,7 @@ def declare(
         pinned,
     )
     op._check_signature()
+    op._check_unbound_outputs()
     # Anything sharing a content token declares the same kernel, parameters
     # and signature, so it is interchangeable with this op for every purpose
     # a resolved op is read for.
