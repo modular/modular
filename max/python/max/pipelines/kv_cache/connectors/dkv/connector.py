@@ -54,6 +54,12 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnectorTransfer,
     TransferDirection,
 )
+from max.pipelines.kv_cache.prefix_hit import (
+    blocks_held_of_hit,
+    longest_full_attention_hit,
+    longest_joint_prefix_hit,
+    longest_sliding_window_hit,
+)
 from max.profiler import traced
 
 _logger = logging.getLogger("max.pipelines")
@@ -66,7 +72,17 @@ class _DkvClient(Protocol):
     :meth:`DKVConnector.__init__`, so this is the only place the FFI surface is
     written down. One client owns one leaf's buffers and that leaf's store
     namespace; ``group_id`` selects the leaf on every per-leaf call.
+    :meth:`lookup` is the exception: it only looks keys up, so any client can
+    answer for the whole tree.
     """
+
+    def lookup(
+        self,
+        *,
+        group_ids: Sequence[int],
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> Sequence[Sequence[bool]]: ...
 
     def load(
         self,
@@ -113,14 +129,20 @@ def _validate_dkv_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
     cache manager repeats the check -- a cache manager especially should not,
     since it would have to know which connector is configured.
 
+    The single-window restriction is :meth:`touch`'s, not :meth:`load`'s.
+    ``load`` derives each leaf's share from that leaf's own
+    ``blocks_in_window``, so differing widths are fine. ``touch`` still windows
+    every sliding leaf by the one ``_window_blocks`` it reads off
+    ``_sliding_leaf_ids[0]``, so a second width would silently refresh the
+    wrong range. Lifting this gate means fixing ``touch`` first.
+
     Args:
         leaves: Leaf id to attention group, as ``params.leaves()`` names them.
 
     Raises:
         ValueError: If the tree is empty, holds a group that is neither full
             attention nor sliding window, or mixes sliding-window leaves with
-            different ``window_size`` values -- ``load`` derives ONE window
-            length for every sliding leaf, so two windows cannot be honored.
+            different ``window_size`` values.
     """
     if not leaves:
         raise ValueError("DKVConnector requires at least one KV cache leaf")
@@ -175,26 +197,29 @@ def _group_recency(group_id: KVCacheGroupId) -> int:
     return _DKV_RECENCY_FULL_SEQUENCE
 
 
-def _sliding_row(
-    leaf_block_ids: Sequence[int], window_length: int, num_loaded: int
+def _loaded_row(
+    leaf_block_ids: Sequence[int], share: int, aligned: int
 ) -> list[int]:
-    """One sliding leaf's loaded row: nulls below the window, blocks inside it.
+    """One leaf's loaded row: nulls below its share, its blocks inside it.
 
-    Every leaf's row must be exactly ``num_loaded`` long -- Jenga rejects ragged
-    rows -- so the real window is capped at ``num_loaded`` and the remaining
-    leading slots are the null block. This mirrors what
+    Every leaf's row must be exactly ``aligned`` long -- Jenga rejects ragged
+    rows -- so a leaf that carries only ``share`` of the agreed prefix gets
+    ``aligned - share`` leading null blocks. A full leaf carries the whole
+    prefix and so gets none; a windowed leaf carries the window ending at
+    ``aligned``, which is what
     ``SlidingWindowKVGroupCoordinator.claim_hit_blocks`` builds for the device
-    tier: ``low = max(0, N - blocks_in_window)`` nulls, then the window.
+    tier (``low = max(0, N - blocks_in_window)`` nulls, then the window).
 
-    ``window_length == 0`` (``window_size == 1``, so the window spans no whole
-    block) is an all-null row of the right length, not an empty one -- the same
-    thing the device coordinator produces, which counts it as a full hit.
+    ``share == 0`` (a windowed leaf whose ``window_size == 1``, so the window
+    spans no whole block) is an all-null row of the right length, not an empty
+    one -- again what the device coordinator produces, which counts it as a
+    full hit.
+
+    ``leaf_block_ids`` arrives already cut to ``share`` -- :meth:`load`
+    passes the row it handed the client, so ``share`` is only re-applied here
+    to keep the bound explicit alongside ``aligned``.
     """
-    if num_loaded <= 0:
-        return []
-    real = min(num_loaded, max(window_length, 0))
-    window = list(leaf_block_ids)[-window_length:][:real] if real else []
-    return [_NULL_BLOCK_ID] * (num_loaded - real) + window
+    return [_NULL_BLOCK_ID] * (aligned - share) + list(leaf_block_ids[:share])
 
 
 def _to_dkv_u64(h: bytes) -> int:
@@ -1324,7 +1349,8 @@ class DKVConnector(KVConnector):
         ]
         # One window for every sliding leaf (``_validate_dkv_leaves`` rejects a
         # tree with two), so resolve it once. 0 when there is no sliding leaf,
-        # and also when ``window_size == 1`` -- see :func:`_sliding_row`.
+        # and also when ``window_size == 1``, a window spanning no whole
+        # block -- see :func:`longest_sliding_window_hit`.
         self._window_blocks = (
             self._leaves[self._sliding_leaf_ids[0]].blocks_in_window(
                 self._page_size
@@ -1343,6 +1369,108 @@ class DKVConnector(KVConnector):
         # pre-existing empty-groups wire shape.
         self._advertise_groups = len(self._leaves) > 1 or bool(
             self._sliding_leaf_ids
+        )
+
+    def _blocks_in_window_of(self, leaf_id: str) -> int | None:
+        """This leaf's window in whole blocks, or ``None`` if it attends fully.
+
+        ``KVCacheGroupId.blocks_in_window`` returns ``-1`` for a full leaf,
+        which reads as a width rather than an absence one call site later, so
+        the sentinel is translated here and never leaves this method.
+        """
+        group_id = self._leaves[leaf_id]
+        if not group_id.is_sliding_window():
+            return None
+        return group_id.blocks_in_window(self._page_size)
+
+    def _leaf_hit_rule(
+        self, leaf_id: str, resident: Sequence[bool]
+    ) -> Callable[[int], int]:
+        """How much of a candidate prefix this leaf serves, given dkv residency.
+
+        The rules are the cache manager's -- the same functions the device tier
+        runs in :mod:`.prefix_hit` -- with dkv residency
+        swapped in for the device pools. The connector supplies presence and
+        the shape of the leaf; it does not decide what presence is worth.
+        """
+        blocks_in_window = self._blocks_in_window_of(leaf_id)
+        if blocks_in_window is not None:
+            return lambda candidate: longest_sliding_window_hit(
+                candidate, blocks_in_window, resident.__getitem__
+            )
+        return lambda candidate: longest_full_attention_hit(
+            candidate, resident.__getitem__
+        )
+
+    def _load_full_attention(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        dkv_hashes: Sequence[int],
+        clients: Mapping[str, _DkvClient],
+        leaf_ids: Sequence[str],
+        hint: bytes | None,
+        miss: KVConnectorTransfer,
+    ) -> KVConnectorTransfer:
+        """Loads a tree with no windowed leaf, without asking :meth:`lookup`.
+
+        TEMPORARY. Delete this the moment :meth:`load` moves to
+        ``prepare_load`` + ``load_with_plan``: that collapses the lookup and
+        the transfer into ONE leased round, at which point the duplicate read
+        this exists to dodge does not exist and every tree can take one path
+        again.
+
+        It is here because the lookup is not free. `read_blocks` PINS every
+        block it returns and the pin has to be released again, so a lookup
+        costs two RPCs and two passes over the server's per-region locks --
+        for an answer this shape does not need. Every leaf is full attention,
+        so each leaf's hit is its run from the root and the prefix they agree
+        on is the shortest of those runs, which is exactly what the per-leaf
+        loads already report. Ask each leaf for the whole chain, keep the
+        shortest run every one of them delivered.
+
+        Two consequences worth naming. A leaf that can serve deeper than the
+        shortest run transfers blocks that are then discarded, which is real
+        waste when full leaves diverge -- they rarely do, since they offload
+        together. And a hinted load routes to the peer here without the
+        co-located lookup ever having to see it, which is what a hybrid tree
+        cannot do (a v2 hint cannot name a windowed leaf, so those trees drop
+        the hint above and take the lookup path).
+        """
+        posted = {
+            leaf_id: clients[leaf_id].load(
+                group_id=self._wire_ids[leaf_id],
+                block_ids=list(block_ids[leaf_id]),
+                block_hashes=list(dkv_hashes),
+                hint=hint,
+            )
+            for leaf_id in leaf_ids
+        }
+        num_loaded = min(posted.values())
+        if num_loaded == 0:
+            # Only when a leaf actually posted. `wait_for_loads` is NOT scoped
+            # to this request -- it takes the client's whole `inflight_reads`,
+            # which accumulates across every `load()` since the last barrier --
+            # so draining here on a total miss would make request N wait, on
+            # the scheduler thread, for the reads requests 1..N-1 posted, and
+            # serialise transfers meant to overlap batch construction.
+            # `posted[leaf] == 0` is exact: every path that returns 0 releases
+            # before pushing to `inflight_reads`.
+            if any(posted.values()):
+                for leaf_id in leaf_ids:
+                    clients[leaf_id].wait_for_loads()
+            return miss
+        if any(count != num_loaded for count in posted.values()):
+            # The leaves that loaded deeper hold blocks past the agreed run.
+            # The caller frees what it does not claim, so those reads have to
+            # land first.
+            for leaf_id in leaf_ids:
+                clients[leaf_id].wait_for_loads()
+        return _DKVCompletedTransfer(
+            TransferDirection.LOAD,
+            {
+                leaf_id: list(block_ids[leaf_id])[:num_loaded]
+                for leaf_id in leaf_ids
+            },
         )
 
     def load(
@@ -1364,12 +1492,24 @@ class DKVConnector(KVConnector):
         holds it, and treats anything unusable as no hint, which costs a miss
         rather than a failed load.
 
-        Routes to the processing replica's per-leaf clients, one call per leaf.
-        Each client returns its own loaded-block count; the block manager frees
-        ``blocks[num_loaded:]`` past it (in
-        ``_get_full_blocks_from_host_prefix_cache``). The Rust client owns the
-        freed-page ordering across its own GPUs, so there is no shard-client
-        fan-out or cross-client drain at this layer.
+        A tree with a windowed leaf takes two phases: one
+        :meth:`_DkvClient.lookup` asks what dkv holds for the whole tree, the
+        cache manager's own prefix rules decide how much of it is serviceable,
+        and then each leaf's client loads its share. dkv itself knows nothing
+        about attention shapes: a windowed leaf's hit is a suffix run whose
+        validity depends on where the prefix ends, and only this layer knows
+        which leaves are windowed.
+
+        A tree with no windowed leaf skips the lookup -- see
+        :meth:`_load_full_attention`, which is temporary and goes away with
+        the move to ``prepare_load`` + ``load_with_plan``.
+
+        On the lookup path the lookup takes no lease, so a block can be
+        evicted between it and the loads. A leaf that then delivers less than
+        its share makes the whole request a miss rather than a shorter hit,
+        because a windowed leaf's remaining run no longer ends where the prefix
+        does. The fast path has no such bound to miss against: it serves
+        ``min(posted)``, which is the shorter run rather than a miss.
         """
         if set(block_ids) != set(self._leaves):
             raise ValueError(
@@ -1378,145 +1518,159 @@ class DKVConnector(KVConnector):
             )
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
         clients = self._clients[replica_idx]
-        full_leaf_ids = self._full_leaf_ids
-        sliding_leaf_ids = self._sliding_leaf_ids
+        leaf_ids = list(self._leaves)
+        miss = _DKVCompletedTransfer(
+            TransferDirection.LOAD, {leaf_id: [] for leaf_id in leaf_ids}
+        )
 
         # A hint routes the leaves that carry it to a PEER. The sliding leaves
         # cannot carry one (a v2 hint is group-major and names the producer's
         # ids, and a peer predating per-leaf ids has no id for a sliding leaf),
-        # so on a hybrid tree a hinted full-leaf hit is looked up remotely
-        # while the sliding leaf is looked up locally and misses. The hit-shape
-        # test below then yields num_loaded = 0 -- after the remote blocks have
-        # already been pulled across the network. That is strictly worse than
-        # not hinting: it spends the bandwidth and the load barrier to throw
-        # the result away, and shows up only as dkv_peer_loads rising with no
-        # matching cached_tokens. Until a hint can name per-leaf ids
-        # (SERVOPT-1617), a hybrid tree takes the local path on every leaf.
-        if sliding_leaf_ids:
+        # so on a hybrid tree a hinted full-leaf hit would be looked up
+        # remotely while the sliding leaf is looked up locally and misses --
+        # spending the bandwidth and the load barrier to throw the result away.
+        # Until a hint can name per-leaf ids (SERVOPT-1617), a hybrid tree
+        # takes the local path on every leaf.
+        if self._sliding_leaf_ids:
             hint = None
 
-        n_fulls: list[int] = []
-        for leaf_id in full_leaf_ids:
-            n_fulls.append(
+        # No windowed leaf means no reconciliation to do, so skip the lookup
+        # entirely -- see `_load_full_attention`, which goes away with the
+        # move to `prepare_load` + `load_with_plan`.
+        if not self._sliding_leaf_ids:
+            return self._load_full_attention(
+                block_ids, dkv_hashes, clients, leaf_ids, hint, miss
+            )
+
+        # Any client can answer for the whole tree: a lookup mints keys from
+        # `(hash, group, shard)` and touches no buffers.
+        # The hint goes with the lookup, and it has to be the SAME hint the
+        # loads below carry. A hint routes a load to the peer holding the
+        # blocks, so a lookup that asked only the co-located store would report
+        # nothing resident for a peer-held prefix -- and the `aligned == 0`
+        # return below would throw the request away before any load could reach
+        # that peer. Lookup and load must agree on which sources are in play.
+        resident = clients[leaf_ids[0]].lookup(
+            group_ids=[self._wire_ids[leaf_id] for leaf_id in leaf_ids],
+            block_hashes=dkv_hashes,
+            hint=hint,
+        )
+        # O(leaves), not O(blocks): the per-leaf masks index against
+        # `dkv_hashes` below, so a mis-sized one has to fail here rather than
+        # as an IndexError inside a serving request.
+        if len(resident) != len(leaf_ids) or any(
+            len(mask) != len(dkv_hashes) for mask in resident
+        ):
+            raise ValueError(
+                f"dkv lookup answered {len(resident)} leaves "
+                f"{[len(mask) for mask in resident]} blocks wide for a "
+                f"{len(leaf_ids)}-leaf tree over {len(dkv_hashes)} blocks"
+            )
+
+        aligned = longest_joint_prefix_hit(
+            len(dkv_hashes),
+            [
+                self._leaf_hit_rule(leaf_id, resident[idx])
+                for idx, leaf_id in enumerate(leaf_ids)
+            ],
+        )
+        if aligned == 0:
+            # Only a hybrid tree reaches the lookup, and a hybrid tree dropped
+            # its hint above, so there is no peer this could still be routed
+            # to. Asserted rather than left as prose because it is what makes
+            # this early return safe, and it is NOT self-evident here: it
+            # holds only because `_load_full_attention` took every tree that
+            # could carry a hint. Deleting that fast path without moving to
+            # `prepare_load` + `load_with_plan` turns this line back into a
+            # discarded peer hit.
+            assert hint is None, (
+                "a hinted request reached the lookup gate; it would be served "
+                "as a miss even though a peer may hold the prefix"
+            )
+            return miss
+
+        # Every leaf's blocks END at the agreed bound, so a leaf holding only
+        # part of it holds the tail: the whole prefix for a full leaf, the
+        # window for a windowed one, whose blocks below it are null. This is
+        # NOT the hit depth -- a windowed leaf's hit covers the whole prefix
+        # while the leaf holds only its window.
+        wanted = {
+            leaf_id: blocks_held_of_hit(
+                aligned, self._blocks_in_window_of(leaf_id)
+            )
+            for leaf_id in leaf_ids
+        }
+        short = {
+            leaf_id: len(block_ids[leaf_id])
+            for leaf_id, share in wanted.items()
+            if len(block_ids[leaf_id]) < share
+        }
+        if short:
+            # Unreachable from either caller:
+            # `num_blocks_needed_for_connector_load` sizes every row to the
+            # same `blocks_held_of_hit` bound off the same `page_size`, and
+            # `alloc_block` raises rather than returning a short row. Kept
+            # loud because a row shorter than its share would otherwise write
+            # a leaf's blocks into another leaf's slots.
+            raise ValueError(
+                "DKVConnector.load was given staging rows too short for the "
+                f"prefix dkv holds ({aligned} blocks, shares {wanted}): "
+                f"{short}. num_blocks_needed_for_connector_load sizes these."
+            )
+
+        rows = {
+            leaf_id: list(block_ids[leaf_id])[: wanted[leaf_id]]
+            for leaf_id in leaf_ids
+        }
+        posted = {
+            leaf_id: (
                 clients[leaf_id].load(
                     group_id=self._wire_ids[leaf_id],
-                    block_ids=list(block_ids[leaf_id]),
-                    block_hashes=dkv_hashes,
+                    block_ids=rows[leaf_id],
+                    block_hashes=dkv_hashes[
+                        aligned - wanted[leaf_id] : aligned
+                    ],
                     hint=hint,
                 )
+                if wanted[leaf_id]
+                else 0
             )
-        # Divergent depths discard the whole hit today. SERVOPT-1613 replaces
-        # this with min(n_fulls): dKV reports a leading prefix count, so the
-        # shorter run is genuinely present in every full leaf, and values vs
-        # scales diverging is the expected case for a quantized model rather
-        # than an anomaly.
-        if n_fulls and len(set(n_fulls)) > 1:
-            for leaf_id in full_leaf_ids:
+            for leaf_id in leaf_ids
+        }
+        if posted != wanted:
+            evicted = [
+                leaf_id
+                for leaf_id in leaf_ids
+                if posted[leaf_id] != wanted[leaf_id]
+            ]
+            # This should be very rare. It needs a block to be evicted in the
+            # window between the lookup and the load of the same scheduling
+            # step -- microseconds, against blocks that were just touched and
+            # are therefore the least likely in the store to be reclaimed. The
+            # lookup deliberately takes no lease (pinning every block the
+            # manager merely ASKS about would hold far more than it loads), so
+            # the race is accepted rather than prevented, and it costs one
+            # request's hit rather than correctness. Persistent warnings here
+            # mean the store is thrashing, not that this path is wrong.
+            _logger.warning(
+                "dkv load fell short of the prefix its lookup reported: leaves "
+                "%s delivered %s of %s. A block was evicted between the lookup "
+                "and the load; serving this request as a miss.",
+                evicted,
+                [posted[leaf_id] for leaf_id in evicted],
+                [wanted[leaf_id] for leaf_id in evicted],
+            )
+            for leaf_id in leaf_ids:
                 clients[leaf_id].wait_for_loads()
-            return _DKVCompletedTransfer(
-                TransferDirection.LOAD,
-                {leaf_id: [] for leaf_id in self._leaves},
-            )
-        # With no full leaf there is nothing to bound the prefix, so the whole
-        # request is the candidate: a pure-SWA model needs only its window, and
-        # every slot below it is null. This is the same accounting
-        # SlidingWindowKVGroupCoordinator.longest_cache_hit does when it returns
-        # ``idx + run`` -- positions under the window count as hit.
-        n_full = n_fulls[0] if n_fulls else len(dkv_hashes)
-        if not sliding_leaf_ids:
-            return _DKVCompletedTransfer(
-                TransferDirection.LOAD,
-                {
-                    leaf_id: list(leaf_ids)[:n_full]
-                    for leaf_id, leaf_ids in block_ids.items()
-                },
-            )
+            return miss
 
-        window_blocks = self._window_blocks
-        if window_blocks == 0:
-            # window_size == 1: the window spans no whole block, so a sliding
-            # leaf needs no real block and there is nothing to load for it. The
-            # full leaves' prefix is served in full against all-null sliding
-            # rows, which is what SlidingWindowKVGroupCoordinator builds for the
-            # device tier. Not reachable for a real model; the paths agreeing
-            # keeps it from becoming a silent divergence if one ever is.
-            return _DKVCompletedTransfer(
-                TransferDirection.LOAD,
-                {
-                    **{
-                        leaf_id: list(block_ids[leaf_id])[:n_full]
-                        for leaf_id in full_leaf_ids
-                    },
-                    **{
-                        leaf_id: [_NULL_BLOCK_ID] * n_full
-                        for leaf_id in sliding_leaf_ids
-                    },
-                },
-            )
-        window_length = min(
-            n_full,
-            window_blocks,
-            *(len(block_ids[leaf_id]) for leaf_id in sliding_leaf_ids),
+        return _DKVCompletedTransfer(
+            TransferDirection.LOAD,
+            {
+                leaf_id: _loaded_row(rows[leaf_id], wanted[leaf_id], aligned)
+                for leaf_id in leaf_ids
+            },
         )
-        if window_length == 0:
-            if n_full:
-                for leaf_id in full_leaf_ids:
-                    clients[leaf_id].wait_for_loads()
-            return _DKVCompletedTransfer(
-                TransferDirection.LOAD,
-                {leaf_id: [] for leaf_id in self._leaves},
-            )
-
-        # No hint on the sliding path. A v2 hint is group-major and names the
-        # PRODUCER's group ids; those line up for the full leaves a hint has
-        # always covered, but a peer that predates per-leaf ids has no id for a
-        # sliding leaf to match. An absent hint reads as no hint, which routes
-        # to the co-located dKV -- a miss at worst, never a wrong block.
-        n_slidings: list[int] = []
-        for leaf_id in sliding_leaf_ids:
-            sliding_block_ids = list(block_ids[leaf_id])
-            n_slidings.append(
-                clients[leaf_id].load(
-                    group_id=self._wire_ids[leaf_id],
-                    block_ids=sliding_block_ids[-window_length:],
-                    block_hashes=dkv_hashes[n_full - window_length : n_full],
-                )
-            )
-
-        # The two hit shapes SlidingWindowKVGroupCoordinator recognizes:
-        #
-        #   * a COMPLETE window ending at n_full serves the whole n_full prefix,
-        #     because the slots below the window are null either way, and
-        #   * a partial run anchored at the SEQUENCE START is a hit of just that
-        #     run -- the window_length == n_full case, where the requested range
-        #     is the prefix itself so there is nothing below it.
-        #
-        # dKV reports a LEADING prefix count, so a short n_sliding is always a
-        # run from the start of the requested range. That is only usable when
-        # the range starts at the root; otherwise the run floats in the middle
-        # of the window and no prefix length is serviceable, so the whole load
-        # misses rather than reporting a hit the KV cannot back.
-        if all(n == window_length for n in n_slidings):
-            num_loaded = n_full
-        elif window_length == n_full:
-            num_loaded = min(n_slidings)
-        else:
-            num_loaded = 0
-
-        # Blocks we do not claim are freed by the caller, so in-flight reads
-        # into them must land first.
-        if num_loaded < n_full:
-            for leaf_id in (*full_leaf_ids, *sliding_leaf_ids):
-                clients[leaf_id].wait_for_loads()
-
-        loaded: dict[str, list[int]] = {}
-        for leaf_id in full_leaf_ids:
-            loaded[leaf_id] = list(block_ids[leaf_id])[:num_loaded]
-        for leaf_id in sliding_leaf_ids:
-            loaded[leaf_id] = _sliding_row(
-                block_ids[leaf_id], window_length, num_loaded
-            )
-        return _DKVCompletedTransfer(TransferDirection.LOAD, loaded)
 
     def offload(
         self,

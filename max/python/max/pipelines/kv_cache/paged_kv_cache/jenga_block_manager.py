@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from bisect import bisect_left
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from max.driver import Buffer, batch_inplace_copy
@@ -37,6 +37,7 @@ from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
+from ..prefix_hit import longest_joint_prefix_hit
 from .block_manager import (
     CompletedTransfer,
     KVConnectorTransfer,
@@ -847,22 +848,22 @@ class JengaBlockManager:
         allow_cross_replica: bool,
     ) -> int:
         """Returns how many blocks every group can serve at once."""
-        # Each group answers under the run the others already allowed, so the
-        # run is settled once every group has accepted it in turn.
-        groups = list(self._groups.values())
-        accepted = 0
-        turn = 0
-        while desired_hashes and accepted < len(groups):
-            num_hit_blocks = groups[turn].longest_cache_hit(
-                desired_hashes, replica_idx, allow_cross_replica
-            )
-            accepted = (
-                accepted + 1 if num_hit_blocks == len(desired_hashes) else 1
-            )
-            desired_hashes = desired_hashes[:num_hit_blocks]
-            turn = (turn + 1) % len(groups)
 
-        return len(desired_hashes)
+        def rule(
+            group: KVGroupCoordinatorInterface,
+        ) -> Callable[[int], int]:
+            # `candidate` is a length, and each group answers under it, so the
+            # slice is what narrowing means here. A factory rather than a
+            # lambda closing over the loop variable, which would late-bind
+            # every rule to the last group.
+            return lambda candidate: group.longest_cache_hit(
+                desired_hashes[:candidate], replica_idx, allow_cross_replica
+            )
+
+        return longest_joint_prefix_hit(
+            len(desired_hashes),
+            [rule(group) for group in self._groups.values()],
+        )
 
     def _lookup_device_prefix_cache_hit(
         self,

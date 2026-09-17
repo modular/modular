@@ -21,6 +21,10 @@ from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 
+from ..prefix_hit import (
+    longest_full_attention_hit,
+    longest_sliding_window_hit,
+)
 from .block_utils import LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
 
@@ -365,15 +369,15 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
         allow_cross_replica: bool = False,
     ) -> int:
         """Returns the run of committed hashes from the root."""
-        for num_hit_blocks, block_hash in enumerate(desired_hashes):
-            if (
+        return longest_full_attention_hit(
+            len(desired_hashes),
+            lambda idx: (
                 self.find_replica_with_hash(
-                    block_hash, replica_idx, allow_cross_replica
+                    desired_hashes[idx], replica_idx, allow_cross_replica
                 )
-                is None
-            ):
-                return num_hit_blocks
-        return len(desired_hashes)
+                is not None
+            ),
+        )
 
     def claimable_hashes(
         self, desired_hashes: Sequence[bytes]
@@ -467,29 +471,16 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         Also window_size=1 is a degenerate case where we always get 100% cache
         hit rate since the query token does not attend to any historical tokens.
         """
-        # This is a degenerate case. When window_size=1, we always get 100%
-        # cache hit rate.
-        if self._blocks_in_window == 0:
-            return len(desired_hashes)
-
-        run = 0
-        for idx in range(len(desired_hashes) - 1, -1, -1):
-            if (
+        return longest_sliding_window_hit(
+            len(desired_hashes),
+            self._blocks_in_window,
+            lambda idx: (
                 self.find_replica_with_hash(
                     desired_hashes[idx], replica_idx, allow_cross_replica
                 )
-                is None
-            ):
-                # The run is broken. Reset the run counter.
-                run = 0
-                continue
-            run += 1
-            # If the run is at least than the window size, we have a complete window.
-            if run >= self._blocks_in_window:
-                return idx + run
-        # No complete window. The surviving run, if any, ends at index 0.
-        # We can skip the blocks_in_window check in this case.
-        return run
+                is not None
+            ),
+        )
 
     def claimable_hashes(
         self, desired_hashes: Sequence[bytes]

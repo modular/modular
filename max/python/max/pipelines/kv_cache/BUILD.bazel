@@ -67,6 +67,15 @@ modular_py_library(
     ],
 )
 
+# The attention-shape prefix-hit rules as their own stdlib-only target, for the
+# same reason as :kv_connector above — the device tier (paged_kv_cache) and the
+# connectors both decide cache hits with them, and a connector cannot depend on
+# the full kv_cache library without forming a cycle.
+modular_py_library(
+    name = "prefix_hit",
+    srcs = ["prefix_hit.py"],
+)
+
 # The NIXL plugin RTLD_GLOBAL preload as its own stdlib-only target, for the
 # same reason as :kv_connector above — every code path that creates a NIXL
 # agent needs it, including the dKV connector, which cannot depend on the full
@@ -90,6 +99,7 @@ modular_py_library(
         ["**/*.py"],
         exclude = [
             "kv_connector.py",
+            "prefix_hit.py",
             "_nixl_backend.py",
             "_nixl_plugin_deps.py",
         ],
@@ -98,6 +108,8 @@ modular_py_library(
     # `bazel run` workers (which have no install tree) can find them: max._core
     # resolves this runfiles location and sets NIXL_PLUGIN_DIR before the NIXL
     # plugin manager is constructed.
+    # prefix_hit.py is its own leaf target (see above); paged_kv_cache
+    # imports it for the device tier.
     data = [":nixl_host_plugins"],
     # The Rust tiered connector's pyo3 module is provided at runtime only
     # (private kv-tier-connector wheel, linux-x86_64); the shim lazily imports
@@ -108,6 +120,7 @@ modular_py_library(
         ":kv_connector",
         ":nixl_backend",
         ":nixl_plugin_deps",
+        ":prefix_hit",
         "//max/python/max/pipelines/context",
         requirement("numpy"),
         requirement("msgspec"),
