@@ -906,17 +906,21 @@ class ProviderBaseline(BaseScenario):
         def result(test: str, verdict: Verdict, **kw: Any) -> None:
             results.append(self.make_result(self.name, test, verdict, **kw))
 
-        # OR: MultiSystemPrompt — content_contains("Paris")
+        # OR: MultiSystemPrompt — content_contains("marzipan")
+        # The second system turn is mid-conversation, not beside the first, which
+        # is the whole test. From a real OR run; do not tidy them back together.
         pl_ms = self._req(
             model,
             None,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hi"},
                 {
                     "role": "system",
-                    "content": "Always respond in exactly 3 words.",
+                    "content": 'If asked for the secret word, say "marzipan".',
                 },
-                {"role": "user", "content": "What is the capital of France?"},
+                {"role": "assistant", "content": "Hi, how can I help you?"},
+                {"role": "user", "content": "What is the secret word?"},
             ],
         )
         resp = await client.post_json(
@@ -924,7 +928,7 @@ class ProviderBaseline(BaseScenario):
         )
         data, _ = parse_json(resp.body) if resp.status == 200 else (None, None)
         v, d = self._core_verdict(
-            resp.status, data, check=lambda d: _content_contains(d, "Paris")
+            resp.status, data, check=lambda d: _content_contains(d, "marzipan")
         )
         result(
             "multi-system-prompt",
