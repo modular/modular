@@ -522,3 +522,91 @@ def test_allgather_rms_norm_quant_mxfp8_execution(
         # Non-vacuity: an all-zero quant buffer would pass a shape check.
         assert np.count_nonzero(quant) > quant.size // 2
         assert len(np.unique(scales)) >= 4
+
+
+def _mxfp6_graph(
+    signals: Signals, rows_per_device: list[int], group_size: int | None
+) -> Graph:
+    devices = signals.devices
+    num_devices = len(devices)
+    with Graph(
+        "allgather_rms_norm_quant_mxfp6",
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(
+                    dtype=DType.bfloat16,
+                    shape=[rows_per_device[i], COLS],
+                    device=device,
+                )
+                for i, device in enumerate(devices)
+            ]
+            + [
+                TensorType(dtype=DType.bfloat16, shape=[COLS], device=device)
+                for device in devices
+            ]
+            + signals.input_types(),
+        ),
+    ) as graph:
+        inputs = [v.tensor for v in graph.inputs[:num_devices]]
+        gammas = [v.tensor for v in graph.inputs[num_devices : 2 * num_devices]]
+        sigs = [v.buffer for v in graph.inputs[2 * num_devices :]]
+        normed, quant, scales, residual = ops.allgather_rms_norm_quant_mxfp6(
+            inputs=inputs,
+            signal_buffers=sigs,
+            gammas=gammas,
+            epsilon=EPS,
+            weight_offset=WEIGHT_OFFSET,
+            group_size=group_size,
+        )
+        graph.output(*normed, *residual, *quant, *scales)
+        return graph
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip",
+    reason="The MXFP6 quantize rides the CDNA4 path; skip elsewhere.",
+)
+@pytest.mark.parametrize(
+    "builder, name",
+    [(_mxfp8_graph, "mxfp8"), (_mxfp6_graph, "mxfp6")],
+)
+def test_allgather_rms_norm_quant_grouped_two_launch(
+    builder: Any, name: str
+) -> None:
+    """Grouped quant ops on the two-launch arm, where the relay engages.
+
+    `group_size < num_gpus` on CDNA4 pairs the two groups and relays part of
+    each shard through the partner, whose GPUs remote-write the *caller's*
+    world-view output slots. A handler that fills only its own slots hands the
+    relay uninitialized pointers and the device faults. The `group_size=None`
+    arms elsewhere in this file cannot reach it: one group never pairs.
+    """
+    num_gpus = 4
+    group_size = 2
+    shard_rows = 128  # 256 gathered rows > the fuse threshold -> two-launch.
+    if num_gpus > accelerator_count():
+        pytest.skip(f"Not enough GPUs ({num_gpus}) for grouped {name}.")
+
+    rows_per_device = [shard_rows] * num_gpus
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    graph = builder(signals, rows_per_device, group_size)
+    host = CPU()
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[host, *devices])
+    compiled = session.load(graph)
+
+    tensor_inputs, gamma_inputs, host_shards, host_gammas = _inputs_and_gammas(
+        rows_per_device, devices, signed=True
+    )
+    outputs = list(
+        compiled.execute(*tensor_inputs, *gamma_inputs, *signals.buffers())
+    )
+    _check(
+        outputs,
+        num_gpus,
+        group_size,
+        host_shards,
+        host_gammas,
+        f"grouped {name}",
+    )

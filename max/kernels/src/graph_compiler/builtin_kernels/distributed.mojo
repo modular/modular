@@ -1813,12 +1813,51 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 inputs[i].to_tile_tensor[.int64]().as_immut()
             )
 
+        # `allgather`'s world-view output array holds every device's own
+        # `group_size` output windows. Every slot has to name a real window,
+        # not just this device's: a grouped allgather may route part of a
+        # shard through the paired group, whose GPUs then write these buffers
+        # directly. Each device windows its own output by ITS group's ragged
+        # row counts. Built once here; nothing in it depends on which device
+        # is launching, and the column count is uniform across the world.
+        var world_cols = Int(
+            outputs_residual[0].to_tile_tensor[.int64]().dim[rank - 1]()
+        )
+        comptime OutViewType = type_of(
+            TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    outputs_residual[0].to_tile_tensor[.int64]()._storage
+                ),
+                row_major(world_cols, world_cols),
+            )
+        )
+        var world_out_views = Array[OutViewType, num_devices * group_size](
+            uninitialized=True
+        )
+        comptime for d in range(num_devices):
+            comptime d_group_start = ualign_down(d, group_size)
+            var d_base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                outputs_residual[d].to_tile_tensor[.int64]()._storage
+            )
+            var row_off = 0
+            comptime for i in range(group_size):
+                var len_i = (
+                    Int(in_tensors[d_group_start + i].num_elements())
+                    // world_cols
+                )
+                world_out_views[d * group_size + i] = TileTensor(
+                    d_base + row_off * world_cols,
+                    row_major(len_i, world_cols),
+                )
+                row_off += len_i
+
         @inline(.always)
         def launch_fused_ag_norm_quant[
             index: Int
         ]() raises {
             imm in_tensors,
             imm rank_sigs,
+            imm world_out_views,
             imm dev_ctxs,
             imm gammas,
             imm epsilons,
@@ -1928,30 +1967,6 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
             @__parameter
             @inline(.always)
             def two_launch_with_quant() raises:
-                var base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    sum_buf._storage
-                )
-                comptime OutViewType = type_of(
-                    TileTensor(base, row_major(cols_rt, cols_rt))
-                )
-                # See `DistributedAllGatherRMSNorm.two_launch`: only THIS
-                # device's own slice of the world-view output array is ever
-                # read back by `allgather`.
-                var world_out_views = Array[
-                    OutViewType, num_devices * group_size
-                ](uninitialized=True)
-                var row_off = 0
-                comptime for i in range(group_size):
-                    var len_i = (
-                        Int(in_tensors[group_start + i].num_elements())
-                        // cols_rt
-                    )
-                    world_out_views[index * group_size + i] = TileTensor(
-                        base + row_off * cols_rt,
-                        row_major(len_i, cols_rt),
-                    )
-                    row_off += len_i
-
                 allgather[
                     dtype=dtype, ngpus=num_devices, group_size=group_size
                 ](
