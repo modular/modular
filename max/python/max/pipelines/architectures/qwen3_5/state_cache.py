@@ -10,19 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The shape of a Qwen3.5 Gated DeltaNet state, as cache configuration.
+"""The shape of a Qwen3.5 Gated DeltaNet state, and how a layer reaches it.
 
-Both the pool's leaves and the graph's input types are sized from this
-geometry, so it is derived here once.
+Both the pool's leaves and the graph's input types are sized from the
+geometry, so it is derived here once. The per-layer access built on top of it
+belongs here too: it is the only reader of the order the leaves are declared
+in, and keeping the two apart would put that order in two files.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from max import tree
 from max.dtype import DType
+from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
+    RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
 )
 
@@ -37,6 +44,58 @@ RECURRENT_LEAF_ID = "linear_attn/recurrent"
 Separate leaves because the kernels want each as its own uniformly-strided
 tensor. They are allocated, published and evicted together.
 """
+
+_LEAF_IDS = (CONV_LEAF_ID, RECURRENT_LEAF_ID)
+"""Region declaration order, which ``leaves`` is indexed by.
+
+:func:`linear_state_regions` checks what it returns against this, so the two
+indices below cannot drift into silently swapping conv and recurrent state.
+"""
+
+_CONV_LEAF = _LEAF_IDS.index(CONV_LEAF_ID)
+_RECURRENT_LEAF = _LEAF_IDS.index(RECURRENT_LEAF_ID)
+
+
+@tree.dataclass(frozen=True)
+class GatedDeltaStateAccess:
+    """One linear layer's state access, on one device.
+
+    Each pool travels with the row id it is indexed by, already reduced to
+    this layer's column by :func:`layer_state_access`.
+    """
+
+    conv_pool: BufferValue
+    conv_row_id: TensorValue
+    recurrent_pool: BufferValue
+    recurrent_row_id: TensorValue
+
+
+def layer_state_access(
+    state: Sequence[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+    layer: int,
+) -> list[GatedDeltaStateAccess]:
+    """Selects one linear layer's state row out of each device's leaves.
+
+    Call this where a layer's inputs are assembled, never from inside a
+    block body: the linear layers share one compiled subgraph.
+
+    Args:
+        state: Per-device recurrent-state inputs, leaves in declaration order.
+        layer: The layer's index among the linear-attention layers, which is
+            the column of ``live_row_ids`` it owns.
+
+    Returns:
+        One access per device, in the order ``state`` came in.
+    """
+    return [
+        GatedDeltaStateAccess(
+            conv_pool=inputs.leaves[_CONV_LEAF].pool,
+            conv_row_id=inputs.leaves[_CONV_LEAF].live_row_id(layer),
+            recurrent_pool=inputs.leaves[_RECURRENT_LEAF].pool,
+            recurrent_row_id=inputs.leaves[_RECURRENT_LEAF].live_row_id(layer),
+        )
+        for inputs in state
+    ]
 
 
 def linear_conv_dim(
@@ -78,7 +137,7 @@ def linear_state_regions(
         )
         // num_devices
     )
-    return (
+    regions = (
         RecurrentStateRegion(
             leaf_id=CONV_LEAF_ID,
             num_layers=num_linear_layers,
@@ -96,6 +155,8 @@ def linear_state_regions(
             dtype=dtype,
         ),
     )
+    assert tuple(region.leaf_id for region in regions) == _LEAF_IDS
+    return regions
 
 
 def attn_cache(params: KVCacheParamInterface) -> KVCacheParams:

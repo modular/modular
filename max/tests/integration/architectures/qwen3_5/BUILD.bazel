@@ -275,3 +275,24 @@ modular_py_test(
         requirement("pytest-asyncio"),
     ],
 )
+
+modular_py_test(
+    name = "test_state_row_per_layer",
+    srcs = ["test_state_row_per_layer.py"],
+    # Building the model constructs `Allreduce`, which instantiates real
+    # accelerators whatever the config's `DeviceRef` says, so the graph cannot
+    # be built on a CPU-only runner.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        requirement("numpy"),
+    ],
+)

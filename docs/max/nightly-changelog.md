@@ -271,4 +271,9 @@ This version is still a work in progress.
   exponent stays rejected, since `1e-5` is a legal JSON number but not an
   integer. This affects `response_format` schemas as well as tool calls.
 
+- Fixed Qwen3.5 returning fluent nonsense on every prompt, text included.
+  Its linear-attention layers all read and wrote one shared recurrent state
+  row rather than one each, and nothing about that was visible from outside,
+  so the model loaded and served as usual.
+
 ## Mojo language

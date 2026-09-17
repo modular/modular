@@ -58,6 +58,7 @@ from .layers.text_rotary import Qwen3_5TextRotaryEmbedding
 from .layers.visual_transformer import VisionTransformer
 from .model_config import Qwen3_5Config
 from .quantization import storage_dtype
+from .state_cache import GatedDeltaStateAccess, layer_state_access
 
 
 def _shard_mlp_and_norms(
@@ -224,12 +225,9 @@ class Qwen3_5LinearAttentionBlock(Module):
         linear_cls: Callable[..., Linear],
         attn_quant_config: QuantConfig | None = None,
         mlp_quant_config: QuantConfig | None = None,
-        *,
-        linear_layer_idx: int = 0,
     ) -> None:
         super().__init__()
         compute_dtype = config.compute_dtype
-        self.linear_layer_idx = linear_layer_idx
         self.linear_attn = GatedDeltaNet(
             hidden_size=config.hidden_size,
             num_key_heads=config.linear_num_key_heads,
@@ -276,23 +274,21 @@ class Qwen3_5LinearAttentionBlock(Module):
         self,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+        state: list[GatedDeltaStateAccess],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
-        layer = self.linear_layer_idx
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # Each device owns a slice of the value heads, so `out_proj` emits a
-        # partial sum over the full hidden dim. ``state[i].leaves`` carries
-        # the conv (0) and recurrent (1) leaves in declaration order; the
-        # per-layer row ids are sliced here from the full ``live_row_ids``.
+        # partial sum over the full hidden dim. The state rows arrive already
+        # selected for this layer (see ``layer_state_access``).
         attn_outs = self.allreduce(
             [
                 shard(
                     norm_xs[i],
-                    conv_pool=state[i].leaves[0].pool,
-                    conv_row_id=state[i].leaves[0].live_row_id(layer),
-                    recurrent_pool=state[i].leaves[1].pool,
-                    recurrent_row_id=state[i].leaves[1].live_row_id(layer),
+                    conv_pool=state[i].conv_pool,
+                    conv_row_id=state[i].conv_row_id,
+                    recurrent_pool=state[i].recurrent_pool,
+                    recurrent_row_id=state[i].recurrent_row_id,
                     input_row_offsets=input_row_offsets[i],
                     replay_capture=(
                         None
@@ -414,7 +410,6 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         ]
 
         layers: list[Module] = []
-        linear_state_idx = 0
         for i, lt in enumerate(config.layer_types):
             attn_quant_config = scheme.attn_config(i) if scheme else None
             mlp_quant_config = scheme.mlp_config(i) if scheme else None
@@ -438,10 +433,8 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                         linear_cls=linear_cls,
                         attn_quant_config=attn_quant_config,
                         mlp_quant_config=mlp_quant_config,
-                        linear_layer_idx=linear_state_idx,
                     )
                 )
-                linear_state_idx += 1
         self.layers = LayerList(layers)
 
         # Final norm (replicated across devices)
@@ -617,11 +610,18 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 if freq_row_ids is not None:
                     full_attn_inputs.append(freq_row_ids)
                 return full_attn_inputs
-            # The block slices ``live_row_ids`` against the per-layer index it
-            # was stamped with at construction, so ``state`` goes through
-            # undeflated; ``forward_sequential_layers`` walks it via the pytree
-            # protocol declared on ``RecurrentStateInputsPerDevice``.
-            return [hs, signal_buffers, state, row_offsets]
+            # All linear layers share one compiled subgraph, whose body is
+            # built from the first of them. Only the arguments vary per call,
+            # so this layer's column of ``live_row_ids`` has to be selected
+            # here -- selecting it inside the block would bake layer 0's
+            # column into every layer's state access.
+            layer = self.linear_layer_indices.index(idx)
+            return [
+                hs,
+                signal_buffers,
+                layer_state_access(state, layer),
+                row_offsets,
+            ]
 
         full_attn_indices = [
             i for i, lt in enumerate(self.layer_types) if lt == "full_attention"
