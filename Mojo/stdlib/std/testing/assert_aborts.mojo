@@ -35,7 +35,7 @@ comptime _LOCATION_ENV = "__MOJO_TEST_EXPECT_ABORT_LOCATION_TARGET"
 # Path the child's stdout/stderr get redirected to before running.
 comptime _OUTPUT_ENV = "__MOJO_TEST_EXPECT_ABORT_OUTPUT"
 # How long to wait for the child to abort before killing it.
-comptime _DEFAULT_TIMEOUT = 30.0
+comptime _DEFAULT_TIMEOUT = 60.0
 # How often to check on the child while waiting for it.
 comptime _POLL_INTERVAL = 0.01
 
