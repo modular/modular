@@ -142,8 +142,8 @@ def test_blackwell_matmul[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize with random data
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)

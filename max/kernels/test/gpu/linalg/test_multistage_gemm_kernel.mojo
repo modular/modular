@@ -117,8 +117,8 @@ def multistage_gemm_fp32_run[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 

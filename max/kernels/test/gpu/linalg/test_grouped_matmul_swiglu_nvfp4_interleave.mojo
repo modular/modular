@@ -300,12 +300,12 @@ def _test_swiglu_interleave[
 
     # ---- Init data: random uint8 weights/activations, power-of-2 e4m3
     #      input scales, random (zeroed-OOB) e4m3 weight scales ----
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
 
     for i in range(a_scales_host.num_elements()):
         a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(b_scales_host.as_span())
     for i in range(b_scales_perm_host.num_elements()):
         b_scales_perm_host._storage[i] = Scalar[scales_dtype](0.0)
 

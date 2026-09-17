@@ -148,10 +148,10 @@ def test_block_scaled_prefetch[
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     # Zero out unused scale entries to avoid accuracy issues
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):

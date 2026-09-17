@@ -110,8 +110,8 @@ def test_blackwell_matmul_with_weight_prefetch[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

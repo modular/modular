@@ -293,8 +293,8 @@ def _test_kernel_impl[
                 for k in range(K):
                     b_host[e, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)

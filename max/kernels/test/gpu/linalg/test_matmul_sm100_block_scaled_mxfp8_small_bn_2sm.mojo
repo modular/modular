@@ -174,8 +174,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # NOTE: unused scales must be zero to avoid accuracy issues
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):

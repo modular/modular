@@ -274,8 +274,8 @@ def run_one_case(
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # A scales: zero everything, then fill the in-range region per active expert.
     for i in range(a_scales_host.num_elements()):
@@ -685,7 +685,7 @@ def _run_batch_composition(
 
     # B weights + B scales: seeded from `b_seed` (identical across compositions).
     seed(b_seed)
-    rand(b_host._storage, b_host.num_elements())
+    rand(b_host.as_span())
     comptime b_expert_scale_count = (
         n_groups * k_groups * SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     )

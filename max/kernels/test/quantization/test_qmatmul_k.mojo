@@ -41,7 +41,7 @@ from std.utils.index import Index
 
 
 def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
-    rand(array.unsafe_ptr(), len(array))
+    rand(array)
 
 
 def random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:

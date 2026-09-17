@@ -145,8 +145,8 @@ def test_swiglu[
     var full_tensor = TileTensor(full_device, full_shape)
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     ctx.enqueue_copy(a_device, a_host_buf)
     ctx.enqueue_copy(b_device, b_host_buf)

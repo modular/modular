@@ -121,8 +121,8 @@ def test_partial_n_tile_compute_epilogue[
         return val + c_tensor.load[width=width](Coord(idx)).cast[_dtype]()
 
     seed(1234)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     for i in range(M):
         for j in range(N):
             comptime assert c_host.flat_rank == 2

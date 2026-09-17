@@ -1258,6 +1258,40 @@ struct TileTensor[
             _index(offset), value
         )
 
+    @inline(.always)
+    def as_span(
+        self,
+        out result: Span[
+            Scalar[Self.dtype], Self.origin, address_space=Self.address_space
+        ],
+    ):
+        """Get a `Span` over the tensor's elements.
+
+        Constraints:
+            The tensor must have row-major (contiguous) strides, so storage
+            order and layout order agree and the span visits every element
+            exactly once.
+
+        Returns:
+            A `Span` of `num_elements()` scalars over the tensor's storage.
+        """
+        comptime assert (
+            Self.Engine == DefaultEngine[element_width=1]
+        ), "TileTensor.as_span requires DefaultEngine"
+        comptime assert (
+            Self.is_row_major
+        ), "TileTensor.as_span requires row-major (contiguous) strides"
+        return {
+            unsafe_ptr = rebind[
+                Pointer[
+                    Scalar[Self.dtype],
+                    Self.origin,
+                    address_space=Self.address_space,
+                ]
+            ](self._storage),
+            length = self.num_elements(),
+        }
+
     @inline(.nodebug)
     def bitcast[
         target_dtype: DType,

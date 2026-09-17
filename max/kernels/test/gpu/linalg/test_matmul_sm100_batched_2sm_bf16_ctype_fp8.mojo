@@ -129,8 +129,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
                         b_type
                     ]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host._storage, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host.as_span(), min=-1.0, max=1.0)
+        rand(b_host.as_span(), min=-1.0, max=1.0)
 
     # Move operands to device
     ctx.enqueue_copy(a_device, a_host_ptr)

@@ -126,8 +126,8 @@ def test_matmul_sm100_fallback[
         )
 
     # Initialize matmul operands
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 

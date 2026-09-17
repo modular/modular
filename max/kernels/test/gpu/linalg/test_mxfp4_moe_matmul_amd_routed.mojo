@@ -324,12 +324,7 @@ def run_routed_test_case[
     rand(a_h.unsafe_ptr(), num_input_rows * k_bytes, min=0, max=255)
     rand(b_h.unsafe_ptr(), num_experts * N * k_bytes, min=0, max=255)
     rand(sfa_h.unsafe_ptr(), num_input_rows * k_scales, min=125, max=129)
-    rand(
-        sfb_h.unsafe_ptr(),
-        num_experts * N * k_scales,
-        min=125,
-        max=129,
-    )
+    rand(sfb_h.unsafe_ptr(), num_experts * N * k_scales, min=125, max=129)
 
     # ---- Routing tables ----
     var sti_h = ctx.enqueue_create_host_buffer[.uint32](

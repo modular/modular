@@ -413,7 +413,7 @@ def test_repack_Q4_0_for_sm8x[
     print("test repack_Q4_0_for_sm8x")
 
     def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
-        rand(array.unsafe_ptr(), len(array), min=0, max=255)
+        rand(array, min=0, max=255)
 
     def build_b_buffer(N: Int, K: Int, b_ptr: MutPointer[UInt8, _]):
         var k_groups = ceildiv(K, 32)

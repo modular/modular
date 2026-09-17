@@ -154,8 +154,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
                 comptime assert b_host.flat_rank == 2
                 b_host[n_idx, k_idx] = Float32(n_idx + k_idx).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

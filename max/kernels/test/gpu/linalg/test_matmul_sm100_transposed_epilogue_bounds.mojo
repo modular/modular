@@ -121,8 +121,8 @@ def test_transposed_epilogue_row_straddle[
         c_tensor.store[width=width](Coord(idx), val.cast[c_type]())
 
     seed(1234)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # C is zeroed, so a dropped store reads back as 0 against a reference
     # the random operands make nonzero.

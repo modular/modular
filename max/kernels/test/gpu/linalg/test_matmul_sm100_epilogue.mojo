@@ -144,8 +144,8 @@ def test_matmul_sm100_epilogue[
         # while also testing arithmetic operations
         return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):

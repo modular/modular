@@ -131,8 +131,8 @@ def test_matmul_sm100_epilogue[
         return y
 
     seed(1234)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     var scales: List[Int32] = [-2, -1, 0, 1, 2]
 

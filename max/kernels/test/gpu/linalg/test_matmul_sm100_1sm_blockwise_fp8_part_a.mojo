@@ -184,10 +184,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
                 ](0.5)
 
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
-        rand(a_scales_host._storage, a_scales_host.num_elements())
-        rand(b_scales_host._storage, b_scales_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
+        rand(a_scales_host.as_span())
+        rand(b_scales_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

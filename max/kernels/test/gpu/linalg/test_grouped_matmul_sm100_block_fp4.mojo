@@ -253,15 +253,15 @@ def _test_kernel_impl_base[
                 for k in range(K // 2):
                     b_host[e, n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+        rand(a_host.as_span(), min=0, max=255)
+        rand(b_host.as_span(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     for i in range(a_scales_host.num_elements()):
         a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(b_scales_host.as_span())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     var effective_n = expert_shape[0]
     var effective_k = expert_shape[1]

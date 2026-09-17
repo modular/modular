@@ -163,6 +163,9 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- `TileTensor` gained `as_span()`, returning a `Span` over the tensor's
+  elements.
+
 - Added `max.nn.kernels.keyed_uniform`, which draws one uniform value in
   `[0, 1)` per row of a seed tensor. Every row is its own Philox key, so a
   row's value is a function of its seed alone, not of the row's position or of

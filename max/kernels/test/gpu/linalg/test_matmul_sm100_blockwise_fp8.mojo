@@ -156,13 +156,13 @@ def test_matmul_sm100_blockwise_scaled_fp8[
             rebind[SIMD[c_type, width]](val),
         )
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

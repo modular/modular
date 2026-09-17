@@ -123,8 +123,8 @@ def test_block_scaled_nvfp4_cublaslt[
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
     var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
@@ -153,8 +153,8 @@ def test_block_scaled_nvfp4_cublaslt[
     var c_device_ref = ctx.enqueue_create_buffer[out_dtype](c_size)
     var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

@@ -173,8 +173,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     comptime assert b_host.flat_rank == 3
                     b_host[b, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     for batch_idx in range(Int(batch.value())):

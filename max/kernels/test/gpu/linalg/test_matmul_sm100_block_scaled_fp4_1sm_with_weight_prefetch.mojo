@@ -192,11 +192,11 @@ def _test_impl[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+        rand(a_host.as_span(), min=0, max=255)
+        rand(b_host.as_span(), min=0, max=255)
 
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,

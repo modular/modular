@@ -187,8 +187,8 @@ def test_grouped_gemm_epilogue[
 
     # Initialize random data
     seed(42)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # Initialize C with random values for epilogue test
     for i in range(Int(m.value())):

@@ -117,8 +117,8 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     var c_ref_tensor = TileTensor(c_ref_device, c_shape)
 
     seed(0)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
@@ -183,8 +183,8 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     var c_ref_tensor = TileTensor(c_ref_device, c_shape)
 
     seed(0)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 

@@ -221,8 +221,8 @@ def _test_dispatch[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # --- Initialize data ---
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
@@ -230,7 +230,7 @@ def _test_dispatch[
     # Initialize a_scales to 0, then set valid regions to power-of-2 values
     for i in range(a_scales_host.num_elements()):
         a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(b_scales_host.as_span())
 
     # Set a_scales for active expert regions
     for i in range(num_active_experts):
