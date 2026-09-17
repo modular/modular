@@ -13,8 +13,8 @@
 """The rope embedding used within the model."""
 
 import math
-from collections.abc import Iterable
 from functools import cached_property
+from typing import Any
 
 from max.driver import CPU, Device
 from max.dtype import DType
@@ -119,14 +119,16 @@ class RotaryEmbedding(Module[..., Tensor]):
         n = self.head_dim
         return user_scale if user_scale is not None else math.sqrt(1.0 / n)
 
-    @property
-    def local_parameters(self) -> Iterable[tuple[str, Tensor]]:
-        """Override the local_parameters property to return an empty list.
+    def __tree_flatten__(self) -> tuple[dict[Any, Any], None]:
+        """Excludes the cached ``freqs_cis`` from the children.
 
-        This is to avoid `freqs_cis` being included in the parameters of the
-        module.
+        It is computed from the module's configuration rather than loaded
+        from a checkpoint, so it is not a parameter.
         """
-        return []
+        children, meta = super().__tree_flatten__()
+        for cached in ("freqs_cis", "_freqs_cis"):
+            children.pop(cached, None)
+        return children, meta
 
     def forward(
         self,

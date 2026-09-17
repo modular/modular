@@ -47,6 +47,13 @@ This version is still a work in progress.
   `0.0.0.0`, matching `max serve`, instead of the Cascade entrypoint's
   `localhost` default.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
+- `max.experimental.nn.Module` is now a pytree: its attributes are its
+  children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk
+  a module directly. `Module.compile` returns a
+  `max.experimental.compilation.CompiledCallable`, which now also accepts a
+  `Buffer` for a single-device input; the `max.experimental.nn.CompiledModel`
+  wrapper and the `Module` parameter helpers it replaced (`apply_to_parameters`,
+  `map_parameters`, `load_state`) are removed in favor of `max.tree`.
 - Added the public `Tree` type alias in `max.tree` for nested pytree values.
   Layer subgraph inputs are annotated with `Tree[Any]` instead of the
   removed `SubgraphInput` alias.

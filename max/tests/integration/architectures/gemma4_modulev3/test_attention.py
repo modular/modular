@@ -50,7 +50,8 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.experimental.nn import CompiledModel, Module
+from max.experimental.compilation import CompiledCallable
+from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.sharding import (
@@ -323,7 +324,7 @@ class AttentionHarness(Module[..., Tensor]):
 class CompiledAttention(NamedTuple):
     """Bundles a compiled attention harness with its KV-cache manager."""
 
-    compiled: CompiledModel[..., Tensor]
+    compiled: CompiledCallable[..., Tensor]
     kv_manager: PagedKVCacheManager
 
 

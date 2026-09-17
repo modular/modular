@@ -17,7 +17,7 @@ Built on top of :mod:`max.graph` and :mod:`max.driver`, in three layers that
 each consume the one below:
 
 - :mod:`~max.experimental.nn` -- the ``Module`` base class plus
-  ahead-of-time compilation to a ``CompiledModel``.
+  ahead-of-time compilation to a ``CompiledCallable``.
 - :mod:`~max.experimental.functional` -- a one-function-per-op distributed
   dispatcher (``F.matmul``, ``F.add``, ...).
 - :mod:`~max.experimental.sharding` -- placements, the device mesh, the

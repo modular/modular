@@ -22,7 +22,6 @@ modular_py_library(
         requirement("numpy"),
         requirement("rich"),
         requirement("typing-extensions"),
-        "//max/python/max:_validation_hooks",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",

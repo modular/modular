@@ -29,7 +29,6 @@ Base classes
    :toctree: generated
    :template: autosummary/class.rst
 
-   CompiledModel
    Module
    ModuleList
    PinnedDeviceTensor
@@ -55,6 +54,6 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   as_subgraph
    module_dataclass
-   subgraphable
 

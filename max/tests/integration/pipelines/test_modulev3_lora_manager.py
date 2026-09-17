@@ -16,9 +16,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental.nn import (
@@ -310,21 +312,42 @@ class _TransparentLeaf(TransparentModule[[Tensor], Tensor]):
         return x
 
 
-def test_lora_qualify_name_is_wrapper_invisible() -> None:
+def test_lora_naming_is_wrapper_invisible() -> None:
     """``LoRA`` names its wrapped module's params as if the wrapper were absent.
 
     The ModuleV3 LoRA weight adapter relies on this: an opaque leaf keeps its
     native leaf name (``o_proj.weight``, not a leaked ``module.weight``), and a
     name-transparent leaf still passes its native child paths straight through.
-    Constructed via ``object.__new__`` to exercise the naming contract without
+    Walked with ``str`` leaves, so the naming contract is exercised without
     building real (compile-triggering) weights.
     """
-    lora = object.__new__(LoRA)
-    lora.module = _OpaqueLeaf()
-    assert lora._qualify_name("o_proj", "module.weight") == "o_proj.weight"
-    assert lora._qualify_name("o_proj", "module.bias") == "o_proj.bias"
-    lora.module = _TransparentLeaf()
-    assert lora._qualify_name("qkv_proj", "q_proj.weight") == "q_proj.weight"
+
+    def wrap(leaf: Module[..., Any]) -> LoRA:
+        lora = object.__new__(LoRA)
+        lora.module = leaf
+        # The naming contract of ``LoRA.__init__``, without its weights.
+        lora.name_transparent = leaf.name_transparent
+        leaf.name_transparent = True
+        return lora
+
+    def holding(**attributes: Any) -> Module[..., Any]:
+        """A bare module carrying exactly these attributes."""
+        node: Module[..., Any] = _OpaqueLeaf()
+        for name, value in attributes.items():
+            setattr(node, name, value)
+        return node
+
+    opaque = holding(weight="w", bias="b")
+    parent = holding(o_proj=wrap(opaque))
+    assert list(tree.paths(parent, leaf=str)) == [
+        "o_proj.weight",
+        "o_proj.bias",
+    ]
+
+    transparent: Module[..., Any] = _TransparentLeaf()
+    setattr(transparent, "q_proj", holding(weight="w"))  # noqa: B010
+    parent = holding(qkv_proj=wrap(transparent))
+    assert list(tree.paths(parent, leaf=str)) == ["q_proj.weight"]
 
 
 def test_fuse_projections_keeps_transparent_qkv_separate() -> None:

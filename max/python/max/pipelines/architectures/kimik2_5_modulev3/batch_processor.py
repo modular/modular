@@ -23,7 +23,7 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.engine import InferenceSession
-from max.experimental.nn import CompiledModel
+from max.experimental.compilation import CompiledCallable
 from max.graph.buffer_utils import cast_tensor_to
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import ImageMetadata
@@ -49,7 +49,7 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
     """
 
     _model_config: KimiK2_5Config | None = None
-    _vision_model: CompiledModel[Any, Any] | None = None
+    _vision_model: CompiledCallable[Any, Any] | None = None
     _session: InferenceSession | None = None
 
     def bind_model_config(self, model_config: KimiK2_5Config) -> None:
@@ -59,7 +59,7 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
     def bind_vision_encoder(
         self,
         *,
-        vision_model: CompiledModel[Any, Any],
+        vision_model: CompiledCallable[Any, Any],
         session: InferenceSession,
     ) -> None:
         """Wire the compiled vision encoder and inference session."""

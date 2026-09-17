@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Static-typing regression tests for `Module.compile` / `CompiledModel`.
+"""Static-typing regression tests for `Module.compile` / `CompiledCallable`.
 
 Locks in the MXF-442 contract: `Module[_P, _R].compile(...)` returns a
-`CompiledModel[_P, _R]`, and `compiled(...)` is statically `_R` (not `Any`).
+`CompiledCallable[_P, _R]`, and `compiled(...)` is statically `_R` (not `Any`).
 
 The bodies actually compile and run -- mirroring the pattern in
 `test_module.py::test_compile` -- but the regression signal lives in the
@@ -27,8 +27,8 @@ the mypy aspect on this file.
 from __future__ import annotations
 
 from max.experimental import random
+from max.experimental.compilation import CompiledCallable
 from max.experimental.nn.module import (
-    CompiledModel,
     Module,
     module_dataclass,
 )
@@ -66,7 +66,7 @@ def _input_type() -> TensorType:
 def test_compile_preserves_unary_p_r() -> None:
     module = UnaryTypingModule(bias=Tensor(0))
     compiled = module.compile(_input_type())
-    assert_type(compiled, CompiledModel[[Tensor], Tensor])
+    assert_type(compiled, CompiledCallable[[Tensor], Tensor])
 
     x = random.uniform([3, 3])
     result = compiled(x)
@@ -78,7 +78,7 @@ def test_compile_preserves_multi_output_p_r() -> None:
     compiled = module.compile(_input_type(), _input_type())
     assert_type(
         compiled,
-        CompiledModel[[Tensor, Tensor], tuple[Tensor, Tensor, Tensor]],
+        CompiledCallable[[Tensor, Tensor], tuple[Tensor, Tensor, Tensor]],
     )
 
     a = random.uniform([3, 3])
@@ -93,12 +93,12 @@ def test_compile_preserves_multi_output_p_r() -> None:
 
 
 def test_compile_rejects_call_arity_drift() -> None:
-    """A unary `CompiledModel` rejects extra positional args at type-check time.
+    """A unary `CompiledCallable` rejects extra positional args at type-check time.
 
     Sentinel: the `# type: ignore[call-arg]` below is the regression alarm.
     Today (post-MXF-442), `compiled_unary(x, x)` is a real `call-arg` error
     and the ignore is justified. If a future change collapses
-    `CompiledModel.__call__` back to `(*args: Any)`, mypy will stop flagging
+    `CompiledCallable.__call__` back to `(*args: Any)`, mypy will stop flagging
     the line, `warn_unused_ignores=true` will mark the ignore unused, and
     this file will fail to type-check.
     """

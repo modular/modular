@@ -84,18 +84,6 @@ def test_transparent_child_still_discoverable_as_descendant() -> None:
     assert "inner.a" not in descendants
 
 
-def test_apply_to_parameters_matches_parameters_paths() -> None:
-    parent = _Parent(transparent=True)
-    visited: set[str] = set()
-
-    def record(name: str, t: Tensor) -> Tensor:
-        visited.add(name)
-        return t
-
-    parent.apply_to_parameters(record)
-    assert visited == {name for name, _ in parent.parameters}
-
-
 def test_load_state_dict_with_omitted_names() -> None:
     with default_dtype(DType.float32):
         parent = _Parent(transparent=True)
@@ -126,7 +114,7 @@ class _Conflict(Module[[Tensor], Tensor]):
 
 
 def test_colliding_paths_are_rejected() -> None:
-    with pytest.raises(ValueError, match="duplicate parameter path"):
+    with pytest.raises(ValueError, match="two leaves share a path"):
         dict(_Conflict().parameters)
 
 
@@ -146,22 +134,6 @@ class _LocalParamParent(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.inner(x)
-
-
-def test_transparent_module_local_param_drops_its_name() -> None:
-    # A transparent module's own local parameter is named at the parent level
-    # (its ``inner`` attr dropped); parameters and apply_to_parameters agree.
-    parent = _LocalParamParent()
-    assert {name for name, _ in parent.parameters} == {"weight"}
-
-    visited: set[str] = set()
-
-    def record(name: str, t: Tensor) -> Tensor:
-        visited.add(name)
-        return t
-
-    parent.apply_to_parameters(record)
-    assert visited == {"weight"}
 
 
 class _OpaqueTransparent(TransparentModule[[Tensor], Tensor]):

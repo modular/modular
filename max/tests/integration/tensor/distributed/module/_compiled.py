@@ -29,6 +29,7 @@ import numpy as np
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
+from max.experimental.compilation import CompiledCallable
 from max.experimental.functional import (
     full,
     matmul,
@@ -36,7 +37,7 @@ from max.experimental.functional import (
     relu,
     transfer_to,
 )
-from max.experimental.nn.module import CompiledModel, Module, module_dataclass
+from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
     DeviceMesh,
     Partial,
@@ -219,10 +220,10 @@ class CompiledTests:
         assert result.placements == (Replicated(), Partial())
         check(result, float(D * D), (3, D))
 
-    # ── CompiledModel API tests ─────────────────────────────────────────
+    # ── CompiledCallable API tests ─────────────────────────────────────────
 
     def test_compile_returns_compiled_model(self) -> None:
-        """compile() returns a CompiledModel, not a bare closure."""
+        """compile() returns a CompiledCallable, not a bare closure."""
         mesh = self.MESH_2
 
         @module_dataclass
@@ -237,7 +238,7 @@ class CompiledTests:
             [D, D], dtype=F32, device=PlacementMapping(mesh, (Sharded(1),))
         )
         compiled = Linear(W=W).compile(sym(D))
-        assert isinstance(compiled, CompiledModel)
+        assert isinstance(compiled, CompiledCallable)
         assert isinstance(compiled.engine_model, Model)
         assert isinstance(compiled.signal_buffers, list)
 

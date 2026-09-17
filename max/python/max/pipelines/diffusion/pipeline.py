@@ -56,7 +56,7 @@ from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
-    from max.experimental.nn import CompiledModel
+    from max.experimental.compilation import CompiledCallable
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.model_manifest import ModelManifest
     from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -139,7 +139,7 @@ class PixelGenerationPipeline(
         self._use_module = False
         self._use_executor = False
         self._module: PixelGenerationModule | None = None
-        self._compiled: CompiledModel | None = None
+        self._compiled: CompiledCallable | None = None
         self._executor: PipelineExecutor[Any, Any, Any] | None = None
         self._pipeline_model: DiffusionPipeline | None = None
 
@@ -150,7 +150,7 @@ class PixelGenerationPipeline(
                 # ModuleV3 path: construct the Module under F.lazy(), compose
                 # the manifest's loader through the Module tree's
                 # query-translating adapters, then compile.  Compilation,
-                # session lifecycle, and the CompiledModel handle all live
+                # session lifecycle, and the CompiledCallable handle all live
                 # here -- the Module itself carries only structure (forward +
                 # input_types) and the request/response I/O contract
                 # (prepare_inputs + from_outputs).

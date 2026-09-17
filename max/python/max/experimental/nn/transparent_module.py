@@ -33,18 +33,6 @@ class TransparentModule(Module[_P, _R]):
     behave as an ordinary opaque :class:`Module`.
     """
 
-    #: Whether this instance is name-transparent. Public so a dual-mode module
-    #: can toggle it (e.g. transparent over separate weights, opaque over a
-    #: single fused weight).
+    #: Settable per instance. A module that holds either separate weights or
+    #: one fused weight sets this to ``False`` in the fused case.
     name_transparent: bool = True
-
-    def _qualify_name(self, prefix: str, name: str) -> str:
-        """Returns ``name`` unchanged, dropping this module's own segment.
-
-        A transparent module contributes no path segment of its own, so its
-        descendants attach at the parent's level. With :attr:`name_transparent`
-        off, prepends the ordinary ``prefix``.
-        """
-        if not self.name_transparent:
-            return super()._qualify_name(prefix, name)
-        return name

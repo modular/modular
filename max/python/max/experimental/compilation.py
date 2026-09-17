@@ -178,15 +178,19 @@ def _input_buffers(
     """Converts the tensor arguments of a call to buffers for the engine.
 
     Each tensor is checked against its staged layout and contributes one
-    buffer per shard. Raises ``TypeError`` if an argument is not a tensor and
-    ``ValueError`` if a tensor does not match its layout.
+    buffer per shard. A single-device argument may be passed as its
+    :class:`~max.driver.Buffer`, which is how the pipelines pass their
+    inputs. Raises ``TypeError`` if an argument is neither and ``ValueError``
+    if it does not match its layout.
     """
     buffers: list[Buffer] = []
     for name, layout, arg in _align_signature(layouts, treedef, args, kwargs):
+        if isinstance(arg, Buffer):
+            arg = Tensor(storage=arg)
         if not isinstance(arg, Tensor):
             raise TypeError(
-                f"argument {name}: expected a Tensor, got "
-                f"{type(arg).__name__}; use execute_raw()"
+                f"argument {name}: expected a Tensor or Buffer, got "
+                f"{type(arg).__name__}"
             )
         shards = arg.local_shards
         devices = [shard.device for shard in shards]

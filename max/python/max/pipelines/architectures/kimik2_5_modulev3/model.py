@@ -38,7 +38,7 @@ from max.driver import Buffer, Device, DeviceSpec, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.experimental.nn import CompiledModel
+from max.experimental.compilation import CompiledCallable
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -96,8 +96,8 @@ class KimiK2_5Model(
         KimiK2_5BatchProcessor
     )
 
-    vision_model: CompiledModel[Any, Any] | None
-    language_model: CompiledModel[Any, Any]
+    vision_model: CompiledCallable[Any, Any] | None
+    language_model: CompiledCallable[Any, Any]
 
     def __init__(
         self,
@@ -133,8 +133,10 @@ class KimiK2_5Model(
         # The base hook is typed loosely (``Callable``); both towers here come
         # out of ``Module.compile``.
         vision_model, language_model = self.load_model()
-        assert isinstance(language_model, CompiledModel)
-        assert vision_model is None or isinstance(vision_model, CompiledModel)
+        assert isinstance(language_model, CompiledCallable)
+        assert vision_model is None or isinstance(
+            vision_model, CompiledCallable
+        )
         self.vision_model, self.language_model = vision_model, language_model
 
         if self._batch_processor is not None:
@@ -151,7 +153,7 @@ class KimiK2_5Model(
             )
 
     @property
-    def model(self) -> CompiledModel[Any, Any]:
+    def model(self) -> CompiledCallable[Any, Any]:
         """Expose language model for graph capture/replay.
 
         Only the language model is captured since vision runs

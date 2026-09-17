@@ -49,7 +49,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.experimental.nn import CompiledModel
+from max.experimental.compilation import CompiledCallable
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights
@@ -242,7 +242,7 @@ class LanguageModelStage:
             ).to(device)
         # `_Step` widens `LanguageModel`'s two outputs to four, which the
         # compiled type cannot express: it is derived from the base signature.
-        self.model: CompiledModel[..., Any] = module.compile(
+        self.model: CompiledCallable[..., Any] = module.compile(
             *module.input_types(BATCH),
             weights=convert_language_model_state(weights, config, dtype),
         )
@@ -495,7 +495,7 @@ class DepthDecoderStage:
             module = _Frame(
                 config, language_model_config.semantic_vocab_size, recipe
             ).to(device)
-        self.decoder: CompiledModel[..., Any] = module.compile(
+        self.decoder: CompiledCallable[..., Any] = module.compile(
             *module.input_types(),
             weights=convert_depth_decoder_state(
                 weights, language_model, language_model_config, dtype

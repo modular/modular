@@ -47,9 +47,8 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import hashlib
 import weakref
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -86,7 +85,6 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Graph,
-    Type,
     Value,
     ops,
 )
@@ -95,8 +93,6 @@ if TYPE_CHECKING:
     from max.experimental.sharding import DeviceMapping, DeviceMesh
 
 Ex = TypeVar("Ex", bound=BaseException)
-#: What a caller files beside a shared subgraph body, handed back unchanged.
-Entry = TypeVar("Entry")
 
 _SEED: Tensor | None = None
 
@@ -531,23 +527,6 @@ class LazyRealizationContext(EagerRealizationContext):
         self.graph.__exit__(exception_type, exception, traceback)
 
 
-def _fresh_subgraph_name(graph: Graph, base: str) -> str:
-    """Returns ``base`` or a numbered variant not yet taken on ``graph``.
-
-    ``graph``'s own name counts as taken: a subgraph sharing it would make
-    ``mo.call`` resolve to the enclosing graph, failing verification with "Only
-    subgraphs can be called". That happens whenever a graph is named after the
-    same callable it lowers to a subgraph.
-    """
-    taken = {*graph._subgraphs, graph.name}
-    if base not in taken:
-        return base
-    i = 1
-    while f"{base}_{i}" in taken:
-        i += 1
-    return f"{base}_{i}"
-
-
 class GraphRealizationContext(RealizationContext):
     """A realization context for ahead-of-time graph compilation.
 
@@ -738,134 +717,6 @@ def subgraph_context() -> (
     ):
         return ctx
     return None
-
-
-def define_subgraph(
-    ctx: GraphRealizationContext | LazyRealizationContext,
-    name: str,
-    input_types: Sequence[Type[Any]],
-    build_body: Callable[[list[Value[Any]]], Sequence[Value[Any]]],
-    *,
-    key: str | None = None,
-) -> Graph:
-    """Defines a deduplicated subgraph on ``ctx`` and returns it.
-
-    Works for any graph-building context — ahead-of-time graph or lazy — since
-    it reasons only in graph values and so is independent of when ``ctx``
-    realizes. ``build_body(inputs) -> outputs`` traces the body.
-
-    Bodies are deduplicated so a repeated call reuses one definition. When
-    ``key`` is given, it is the dedup key: two calls with the same ``key`` share
-    a definition and the caller vouches that their bodies match. When ``key`` is
-    ``None``, the body's IR hash is the key, so only bodies that print to
-    identical IR share.
-
-    ``ctx``'s signal buffers are appended as trailing subgraph inputs so
-    collectives in the body work; the caller passes the matching signal values
-    (``ctx.signal_buffers``) when it emits :func:`~max.graph.ops.call`.
-    """
-    cache = ctx.subgraph_cache
-    if cache is None:
-        raise TypeError("define_subgraph requires the root trace context.")
-
-    # A keyed hit answers before tracing; the caller keeps its own out defs.
-    if key is not None and (found := cache.get(key)) is not None:
-        return found[0]
-
-    with open_subgraph(ctx, key or name, input_types) as subgraph:
-        n = len(input_types)
-        subgraph.output(*build_body(list(subgraph.inputs[:n])))
-    return share_subgraph(ctx, subgraph, None, key=key)[0]
-
-
-@contextlib.contextmanager
-def open_subgraph(
-    ctx: GraphRealizationContext | LazyRealizationContext,
-    name: str,
-    input_types: Sequence[Type[Any]],
-    *,
-    prefix: str = "",
-) -> Generator[Graph]:
-    """Opens a fresh subgraph on ``ctx``, entered under its own child context.
-
-    ``ctx``'s signal buffers become trailing inputs so collectives in the body
-    work; the caller appends ``ctx.signal_buffers`` to its
-    :func:`~max.graph.ops.call` operands to match.
-
-    Args:
-        ctx: The root trace context to add the subgraph to.
-        name: The base name for the symbol, numbered when already taken.
-        input_types: Operand types, excluding the trailing signal buffers.
-        prefix: What names declared in the body are relative to.
-
-    Yields:
-        The subgraph, whose leading inputs are the operands'.
-    """
-    signals = ctx.signal_buffers or []
-    subgraph = ctx.graph.add_subgraph(
-        _fresh_subgraph_name(ctx.graph, name),
-        input_types=[*input_types, *(b.type for b in signals)],
-        custom_extensions=ctx.graph.kernel_libraries_paths,
-        devices=list(ctx.graph.device_chains),
-    )
-    child = GraphRealizationContext(
-        subgraph,
-        signal_buffers=[i.buffer for i in subgraph.inputs[len(input_types) :]]
-        or None,
-        prefix=prefix,
-    )
-    # child.subgraph_cache stays None, so a nested call in the body inlines.
-    with realization_context(child), child:
-        yield subgraph
-
-
-def share_subgraph(
-    ctx: GraphRealizationContext | LazyRealizationContext,
-    subgraph: Graph,
-    entry: Entry,
-    *,
-    key: str | None = None,
-) -> tuple[Graph, Entry]:
-    """Files a traced body for reuse, or discards it for an identical one.
-
-    A body already filed under the same ``key`` -- or, when no key is given,
-    one whose IR hashes the same -- stands in for this one, which is erased.
-
-    Args:
-        ctx: The root trace context owning the deduplication table.
-        subgraph: The body just traced, erased here when an identical body is
-            already filed.
-        entry: Whatever the caller needs at the call site but can only learn
-            while tracing, filed beside the body and handed back unchanged.
-            ``as_subgraph`` files the output tree structure, which is what
-            rebuilds a return value from the call's flat results.
-        key: What identifies the body, or :obj:`None` to hash the traced IR.
-
-    Returns:
-        The subgraph to call and the entry filed with it -- the already-filed
-        body's, when this one duplicated it.
-
-    Raises:
-        TypeError: If ``ctx`` owns no deduplication table.
-    """
-    if ctx.subgraph_cache is None:
-        raise TypeError("subgraph dedup requires the root trace context.")
-    if key is None:
-        # The symbol name is what a reader sees, so it is not the key: naming
-        # it after one would print the argument structure into every mo.call.
-        asm = subgraph._mlir_op.get_asm(
-            assume_verified=True,
-            enable_debug_info=False,
-            print_generic_op_form=True,
-            use_local_scope=True,
-        ).replace(f'"{subgraph.name}"', '"_"', 1)
-        key = hashlib.sha256(asm.encode()).hexdigest()
-    if (filed := ctx.subgraph_cache.get(key)) is not None:
-        ctx.graph._subgraphs.pop(subgraph.name, None)
-        subgraph._mlir_op.erase()
-        return filed
-    ctx.subgraph_cache[key] = (subgraph, entry)
-    return subgraph, entry
 
 
 __all__ = [

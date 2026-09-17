@@ -41,7 +41,7 @@ from dataclasses import replace
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
-from max.experimental.nn.module import CompiledModel
+from max.experimental.compilation import CompiledCallable
 from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
 from max.nn.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
@@ -276,7 +276,7 @@ class ServeGraphCaptureRunner:
                     batch_size, batch_characteristics
                 ) as model_inputs:
                     input_buffers = model_inputs.buffers
-                    if isinstance(self._model, CompiledModel):
+                    if isinstance(self._model, CompiledCallable):
                         output_buffers = self._model.engine_model.capture(
                             _pack_model_graph_key(graph_key),
                             *input_buffers,
@@ -456,7 +456,7 @@ class ServeGraphCaptureRunner:
                 *verify_inputs.buffers,
             )
 
-        if isinstance(self._model, CompiledModel):
+        if isinstance(self._model, CompiledCallable):
             self._model.engine_model.replay(
                 packed_model_graph_key,
                 *captured_inputs,

@@ -274,6 +274,11 @@ class LoRA(TransparentModule[[Tensor], Tensor]):
             )
         in_dim = int(weight.shape[1])
         self.module = module
+        # The wrapper holds no parameters, so it takes the wrapped module's
+        # visibility in parameter names and hides the ``module`` attribute,
+        # keeping the base weights at their checkpoint paths.
+        self.name_transparent = module.name_transparent
+        module.name_transparent = True
         self.max_lora_seq_len = max_lora_seq_len
         self.max_lora_rank = max_lora_rank
         self.fused = len(projection_dims) == 3
@@ -368,20 +373,6 @@ class LoRA(TransparentModule[[Tensor], Tensor]):
                 shrunk, self.lora_b.get(), routing, self.max_lora_seq_len
             )
         return _sliced_add(base, delta, routing.end_idx)
-
-    def _qualify_name(self, prefix: str, name: str) -> str:
-        """Names the wrapped module's params as if this LoRA were absent.
-
-        The wrapper holds no parameters of its own, so it must stay invisible
-        to naming: the base weights keep the exact checkpoint paths they'd have
-        unwrapped. Drop the ``module`` holder segment this wrapper introduces,
-        then delegate to the wrapped module's own (possibly name-transparent)
-        qualification at this LoRA's position -- so an opaque leaf keeps its
-        native leaf name (``o_proj.weight``, not ``module.weight``) and a
-        transparent ``QKVLinear`` still exposes native ``q_proj``/``k_proj``/
-        ``v_proj``.
-        """
-        return self.module._qualify_name(prefix, name.removeprefix("module."))
 
 
 def lora_layers(model: Module[..., Any]) -> Iterator[tuple[str, LoRA]]:

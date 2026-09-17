@@ -15,18 +15,18 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
+from max.experimental.nn import Module, as_subgraph
 from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
 from max.experimental.nn.common_layers.functional_kernels import local_map
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.common_layers.mesh_axis import DP
-from max.experimental.nn.module import subgraphable
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
@@ -168,17 +168,14 @@ class DeepseekV3TextModel(
         scale = self.rope.compute_scale(math.sqrt(1.0 / qk_head_dim))
         layers = []
         for i in range(config.num_hidden_layers):
-            layer = DeepseekV3TransformerBlock(
-                config=config,
-                layer_idx=i,
-                attention_scale=scale,
-                ep_batch_manager=ep_batch_manager,
+            layers.append(
+                DeepseekV3TransformerBlock(
+                    config=config,
+                    layer_idx=i,
+                    attention_scale=scale,
+                    ep_batch_manager=ep_batch_manager,
+                )
             )
-
-            # Subgraph the blocks with MoE.
-            if isinstance(layer.mlp, QuantizedMoE):
-                layer = subgraphable(layer, name="moe_block")
-            layers.append(layer)
 
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
@@ -240,9 +237,14 @@ class DeepseekV3TextModel(
             # CPU batch_context_length so the graph stays capturable.
             mla_prefill_metadata.buffer_lengths = batch_context_length
 
+        # All MoE blocks share one subgraph, built from the first block. Each
+        # call resolves the weights of its own layer.
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
-            h = layer(
+            call: Callable[..., Tensor] = layer
+            if isinstance(layer.mlp, QuantizedMoE):
+                call = as_subgraph(layer, name="moe_block")
+            h = call(
                 layer_idx_tensor,
                 h,
                 kv_collection,

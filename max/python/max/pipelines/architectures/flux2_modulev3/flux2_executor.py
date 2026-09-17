@@ -68,7 +68,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
        ``HasLoaderAdapter`` sub-Module automatically).
     3. Calling :meth:`~max.experimental.nn.Module.compile` with
        :meth:`input_types` and the materialised weights.
-    4. Driving the resulting ``CompiledModel`` against
+    4. Driving the resulting ``CompiledCallable`` against
        :meth:`prepare_inputs` and :meth:`from_outputs` for each batch.
     """
 

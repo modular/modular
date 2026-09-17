@@ -21,11 +21,13 @@ graph inputs are added here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
+from max.experimental.nn import Module, as_subgraph
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     DeviceMapping,
@@ -46,6 +48,7 @@ from ...deepseekV3_modulev3.deepseekV3 import (
     gather_last_tokens,
     split_replicated_batch,
 )
+from ...deepseekV3_modulev3.layers.quant_moe import QuantizedMoE
 from ...deepseekV3_modulev3.model_config import DeepseekV3Config
 
 
@@ -193,9 +196,13 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             # CPU batch_context_length so the graph stays capturable.
             mla_prefill_metadata.buffer_lengths = batch_context_length
 
+        # The MoE blocks share one subgraph, as in ``DeepseekV3TextModel``.
         for idx, layer in enumerate(lm.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
-            h = layer(
+            call: Callable[..., Tensor] = layer
+            if isinstance(layer.mlp, QuantizedMoE):
+                call = as_subgraph(layer, name="moe_block")
+            h = call(
                 layer_idx_tensor,
                 h,
                 kv_collection,

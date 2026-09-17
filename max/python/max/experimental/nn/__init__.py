@@ -14,7 +14,7 @@
 
 Provides the :class:`Module` base class, the :func:`module_dataclass`
 decorator, and :meth:`Module.compile`, which traces ``forward`` against
-symbolic inputs and returns an ahead-of-time-compiled ``CompiledModel``. The
+symbolic inputs and returns an ahead-of-time-compiled ``CompiledCallable``. The
 same ``forward`` body runs eagerly, traces to a :class:`~max.graph.Graph`, or
 compiles, depending on the active realization context.
 
@@ -54,16 +54,16 @@ Example:
     assert np.allclose(result.to_numpy(), np.zeros((3, 10)))
 """
 
+from max.experimental.compilation import as_subgraph
+
 from .common_layers.lora_wrapper import LoRA, lora_layers, lora_parameters
 from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
 from .module import (
-    CompiledModel,
     Module,
     PinnedDeviceTensor,
     module_dataclass,
-    subgraphable,
 )
 from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
@@ -71,7 +71,6 @@ from .sequential import ModuleList, Sequential
 from .transparent_module import TransparentModule
 
 __all__ = [
-    "CompiledModel",
     "Conv2d",
     "Embedding",
     "GemmaRMSNorm",
@@ -87,8 +86,8 @@ __all__ = [
     "Sequential",
     "TransparentModule",
     "TransposedRotaryEmbedding",
+    "as_subgraph",
     "lora_layers",
     "lora_parameters",
     "module_dataclass",
-    "subgraphable",
 ]
