@@ -396,7 +396,7 @@ def _enqueue_apple_fp8_materialize_dense[
     `_enqueue_apple_fp4_materialize_dense`.
     """
     var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](n * k)
-    var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(n, k))
+    var wdense_tt = TileTensor(wdense_dev, row_major(n, k))
 
     enqueue_fp8_materialize[.bfloat16](wdense_tt, weight, ctx)
 

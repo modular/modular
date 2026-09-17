@@ -37,7 +37,7 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
-from layout import TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -77,6 +77,9 @@ def gemm_kernel_rdna[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -88,9 +91,9 @@ def gemm_kernel_rdna[
     WARP_TILE_M: Int = 1,
     WARP_TILE_N: Int = 4,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     m: Int32,
     n: Int32,
     k: Int32,
@@ -108,6 +111,9 @@ def gemm_kernel_rdna[
         c_layout: Memory layout of the output tile `c`.
         a_layout: Memory layout of the input tile `a`.
         b_layout: Memory layout of the input tile `b`.
+        c_engine: `TensorEngine` of the output tile `c`.
+        a_engine: `TensorEngine` of the input tile `a`.
+        b_engine: `TensorEngine` of the input tile `b`.
         transpose_b: Whether `b` is stored as `(N, K)` instead of `(K, N)`
             (defaults to `True`).
         elementwise_lambda_fn: Optional per-element epilogue that replaces
@@ -156,6 +162,9 @@ def gemm_kernel_rdna[
             c_layout,
             a_layout,
             b_layout,
+            c_engine,
+            a_engine,
+            b_engine,
             transpose_b,
             elementwise_lambda_fn,
             s_type,
@@ -168,6 +177,9 @@ def gemm_kernel_rdna[
             c_layout,
             a_layout,
             b_layout,
+            c_engine,
+            a_engine,
+            b_engine,
             transpose_b,
             elementwise_lambda_fn,
             s_type,
@@ -188,13 +200,16 @@ def _naive_matmul_kernel[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
     transpose_b: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     s_type: DType,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     m: Int,
     n: Int,
     k: Int,
@@ -248,6 +263,7 @@ def _naive_matmul_kernel[
 def _load_tile_to_smem[
     dtype: DType,
     tile_layout: TensorLayout,
+    tile_engine: TensorEngine,
     transpose_b: Bool,
     is_b_tile: Bool,
     BLOCK_ROWS: Int,
@@ -256,7 +272,7 @@ def _load_tile_to_smem[
     NUM_THREADS: Int,
 ](
     smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
-    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin],
+    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin, Engine=tile_engine],
     block_row_offset: Int,
     k_offset: Int,
     max_rows: Int,
@@ -335,13 +351,14 @@ def _load_tile_to_smem[
 def _load_tile_regs[
     dtype: DType,
     tile_layout: TensorLayout,
+    tile_engine: TensorEngine,
     BLOCK_ROWS: Int,
     BLOCK_K: Int,
     NUM_THREADS: Int,
     VECS_PER_THREAD: Int,
     VECTOR_WIDTH: Int,
 ](
-    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin],
+    tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin, Engine=tile_engine],
     block_row_offset: Int,
     k_offset: Int,
     max_rows: Int,
@@ -453,6 +470,9 @@ def _wmma_matmul_kernel[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
     transpose_b: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     s_type: DType,
@@ -464,9 +484,9 @@ def _wmma_matmul_kernel[
     WARP_TILE_M: Int = 1,
     WARP_TILE_N: Int = 4,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     m: Int,
     n: Int,
     k: Int,
@@ -559,10 +579,24 @@ def _wmma_matmul_kernel[
 
         # Prologue: stage tile 0 into LDS via registers.
         var a_regs = _load_tile_regs[
-            a_type, a_layout, BLOCK_M, BLOCK_K, NUM_THREADS, A_VECS, VW
+            a_type,
+            a_layout,
+            a_engine,
+            BLOCK_M,
+            BLOCK_K,
+            NUM_THREADS,
+            A_VECS,
+            VW,
         ](a, block_m_offset, 0, m, tid)
         var b_regs = _load_tile_regs[
-            b_type, b_layout, BLOCK_N, BLOCK_K, NUM_THREADS, B_VECS, VW
+            b_type,
+            b_layout,
+            b_engine,
+            BLOCK_N,
+            BLOCK_K,
+            NUM_THREADS,
+            B_VECS,
+            VW,
         ](b, block_n_offset, 0, n, tid)
         _store_tile_regs[
             a_type, BLOCK_M, BLOCK_K, SMEM_STRIDE, NUM_THREADS, A_VECS, VW
@@ -577,10 +611,24 @@ def _wmma_matmul_kernel[
             if k_tile + 1 < num_k_tiles:
                 var nk = (k_tile + 1) * BLOCK_K
                 a_regs = _load_tile_regs[
-                    a_type, a_layout, BLOCK_M, BLOCK_K, NUM_THREADS, A_VECS, VW
+                    a_type,
+                    a_layout,
+                    a_engine,
+                    BLOCK_M,
+                    BLOCK_K,
+                    NUM_THREADS,
+                    A_VECS,
+                    VW,
                 ](a, block_m_offset, nk, m, tid)
                 b_regs = _load_tile_regs[
-                    b_type, b_layout, BLOCK_N, BLOCK_K, NUM_THREADS, B_VECS, VW
+                    b_type,
+                    b_layout,
+                    b_engine,
+                    BLOCK_N,
+                    BLOCK_K,
+                    NUM_THREADS,
+                    B_VECS,
+                    VW,
                 ](b, block_n_offset, nk, n, tid)
 
             _compute_ktile[
@@ -638,6 +686,7 @@ def _wmma_matmul_kernel[
         _load_tile_to_smem[
             a_type,
             a_layout,
+            a_engine,
             transpose_b,
             is_b_tile=False,
             BLOCK_ROWS=BLOCK_M,
@@ -648,6 +697,7 @@ def _wmma_matmul_kernel[
         _load_tile_to_smem[
             b_type,
             b_layout,
+            b_engine,
             transpose_b,
             is_b_tile=True,
             BLOCK_ROWS=BLOCK_N,
@@ -679,6 +729,7 @@ def _wmma_matmul_kernel[
                 _load_tile_to_smem[
                     a_type,
                     a_layout,
+                    a_engine,
                     transpose_b,
                     is_b_tile=False,
                     BLOCK_ROWS=BLOCK_M,
@@ -689,6 +740,7 @@ def _wmma_matmul_kernel[
                 _load_tile_to_smem[
                     b_type,
                     b_layout,
+                    b_engine,
                     transpose_b,
                     is_b_tile=True,
                     BLOCK_ROWS=BLOCK_N,
