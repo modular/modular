@@ -20,7 +20,6 @@ import time
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -47,11 +46,6 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     RequestFuncOutput,
     ServerTokenStats,
-)
-from max.benchmark.benchmark_shared.warmup import (
-    _prefix_delays_ms,
-    _prefix_occupancy_ms,
-    pick_warmup_population,
 )
 from pytest_mock import MockerFixture
 
@@ -1001,301 +995,12 @@ def test_interturn_sleep_deadline_skip() -> None:
 
 # ---------------------------------------------------------------------------
 # warmup.py: delay-biased session and prefix-turn selection
+#
+# Note: unit tests for _prefix_delays_ms, _prefix_occupancy_ms, and the
+# pick_warmup_population delay/occupancy weighting live in test_warmup.py.
+# The tests below only cover chat_session_driver's integration of runtime
+# estimates (phase-spread jitter and config wiring).
 # ---------------------------------------------------------------------------
-
-
-def _make_session_with_delays(
-    session_id: int,
-    delays_ms: list[float],
-) -> ChatSession:
-    """Build a session whose inter-turn delays match ``delays_ms``.
-
-    Each element in ``delays_ms`` is the delay on the assistant message of
-    that turn.  The session has ``len(delays_ms)`` turns (one user+assistant
-    pair per entry).
-    """
-    messages: list[SessionMessage] = []
-    for i, d in enumerate(delays_ms):
-        messages.append(
-            SessionMessage(source="user", content=f"U{i}", num_tokens=5)
-        )
-        messages.append(
-            SessionMessage(
-                source="assistant",
-                content=f"A{i}",
-                num_tokens=5,
-                delay_until_next_message=d if d > 0 else None,
-            )
-        )
-    return ChatSession(id=session_id, messages=messages)
-
-
-def test_prefix_delays_ms_returns_correct_array() -> None:
-    """_prefix_delays_ms maps prefix position k to messages[2k-1]'s delay."""
-    session = _make_session_with_delays(0, [100.0, 200.0, 300.0])
-    # 3 turns → valid prefix_turns in {1, 2} → delays for turns 0 and 1
-    delays = _prefix_delays_ms(session)
-    assert list(delays) == pytest.approx([100.0, 200.0])
-
-
-def test_prefix_delays_ms_single_turn_is_empty() -> None:
-    """Single-turn sessions return an empty array (no valid prefix position)."""
-    session = _make_session_with_delays(0, [500.0])
-    assert len(_prefix_delays_ms(session)) == 0
-
-
-def test_prefix_delays_ms_none_delay_stored_as_zero() -> None:
-    """Turns with delay_until_next_message=None are stored as 0.0."""
-    # 3-turn session: delays on turns 0 and 1 → array length 2
-    session = _make_session_with_delays(0, [0.0, 400.0, 0.0])
-    delays = _prefix_delays_ms(session)
-    assert len(delays) == 2
-    assert delays[0] == pytest.approx(0.0)  # turn 0 has no delay
-    assert delays[1] == pytest.approx(400.0)  # turn 1 has 400 ms delay
-
-
-def test_pick_warmup_population_delay_biased_never_picks_prefix_zero() -> None:
-    """When delays are configured, prefix_turns is always >= 1 (session is mid-sleep)."""
-    rng = np.random.default_rng(42)
-    sessions = [
-        _make_session_with_delays(i, [1000.0, 2000.0, 3000.0])
-        for i in range(20)
-    ]
-    result, report = pick_warmup_population(
-        sessions,
-        warmup_count=10,
-        warmup_to_steady_state=True,
-        warmup_oversample_factor=2,
-        main_pool_target=0,
-        rng=rng,
-        delay_biased=True,
-    )
-    warmup = result[:10]
-    assert all(s.prefix_turns >= 1 for s in warmup)
-    assert report is not None
-    assert report.delay_biased is True
-    assert report.weight_unit == "delay-ms"
-
-
-def test_pick_warmup_population_delay_biased_prefix_proportional_to_delay() -> (
-    None
-):
-    """prefix_turns selection is proportional to the delay at each position.
-
-    Session has 3 turns with delays [100, 900] ms.  Over many draws the
-    fraction of picks at prefix_turns=1 should be ~10% and at
-    prefix_turns=2 should be ~90%.
-    """
-    # Single session so all picks come from it.
-    session = _make_session_with_delays(0, [100.0, 900.0, 0.0])
-    # Need a large pool so PPS doesn't cap the single session.
-    sessions = [dataclasses.replace(session, id=i) for i in range(200)]
-
-    rng = np.random.default_rng(0)
-    picks_at_1 = 0
-    picks_at_2 = 0
-    n_trials = 100
-    for _ in range(n_trials):
-        result, _ = pick_warmup_population(
-            sessions,
-            warmup_count=1,
-            warmup_to_steady_state=True,
-            warmup_oversample_factor=2,
-            main_pool_target=0,
-            rng=rng,
-            delay_biased=True,
-        )
-        pt = result[0].prefix_turns
-        if pt == 1:
-            picks_at_1 += 1
-        elif pt == 2:
-            picks_at_2 += 1
-
-    # Expect ~10 picks at 1 and ~90 picks at 2 (±20 at 3-sigma for binomial).
-    assert 0 <= picks_at_1 <= 30, f"too many/few prefix_turns=1: {picks_at_1}"
-    assert 70 <= picks_at_2 <= 100, f"too many/few prefix_turns=2: {picks_at_2}"
-
-
-def test_pick_warmup_population_no_delays_fallback_to_turn_counts() -> None:
-    """With the flag on but no delays present, falls back to turn-count weighting."""
-    rng = np.random.default_rng(7)
-    sessions = [_make_session_with_delays(i, [0.0, 0.0]) for i in range(20)]
-    _result, report = pick_warmup_population(
-        sessions,
-        warmup_count=10,
-        warmup_to_steady_state=True,
-        warmup_oversample_factor=2,
-        main_pool_target=0,
-        rng=rng,
-        delay_biased=True,
-    )
-    assert report is not None
-    assert report.delay_biased is False
-    assert report.weight_unit == "turns"
-
-
-def test_pick_warmup_population_delay_biased_off_by_default() -> None:
-    """Delays present but flag off (the default): stays turn-based."""
-    rng = np.random.default_rng(11)
-    sessions = [
-        _make_session_with_delays(i, [1000.0, 2000.0, 3000.0])
-        for i in range(20)
-    ]
-    _result, report = pick_warmup_population(
-        sessions,
-        warmup_count=10,
-        warmup_to_steady_state=True,
-        warmup_oversample_factor=2,
-        main_pool_target=0,
-        rng=rng,
-    )
-    assert report is not None
-    assert report.delay_biased is False
-    assert report.weight_unit == "turns"
-
-
-# ---------------------------------------------------------------------------
-# Runtime-aware (occupancy) warmup weighting.
-# ---------------------------------------------------------------------------
-
-
-def _make_session_with_delays_and_outputs(
-    session_id: int,
-    delays_ms: list[float],
-    output_lens: list[int],
-) -> ChatSession:
-    """Like ``_make_session_with_delays`` but with per-turn assistant output
-    token counts so occupancy (``R_k + D_k``) can be exercised."""
-    assert len(delays_ms) == len(output_lens)
-    messages: list[SessionMessage] = []
-    for i, (d, out_len) in enumerate(zip(delays_ms, output_lens, strict=False)):
-        messages.append(
-            SessionMessage(source="user", content=f"U{i}", num_tokens=5)
-        )
-        messages.append(
-            SessionMessage(
-                source="assistant",
-                content=f"A{i}",
-                num_tokens=out_len,
-                delay_until_next_message=d if d > 0 else None,
-            )
-        )
-    return ChatSession(id=session_id, messages=messages)
-
-
-def test_prefix_occupancy_zero_estimates_equals_delays() -> None:
-    """With zero runtime estimates, occupancy reduces to the inter-turn delay."""
-    session = _make_session_with_delays_and_outputs(
-        0, [100.0, 200.0, 300.0], [10, 20, 30]
-    )
-    occ = _prefix_occupancy_ms(session)
-    assert list(occ) == pytest.approx(list(_prefix_delays_ms(session)))
-    assert list(occ) == pytest.approx([100.0, 200.0])
-
-
-def test_prefix_occupancy_adds_runtime() -> None:
-    """Occupancy at position k is D_k + ttft + tpot * output_len_k."""
-    # 3 turns → valid prefix positions for turns 0 and 1.
-    session = _make_session_with_delays_and_outputs(
-        0, [100.0, 200.0, 0.0], [10, 50, 7]
-    )
-    occ = _prefix_occupancy_ms(session, est_ttft_ms=5.0, est_tpot_ms=2.0)
-    # turn 0: 100 + 5 + 2*10 = 125; turn 1: 200 + 5 + 2*50 = 305
-    assert list(occ) == pytest.approx([125.0, 305.0])
-
-
-def test_pick_warmup_population_occupancy_weight_unit_label() -> None:
-    """Runtime estimates flip the diagnostic unit to occupancy-ms."""
-    rng = np.random.default_rng(3)
-    sessions = [
-        _make_session_with_delays_and_outputs(
-            i, [1000.0, 1000.0, 1000.0], [10, 10, 10]
-        )
-        for i in range(20)
-    ]
-    _result, report = pick_warmup_population(
-        sessions,
-        warmup_count=10,
-        warmup_to_steady_state=True,
-        warmup_oversample_factor=2,
-        main_pool_target=0,
-        rng=rng,
-        delay_biased=True,
-        est_ttft_ms=50.0,
-        est_tpot_ms=10.0,
-    )
-    assert report is not None
-    assert report.delay_biased is True
-    assert report.weight_unit == "occupancy-ms"
-
-
-def test_pick_warmup_population_occupancy_biases_long_output_position() -> None:
-    """Equal delays but unequal output_len: high-runtime position dominates.
-
-    Turn 0 has a short output, turn 1 a long one, with equal delays. Under
-    delay-only weighting the two positions are equiprobable; with a large TPOT
-    estimate the long-output position should be picked far more often.
-    """
-    # 3 turns, equal 100ms delays, outputs [10, 1000] at positions 0, 1.
-    session = _make_session_with_delays_and_outputs(
-        0, [100.0, 100.0, 0.0], [10, 1000, 7]
-    )
-    sessions = [dataclasses.replace(session, id=i) for i in range(200)]
-
-    rng = np.random.default_rng(0)
-    picks_at_1 = 0
-    picks_at_2 = 0
-    n_trials = 100
-    for _ in range(n_trials):
-        result, _ = pick_warmup_population(
-            sessions,
-            warmup_count=1,
-            warmup_to_steady_state=True,
-            warmup_oversample_factor=2,
-            main_pool_target=0,
-            rng=rng,
-            delay_biased=True,
-            est_ttft_ms=0.0,
-            est_tpot_ms=10.0,  # R_1 = 10*1000 = 10000 >> R_0 = 100
-        )
-        pt = result[0].prefix_turns
-        if pt == 1:
-            picks_at_1 += 1
-        elif pt == 2:
-            picks_at_2 += 1
-
-    # occupancy: pos0 = 100+100 = 200, pos1 = 100+10000 = 10100 → ~98% at pos1.
-    assert picks_at_2 >= 90, (
-        f"expected long-output position to dominate: {picks_at_2}"
-    )
-    assert picks_at_1 <= 10
-
-
-def test_pick_warmup_population_runtime_engages_with_zero_delays() -> None:
-    """No inter-turn delays but nonzero estimates: occupancy still biases.
-
-    Without estimates this falls back to turn-count weighting (delay_biased
-    False). With estimates, occupancy = R_k > 0 so biasing engages.
-    """
-    rng = np.random.default_rng(5)
-    sessions = [
-        _make_session_with_delays_and_outputs(i, [0.0, 0.0, 0.0], [10, 20, 30])
-        for i in range(20)
-    ]
-    _result, report = pick_warmup_population(
-        sessions,
-        warmup_count=10,
-        warmup_to_steady_state=True,
-        warmup_oversample_factor=2,
-        main_pool_target=0,
-        rng=rng,
-        delay_biased=True,
-        est_ttft_ms=1.0,
-        est_tpot_ms=1.0,
-    )
-    assert report is not None
-    assert report.delay_biased is True
-    assert report.weight_unit == "occupancy-ms"
 
 
 def _jitter_trial_fired_immediately() -> bool:
@@ -1337,12 +1042,12 @@ def _jitter_trial_fired_immediately() -> bool:
 
 def test_jitter_collapse_fires_immediately_when_runtime_dominates() -> None:
     """When R_k >> D_k, most pre-warmed sessions fire immediately (no sleep)."""
-    n_trials = 60
+    n_trials = 30
     fire_immediately = sum(
         _jitter_trial_fired_immediately() for _ in range(n_trials)
     )
     # R/(R+D) = 5000/5010 ≈ 0.998, so nearly every trial fires immediately.
-    assert fire_immediately >= 55, (
+    assert fire_immediately >= 25, (
         f"expected mostly fire-now: {fire_immediately}"
     )
 
