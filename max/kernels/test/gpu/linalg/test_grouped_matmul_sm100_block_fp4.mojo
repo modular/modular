@@ -54,6 +54,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -606,11 +607,11 @@ def _test_kernel_impl_base[
         else:
             vendor_blas.matmul(
                 ctx,
-                c_slice,
-                new_a_tensor,
-                new_b_tensor,
-                a_scales=new_a_scales_tensor.as_imm().as_unsafe_any_origin(),
-                b_scales=new_b_scales_tensor.as_imm().as_unsafe_any_origin(),
+                lt_to_tt(c_slice),
+                lt_to_tt(new_a_tensor),
+                lt_to_tt(new_b_tensor),
+                a_scales=lt_to_tt(new_a_scales_tensor).as_immut(),
+                b_scales=lt_to_tt(new_b_scales_tensor).as_immut(),
                 transpose_b=transpose_b,
                 c_row_major=True,
                 alpha=expert_scale,

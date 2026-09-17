@@ -127,19 +127,17 @@ def multistage_gemm_fp32_run[
     ctx.enqueue_copy(c_device, c_host_ptr)
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[store_alignment=alignment](
-            idx, rebind[SIMD[dtype, width]](val)
+        c_tensor.store[alignment=alignment](
+            Coord(idx), rebind[SIMD[dtype, width]](val)
         )
 
     # The config the vendor BLAS fallback hardcodes (KERN-1812).

@@ -40,11 +40,7 @@ from linalg.block_scaled_quantization import block_scaled_matmul
 from layout import (
     CoordLike,
     Coord,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     Idx,
     row_major,
 )
@@ -713,13 +709,8 @@ def bench_mxfp4_amd[
     cb_sfa.init_scales_on_device(init_type, ctx)
     cb_sfb.init_scales_on_device(init_type, ctx)
 
-    # 2D scale layouts for hipBLASLt. M is dynamic (UNKNOWN_VALUE),
-    # N and K_SCALES are comptime-known.
-    comptime sfa_layout = Layout.row_major(UNKNOWN_VALUE, K_SCALES)
-    comptime sfb_layout = Layout.row_major(N_VAL, K_SCALES)
-
-    # Run hipBLASLt on the given tensors. Repacks 2D uint8 scales into
-    # 2D LayoutTensors and calls the handle-taking vendor_blas entry.
+    # Run hipBLASLt on the given tensors via the handle-taking vendor_blas
+    # entry. The 2D scale tiles are passed through as-is.
     @inline(.always)
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -729,27 +720,17 @@ def bench_mxfp4_amd[
         sfa: TileTensor[.float8_e8m0fnu, ...],
         sfb: TileTensor[.float8_e8m0fnu, ...],
     ) raises {imm}:
-        var sfa_lt = LayoutTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin](
-            rebind[ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
-            RuntimeLayout[sfa_layout].row_major(
-                IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
-            ),
-        )
-        var sfb_lt = LayoutTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin](
-            rebind[ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfb.ptr),
-            RuntimeLayout[sfb_layout].row_major(
-                IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))
-            ),
-        )
         with ctx.push_context() as cur_ctx:
-            vendor_blas.matmul[scales_type=DType.float8_e8m0fnu](
+            vendor_blas.matmul[
+                scales_type=DType.float8_e8m0fnu, has_scales=True
+            ](
                 cur_ctx,
                 vendor_blas._get_global_handle[.uint8](ctx),
                 c,
                 a,
                 b,
-                a_scales=sfa_lt,
-                b_scales=sfb_lt,
+                a_scales=sfa.as_immut(),
+                b_scales=sfb.as_immut(),
                 transpose_b=True,
                 c_row_major=True,
             )

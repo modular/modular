@@ -164,30 +164,28 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
     )
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     # Normal epilogue: store the matmul result unchanged (exercises the lambda
     # store path; reference is plain vendor BLAS).
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[store_alignment=alignment * size_of[c_type]()](
-            idx, rebind[SIMD[c_type, width]](val)
+        c_tensor.store[alignment=alignment * size_of[c_type]()](
+            Coord(idx), rebind[SIMD[c_type, width]](val)
         )
 
     # Compute epilogue: out = matmul * C_initial (also checks the coordinate).
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def compute_fn[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return val * c_tensor_lt.load[width=width](idx).cast[_dtype]()
+        return val * c_tensor.load[width=width](Coord(idx)).cast[_dtype]()
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
@@ -213,15 +211,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

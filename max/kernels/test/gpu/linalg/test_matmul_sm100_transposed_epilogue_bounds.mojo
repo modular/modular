@@ -109,18 +109,16 @@ def test_transposed_epilogue_row_straddle[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def store_epilogue[
         _dtype: DType,
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[width=width](idx, val.cast[c_type]())
+        c_tensor.store[width=width](Coord(idx), val.cast[c_type]())
 
     seed(1234)
     rand(a_host._storage, a_host.num_elements())
@@ -156,15 +154,11 @@ def test_transposed_epilogue_row_straddle[
         elementwise_lambda_fn=optional_lambda_fn,
     ](c_tensor, a_tensor, b_tensor, ctx)
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

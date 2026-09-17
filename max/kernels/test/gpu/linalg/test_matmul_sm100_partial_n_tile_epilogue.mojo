@@ -107,11 +107,9 @@ def test_partial_n_tile_compute_epilogue[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def in_bounds_compute_lambda[
         _dtype: DType,
         width: SIMDLength,
@@ -120,7 +118,7 @@ def test_partial_n_tile_compute_epilogue[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor.load[width=width](Coord(idx)).cast[_dtype]()
 
     seed(1234)
     rand(a_host._storage, a_host.num_elements())
@@ -154,15 +152,11 @@ def test_partial_n_tile_compute_epilogue[
         elementwise_compute_lambda_fn=optional_lambda_fn,
     ](c_tensor, a_tensor, b_tensor, ctx)
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -172,11 +166,9 @@ def test_partial_n_tile_compute_epilogue[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    var c_host_copy_lt = c_host_copy.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_host_copy_lt)
+    @__copy_capture(c_host_copy)
     def in_bounds_compute_lambda_local[
         _dtype: DType,
         width: SIMDLength,
@@ -185,7 +177,7 @@ def test_partial_n_tile_compute_epilogue[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return val + c_host_copy_lt.load[width=width](idx).cast[_dtype]()
+        return val + c_host_copy.load[width=width](Coord(idx)).cast[_dtype]()
 
     for i in range(M):
         for j in range(N):

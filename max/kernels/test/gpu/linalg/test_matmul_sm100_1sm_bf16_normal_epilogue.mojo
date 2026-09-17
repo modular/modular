@@ -172,19 +172,17 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
     )
 
-    var c_device_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_device_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_device_lt.store[store_alignment=alignment * size_of[c_type](),](
-            idx, rebind[SIMD[c_type, width]](val)
+        c_tensor.store[alignment=alignment * size_of[c_type](),](
+            Coord(idx), rebind[SIMD[c_type, width]](val)
         )
 
     comptime epi = Optional[elementwise_epilogue_type](
@@ -207,15 +205,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

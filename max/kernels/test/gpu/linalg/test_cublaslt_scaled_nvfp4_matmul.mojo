@@ -173,21 +173,16 @@ def test_block_scaled_nvfp4_cublaslt[
         c_row_major=True,
     )
 
-    var c_ref = c_device_ref_nd.to_layout_tensor()
-    var a_lt = a_device_nd.to_layout_tensor()
-    var b_lt = b_device_nd.to_layout_tensor()
-    var a_scales_lt = a_scales_device_nd.to_layout_tensor()
-    var b_scales_lt = b_scales_device_nd.to_layout_tensor()
     naive_block_scaled_matmul[
         scaling_kind=UMMAKind.KIND_MXF4NVF4,
         SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](
-        c_ref,
-        a_lt,
-        b_lt,
-        a_scales_lt,
-        b_scales_lt,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
         ctx,
     )
 

@@ -102,17 +102,17 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout.tile_tensor import NullableTileTensor
+from layout.tile_tensor import (
+    NullableTileTensor,
+    _ComptimeConditionalTileTensor,
+)
 from std.memory.alloc import Layout as AllocLayout
 from std.utils import IndexList
 from std.utils.variant import Variant
 from max.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
-from std.collections import OptionalReg
 
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
@@ -387,6 +387,11 @@ def _get_global_handle[
     return handle_ptr[]
 
 
+# A disengaged `_ComptimeConditionalTileTensor` stores nothing, so the layout
+# of an absent scale-factor argument only has to name a concrete type.
+comptime _NoScaleFactorsLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+
+
 def matmul[
     use_tf32: Bool = False,
 ](
@@ -436,21 +441,12 @@ def matmul[
     b_layout: Layout,
     *,
     use_tf32: Bool = False,
-    scales_type: DType = a_type,
-    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
-    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
     c_tensor: LayoutTensor[mut=True, c_type, c_layout, _],
     a_tensor: LayoutTensor[mut=False, a_type, a_layout, _],
     b_tensor: LayoutTensor[mut=False, b_type, b_layout, _],
     *,
-    a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
-    ] = None,
-    b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
-    ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -471,14 +467,12 @@ def matmul[
         row_major(Coord(b_tensor.dim(0), b_tensor.dim(1))),
     )
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type](
+        return matmul[use_tf32=use_tf32](
             cur_ctx,
             _get_global_handle[a_type](ctx),
             c_tt,
             a_tt,
             b_tt,
-            a_scales=a_scales,
-            b_scales=b_scales,
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
@@ -512,62 +506,19 @@ def matmul[
 ) raises:
     """Overload accepting TileTensors for all operands and scale factors.
 
-    Converts TileTensor scale factors to LayoutTensor for the core dispatch
-    which passes them through to the cublasLt backend.
+    The scale factors reach the backend with their rank intact, so each
+    backend sees the layout it requires: 5D TCGEN tensors for cuBLASLt, 2D
+    tensors for hipBLASLt.
     """
-    comptime sfa_layout = Layout.row_major(
-        a_scales.static_shape[0],
-        a_scales.static_shape[1],
-        a_scales.static_shape[2],
-        a_scales.static_shape[3],
-        a_scales.static_shape[4],
-    )
-    comptime sfb_layout = Layout.row_major(
-        b_scales.static_shape[0],
-        b_scales.static_shape[1],
-        b_scales.static_shape[2],
-        b_scales.static_shape[3],
-        b_scales.static_shape[4],
-    )
-
-    var a_scales_lt = LayoutTensor[scales_type, sfa_layout, ImmutAnyOrigin](
-        rebind[UnsafePointer[Scalar[scales_type], ImmutAnyOrigin]](
-            a_scales.ptr
-        ),
-        RuntimeLayout[sfa_layout].row_major(
-            IndexList[5](
-                Int(a_scales.dim[0]()),
-                Int(a_scales.dim[1]()),
-                Int(a_scales.dim[2]()),
-                Int(a_scales.dim[3]()),
-                Int(a_scales.dim[4]()),
-            )
-        ),
-    )
-    var b_scales_lt = LayoutTensor[scales_type, sfb_layout, ImmutAnyOrigin](
-        rebind[UnsafePointer[Scalar[scales_type], ImmutAnyOrigin]](
-            b_scales.ptr
-        ),
-        RuntimeLayout[sfb_layout].row_major(
-            IndexList[5](
-                Int(b_scales.dim[0]()),
-                Int(b_scales.dim[1]()),
-                Int(b_scales.dim[2]()),
-                Int(b_scales.dim[3]()),
-                Int(b_scales.dim[4]()),
-            )
-        ),
-    )
-
     with ctx.push_context() as cur_ctx:
-        matmul[use_tf32=use_tf32, scales_type=scales_type](
+        matmul[use_tf32=use_tf32, scales_type=scales_type, has_scales=True](
             cur_ctx,
             _get_global_handle[a_type](ctx),
             c_tensor,
             a_tensor,
             b_tensor,
-            a_scales=a_scales_lt,
-            b_scales=b_scales_lt,
+            a_scales=a_scales.as_immut(),
+            b_scales=b_scales.as_immut(),
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
@@ -583,8 +534,7 @@ def matmul[
     b_type: DType,
     use_tf32: Bool = False,
     scales_type: DType = a_type,
-    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
-    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    has_scales: Bool = False,
 ](
     ctx: DeviceContext,
     handle: Handle,
@@ -592,12 +542,22 @@ def matmul[
     a_tensor: TileTensor[a_type, ...],
     b_tensor: TileTensor[b_type, ...],
     *,
-    a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
-    ] = None,
-    b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
-    ] = None,
+    a_scales: _ComptimeConditionalTileTensor[
+        scales_type, engaged=has_scales, ...
+    ] = _ComptimeConditionalTileTensor[
+        scales_type,
+        _NoScaleFactorsLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
+    b_scales: _ComptimeConditionalTileTensor[
+        scales_type, engaged=has_scales, ...
+    ] = _ComptimeConditionalTileTensor[
+        scales_type,
+        _NoScaleFactorsLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -663,7 +623,7 @@ def matmul[
                 beta=beta,
             )
         elif handle.resolved_backend is Backend.CUBLASLT:
-            _cublasLt_matmul(
+            _cublasLt_matmul[scales_type=scales_type, has_scales=has_scales](
                 ctx,
                 handle._get_cublas(),
                 c_tensor,
@@ -678,7 +638,7 @@ def matmul[
                 beta=beta,
             )
         elif handle.resolved_backend is Backend.HIPBLASLT:
-            _hipblasLt_matmul(
+            _hipblasLt_matmul[scales_type=scales_type, has_scales=has_scales](
                 ctx,
                 handle._get_hipblaslt(),
                 c_tensor,
@@ -1025,8 +985,7 @@ def _cublasLt_matmul[
     a_type: DType,
     b_type: DType,
     scales_type: DType = a_type,
-    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
-    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    has_scales: Bool = False,
 ](
     ctx: DeviceContext,
     handle: cublasHandle_t[_],
@@ -1034,12 +993,22 @@ def _cublasLt_matmul[
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     *,
-    a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
-    ] = None,
-    b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
-    ] = None,
+    a_scales: _ComptimeConditionalTileTensor[
+        scales_type, engaged=has_scales, ...
+    ] = _ComptimeConditionalTileTensor[
+        scales_type,
+        _NoScaleFactorsLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
+    b_scales: _ComptimeConditionalTileTensor[
+        scales_type, engaged=has_scales, ...
+    ] = _ComptimeConditionalTileTensor[
+        scales_type,
+        _NoScaleFactorsLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -1147,11 +1116,9 @@ def _cublasLt_matmul[
         _is_sm10x_gpu(ctx.default_device_info)
         or _is_sm12x_gpu(ctx.default_device_info)
     ):
-        if a_scales or b_scales:
-            if not (a_scales and b_scales):
-                raise Error("a_scales and b_scales must be provided together")
-            var a_scale_tensor = a_scales.value()
-            var b_scale_tensor = b_scales.value()
+        comptime if has_scales:
+            var a_scale_tensor = a_scales[]
+            var b_scale_tensor = b_scales[]
 
             comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if scales_type == NVFP4_SF_DTYPE else MXFP8_SF_VECTOR_SIZE
 
@@ -1188,27 +1155,23 @@ def _cublasLt_matmul[
                     " by 16/32 for MXFP8/NVFP4 input data type, respectively"
                 )
 
-            if comptime (
-                a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5
-            ):
-                raise Error(
-                    "Invalid A/B scales dimensions. Expected 5D tensors."
-                )
+            comptime assert (
+                a_scale_tensor.flat_rank == 5 and b_scale_tensor.flat_rank == 5
+            ), "Invalid A/B scales dimensions. Expected 5D tensors."
 
             if (
-                a_scale_tensor.dim(0) != ceildiv(M, SF_MN_GROUP_SIZE)
-                or a_scale_tensor.dim(1)
+                Int(a_scale_tensor.dim(0)) != ceildiv(M, SF_MN_GROUP_SIZE)
+                or Int(a_scale_tensor.dim(1))
                 != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
-                or b_scale_tensor.dim(0) != ceildiv(N, SF_MN_GROUP_SIZE)
-                or b_scale_tensor.dim(1)
+                or Int(b_scale_tensor.dim(0)) != ceildiv(N, SF_MN_GROUP_SIZE)
+                or Int(b_scale_tensor.dim(1))
                 != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
-                or a_scale_tensor.dim(2)
-                != b_scale_tensor.dim(2)
-                != SF_ATOM_M[0]
-                or a_scale_tensor.dim(3)
-                != b_scale_tensor.dim(3)
-                != SF_ATOM_M[1]
-                or a_scale_tensor.dim(4) != b_scale_tensor.dim(4) != SF_ATOM_K
+                or Int(a_scale_tensor.dim(2)) != SF_ATOM_M[0]
+                or Int(b_scale_tensor.dim(2)) != SF_ATOM_M[0]
+                or Int(a_scale_tensor.dim(3)) != SF_ATOM_M[1]
+                or Int(b_scale_tensor.dim(3)) != SF_ATOM_M[1]
+                or Int(a_scale_tensor.dim(4)) != SF_ATOM_K
+                or Int(b_scale_tensor.dim(4)) != SF_ATOM_K
             ):
                 raise Error("Invalid A/B scales dimensions.")
 
@@ -1220,12 +1183,20 @@ def _cublasLt_matmul[
                 == NVFP4_SF_DTYPE else cublasLtMatmulMatrixScale_t.MATRIX_SCALE_VEC32_UE8M0
             )
 
-            var a_scale_ptr = b_scale_tensor.ptr.bitcast[
-                NoneType
-            ]() if c_row_major else a_scale_tensor.ptr.bitcast[NoneType]()
-            var b_scale_ptr = a_scale_tensor.ptr.bitcast[
-                NoneType
-            ]() if c_row_major else b_scale_tensor.ptr.bitcast[NoneType]()
+            var sfa_ptr = a_scale_tensor.ptr.bitcast[NoneType]()
+            var sfb_ptr = b_scale_tensor.ptr.bitcast[NoneType]()
+
+            # cuBLASLt is column-major, so a row-major D swaps which operand
+            # each scale factor belongs to. The two tiles have independent
+            # origins, so swap the attribute rather than the pointer.
+            var sfa_attr = (
+                cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER
+            )
+            var sfb_attr = (
+                cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER
+            )
+            if c_row_major:
+                swap(sfa_attr, sfb_attr)
 
             check_cublas_error(
                 cublasLtMatmulDescSetAttribute(
@@ -1261,8 +1232,8 @@ def _cublasLt_matmul[
             check_cublas_error(
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
-                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
-                    UnsafePointer(to=a_scale_ptr)
+                    sfa_attr,
+                    UnsafePointer(to=sfa_ptr)
                     .bitcast[NoneType]()
                     .as_imm()
                     .as_unsafe_any_origin(),
@@ -1276,8 +1247,8 @@ def _cublasLt_matmul[
             check_cublas_error(
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
-                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
-                    UnsafePointer(to=b_scale_ptr)
+                    sfb_attr,
+                    UnsafePointer(to=sfb_ptr)
                     .bitcast[NoneType]()
                     .as_imm()
                     .as_unsafe_any_origin(),
@@ -1289,7 +1260,7 @@ def _cublasLt_matmul[
                 ),
             )
     else:
-        if a_scales or b_scales:
+        comptime if has_scales:
             raise Error("block scaling is only supported on B200 devices")
 
     # create matrix descriptors, we are good with the details here so no need to set any extra attributes
@@ -1494,8 +1465,7 @@ def _hipblasLt_matmul[
     a_type: DType,
     b_type: DType,
     scales_type: DType = a_type,
-    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
-    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    has_scales: Bool = False,
 ](
     ctx: DeviceContext,
     handle: hipblasLtHandle_t,
@@ -1503,12 +1473,22 @@ def _hipblasLt_matmul[
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     *,
-    a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
-    ] = None,
-    b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
-    ] = None,
+    a_scales: _ComptimeConditionalTileTensor[
+        scales_type, engaged=has_scales, ...
+    ] = _ComptimeConditionalTileTensor[
+        scales_type,
+        _NoScaleFactorsLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
+    b_scales: _ComptimeConditionalTileTensor[
+        scales_type, engaged=has_scales, ...
+    ] = _ComptimeConditionalTileTensor[
+        scales_type,
+        _NoScaleFactorsLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -1584,11 +1564,9 @@ def _hipblasLt_matmul[
         )
     )
 
-    if a_scales or b_scales:
-        if not (a_scales and b_scales):
-            raise Error("a_scales and b_scales must be provided together")
-        var a_scale_tensor = a_scales.value()
-        var b_scale_tensor = b_scales.value()
+    comptime if has_scales:
+        var a_scale_tensor = a_scales[]
+        var b_scale_tensor = b_scales[]
 
         if comptime (scales_type != MXFP8_SF_DTYPE):
             raise Error("Only float8_e8m0fnu(scale type: MXFP8) supported")
@@ -1601,16 +1579,17 @@ def _hipblasLt_matmul[
         a_cols *= 2
         b_cols *= 2
 
-        if comptime (
-            a_scales_layout.rank() != 2 or b_scales_layout.rank() != 2
-        ):
-            raise Error("Invalid A/B scales dimensions. Expected 2D tensors.")
+        comptime assert (
+            a_scale_tensor.flat_rank == 2 and b_scale_tensor.flat_rank == 2
+        ), "Invalid A/B scales dimensions. Expected 2D tensors."
 
         if (
-            a_scale_tensor.dim(0) != a_rows
-            or a_scale_tensor.dim(1) != ceildiv(a_cols, MXFP4_SF_VECTOR_SIZE)
-            or b_scale_tensor.dim(0) != b_rows
-            or b_scale_tensor.dim(1) != ceildiv(b_cols, MXFP4_SF_VECTOR_SIZE)
+            Int(a_scale_tensor.dim(0)) != a_rows
+            or Int(a_scale_tensor.dim(1))
+            != ceildiv(a_cols, MXFP4_SF_VECTOR_SIZE)
+            or Int(b_scale_tensor.dim(0)) != b_rows
+            or Int(b_scale_tensor.dim(1))
+            != ceildiv(b_cols, MXFP4_SF_VECTOR_SIZE)
         ):
             raise Error("Invalid A/B scales dimensions.")
 
@@ -1633,25 +1612,30 @@ def _hipblasLt_matmul[
             )
         )
 
-        var a_scale_ptr = a_scale_tensor.ptr.bitcast[NoneType]()
-        var b_scale_ptr = b_scale_tensor.ptr.bitcast[NoneType]()
+        var sfa_ptr = a_scale_tensor.ptr.bitcast[NoneType]()
+        var sfb_ptr = b_scale_tensor.ptr.bitcast[NoneType]()
 
+        # hipBLASLt is column-major, so a row-major D swaps which operand each
+        # scale factor belongs to. The two tiles have independent origins, so
+        # swap the attribute rather than the pointers.
+        var sfa_attr = hipblasLtMatmulDescAttributes_t.A_SCALE_POINTER
+        var sfb_attr = hipblasLtMatmulDescAttributes_t.B_SCALE_POINTER
         if c_row_major:
-            swap(a_scale_ptr, b_scale_ptr)
+            swap(sfa_attr, sfb_attr)
 
         _check_hipblas_error(
             hipblasLtMatmulDescSetAttribute(
                 operationDesc,
-                hipblasLtMatmulDescAttributes_t.A_SCALE_POINTER,
-                UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
+                sfa_attr,
+                UnsafePointer(to=sfa_ptr).bitcast[NoneType](),
                 size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
             )
         )
         _check_hipblas_error(
             hipblasLtMatmulDescSetAttribute(
                 operationDesc,
-                hipblasLtMatmulDescAttributes_t.B_SCALE_POINTER,
-                UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
+                sfb_attr,
+                UnsafePointer(to=sfb_ptr).bitcast[NoneType](),
                 size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
             )
         )

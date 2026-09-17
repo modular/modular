@@ -209,17 +209,15 @@ def run_gemm_mma_cpasync_residual[
     var w_tensor = TileTensor(weight_dev, w_shape)
     var c_tensor = TileTensor(out_dev, c_shape)
     var residual_tensor = TileTensor(residual_dev, c_shape)
-    var c_lt = c_tensor.to_layout_tensor()
-    var residual_lt = residual_tensor.to_layout_tensor()
 
     @__parameter
     @inline(.always)
-    @__copy_capture(c_lt, residual_lt)
+    @__copy_capture(c_tensor, residual_tensor)
     def residual_epilogue[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
-        var res = residual_lt.load[width=width](idx).cast[dtype]()
-        c_lt.store[width=width](idx, (val + res).cast[c_type]())
+        var res = residual_tensor.load[width=width](Coord(idx)).cast[dtype]()
+        c_tensor.store[width=width](Coord(idx), (val + res).cast[c_type]())
 
     gemm_mma_cpasync[
         tile_k=tile_k,

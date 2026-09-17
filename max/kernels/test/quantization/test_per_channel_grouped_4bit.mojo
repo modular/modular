@@ -169,21 +169,15 @@ def _read_write_to_tensors[
     )
 
     Q4sym[group_size, DType.float32].quantize_and_write_to_tensor(
-        data_matrix.make_dynamic[.int64]().to_layout_tensor(),
-        packed_blob.make_dynamic[.int64]().to_layout_tensor(),
-        IndexList[
-            type_of(data_matrix.make_dynamic[.int64]().to_layout_tensor()).rank
-        ](num_elements),
+        data_matrix.make_dynamic[.int64](),
+        packed_blob.make_dynamic[.int64](),
+        IndexList[data_matrix.rank](num_elements),
     )
 
     Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor(
-        packed_blob.make_dynamic[.int64]().to_layout_tensor(),
-        out_data_matrix.make_dynamic[.int64]().to_layout_tensor(),
-        IndexList[
-            type_of(
-                out_data_matrix.make_dynamic[.int64]().to_layout_tensor()
-            ).rank
-        ](num_elements),
+        packed_blob.make_dynamic[.int64](),
+        out_data_matrix.make_dynamic[.int64](),
+        IndexList[out_data_matrix.rank](num_elements),
     )
 
     var allClose: Bool = True

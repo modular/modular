@@ -112,19 +112,17 @@ def test_matmul_sm100_fallback[
         ")",
     )
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[store_alignment=alignment](
-            idx, rebind[SIMD[c_type, width]](val)
+        c_tensor.store[alignment=alignment](
+            Coord(idx), rebind[SIMD[c_type, width]](val)
         )
 
     # Initialize matmul operands
@@ -162,15 +160,11 @@ def test_matmul_sm100_fallback[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

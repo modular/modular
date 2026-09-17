@@ -113,11 +113,9 @@ def test_matmul_sm100_epilogue[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def test_lambda_add_coords_prod[
         _dtype: DType,
         width: SIMDLength,
@@ -128,7 +126,7 @@ def test_matmul_sm100_epilogue[
     ]:
         # this function helps us determine if the provided indexes are correct
         # while also testing arithmetic operations
-        var x = c_tensor_lt.load[width=width](idx).cast[_dtype]()
+        var x = c_tensor.load[width=width](Coord(idx)).cast[_dtype]()
         var y = val * x
         return y
 
@@ -195,15 +193,11 @@ def test_matmul_sm100_epilogue[
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )
 
-        var a_lt = a_tensor.to_layout_tensor()
-        var b_lt = b_tensor.to_layout_tensor()
-        var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_lt,
-            a_lt,
-            b_lt,
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
             c_row_major=True,
             transpose_b=transpose_b,
         )
@@ -214,11 +208,9 @@ def test_matmul_sm100_epilogue[
         ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
         ctx.synchronize()
 
-        var c_host_copy_lt = c_host_copy.to_layout_tensor()
-
         @__parameter
         @inline(.always)
-        @__copy_capture(c_host_copy_lt)
+        @__copy_capture(c_host_copy)
         def test_lambda_add_coords_prod_local[
             _dtype: DType,
             width: SIMDLength,
@@ -227,7 +219,9 @@ def test_matmul_sm100_epilogue[
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
-            return val * c_host_copy_lt.load[width=width](idx).cast[_dtype]()
+            return (
+                val * c_host_copy.load[width=width](Coord(idx)).cast[_dtype]()
+            )
 
         comptime if optional_lambda_fn:
             # Apply the compute lambda directly on the reference tensor

@@ -24,8 +24,6 @@ from layout import (
     Coord,
     CoordLike,
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     Idx,
     row_major,
@@ -179,47 +177,13 @@ def test_block_scaled_mxfp4_hipblaslt[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    comptime a_scales_layout = Layout.row_major(
-        a_scales_device_nd.static_shape[0], a_scales_device_nd.static_shape[1]
-    )
-    comptime b_scales_layout = Layout.row_major(
-        b_scales_device_nd.static_shape[0], b_scales_device_nd.static_shape[1]
-    )
-
-    var a_scales_lt = LayoutTensor[
-        scales_dtype, a_scales_layout, ImmutAnyOrigin
-    ](
-        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
-            a_scales_device_nd._storage
-        ),
-        RuntimeLayout[a_scales_layout].row_major(
-            IndexList[2](
-                Int(a_scales_device_nd.dim[0]()),
-                Int(a_scales_device_nd.dim[1]()),
-            )
-        ),
-    )
-    var b_scales_lt = LayoutTensor[
-        scales_dtype, b_scales_layout, ImmutAnyOrigin
-    ](
-        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
-            b_scales_device_nd._storage
-        ),
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[2](
-                Int(b_scales_device_nd.dim[0]()),
-                Int(b_scales_device_nd.dim[1]()),
-            )
-        ),
-    )
-
     matmul(
         ctx,
-        c_device_nd.to_layout_tensor(),
-        a_device_nd.to_layout_tensor(),
-        b_device_nd.to_layout_tensor(),
-        a_scales=a_scales_lt,
-        b_scales=b_scales_lt,
+        c_device_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales=a_scales_device_nd,
+        b_scales=b_scales_device_nd,
         transpose_b=True,
         c_row_major=True,
     )
