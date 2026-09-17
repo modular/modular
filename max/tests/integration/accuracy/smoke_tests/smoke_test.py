@@ -19,11 +19,10 @@ It does two things:
     2. Runs a tiny evaluation task using against the chat/completions API
 
 Currently there is a hard dependency that two virtualenvs are already created:
-    - .venv-serve (not needed for max-ci, which uses bazel)
-    - .venv-eval
+    - .venv-serve, with MAX installed (not needed for max-ci, which uses
+      bazel, nor for vllm/sglang, which serve from their released images)
+    - .venv-eval, with lm-eval installed
 
-Where the serve environment should already have either MAX/VLLM/SGLang installed.
-The eval environment should already have lm-eval installed.
 These dependencies are to be removed once this script
 has been integrated into bazel.
 
@@ -36,6 +35,7 @@ import logging
 import os
 import shlex
 import sys
+from collections.abc import Mapping
 from functools import cache
 from pathlib import Path
 from pprint import pformat
@@ -62,6 +62,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from requests.structures import CaseInsensitiveDict
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
+
+GPU_ARGS = {
+    "nvidia": ["--device", "nvidia.com/gpu=all"],
+    "amd": [
+        "--device", "/dev/kfd",
+        "--device", "/dev/dri",
+        "--group-add", "video",
+        "--security-opt", "seccomp=unconfined",
+    ],
+}  # fmt: skip
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -373,16 +383,40 @@ def merge_serve_extra_args(args: list[str], extra: str) -> list[str]:
     return merged + ["--serve-extra-args", extra]
 
 
+def accelerator(image: str) -> str:
+    return "amd" if "rocm" in image.lower() else "nvidia"
+
+
+def container_argv(image: str, env: Mapping[str, str]) -> list[str]:
+    """Build the ``docker run`` prefix that serves ``image`` on the local GPUs."""
+    offline = {
+        key: os.environ[key] for key in ("HF_HUB_OFFLINE",) if key in os.environ
+    }
+    hf_hub_cache = Path("~/.cache/huggingface/hub").expanduser()
+    return [
+        "docker", "run", "--rm", "--name", "smoke-server",
+        *GPU_ARGS[accelerator(image)],
+        "--ipc=host",
+        "-p", "127.0.0.1:8000:8000",
+        "-v", f"{hf_hub_cache}:/root/.cache/huggingface/hub:ro",
+        *[f for k, v in {**offline, **env}.items() for f in ("-e", f"{k}={v}")],
+        "--entrypoint", "python3",
+        image,
+        "-m",
+    ]  # fmt: skip
+
+
 def get_server_cmd(
     framework: str,
     model: str,
     *,
+    serve_image: str = "",
     serve_extra_args: str = "",
     recipe_path: str | None = None,
     autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
 ) -> ServerCommand:
-    gpu_model, gpu_count = gpu_spec
+    _, gpu_count = gpu_spec
     env: dict[str, str] = {}
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
@@ -395,16 +429,17 @@ def get_server_cmd(
     ):
         recipe_config = (recipe_path, recipe)
 
-    sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = [
         "sglang.launch_server",
-        "--attention-backend",
-        sglang_backend,
         "--enable-metrics",
+        "--host",
+        "0.0.0.0",
     ]
     # limit-mm-per-prompt.video is for InternVL3 on B200
     VLLM = [
         "vllm.entrypoints.openai.api_server",
+        "--host",
+        "0.0.0.0",
         "--max-model-len",
         "auto",
         "--limit-mm-per-prompt.video",
@@ -481,13 +516,13 @@ def get_server_cmd(
         cmd = [sys.executable, "-m", "max._entrypoints.pipelines", *MAX]
     else:
         assert framework != "max-ci", "max-ci must be run through bazel"
-        interpreter = [".venv-serve/bin/python", "-m"]
-        commands = {
-            "sglang": [*interpreter, *SGLANG],
-            "vllm": [*interpreter, *VLLM],
-            "max": [".venv-serve/bin/max", *MAX],
-        }
-        cmd = commands[framework]
+        if framework == "max":
+            cmd = [".venv-serve/bin/max", *MAX]
+        else:
+            if not serve_image:
+                raise ValueError(f"--serve-image is required for {framework}")
+            server = {"sglang": SGLANG, "vllm": VLLM}[framework]
+            cmd, env = [*container_argv(serve_image, env), *server], {}
 
     cmd = cmd + ["--port", "8000"]
     if recipe_config is not None:
@@ -548,6 +583,12 @@ def valid_tasks() -> set[str]:
     default="max-ci",
     required=False,
     help="Framework to use for the smoke test. Only max-ci is supported when running in bazel.",
+)
+@click.option(
+    "--serve-image",
+    type=str,
+    default="",
+    help="Container image serving the model. Required for vllm and sglang.",
 )
 @click.option(
     "--output-path",
@@ -631,6 +672,7 @@ def valid_tasks() -> set[str]:
 def smoke_test(
     hf_model_path: str,
     framework: str,
+    serve_image: str,
     output_path: Path | None,
     print_responses: bool,
     print_cot: bool,
@@ -678,6 +720,7 @@ def smoke_test(
     cmd, server_env = get_server_cmd(
         framework,
         hf_model_path,
+        serve_image=serve_image,
         serve_extra_args=serve_extra_args,
         recipe_path=recipe_path,
         autoscale_devices=autoscale_devices,

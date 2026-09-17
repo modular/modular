@@ -105,8 +105,11 @@ def test_8xmi355_stays_opt_in() -> None:
             "modularai/MiniMax-M3-MXFP6",
         },
         "max": set(),
-        "vllm": set(),
-        "sglang": set(),
+        "vllm": {"modularai/MiniMax-M3-MXFP6"},
+        "sglang": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        },
     }
     for framework, models in expected.items():
         result = CliRunner().invoke(

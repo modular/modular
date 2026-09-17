@@ -31,12 +31,6 @@ RUNNERS = {
     "8xMI355": "modrunner-mi355-8x",
 }
 
-# Framework → GPUs that framework cannot run on.
-HW_EX = {
-    "vllm": {"MI355", "2xMI355", "4xMI355", "8xMI355"},
-    "sglang": {"MI355", "2xMI355", "4xMI355", "8xMI355"},
-}
-
 # Tags: skip model on multi-GPU runners.
 XL = {"8xB200", "4xMI355", "8xMI355"}
 MULTI = {"2xB200", "2xMI355"} | XL
@@ -206,8 +200,6 @@ def tier_models(tier: str) -> list[str]:
 
 def excluded(framework: str, gpu: str, model: str) -> bool:
     """Check if a model is excluded from a given framework and/or GPU."""
-    if gpu in HW_EX.get(framework, set()):
-        return True
     # Custom MAX recipe variants are MAX only; no vLLM/SGLang equivalent.
     if model in CUSTOM_MODELS and framework in {"vllm", "sglang"}:
         return True

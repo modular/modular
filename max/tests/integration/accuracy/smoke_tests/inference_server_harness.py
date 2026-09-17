@@ -95,7 +95,8 @@ def start_server(
         env.update(env_overrides)
 
     if not _inside_bazel():
-        # SGLang depends on ninja which is in the serve environment
+        # For the `max` framework, which serves from .venv-serve. vllm and
+        # sglang serve from a container and inherit neither.
         env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
         venv_bin = os.path.abspath(".venv-serve/bin")
         prev_path = env.get("PATH")
