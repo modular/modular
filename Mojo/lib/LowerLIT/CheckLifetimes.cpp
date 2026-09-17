@@ -4987,7 +4987,7 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // continue set.
   loopBodySets.dryRun = true;
 
-  // Iteratively scan the loop body until the continue set converges.
+  // Iteratively scan the loop body until continueSet covers header demand.
   [[maybe_unused]] unsigned numIters = 0;
   while (true) {
     // Scan the body: any breaks will intersect their live-out set with
@@ -5001,8 +5001,11 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
     if (!loopBodySets.consumedValues[0])
       loopBodySets.consumedValues[0] = true;
 
-    // If the continue set is unchanged, then we converged.
-    if (loopBodySets.consumedValues == continueSet)
+    // Extra 1s in continueSet are leftover from an unreachable break meet.
+    // Allow that only while break is unreachable; once it is reachable,
+    // require equality.
+    if (breakSet[0] ? loopBodySets.consumedValues == continueSet
+                    : loopBodySets.consumedValues.subsetOf(continueSet))
       break;
 
     // Otherwise, use the set of values consumed on loop entry as the new

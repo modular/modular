@@ -685,3 +685,50 @@ def test4694(a: PyObjLike, b: PyObjLike) raises:
 
 def gotit():
     pass
+
+
+
+# CHECK-LABEL: lit.fn @"nested_for_reassign_used_after
+def nested_for_reassign_used_after():
+    for _ in TrivialRange():
+        var flag = False
+        for _ in TrivialRange():
+            flag = True
+        if flag:
+            marker()
+
+
+# Same shape as above with a destructible type, to pin down the destroys that
+# the checkLoopOp fixed point settles on: "mem" is dead at the inner
+# hlcf.continue but live at the inner loop header, so the incoming value has to
+# die on the path that runs the body and survive the path that exits the loop.
+# CHECK-LABEL: lit.fn @"nested_for_reassign_nontrivial
+def nested_for_reassign_nontrivial():
+    for _ in TrivialRange():
+        # CHECK: %mem = lit.var.decl
+        # CHECK-NEXT: lifetime.start %mem
+        # CHECK-NEXT: lit.call {{.*}}MemExample::@"__init__{{.*}}(%mem)
+        var mem = MemExample()
+
+        # Nothing may be destroyed ahead of the loop: a zero-trip inner loop
+        # exits to the "use" below with the incoming value intact.
+        # CHECK-NOT: __deinit__
+        # CHECK: hlcf.loop "_loop_1"
+        for _ in TrivialRange():
+            # The old value dies on the non-raising arm, i.e. only once
+            # __next__ says the body runs.
+            # CHECK: lit.try.raise "try1"
+            # CHECK-NEXT: } else {
+            # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
+            # CHECK-NEXT: lifetime.end %mem
+
+            # CHECK: lifetime.start %mem
+            # CHECK-NEXT: lit.call {{.*}}MemExample::@"__init__{{.*}}(%mem)
+            # CHECK-NEXT: hlcf.continue "_loop_1"
+            mem = MemExample()
+
+        # CHECK: lit.call {{.*}}@"use(
+        # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
+        # CHECK-NEXT: lifetime.end %mem
+        # CHECK-NEXT: hlcf.continue "_loop_0"
+        use(mem)
