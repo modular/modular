@@ -399,7 +399,7 @@ void Config::parseModularDebugEnv() {
       } else if (llvm::is_contained({"nan-check", "uninitialized-read-check",
                                      "device-sync-mode", "stack-trace-on-error",
                                      "stack-trace-on-crash",
-                                     "source-tracebacks"},
+                                     "source-tracebacks", "pre-jit"},
                                     tokenRef)) {
         setGlobalValue(("max-debug." + tokenRef).str(), "true");
       } else {

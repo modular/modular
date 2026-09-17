@@ -570,6 +570,60 @@ class TestReaderMigration:
             f"Expected an emitted .mojo file in {ir_dir}, got {files}"
         )
 
+    def test_pre_jit_emits_mojo_without_compiling(self, tmp_path: Path) -> None:
+        """Under `ir-output-dir` plus `pre-jit`, compiling a graph writes the
+        emitted `.mojo` and then fails naming the option, instead of
+        JIT-compiling the kernels. This is the in-process form of the
+        `gc-pipeline-pre-jit` mo-opt pipeline, for a caller that wants the
+        emitted Mojo and nothing else.
+        """
+        ir_dir = tmp_path / "ir-out"
+        ir_dir.mkdir()
+        result = _run_script(
+            """\
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_pre_jit",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            try:
+                session.load(graph)
+            except Exception as e:
+                cause = e.__cause__ or e
+                assert "pre-jit" in str(cause), str(cause)
+                print("PASS")
+            else:
+                raise AssertionError("load succeeded despite pre-jit")
+            """,
+            env_overrides={
+                "MODULAR_DEBUG": f"ir-output-dir={ir_dir},pre-jit",
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        files = sorted(p.name for p in ir_dir.iterdir())
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
     def test_source_tracebacks_appear_in_ir_dump(self, tmp_path: Path) -> None:
         """With source-tracebacks and ir-output-dir both on, the post-fusion
         dump carries the Python call site that built each op.
