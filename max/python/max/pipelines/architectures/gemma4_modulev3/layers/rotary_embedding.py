@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from max.driver import Device
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
@@ -62,13 +62,13 @@ class ProportionalRotaryEmbedding(RotaryEmbedding):
         nope_angles = n // 2 - rope_angles
 
         iota = F.arange(
-            0, 2 * rope_angles, step=2, dtype=DType.float64, device=self.device
+            0, 2 * rope_angles, step=2, dtype=DType.float64, device=CPU()
         )
         inv_freqs = F.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
 
         if nope_angles > 0:
             zeros = Tensor.zeros(
-                [nope_angles], dtype=DType.float32, device=self.device
+                [nope_angles], dtype=DType.float32, device=CPU()
             )
             inv_freqs = F.concat([inv_freqs, zeros], axis=0)
         return inv_freqs

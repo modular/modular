@@ -54,7 +54,7 @@ gemma4_modulev3_arch = SupportedArchitecture(
     default_structured_output_backend="xgrammar",
     batching=Gemma4ModuleV3BatchProcessor,
     memory_planner=Gemma4MemoryPlanner,
-    supports_overlap_scheduler=False,
+    supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
 )
 
