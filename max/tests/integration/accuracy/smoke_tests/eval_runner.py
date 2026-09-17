@@ -140,7 +140,11 @@ def write_github_output(key: str, value: str) -> None:
 
 
 def test_single_request(
-    url: str, model: str, task: str, disable_timeouts: bool
+    url: str,
+    model: str,
+    task: str,
+    disable_timeouts: bool,
+    api_key: str | None = None,
 ) -> None:
     is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
@@ -149,10 +153,12 @@ def test_single_request(
     connect_timeout, read_timeout = (
         (None, None) if disable_timeouts else (30, 180)
     )
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
     r = requests.post(
         url,
         json={"model": model, "messages": m, "max_tokens": 8},
         timeout=(connect_timeout, read_timeout),
+        headers=headers,
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
