@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Provides top-K selection kernels using warp- and block-level reductions for CPU and GPU."""
 
-from std.builtin.debug_assert import ASSERT_MODE
 from std.atomic import Atomic, Ordering, fence
 from std.math import align_up, ceildiv, exp, iota
 from std.math.uutils import ufloordiv, udivmod
@@ -2115,19 +2114,6 @@ def fused_token_sampling_gpu[
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
-        # If all items in the batch, want to sample all tokens (top_k==-1, top_p=1)
-        # Use the fused kernel: generates Gumbel noise inline and argmax-reduces
-        # in a single pass with no intermediate HBM buffer.
-        if max_k == -1 and min_top_p == 1.0:
-            gumbel_sampling_fused_gpu(
-                ctx,
-                input,
-                out_idxs,
-                temperature,
-                seed,
-            )
-            return
-
         comptime assert (
             input.rank == out_idxs.rank
         ), "input.rank must match out_idx.rank"
@@ -2137,75 +2123,32 @@ def fused_token_sampling_gpu[
         var vocab_size = Int(input.layout.shape[1]().value())
         var adjusted_max_k = vocab_size if max_k == -1 else max_k
 
-        if adjusted_max_k >= 10:
-            _topk_topp_sampling_fi[dtype, out_idx_type](
-                ctx,
-                adjusted_max_k,
-                min_top_p,
-                input,
-                out_idxs,
-                k=rebind[
-                    Optional[
-                        TileTensor[
-                            out_idx_type,
-                            KLayoutType,
-                            ImmutAnyOrigin,
-                            Engine=KEngine,
-                        ]
-                    ]
-                ](k),
-                temperature=temperature,
-                top_p=top_p,
-                min_p=min_p,
-                rng_seed=seed,
-            )
-            return
-
-        var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-        out_vals_shape[input.rank - 1] = adjusted_max_k
-        var out_vals_buf = ctx.enqueue_create_buffer[dtype](
-            out_vals_shape.flattened_length()
-        )
-        var out_vals = TileTensor(
-            out_vals_buf,
-            row_major(Coord(out_vals_shape)),
-        )
-
-        var batch_size = input_shape[0]
-        var valid_buf = Optional[DeviceBuffer[.int8]](None)
-        var valid = Optional[UnsafePointer[Int8, MutAnyOrigin]](None)
-        comptime if ASSERT_MODE == "all":
-            valid_buf = ctx.enqueue_create_buffer[.int8](batch_size)
-            ctx.enqueue_memset(valid_buf.value(), 1)
-            valid = valid_buf.value().unsafe_ptr().as_unsafe_any_origin()
-
-        topk_gpu[sampling=True, largest=True](
+        # One kernel for every sampling configuration. Picking a narrower
+        # specialization here would bake the choice into a captured device
+        # graph: this branch runs once at capture time, and replay reissues
+        # whatever it selected, so a later request's top_k/top_p would be
+        # silently ignored.
+        _topk_topp_sampling_fi[dtype, out_idx_type](
             ctx,
             adjusted_max_k,
+            min_top_p,
             input,
-            out_vals,
             out_idxs,
-            k=k,
+            k=rebind[
+                Optional[
+                    TileTensor[
+                        out_idx_type,
+                        KLayoutType,
+                        ImmutAnyOrigin,
+                        Engine=KEngine,
+                    ]
+                ]
+            ](k),
             temperature=temperature,
             top_p=top_p,
             min_p=min_p,
-            block_size=block_size,
-            num_blocks_per_input=num_blocks_per_input,
-            seed=seed,
-            valid=valid,
+            rng_seed=seed,
         )
-
-        comptime if ASSERT_MODE == "all":
-            var valid_host = ctx.enqueue_create_host_buffer[.int8](batch_size)
-            ctx.enqueue_copy(valid_host, valid_buf.value())
-            ctx.synchronize()
-
-            for i in range(batch_size):
-                if not valid_host[i]:
-                    raise Error("NaN logits detected in batch row " + String(i))
-
-        _ = valid_buf^
-        _ = out_vals_buf^
 
 
 # ===-----------------------------------------------------------------------===#
