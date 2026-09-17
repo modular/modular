@@ -390,10 +390,20 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
             # BN
+            # Doubling the K tile halves the loop iterations over the KV
+            # cache, and with them the per-iteration `s_barrier` count that
+            # measured as the dominant stall when the warp count was raised.
+            # Warp count is unchanged here; only the tile grows.
             self.num_keys_per_block = num_keys_per_block.or_else(
-                (
-                    32 if depth == 512 else 64
-                ) if has_amd_gpu_accelerator() else depth
+                128 if (
+                    has_amd_gpu_accelerator()
+                    and Self.dtype.is_float8()
+                    and depth == 128
+                ) else (
+                    (
+                        32 if depth == 512 else 64
+                    ) if has_amd_gpu_accelerator() else depth
+                )
             )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(

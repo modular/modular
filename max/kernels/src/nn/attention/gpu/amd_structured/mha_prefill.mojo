@@ -313,6 +313,14 @@ __extension Attention:
             elif Self.depth > 128 or Self.mask_t.apply_log2e_after_mask:
                 self.online_softmax_step_0[0]()
                 self.online_softmax_step_1[0]()
+            elif Self.q_type.is_float8():
+                # FP8 folds (score - max) * scale into one packed FMA per score
+                # pair. The FMA loses `exp_scaled`'s exact-zero-at-max property,
+                # which is load-bearing for BF16 (adversarial inputs reach NaN);
+                # the FP8 tolerance envelope and row-sum normalization absorb it,
+                # which is why `mla_prefill` already runs this form.
+                self.online_softmax_step_0_pkfma[0]()
+                self.online_softmax_step_1_pkfma[0]()
             else:
                 self.online_softmax_step_0_fma[0]()
                 self.online_softmax_step_1_fma[0]()
