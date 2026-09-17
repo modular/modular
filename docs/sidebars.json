@@ -424,6 +424,28 @@
                 "__AUTOGEN:max.nn.kv_cache__"
               ]
             },
+            {
+              "type": "category",
+              "label": "state_space",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.state_space"
+              },
+              "items": [
+                {
+                  "type": "category",
+                  "label": "kimi_delta",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.state_space.kimi_delta"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.nn.state_space.kimi_delta__"
+                  ]
+                },
+                "__AUTOGEN:max.nn.state_space__"
+              ]
+            },
             "__AUTOGEN:max.nn__"
           ]
         },
@@ -571,6 +593,28 @@
                 "id": "api/python/pipelines.kv_cache"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "kv_group_coordinator",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.kv_cache.paged_kv_cache.kv_group_coordinator"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.kv_cache.paged_kv_cache.kv_group_coordinator__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "recurrent_coordinator",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.kv_cache.paged_kv_cache.recurrent_coordinator"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.kv_cache.paged_kv_cache.recurrent_coordinator__"
+                  ]
+                },
                 "__AUTOGEN:max.pipelines.kv_cache__"
               ]
             },
@@ -764,6 +808,39 @@
                 "id": "api/python/pipelines.speculative"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "depth_schedule",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.depth_schedule"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.depth_schedule__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "driver",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.driver"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.driver__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "spec_target",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.spec_target"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.spec_target__"
+                  ]
+                },
                 "__AUTOGEN:max.pipelines.speculative__"
               ]
             },
@@ -801,6 +878,17 @@
               ]
             },
             "__AUTOGEN:max.profiler__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.serve.media",
+          "link": {
+            "type": "doc",
+            "id": "api/python/serve.media"
+          },
+          "items": [
+            "__AUTOGEN:max.serve.media__"
           ]
         },
         {

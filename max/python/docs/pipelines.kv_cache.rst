@@ -11,6 +11,15 @@ max.pipelines.kv_cache
 
 .. currentmodule:: max.pipelines.kv_cache
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.kv_cache.paged_kv_cache.kv_group_coordinator
+   pipelines.kv_cache.paged_kv_cache.recurrent_coordinator
+
 Memory planning
 ---------------
 

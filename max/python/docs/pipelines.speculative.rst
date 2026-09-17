@@ -11,6 +11,16 @@ max.pipelines.speculative
 
 .. currentmodule:: max.pipelines.speculative
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.speculative.depth_schedule
+   pipelines.speculative.driver
+   pipelines.speculative.spec_target
+
 Configuration
 -------------
 
@@ -22,6 +32,7 @@ Configuration
    RejectionSamplingStrategy
    SpeculativeConfig
    SpeculativeMethod
+   VerifyWidthRange
 
 Token merging
 -------------

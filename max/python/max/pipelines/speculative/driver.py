@@ -18,7 +18,7 @@ in how it calls its target, how it calls its draft, and what per-step cache
 bookkeeping the draft needs. :class:`SequentialDriver` owns the phases; a model
 contributes a :class:`SpecDecodeTarget` and a :class:`SequentialProposer`.
 
-The two adapters are deliberately *not* ``Module`` subclasses. The driver
+The two adapters are deliberately not ``Module`` subclasses. The driver
 registers the target and draft modules under the same attribute names the
 hand-written modules used, so weight loading, ``state_dict`` keys and the
 weights registry are unchanged.
@@ -154,7 +154,7 @@ class DecodeKVSwap(Enum):
     query length is whatever the merged batch holds; steps 1..K-1 run one
     token per request, ``q = 1``. ``PagedCacheValues`` carries a dispatch
     buffer for each, the ``q = 1`` one under a ``draft_`` prefix -- which
-    names the shorter query length, *not* the draft model; the target's cache
+    names the shorter query length, not the draft model; the target's cache
     leaf carries a ``draft_`` variant too. Selecting between them is a
     declaration rather than an inline ``replace`` per model.
     """
@@ -648,7 +648,7 @@ class SequentialDriver(Module):
     ) -> tuple[TensorType | BufferType, ...]:
         """Builds the unified spec-decode graph signature.
 
-        See :func:`build_spec_decode_input_types` for the canonical ordering.
+        See ``build_spec_decode_input_types`` for the canonical ordering.
         """
         return build_spec_decode_input_types(
             self._input_spec,

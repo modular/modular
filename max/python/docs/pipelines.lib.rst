@@ -84,6 +84,7 @@ Utilities
    MemoryPlan
    ModelManifest
    RetrievedPipeline
+   Speculator
    VisionPreprocessCache
    WeightPathParser
 

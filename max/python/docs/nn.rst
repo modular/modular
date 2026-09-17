@@ -20,6 +20,7 @@ Submodules
    nn.attention
    nn.kernels
    nn.kv_cache
+   nn.state_space
 
 Base classes
 ------------

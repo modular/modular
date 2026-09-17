@@ -45,7 +45,8 @@ class StoredMediaAsset:
     asset_id: str
     """Stable identifier used in MAX's generated-media download routes."""
     kind: str
-    """Media category: ``"image"``, ``"video"``, or ``"audio"``."""
+    """The media category of the stored asset, one of ``"image"``,
+    ``"video"``, or ``"audio"``."""
     path: Path
     """Absolute path to the saved file on local disk."""
     media_type: str
@@ -65,7 +66,14 @@ class GeneratedMediaStorageLimitExceeded(RuntimeError):
 
 
 class GeneratedMediaStore:
-    """Stores generated media files for later download via HTTP."""
+    """Stores generated media files for later download via HTTP.
+
+    Args:
+        root_dir: Root directory under which the per-category media
+            subdirectories are created.
+        max_storage_bytes: Maximum total size of stored assets, in bytes;
+            older assets are evicted to make room for new ones.
+    """
 
     def __init__(
         self,
