@@ -418,6 +418,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="N",
         help="shard-parallel workers (default: 32)",
     )
+    parser.add_argument(
+        "--stats-json",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "also write the final stats to PATH as JSON, so a caller can read "
+            "them without scraping the log"
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -434,6 +443,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         dry_run=args.dry_run,
         max_workers=args.max_workers,
     )
+
+    if args.stats_json:
+        summary: dict[str, object] = {"format": fmt.value, **stats}
+        args.stats_json.parent.mkdir(parents=True, exist_ok=True)
+        args.stats_json.write_text(json.dumps(summary, indent=2))
 
     label = "NVFP4" if isinstance(fmt, FP4Format) else f"MXFP6 ({fmt.value})"
     logger.info(
