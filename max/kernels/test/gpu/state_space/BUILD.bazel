@@ -100,7 +100,11 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _GPU_MEMORY = {
-    "test_gated_delta.mojo": "3",
+    # These three each hold a ~4 GiB state pool, to reach a row past a
+    # 32-bit offset.
+    "test_gated_delta.mojo": "8",
+    "test_gated_delta_conv1d.mojo": "8",
+    "test_varlen_causal_conv1d.mojo": "8",
     "test_sm100_kda_prefill_m64.mojo": "8",
     "test_sm100_kda_prefill_m128.mojo": "8",
     "test_sm100_kda_bt16.mojo": "8",

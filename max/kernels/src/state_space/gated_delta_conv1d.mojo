@@ -64,7 +64,7 @@ from max.gpu import (
     block_idx,
     thread_idx,
 )
-from layout import TensorEngine, TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from std.utils.index import IndexList
 
 
@@ -112,10 +112,6 @@ def gated_delta_conv1d_fwd_gpu[
     qkv_input_channel_stride: UInt32,  # stride along conv_dim axis (usually 1)
     conv_weight_channel_stride: UInt32,  # stride along conv_dim axis
     conv_weight_offset_stride: UInt32,  # stride along kernel_size axis
-    # Strides for the [max_slots, conv_dim, kernel_size-1] conv state pool.
-    conv_state_pool_stride: UInt32,
-    conv_state_channel_stride: UInt32,
-    conv_state_window_stride: UInt32,
     # Output strides (match input strides for conv_output_ragged)
     conv_output_seqlen_stride: UInt32,
     conv_output_channel_stride: UInt32,
@@ -212,13 +208,10 @@ def gated_delta_conv1d_fwd_gpu[
                 # KERNEL_SIZE-2 (newest).
                 var window_idx = KERNEL_SIZE_MINUS_ONE + lookback_position
                 if window_idx >= 0:
-                    var state_flat_offset = (
-                        UInt32(slot) * conv_state_pool_stride
-                        + UInt32(conv_channel_idx) * conv_state_channel_stride
-                        + UInt32(window_idx) * conv_state_window_stride
-                    )
                     input_value = Float32(
-                        conv_state.raw_load(state_flat_offset)
+                        conv_state.load(
+                            Coord(slot, conv_channel_idx, window_idx)
+                        )[0]
                     )
 
             conv_sum += input_value * Float32(weight_register[kernel_offset_k])
@@ -266,16 +259,10 @@ def gated_delta_conv1d_fwd_gpu[
                 KERNEL_SIZE_MINUS_ONE + source_position_in_sequence
             )
             if old_window_idx >= 0:
-                var old_state_flat_offset = (
-                    UInt32(slot) * conv_state_pool_stride
-                    + UInt32(conv_channel_idx) * conv_state_channel_stride
-                    + UInt32(old_window_idx) * conv_state_window_stride
-                )
-                state_value = conv_state.raw_load(old_state_flat_offset)
+                state_value = conv_state.load(
+                    Coord(slot, conv_channel_idx, old_window_idx)
+                )[0]
 
-        var new_state_flat_offset = (
-            UInt32(slot) * conv_state_pool_stride
-            + UInt32(conv_channel_idx) * conv_state_channel_stride
-            + UInt32(state_slot_j) * conv_state_window_stride
+        conv_state.store(
+            Coord(slot, conv_channel_idx, state_slot_j), state_value
         )
-        conv_state.raw_store(new_state_flat_offset, state_value)

@@ -175,8 +175,7 @@ struct VarlenConvIO[
     `t.load(Coord(...))` -- the view's own `RuntimeLayout` matches the
     `(d, w)` / `(d,)` logical order exactly. `load_x`/`store_out` instead take
     the caller's runtime `dim`/`seqlen` strides and compute the offset
-    explicitly (`d*dim_stride + s*seqlen_stride`), matching the conv-state
-    ring-buffer's `raw_load`/`raw_store` pattern below. This is required, not
+    explicitly (`d*dim_stride + s*seqlen_stride`). This is required, not
     just symmetric style: `x`/`output`'s *physical* axis order flips under the
     `channels_last` builtin parameter (`kernels.mojo`'s `CausalConv1DVarlenFwd`)
     while the `(d, s)` *logical* argument order here does not, so a
@@ -453,9 +452,6 @@ def causal_conv1d_varlen_fwd_cpu[
     weight_width_stride: UInt32,
     out_dim_stride: UInt32,
     out_seqlen_stride: UInt32,
-    conv_states_batch_stride: UInt32,
-    conv_states_dim_stride: UInt32,
-    conv_states_width_stride: UInt32,
     silu_activation: Bool,
     pad_slot_id: Int32,
     has_cache_indices: Bool,
@@ -505,12 +501,6 @@ def causal_conv1d_varlen_fwd_cpu[
         weight_width_stride: Stride for the tap dimension in `weight`.
         out_dim_stride: Stride for the channel dimension in `output`.
         out_seqlen_stride: Stride for the sequence dimension in `output`.
-        conv_states_batch_stride: Stride for the batch dimension in
-            `conv_states`.
-        conv_states_dim_stride: Stride for the channel dimension in
-            `conv_states`.
-        conv_states_width_stride: Stride for the tap dimension in
-            `conv_states`.
         silu_activation: Whether to apply the SiLU activation to the output.
         pad_slot_id: Slot ID identifying padded entries to skip.
         has_cache_indices: Whether to consult `cache_indices` for slot lookup.
@@ -526,8 +516,9 @@ def causal_conv1d_varlen_fwd_cpu[
 
     # Forward-path DRAM I/O owner. `load_x`/`store_out` address through the
     # caller's runtime dim/seqlen strides (channels_last-corrected by the
-    # caller) rather than `Coord(d, s)`, matching the conv-state ring-buffer's
-    # raw_load/raw_store pattern below -- see `VarlenConvIO`'s docstring.
+    # caller) rather than `Coord(d, s)` -- see `VarlenConvIO`'s docstring.
+    # `conv_states` is indexed, not addressed: the pool outgrows a 32-bit
+    # offset, and TileTensor forms this one at 64 bits.
     var io = VarlenConvIO(
         x,
         weight,
@@ -591,13 +582,10 @@ def causal_conv1d_varlen_fwd_cpu[
                             width_minus_1 + input_l
                         )  # Maps negative to state index
                         if state_idx >= 0:
-                            var state_offset = (
-                                UInt32(cache_idx) * conv_states_batch_stride
-                                + UInt32(d) * conv_states_dim_stride
-                                + UInt32(state_idx) * conv_states_width_stride
-                            )
                             input_val = Scalar[x_dtype](
-                                conv_states.raw_load(state_offset)
+                                conv_states.load(
+                                    Coord(cache_idx, d, state_idx)
+                                )[0]
                             )
 
                     conv_sum += Scalar[accum_dtype](input_val) * Scalar[
@@ -636,19 +624,11 @@ def causal_conv1d_varlen_fwd_cpu[
                         # `src_l >= -width_minus_1`.
                         var state_idx = width_minus_1 + src_l
                         if state_idx >= 0:
-                            var state_offset = (
-                                UInt32(cache_idx) * conv_states_batch_stride
-                                + UInt32(d) * conv_states_dim_stride
-                                + UInt32(state_idx) * conv_states_width_stride
-                            )
-                            val = conv_states.raw_load(state_offset)
+                            val = conv_states.load(
+                                Coord(cache_idx, d, state_idx)
+                            )[0]
 
-                    var state_offset = (
-                        UInt32(cache_idx) * conv_states_batch_stride
-                        + UInt32(d) * conv_states_dim_stride
-                        + UInt32(s) * conv_states_width_stride
-                    )
-                    conv_states.raw_store(state_offset, val)
+                    conv_states.store(Coord(cache_idx, d, s), val)
 
 
 def causal_conv1d_varlen_update_cpu[
@@ -1029,9 +1009,6 @@ def causal_conv1d_varlen_fwd_gpu[
     weight_width_stride: UInt32,
     out_dim_stride: UInt32,
     out_seqlen_stride: UInt32,
-    conv_states_batch_stride: UInt32,
-    conv_states_dim_stride: UInt32,
-    conv_states_width_stride: UInt32,
     silu_activation: Int8,
     pad_slot_id: Int32,
     has_cache_indices: Int8,
@@ -1088,8 +1065,9 @@ def causal_conv1d_varlen_fwd_gpu[
 
     # Forward-path DRAM I/O owner. `load_x`/`store_out` address through the
     # caller's runtime dim/seqlen strides (channels_last-corrected by the
-    # caller) rather than `Coord(d, s)`, matching the conv-state ring-buffer's
-    # raw_load/raw_store pattern below -- see `VarlenConvIO`'s docstring.
+    # caller) rather than `Coord(d, s)` -- see `VarlenConvIO`'s docstring.
+    # `conv_states` is indexed, not addressed: the pool outgrows a 32-bit
+    # offset, and TileTensor forms this one at 64 bits.
     var io = VarlenConvIO(
         x,
         weight,
@@ -1125,13 +1103,8 @@ def causal_conv1d_varlen_fwd_gpu[
             elif use_initial_state and has_conv_states != 0:
                 var state_idx = WIDTH_MINUS_1 + input_l
                 if state_idx >= 0:
-                    var state_offset = (
-                        UInt32(cache_idx) * conv_states_batch_stride
-                        + UInt32(d) * conv_states_dim_stride
-                        + UInt32(state_idx) * conv_states_width_stride
-                    )
                     input_val = Scalar[x_dtype](
-                        conv_states.raw_load(state_offset)
+                        conv_states.load(Coord(cache_idx, d, state_idx))[0]
                     )
 
             conv_sum += Scalar[accum_dtype](input_val) * Scalar[accum_dtype](
@@ -1175,19 +1148,9 @@ def causal_conv1d_varlen_fwd_gpu[
                 # entry.
                 var state_idx = WIDTH_MINUS_1 + src_l
                 if state_idx >= 0:
-                    var prev_offset = (
-                        UInt32(cache_idx) * conv_states_batch_stride
-                        + UInt32(d) * conv_states_dim_stride
-                        + UInt32(state_idx) * conv_states_width_stride
-                    )
-                    val = conv_states.raw_load(prev_offset)
+                    val = conv_states.load(Coord(cache_idx, d, state_idx))[0]
 
-            var state_offset = (
-                UInt32(cache_idx) * conv_states_batch_stride
-                + UInt32(d) * conv_states_dim_stride
-                + UInt32(s) * conv_states_width_stride
-            )
-            conv_states.raw_store(state_offset, val)
+            conv_states.store(Coord(cache_idx, d, s), val)
 
 
 # Outputs per steady-state trip of the seq-parallel prefill kernel below.
@@ -1271,9 +1234,6 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     weight_width_stride: UInt32,
     out_dim_stride: UInt32,
     out_seqlen_stride: UInt32,
-    conv_states_batch_stride: UInt32,
-    conv_states_dim_stride: UInt32,
-    conv_states_width_stride: UInt32,
     silu_activation: Int8,
     pad_slot_id: Int32,
     has_cache_indices: Int8,
@@ -1392,11 +1352,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
             var state_idx = WIDTH_MINUS_1 + pos
             if state_idx >= 0:
                 v = Scalar[x_dtype](
-                    conv_states.raw_load(
-                        UInt32(cache_idx) * conv_states_batch_stride
-                        + UInt32(d) * conv_states_dim_stride
-                        + UInt32(state_idx) * conv_states_width_stride
-                    )
+                    conv_states.load(Coord(cache_idx, d, state_idx))[0]
                 )
         win[i] = v
 
@@ -1465,19 +1421,9 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
                 # `seqlen + s`, ahead of the `s` written here.
                 var state_idx = WIDTH_MINUS_1 + src_l
                 if state_idx >= 0:
-                    var prev_offset = (
-                        UInt32(cache_idx) * conv_states_batch_stride
-                        + UInt32(d) * conv_states_dim_stride
-                        + UInt32(state_idx) * conv_states_width_stride
-                    )
-                    val = conv_states.raw_load(prev_offset)
+                    val = conv_states.load(Coord(cache_idx, d, state_idx))[0]
 
-            var state_offset = (
-                UInt32(cache_idx) * conv_states_batch_stride
-                + UInt32(d) * conv_states_dim_stride
-                + UInt32(s) * conv_states_width_stride
-            )
-            conv_states.raw_store(state_offset, val)
+            conv_states.store(Coord(cache_idx, d, s), val)
 
 
 def causal_conv1d_varlen_update_gpu[

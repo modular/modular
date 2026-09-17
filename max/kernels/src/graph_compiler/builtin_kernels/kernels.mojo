@@ -3446,16 +3446,12 @@ struct GatedDeltaConv1dFwd:
 
         var qkv_input_strides = qkv_input_ragged.strides()
         var conv_weight_strides = conv_weight.strides()
-        var conv_state_strides = conv_state.strides()
         var conv_output_strides = conv_output_ragged.strides()
 
         var qkv_input_seqlen_stride = UInt32(qkv_input_strides[0])
         var qkv_input_channel_stride = UInt32(qkv_input_strides[1])
         var conv_weight_channel_stride = UInt32(conv_weight_strides[0])
         var conv_weight_offset_stride = UInt32(conv_weight_strides[1])
-        var conv_state_pool_stride = UInt32(conv_state_strides[0])
-        var conv_state_channel_stride = UInt32(conv_state_strides[1])
-        var conv_state_window_stride = UInt32(conv_state_strides[2])
         var conv_output_seqlen_stride = UInt32(conv_output_strides[0])
         var conv_output_channel_stride = UInt32(conv_output_strides[1])
 
@@ -3500,9 +3496,6 @@ struct GatedDeltaConv1dFwd:
                 qkv_input_channel_stride,
                 conv_weight_channel_stride,
                 conv_weight_offset_stride,
-                conv_state_pool_stride,
-                conv_state_channel_stride,
-                conv_state_window_stride,
                 conv_output_seqlen_stride,
                 conv_output_channel_stride,
                 grid_dim=(grid_dim_batch, grid_dim_channels),
@@ -3676,7 +3669,6 @@ struct GatedDeltaRecurrenceFwd:
 
         var qkv_strides = qkv_conv_output.strides()
         var per_token_decay_strides = decay_per_token.strides()
-        var recurrent_state_strides = recurrent_state.strides()
         var recurrence_output_strides = recurrence_output.strides()
 
         debug_assert(
@@ -3691,14 +3683,6 @@ struct GatedDeltaRecurrenceFwd:
         var qkv_conv_output_channel_stride = UInt32(qkv_strides[1])
         var per_token_seqlen_stride = UInt32(per_token_decay_strides[0])
         var per_token_head_stride = UInt32(per_token_decay_strides[1])
-        var recurrent_state_slot_stride = UInt32(recurrent_state_strides[0])
-        var recurrent_state_value_head_stride = UInt32(
-            recurrent_state_strides[1]
-        )
-        var recurrent_state_key_dim_stride = UInt32(recurrent_state_strides[2])
-        var recurrent_state_value_dim_stride = UInt32(
-            recurrent_state_strides[3]
-        )
         var recurrence_output_seqlen_stride = UInt32(
             recurrence_output_strides[0]
         )
@@ -3751,10 +3735,6 @@ struct GatedDeltaRecurrenceFwd:
                 qkv_conv_output_channel_stride,
                 per_token_seqlen_stride,
                 per_token_head_stride,
-                recurrent_state_slot_stride,
-                recurrent_state_value_head_stride,
-                recurrent_state_key_dim_stride,
-                recurrent_state_value_dim_stride,
                 recurrence_output_seqlen_stride,
                 recurrence_output_valuedim_stride,
                 grid_dim=(num_blocks,),
@@ -4706,7 +4686,6 @@ struct CausalConv1DVarlenFwd[
         var x_strides = x.strides()
         var weight_strides = weight.strides()
         var output_strides = output.strides()
-        var conv_states_strides = conv_states.strides()
 
         var x_dim_stride = UInt32(x_strides[dim_axis])
         var x_seqlen_stride = UInt32(x_strides[seq_axis])
@@ -4716,15 +4695,6 @@ struct CausalConv1DVarlenFwd[
         var out_seqlen_stride = UInt32(output_strides[seq_axis])
 
         var has_conv_states = conv_states.dim_size(0) > 0
-        var conv_states_batch_stride = UInt32(
-            conv_states_strides[0] if has_conv_states else 0
-        )
-        var conv_states_dim_stride = UInt32(
-            conv_states_strides[1] if has_conv_states else 0
-        )
-        var conv_states_width_stride = UInt32(
-            conv_states_strides[2] if has_conv_states else 0
-        )
 
         var has_cache_indices = cache_indices.dim_size(0) > 0
         var has_initial_state_flag = has_initial_state.dim_size(0) > 0
@@ -4763,9 +4733,6 @@ struct CausalConv1DVarlenFwd[
                 weight_width_stride,
                 out_dim_stride,
                 out_seqlen_stride,
-                conv_states_batch_stride,
-                conv_states_dim_stride,
-                conv_states_width_stride,
                 silu_activation,
                 PAD_SLOT_ID,
                 has_cache_indices,
@@ -4856,9 +4823,6 @@ struct CausalConv1DVarlenFwd[
                         UInt32(weight_width_stride),
                         UInt32(out_dim_stride),
                         UInt32(out_seqlen_stride),
-                        UInt32(conv_states_batch_stride),
-                        UInt32(conv_states_dim_stride),
-                        UInt32(conv_states_width_stride),
                         silu_activation_int8,
                         Int32(PAD_SLOT_ID),
                         Int8(has_cache_indices),
@@ -4924,9 +4888,6 @@ struct CausalConv1DVarlenFwd[
                     UInt32(weight_width_stride),
                     UInt32(out_dim_stride),
                     UInt32(out_seqlen_stride),
-                    UInt32(conv_states_batch_stride),
-                    UInt32(conv_states_dim_stride),
-                    UInt32(conv_states_width_stride),
                     silu_activation_int8,
                     Int32(PAD_SLOT_ID),
                     Int8(has_cache_indices),

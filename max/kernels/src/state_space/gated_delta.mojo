@@ -107,7 +107,7 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from std.math import rsqrt
 from std.memory import unsafe_stack_allocation
-from layout import TensorEngine, TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 
 
 # ===----------------------------------------------------------------------=== #
@@ -160,11 +160,6 @@ def gated_delta_recurrence_fwd_gpu[
     # Strides for [total_seq_len, num_value_heads] tensors (decay, beta)
     per_token_seqlen_stride: UInt32,
     per_token_head_stride: UInt32,
-    # Strides for [max_slots, nv, KD, VD] recurrent state pool.
-    recurrent_state_slot_stride: UInt32,
-    recurrent_state_value_head_stride: UInt32,
-    recurrent_state_key_dim_stride: UInt32,
-    recurrent_state_value_dim_stride: UInt32,
     # Strides for [total_seq_len, value_dim] recurrence output
     recurrence_output_seqlen_stride: UInt32,
     recurrence_output_valuedim_stride: UInt32,
@@ -234,14 +229,6 @@ def gated_delta_recurrence_fwd_gpu[
             positions in `decay_per_token` and `beta_per_token`.
         per_token_head_stride: Stride between consecutive heads in
             `decay_per_token` and `beta_per_token`.
-        recurrent_state_slot_stride: Stride between consecutive slots
-            in `recurrent_state`.
-        recurrent_state_value_head_stride: Stride between consecutive
-            value heads in `recurrent_state`.
-        recurrent_state_key_dim_stride: Stride between consecutive
-            key-dim elements in `recurrent_state`.
-        recurrent_state_value_dim_stride: Stride between consecutive
-            value-dim elements in `recurrent_state`.
         recurrence_output_seqlen_stride: Stride between consecutive
             sequence positions in `recurrence_output`.
         recurrence_output_valuedim_stride: Stride between consecutive
@@ -287,13 +274,9 @@ def gated_delta_recurrence_fwd_gpu[
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
     var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
     comptime for kd in range(KEY_HEAD_DIM):
-        var off = (
-            UInt32(slot) * recurrent_state_slot_stride
-            + UInt32(value_head_idx) * recurrent_state_value_head_stride
-            + UInt32(kd) * recurrent_state_key_dim_stride
-            + UInt32(tid) * recurrent_state_value_dim_stride
+        state_col[kd] = Float32(
+            recurrent_state.load(Coord(slot, value_head_idx, kd, tid))[0]
         )
-        state_col[kd] = Float32(recurrent_state.raw_load(off))
 
     var sequence_start_flat_idx = Int(
         input_row_offsets.raw_load(batch_item_idx)
@@ -403,10 +386,7 @@ def gated_delta_recurrence_fwd_gpu[
 
     # ── Write final state column back into pool[slot, ...] ──────────────────
     comptime for kd in range(KEY_HEAD_DIM):
-        var off = (
-            UInt32(slot) * recurrent_state_slot_stride
-            + UInt32(value_head_idx) * recurrent_state_value_head_stride
-            + UInt32(kd) * recurrent_state_key_dim_stride
-            + UInt32(tid) * recurrent_state_value_dim_stride
+        recurrent_state.store(
+            Coord(slot, value_head_idx, kd, tid),
+            Scalar[state_dtype](state_col[kd]),
         )
-        recurrent_state.raw_store(off, Scalar[state_dtype](state_col[kd]))

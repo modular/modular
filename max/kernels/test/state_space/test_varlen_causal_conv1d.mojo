@@ -13,14 +13,19 @@
 
 from std.math import exp
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from std.random import rand
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
     causal_conv1d_varlen_states_cpu,
 )
-from std.testing import TestSuite, assert_almost_equal
+from std.testing import (
+    TestSuite,
+    assert_almost_equal,
+    assert_equal,
+    assert_true,
+)
 
 from std.utils.index import Index, IndexList
 
@@ -147,9 +152,6 @@ def run_varlen_causal_conv1d_fwd[
     var weight_width_stride: UInt32 = 1
     var out_dim_stride: UInt32 = UInt32(total_seqlen)
     var out_seqlen_stride: UInt32 = 1
-    var conv_states_batch_stride: UInt32 = UInt32(dim * state_len)
-    var conv_states_dim_stride: UInt32 = UInt32(state_len)
-    var conv_states_width_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
@@ -182,9 +184,6 @@ def run_varlen_causal_conv1d_fwd[
         weight_width_stride,
         out_dim_stride,
         out_seqlen_stride,
-        conv_states_batch_stride,
-        conv_states_dim_stride,
-        conv_states_width_stride,
         silu_activation,
         PAD_SLOT_ID,
         True,  # has_cache_indices
@@ -711,9 +710,6 @@ def run_conv_state_writeback[
         UInt32(1),  # weight_width_stride
         UInt32(total_seqlen),  # out_dim_stride
         UInt32(1),  # out_seqlen_stride
-        UInt32(dim * state_len),  # conv_states_batch_stride
-        UInt32(state_len),  # conv_states_dim_stride
-        UInt32(1),  # conv_states_width_stride
         False,  # silu_activation
         PAD_SLOT_ID,
         True,  # has_cache_indices
@@ -748,6 +744,63 @@ def run_conv_state_writeback[
                     expected,
                     rtol=0.001,
                 )
+
+
+# =============================================================================
+# Regression test: `conv_states` addressing past a 32-bit offset
+# =============================================================================
+
+
+def test_conv_states_pool_offset_avoids_32bit_wrap() raises:
+    """`conv_states` pool addressing must not wrap at 2**32 elements.
+
+    Reproduces the MXSERV-520 overflow: once Inkling's conv state moved onto
+    the recurrent cache group, a layer indexes the whole per-device Jenga
+    slab instead of a `max_batch_size`-row buffer. The measured slab is 2531
+    huge pages x 26.25 MiB = 64.88 GiB; at `dim=4096` channels and
+    `state_len=3` (width 4) that is 1,417,344 rows x 12,288 elements/row,
+    1.74e10 elements total -- over 4x past `2**32`.
+
+    Materializing that pool here (>16 GiB) is impractical, so this reproduces
+    the identical offset arithmetic without the memory: `dim`/`state_len` fix
+    the per-row size exactly as the real pool has it, `cache_idx` is the real
+    deepest-row index from the measured slab, and both formulas below are
+    pure integer arithmetic over a `Layout`'s shape/stride metadata -- no
+    pointer is ever dereferenced, so no backing allocation is needed.
+
+    Before the fix (`varlen_causal_conv1d.mojo`'s 9 sites), the kernel formed
+    this offset by hand in `UInt32`:
+    `UInt32(cache_idx) * UInt32(conv_states_batch_stride) + ...`, which wraps
+    for this `cache_idx` (asserted below). After the fix, the kernel indexes
+    `conv_states.load(Coord(cache_idx, d, state_idx))` /
+    `.store(Coord(...), ...)`, which forms the offset at `conv_states`'s own
+    `linear_idx_type` -- 64-bit for a dynamic, `GENERIC`-address-space pool
+    per `_get_index_type` (`layout/tile_tensor.mojo`) -- so it no longer
+    wraps. This test drives that exact `Layout.__call__[linear_idx_type=...]`
+    step `TileTensor.load`/`.store` use internally.
+    """
+    var dim = 4096
+    var state_len = 3
+    var cache_idx = 1_417_343  # deepest row of the measured 1,417,344-row slab
+
+    var conv_states_batch_stride = UInt32(dim * state_len)  # 12288
+    var true_offset = UInt64(cache_idx) * UInt64(conv_states_batch_stride)
+    assert_true(
+        true_offset > UInt64(UInt32.MAX),
+        "test setup must actually cross the 32-bit boundary",
+    )
+
+    var wrapped_offset = UInt32(cache_idx) * conv_states_batch_stride
+    assert_true(
+        UInt64(wrapped_offset) != true_offset,
+        "expected the hand-rolled UInt32 product to wrap",
+    )
+
+    var pool_layout = row_major(cache_idx + 1, dim, state_len)
+    var computed_offset = pool_layout[linear_idx_type=DType.int64](
+        Coord(cache_idx, 0, 0)
+    )
+    assert_equal(UInt64(computed_offset), true_offset)
 
 
 # =============================================================================

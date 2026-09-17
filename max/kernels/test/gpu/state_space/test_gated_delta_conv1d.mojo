@@ -25,7 +25,7 @@ from layout import (
 )
 from std.random import rand
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
-from std.testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal, assert_equal
 from std.utils.index import Index, IndexList
 
 
@@ -182,6 +182,8 @@ def run_slot_indexed_gpu[
     var qkv_input_channel_stride: UInt32 = 1
     var conv_weight_channel_stride: UInt32 = UInt32(KERNEL_SIZE)
     var conv_weight_offset_stride: UInt32 = 1
+    # Not passed to the kernel (it indexes `conv_state_tt` via `Coord`), but
+    # the CPU reference below still addresses `pool_ref_h` by hand.
     var conv_state_pool_stride: UInt32 = UInt32(conv_dim * state_len)
     var conv_state_channel_stride: UInt32 = UInt32(state_len)
     var conv_state_window_stride: UInt32 = 1
@@ -220,9 +222,6 @@ def run_slot_indexed_gpu[
             qkv_input_channel_stride,
             conv_weight_channel_stride,
             conv_weight_offset_stride,
-            conv_state_pool_stride,
-            conv_state_channel_stride,
-            conv_state_window_stride,
             conv_output_seqlen_stride,
             conv_output_channel_stride,
             grid_dim=(batch_size, ceildiv(conv_dim, CONV1D_BLOCK_DIM)),
@@ -394,6 +393,172 @@ def test_slot_indexed_short_sequence_carries_state_forward() raises:
         slot_assignments=Index(1),
         ctx=ctx,
     )
+
+
+# =============================================================================
+# Regression test: a `conv_state` row past a 32-bit offset
+# =============================================================================
+
+
+def test_gated_delta_conv1d_gpu_deep_slot_no_alias() raises:
+    """A `conv_state` slot past 2**32 elements must not alias onto the front
+    of the pool.
+
+    The row is kept tiny (`conv_dim=4`, `KERNEL_SIZE=2`, `UInt8`) so that
+    `slot_deep * row_elements` lands on 2**32 with a ~4 GiB pool. Only
+    the two sentinel bytes are touched from the host.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+
+    comptime state_dtype = DType.uint8
+    comptime work_dtype = DType.float32
+    comptime KERNEL_SIZE = 2
+    comptime state_len = KERNEL_SIZE - 1  # 1
+    comptime conv_dim = 4
+    comptime row_elements = conv_dim * state_len  # 4, a power of two
+    comptime batch_size = 1
+    comptime total_seq_len = 1
+    comptime CONV1D_BLOCK_DIM = 128
+
+    # slot_deep * row_elements == 2**32 exactly: one past UInt32.MAX.
+    var slot_deep = 1 << 30
+    var num_slots = slot_deep + 1
+    var deep_offset = slot_deep * row_elements
+
+    var front_sentinel = Scalar[state_dtype](111)
+    var deep_sentinel = Scalar[state_dtype](222)
+    var x_val = Float32(5)
+
+    var qkv_input_heap = List(length=conv_dim * total_seq_len, fill=x_val)
+    var qkv_input_h = TileTensor(
+        qkv_input_heap, row_major(total_seq_len, conv_dim)
+    )
+    var conv_weight_heap = List(length=conv_dim * KERNEL_SIZE, fill=Float32(0))
+    var conv_weight_h = TileTensor(
+        conv_weight_heap, row_major(conv_dim, KERNEL_SIZE)
+    )
+    for c in range(conv_dim):
+        conv_weight_h.raw_store(c * KERNEL_SIZE, Float32(1))
+    var slot_idx_heap = List(length=batch_size, fill=UInt32(slot_deep))
+    var slot_idx_h = TileTensor(slot_idx_heap, row_major(batch_size))
+    var input_row_offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
+    var input_row_offsets_h = TileTensor(
+        input_row_offsets_heap, row_major(batch_size + 1)
+    )
+    input_row_offsets_h.raw_store(1, UInt32(total_seq_len))
+
+    var qkv_input_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * conv_dim
+    )
+    ctx.enqueue_copy(qkv_input_device, qkv_input_h._storage)
+    var conv_weight_device = ctx.enqueue_create_buffer[work_dtype](
+        conv_dim * KERNEL_SIZE
+    )
+    ctx.enqueue_copy(conv_weight_device, conv_weight_h._storage)
+    var slot_idx_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    ctx.enqueue_copy(slot_idx_device, slot_idx_h._storage)
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
+        batch_size + 1
+    )
+    ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_h._storage)
+    var conv_output_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * conv_dim
+    )
+
+    var qkv_input_tt = TileTensor(
+        qkv_input_device, row_major(total_seq_len, conv_dim)
+    )
+    var conv_weight_tt = TileTensor(
+        conv_weight_device, row_major(conv_dim, KERNEL_SIZE)
+    )
+    var slot_idx_tt = TileTensor(slot_idx_device, row_major(batch_size))
+    var input_row_offsets_tt = TileTensor(
+        input_row_offsets_device, row_major(batch_size + 1)
+    )
+    var conv_output_tt = TileTensor(
+        conv_output_device, row_major(total_seq_len, conv_dim)
+    )
+
+    var conv_state_device = ctx.enqueue_create_buffer[state_dtype](
+        num_slots * row_elements
+    )
+    var conv_state_tt = TileTensor(
+        conv_state_device, row_major(num_slots, conv_dim, state_len)
+    )
+
+    var front_sub = conv_state_device.create_sub_buffer[state_dtype](0, 1)
+    var deep_sub = conv_state_device.create_sub_buffer[state_dtype](
+        deep_offset, 1
+    )
+    var front_seed_heap = List(length=1, fill=front_sentinel)
+    var front_seed_h = TileTensor(front_seed_heap, row_major(1))
+    var deep_seed_heap = List(length=1, fill=deep_sentinel)
+    var deep_seed_h = TileTensor(deep_seed_heap, row_major(1))
+    ctx.enqueue_copy(front_sub, front_seed_h._storage)
+    ctx.enqueue_copy(deep_sub, deep_seed_h._storage)
+    ctx.synchronize()
+
+    var compiled_func = ctx.compile_function[
+        gated_delta_conv1d_fwd_gpu[
+            work_dtype,
+            state_dtype,
+            KERNEL_SIZE,
+            CONV1D_BLOCK_DIM,
+            qkv_input_tt.LayoutType,
+            conv_weight_tt.LayoutType,
+            conv_state_tt.LayoutType,
+            slot_idx_tt.LayoutType,
+            input_row_offsets_tt.LayoutType,
+            conv_output_tt.LayoutType,
+            qkv_input_tt.Engine,
+        ]
+    ]()
+    ctx.enqueue_function(
+        compiled_func,
+        Int32(batch_size),
+        Int32(total_seq_len),
+        Int32(conv_dim),
+        qkv_input_tt,
+        conv_weight_tt,
+        conv_state_tt,
+        slot_idx_tt,
+        input_row_offsets_tt,
+        conv_output_tt,
+        UInt32(conv_dim),  # qkv_input_seqlen_stride
+        UInt32(1),  # qkv_input_channel_stride
+        UInt32(KERNEL_SIZE),  # conv_weight_channel_stride
+        UInt32(1),  # conv_weight_offset_stride
+        UInt32(conv_dim),  # conv_output_seqlen_stride
+        UInt32(1),  # conv_output_channel_stride
+        grid_dim=(batch_size, ceildiv(conv_dim, CONV1D_BLOCK_DIM)),
+        block_dim=(CONV1D_BLOCK_DIM,),
+    )
+
+    var output_readback_heap = List(
+        length=total_seq_len * conv_dim, fill=Float32(0)
+    )
+    var output_h = TileTensor(
+        output_readback_heap, row_major(total_seq_len, conv_dim)
+    )
+    var front_readback_heap = List(length=1, fill=Scalar[state_dtype](0))
+    var front_readback_h = TileTensor(front_readback_heap, row_major(1))
+    var deep_readback_heap = List(length=1, fill=Scalar[state_dtype](0))
+    var deep_readback_h = TileTensor(deep_readback_heap, row_major(1))
+    ctx.enqueue_copy(output_h._storage, conv_output_device)
+    ctx.enqueue_copy(front_readback_h._storage, front_sub)
+    ctx.enqueue_copy(deep_readback_h._storage, deep_sub)
+    ctx.synchronize()
+
+    # The deep sentinel, not the front row it would alias onto.
+    assert_equal(output_h.raw_load(0), Scalar[work_dtype](deep_sentinel))
+
+    # The front of the pool must be untouched.
+    assert_equal(front_readback_h.raw_load(0), front_sentinel)
+
+    # The deep slot itself must carry the write.
+    assert_equal(deep_readback_h.raw_load(0), Scalar[state_dtype](x_val))
 
 
 def main() raises:

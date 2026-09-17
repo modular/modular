@@ -26,7 +26,7 @@ from layout import (
 )
 from std.random import rand
 from state_space.gated_delta import gated_delta_recurrence_fwd_gpu
-from std.testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal, assert_equal
 from std.utils.index import Index, IndexList
 
 
@@ -205,6 +205,8 @@ def run_slot_indexed_gpu[
     var qkv_channel_stride: UInt32 = 1
     var per_token_seqlen_stride: UInt32 = UInt32(num_value_heads)
     var per_token_head_stride: UInt32 = 1
+    # Not passed to the kernel (it indexes `pool_tt` via `Coord`), but the
+    # CPU reference below still addresses `pool_ref_h` by hand.
     var pool_slot_stride: UInt32 = UInt32(
         num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
     )
@@ -252,10 +254,6 @@ def run_slot_indexed_gpu[
             qkv_channel_stride,
             per_token_seqlen_stride,
             per_token_head_stride,
-            pool_slot_stride,
-            pool_value_head_stride,
-            pool_key_dim_stride,
-            pool_value_dim_stride,
             output_seqlen_stride,
             output_valuedim_stride,
             grid_dim=(num_blocks,),
@@ -470,6 +468,179 @@ def test_prefill_gqa_multi_seq() raises:
         ctx=ctx,
         rtol=0.05,
     )
+
+
+# =============================================================================
+# Regression test: a `recurrent_state` row past a 32-bit offset
+# =============================================================================
+
+
+def test_gated_delta_recurrence_gpu_deep_slot_no_alias() raises:
+    """A `recurrent_state` slot past 2**32 elements must not alias onto the
+    front of the pool.
+
+    The row is kept tiny (`nv=4`, `KD=VD=1`, `UInt8`) so that
+    `slot_deep * row_elements` lands on 2**32 with a ~4 GiB pool. `K=0`
+    leaves decay as the only term driving the update, and decay is 0.5
+    rather than 1.0 so an aliased write cannot pass as a no-op.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+
+    comptime state_dtype = DType.uint8
+    comptime work_dtype = DType.float32
+    comptime KEY_HEAD_DIM = 1
+    comptime VALUE_HEAD_DIM = 1
+    comptime num_value_heads = 4
+    comptime num_key_heads = 1
+    comptime row_elements = num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM  # 4
+    comptime key_dim = num_key_heads * KEY_HEAD_DIM  # 1
+    comptime value_dim = num_value_heads * VALUE_HEAD_DIM  # 4
+    comptime conv_dim = key_dim * 2 + value_dim  # 6: [Q, K, V0..V3]
+    comptime total_seq_len = 1
+    comptime batch_size = 1
+
+    # slot_deep * row_elements == 2**32 exactly: one past UInt32.MAX.
+    var slot_deep = 1 << 30
+    var num_slots = slot_deep + 1
+    var deep_offset = slot_deep * row_elements
+
+    var front_sentinel = Scalar[state_dtype](200)
+    var deep_sentinel = Scalar[state_dtype](100)
+    var decay_value = Float32(0.5)
+
+    var qkv_heap = List(length=conv_dim, fill=Float32(0))
+    var qkv_h = TileTensor(qkv_heap, row_major(total_seq_len, conv_dim))
+    qkv_h.raw_store(0, Float32(1))
+    var decay_heap = List(length=num_value_heads, fill=Float32(0))
+    var decay_h = TileTensor(
+        decay_heap, row_major(total_seq_len, num_value_heads)
+    )
+    decay_h.raw_store(0, decay_value)
+    var beta_heap = List(length=num_value_heads, fill=Float32(0))
+    var beta_h = TileTensor(
+        beta_heap, row_major(total_seq_len, num_value_heads)
+    )
+    var offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
+    var offsets_h = TileTensor(offsets_heap, row_major(batch_size + 1))
+    offsets_h.raw_store(1, UInt32(total_seq_len))
+    var slot_idx_heap = List(length=batch_size, fill=UInt32(slot_deep))
+    var slot_idx_h = TileTensor(slot_idx_heap, row_major(batch_size))
+
+    var qkv_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * conv_dim
+    )
+    ctx.enqueue_copy(qkv_device, qkv_h._storage)
+    var decay_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * num_value_heads
+    )
+    ctx.enqueue_copy(decay_device, decay_h._storage)
+    var beta_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * num_value_heads
+    )
+    ctx.enqueue_copy(beta_device, beta_h._storage)
+    var offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    ctx.enqueue_copy(offsets_device, offsets_h._storage)
+    var slot_idx_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    ctx.enqueue_copy(slot_idx_device, slot_idx_h._storage)
+    var recur_out_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * value_dim
+    )
+
+    var qkv_tt = TileTensor(qkv_device, row_major(total_seq_len, conv_dim))
+    var decay_tt = TileTensor(
+        decay_device, row_major(total_seq_len, num_value_heads)
+    )
+    var beta_tt = TileTensor(
+        beta_device, row_major(total_seq_len, num_value_heads)
+    )
+    var offsets_tt = TileTensor(offsets_device, row_major(batch_size + 1))
+    var slot_idx_tt = TileTensor(slot_idx_device, row_major(batch_size))
+    var recur_out_tt = TileTensor(
+        recur_out_device, row_major(total_seq_len, value_dim)
+    )
+
+    var pool_device = ctx.enqueue_create_buffer[state_dtype](
+        num_slots * row_elements
+    )
+    var pool_device_tt = TileTensor(
+        pool_device,
+        row_major(num_slots, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM),
+    )
+
+    var front_sub = pool_device.create_sub_buffer[state_dtype](0, 1)
+    var deep_sub = pool_device.create_sub_buffer[state_dtype](deep_offset, 1)
+    var front_seed_heap = List(length=1, fill=front_sentinel)
+    var front_seed_h = TileTensor(front_seed_heap, row_major(1))
+    var deep_seed_heap = List(length=1, fill=deep_sentinel)
+    var deep_seed_h = TileTensor(deep_seed_heap, row_major(1))
+    ctx.enqueue_copy(front_sub, front_seed_h._storage)
+    ctx.enqueue_copy(deep_sub, deep_seed_h._storage)
+    ctx.synchronize()
+
+    var compiled_func = ctx.compile_function[
+        gated_delta_recurrence_fwd_gpu[
+            work_dtype,
+            state_dtype,
+            KEY_HEAD_DIM,
+            VALUE_HEAD_DIM,
+            recur_out_tt.LayoutType,
+            qkv_tt.LayoutType,
+            decay_tt.LayoutType,
+            beta_tt.LayoutType,
+            pool_device_tt.LayoutType,
+            slot_idx_tt.LayoutType,
+            offsets_tt.LayoutType,
+            recur_out_tt.Engine,
+        ]
+    ]()
+    ctx.enqueue_function(
+        compiled_func,
+        Int32(batch_size),
+        Int32(num_value_heads),
+        Int32(num_key_heads),
+        Int32(key_dim),
+        recur_out_tt,
+        pool_device_tt,
+        slot_idx_tt,
+        qkv_tt,
+        decay_tt,
+        beta_tt,
+        offsets_tt,
+        UInt32(conv_dim),  # qkv_conv_output_seqlen_stride
+        UInt32(1),  # qkv_conv_output_channel_stride
+        UInt32(num_value_heads),  # per_token_seqlen_stride
+        UInt32(1),  # per_token_head_stride
+        UInt32(value_dim),  # recurrence_output_seqlen_stride
+        UInt32(1),  # recurrence_output_valuedim_stride
+        grid_dim=(batch_size * num_value_heads,),
+        block_dim=(VALUE_HEAD_DIM,),
+    )
+
+    var output_readback_heap = List(
+        length=total_seq_len * value_dim, fill=Float32(0)
+    )
+    var output_h = TileTensor(
+        output_readback_heap, row_major(total_seq_len, value_dim)
+    )
+    var front_readback_heap = List(length=1, fill=Scalar[state_dtype](0))
+    var front_readback_h = TileTensor(front_readback_heap, row_major(1))
+    var deep_readback_heap = List(length=1, fill=Scalar[state_dtype](0))
+    var deep_readback_h = TileTensor(deep_readback_heap, row_major(1))
+    ctx.enqueue_copy(output_h._storage, recur_out_device)
+    ctx.enqueue_copy(front_readback_h._storage, front_sub)
+    ctx.enqueue_copy(deep_readback_h._storage, deep_sub)
+    ctx.synchronize()
+
+    # The deep sentinel, not the front row it would alias onto.
+    assert_almost_equal(output_h.raw_load(0), Float32(50), rtol=0.01)
+
+    # The front of the pool must be untouched.
+    assert_equal(front_readback_h.raw_load(0), front_sentinel)
+
+    # The deep slot itself must carry the write.
+    assert_equal(deep_readback_h.raw_load(0), Scalar[state_dtype](50))
 
 
 def main() raises:
