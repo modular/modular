@@ -223,7 +223,7 @@ def quantize_dynamic_scaled_fp4fp8[
         1,
     )
     var num_blocks_per_SM = max(
-        1, B200.threads_per_multiprocessor // block_dim[0]
+        1, B200.gpu_info.threads_per_multiprocessor // block_dim[0]
     )
     var grid_dim = (min(num_rows_padded, num_SMs * num_blocks_per_SM), 1, 1)
 
@@ -469,7 +469,7 @@ def block_scales_interleave_fp4[
     # each thread handle just one scale factor for SF_VECTOR_SIZE of elements
     var block_dim = (min(num_col_padded, num_max_threads), 1, 1)
     var num_blocks_per_SM = max(
-        1, 2 * B200.threads_per_multiprocessor // block_dim[0]
+        1, 2 * B200.gpu_info.threads_per_multiprocessor // block_dim[0]
     )
     var grid_dim = (min(num_rows_padded, num_SMs * num_blocks_per_SM), 1, 1)
 

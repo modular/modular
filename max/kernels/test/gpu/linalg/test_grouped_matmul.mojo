@@ -778,7 +778,7 @@ def main() raises:
                 comptime m = ms[m_idx]
 
                 comptime if m == 16 or n == 16:
-                    comptime if ctx.default_device_info != B200:
+                    comptime if ctx.default_device_info != B200.gpu_info:
                         continue
                 # Test that expert id of -1 results in 0s in the output
                 test[

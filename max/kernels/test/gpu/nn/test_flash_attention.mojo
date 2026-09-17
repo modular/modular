@@ -255,7 +255,7 @@ def test[
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths: List = [64, 128, 512]
 
-    if info == materialize[H100]() or _is_sm10x_gpu(info):
+    if info == materialize[H100.gpu_info]() or _is_sm10x_gpu(info):
         depths.append(80)
         depths.append(256)
 

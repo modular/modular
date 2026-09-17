@@ -66,43 +66,55 @@ def _get_gpu_target[
 
 comptime _matches_target_arch[
     target_arch: StaticString,
+    C: TargetAcceleratorCollection,
     Elt: TargetAcceleratorType,
     Idx: Int,
-]: Bool = Elt.target_accelerator_values.__contains__(target_arch)
+]: Bool = Elt.target_accelerator_values.__contains__(
+    C.normalize_target_arch(target_arch)
+)
 
 comptime _matches_gpu_name[
-    gpu_name: StaticString, Elt: TargetAcceleratorType, Idx: Int
+    gpu_name: StaticString,
+    __unused: TargetAcceleratorCollection,
+    Elt: TargetAcceleratorType,
+    Idx: Int,
 ]: Bool = Elt.gpu_info.name == gpu_name
 
 
 struct _LookupTargetAccelerator[
-    filter_pred: __generator_type[Elt: TargetAcceleratorType, Idx: Int] Bool,
+    filter_pred: __generator_type[
+        C: TargetAcceleratorCollection,
+        Elt: TargetAcceleratorType,
+        Idx: Int,
+    ] Bool,
+    Collections: TypeList[Trait=TargetAcceleratorCollection, ...] = TypeList.of[
+        Trait=TargetAcceleratorCollection, BuiltinTargets, ADDITIONAL_TARGETS
+    ](),
 ]:
     comptime by_target_arch[target_arch: StaticString] = (
         _LookupTargetAccelerator[
             _matches_target_arch[
-                ADDITIONAL_TARGETS.normalize_target_arch(
-                    BuiltinTargets.normalize_target_arch(target_arch)
-                ),
+                target_arch,
                 _,
                 _,
-            ]
+                _,
+            ],
+            Self.Collections,
         ]
     )
 
     comptime by_gpu_name[gpu_name: StaticString] = (
-        _LookupTargetAccelerator[_matches_gpu_name[gpu_name, _, _]]
+        _LookupTargetAccelerator[
+            _matches_gpu_name[gpu_name, _, _, _], Self.Collections
+        ]
     )
 
-    comptime _builtin_results = BuiltinTargets.TARGETS.filter_idx[
-        Self.filter_pred
-    ]()
-    comptime _additional_results = ADDITIONAL_TARGETS.TARGETS.filter_idx[
-        Self.filter_pred
-    ]()
+    comptime _matching_target_values[C: TargetAcceleratorCollection] = (
+        C.TARGETS.filter_idx[Self.filter_pred[C, _, _]]().values
+    )
 
     comptime results = TypeList._concat[
-        Self._builtin_results.values, Self._additional_results.values
+        *Self.Collections.map_to_values[Self._matching_target_values]()
     ]()
 
     @staticmethod
@@ -131,14 +143,36 @@ struct TargetAccelerator[
     target: CompilationTarget,
     # TODO: Should be the same as either GPUInfo.arch_name or GPUInfo.version,
     #       however that field is currently used inconsistently.
-    target_accelerator_values_: List[String],
+    target_accelerator_values_: List[String] = [],
 ](TargetAcceleratorType):
     comptime gpu_info = Self.gpu_info_
     comptime mlir_target = Self.target._mlir_value
     comptime target_accelerator_values = Self.target_accelerator_values_
 
+    # Used when constructing a `TargetAcceleratorCollection` table to add
+    # accepted `--target-accelerator` values to a `TargetAccelerator` instance
+    # that has the default `[]` list.
+    #
+    # We could declare these ahead of time on the target constants (e.g. `B200`)
+    # but that makes it harder to how where the current ambiguities and
+    # conflicts are (e.g. GTX1060 and GTX1060Ti could arguably both match
+    # "sm_61", but only is declared with as matching that `--target-accelerator`
+    # value).
+    comptime _with_cli_values[values: List[String]] = TargetAccelerator[
+        Self.gpu_info_, Self.target, values
+    ]
+
     def __init__(out self):
         pass
+
+    # Forwarded for backwards compatibility. Enables e.g. `B200.sm_count` to
+    # work, instead of the more verbose `B200.gpu_info.sm_count`.
+    # Other fields could be forwarded, but these are the commonly accessed ones.
+    # fmt: off
+    comptime sm_count                         = Self.gpu_info_.sm_count
+    comptime shared_memory_per_multiprocessor = Self.gpu_info_.shared_memory_per_multiprocessor
+    comptime compute                          = Self.gpu_info_.compute
+    # fmt: on
 
 
 trait TargetAcceleratorCollection:
@@ -322,12 +356,12 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         if name == "":
             return _empty_target._mlir_value
 
-        comptime matching_targets = _LookupTargetAccelerator.by_gpu_name[
+        comptime matching_targets = _LookupTargetAccelerator[].by_gpu_name[
             name
         ].results
 
         comptime if matching_targets.length > 0:
-            comptime result = _LookupTargetAccelerator.by_gpu_name[
+            comptime result = _LookupTargetAccelerator[].by_gpu_name[
                 name
             ].single_result()
             return result.mlir_target
@@ -363,12 +397,12 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         comptime if target_arch0 == "cuda":
             return Self.from_name[_accelerator_arch()]()
 
-        comptime matching_targets = _LookupTargetAccelerator.by_target_arch[
+        comptime matching_targets = _LookupTargetAccelerator[].by_target_arch[
             target_arch0
         ].results
 
         comptime if matching_targets.length > 0:
-            comptime result = _LookupTargetAccelerator.by_target_arch[
+            comptime result = _LookupTargetAccelerator[].by_target_arch[
                 target_arch0
             ].single_result()
             return materialize[result.gpu_info]()
@@ -428,6 +462,28 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
             True if both instances represent the same GPU model.
         """
         return self.name == other.name
+
+    def __eq__(self, other: TargetAccelerator[_, _, _]) -> Bool:
+        """Compares this GPU information with a target accelerator.
+
+        Compares against the accelerator's associated `GPUInfo`, allowing
+        device information to be checked directly against a built-in target
+        constant.
+
+        Args:
+            other: The target accelerator to compare.
+
+        Returns:
+            True if both represent the same GPU model.
+
+        Examples:
+
+        ```mojo
+        var device_info = materialize[H100.gpu_info]()
+        print(device_info == H100)  # True
+        ```
+        """
+        return self == materialize[other.gpu_info]()
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):

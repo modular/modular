@@ -70,7 +70,7 @@ def _run_case[
     comptime out_bytes = (hidden_size * 6) // 8
     comptime scale_k = hidden_size // MXFP6_SF_VECTOR_SIZE
     comptime input_dim = hidden_size * 2
-    comptime hw = MI355X
+    comptime hw = MI355X.gpu_info
 
     comptime n_experts = NUM_EXPERTS
     comptime n_off = NUM_EXPERTS + 1

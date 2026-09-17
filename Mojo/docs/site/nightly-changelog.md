@@ -100,6 +100,28 @@ This version is still a work in progress.
   `MutStringSlice` have been removed, and the `mut` parameter on `StringSpan`
   has been removed.
 
+- Introduced a new `CompilationTarget` public type, which is now used in
+  most APIs that are parameterized on compilation target, such as `size_of()`,
+  `align_of()`, `compile_info()`, and more.
+
+  Convenience accessors are provided for querying the current host and
+  accelerator targets:
+
+  - `CompilationTarget.current()` — either the current host target, or
+    accelerator target in an offload compilation.
+
+  - `CompilationTarget.current_accelerator()` — the default accelerator target,
+    either determined automatically or as specified by `--target-accelerator`.
+
+- Added new `TargetAccelerator` type for representing accelerator metadata at
+  compile time, combining `GPUInfo` and `CompilationTarget` values.
+
+  Target constants like `B200` or `MI355X` have changed from being `GPUInfo`
+  instances to `TargetAccelerator`.
+
+  Use `.gpu_info` to access the prior device metadata, or `.target` for the
+  compilation target.
+
 - `Layout` now carries its alignment as a keyword-only parameter of
   the new `Alignment` type, instead of storing it as a runtime field. It
   defaults to the element type's natural alignment, so `Layout[T](count=n)` is
