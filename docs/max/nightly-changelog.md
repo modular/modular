@@ -288,6 +288,22 @@ This version is still a work in progress.
   exponent stays rejected, since `1e-5` is a legal JSON number but not an
   integer. This affects `response_format` schemas as well as tool calls.
 
+- Fixed identical tokens producing different reduce-scatter sums depending
+  on which batch slot they occupied. The P2P reduce-scatter kernel rotated
+  the order in which it summed its peers' buffers by the destination rank,
+  to stagger NVLink traffic. A reduce-scatter's destination rank is a
+  function of the row index, so the same token summed in a different
+  order from one shard to the next -- a legal float reassociation, but one
+  bfloat16 ULP of difference that downstream layers amplified into
+  diverging sampled output when two identical requests shared a batch at
+  different slots (measured on MiniMax-M3 TP4: 113 of 150 greedy decode
+  steps disagreed at temperature 0). Every destination now accumulates its
+  peers in the same canonical rank order, in the standalone kernel, the
+  fused reduce-scatter + RMSNorm kernel, and the grouped relay path, so an
+  element's sum depends on its inputs alone. Outputs of existing
+  multi-GPU batches may shift within rounding noise; the add order was
+  never a contract.
+
 - Fixed Qwen3.5 returning fluent nonsense on every prompt, text included.
   Its linear-attention layers all read and wrote one shared recurrent state
   row rather than one each, and nothing about that was visible from outside,

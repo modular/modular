@@ -158,14 +158,14 @@ def _reducescatter_rmsnorm_kernel[
     var my_start = config.rank_unit_start(my_rank)
     var my_count = config.rank_units(my_rank)
 
-    # Round-robin peer order (RS's `circular_add`): peer 0 is self, so accum
-    # from 0 over all peers is bit-for-bit RS's `accum = peer[0]` init (AMD
-    # non-multimem).
+    # Canonical peer order (RS's canonical rank order): every destination
+    # sums the peers as 0, 1, 2, ... so an element's sum depends on its
+    # `ngpus` input values alone, not on the destination shard. `accum`
+    # starts at 0 and adds peer 0 first, which is bit-for-bit RS's
+    # `accum = peer[0]` init followed by the rest (adding zero is exact).
     comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
     var ptrs = Array[_, ngpus](
-        fill_with_unrolled=lambda [i: Int]() -> PtrType: src_ptrs[
-            (my_rank + i) % ngpus
-        ]
+        fill_with_unrolled=lambda [i: Int]() -> PtrType: src_ptrs[i]
     )
 
     # Gamma is a model weight, not predecessor output, so it can be loaded ahead

@@ -63,7 +63,6 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    circular_add,
     is_p2p_enabled,
 )
 
@@ -399,12 +398,22 @@ def _reducescatter_kernel[
             rank_sigs, my_sig, _my_rank
         )
 
-        # Round-robin access pattern to balance NVLink traffic across GPUs.
+        # Accumulate peers in canonical rank order (0, 1, 2, ...).
+        #
+        # An earlier version rotated the order by the destination rank
+        # (`circular_add(_my_rank, i)`) to stagger which peer each GPU reads
+        # first and balance NVLink traffic. But a reduce-scatter's destination
+        # rank is a function of the row index, so the same logical row was
+        # summed in a different peer order depending on where it landed: a
+        # legal reassociation that still made identical inputs produce
+        # different float results across destination shards (one bf16 ULP,
+        # amplified downstream). The sum of an element must depend on its
+        # `ngpus` input values alone, so every destination accumulates in the
+        # same canonical order. The fused `reducescatter_rmsnorm` and the
+        # relay kernel below keep the same order for bit-consistency.
         comptime TileType = TileTensor[dtype, in_layout, ImmutAnyOrigin]
         var reordered = Array[_, num_buffers](
-            fill_with_unrolled=lambda [i: Int]() -> TileType: in_bufs[
-                circular_add[num_buffers](_my_rank, i)
-            ]
+            fill_with_unrolled=lambda [i: Int]() -> TileType: in_bufs[i]
         )
 
         var u_start = config.rank_unit_start(_my_rank)
@@ -551,12 +560,13 @@ def _reducescatter_relay_kernel[
 
         for idx in range(bid * BLOCK_SIZE + tid, span, stride):
             var elem_idx = idx * simd_width
-            # Rotate the source order by rank, as the plain kernel does, so
-            # the group's reads do not all queue on the same peer first.
+            # Canonical source order (see the plain kernel): every
+            # destination must sum its peers in the same order, or identical
+            # inputs give shard-dependent float results.
             var accum = SIMD[accum_type, simd_width](0)
             comptime for i in range(ngpus):
                 accum += (
-                    in_ptrs[circular_add[ngpus](group_rank, i)]
+                    in_ptrs[i]
                     .address_space_cast[_target_address_space]()
                     .load[
                         width=simd_width,
@@ -625,18 +635,16 @@ def _reducescatter_relay_kernel[
             _target_address_space
         ]()
 
-        # Rotate the source order by the DESTINATION's rank, which is the
-        # order that destination's own direct blocks use. Relayed and
-        # directly-reduced values then come out of the same sequence of
-        # adds, so the result is bit-identical to the plain kernel's --
-        # which the fused reduce-scatter + norm op is tested against.
+        # Canonical source order (see the plain kernel): the same order the
+        # destination's own direct blocks use, so relayed and
+        # directly-reduced values come out of the same sequence of adds and
+        # the result is bit-identical to the plain kernel's -- which the
+        # fused reduce-scatter + norm op is tested against.
         # Hoisted for the same reason as `dst_ptr`: a runtime index into
         # the table inside the loop would stage it through scratch.
         comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
         var src_ptrs = Array[_, ngpus](
-            fill_with_unrolled=lambda [g: Int]() -> SrcPtrType: peer_in_ptrs[
-                circular_add[ngpus](dst, g)
-            ]
+            fill_with_unrolled=lambda [g: Int]() -> SrcPtrType: peer_in_ptrs[g]
         )
 
         # Operands a thread batches before reducing: the read links and the
