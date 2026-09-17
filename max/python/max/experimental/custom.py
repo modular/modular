@@ -14,11 +14,13 @@
 
 :class:`CustomOp` stages a ``mo.custom`` op from a declared
 ``inputs``/``outputs`` signature; works both eagerly (``Tensor``) and inside
-a :class:`~max.graph.Graph` build (``TensorValue``).
+a :class:`~max.graph.Graph` build (``TensorValue``). Interpreter binding
+logic lives in ``custom_gc``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -26,6 +28,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, TypeVar
 
+from max._core import Operation
+from max._core.dialects import builtin
 from max.dtype import DType
 from max.experimental.functional import _load_custom_extensions
 from max.experimental.realization_context import ensure_context
@@ -52,6 +56,21 @@ __all__ = [
     "TemplateType",
     "declare",
 ]
+
+#: Attribute key stamped on each `mo.custom` op so the interpreter can look
+#: up its `CustomOp`; survives `graph.copy()` and RMO->MO lowering.
+_SPEC_ATTR_KEY = "max.custom_op_def"
+
+#: Keyed by content token (see `CustomOp.token`), not kernel
+#: name: two defs can share a name with different signatures, and
+#: name-keying would let one overwrite another's already-staged ops.
+#: Content-keying also means identical redeclarations share one entry. Holds
+#: strong references and never shrinks.
+#: TODO(pprovins): a program constructing genuinely distinct declarations in
+#: a loop grows this registry without limit. Revisit if a workload hits it;
+#: weak values are not the fix, since entry lifetime would then decide which
+#: executor runs a staged op.
+_SPEC_REGISTRY: dict[str, CustomOp] = {}
 
 _ResultT = TypeVar("_ResultT")
 
@@ -133,6 +152,56 @@ class DTypeVar:
     """A dtype variable: inputs sharing one must agree at call time."""
 
     name: str
+
+
+def _dtype_key(dtype: DType | DTypeVar) -> str:
+    """Spells a template dtype for a key, keeping the two kinds apart.
+
+    A ``DTypeVar`` named ``float32`` means something entirely different from
+    :attr:`DType.float32` and the two share a spelling, so the kind is part of
+    the key.
+    """
+    kind = "var" if isinstance(dtype, DTypeVar) else "dtype"
+    return f"{kind}:{dtype.name}"
+
+
+def _signature_key(
+    inputs: Mapping[str, TemplateType], outputs: Sequence[TemplateType]
+) -> str:
+    """Canonicalizes a signature into one string, for `_digest`.
+
+    Operand names are part of it: they are what a keyword call binds through
+    (see :attr:`CustomOp.__signature__`). Each dim contributes its own
+    ``repr``, so ``w // 2`` and ``w // 3`` stay distinct.
+    """
+    return repr(
+        (
+            [
+                (key, _dtype_key(spec.dtype), [repr(d) for d in spec.shape])
+                for key, spec in inputs.items()
+            ],
+            [
+                (_dtype_key(spec.dtype), [repr(d) for d in spec.shape])
+                for spec in outputs
+            ],
+        )
+    )
+
+
+def _digest(*fields: str) -> str:
+    """Digests *fields*, distinctly for every distinct field tuple.
+
+    Each field is length-prefixed, so the concatenation is decodable and no
+    two tuples share one digest input: without that, a value containing the
+    separator would let a field boundary move (``("a_b", "c")`` and
+    ``("a", "b_c")``) without changing what is hashed.
+
+    Uses ``hashlib``, never the builtin ``hash()``: ``hash()`` is salted per
+    process for ``str``, and callers here need names that are identical run to
+    run.
+    """
+    encoded = "".join(f"{len(field)}:{field}" for field in fields)
+    return hashlib.blake2b(encoded.encode(), digest_size=8).hexdigest()
 
 
 def _resolve_extension(path: Path) -> Path:
@@ -217,6 +286,31 @@ class CustomOp:
             ],
             return_annotation=_Result,
         )
+
+    @cached_property
+    def token(self) -> str:
+        """The registry token for this op, a digest of its declaration.
+
+        Content-derived, so identical declarations share one token and so
+        one compile: the token is stamped into a discardable attribute,
+        which prints into the module ASM that
+        ``executor._eager_model_cache_key`` hashes.
+
+        Covers exactly what a resolved op is read for: kernel symbol,
+        signature, and the extension paths ``custom_gc.binding_for`` links
+        against. Kernel library CONTENT is deliberately absent: both
+        consumers already hash it themselves -- ``BindingKey.lib_hashes`` on
+        the interpreter path, and ``_eager_model_cache_key``'s
+        resolved-library component alongside the ASM hash on the compile
+        path -- so a kernel edit is covered without reading every library
+        file at every declaration.
+        """
+        digest = _digest(
+            self.name,
+            _signature_key(self.inputs, self.outputs),
+            repr([str(path) for path in self.extensions]),
+        )
+        return f"{self.name}#{digest}"
 
     def _check_signature(self) -> None:
         """Rejects any dim a signature is not allowed to name.
@@ -368,6 +462,12 @@ class CustomOp:
         results = ops.custom(
             self.name, device, list(values), out_types=out_types
         )
+        if results:
+            op = results[0]._mlir_value.owner
+            assert isinstance(op, Operation)
+            op.discardable_attributes[_SPEC_ATTR_KEY] = builtin.StringAttr(
+                self.token
+            )
         return [result.tensor for result in results]
 
     def _result_dtype(
@@ -496,4 +596,8 @@ def declare(
         tuple(_resolve_extension(Path(p)) for p in custom_extensions),
     )
     op._check_signature()
+    # Anything sharing a content token declares the same kernel and
+    # signature, so it is interchangeable with this op for every purpose a
+    # resolved op is read for.
+    _SPEC_REGISTRY[op.token] = op
     return op

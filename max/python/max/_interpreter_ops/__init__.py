@@ -25,6 +25,7 @@ from . import (
     band_part_gc,
     cast_gc,
     conv_gc,
+    custom_gc,
     data_movement_gc,
     elementwise_binary_gc,
     gather_gc,

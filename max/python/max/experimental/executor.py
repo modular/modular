@@ -45,11 +45,12 @@ from .support import SetterContext, _session
 
 
 class UnsupportedGraphError(RuntimeError):
-    """Raised by an executor when it refuses to execute a graph.
+    """Raised by an executor that refuses to execute a graph.
 
-    A composite executor (e.g. :class:`JitExecutor`) may catch this to route
-    the graph elsewhere **before** execution starts.  Once execution has
-    begun, exceptions are never masked as ``UnsupportedGraphError``.
+    A composite executor catches this and compiles the graph instead. Since
+    that fallback reruns the whole graph, this is raised only before
+    execution begins, never mid-execution: a partially executed graph would
+    replay every mutation it had already applied.
     """
 
 
@@ -132,11 +133,13 @@ class InterpreterExecutor:
     """Executes a graph via :func:`max._interpreter.execute`.
 
     Raises :class:`UnsupportedGraphError` when
-    :func:`max._interpreter.can_execute` refuses the graph
-    (e.g. ``CustomOp`` present, unregistered op, or over the op-count
-    threshold), or when this build lacks the interpreter's op handlers.
-    All runtime errors propagate unchanged — an explicit interpreter
-    request is deliberately loud.
+    :func:`max._interpreter.can_execute` refuses the graph up front: a
+    custom op that mutates an operand buffer in place, a custom op with no
+    ``CustomOp`` declaration, an unregistered op, or too many ops. Other
+    runtime errors propagate — including a custom op whose realized output
+    disagrees with its staged type, which is a kernel contract violation
+    rather than a refusal. An explicit interpreter request is deliberately
+    loud.
     """
 
     def __init__(self, max_ops: int | None = None) -> None:
@@ -166,8 +169,10 @@ class InterpreterExecutor:
         if not _interpreter.can_execute(graph, max_ops=self._max_ops):
             raise UnsupportedGraphError(
                 "InterpreterExecutor: graph contains ops that require "
-                "compilation (CustomOp, unregistered op, or over op-count "
-                f"threshold {self._max_ops!r})."
+                "compilation (a custom op that mutates an operand buffer "
+                "in place, a custom op with no custom.declare declaration, "
+                "an unregistered op, or "
+                f"over op-count threshold {self._max_ops!r})."
             )
         return _interpreter.execute(graph, inputs)
 

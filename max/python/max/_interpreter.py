@@ -31,7 +31,7 @@ Example usage:
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from typing import Any
+from typing import Any, cast
 
 from max import _core
 from max._core.dialects import builtin, kgen, mo, mosh
@@ -42,6 +42,9 @@ try:
     # Importing registers all op handlers as a side effect.
     from ._interpreter_ops import (  # type: ignore[import-not-found]
         lookup_handler,
+    )
+    from ._interpreter_ops.handlers import (  # type: ignore[import-not-found]
+        _resolve_spec,
     )
 except Exception as _e:
     import os as _os
@@ -93,10 +96,13 @@ except Exception as _e:
 InterpreterSlots = dict[Any, Buffer | None]
 
 # Op names that always require the compiled execution path.
+# Empty, but kept as the extension point for forcing an op back onto the
+# compiled path; the interpreter/executor tests monkeypatch it to exercise
+# that route.
 # Name-based matching is used (like _is_dispatchable and the handler
 # name-fallback) because nanobind may create different class objects
 # for the same MLIR op.
-_COMPILATION_REQUIRED_OP_NAMES: tuple[str, ...] = ("CustomOp",)
+_COMPILATION_REQUIRED_OP_NAMES: tuple[str, ...] = ()
 
 
 def _validate_inputs(graph: Graph, inputs: Sequence[Buffer]) -> None:
@@ -120,13 +126,41 @@ def _validate_inputs(graph: Graph, inputs: Sequence[Buffer]) -> None:
     # symbolic dimensions.
 
 
+def _is_interpretable_custom(op: _core.Operation) -> bool:
+    """Whether this custom op can run through an interpreter binding.
+
+    Three refusals, all decided here so the graph is never accepted and
+    then abandoned part-way: a fallback compile reruns the whole graph, so
+    a refusal after an earlier op already mutated a buffer would replay
+    that mutation.
+
+    Tensors are the only values the interpreter has a
+    :class:`~max.driver.Buffer` representation for, so every other type
+    (chain, buffer, opaque, and anything added later) refuses by
+    construction. An op with no resolvable
+    :class:`~max.experimental.custom.CustomOp` has no shape contract to
+    bind, so it compiles instead. So does one whose operands and results
+    don't all agree on a device, since a binding runs on a single one.
+    """
+    # cast, not isinstance: nanobind may alias the op class object.
+    custom_op = cast(mo.CustomOp, op)
+    # CustomOp overrides `operands` to yield Value, not OpOperand.
+    values = list(custom_op.operands) + list(custom_op.results)
+    # Matched by name for the same reason as the cast above.
+    if any(type(v.type).__name__ != "TensorType" for v in values):
+        return False
+    if len({cast(mo.TensorType, v.type).device_ref for v in values}) != 1:
+        return False
+    return _resolve_spec(custom_op) is not None
+
+
 def can_execute(graph: Graph, max_ops: int | None = None) -> bool:
     """Check whether the interpreter can handle this graph.
 
-    Scans the graph for ops that require compilation (e.g. ``CustomOp``)
-    and for ops without a registered handler.  Optionally enforces a
-    maximum dispatchable-op count so that large graphs still go through
-    the graph compiler where fusion is beneficial.
+    Scans the graph for ops that require compilation (e.g. a custom op
+    that mutates an operand buffer in place) and for ops without a
+    registered handler. Optionally enforces a maximum dispatchable-op
+    count so that large graphs still get compiler fusion.
 
     Args:
         graph: The graph to check.
@@ -144,6 +178,14 @@ def can_execute(graph: Graph, max_ops: int | None = None) -> bool:
         if isinstance(op, mo.OutputOp):
             continue
         if type(op).__name__ in _COMPILATION_REQUIRED_OP_NAMES:
+            return False
+        # Must mirror register_op_handler's automatic "Mo"-prefix aliasing:
+        # without the prefixed spelling, a Mo-named variant would still find
+        # its handler through the name fallback but skip this predicate.
+        if type(op).__name__ in (
+            "CustomOp",
+            "MoCustomOp",
+        ) and not _is_interpretable_custom(op):
             return False
         if lookup_handler(op) is None:
             return False
@@ -263,10 +305,13 @@ def _dispatch_op(op: _core.Operation, slots: dict[Any, Buffer | None]) -> None:
     """
     # Check handler registry
     if (handler := lookup_handler(op)) is not None:
-        # Operation.operands returns OpOperand, use .value to get the Value.
-        # Use .get() with default None for chain values (ChainCreateOp is
-        # skipped, so chain values are not stored in slots)
-        input_buffers = [slots.get(operand.value) for operand in op.operands]
+        # Variadic ops (CustomOp, OutputOp) expose Value where others
+        # expose OpOperand; getattr handles both. Chain values are never
+        # in slots, so .get() yields None for them.
+        input_buffers = [
+            slots.get(getattr(operand, "value", operand))
+            for operand in op.operands
+        ]
         outputs = handler(op, input_buffers)
     else:
         raise NotImplementedError(f"No handler for op: {type(op).__name__}")

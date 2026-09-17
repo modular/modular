@@ -32,6 +32,7 @@ from max._interpreter_ops import (
     band_part_gc,
     cast_gc,
     conv_gc,
+    custom_gc,
     data_movement_gc,
     elementwise_binary_gc,
     gather_gc,
@@ -57,6 +58,7 @@ from max._interpreter_ops import (
 )
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
+from max.experimental import custom
 
 
 class _HasAxis(Protocol):
@@ -2749,3 +2751,130 @@ def _handle_distributed_reducescatter_sum(
     # Trailing None for the output chain.
     output_buffers.append(None)
     return output_buffers
+
+
+# User custom operations (MXF-353)
+
+
+def _resolve_spec(op: mo.CustomOp) -> custom.CustomOp | None:
+    """Resolves the ``CustomOp`` used to stage *op*, or ``None``.
+
+    Reads the registry token ``CustomOp._stage`` stamps onto the op's
+    discardable attributes at trace time, verified to survive
+    ``graph.copy()`` and RMO->MO lowering. ``None`` covers both an op never
+    staged through a ``CustomOp`` and a stamped token whose spec can no
+    longer be resolved; the two are indistinguishable to the caller, which
+    refuses the graph either way.
+
+    A resolved def that disagrees with *op* is refused too. The token is
+    ``f"{name}#{content_digest}"`` (see ``CustomOp.token``), so
+    two defs sharing one token already share a name; reaching an unrelated
+    declaration through this lookup takes a 64-bit digest collision or a
+    hand-forged attribute value, not an honest replay in another process. The
+    name check here only guards against that forged or foreign input -- the
+    arity comparison (operand and result counts) is the check still doing
+    real work, catching a resolved def whose signature no longer matches what
+    *op* was staged with. Either mismatch degrades to ``None``, which the
+    caller treats as the compile fallback.
+    """
+    attrs = op.discardable_attributes
+    if custom._SPEC_ATTR_KEY not in attrs:
+        return None
+    token = attrs[custom._SPEC_ATTR_KEY]
+    if not isinstance(token, builtin.StringAttr):
+        return None
+    defn = custom._SPEC_REGISTRY.get(token.value)
+    if defn is None:
+        return None
+    if (
+        defn.name != op.symbol
+        or len(defn.inputs) != len(op.operands)
+        or len(defn.outputs) != len(op.results)
+    ):
+        return None
+    return defn
+
+
+def _check_realized_shape(out: Buffer, result: _core.Value[Any]) -> None:
+    """Raises ``RuntimeError`` when *out*'s realized rank, dtype, device, or
+    a statically-known dim disagrees with *result*'s staged type.
+
+    A binding compiled from a ``CustomOp`` (:mod:`custom_gc`) is
+    rank-polymorphic: only rank, dtype, and device key the compiled model,
+    not shape. So a defn whose declared signature computed something the
+    kernel doesn't actually produce would otherwise silently corrupt the
+    slot instead of raising.
+
+    A hard error, not an ``UnsupportedGraphError``: the kernel contradicting
+    its own declaration is a contract violation, and falling back to
+    compilation would both hide it and rerun any mutation an earlier op in
+    this graph already applied.
+    """
+    result_type = graph.TensorType.from_mlir(result.type)
+    staged_shape = tuple(result_type.shape)
+    realized_shape = tuple(out.shape)
+    staged_device = result_type.device.to_device()
+
+    def mismatch(kind: str, realized: object, staged: object) -> RuntimeError:
+        return RuntimeError(
+            f"custom op result {kind} mismatch: model produced "
+            f"{realized}, staged type declared {staged}"
+        )
+
+    if len(realized_shape) != len(staged_shape):
+        raise mismatch("rank", len(realized_shape), len(staged_shape))
+    if out.dtype != result_type.dtype:
+        raise mismatch("dtype", out.dtype, result_type.dtype)
+    if out.device != staged_device:
+        raise mismatch("device", out.device, staged_device)
+    # A symbolic staged dim has no expected static size, since the kernel's
+    # shape function is authoritative for it.
+    if not all(
+        int(staged) == realized
+        for staged, realized in zip(staged_shape, realized_shape, strict=True)
+        if isinstance(staged, graph.StaticDim)
+    ):
+        raise mismatch("shape", realized_shape, staged_shape)
+
+
+@register_op_handler(mo.CustomOp)
+def _handle_custom(
+    op: mo.CustomOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Executes a user custom op via its rank-polymorphic interpreter binding.
+
+    ``_is_interpretable_custom`` (``_interpreter.py``) has already admitted
+    the op: it is pure tensor-in/tensor-out, single-device, and carries a
+    resolvable ``CustomOp``. Realized output shapes are validated against
+    the staged types before being trusted.
+    """
+    defn = _resolve_spec(op)
+    if defn is None:
+        raise RuntimeError(
+            f"custom op {op.symbol!r} reached the interpreter with no "
+            "resolvable CustomOp; can_execute should have refused it"
+        )
+
+    # Raises rather than asserting so it still fires under `python -O`: the
+    # staged types agree on one device by admission, so a realized buffer
+    # elsewhere is an interpreter bug, not a graph to hand back to the
+    # compiler.
+    target_device = _get_target_device(op)
+    _check_buffers_on_device(inputs, target_device)
+
+    in_types = []
+    for v in op.operands:
+        v_type: mo.TensorType = v.type  # type: ignore[assignment]
+        in_types.append(graph.TensorType.from_mlir(v_type))
+    realized_inputs: list[Buffer] = []
+    for b in inputs:
+        assert isinstance(b, Buffer)
+        realized_inputs.append(b)
+
+    model = custom_gc.binding_for(
+        defn, target_device, in_types, defn.extensions
+    )
+    outs = model(*realized_inputs)
+    for out, result in zip(outs, op.results, strict=True):
+        _check_realized_shape(out, result)
+    return list(outs)
