@@ -371,6 +371,7 @@ struct BlackwellMatmulSM100Kernel[
     # 0 means "use c_tile_dim0" (default, whole SMEM tile per TMA — prefill).
     # Decode wants this set to 1 (one row per TMA).
     c_desc_dim0_override: Int = 0,
+    BiasEngine: TensorEngine = DefaultEngine[element_width=1],
 ]:
     """Blackwell SM100 GEMM kernel with warp specialization.
 
@@ -409,6 +410,8 @@ struct BlackwellMatmulSM100Kernel[
             written to global memory (defaults to `StandardOutputWriter`).
         c_desc_dim0_override: Override for the C TMA descriptor box row count
             per TMA store; 0 uses the full SMEM tile dim0 (defaults to 0).
+        BiasEngine: Engine of the 1D bias tile (`Bias1DTile`), defaulting to
+            `DefaultEngine[element_width=1]`.
     """
 
     # ========== Derived Constants (from config) ==========
@@ -1496,7 +1499,10 @@ struct BlackwellMatmulSM100Kernel[
 
     comptime Bias1DTileLayout = row_major[1, Self.MMA_N]()
     comptime Bias1DTile = TileTensor[
-        Self.c_type, type_of(Self.Bias1DTileLayout), ImmutAnyOrigin
+        Self.c_type,
+        type_of(Self.Bias1DTileLayout),
+        ImmutAnyOrigin,
+        Engine=Self.BiasEngine,
     ]
 
     comptime WorkIter = WorkIterator[
@@ -1585,9 +1591,13 @@ struct BlackwellMatmulSM100Kernel[
                     ) if lane_start + elems_per_lane <= valid_elems else Int32(
                         0
                     )
-                    var src_ptr = (
-                        bias_1d_tile._storage + gmem_offset + lane_start
-                    ).address_space_cast[.GLOBAL]()
+                    # Advance the handle through the engine (not raw pointer
+                    # arithmetic) so the offset is correct under any engine,
+                    # then take the resulting scalar pointer.
+                    var src_ptr = TileTensor(
+                        bias_1d_tile._offset_storage(gmem_offset + lane_start),
+                        bias_1d_tile.layout,
+                    ).ptr.address_space_cast[.GLOBAL]()
                     var dst_ptr = smem_tile._storage + lane_start
                     comptime for chunk in range(num_copies):
                         async_copy[

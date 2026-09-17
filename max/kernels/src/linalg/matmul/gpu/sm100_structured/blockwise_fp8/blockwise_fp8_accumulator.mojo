@@ -164,6 +164,9 @@ struct BlockwiseFP8Accumulator[
         Self.accum_type,
         Self.AccumLayout,
         MutUntrackedOrigin,
+        # Register-backed stack tile, never DeviceBuffer-backed, so pin
+        # DefaultEngine.
+        Engine=DefaultEngine[element_width=1],
         address_space=.GENERIC,
     ]
 

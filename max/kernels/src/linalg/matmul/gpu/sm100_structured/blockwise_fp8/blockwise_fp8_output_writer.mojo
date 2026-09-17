@@ -32,6 +32,7 @@ from layout import (
     ComptimeInt,
     Coord,
     CoordLike,
+    DefaultEngine,
     Idx,
     TensorLayout,
     TileTensor,
@@ -476,7 +477,12 @@ struct BlockwiseFP8TileWriter[
         c_smem_layout: TensorLayout,
     ](
         c_smem_tile: TileTensor[
-            Self.c_type, c_smem_layout, MutAnyOrigin, address_space=.SHARED
+            Self.c_type,
+            c_smem_layout,
+            MutAnyOrigin,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
+            Engine=DefaultEngine[element_width=1],
+            address_space=.SHARED,
         ],
         c_tensor: TileTensor[
             mut=True, Self.c_type, LayoutType=c_tensor_layout, ...

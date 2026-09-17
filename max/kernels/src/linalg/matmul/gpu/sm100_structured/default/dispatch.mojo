@@ -32,8 +32,10 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from layout import (
     Coord,
+    DefaultEngine,
     Idx,
     RowMajorLayout,
+    TensorEngine,
     TensorLayout,
     TileTensor,
 )
@@ -835,13 +837,21 @@ def select_and_launch_sm100_config[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    # Declared before `launch_type` so the callback signature can reference it;
+    # inferred from the `epilogue_tensor` argument, defaulting when it is None.
+    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
     launch_type: def[config: MatmulConfig[...]](
         TileTensor[mut=True, c_type, ...],
         TileTensor[a_type, ...],
         TileTensor[b_type, ...],
         DeviceContext,
         OptionalReg[
-            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+            TileTensor[
+                c_type,
+                RowMajorLayout[Int64, Int64],
+                ImmutAnyOrigin,
+                Engine=EpilogueEngine,
+            ]
         ],
     ) raises -> None,
     //,
@@ -860,7 +870,12 @@ def select_and_launch_sm100_config[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+        TileTensor[
+            c_type,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+            Engine=EpilogueEngine,
+        ]
     ] = None,
 ) raises -> Int:
     """Selects and launches an SM100 matmul config for the given shape.
@@ -975,13 +990,19 @@ def heuristic_and_outliers_dispatch[
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
     epilogue_is_1d: Bool = False,
+    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[c.dtype, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+        TileTensor[
+            c.dtype,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+            Engine=EpilogueEngine,
+        ]
     ] = None,
 ) raises -> Int:
     """Dispatches an SM100 matmul through the heuristic outlier config set.
@@ -1006,6 +1027,8 @@ def heuristic_and_outliers_dispatch[
             the TMA epilogue load path (defaults to `False`).
         epilogue_is_1d: Whether the epilogue tensor is treated as
             1D rather than row-major 2D (defaults to `False`).
+        EpilogueEngine: Engine of the epilogue tensor (defaults to
+            `DefaultEngine[element_width=1]`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -1027,7 +1050,12 @@ def heuristic_and_outliers_dispatch[
         b_tensor: TileTensor[b_type, ...],
         dispatch_ctx: DeviceContext,
         dispatch_epilogue_tensor: OptionalReg[
-            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+            TileTensor[
+                c_type,
+                RowMajorLayout[Int64, Int64],
+                ImmutAnyOrigin,
+                Engine=EpilogueEngine,
+            ]
         ],
     ) raises:
         _matmul_dispatch_sm100[
@@ -1334,13 +1362,19 @@ def _matmul_dispatch_sm100[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     c_tensor: TileTensor[mut=True, c_type, ...],
     a_tensor: TileTensor[a_type, ...],
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+        TileTensor[
+            c_type,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+            Engine=EpilogueEngine,
+        ]
     ] = None,
 ) raises:
     _matmul_dispatch_sm100[
@@ -1370,13 +1404,19 @@ def _matmul_dispatch_sm100[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     c_tensor: NullableTileTensor[mut=True, c_type, ...],
     a_tensor: TileTensor[a_type, ...],
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+        TileTensor[
+            c_type,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+            Engine=EpilogueEngine,
+        ]
     ] = None,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -1648,13 +1688,19 @@ def sm100_heuristic_and_outliers_dispatch[
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
     epilogue_is_1d: Bool = False,
+    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[c.dtype, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+        TileTensor[
+            c.dtype,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+            Engine=EpilogueEngine,
+        ]
     ] = None,
 ) raises -> Int:
     """Dispatches an SM100 matmul through the heuristic outlier config set.
@@ -1679,6 +1725,8 @@ def sm100_heuristic_and_outliers_dispatch[
             the TMA epilogue load path (defaults to `False`).
         epilogue_is_1d: Whether the epilogue tensor is treated as
             1D rather than row-major 2D (defaults to `False`).
+        EpilogueEngine: Engine of the epilogue tensor (defaults to
+            `DefaultEngine[element_width=1]`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -1700,7 +1748,12 @@ def sm100_heuristic_and_outliers_dispatch[
         b_tensor: TileTensor[b_type, ...],
         dispatch_ctx: DeviceContext,
         dispatch_epilogue_tensor: OptionalReg[
-            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
+            TileTensor[
+                c_type,
+                RowMajorLayout[Int64, Int64],
+                ImmutAnyOrigin,
+                Engine=EpilogueEngine,
+            ]
         ],
     ) raises:
         blackwell_matmul_tma_umma_warp_specialized[

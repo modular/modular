@@ -31,7 +31,7 @@ from max.gpu.primitives.grid_controls import PDLLevel
 from std.sys import size_of
 
 from internal_utils import Table
-from layout import Coord, RowMajorLayout, TileTensor
+from layout import Coord, RowMajorLayout, TensorEngine, TileTensor
 from std.logger import Logger
 from std.utils.index import Index, IndexList
 
@@ -54,6 +54,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    EpilogueEngine: TensorEngine,
     //,
     transpose_b: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
@@ -64,7 +65,10 @@ def fused_bias_residual_matmul_dispatch_sm100[
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
     epilogue_tensor: TileTensor[
-        c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin
+        c_type,
+        RowMajorLayout[Int64, Int64],
+        ImmutAnyOrigin,
+        Engine=EpilogueEngine,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -79,6 +83,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
         c_type: Output element dtype of `c`.
         a_type: Element dtype of `a`; must equal `b_type` and be bfloat16.
         b_type: Element dtype of `b`; must equal `a_type` and be bfloat16.
+        EpilogueEngine: Engine of the `epilogue_tensor` bias/residual tensor.
         transpose_b: Whether `b` is transposed.
         pdl_level: Persistent kernel launch grid control level.
         epilogue_is_1d: Treats `epilogue_tensor` as a 1D bias broadcast across rows.
