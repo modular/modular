@@ -426,6 +426,17 @@
             },
             {
               "type": "category",
+              "label": "sampling",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.sampling"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.sampling__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "state_space",
               "link": {
                 "type": "doc",
