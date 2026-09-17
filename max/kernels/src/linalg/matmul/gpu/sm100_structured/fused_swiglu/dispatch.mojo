@@ -21,7 +21,7 @@ from std.math import align_up
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
-from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.collections import OptionalReg
 
 from std.utils.index import Index
@@ -42,9 +42,7 @@ def matmul_swiglu_dispatch_sm100[
     config: FusedSwiGLUMatmulConfig[_, _, _, True],
     pdl_level: PDLLevel = PDLLevel(0),
 ](
-    c_out: TileTensor[
-        mut=True, .bfloat16, Engine=DefaultEngine[element_width=1], ...
-    ],
+    c_out: TileTensor[mut=True, .bfloat16, ...],
     a: TileTensor[mut=False, .bfloat16, ...],
     b: TileTensor[mut=False, .bfloat16, ...],
     ctx: DeviceContext,
@@ -73,11 +71,11 @@ def matmul_swiglu_dispatch_sm100[
         bias_ptr: Optional [N=2H] BF16 bias (interleaved gate/up pairs).
               Ignored when ``config.use_bias`` is False.
     """
-    # When config.use_bias=False, c_out._storage is a valid dummy (bias never
+    # When config.use_bias=False, c_out.ptr is a valid dummy (bias never
     # accessed).
     var bias_ptr_c = rebind[
         UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
-    ](c_out._storage)
+    ](c_out.ptr)
     comptime if config.use_bias:
         bias_ptr_c = rebind[
             UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
@@ -104,7 +102,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
     pdl_level: PDLLevel = PDLLevel(0),
     has_bias: Bool = False,
 ](
-    c_out: TileTensor[mut=True, Engine=DefaultEngine[element_width=1], ...],
+    c_out: TileTensor[mut=True, ...],
     a: TileTensor[...],
     b: TileTensor[...],
     ctx: DeviceContext,
@@ -138,10 +136,8 @@ def matmul_swiglu_dispatch_sm100_bf16[
     comptime dtype = DType.bfloat16
     comptime static_N = b.static_shape[0]
     comptime static_K = b.static_shape[1]
-    # When has_bias=False, c_out._storage is a valid dummy (bias never accessed).
-    var bias_base = rebind[UnsafePointer[BFloat16, ImmutAnyOrigin]](
-        c_out._storage
-    )
+    # When has_bias=False, c_out.ptr is a valid dummy (bias never accessed).
+    var bias_base = rebind[UnsafePointer[BFloat16, ImmutAnyOrigin]](c_out.ptr)
     comptime if has_bias:
         bias_base = bias_ptr.value()
     var bias_tile = TileTensor(bias_base, row_major(Coord(Idx[static_N])))

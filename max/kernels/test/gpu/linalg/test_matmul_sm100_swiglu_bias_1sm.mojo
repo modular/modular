@@ -185,7 +185,7 @@ def test_swiglu_bias[
 
     var c_tensor = TileTensor(c_device, c_shape)
     var bias_immut_ptr = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-        bias_tensor._storage
+        bias_tensor.ptr
     )
     matmul_swiglu_dispatch_sm100[config](
         c_tensor, a_tensor, b_tensor, ctx, OptionalReg(bias_immut_ptr)
