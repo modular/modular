@@ -15,6 +15,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from max.serve.config import MetricRecordingMethod, Settings
+from max.serve.telemetry._cpp_metrics_bridge import start_cpp_metrics_bridge
 from max.serve.telemetry.asyncio_controller import start_asyncio_consumer
 from max.serve.telemetry.metrics import MetricClient, NoopClient, SyncClient
 from max.serve.telemetry.process_controller import start_process_consumer
@@ -27,17 +28,19 @@ async def start_telemetry_consumer(
     method = settings.metric_recording
     if method == MetricRecordingMethod.NOOP:
         yield NoopClient()
+        return
 
-    elif method == MetricRecordingMethod.SYNC:
-        yield SyncClient()
+    async with start_cpp_metrics_bridge():
+        if method == MetricRecordingMethod.SYNC:
+            yield SyncClient()
 
-    elif method == MetricRecordingMethod.ASYNCIO:
-        async with start_asyncio_consumer() as controller:
-            yield controller
+        elif method == MetricRecordingMethod.ASYNCIO:
+            async with start_asyncio_consumer() as controller:
+                yield controller
 
-    elif method == MetricRecordingMethod.PROCESS:
-        async with start_process_consumer(settings) as controller:
-            yield controller.Client()
+        elif method == MetricRecordingMethod.PROCESS:
+            async with start_process_consumer(settings) as controller:
+                yield controller.Client()
 
-    else:
-        raise Exception(f"Unrecognized metric_recording: {method}")
+        else:
+            raise Exception(f"Unrecognized metric_recording: {method}")
