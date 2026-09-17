@@ -24,6 +24,17 @@ def call_int[T: def(Int)](mut closure: T):
     closure.__call__(1)
 
 
+def sink[T: Writable, C: def(T)](mut c: C, arg: T):
+    c.__call__(arg)
+
+
+def forward[T: Writable & TrivialRegisterPassable, C: def(T)](mut c: C, arg: T):
+    # `sink` bounds the argument type more loosely, so `C` reaches its closure
+    # trait only through a bridging thunk. The extension struct carrying that
+    # thunk is parameterized on this scope's `T` and `C`.
+    sink(c, arg)
+
+
 def main():
     var fi = Foo[Int]()
     # CHECK: via struct: 1
@@ -37,3 +48,12 @@ def main():
     call_int(closure)
     # CHECK: via closure: 2
     print("via closure:", y)
+
+    var total = 0
+
+    def add(x: Int) {mut total}:
+        total += x
+
+    forward(add, 40)
+    # CHECK: via extension: 40
+    print("via extension:", total)

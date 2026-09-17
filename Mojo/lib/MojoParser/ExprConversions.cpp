@@ -42,7 +42,6 @@
 #include "Mojo/POPDialect/POPOps.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
-#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace KGEN;
@@ -263,24 +262,6 @@ static GeneratorType getReducedGeneratorType(GeneratorType gen) {
   return GeneratorType::get(gen.getInputParamTypes(), bodyType, metadata);
 }
 
-static std::string generateThunkName(Type expected, Type actual) {
-  std::string name;
-  llvm::raw_string_ostream os(name);
-  ASTType(expected).print(os, /*diags=*/{});
-  os << '|';
-  ASTType(actual).print(os, /*diags=*/{});
-
-  // Mix in the full signatures to disambiguate.
-  std::string sigHash;
-  llvm::raw_string_ostream sigHashOs(sigHash);
-  expected.print(sigHashOs);
-  actual.print(sigHashOs);
-  os << '|';
-  os << llvm::utohexstr(llvm::xxh3_64bits(sigHash),
-                        /*LowerCase=*/true, /*Width=*/16);
-  return name;
-}
-
 static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
                                     SMLoc useLoc) {
   auto &shared = moduleDecl.getShared();
@@ -335,7 +316,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   paramDecls.push_back(calleeDecl);
 
   // Generate a mangled name.
-  std::string name = generateThunkName(thunkSignature, actualSignature);
+  std::string name;
+  llvm::raw_string_ostream os(name);
+  generateConversionThunkName(os, thunkSignature, actualSignature);
 
   // Extract the callee's where-clause constraints from the rebound callee
   // type. The evaluator has already remapped index-based parameter references
@@ -614,16 +597,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     dest.resetForError(emitter);
     return {};
   }
-
-  if (auto funcLiteralType =
-          sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getType())) {
-    // Simply convert the literal itself, call the top-most conversion API,
-    // because this could be a zero cost conversion without needing to generate
-    // a thunk.
-    return emitter.emitImplicitConversionToType(
-        {PValue(funcLiteralType.getSymbolConstantAttr()), expr}, expected,
-        dest);
-  }
+  assert(!sugarIsa<FuncLiteralTypeGeneratorType>(callee.getType()) &&
+         "materialize function literal before conversion");
 
   // Strip all sugar so we don't bind parameters wrong.
   // TODO: We could improve this to maintain sugar better.
@@ -845,6 +820,17 @@ convertGeneratorValue(CValue value, const ExprNode *expr,
 
   // If this is a function generator value, defer to function conversion.
   if (auto expectedFnType = sugarDynCast<FnTypeGeneratorType>(expected)) {
+    if (auto callee = value.getIfPValue();
+        callee && sugarIsa<FuncLiteralTypeGeneratorType>(callee.getType())) {
+      // Simply convert the literal itself, call the top-most conversion API,
+      // because this could be a zero cost conversion without needing to
+      // generate a thunk.
+      return emitter.emitImplicitConversionToType(
+          {PValue(sugarCast<FuncLiteralTypeGeneratorType>(callee.getType())
+                      .getSymbolConstantAttr()),
+           expr},
+          expected, dest);
+    }
     return convertFunctionGeneratorValue(value, expr, expectedFnType, emitter,
                                          dest);
   }
@@ -926,6 +912,32 @@ struct ConversionResult {
   }
 };
 } // namespace
+
+static ASTDecl *getFileModuleForValue(SharedState &shared, ASTDecl &declScope,
+                                      const CValue &value) {
+  if (ASTDecl *fileModule = declScope.getNearestDeclOfType<FileModuleOp>())
+    return fileModule;
+
+  Value mlirValue = value.getMlirValue();
+  if (!mlirValue)
+    return nullptr;
+
+  Operation *op = mlirValue.getDefiningOp();
+  if (!op) {
+    if (Block *block = mlirValue.getParentBlock())
+      op = block->getParentOp();
+  }
+  if (!op)
+    return nullptr;
+
+  auto fileMod = op->getParentOfType<FileModuleOp>();
+  if (!fileMod)
+    return nullptr;
+
+  SymbolRefAttr fileSym = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(fileMod.getOperation()));
+  return shared.getDeclResolver().getDeclForTypeSymbolIfExists(fileSym);
+}
 
 static ConversionResult
 classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
@@ -1770,7 +1782,8 @@ static FailureOr<TraitType> verifyClosureTrait(SharedState &shared,
       seenUniParamTrait = true;
 
       auto sourceTrait = concreteType.getProvidedTrait(shared);
-      if (TraitSymbolAttr src = extractClosureSymbol(shared, sourceTrait)) {
+      if (TraitSymbolAttr src = extractClosureSymbol(shared, sourceTrait);
+          src && src != tgt) {
         FnTypeGeneratorType srcSig = shared.getClosureFnSigWithoutSelf(src);
         FnTypeGeneratorType tgtSig = shared.getClosureFnSigWithoutSelf(tgt);
         SyntheticNode node(declScope->getLoc());
@@ -1807,7 +1820,7 @@ static FailureOr<TraitType> verifyClosureTrait(SharedState &shared,
 
 // NOTE: this must be alined with verifyClosureTrait.
 FailureOr<PValue>
-IREmitter::emitClosureTraitConversion(ASTExprAnd<CValue> valueExpr,
+IREmitter::emitClosureTraitConversion(ASTExprAnd<CValue> typeVal,
                                       TraitType trait) {
   // FIXME: we only handle case where the target type only have one closure
   // trait, we need to be more smart to extend it for N:M mapping.
@@ -1818,24 +1831,31 @@ IREmitter::emitClosureTraitConversion(ASTExprAnd<CValue> valueExpr,
       continue;
 
     if (seenUniParamTrait) {
-      emitError(valueExpr.expr->getLoc(), "can not convert");
+      emitError(typeVal.expr->getLoc(), "can not convert");
       return PValue();
     }
     seenUniParamTrait = true;
 
-    auto sourceTrait = valueExpr.ir.getRValueType().getProvidedTrait(shared);
-    if (TraitSymbolAttr src = extractClosureSymbol(shared, sourceTrait)) {
+    PValue srcTypeVal = typeVal.ir.getIfPValue();
+    TraitType srcTrait = ASTType(srcTypeVal).getProvidedTrait(shared);
+    if (TraitSymbolAttr src = extractClosureSymbol(shared, srcTrait);
+        src && src != tgt) {
       FnTypeGeneratorType srcSig = shared.getClosureFnSigWithoutSelf(src);
       FnTypeGeneratorType tgtSig = shared.getClosureFnSigWithoutSelf(tgt);
       if (canZeroCostConvertFnTypes(srcSig, tgtSig))
-        return PValue(UpcastAttr::get(trait, valueExpr.ir.getIfPValue()));
+        return PValue(UpcastAttr::get(trait, srcTypeVal));
+      if (canConvertFunctionTypes(srcSig, tgtSig, typeVal.expr, declScope)) {
+        PValue extStruct =
+            shared.getClosureEmitter().createParamClosureExtensionType(
+                *this, typeVal, src, tgt);
+        if (!extStruct)
+          return PValue();
 
-      if (canConvertFunctionTypes(srcSig, tgtSig, valueExpr.expr, declScope)) {
-        // Insert extension.
-        llvm_unreachable("not implement");
+        return PValue(ExtensionAttr::get(shared.getContext(), trait, srcTypeVal,
+                                         {extStruct.get()}));
       }
 
-      emitError(valueExpr.expr->getLoc(), "can not convert");
+      emitError(typeVal.expr->getLoc(), "can not convert");
       return PValue();
     }
   }
@@ -2374,32 +2394,6 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
 
   // Not applicable
   return failure();
-}
-
-static ASTDecl *getFileModuleForValue(SharedState &shared, ASTDecl &declScope,
-                                      const CValue &value) {
-  if (ASTDecl *fileModule = declScope.getNearestDeclOfType<FileModuleOp>())
-    return fileModule;
-
-  Value mlirValue = value.getMlirValue();
-  if (!mlirValue)
-    return nullptr;
-
-  Operation *op = mlirValue.getDefiningOp();
-  if (!op) {
-    if (Block *block = mlirValue.getParentBlock())
-      op = block->getParentOp();
-  }
-  if (!op)
-    return nullptr;
-
-  auto fileMod = op->getParentOfType<FileModuleOp>();
-  if (!fileMod)
-    return nullptr;
-
-  SymbolRefAttr fileSym = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(fileMod.getOperation()));
-  return shared.getDeclResolver().getDeclForTypeSymbolIfExists(fileSym);
 }
 
 /// This emits an implicit conversion to the specified type if the types

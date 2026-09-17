@@ -90,13 +90,20 @@ def main():
     # Parametric trait enables matching between parametric closure and instantiated one.
 
     var fi = Foo[Int]()
+    # `Foo.__call__` takes its argument by reference while `def(Int)` passes an
+    # `Int` in registers, so the two instances bridge through a thunk: `T`
+    # binds to an extension anchored at `Foo[Int]`, whose only parameter is
+    # that anchor.
     # CHECK:      lit.call {{.*}}@"call_int[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
     # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
-    # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!Int, imm *[0,1]>>],
-    # CHECK-SAME:     @Foo<:!AnyType !Int>>
+    # CHECK-SAME:     :param_list<type> [#kgen.quote<!Int>],
+    # CHECK-SAME:   #kgen.extension<{{.*}}@Foo<:!AnyType !Int>, [
+    # CHECK-SAME:     @"extension${{.*}}"<{{.*}}@Foo<:!AnyType !Int>>]>
     call_int(fi)
 
     var fm = Foo[MemOnly]()
+    # A memory-only argument is passed by reference either way, so this one
+    # needs no extension.
     # CHECK:      lit.call {{.*}}@"call_mem_only[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
     # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
     # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!MemOnly, imm *[0,1]>>],
@@ -167,3 +174,32 @@ def main():
     # CHECK-SAME:     :param_list<type> [], :param_list<type> [
     # CHECK-SAME:     #kgen.quote<!lit.ref<!MemType, imm *[0,1]>>]
     infer_arg_type(abc)
+
+
+# // -----
+
+
+# Two instances of the parametric closure trait that are convertible only
+# through a thunk bridge with a stateless extension struct: the thunk becomes
+# its `__call__` witness, and what the thunk captured from the conversion site
+# -- the anchor closure and the `T` its signature mentions -- is hoisted onto
+# the struct's own parameters.
+
+# CHECK:      lit.struct.decl @"extension${{.*}}"<T: {{.*}}, *"#Closure_Ext#": trait<@"##__mojo_closure__##"
+# CHECK:        kgen.conformance @"##__mojo_closure__##"
+# CHECK-NEXT:     kgen.witness "__call__" : {{.*}} = rebind(
+# CHECK-SAME:       #kgen.get_witness<{{.*}} *"#Closure_Ext#", @"##__mojo_closure__##"{{.*}}"__call__">
+
+
+def sink[T: AnyType, C: def(T)](mut c: C, arg: T):
+    pass
+
+
+def forward[T: TrivialRegisterPassable, C: def(t : T)](mut c: C, arg: T):
+    # The extension leaves `c`'s physical type alone: `sink`'s `C` is bound to
+    # a `#kgen.extension` anchored at `C`, with the struct above -- its
+    # parameters bound to this scope's `T` and `C` -- supplying the conformance.
+    # CHECK:      lit.call {{.*}}@"sink[
+    # CHECK-SAME:   #kgen.extension<{{.*}}> C, [
+    # CHECK-SAME:     @"extension${{.*}}"<:{{.*}} T, :{{.*}} C>]>
+    sink(c, arg)

@@ -20,6 +20,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <cstddef>
+#include <string>
 
 namespace M::KGEN {
 enum class ArgConvention : uint32_t;
@@ -102,6 +103,13 @@ void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
+
+/// Generate the mangled name identifying the thunk that converts a value of
+/// signature `actual` into one of signature `expected`. The AST-level spelling
+/// of both types keeps the name readable, and a hash of the full signatures
+/// disambiguates types that share a spelling but differ in parameters.
+void generateConversionThunkName(llvm::raw_ostream &os, Type expected,
+                                 Type actual);
 
 } // namespace M::KGEN::LIT
 

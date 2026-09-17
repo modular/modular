@@ -294,11 +294,9 @@ static std::pair<ASTDecl &, StructDeclOp>
 createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
              ArrayRef<ParamDeclAttr> params, SMLoc loc,
              ArrayRef<PassingKind> passingKinds) {
-  auto module = cast_or_null<FileModuleOp>(moduleDecl.getIfOperation());
-  assert(module && "extension/wrapper structs require a FileModuleOp parent");
   assert(passingKinds.size() == params.size() &&
          "passing kind per struct parameter");
-  OpBuilder b(module.getRegion());
+  OpBuilder b(moduleDecl.getIfOperation()->getRegion(0));
   SmallVector<StringAttr> paramNames;
 #ifndef NDEBUG // Only used for assertion checks below.
   SmallPtrSet<StringAttr, 16> paramNamesSet;
@@ -328,7 +326,7 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
       },
       ParamDeclArrayAttr::get(b.getContext(), params), paramListAttr);
   attrs.set(declOp.getSignatureAttrName(), TypeAttr::get(sig));
-  declOp->setAttrs(attrs.getDictionary(module.getContext()));
+  declOp->setAttrs(attrs.getDictionary(shared.getContext()));
 
   ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
       &*declOp, name, loc, &moduleDecl);
@@ -4296,6 +4294,112 @@ ASTDecl *ClosureEmitter::createExtensionStruct(ASTDecl &moduleDecl,
                                     "__call__", ClosureMethod::CALL),
       witnesses);
   return &structDecl;
+}
+
+PValue ClosureEmitter::createParamClosureExtensionType(
+    IREmitter &emitter, ASTExprAnd<CValue> srcTypeVal,
+    TraitSymbolAttr srcClosureInst, TraitSymbolAttr tgtClosureInst) {
+  auto newSelfVal = ParamDeclRefAttr::get(
+      "#Closure_Ext#", shared.declResolver->getCanonicalTrait(srcClosureInst));
+  auto srcSig =
+      LIT::specializeSignature(shared.getClosureFnSig(srcClosureInst),
+                               ASTType(newSelfVal), shared.getDeclResolver());
+  auto tgtSig =
+      LIT::specializeSignature(shared.getClosureFnSig(tgtClosureInst),
+                               ASTType(newSelfVal), shared.getDeclResolver());
+  assert(srcSig && tgtSig);
+
+  auto callName = StringAttr::get(shared.getContext(), "__call__");
+
+  // This is the function that we try to convert, the selfVal is synthetic,
+  // guaranteed to be un-foldable.
+  auto toConvert =
+      GetWitnessAttr::get(newSelfVal, srcClosureInst, callName, srcSig);
+
+  ExprDest dest(EC_TypeParamValue);
+  TypedAttr converted =
+      emitter
+          .emitImplicitConversionToType({PValue(toConvert), srcTypeVal.expr},
+                                        tgtSig, dest)
+          .getIfPValue();
+  assert(converted && "trait convertibility must have been tested");
+
+  // This is the bridging thunk generated.
+  auto thunkSymbol =
+      cast<SymbolConstantAttr>(ParamOperatorAttr::stripRebind(converted));
+
+  // Collecting all the parameter
+  SmallVector<TypedAttr> thunkParams;
+  for (auto param : thunkSymbol.getParamValues()) {
+    if (sugarIsa<UnboundAttr>(param))
+      continue;
+    thunkParams.push_back(param);
+  }
+
+  assert(thunkSymbol.getParamValues().size() - thunkParams.size() ==
+         tgtSig.getInputParamTypes().size());
+
+  // The generated thunk always append an extra parameter for the function.
+  assert(isEqualCanon(toConvert, thunkParams.back()));
+  thunkParams.pop_back();
+
+#ifndef MODULAR_PRODUCTION
+  llvm::SmallSetVector<ParamDeclRefAttr, 4> capturedParamRef;
+  getCanonicalType(toConvert.getType()).walk([&](ParamDeclRefAttr ref) {
+    capturedParamRef.insert(ref);
+  });
+
+  // The captures parameter must lined up with the bound parameter in the
+  // thunk.
+  auto captures = capturedParamRef.takeVector();
+  for (auto [t, c] : llvm::zip_equal(thunkParams, captures))
+    assert(isEqualCanon(t, c) && "mismatched captures?");
+#endif
+
+  // Hoist the parameter ref to the extension struct, reuse the name so that we
+  // don't need to remapped the name.
+  SmallVector<ParamDeclAttr> structParams;
+  SmallVector<TypedAttr> bindings;
+  for (TypedAttr capture : thunkParams) {
+    auto ref = cast<ParamDeclRefAttr>(capture);
+    structParams.push_back(ParamDeclAttr::get(ref.getName(), ref.getType()));
+    // Every capture binds back to the value it stood for at the conversion
+    // site; the synthetic `Self` binds to the closure being extended.
+    if (isEqualCanon(ref, newSelfVal))
+      bindings.push_back(
+          UpcastAttr::get(ref.getType(), srcTypeVal.ir.getIfPValue()));
+    else
+      bindings.push_back(ref);
+  }
+
+  // TODO: The cache key includes pog list, we can potentially strip in order to
+  // get fewer extension struct
+  StructDeclOp extDeclOp = shared.getOrCreateParamClosureExtension(
+      srcClosureInst, tgtClosureInst, [&] {
+        std::string extName("extension$");
+        llvm::raw_string_ostream os(extName);
+        generateConversionThunkName(os, tgtSig, srcSig);
+
+        auto [structDecl, declOp] = createStruct(
+            shared, shared.getTopLevelDecl(), StringAttr::get(ctx, extName),
+            structParams, srcTypeVal.expr->getLoc(),
+            SmallVector<PassingKind>(structParams.size(),
+                                     PassingKind::PosOnly));
+
+        // The bridging thunk is the whole conformance; there is nothing to
+        // store.
+        declOp.setConvention(TypeConvention::RegisterPassable);
+        addConformanceTable(
+            structDecl,
+            ClosureParent(tgtClosureInst,
+                          shared.getClosureFnSig(tgtClosureInst), callName,
+                          ClosureMethod::CALL),
+            {{callName.getValue(), converted}});
+        return declOp;
+      });
+
+  StructType extType = extDeclOp.bindReference(bindings);
+  return PValue(TypeParamAttr::get(extType, StructMetaType::get(extType)));
 }
 
 CValue ClosureEmitter::createExtensionType(ASTDecl &fileModule,

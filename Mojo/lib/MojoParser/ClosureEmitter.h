@@ -216,6 +216,17 @@ public:
   CValue createExtensionType(ASTDecl &fileModule, CValue sourceValue,
                              Type targetMetaType, TraitDeclOp targetTrait);
 
+  /// Extend a source closure type constrained by one closure trait to a
+  /// structurally compatible target closure trait, without changing the
+  /// source's physical type, the function assume that the compatibility between
+  /// `srcClosureInst` and `tgtClosureInst` are tested. Returns the extension
+  /// struct type value, with the parameters the bridging thunk captured bound
+  /// to the values they hold at the conversion site.
+  PValue createParamClosureExtensionType(IREmitter &emitter,
+                                         ASTExprAnd<CValue> srcTypeVal,
+                                         TraitSymbolAttr srcClosureInst,
+                                         TraitSymbolAttr tgtClosureInst);
+
   /// Checks if the wrapper struct type conforms to a trait that is compatible
   /// with the desired trait.
   LogicalResult isCompatibleWith(ASTType structType, ASTDecl *traitDecl);

@@ -601,6 +601,17 @@ public:
   FnOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
                                 SMLoc useLoc);
 
+  /// Function used to create a parametric-closure extension struct.
+  using CreateParamClosureExtensionFn = function_ref<StructDeclOp()>;
+
+  /// This gets the extension struct that supplies `tgtClosureInst`'s
+  /// conformance by bridging through `srcClosureInst`, or creates one if
+  /// needed.
+  StructDeclOp
+  getOrCreateParamClosureExtension(TraitSymbolAttr srcClosureInst,
+                                   TraitSymbolAttr tgtClosureInst,
+                                   CreateParamClosureExtensionFn create);
+
   /// Given a scope that refers to a nested function, return the set of captured
   /// values. The name of the capture is paired with the metadata.
   const llvm::MapVector<StringRef, Capture> &

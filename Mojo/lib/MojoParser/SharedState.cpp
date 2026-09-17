@@ -362,6 +362,11 @@ struct SharedState::Impl {
   //   "clarifying parameters", see TAPCPTTT).
   DenseMap<Attribute, FnOp> conversionThunks;
 
+  /// Parametric-closure extension structs, keyed on the (source, target)
+  /// closure instances the extension bridges between.
+  DenseMap<std::pair<TraitSymbolAttr, TraitSymbolAttr>, StructDeclOp>
+      paramClosureExtensions;
+
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
   DenseMap<std::pair<Type, Type>, bool> cachedImplicitConvertibility;
@@ -1840,6 +1845,16 @@ FnOp SharedState::getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
   if (!thunk)
     thunk = create(key, getTopLevelDecl(), useLoc);
   return thunk;
+}
+
+StructDeclOp SharedState::getOrCreateParamClosureExtension(
+    TraitSymbolAttr srcClosureInst, TraitSymbolAttr tgtClosureInst,
+    CreateParamClosureExtensionFn create) {
+  StructDeclOp &extension =
+      impl->paramClosureExtensions[{srcClosureInst, tgtClosureInst}];
+  if (!extension)
+    extension = create();
+  return extension;
 }
 
 const llvm::MapVector<StringRef, Capture> &

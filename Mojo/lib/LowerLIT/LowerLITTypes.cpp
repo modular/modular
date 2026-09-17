@@ -619,7 +619,6 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       [&](TraitSymbolAttr attr) -> FailureOr<Attribute> {
         if (attr.getSymbol().getLeafReference().strref().ends_with(
                 UNI_CLOSURE_TRAIT_NAME)) {
-          assert(attr.getParamValues().size() == 6);
           SmallVector<TypedAttr> params;
           for (auto param : attr.getParamValues()) {
             if (isa<PogListAttr>(param)) // irrelevant after lower-lit
@@ -634,6 +633,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
             else
               params.push_back(*replaced);
           }
+          // After pog list is skipped, there are 4 parameter remaining.
+          assert(params.size() == 4);
           return TraitSymbolAttr::get(attr.getSymbol(), params);
         }
 

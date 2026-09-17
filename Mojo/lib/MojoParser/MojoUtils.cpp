@@ -25,10 +25,12 @@
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/ExprNode.h"
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "Mojo/POPDialect/POPTypes.h"
 #include "ParamInf.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -214,4 +216,20 @@ FunctionType
 LIT::replaceIndexRefsWithNamedRefs(FunctionType functionType,
                                    ArrayRef<ParamDeclAttr> explicitParamDecls) {
   return replaceIndexRefsWithNamedRefs(functionType, explicitParamDecls, {});
+}
+
+void LIT::generateConversionThunkName(llvm::raw_ostream &os, Type expected,
+                                      Type actual) {
+  ASTType(expected).print(os, /*diags=*/{});
+  os << '|';
+  ASTType(actual).print(os, /*diags=*/{});
+
+  // Mix in the full signatures to disambiguate.
+  std::string sigHash;
+  llvm::raw_string_ostream sigHashOs(sigHash);
+  expected.print(sigHashOs);
+  actual.print(sigHashOs);
+  os << '|';
+  os << llvm::utohexstr(llvm::xxh3_64bits(sigHash),
+                        /*LowerCase=*/true, /*Width=*/16);
 }
