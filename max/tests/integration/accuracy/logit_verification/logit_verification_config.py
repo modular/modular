@@ -85,6 +85,16 @@ class LogitVerificationPipelineConfig(BaseModel):
     the unquantized source model, and the tolerances then carry the
     quantization error itself."""
 
+    verify_target: str | None = None
+    """Bazel target that can verify this pipeline, when the default cannot.
+
+    ``//max/tests/integration/accuracy:verify_pipelines`` links every public
+    architecture. A private one is registered by a guarded import that only
+    succeeds when its module is in the runfiles, so such a pipeline needs a
+    wrapper target that depends on it -- see
+    ``//max_private/minimax_m3:verify_minimax_m3``. ``None`` means the default
+    driver."""
+
     absolute_tolerance: float | None = None
     relative_tolerance: float | None = None
     cos_dist_threshold: float | None = None

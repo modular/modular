@@ -130,6 +130,29 @@ logit_verification_pipelines:
     cos_dist_threshold: 8.2e-6
     kl_div_threshold: 1.1e-04
 
+  # The checkpoint mcloudDeployConfig.yaml's smollm jobs deploy, on CPU
+  # because their manifests request no accelerator. No
+  # pregenerated_torch_goldens: at 135M a torch reference is cheaper to
+  # regenerate each run than a golden tarball is to maintain.
+  modularai/SmolLM-135M-Instruct-FP32:
+    pre_submit_agents: []
+    pipeline: "modularai/SmolLM-135M-Instruct-FP32"
+    compatible_with: [cpu]
+    encoding: float32
+    # manual for the same reason the SmolLM2-360M entry below is: sub-8B models
+    # aren't what the post-submit sweep is for. A caller that names this entry
+    # by filter gets it anyway -- see select_runners.py.
+    tags: [manual]
+    # Tuned via --find-tolerances on CPU (suggested cos_dist 1.2e-07, kl_div
+    # 1.9e-07) with headroom. kl_div_threshold feeds both the per-position
+    # check and the aggregate max_kl_div the pass/fail decision reads, so the
+    # noisier of the two sets it; max_kl_div itself measured 2.1e-11. atol and
+    # rtol are verify.py's defaults, pinned rather than inherited.
+    absolute_tolerance: 1.0e-04
+    relative_tolerance: 1.0e-03
+    cos_dist_threshold: 2.0e-07
+    kl_div_threshold: 3.0e-07
+
   # ========== Brittle Pipelines ==========
   # The models here are considered brittle. They have never reached high
   # accuracy. They tend to be more sensitive to noise as code changes.
@@ -814,9 +837,16 @@ logit_verification_pipelines:
     compatible_with: [gpu]
     encoding: float8_e4m3fn
     tags: [manual, nvidia-multi, 8xb200]
+    # The public driver cannot register this architecture; the wrapper pulls it
+    # into the runfiles the generate_llm_logits child inherits.
+    verify_target: //max_private/minimax_m3:verify_minimax_m3
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
       json_file: "sglang_MiniMaxAI_MiniMax-M3-MXFP8_float8_e4m3fn_golden.json"
+    # Matches the 405B 8xb200 entry above. The MCloud deploy runs this entry
+    # with no precompile pass -- the only precompiler can't register a private
+    # arch -- so the graph compile is charged against this window.
+    timeout: 3600
     # Tuned via --find-tolerances on 8x B200 (measured: cos_dist 5.6e-04,
     # kl_div 1.8e-01) with headroom. KL is dominated by the translate prompt's
     # later steps; MAX fp8 vs sglang mxfp8+deep_gemm kernels differ.

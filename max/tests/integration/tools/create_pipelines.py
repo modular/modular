@@ -2064,6 +2064,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
+    "modularai/SmolLM-135M-Instruct-FP32": GenericOracle(
+        model_path="modularai/SmolLM-135M-Instruct-FP32",
+        config_params={
+            "max_length": 2048,
+        },
+        device_encoding_map={
+            "cpu": ["float32"],
+        },
+    ),
     "HuggingFaceTB/SmolLM2-360M-Instruct": LoRAOracle(
         model_path="HuggingFaceTB/SmolLM2-360M-Instruct",
         lora_repo_id="fausap/peft-smollm2-lora-gtx1660",
