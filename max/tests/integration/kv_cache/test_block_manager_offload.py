@@ -793,3 +793,35 @@ def test_touch_anchor_payload_trims_uncached_tail() -> None:
 
     assert len(served) == 1  # only 222 hit; 333 is the uncached tail
     assert connector.touches == [([_b(111), _b(222)], 0)]  # root in, tail out
+
+
+def test_release_touches_the_whole_committed_sequence() -> None:
+    """Release re-ranks the request's committed sequence in the external tier.
+
+    The tier orders a group by the keys of one call, and a sequence reaches it
+    over several (one per completed block, plus one per chunked-prefill chunk),
+    so each later commit outranks everything committed before it (CLIN-1893).
+    Release is the one point that fires for every request, not just the ones
+    that are read back, so it is where the whole chain gets re-ranked.
+    """
+    bm, connector = _make_block_manager()
+    ctx = _make_ctx(bm, RequestID("req-release"))
+    bm.req_to_hashes[ctx.request_id] = [_b(111), _b(222), _b(333)]
+    # Two blocks committed; the third is still uncommitted, so the tier never
+    # saw it and touching it would name a key that is not there.
+    bm.req_to_committed_idx[ctx.request_id] = 2 * bm.block_size
+
+    bm.release(ctx)
+
+    assert connector.touches == [([_b(111), _b(222)], 0)]
+
+
+def test_release_touches_nothing_when_no_block_was_committed() -> None:
+    """A request too short to fill one block has nothing in the tier to rank."""
+    bm, connector = _make_block_manager()
+    ctx = _make_ctx(bm, RequestID("req-short"))
+    bm.req_to_hashes[ctx.request_id] = [_b(111)]
+
+    bm.release(ctx)
+
+    assert connector.touches == []

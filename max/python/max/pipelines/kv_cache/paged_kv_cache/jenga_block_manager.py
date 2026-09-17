@@ -298,7 +298,28 @@ class JengaBlockManager:
         for group in self._groups.values():
             group.release(req_id, replica_idx)
 
+        self._touch_committed_sequence(ctx)
+
         del self._requests[req_id]
+
+    def _touch_committed_sequence(self, ctx: TextContext) -> None:
+        """Re-ranks the request's whole committed sequence in the external tier.
+
+        See ``BlockManager._touch_committed_sequence``: the connector orders a
+        group by the keys of one call, and a sequence is committed over several,
+        so each later commit outranks the earlier ones until this runs
+        (CLIN-1893). Best-effort; ``touch`` never raises into the caller.
+        """
+        if self._connector is None or not self._enable_prefix_caching:
+            return
+        state = self._state_of(ctx)
+        num_committed_blocks = state.committed_idx // self._block_size
+        if not num_committed_blocks:
+            return
+        self._connector.touch(
+            state.hashes[:num_committed_blocks],
+            replica_idx=self._replica_of(ctx),
+        )
 
     # ============================================================================
     # Allocation & Reuse APIs

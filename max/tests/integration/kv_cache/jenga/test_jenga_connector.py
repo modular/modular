@@ -352,7 +352,10 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
     # which is what BlockManager touches on the legacy path. Gating the touch
     # on the device hit alone would skip it entirely under
     # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, where there is never one.
-    assert connector.touches == [(list(reusable), 0)]
+    # `release` also re-ranks a finished request's sequence (CLIN-1893), so
+    # earlier releases in this test contribute touches of their own. The
+    # admission touch is the one under test, and it is the most recent.
+    assert connector.touches[-1] == (list(reusable), 0)
     # One contiguous row: the device page first, then the onloaded ones,
     # then whatever the forward still has to fill.
     row = manager.get_req_blocks_per_leaf(second)[FULL]
@@ -430,7 +433,7 @@ def test_last_level_cache_only_forces_every_hit_through_the_connector(
     # configuration that leans on the connector hardest. No other test can see
     # that mutation, because every other one has a device hit and the touch
     # argument is byte-identical either way.
-    assert connector.touches == [(list(offloaded[:-1]), 0)]
+    assert connector.touches[-1] == (list(offloaded[:-1]), 0)
 
 
 def test_alloc_drains_landed_transfers_so_pins_do_not_accumulate() -> None:

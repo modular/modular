@@ -1077,6 +1077,8 @@ class BlockManager:
         for block in ordered_blocks:
             pool.free_block(block)
 
+        self._touch_committed_sequence(ctx)
+
         self.req_to_blocks.pop(request_id, None)
         self.req_to_hashes.pop(request_id, None)
         self.req_to_replica.pop(request_id, None)
@@ -1085,6 +1087,37 @@ class BlockManager:
         # therefore this may not always be in the dict.
         if request_id in self.req_to_committed_idx:
             del self.req_to_committed_idx[request_id]
+
+    def _touch_committed_sequence(self, ctx: TextContext) -> None:
+        """Re-ranks the request's whole committed sequence in the external tier.
+
+        An external tier that evicts by recency takes a group's order from the
+        keys of one call, and the engine commits a sequence over several calls
+        (one per completed block, plus one per chunked-prefill chunk). Each
+        later call therefore ranks its own blocks above everything committed
+        before them, leaving the boundary between two commits as the coldest
+        block rather than the sequence tail (CLIN-1893). Handing the tier the
+        whole root-anchored sequence once, here, restores tail-coldest order.
+
+        Release rather than the load-path anchor, because the anchor only fires
+        for a sequence that is read back, and most written sequences never are.
+        This does not undo an eviction that already happened during generation;
+        it stops the next one landing in the middle, and demotes a stranded
+        tail so its capacity is reclaimed rather than held.
+
+        Best-effort: ``touch`` never raises into the caller.
+        """
+        if not self.enable_prefix_caching:
+            return
+        if self.connector.name == "NullConnector":
+            return
+        num_committed_blocks = (
+            self.req_to_committed_idx[ctx.request_id] // self.block_size
+        )
+        if not num_committed_blocks:
+            return
+        committed = self.req_to_hashes[ctx.request_id][:num_committed_blocks]
+        self.connector.touch(committed, replica_idx=self._replica_of(ctx))
 
     @traced
     def allocate_new_blocks(
