@@ -206,6 +206,78 @@ max benchmark \
   --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json \
 ```
 
+### Benchmark with image inputs
+
+Vision models such as Gemma 3 and Qwen3-VL accept image inputs, and a single
+image can add hundreds of prefill tokens, depending on the model's vision
+encoder. `max benchmark` can generate images and mix them into any text
+dataset's requests.
+
+To attach one generated 512x512 image to half of the requests in the `sonnet`
+workload, add the image-mixing flags to the benchmark command:
+
+```bash
+max benchmark \
+  --model google/gemma-3-27b-it \
+  --backend modular \
+  --endpoint /v1/chat/completions \
+  --dataset-name sonnet \
+  --num-prompts 500 \
+  --image-fraction 0.5 \
+  --image-count 1 \
+  --image-long-side 512 \
+  --image-aspect-ratio 1.0
+```
+
+This run selects half of the requests for images, and each selected request
+carries one 512x512 image.
+
+`--image-fraction` controls image mixing: at the default `0.0` the workload
+stays text-only, and raising it starts mixing images into the selected
+requests. `--image-count` sets how many images each selected request carries,
+`--image-long-side` sets each image's longer pixel dimension, and
+`--image-aspect-ratio` sets width divided by height. `1.0` produces square
+images, values above `1.0` produce landscape images, and values below `1.0`
+produce portrait images.
+
+For multi-turn datasets such as ShareGPT, `--image-turn` picks which user
+turn carries the image: `first`, `last`, or `every`. `--image-count` then
+applies to each selected turn.
+
+`--image-count`, `--image-long-side`, and `--image-aspect-ratio` each accept
+a distribution string, so image counts and sizes can vary from request to
+request. `Cat()` samples from a list of values with explicit weights:
+
+```bash
+max benchmark \
+  --model google/gemma-3-27b-it \
+  --backend modular \
+  --endpoint /v1/chat/completions \
+  --dataset-name sonnet \
+  --num-prompts 500 \
+  --image-fraction 0.5 \
+  --image-long-side "Cat(1024:0.7, 512:0.2, 2048:0.1)"
+```
+
+In this example, 70% of images have a 1024px long side, 20% have 512px,
+and 10% have 2048px. Weights are normalized, so `Cat(1024:7, 512:2, 2048:1)`
+behaves the same, and values without weights are equally likely.
+
+The `random` dataset has its own image flags, `--random-image-count` and
+`--random-image-size`, which attach the same fixed image count and size to
+every request. The `random` dataset's image flags and the image-mixing flags
+are mutually exclusive: `max benchmark` exits with an error at startup when
+both are set.
+
+To preview the workload before sending traffic, add `--dry-run`: it samples
+the generated requests and prints distribution statistics, including the
+image count per request and the long-side pixel distribution, without
+contacting the server.
+
+For the full flag reference and the distribution grammar, see the
+[`max benchmark` documentation](/cli/benchmark). For a deeper walkthrough, see
+[Mix generated images into any benchmark workload](https://github.com/modular/modular/blob/main/max/python/max/benchmark/benchmarking_mixed_images.md).
+
 ## Interpret the results
 
 Your results depend on your hardware, but the structure of the output

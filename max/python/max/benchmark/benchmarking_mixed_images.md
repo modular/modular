@@ -1,8 +1,7 @@
 # Mix generated images into any benchmark workload
 
 This guide describes how to mix generated images into any `benchmark_serving.py`
-workload, so you can benchmark vision-capable models without a dataset that
-natively carries images.
+workload.
 
 ## Overview
 
@@ -79,12 +78,11 @@ any distribution string supported by this codebase's distribution
 grammar—not just a constant. Beyond the usual parametric shapes (`N(mean,std)`,
 `U(lower,upper)`, `DU(lower,upper)`, `NB(n,p)`, `G(shape,scale)`,
 `LN(mean,std)`, `Burr12(c,d,scale)`), there's `Cat(v1:w1, v2:w2, ...)`: an
-explicit, weighted set of values. Use it when you've measured a real image-size
-distribution (for example, from production traffic) and want to reproduce it
-exactly, rather than approximate it with a bell curve or a uniform range.
+explicit, weighted set of values, such as image sizes observed in production
+traffic.
 
-For example, given measured production stats showing 70% of images at 1024px,
-20% at 512px, and 10% at 2048px on the long side:
+For example, to draw 70% of images at 1024px, 20% at 512px, and 10% at
+2048px on the long side:
 
 ```bash
 max benchmark \
