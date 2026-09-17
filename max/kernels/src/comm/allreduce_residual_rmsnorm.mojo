@@ -1159,7 +1159,13 @@ def _dispatch_fused_kernel[
             return 100 * 1024 if c >= 6144 else 80 * 1024
 
     var threshold: Int
-    comptime if ngpus <= 4:
+    comptime if ngpus <= 2 and has_residual and not quantize:
+        # 2-stage ships the payload twice, moving 2*(ngpus-1)/ngpus of what
+        # 1-stage moves over the fabric, plus a second barrier and a scratch
+        # round trip (~9 us on 2xB200). At two ranks that ratio is exactly 1,
+        # so this is never a win and we always use the 1-stage kernel.
+        threshold = Int.MAX
+    elif ngpus <= 4:
         threshold = _rank_4_per_rank_thresh()
     elif has_residual and not has_amd_gpu_accelerator():
         threshold = _rank_8_residual_thresh_for_cols(cols)
