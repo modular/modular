@@ -142,6 +142,15 @@ modular_cc_library(
     ],
 )
 
+# Portable <dlfcn.h>: on Windows the sources provide dlopen/dlsym/dlclose/
+# dlerror over LoadLibrary/GetProcAddress; elsewhere the header forwards to
+# the system <dlfcn.h> and the sources compile empty.
+modular_cc_library(
+    name = "DLFcn",
+    srcs = ["lib/DLFcn.cpp"],
+    hdrs = ["include/Support/DLFcn.h"],
+)
+
 modular_cc_library(
     name = "BuildInfo",
     srcs = ["lib/BuildInfo.cpp"],
