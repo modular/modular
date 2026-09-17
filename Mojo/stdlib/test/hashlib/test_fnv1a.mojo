@@ -59,13 +59,13 @@ def test_avalanche() raises:
     # produce significantly different hash values
     var buffer = Array[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
+    hashes.append(hash_bytes[Fnv1a](buffer))
 
     for i in range(256):
         unsafe_memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         buffer[i >> 3] = UInt8(v)
-        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
+        hashes.append(hash_bytes[Fnv1a](buffer))
 
     assert_dif_hashes(hashes, 15)
 
@@ -77,7 +77,7 @@ def test_trailing_zeros() raises:
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), i))
+        hashes.append(hash_bytes[Fnv1a](Span(buffer)[:i]))
 
     assert_dif_hashes(hashes, 21)
 

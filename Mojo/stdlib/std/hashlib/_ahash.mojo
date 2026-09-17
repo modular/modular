@@ -234,11 +234,32 @@ struct AHasher[key: U256](Defaultable, Hasher):
         return (folded << rot) | (folded >> ((UInt64(64) - rot) & UInt64(63)))
 
 
+def hash_seeded_bytes(data: ImmSpan[Byte, _], seed: U256) -> UInt64:
+    """Hashes a sequence of bytes with a runtime seed mixed into AHash's keyed state.
+
+    Seeded analogue of `hash_bytes()`. An all-zero `seed` reproduces
+    `hash_bytes(data)` exactly.
+
+    Args:
+        data: The byte sequence to hash.
+        seed: Runtime bits mixed into the hasher's keyed state, e.g. a
+            per-tenant or per-request salt.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
+    var hasher = AHasher[U256(0)](seed)
+    hasher.update(data)
+    var value = hasher^.finish()
+    return value
+
+
+@deprecated("Use the `Span` based `hash_seeded_bytes()` overload instead")
 def hash_seeded_bytes(data: ImmPointer[UInt8, _], n: Int, seed: U256) -> UInt64:
     """Hashes a sequence of bytes with a runtime seed mixed into AHash's keyed state.
 
-    Seeded analogue of `hash(bytes, n)`. An all-zero `seed` reproduces
-    `hash(data, n)` exactly.
+    Seeded analogue of `hash_bytes()`. An all-zero `seed` reproduces
+    `hash_bytes(data)` exactly.
 
     Args:
         data: Pointer to the byte sequence to hash.
@@ -249,10 +270,7 @@ def hash_seeded_bytes(data: ImmPointer[UInt8, _], n: Int, seed: U256) -> UInt64:
     Returns:
         A 64-bit integer hash value.
     """
-    var hasher = AHasher[U256(0)](seed)
-    hasher.update(Span(unsafe_ptr=data, length=n))
-    var value = hasher^.finish()
-    return value
+    return hash_seeded_bytes(Span(unsafe_ptr=data, length=n), seed)
 
 
 def hash_seeded[T: Hashable](value: T, seed: U256) -> UInt64:

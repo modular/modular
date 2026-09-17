@@ -73,6 +73,16 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Hashing a byte sequence is now spelled `hash_bytes()`, which takes an
+  `ImmSpan[Byte]`. The pointer-and-length `hash()` overload is deprecated:
+
+  ```mojo
+  var digest = hash_bytes(text.as_bytes())  # was: hash(text.ptr(), text.byte_length())
+  ```
+
+  `hash()` keeps its `Hashable` meaning, so `hash(my_list)` still hashes a list
+  element-by-element while `hash_bytes(my_list)` hashes its bytes.
+
 - `Coord.product()` has a new parameterized overload, `product[T: DType]()`,
   which accumulates and returns the product at `T` rather than at
   `Coord.DTYPE`:

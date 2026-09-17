@@ -26,7 +26,7 @@ def randomize_list[
     dt: DType
 ](mut list: List[Scalar[dt]], size: Int, max: Scalar[dt] = Scalar[dt].MAX):
     comptime if dt.is_integral():
-        randint(list.unsafe_ptr(), size, 0, Int(max))
+        randint(list, 0, Int(max))
     else:
         for i in range(size):
             var res = random_float64()
