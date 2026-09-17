@@ -561,6 +561,7 @@ def naive_batched_matmul_kernel[
     t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}",
 )
 def batched_matmul_kernel_gpu[
+    rank: Int,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -574,6 +575,7 @@ def batched_matmul_kernel_gpu[
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
+    c_buff_nd_shape: IndexList[rank],
 ):
     """
     Computes a single batch slice of a batched matrix multiplication on the
@@ -581,6 +583,7 @@ def batched_matmul_kernel_gpu[
     `AMDMatmul` kernel on AMD hardware.
 
     Parameters:
+        rank: Rank of the original (un-collapsed) output tensor.
         c_type: Output tensor element dtype.
         a_type: LHS input tensor element dtype.
         b_type: RHS input tensor element dtype.
@@ -595,6 +598,8 @@ def batched_matmul_kernel_gpu[
         c_tensor: Rank-3 output tensor of shape `(batch, m, n)`.
         a_tensor: Rank-3 LHS input tensor of shape `(batch, m, k)`.
         b_tensor: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        c_buff_nd_shape: Shape of the original output tensor before collapsing
+            to 3D, used to un-collapse batch coordinates for the epilogue.
     """
     var batch_idx = block_idx.z
     var a_ptr = a_tensor.ptr + batch_idx * Int(
@@ -640,10 +645,12 @@ def batched_matmul_kernel_gpu[
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_coords = IndexList[3](block_idx.z)
-            batch_coords[2] = out_coords[1]
-            batch_coords[1] = out_coords[0]
-            elementwise_epilogue(batch_coords, val)
+            var nd_coords = _get_start_indices_of_nth_subvolume[2](
+                block_idx.z, c_buff_nd_shape
+            )
+            nd_coords[rank - 1] = out_coords[1]
+            nd_coords[rank - 2] = out_coords[0]
+            elementwise_epilogue(nd_coords, val)
 
     comptime if is_nvidia_gpu():
         multistage_gemm_kernel[
@@ -772,6 +779,10 @@ def _batched_matmul_gpu[
     comptime a_k = a_tensor_reshaped.LayoutType._shape_types[2].static_value
     comptime c_n = c_tensor_reshaped.LayoutType._shape_types[2].static_value
 
+    var c_shape = rebind[IndexList[rank]](
+        coord_to_index_list(c_buf.layout.shape_coord())
+    )
+
     # SM100 (B200+) batched BF16 matmul dispatch
     comptime use_SM100_kernels = (
         has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()
@@ -810,9 +821,13 @@ def _batched_matmul_gpu[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
                     ](idx)
-                    epilogue[c_type, simd_width, alignment=alignment](
-                        coord_to_index_list(idx), c_val
+                    var collapsed = coord_to_index_list(idx)
+                    var nd_coords = _get_start_indices_of_nth_subvolume[2](
+                        Int(collapsed[0]), c_shape
                     )
+                    nd_coords[rank - 1] = collapsed[2]
+                    nd_coords[rank - 2] = collapsed[1]
+                    epilogue[alignment=alignment](nd_coords, c_val)
 
                 elementwise[simd_size, target="gpu"](
                     epilogue_wrapper, Coord(batch_size, m, n), ctx
@@ -834,6 +849,7 @@ def _batched_matmul_gpu[
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
         comptime batched_matmul_type = batched_matmul_kernel_gpu[
+            rank,
             c_tensor_reshaped.dtype,
             a_tensor_reshaped.dtype,
             b_tensor_reshaped.dtype,
@@ -851,6 +867,7 @@ def _batched_matmul_gpu[
             c_tensor_reshaped,
             a_tensor_reshaped.as_immut(),
             b_tensor_reshaped.as_immut(),
+            c_shape,
             grid_dim=(grid_dim[0], grid_dim[1], batch_size),
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
@@ -873,6 +890,7 @@ def _batched_matmul_gpu[
             )
 
             comptime batched_matmul_type = batched_matmul_kernel_gpu[
+                rank,
                 c_tensor_reshaped.dtype,
                 a_tensor_reshaped.dtype,
                 b_tensor_reshaped.dtype,
@@ -888,6 +906,7 @@ def _batched_matmul_gpu[
                 c_tensor_reshaped,
                 a_tensor_reshaped.as_immut(),
                 b_tensor_reshaped.as_immut(),
+                c_shape,
                 grid_dim=(
                     ceildiv(n, block_n),
                     ceildiv(m, block_m),
@@ -905,7 +924,6 @@ def _batched_matmul_gpu[
 
     else:
         logger.info("Dispatching Batched Matmul via Naive Kernels")
-        var c_shape = coord_to_index_list(c_buf.layout.shape_coord())
 
         comptime BLOCK_DIM = 16
         comptime bmm = naive_batched_matmul_kernel[
@@ -1168,6 +1186,10 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
             IndexList[2](b_scales_tensor.dim(1), b_scales_tensor.dim(2)),
         ),
     )
+
+    comptime assert (
+        c_tensor.rank == 3
+    ), "the epilogue below builds rank-3 coordinates"
 
     @__parameter
     def elementwise_epilogue_fn_wrapper[

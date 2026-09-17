@@ -19,7 +19,10 @@ from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
 from layout.tile_layout import Layout
-from linalg.bmm import _batched_matmul_gpu
+from linalg.bmm import (
+    _batched_matmul_gpu,
+    _reshape_tile_tensor_with_batch_to_3d,
+)
 
 from std.random import rand
 from std.testing import assert_almost_equal
@@ -79,8 +82,10 @@ def run_bmm_and_check_result[
     ctx: DeviceContext,
     rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
 ) raises:
-    comptime assert c_host.flat_rank == 3, "c_device must have rank 3"
-    comptime assert c_host_ref.flat_rank == 3, "c_device_ref must have rank 3"
+    comptime assert c_host.flat_rank >= 3, "c_device must have rank >= 3"
+    comptime assert (
+        c_host_ref.flat_rank >= 3
+    ), "c_device_ref must have rank >= 3"
     var a_size = a_host.num_elements()
     var b_size = b_host.num_elements()
     var c_size = c_host.num_elements()
@@ -95,6 +100,12 @@ def run_bmm_and_check_result[
     var b_device = TileTensor[dtype](b_device_buffer, b_host.layout)
     var c_device = TileTensor[dtype](c_device_buffer, c_host.layout)
     var c_device_ref = TileTensor[dtype](c_device_ref_buffer, c_host_ref.layout)
+
+    var a_device_3d = _reshape_tile_tensor_with_batch_to_3d(a_device)
+    var b_device_3d = _reshape_tile_tensor_with_batch_to_3d(b_device)
+    var c_device_ref_3d = _reshape_tile_tensor_with_batch_to_3d(c_device_ref)
+    var c_host_3d = _reshape_tile_tensor_with_batch_to_3d(c_host)
+    var c_host_ref_3d = _reshape_tile_tensor_with_batch_to_3d(c_host_ref)
 
     rand(a_host._storage, a_size)
     rand(b_host._storage, b_size)
@@ -116,12 +127,13 @@ def run_bmm_and_check_result[
         *,
         alignment: Int = 1,
     ](idx0: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
-        var idx = rebind[IndexList[3]](idx0)
+        comptime assert rank == c_device.rank
         comptime func = lambda_fn.value()
         var update_val = func(val)
-        var coord = Coord((idx[0], idx[1], idx[2]))
-        comptime assert c_device.flat_rank >= 3
-        c_device.store(coord, update_val.cast[c_device.dtype]())
+        c_device.store_linear[width=width](
+            rebind[IndexList[c_device.rank]](idx0),
+            update_val.cast[c_device.dtype](),
+        )
 
     comptime if lambda_fn:
         _batched_matmul_gpu[
@@ -135,10 +147,10 @@ def run_bmm_and_check_result[
 
     ctx.synchronize()
 
-    var b = Int(c_device_ref.dim(0))
-    var m = Int(c_device_ref.dim(1))
-    var n = Int(c_device_ref.dim(2))
-    var k = Int(a_device.dim(2))
+    var b = Int(c_device_ref_3d.dim(0))
+    var m = Int(c_device_ref_3d.dim(1))
+    var n = Int(c_device_ref_3d.dim(2))
+    var k = Int(a_device_3d.dim(2))
 
     # Skip equality check if N or K are 0 (causes error in vendor_blas).
     if n == 0 or k == 0:
@@ -156,15 +168,19 @@ def run_bmm_and_check_result[
             ctx,
         )
     else:
-        for i in range(a_host.dim(0)):
-            var c_ptr = c_device_ref._storage + i * Scalar[
+        var c_batch_stride = Int(c_device_ref_3d.layout.stride[0]().value())
+        var a_batch_stride = Int(a_device_3d.layout.stride[0]().value())
+        var b_batch_stride = Int(b_device_3d.layout.stride[0]().value())
+
+        for i in range(b):
+            var c_ptr = c_device_ref_3d._storage + Scalar[
                 a_host.linear_idx_type
-            ](c_device_ref.layout.stride[0]().value())
-            var a_ptr = a_device._storage + i * Scalar[a_host.linear_idx_type](
-                a_device.layout.stride[0]().value()
+            ](i * c_batch_stride)
+            var a_ptr = a_device_3d._storage + Scalar[a_host.linear_idx_type](
+                i * a_batch_stride
             )
-            var b_ptr = b_device._storage + i * Scalar[a_host.linear_idx_type](
-                b_device.layout.stride[0]().value()
+            var b_ptr = b_device_3d._storage + Scalar[a_host.linear_idx_type](
+                i * b_batch_stride
             )
 
             var c_buffer = TileTensor(c_ptr, row_major(m, n))
@@ -187,12 +203,11 @@ def run_bmm_and_check_result[
 
     @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        comptime assert c_device_ref.flat_rank >= 3
-        var val = c_device_ref.load[width=simd_width](coord)
+        var val = c_device_ref_3d.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
         var update_val = element_lambda(val)
 
-        c_device_ref.store(
+        c_device_ref_3d.store(
             coord,
             update_val,
         )
@@ -211,8 +226,8 @@ def run_bmm_and_check_result[
     for batch_idx in range(b):
         for m_idx in range(m):
             for n_idx in range(n):
-                var expect = c_host_ref[batch_idx, m_idx, n_idx][0]
-                var actual = c_host[batch_idx, m_idx, n_idx][0]
+                var expect = c_host_ref_3d[batch_idx, m_idx, n_idx][0]
+                var actual = c_host_3d[batch_idx, m_idx, n_idx][0]
 
                 assert_almost_equal(actual, expect, rtol=rtol)
 
@@ -299,6 +314,61 @@ def test_static_NK[
 
     else:
         var b_host = TileTensor(b_host_ptr, row_major(b, Idx[K], Idx[N]))
+        run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
+            a_host, b_host, c_host, c_host_ref, ctx, rtol
+        )
+
+
+def test_static_NK_rank4[
+    dtype: DType,
+    /,
+    *,
+    N: Int,
+    K: Int,
+    transpose_b: Bool,
+    lambda_fn: Optional[epilogue_func_type] = None,
+](
+    ctx: DeviceContext,
+    b0: Int,
+    b1: Int,
+    m: Int,
+    rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
+) raises:
+    """
+    Tests a rank-4 batched matmul, whose two leading batch dimensions the
+    kernel collapses into one. With a fused epilogue this is the shape that
+    regressed in GEX-4200: the tiled dispatch handed the epilogue a rank-3
+    coordinate for a rank-4 output.
+    """
+    # fmt: off
+    print(
+        "test_static_NK_rank4", b0, "x", b1, "x", m, "x", N, "x", K,
+        "transpose_b", transpose_b,
+    )
+    # fmt: on
+
+    var batch = b0 * b1
+    var a_size = batch * m * K
+    var b_size = batch * N * K
+    var c_size = batch * m * N
+
+    # Host allocations
+    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
+
+    var a_host = TileTensor(a_host_ptr, row_major(b0, b1, m, Idx[K]))
+    var c_host = TileTensor(c_host_ptr, row_major(b0, b1, m, Idx[N]))
+    var c_host_ref = TileTensor(c_host_ref_ptr, row_major(b0, b1, m, Idx[N]))
+
+    comptime if transpose_b:
+        var b_host = TileTensor(b_host_ptr, row_major(b0, b1, Idx[N], Idx[K]))
+        run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
+            a_host, b_host, c_host, c_host_ref, ctx, rtol
+        )
+    else:
+        var b_host = TileTensor(b_host_ptr, row_major(b0, b1, Idx[K], Idx[N]))
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
@@ -392,6 +462,26 @@ def main() raises:
             transpose_b=False,
             lambda_fn=elementwise_epilogue_fn,
         ](ctx, 64, 256, 512, 128)
+
+        # Rank-4 output on the tiled dispatch with a fused epilogue
+        # (GEX-4200). fp32/transpose_b=False takes the A100 multistage path.
+        test_static_NK_rank4[
+            .float32,
+            transpose_b=False,
+            lambda_fn=elementwise_epilogue_fn,
+            N=Int(128),
+            K=Int(128),
+        ](ctx, 2, 3, 64)
+
+        # transpose_b=True takes the SM100 path on Blackwell and the AMD
+        # path on CDNA.
+        test_static_NK_rank4[
+            .bfloat16,
+            transpose_b=True,
+            lambda_fn=elementwise_epilogue_fn,
+            N=Int(128),
+            K=Int(128),
+        ](ctx, 2, 3, 64)
 
         comptime if has_nvidia_gpu_accelerator():
             # NOTE: these tests should be run on a100 and above
