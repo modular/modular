@@ -14,7 +14,7 @@ import { requirementsWithDockerAndGPU } from '../requirements';
 In this tutorial, you'll deploy a MAX inference endpoint using our
 [GPU-enabled containers](/container) and evaluate endpoint performance with
 the [`max benchmark`](/cli/benchmark) CLI command. You'll collect key
-metrics such as throughput, latency, and token-processing speed to benchmark
+metrics such as request throughput, latency, and token throughput to benchmark
 under production-like workloads and establish a baseline before scaling or
 integrating MAX into your deployments.
 
@@ -23,36 +23,34 @@ integrating MAX into your deployments.
 For the best performance, use an **NVIDIA B200 / H200 / H100** or **AMD
 MI355X / MI325X / MI300X**.
 
-MAX can serve models on a wide range of CPUs and GPUs, but the big LLMs most
-customers want require an amount of memory that's only available on the latest
-datacenter GPUs. Specifically, this tutorial uses the
-[Gemma 3 27B model](https://huggingface.co/google/gemma-3-27b-it), which
-requires at least 60 GiB of memory.
+MAX can serve models on a wide range of CPUs and GPUs, but the largest models
+require memory that's available only on the latest datacenter GPUs. This
+tutorial uses the [Gemma 3 27B
+model](https://huggingface.co/google/gemma-3-27b-it), which requires at least
+60 GiB of memory.
 
 :::
 
-Deploying AI inference workloads requires careful performance optimization,
-balancing factors such as accuracy, latency, and cost. This tutorial benchmarks
-a [Gemma 3](https://huggingface.co/google/gemma-3-27b-it) endpoint using
-the `max benchmark` CLI command, which provides key metrics to evaluate the
-model server's performance, including:
+Deploying AI inference workloads means balancing accuracy, latency, and cost.
+This tutorial benchmarks a
+[Gemma 3](https://huggingface.co/google/gemma-3-27b-it) endpoint with the
+`max benchmark` CLI command, which reports the following metrics:
 
 - Request throughput
 - Input and output token throughput
 - Time-to-first-token (TTFT)
 - Time per output token (TPOT)
 
-Our benchmarking script is adapted from vLLM with additional features, such as
-client-side GPU metric collection to ensure consistent and comprehensive
-performance measurement that's tailored to MAX. You can see the [benchmark
-script source
-here](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
+The benchmark is adapted from vLLM, with additions such as client-side GPU
+metric collection tailored to MAX. You can see the
+[benchmark script
+source](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
 
-An AI coding agent can run this for you with the `benchmark-model` skill, which
-drives load against an endpoint you're already serving and reports the same
-throughput and latency metrics, plus GPU utilization when it runs on the same
-NVIDIA host as the server. See [Modular skills](/coding-assistants#skills) to
-install it.
+An AI coding agent can run the benchmark for you with the `benchmark-model`
+skill, which drives load against an endpoint you're already serving and
+reports the same throughput and latency metrics, plus GPU utilization when it
+runs on the same NVIDIA host as the endpoint. See
+[Modular skills](/coding-assistants#skills) to install it.
 
 System requirements:
 
@@ -64,7 +62,7 @@ url="/packages#system-requirements" />
 This tutorial is intended for production environments using Docker,
 which can be difficult to set up with GPU access on some systems. If you have
 any trouble with Docker, you can instead run benchmarks on an endpoint created
-with the `max serve` command—for instructions, see the [quickstart
+with the `max serve` command. For instructions, see the [quickstart
 guide](/get-started).
 
 :::
@@ -90,8 +88,8 @@ Face](https://huggingface.co/google/gemma-3-27b-it).
 
 ## Start the model endpoint
 
-We provide a pre-configured GPU-enabled Docker container that simplifies the
-process to deploy an endpoint with MAX. For more information, see [MAX
+We provide a pre-configured GPU-enabled Docker container that simplifies
+deploying an endpoint with MAX. For more information, see [MAX
 container](/container).
 
 Use this command to pull the MAX container and start the model endpoint:
@@ -133,8 +131,8 @@ Use this command to pull the MAX container and start the model endpoint:
 If you want to try a different model, see our
 [supported models](/models/).
 
-The server is running when you see the following terminal
-message (beware Docker prints [JSON logs by default](/container#logs)):
+The endpoint is running when you see the following terminal
+message (Docker prints [JSON logs by default](/container#logs)):
 
 ```output
 🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
@@ -143,7 +141,7 @@ message (beware Docker prints [JSON logs by default](/container#logs)):
 ## Start benchmarking
 
 Open a second terminal and install the `max[all]` or `max[benchmark]` package
-to get the `max` CLI tool we'll use to perform benchmarking.
+to get the `max` CLI.
 
 ### Set up your environment
 
@@ -167,18 +165,18 @@ max benchmark \
 
 :::note
 
-By default, this sends requests to `localhost:8000`, but you can override with
-the `--host` and `--port` arguments.
+By default, this sends requests to `localhost:8000`, but you can override the
+address with the `--host` and `--port` arguments.
 
-In order to download the dataset, you must have permission to write to your
+To download the dataset, you must have permission to write to your
 Hugging Face cache. You might need to change permissions with `chown`.
 
 :::
 
-When you want to save your own benchmark configurations, you can define them in
-a YAML file and pass it to the `--config-file` option. For example, copy our
+When you want to save your own benchmark configurations, you can define one in a
+YAML file and pass it to the `--config-file` option. For example, copy our
 [`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs/gemma-3-27b-sonnet-decode-heavy-prefix200.yaml)
-file from GitHub, and you can benchmark the same model with this command:
+from GitHub, then benchmark the same model with this command:
 
 ```sh
 max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
@@ -210,8 +208,8 @@ max benchmark \
 
 ## Interpret the results
 
-Of course, your results depend on your hardware, but the structure of the
-output should look like this:
+Your results depend on your hardware, but the structure of the output
+should look like this:
 
 ```output
 ============ Serving Benchmark Result ============
@@ -273,21 +271,21 @@ For more information about each metric, see the
 ### Measure latency with finite request rates
 
 Latency metrics like time-to-first-token (TTFT) and time per output token
-(TPOT) matter most when the server isn't overloaded. An overloaded server will
-queue requests, which results in a massive increase in latency that varies
-depending on the size of the benchmark more than the actual latency of the
-server. Benchmarks with a larger number of prompts result in a deeper queue.
+(TPOT) are most meaningful when the endpoint keeps up with the request rate.
+When the endpoint is overloaded, requests queue, and queue time dominates the
+results: a benchmark with more prompts produces a deeper queue and higher
+measured latency.
 
-If you'd like to vary the size of the queue, you can adjust the request rate
-with the `--request-rate` flag. This creates a stochastic request load with
-an average rate of `N` requests per second.
+To control the queue depth, set the average request rate with the
+`--request-rate` flag. Requests then arrive at randomized intervals,
+averaging `N` requests per second.
 
 ### Comparing to alternatives
 
-You can run the benchmarking script using the Modular or vLLM
-backends to compare performance with alternative LLM serving frameworks. Before
-running the benchmark, make sure you set up and launch the corresponding
-inference engine so the script can send requests to it.
+You can run `max benchmark` against the Modular or vLLM backends to compare
+performance with alternative LLM serving frameworks. Before running the
+benchmark, set up and launch the corresponding inference engine so the
+benchmark can send requests to it.
 
 :::tip Optional cleanup
 
@@ -320,7 +318,8 @@ MAX using an NVIDIA or AMD GPU, you can explore more advanced scaling
 optimizations:
 
 - [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
-  Learn how to deploy MAX pipelines to cloud.
+  Learn how to take a serving endpoint from local testing to production on
+  AWS, GCP, or Azure.
 - [Using LoRA adapters](/serve/lora-adapters): Use LoRA adapters with MAX
   to serve task-specific, fine-tuned variants of LLMs.
 - [The `benchmark-model` skill](https://github.com/modular/skills/tree/main/benchmark-model):
@@ -328,7 +327,7 @@ optimizations:
   off to the `profile-model` skill when the numbers show a bottleneck. See
   [GPU system profiling](/gpu-system-profiling) for that next step.
 
-To read more about our performance methodology, check our blog post,
+To read more about our performance methodology, see our blog post,
 [MAX GPU: State of the Art Throughput on a New GenAI platform](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
 
 You can also share your experience on the [Modular
