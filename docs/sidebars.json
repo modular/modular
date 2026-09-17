@@ -271,6 +271,17 @@
             },
             {
               "type": "category",
+              "label": "nn.functional_kernels",
+              "link": {
+                "type": "doc",
+                "id": "api/python/experimental.nn.common_layers.functional_kernels"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.nn.common_layers.functional_kernels__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "nn.norm",
               "link": {
                 "type": "doc",

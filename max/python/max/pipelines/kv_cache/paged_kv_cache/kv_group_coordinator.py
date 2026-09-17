@@ -334,7 +334,7 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
 
 @dataclass(frozen=True)
 class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
-    """This group needs ``blocks_in_window`` sized run to serve a cache hit."""
+    """A group that needs ``blocks_in_window`` consecutive blocks for a hit."""
 
     window_size: int
     page_size: int

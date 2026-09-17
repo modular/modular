@@ -1122,24 +1122,24 @@ def fused_silu(
     input: TensorValue,
     row_offsets: TensorValue,
 ) -> TensorValue:
-    """Perform fused SILU operation for all the MLPs in the EP MoE module.
+    """Performs the fused SILU operation for all the MLPs in the EP MoE
+    module.
 
-    We need to manually implement the custom operation here is because after
-    the EP dispatch phase, the actual number of received tokens is not known to
-    the host. This kernel will read the row offsets to determine the actual
-    number of received tokens in the input tensor, and then only perform the
-    SILU operation on the received tokens.
+    After the EP dispatch phase, the host does not know how many tokens
+    were actually received, so this op reads the row offsets to determine
+    the received token count and applies the SILU operation only to the
+    received tokens.
 
     Args:
-        input_tokens: Input tokens to perform the SILU operation.
-            Shape: (max_recv_tokens, hidden_size)
-        row_offsets: Row offsets to determine the actual number of received
-            tokens in the input tensor.
-            Shape: (n_local_experts + 1,)
+        input: The input tokens to apply the SILU operation to. Shape:
+            ``[max_recv_tokens, hidden_size]``.
+        row_offsets: The row offsets that determine the actual number of
+            received tokens in the input tensor. Shape:
+            ``[n_local_experts + 1]``.
 
     Returns:
-        output_tokens: Output tokens after the SILU operation.
-            Shape: (max_recv_tokens, hidden_size)
+        The output tokens after the SILU operation. Shape:
+        ``[max_recv_tokens, hidden_size]``.
     """
     if input.rank != 2:
         raise ValueError("input must be rank 2 tensor")

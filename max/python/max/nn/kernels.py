@@ -299,46 +299,51 @@ def rope_split_store_ragged(
     rms_norm_eps: float | None = None,
     k_eq_v: bool = False,
 ) -> TensorValue:
-    """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
+    """Applies RoPE to Q and K from a flat QKV buffer and stores K/V to the cache.
 
-    Reads from a flat QKV matmul output, applies RoPE to Q and K regions,
-    stores K/V to the paged KV cache, and writes roped Q to the output.
+    Reads from a flat QKV matmul output, applies RoPE to the Q and K
+    regions, stores K/V to the paged KV cache, and writes the roped Q to
+    the output.
 
     Args:
-        kv_params: KV cache parameters.
-        qkv: Flat QKV matmul output [total_seq_len, q_dim + k_dim + v_dim].
-        input_row_offsets: Ragged offsets [batch_size + 1].
-        freqs_cis: RoPE frequencies [max_seq_len, head_dim].
-        kv_collection: Paged KV cache.
-        layer_idx: Layer index.
-        n_heads: Number of query attention heads.
-        interleaved: Whether freqs_cis uses interleaved (re, im) format.
-        position_ids: Optional ragged 2D array of position IDs. If None,
-            defaults to cache_length + token_idx for each token. When
-            ``num_sections > 1``, ``mrope_section`` must be provided.
-            Shape: [num_sections, total_seq_len].
-        mrope_section: Optional list of ints indicating the section of the
-            head_dim to apply RoPE to. Must be used with ``position_ids``.
-        fuse: If True (default), emit a single fused custom op. If False,
-            emit separate split, rope, and store ops for testing graph
-            compiler fusion.
-        q_out_dtype: Dtype for the roped Q output. Defaults to ``qkv.dtype``.
-        q_norm_weight: Optional per-head RMSNorm gamma ``[head_dim]`` for Q. When
-            given (with ``k_norm_weight`` and ``rms_norm_eps``), the per-head
-            Q/K/V RMS-norm is fused into the op (q/k use their gammas, v is a bare
-            norm), removing the separate norm ops. Mutually exclusive with
+        kv_params: The KV cache parameters.
+        qkv: The flat QKV matmul output,
+            ``[total_seq_len, q_dim + k_dim + v_dim]``.
+        input_row_offsets: The ragged offsets, ``[batch_size + 1]``.
+        freqs_cis: The RoPE frequencies, ``[max_seq_len, head_dim]``.
+        kv_collection: The paged KV cache.
+        layer_idx: The layer index.
+        n_heads: The number of query attention heads.
+        interleaved: Whether ``freqs_cis`` uses interleaved (re, im) format.
+        position_ids: The optional ragged 2D array of position IDs. If
+            ``None``, defaults to ``cache_length + token_idx`` for each
+            token. When ``num_sections > 1``, ``mrope_section`` must be
+            provided. Shape: ``[num_sections, total_seq_len]``.
+        mrope_section: The optional list of ints indicating the section of
+            the ``head_dim`` to apply RoPE to. Must be used with
             ``position_ids``.
-        k_norm_weight: Per-head RMSNorm gamma ``[head_dim]`` for K (see
+        fuse: If ``True`` (the default), emits a single fused custom op. If
+            ``False``, emits separate split, rope, and store ops for
+            testing graph compiler fusion.
+        q_out_dtype: The dtype for the roped Q output. Defaults to
+            ``qkv.dtype``.
+        q_norm_weight: The optional per-head RMSNorm gamma ``[head_dim]``
+            for Q. When given (with ``k_norm_weight`` and ``rms_norm_eps``),
+            the per-head Q/K/V RMS-norm is fused into the op (Q/K use their
+            gammas, V is a bare norm), removing the separate norm ops.
+            Mutually exclusive with ``position_ids``.
+        k_norm_weight: The per-head RMSNorm gamma ``[head_dim]`` for K (see
             ``q_norm_weight``).
-        rms_norm_eps: Epsilon for the fused qk-norm; required when
+        rms_norm_eps: The epsilon for the fused qk-norm; required when
             ``q_norm_weight`` is set.
-        k_eq_v: When True (only valid with ``q_norm_weight``), V has no own
-            projection and reuses K's: ``qkv`` is ``[q|k]`` (no V region) and the
-            kernel reads the K head for both the K and V stores, sharing the norm
-            reduction. When False (default), ``qkv`` is ``[q|k|v]``.
+        k_eq_v: When ``True`` (only valid with ``q_norm_weight``), V has no
+            own projection and reuses K's: ``qkv`` is ``[q|k]`` (no V
+            region) and the kernel reads the K head for both the K and V
+            stores, sharing the norm reduction. When ``False`` (the
+            default), ``qkv`` is ``[q|k|v]``.
 
     Returns:
-        Roped Q output [total_seq_len, n_heads * head_dim].
+        The roped Q output, ``[total_seq_len, n_heads * head_dim]``.
     """
     _check_rank(2, qkv=qkv)
 
@@ -3598,21 +3603,26 @@ def flash_attention_gpu(
     local_window_size: int = -1,
     valid_length: TensorValue | None = None,
 ) -> TensorValue:
-    """Computes flash attention using GPU-optimized kernel.
+    """Computes flash attention using a GPU-optimized kernel.
 
     Args:
-        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
-        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
-        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
-        mask_variant: The mask variant to use for attention
-        scale: Scaling factor for attention scores
-        local_window_size: Local window size for sliding window attention
-        valid_length: Optional tensor of shape [batch] with dtype uint32.
-            When provided, uses the padded kernel variant that respects
-            the valid sequence lengths for each batch element.
+        q: The query tensor, of shape ``[batch, seq_len, num_heads,
+            head_dim]``.
+        k: The key tensor, of shape ``[batch, seq_len, num_heads,
+            head_dim]``.
+        v: The value tensor, of shape ``[batch, seq_len, num_heads,
+            head_dim]``.
+        mask_variant: The mask variant to use for attention.
+        scale: The scaling factor for attention scores.
+        local_window_size: The local window size for sliding window
+            attention.
+        valid_length: The optional tensor of shape ``[batch]`` with dtype
+            uint32. When provided, uses the padded kernel variant that
+            respects the valid sequence lengths for each batch element.
 
     Returns:
-        Output tensor of shape [batch, seq_len, num_heads, head_dim]
+        The output tensor, of shape ``[batch, seq_len, num_heads,
+        head_dim]``.
     """
     if q.dtype != k.dtype or q.dtype != v.dtype:
         raise ValueError(
@@ -3965,22 +3975,30 @@ def flash_attention_ragged_gpu(
     scale: float,
     local_window_size: int = -1,
 ) -> TensorValue:
-    """Computes flash attention for ragged inputs using GPU-optimized kernel
-    without a KV cache.
+    """Computes flash attention for ragged inputs using a GPU-optimized
+    kernel, without a KV cache.
 
     Args:
-        q: Query tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        k: Key tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        v: Value tensor of shape [total_seq_len, num_heads, head_dim] (ragged)
-        input_row_offsets: Buffer of shape [batch_size + 1] with dtype uint32.
-            Indicates where each sequence starts and ends in the ragged tensors.
-            The values should be a prefix sum (cumulative sum) of sequence lengths.
-        mask_variant: The mask variant to use for attention
-        scale: Scaling factor for attention scores
-        local_window_size: Local window size for sliding window attention
+        q: The query tensor, of shape ``[total_seq_len, num_heads,
+            head_dim]`` (ragged).
+        k: The key tensor, of shape ``[total_seq_len, num_heads,
+            head_dim]`` (ragged).
+        v: The value tensor, of shape ``[total_seq_len, num_heads,
+            head_dim]`` (ragged).
+        input_row_offsets: The buffer of shape ``[batch_size + 1]`` with
+            dtype uint32. Indicates where each sequence starts and ends in
+            the ragged tensors. The values should be a prefix sum
+            (cumulative sum) of sequence lengths.
+        max_seq_len: The maximum sequence length across the batch, as a
+            rank-1 ``uint32`` tensor on CPU.
+        mask_variant: The mask variant to use for attention.
+        scale: The scaling factor for attention scores.
+        local_window_size: The local window size for sliding window
+            attention.
 
     Returns:
-        Output tensor of shape [total_seq_len, num_heads, head_dim]
+        The output tensor, of shape ``[total_seq_len, num_heads,
+        head_dim]``.
     """
     q = TensorValue(q)
     k = TensorValue(k)
@@ -5220,24 +5238,45 @@ def rms_norm_key_cache(
     multiply_before_cast: bool = True,
     per_head_norm: bool = True,
 ) -> None:
-    """This function applies RMSNorm to the _new_ entries in the KVCache.
+    """Applies RMSNorm to the new entries in the KV cache.
 
-    When per_head_norm=True (default), RMSNorm is applied separately to each head.
-    In this mode, gamma should have size [head_dim] and normalization occurs
-    across the head_dim dimensions within each head.
+    When ``per_head_norm`` is ``True`` (the default), RMSNorm is applied
+    separately to each head. In this mode, ``gamma`` should have size
+    ``[head_dim]`` and normalization occurs across the ``head_dim``
+    dimensions within each head.
 
-    When per_head_norm=False, RMSNorm is applied per token across all heads.
-    In this mode, gamma should have size [n_kv_heads * head_dim] and normalization
-    occurs across all dimensions for each token.
+    When ``per_head_norm`` is ``False``, RMSNorm is applied per token
+    across all heads. In this mode, ``gamma`` should have size
+    ``[n_kv_heads * head_dim]`` and normalization occurs across all
+    dimensions for each token.
 
-    The size of the gamma tensor determines how many dimensions will be normalized.
-    If gamma's size doesn't match the expected size based on per_head_norm setting,
-    rms_norm_cols must be explicitly specified to confirm the intention to normalize
-    only a subset of dimensions.
+    The size of the ``gamma`` tensor determines how many dimensions will
+    be normalized. If ``gamma``'s size doesn't match the expected size
+    based on the ``per_head_norm`` setting, ``rms_norm_cols`` must be
+    explicitly specified to confirm the intention to normalize only a
+    subset of dimensions.
 
-    Currently, the KVCacheT class itself isn't aware of the new cache entries
-    until cache length increment, which happens after model forward.
-    So use `input_row_offsets` to do this bookkeeping.
+    The KV cache collection itself isn't aware of the new cache entries
+    until the cache length increment, which happens after the model
+    forward, so ``input_row_offsets`` does this bookkeeping.
+
+    Args:
+        kv_params: The KV cache parameters.
+        kv_collection: The paged KV cache holding the entries to
+            normalize.
+        gamma: The RMSNorm weight.
+        epsilon: The epsilon added inside the normalization.
+        layer_idx: The index of the layer being normalized.
+        total_seq_len: The total sequence length of the ragged batch.
+        input_row_offsets: The ragged offsets delimiting the new entries.
+        weight_offset: The offset added to ``gamma`` before the multiply.
+        rms_norm_cols: The number of columns to normalize. Required when
+            ``gamma``'s size doesn't match the expected size, to confirm
+            the intention to normalize only a subset of dimensions.
+        multiply_before_cast: Whether to multiply by ``gamma`` before
+            casting back to the cache dtype.
+        per_head_norm: Whether to normalize each head separately. Defaults
+            to ``True``.
     """
     gamma_rank_expected = 1
     if gamma.rank != gamma_rank_expected:
@@ -5373,14 +5412,16 @@ def moe_create_indices(
 
     Returns:
         A tuple of five tensors:
-        - token_expert_order: The reordered token indices, grouped by assigned expert.
-        - expert_start_indices: The starting index for each expert's token group in
-            the reordered sequence.
-        - restore_token_order: The indices to restore original token ordering after
-            expert computation.
-        - expert_ids: ids of active experts selected for tokens
-        - expert_usage_stats: The maximum number of tokens assigned to any expert,
-            and the number of active experts.
+
+        - token_expert_order: The reordered token indices, grouped by
+          assigned expert.
+        - expert_start_indices: The starting index for each expert's token
+          group in the reordered sequence.
+        - restore_token_order: The indices that restore the original token
+          ordering after expert computation.
+        - expert_ids: The IDs of the active experts selected for tokens.
+        - expert_usage_stats: The maximum number of tokens assigned to
+          any expert, and the number of active experts.
     """
 
     op_name = "mo.moe.create.indices"
@@ -5451,39 +5492,44 @@ def moe_router_group_limited(
     norm_weights: bool,
     routed_scaling_factor: float,
 ) -> tuple[TensorValue, TensorValue]:
-    """Group limited MoE router.
-    When `n_groups > 1`, selects up to `topk_group` expert groups, then
-    picks ``n_experts_per_tok`` experts within those groups (DeepSeek-V3 style).
-    When ``n_groups == 1``, there is only one group, so group selection is
-    skipped and routing uses the dedicated GPU single-group path
-    (``mo.moe.single.group.router``, implemented as ``single_group_router`` in
-    Mojo). In that case ``topk_group`` is not used by the kernel.
+    """Routes tokens with the group-limited MoE router.
 
-    Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566.
+    When ``n_groups > 1``, selects up to ``topk_group`` expert groups,
+    then picks ``n_experts_per_tok`` experts within those groups
+    (DeepSeek-V3 style). When ``n_groups == 1``, there is only one group,
+    so group selection is skipped and routing uses the dedicated GPU
+    single-group path (``mo.moe.single.group.router``, implemented as
+    ``single_group_router`` in Mojo). In that case ``topk_group`` is not
+    used by the kernel.
+
+    Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566
 
     Args:
         expert_scores: The scores for each expert for each token. Shape:
-            [num_tokens, n_routed_experts].
-        expert_bias: The bias for each expert. Shape: [n_routed_experts].
-        n_routed_experts: The total number of experts. Must be divisible by
-            n_groups.
-        n_experts_per_tok: The number of experts to be selected per token.
-        n_groups: The total number of expert groups. Must be divisible by
-            n_routed_experts.
-        topk_group: The maximum number of expert groups that a token will be
-            routed to.
-        norm_weights: Whether to normalize the selected expert weights when
-            n_groups > 1. When n_groups == 1, normalization is currently
-            always enabled (norm_weights is treated as True) so behavior
-            matches the previous graph path that always divided weights by their
-            sum per token.
+            ``[num_tokens, n_routed_experts]``.
+        expert_bias: The bias for each expert. Shape:
+            ``[n_routed_experts]``.
+        n_routed_experts: The total number of experts. Must be divisible
+            by ``n_groups``.
+        n_experts_per_tok: The number of experts to be selected per
+            token.
+        n_groups: The total number of expert groups. ``n_routed_experts``
+            must be divisible by this.
+        topk_group: The maximum number of expert groups that a token
+            will be routed to.
+        norm_weights: Whether to normalize the selected expert weights
+            when ``n_groups > 1``. When ``n_groups == 1``, normalization
+            is currently always enabled (``norm_weights`` is treated as
+            ``True``) so behavior matches the graph path that always
+            divided weights by their sum per token.
 
     Returns:
         A tuple of two tensors:
-        - expert_indices: The indices of the routed experts for each token.
-            Shape: [num_tokens, n_experts_per_tok].
-        - expert_weights: The weights of the routed experts for each token.
-            Shape: [num_tokens, n_experts_per_tok].
+
+        - expert_indices: The indices of the routed experts for each
+          token. Shape: ``[num_tokens, n_experts_per_tok]``.
+        - expert_weights: The weights of the routed experts for each
+          token. Shape: ``[num_tokens, n_experts_per_tok]``.
     """
 
     if expert_bias.rank != 1:
@@ -6003,17 +6049,31 @@ def grouped_matmul_ragged(
     expert_ids: TensorValue,
     expert_usage_stats: TensorValue,
 ) -> TensorValue:
-    """Grouped matmul used in MoE layer.
+    """Performs the grouped matmul used in the MoE layer.
 
-    `hidden_states` and `expert_start_indices` are used together to implement
-    the ragged tensor. `expert_start_indices` indicates where each group starts
-    and ends in `hidden_states`
+    ``hidden_states`` and ``expert_start_indices`` are used together to
+    implement the ragged tensor. ``expert_start_indices`` indicates where
+    each group starts and ends in ``hidden_states``.
 
-    `expert_ids` is the id of the expert for each group in `hidden_states`
+    ``expert_ids`` is the id of the expert for each group in
+    ``hidden_states``.
 
-    `expert_usage_stats` is a rank-1 ``uint32`` tensor laid out as
+    ``expert_usage_stats`` is a rank-1 ``uint32`` tensor laid out as
     ``[max_tokens_per_expert, num_active_experts]`` (the output of
     ``moe_create_indices``).
+
+    Args:
+        hidden_states: The ragged input activations.
+        weight: The expert weights, ``[num_experts, N, K]`` (Linear
+            convention); each group computes ``group @ weight.T``.
+        expert_start_indices: The start index of each group in
+            ``hidden_states``.
+        expert_ids: The id of the expert for each group.
+        expert_usage_stats: The per-expert usage stats, the output of
+            ``moe_create_indices``.
+
+    Returns:
+        The ragged matmul output.
     """
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
