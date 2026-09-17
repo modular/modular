@@ -224,7 +224,7 @@ def tpool_patch_merger[
 
     comptime simd_width = simd_width_of[
         dtype,
-        target=CompilationTarget.from[DeviceContext.default_device_info](),
+        target=DeviceContext.target,
     ]()
     comptime num_threads = 256
 

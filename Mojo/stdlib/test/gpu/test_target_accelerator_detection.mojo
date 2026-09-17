@@ -27,7 +27,7 @@
 # AMD: canonical values, finite model aliases, and vendor prefixes must all be
 # AMD. Prefix patterns are tested separately because they are not finite values
 # in the target-list synchronization test.
-# RUN: %mojo-build --emit object --target-accelerator gfx950          -D EXPECT=amd %s -o %t
+# RUN: %mojo-build --emit object --target-accelerator gfx950          -D EXPECT=amd_current_accelerator %s -o %t
 # RUN: %mojo-build --emit object --target-accelerator mi250x          -D EXPECT=amd %s -o %t
 # RUN: %mojo-build --emit object --target-accelerator mi300x          -D EXPECT=amd %s -o %t
 # RUN: %mojo-build --emit object --target-accelerator mi355x          -D EXPECT=amd %s -o %t
@@ -51,10 +51,9 @@
 # Unknown/unrecognized accelerator: none of the vendor predicates fire (the
 # False-on-unknown contract). "wombat42" contains none of the vendor-relevant
 # substrings, so it also guards against loose-substring false positives.
-# RUN: %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=none %s -o %t
-# RUN: not %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=unknown %s -o %t 2>&1 | FileCheck %s --check-prefix=UNKNOWN-TARGET
-#
-# UNKNOWN-TARGET: GPU architecture 'wombat42' is not supported.
+# RUN: %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=error_no_vendor_detected %s -o %t
+# RUN: not %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=error_gpu_info_from_name %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-GPUInfo_from_name
+# RUN: not %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=error_current_accelerator %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-current_accelerator
 
 from std.sys import (
     get_defined_string,
@@ -62,52 +61,40 @@ from std.sys import (
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
 )
-from std._gpu.host.info import GPUInfo
+from std._gpu.host.info import GPUInfo, TargetAccelerator
 
 
 def main():
     comptime expect = get_defined_string["EXPECT"]()
 
-    comptime if expect == "amd":
-        comptime assert has_amd_gpu_accelerator(), "expected an AMD accelerator"
-        comptime assert (
-            not has_nvidia_gpu_accelerator()
-        ), "did not expect an NVIDIA accelerator"
-        comptime assert (
-            not has_apple_gpu_accelerator()
-        ), "did not expect an Apple accelerator"
+    comptime if expect == "amd" or expect == "amd_current_accelerator":
+        comptime assert has_amd_gpu_accelerator()
+        comptime assert not has_nvidia_gpu_accelerator()
+        comptime assert not has_apple_gpu_accelerator()
+        comptime if expect == "amd_current_accelerator":
+            comptime target = TargetAccelerator.current_accelerator
+            comptime assert target.gpu_info == GPUInfo.current_accelerator()
     elif expect == "nvidia":
-        comptime assert (
-            has_nvidia_gpu_accelerator()
-        ), "expected an NVIDIA accelerator"
-        comptime assert (
-            not has_amd_gpu_accelerator()
-        ), "did not expect an AMD accelerator"
-        comptime assert (
-            not has_apple_gpu_accelerator()
-        ), "did not expect an Apple accelerator"
+        comptime assert has_nvidia_gpu_accelerator()
+        comptime assert not has_amd_gpu_accelerator()
+        comptime assert not has_apple_gpu_accelerator()
     elif expect == "apple":
-        comptime assert (
-            has_apple_gpu_accelerator()
-        ), "expected an Apple accelerator"
-        comptime assert (
-            not has_amd_gpu_accelerator()
-        ), "did not expect an AMD accelerator"
-        comptime assert (
-            not has_nvidia_gpu_accelerator()
-        ), "did not expect an NVIDIA accelerator"
-    elif expect == "none":
-        comptime assert (
-            not has_amd_gpu_accelerator()
-        ), "did not expect an AMD accelerator"
-        comptime assert (
-            not has_nvidia_gpu_accelerator()
-        ), "did not expect an NVIDIA accelerator"
-        comptime assert (
-            not has_apple_gpu_accelerator()
-        ), "did not expect an Apple accelerator"
-    elif expect == "unknown":
+        comptime assert has_apple_gpu_accelerator()
+        comptime assert not has_amd_gpu_accelerator()
+        comptime assert not has_nvidia_gpu_accelerator()
+    elif expect == "error_no_vendor_detected":
+        comptime assert not has_amd_gpu_accelerator()
+        comptime assert not has_nvidia_gpu_accelerator()
+        comptime assert not has_apple_gpu_accelerator()
+    elif expect == "error_gpu_info_from_name":
+        # CHECK-INVALID-GPUInfo_from_name: GPU architecture 'wombat42' is not supported.
         comptime info = GPUInfo.from_name["wombat42"]()
         comptime assert info.name == "wombat42"
+    elif expect == "error_current_accelerator":
+        # CHECK-INVALID-current_accelerator: GPU architecture 'wombat42' is not supported.
+        # Force resolution of `.current_accelerator` to trigger error.
+        comptime assert (
+            TargetAccelerator.current_accelerator.gpu_info.name != ""
+        )
     else:
         comptime assert False, "unknown EXPECT value"

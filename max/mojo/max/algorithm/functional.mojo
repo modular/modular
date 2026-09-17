@@ -351,11 +351,9 @@ def _elementwise_impl[
                 trace_description=trace_description,
             ](func_wrap_cpu, shape=shape, ctx=Optional(context))
         elif _accelerator_arch() != "" and MaxPluginForTarget[
-            CompilationTarget.from[context.default_device_info]()
+            context.target
         ]._handles_elementwise:
-            comptime plugin = MaxPluginForTarget[
-                CompilationTarget.from[context.default_device_info]()
-            ]
+            comptime plugin = MaxPluginForTarget[context.target]
             return plugin.elementwise_fn[shape.rank, simd_width](
                 _CoordToIndexListAdapter[shape.rank, FuncType](func),
                 coord_to_index_list(shape),

@@ -144,17 +144,19 @@ trait TargetAcceleratorType(Defaultable):
     comptime mlir_target: _TargetType
     comptime target_accelerator_values: List[String]
 
+    comptime target = CompilationTarget[_mlir_value=Self.mlir_target]()
+
 
 struct TargetAccelerator[
     gpu_info_: GPUInfo,
-    target: CompilationTarget,
+    target_: CompilationTarget,
     # TODO: Should be the same as either GPUInfo.arch_name or GPUInfo.version,
     #       however that field is currently used inconsistently.
     target_accelerator_values_: List[String] = [],
 ](TargetAcceleratorType):
     # TargetAcceleratorType conformance
     comptime gpu_info = Self.gpu_info_
-    comptime mlir_target = Self.target._mlir_value
+    comptime mlir_target = Self.target_._mlir_value
     comptime target_accelerator_values = Self.target_accelerator_values_
 
     # Used when constructing a `TargetAcceleratorCollection` table to add
@@ -167,11 +169,19 @@ struct TargetAccelerator[
     # "sm_61", but only is declared with as matching that `--target-accelerator`
     # value).
     comptime _with_cli_values[values: List[String]] = TargetAccelerator[
-        Self.gpu_info_, Self.target, values
+        Self.gpu_info_, Self.target_, values
     ]
 
     def __init__(out self):
         pass
+
+    comptime current_accelerator = Self.from_arch[_accelerator_arch()]
+
+    # Note:
+    #   These parametric aliases can't instead be a static methods like:
+    #       `TargetAccelerator.from_arch[..]()`
+    #   because the compiler requires the `Self` type be concrete, otherwise the
+    #   call fails due to an 'unbound struct type parameters' error.
 
     comptime from_arch[name: StaticString] = (
         _LookupTargetAccelerator[].by_target_arch[name].single_result

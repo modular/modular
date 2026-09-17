@@ -81,7 +81,7 @@ from std.utils.static_tuple import StaticTuple
 
 from std._gpu.host import get_gpu_target
 from .info import _device_type_encoder_target
-from std._gpu.host.info import GPUInfo
+from std._gpu.host.info import TargetAccelerator
 
 from .compile import (
     _compile_code,
@@ -3905,7 +3905,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ```
     """
 
-    comptime default_device_info = GPUInfo.current_accelerator()
+    comptime target = TargetAccelerator.current_accelerator.target
+    """`CompilationTarget` for the accelerator targeted by this device context."""
+
+    comptime default_device_info = TargetAccelerator.current_accelerator.gpu_info
     """`GPUInfo` object for the default accelerator."""
 
     var _handle: _DeviceContextPtr[mut=True]
@@ -4443,9 +4446,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *,
-        compile_options: StaticString = CompilationTarget.from[
-            Self.default_device_info
-        ]().default_compile_options(),
+        compile_options: StaticString = (Self.target.default_compile_options()),
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4458,7 +4459,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=CompilationTarget.from[Self.default_device_info](),
+            target=Self.target,
             compile_options=compile_options,
             link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -4520,9 +4521,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *,
-        compile_options: StaticString = CompilationTarget.from[
-            Self.default_device_info
-        ]().default_compile_options(),
+        compile_options: StaticString = (Self.target.default_compile_options()),
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4535,7 +4534,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target=CompilationTarget.from[Self.default_device_info](),
+            target=Self.target,
             compile_options=compile_options,
             link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -4842,9 +4841,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         # The compiled kernel is FuncType.__call__; the launch argument is the
         # encoded FuncType.device_type instance. Layout punning is only safe
         # while those sizes and alignments coincide on the launch target.
-        comptime launch_target = CompilationTarget.from[
-            Self.default_device_info
-        ]()
+        comptime launch_target = Self.target
         comptime host_size = size_of[FuncType, target=launch_target]()
         comptime device_size = size_of[
             FuncType.device_type, target=launch_target
@@ -4955,9 +4952,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        comptime launch_target = CompilationTarget.from[
-            Self.default_device_info
-        ]()
+        comptime launch_target = Self.target
         comptime n = size_of[FuncType, target=launch_target]()
         comptime a = align_of[FuncType, target=launch_target]()
         var bits = _LaunchBits[n, a](StaticTuple[UInt8, n]())
