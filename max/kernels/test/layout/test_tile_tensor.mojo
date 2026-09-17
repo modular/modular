@@ -359,7 +359,15 @@ def test_slice() raises:
     assert_equal(sliced.layout.shape[0]().value(), 2)
     assert_equal(sliced.layout.shape[1]().value(), 2)
 
-    # Verify slice values - use runtime indices since slice returns runtime shapes
+    # A view of a fully static tensor stays fully static: extents, strides
+    # and the base offset are all compile-time.
+    assert_true(type_of(sliced).all_dims_known)
+    assert_equal(type_of(sliced).static_shape[0], 2)
+    assert_equal(type_of(sliced).static_shape[1], 2)
+    assert_equal(type_of(sliced).static_stride[0], 4)
+    assert_equal(type_of(sliced).static_stride[1], 1)
+
+    # Verify slice values
     assert_equal(sliced[0, 0], 5)
     assert_equal(sliced[0, 1], 6)
     assert_equal(sliced[1, 0], 9)
@@ -382,6 +390,80 @@ def test_slice() raises:
     assert_equal(first_row.layout.shape[1]().value(), 4)
     assert_equal(first_row[0, 0], 0)
     assert_equal(first_row[0, 3], 3)
+
+
+def test_slice_rank_reducing() raises:
+    """Test slicing with `Int` arguments that fix and drop a dimension."""
+    var data_2d = Array[Int32, 16](fill_with=lambda (i: Int) -> Int32: Int32(i))
+
+    # [0  1  2  3]
+    # [4  5  6  7]
+    # [8  9  10 11]
+    # [12 13 14 15]
+    var tensor_2d = TileTensor(data_2d, row_major[4, 4]())
+
+    # Fix the row, subslice the columns: row 2, columns 1:3 -> [9, 10].
+    var row = tensor_2d.slice[2, 1:3]()
+    assert_equal(type_of(row).rank, 1)
+    assert_true(type_of(row).all_dims_known)
+    assert_equal(type_of(row).static_shape[0], 2)
+    assert_equal(type_of(row).static_stride[0], 1)
+    assert_equal(row[0], 9)
+    assert_equal(row[1], 10)
+
+    # Fix the column, subslice the rows: column 2, rows 1:3 -> [6, 10]. The
+    # dropped axis is the trailing one, and the kept axis keeps its stride.
+    var column = tensor_2d.slice[1:3, 2]()
+    assert_equal(type_of(column).rank, 1)
+    assert_true(type_of(column).all_dims_known)
+    assert_equal(type_of(column).static_shape[0], 2)
+    assert_equal(type_of(column).static_stride[0], 4)
+    assert_equal(column[0], 6)
+    assert_equal(column[1], 10)
+
+    # The result is a view.
+    column[Coord(Idx[1])] = 77
+    assert_equal(tensor_2d[Idx[2], Idx[2]], 77)
+
+
+def test_slice_rank_reducing_3d() raises:
+    """Test dropping a leading axis and an interior axis of a 3D tensor."""
+    var data_3d = Array[Int32, 64](fill_with=lambda (i: Int) -> Int32: Int32(i))
+
+    var tensor_3d = TileTensor(data_3d, row_major[4, 4, 4]())
+
+    # Drop the leading axis: plane 1, then a 2x2 window of it.
+    var plane = tensor_3d.slice[1, 1:3, 1:3]()
+    assert_equal(type_of(plane).rank, 2)
+    assert_equal(plane.layout.shape[0]().value(), 2)
+    assert_equal(plane.layout.shape[1]().value(), 2)
+    # tensor_3d[1][1][1] = 1*16 + 1*4 + 1 = 21
+    assert_equal(plane[0, 0], 21)
+    assert_equal(plane[0, 1], 22)
+    assert_equal(plane[1, 0], 25)
+    assert_equal(plane[1, 1], 26)
+
+    # Drop an interior axis: the surviving axes keep their own strides, 16
+    # and 1, rather than the ones that sit next to them in the result.
+    var interior = tensor_3d.slice[1:3, 2, 0:4]()
+    assert_equal(type_of(interior).rank, 2)
+    assert_true(type_of(interior).all_dims_known)
+    assert_equal(type_of(interior).static_shape[0], 2)
+    assert_equal(type_of(interior).static_shape[1], 4)
+    assert_equal(type_of(interior).static_stride[0], 16)
+    assert_equal(type_of(interior).static_stride[1], 1)
+    # tensor_3d[1][2][0] = 1*16 + 2*4 = 24
+    assert_equal(interior[0, 0], 24)
+    assert_equal(interior[0, 3], 27)
+    # tensor_3d[2][2][0] = 2*16 + 2*4 = 40
+    assert_equal(interior[1, 0], 40)
+
+    # Drop every axis but one: a single row of a single plane.
+    var line = tensor_3d.slice[3, 3, 1:3]()
+    assert_equal(type_of(line).rank, 1)
+    # tensor_3d[3][3][1] = 3*16 + 3*4 + 1 = 61
+    assert_equal(line[0], 61)
+    assert_equal(line[1], 62)
 
 
 def test_slice_3d() raises:

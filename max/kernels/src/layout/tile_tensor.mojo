@@ -89,6 +89,230 @@ def _async_fill_value[dtype: DType, fill: Fill]() -> Optional[Scalar[dtype]]:
         return Scalar[dtype](0)
 
 
+struct _IndexOrSlice(EnumLike, ImplicitlyCopyable):
+    """A single `TileTensor.slice` argument: either an `Int` that fixes (drops)
+    a dimension or a `ContiguousSlice` that selects a rank-preserving subrange.
+
+    This thin wrapper over `Variant[Int, ContiguousSlice]` adds the slice-literal
+    and implicit-`Int` constructors that subscript syntax requires, so both
+    `t.slice[2, 0:4]()` (fix axis 0 to 2, subslice axis 1) and
+    `t.slice[0:4, 0:4]()` parse.
+    """
+
+    var _value: std.utils.Variant[Int, ContiguousSlice]
+    """The wrapped index (`Int`) or subrange (`ContiguousSlice`)."""
+
+    comptime _enum_case_length = 2
+    comptime _enum_case_names = ParameterList.of[
+        "index".value, "slice".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, Int, ContiguousSlice
+    ].values
+
+    @implicit
+    @inline(.nodebug)
+    def __init__(out self, index: Int):
+        """Wraps an `Int`, fixing and dropping the corresponding dimension.
+
+        Args:
+            index: The index to fix the dimension to.
+        """
+        self._value = index
+
+    @implicit
+    @inline(.nodebug)
+    def __init__(out self, slice: ContiguousSlice):
+        """Wraps a `ContiguousSlice`, slicing the corresponding dimension.
+
+        Args:
+            slice: The range to slice the dimension.
+        """
+        self._value = slice
+
+    @inline(.nodebug)
+    def __init__(
+        out self,
+        start: Optional[Int],
+        end: Optional[Int],
+        stride: NoneType,
+        __slice_literal__: NoneType = None,
+    ):
+        """Wraps a slice literal as a rank-preserving `ContiguousSlice`.
+
+        Args:
+            start: The start of the subrange.
+            end: The end of the subrange.
+            stride: Always none; disambiguates from strided slices.
+            __slice_literal__: Enables slice-literal subscript syntax.
+        """
+        self._value = ContiguousSlice(start, end, stride)
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0 if self._value.isa[Int]() else 1
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        return (
+            Pointer(to=self._value)
+            .unsafe_bitcast[
+                TypeList[Trait=AnyType, Self._enum_case_types]()[id]
+            ]()
+            .unsafe_origin_cast[origin_of(self)]()[]
+        )
+
+    @staticmethod
+    def index(index: Int) -> Self:
+        return Self(index=index)
+
+    @staticmethod
+    def slice(slice: ContiguousSlice) -> Self:
+        return Self(slice=slice)
+
+    def is_slice(self) -> Bool:
+        return self._value.isa[ContiguousSlice]()
+
+    def unsafe_get_slice(self) -> ContiguousSlice:
+        return self._value[ContiguousSlice]
+
+    def unsafe_get_index(self) -> Int:
+        return self._value[Int]
+
+
+@inline(.nodebug)
+def _count_slice_dims[slices: ParameterList[type=_IndexOrSlice, ...]]() -> Int:
+    """Returns the number of `ContiguousSlice` (rank-preserving) arguments."""
+    var count = 0
+    comptime for i in range(slices.size):
+        __match slices[i]:
+        case .slice:
+            count += 1
+        case .index:
+            pass
+    return count
+
+
+@inline(.nodebug)
+def _kept_slice_axis_for_output[
+    slices: ParameterList[type=_IndexOrSlice, ...], out_axis: Int
+]() -> Int:
+    """Maps an output axis to the original axis holding its `ContiguousSlice`.
+
+    `Int` arguments fix (drop) their dimension, so only the axes carrying a
+    `ContiguousSlice` survive into the result; this skips the dropped axes.
+    """
+    var kept_axes_seen = 0
+    comptime for axis in range(slices.size):
+        __match slices[axis]:
+        case .slice:
+            if kept_axes_seen == out_axis:
+                return axis
+            kept_axes_seen += 1
+        case .index:
+            pass
+    abort("invalid sliced-axis mapping")
+
+
+@inline(.nodebug)
+def _indexed_extent[
+    slices: ParameterList[type=_IndexOrSlice, ...],
+    layout: TensorLayout,
+    out_axis: Int,
+]() -> Int:
+    """Returns the extent of output axis `out_axis` after fixing/subslicing."""
+    comptime orig = _kept_slice_axis_for_output[slices, out_axis]()
+    comptime s = slices[orig].unsafe_get_slice()
+    return comptime (
+        s.end.or_else(layout.static_shape[orig]) - s.start.or_else(0)
+    )
+
+
+comptime _indexed_extent_at[
+    slices: ParameterList[type=_IndexOrSlice, ...],
+    layout: TensorLayout,
+    out_axis: Int,
+] = _indexed_extent[slices, layout, out_axis]()
+
+
+@inline(.nodebug)
+def _slice_start[
+    slices: ParameterList[type=_IndexOrSlice, ...], axis: Int
+]() -> Int:
+    """Returns the first element of `axis` that the view selects: a slice's
+    start, or the index a rank-reducing (`Int`) argument fixes the axis to."""
+    var start = 0
+    __match slices[axis]:
+    case .slice:
+        start = slices[axis].unsafe_get_slice().start.or_else(0)
+    case .index:
+        start = slices[axis].unsafe_get_index()
+    return start
+
+
+@inline(.nodebug)
+def _slice_storage_offset[
+    slices: ParameterList[type=_IndexOrSlice, ...], layout: TensorLayout
+]() -> Int:
+    """Returns the scalar-element offset of the view's first element.
+
+    Every dropped axis and every slice start shifts the view's base; none of
+    them survives in the view's layout, so the whole shift is folded into its
+    storage handle instead.
+    """
+    var offset = 0
+    comptime for axis in range(slices.size):
+        offset += _slice_start[slices, axis]() * layout.static_stride[axis]
+    return offset
+
+
+comptime _sliced_stride_at[
+    slices: ParameterList[type=_IndexOrSlice, ...],
+    layout: TensorLayout,
+    out_axis: Int,
+] = layout.static_stride[_kept_slice_axis_for_output[slices, out_axis]()]
+"""Flat stride a sliced view inherits for output axis `out_axis`.
+
+A rank-reducing (`Int`) argument drops its axis, so the surviving axes shift
+left; the stride has to come from the original axis that carried the slice,
+exactly like `_indexed_extent_at` does for the extent. Identity for a
+rank-preserving (all-slice) view."""
+
+
+comptime _SlicedOffset[
+    slices: ParameterList[type=_IndexOrSlice, ...],
+    layout: TensorLayout,
+] = ComptimeInt[_slice_storage_offset[slices, layout]()]
+"""The view's base offset, as a `ComptimeInt` so the engine keeps it static."""
+
+
+comptime _SlicedLayout[
+    slices: ParameterList[type=_IndexOrSlice, ...],
+    layout: TensorLayout,
+] = Layout[
+    shape_types=_IntToComptimeInt[
+        *ParameterList.tabulate[
+            _count_slice_dims[slices](),
+            _indexed_extent_at[slices, layout, _],
+        ]()
+    ],
+    stride_types=_IntToComptimeInt[
+        *ParameterList.tabulate[
+            _count_slice_dims[slices](),
+            _sliced_stride_at[slices, layout, _],
+        ]()
+    ],
+]
+"""The layout of the view `slices` cuts out of `layout`.
+
+Its rank is the number of slice arguments, since every `Int` argument drops
+its axis. Extents are the sliced subranges and strides are inherited from the
+surviving axes; the element offsets the slices start at live in the view's
+storage handle, not here."""
+
+
 struct TileTensor[
     mut: Bool,
     //,
@@ -2302,47 +2526,48 @@ struct TileTensor[
 
     @inline(.always)
     def slice[
-        *slices: ContiguousSlice
-    ](self) -> TileTensor[
-        Self.dtype,
-        Layout[
-            shape_types=_Slice[slices, Self.LayoutType._shape_types](),
-            stride_types=Self.LayoutType._stride_types,
-        ],
-        Self.origin,
-        Engine=Self.Engine.OffsetResultType[
-            TypeList.of[Scalar[Self.linear_idx_type]]()
-        ],
-        address_space=Self.address_space,
+        *slices: _IndexOrSlice
+    ](self) -> Self.OffsetViewType[
+        TypeList.of[_SlicedOffset[slices, Self.LayoutType]](),
+        _SlicedLayout[slices, Self.LayoutType],
     ] where (slices.size == Self.flat_rank and Self.all_dims_known):
-        """Extract a slice from the tensor using slice objects.
+        """Extract a view of the tensor, fixing or subslicing each dimension.
 
-        This method creates a view into a subset of the tensor defined by the
-        slice specifications for each dimension. The slice is a continuous
-        region of the tensor with no gaps (step size must be 1 for all dimensions).
-
-        The number of slice arguments must match the tensor rank.
+        Each parameter is either an `Int`, which fixes that dimension to the
+        given index and drops it from the result (rank reduction, like
+        `squeeze`), or a slice literal selecting a rank-preserving subrange --
+        e.g. `t.slice[0:5, 2]()`. The output rank equals the number of slice
+        parameters. Unlike `tile`, whose coordinate indexes a grid of
+        tile-sized blocks, slice bounds are element offsets, so a view need
+        not be aligned to its own extent (e.g. the shorter trailing tile of a
+        `tile_iterator` walk). The bounds must be compile-time values: they are
+        folded into the view's storage handle as a `ComptimeInt` offset, so a
+        view of a fully static tensor stays fully static.
 
         Parameters:
-            slices: Slice specifications for each dimension. Each slice defines
-                the start and end indices for that dimension.
+            slices: One `Int` or slice literal per tensor dimension.
 
         Returns:
-            A view into the original tensor representing the specified slice.
-            The returned tensor has the same rank but smaller dimensions.
+            A strided sub-view over the same backing storage. Its extents are
+            fresh `ComptimeInt`s, since a sliced extent is a new compile-time
+            value rather than the parent's; its strides are the surviving
+            axes' own.
 
         Example:
-
-
-        For a 3D tensor, you can slice all three dimensions:
 
         ```mojo
         from layout.tile_layout import row_major
         from layout import TileTensor
+
         comptime layout_3d = row_major[16, 16, 16]()
         var stack = Array[UInt8, layout_3d.static_product](fill=0)
         var tensor_3d = TileTensor(stack, layout_3d)
-        var slice = tensor_3d.slice[0:2, 1:3, 0:4]()
+
+        # Rank-preserving: a 2x2x4 view.
+        var sub = tensor_3d.slice[0:2, 1:3, 0:4]()
+
+        # Rank-reducing: plane 3, then a 2x4 view of it.
+        var plane = tensor_3d.slice[3, 1:3, 0:4]()
         ```
 
         Performance:
@@ -2350,56 +2575,35 @@ struct TileTensor[
         - Creates a view without copying data, making it very efficient.
         - Maintains the original tensor's stride information for efficient
             memory access.
-        - Zero-cost abstraction at runtime when used with compile-time constant
-            slices.
+        - Free at runtime: the whole view, offset included, is computed in
+            the type system and emits no index arithmetic.
 
         Notes:
 
-        - The slice is a view into the original tensor, so modifications to the
-            slice will affect the original tensor.
-        - Works with tensors of any rank (must provide one slice per dimension).
+        - The slice is a view into the original tensor, so modifications to
+            the slice will affect the original tensor.
         - The step size must be 1 for all dimensions (no gaps allowed).
-        - Slice bounds are not checked at runtime; accessing out-of-bounds
-            indices will result in undefined behavior.
-        - Shape and stride types are converted to Scalar in the sliced
-            tensor, even if the original tensor had ComptimeInt dimensions.
-            This is necessary because we can't change ComptimeInt[4] to
-            ComptimeInt[2] in the type system.
+        - Slice bounds are checked at compile time against the parent's static
+            shape; out-of-range bounds are a compile error, not a runtime one.
         """
-
-        # Compute offset based on slice start indices and strides. Narrow-first
-        # multiply: keep index arithmetic at `linear_idx_type` precision.
-        var offset = Scalar[Self.linear_idx_type](0)
-
         comptime for i in range(slices.size):
-            comptime slice_i = slices[i]
-            comptime slice_start = slice_i.start.or_else(0)
-            var stride_i = Scalar[Self.linear_idx_type](
-                self.layout.stride[i]().value()
-            )
-            offset += Scalar[Self.linear_idx_type](slice_start) * stride_i
+            comptime if slices[i].is_slice():
+                comptime s = slices[i].unsafe_get_slice()
+                comptime start = s.start.or_else(0)
+                comptime end = s.end.or_else(Self.static_shape[i])
+                comptime assert (
+                    start >= 0 and end >= start and end <= Self.static_shape[i]
+                ), "`slice`: slice bounds out of range"
+            else:
+                comptime idx = slices[i].unsafe_get_index()
+                comptime assert (
+                    idx >= 0 and idx < Self.static_shape[i]
+                ), "`slice`: fixed index out of range"
 
-        # Build new shape tuple with runtime types
-        # Even though slice bounds are compile-time known, we use Scalar
-        # because we can't change ComptimeInt[4] to ComptimeInt[2] in the type system
-        comptime NewShapeTypes = _Slice[slices, Self.LayoutType._shape_types]()
-        var new_shape = Coord[*NewShapeTypes]()
-
-        comptime for i in range(Self.rank):
-            comptime slice_i = slices[i]
-            comptime slice_start = slice_i.start.or_else(0)
-
-            var shape_ptr = Pointer(to=new_shape[i])
-            comptime NewShapeType = NewShapeTypes[i]
-
-            shape_ptr.write(
-                rebind[NewShapeType](ComptimeInt[NewShapeType.static_value]())
-            )
-
-        # Strides remain unchanged
-        var new_layout = Layout(new_shape, self.layout.stride_coord())
-
-        return {self._offset_storage(offset), new_layout}
+        return {
+            self._offset_storage(_SlicedOffset[slices, Self.LayoutType]()),
+            _SlicedLayout[slices, Self.LayoutType](),
+        }
 
     @inline(.always)
     def slice(
@@ -4328,23 +4532,6 @@ Parameters:
     element_types: The variadic sequence of types to convert (wrapped in values).
     idx: The current index being processed.
 """
-
-comptime _SliceTabulator[
-    slices: ParameterList[type=ContiguousSlice, ...],
-    element_types: TypeList[Trait=CoordLike, ...],
-    idx: Int,
-]: CoordLike = ComptimeInt[
-    slices[idx].end.or_else(element_types[idx].static_value)
-    - slices[idx].start.or_else(0)
-]
-
-comptime _Slice[
-    slices: ParameterList[type=ContiguousSlice, ...],
-    element_types: TypeList[Trait=CoordLike, ...],
-] = TypeList.tabulate[
-    element_types.length, _SliceTabulator[slices, element_types, _]
-]
-
 
 comptime _StaticSplitShapeTabulator[
     count: Int,

@@ -171,6 +171,17 @@ This version is still a work in progress.
   counter, so it cannot express that. Speculative decoding's accept coin uses
   it to draw one uniform per (request, draft position).
 
+- `TileTensor.slice` now accepts an `Int` in place of a slice literal, which
+  fixes that dimension to the given index and drops it from the result, the
+  way `squeeze` would. The output rank is the number of slice arguments, so
+  `t.slice[1:3, 2, 0:4]()` returns a rank-2 view of a rank-3 tensor. Any axis
+  may be dropped, not only trailing ones, and each surviving axis keeps its
+  own stride. Bounds stay compile-time and are now range-checked against the
+  parent's static shape at compile time. A view of a fully static tensor
+  remains fully static: its extents and strides are `ComptimeInt`, and the
+  base offset is carried in the view's engine as a `ComptimeInt` rather than
+  computed at runtime.
+
 ## Breaking changes
 
 - `KVCacheMetrics` drops `nixl_read_blocks_local`, `nixl_read_blocks_remote`,
