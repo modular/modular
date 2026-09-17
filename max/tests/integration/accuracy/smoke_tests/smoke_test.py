@@ -502,6 +502,9 @@ def get_server_cmd(
             SGLANG += [f"--tp-size={gpu_count}"]
             VLLM += [f"--tensor-parallel-size={gpu_count}"]
 
+    if framework == "vllm" and accelerator(serve_image) == "amd":
+        env["VLLM_ROCM_USE_AITER"] = "1"
+
     if framework in ("max", "max-ci"):
         # Force MAX to rely solely on the KVConnector for prefix cache hits to test
         # cpu/disk KV offload code paths.
