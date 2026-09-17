@@ -24,7 +24,7 @@ print(CompilationTarget.is_x86())
 from std.collections.string.string_span import _get_kgen_string
 from std.ffi import _external_call_const, external_call
 
-from std._gpu.host.info import GPUInfo, get_gpu_target
+from std._gpu.host.info import GPUInfo, get_gpu_target, TargetAccelerator
 
 comptime _TargetType = __mlir_type.`!kgen.target`
 
@@ -91,7 +91,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     @inline(.nodebug)
     def from[
         info: GPUInfo
-    ]() -> CompilationTarget[_mlir_value=GPUInfo._mlir_target[info.name]()]:
+    ]() -> CompilationTarget[
+        _mlir_value=TargetAccelerator.from_gpu_name[info.name].mlir_target
+    ]:
         return {}
 
     @doc_hidden

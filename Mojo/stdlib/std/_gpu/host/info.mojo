@@ -31,14 +31,16 @@ from std.sys.info import (
 
 from std._plugin._overlay import ADDITIONAL_TARGETS
 
-from ._builtin_targets import BuiltinTargets, _a100_target
+from ._builtin_targets import BuiltinTargets
 
 
 @inline(.always)
 def get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = _accelerator_arch(),
-]() -> CompilationTarget[_mlir_value=_get_gpu_target[target_arch]()]:
+]() -> CompilationTarget[
+    _mlir_value=TargetAccelerator.from_arch[target_arch].mlir_target
+]:
     """Gets the GPU target information for the specified architecture.
 
     Parameters:
@@ -50,19 +52,9 @@ def get_gpu_target[
     return {}
 
 
-@inline(.always)
-def _get_gpu_target[
-    # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
-    target_arch: StaticString = _accelerator_arch(),
-]() -> _TargetType:
-    comptime assert (
-        target_arch != ""
-    ), "target_arch must be a valid GPU architecture."
-    # TODO: This `.from_name()` followed by `._mlir_target()` is effectively
-    #       doing two full scans of the TargetAccelerator tables.
-    comptime info = GPUInfo.from_name[target_arch]()
-    return GPUInfo._mlir_target[info.name]()
-
+# ===----------------------------------------------------------------------=== #
+# _LookupTargetAccelerator
+# ===----------------------------------------------------------------------=== #
 
 comptime _matches_target_arch[
     target_arch: StaticString,
@@ -117,12 +109,27 @@ struct _LookupTargetAccelerator[
         *Self.Collections.map_to_values[Self._matching_target_values]()
     ]()
 
+    comptime single_result = (
+        Self.results[0] if Self.results.length
+        == 1 else Self._error_non_single_result()
+    )
+
     @staticmethod
-    def single_result() -> Self.results[0] where Self.results.length > 0:
-        comptime assert (
-            Self.results.length == 1
-        ), "target lookup unexpectedly matched more than one target entry"
-        return {}
+    def _error_non_single_result() -> (
+        TargetAcceleratorType
+    ) where Self.results.length != 1:
+        comptime if Self.results.length == 0:
+            # No matching target could be found, so issue a descriptive error.
+            # FIXME(MSTDL-3207): This error is not applicable to all the queries
+            #       where `single_result` is used.
+            comptime assert False, _build_unsupported_arch_error[
+                _accelerator_arch()
+            ]()
+        else:
+            comptime assert False, String(
+                t"target lookup must match exactly one target entry, got"
+                t" {Self.results.length}"
+            )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -145,6 +152,7 @@ struct TargetAccelerator[
     #       however that field is currently used inconsistently.
     target_accelerator_values_: List[String] = [],
 ](TargetAcceleratorType):
+    # TargetAcceleratorType conformance
     comptime gpu_info = Self.gpu_info_
     comptime mlir_target = Self.target._mlir_value
     comptime target_accelerator_values = Self.target_accelerator_values_
@@ -164,6 +172,14 @@ struct TargetAccelerator[
 
     def __init__(out self):
         pass
+
+    comptime from_arch[name: StaticString] = (
+        _LookupTargetAccelerator[].by_target_arch[name].single_result
+    )
+
+    comptime from_gpu_name[name: StaticString] = (
+        _LookupTargetAccelerator[].by_gpu_name[name].single_result
+    )
 
     # Forwarded for backwards compatibility. Enables e.g. `B200.sm_count` to
     # work, instead of the more verbose `B200.gpu_info.sm_count`.
@@ -352,24 +368,6 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
     """Maximum number of threads allowed in a thread block."""
 
     @staticmethod
-    def _mlir_target[name: StaticString]() -> _TargetType:
-        if name == "":
-            return _empty_target._mlir_value
-
-        comptime matching_targets = _LookupTargetAccelerator[].by_gpu_name[
-            name
-        ].results
-
-        comptime if matching_targets.length > 0:
-            comptime result = _LookupTargetAccelerator[].by_gpu_name[
-                name
-            ].single_result()
-            return result.mlir_target
-
-        # FIXME: Don't return a default, instead issue an error.
-        return _a100_target._mlir_value
-
-    @staticmethod
     def from_target[target: CompilationTarget]() -> Self:
         """Creates a `GPUInfo` instance from an MLIR target.
 
@@ -380,6 +378,15 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
             GPU info corresponding to the target.
         """
         return Self.from_name[target._arch()]()
+
+    @staticmethod
+    def current_accelerator() -> Self:
+        """Gets `GPUInfo` for the default target accelerator.
+
+        Returns:
+            `GPUInfo` instance for the default target accelerator.
+        """
+        return GPUInfo.from_name[_accelerator_arch()]()
 
     @staticmethod
     def from_name[target_arch0: StaticString, /]() -> Self:
@@ -393,22 +400,11 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         Returns:
             `GPUInfo` instance for the specified target architecture.
         """
-        # "cuda" means generic CUDA — use runtime GPU detection.
-        comptime if target_arch0 == "cuda":
-            return Self.from_name[_accelerator_arch()]()
-
-        comptime matching_targets = _LookupTargetAccelerator[].by_target_arch[
+        comptime result = _LookupTargetAccelerator[].by_target_arch[
             target_arch0
-        ].results
+        ].single_result
 
-        comptime if matching_targets.length > 0:
-            comptime result = _LookupTargetAccelerator[].by_target_arch[
-                target_arch0
-            ].single_result()
-            return materialize[result.gpu_info]()
-        else:
-            # No matching target could be found, so issue a descriptive error.
-            comptime assert False, _build_unsupported_arch_error[target_arch0]()
+        return materialize[result.gpu_info]()
 
     @staticmethod
     def from_family(

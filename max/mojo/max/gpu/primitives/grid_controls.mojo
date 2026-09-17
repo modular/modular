@@ -33,7 +33,6 @@ from max.gpu.host.launch_attribute import (
     LaunchAttributeValue,
 )
 from std.sys import has_nvidia_gpu_accelerator
-from std.sys.info import _accelerator_arch
 
 from ..host.info import H100, GPUInfo
 
@@ -54,7 +53,7 @@ def _support_pdl_launch() -> Bool:
 
     comptime if (
         has_nvidia_gpu_accelerator()
-        and GPUInfo.from_name[_accelerator_arch()]().compute >= H100.compute
+        and GPUInfo.current_accelerator().compute >= H100.compute
     ):
         return True
     else:

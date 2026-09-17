@@ -411,7 +411,7 @@ def _amdgpu_matmul_config_from_block_shape[
 
 
 def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
-    comptime sm_count = GPUInfo.from_name[_accelerator_arch()]().sm_count
+    comptime sm_count = GPUInfo.current_accelerator().sm_count
 
     comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
     comptime len_block_sizes = len(block_sizes_alias)

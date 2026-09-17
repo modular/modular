@@ -20,7 +20,6 @@ memory specifications, thread organization, and performance characteristics.
 
 from std.sys.info import _TargetType, _accelerator_arch, _current_target
 
-from std._gpu.host.info import _get_gpu_target
 from std._plugin._overlay import ADDITIONAL_TARGETS
 
 
@@ -128,4 +127,4 @@ def _device_type_encoder_target() -> _TargetType:
     elif ADDITIONAL_TARGETS.encode_device_types_with_host_layout:
         return _current_target()
     else:
-        return _get_gpu_target()
+        return get_gpu_target()._mlir_value

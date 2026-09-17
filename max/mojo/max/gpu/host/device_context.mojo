@@ -52,7 +52,6 @@ from std.sys import (
 from std.sys.compile import DebugLevel, OptimizationLevel
 from std.sys.info import (
     CompilationTarget,
-    _accelerator_arch,
     is_triple,
 )
 from std.sys.defines import _is_bool_like
@@ -3906,7 +3905,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ```
     """
 
-    comptime default_device_info = GPUInfo.from_name[_accelerator_arch()]()
+    comptime default_device_info = GPUInfo.current_accelerator()
     """`GPUInfo` object for the default accelerator."""
 
     var _handle: _DeviceContextPtr[mut=True]

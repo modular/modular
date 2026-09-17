@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.sys.info import _accelerator_arch
-
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import GPUInfo, _is_sm10x_gpu
@@ -167,7 +165,7 @@ def main() raises:
 
     test_cast()
 
-    comptime device = GPUInfo.from_name[_accelerator_arch()]()
+    comptime device = GPUInfo.current_accelerator()
 
     comptime if _is_sm10x_gpu(device):
         test_add[.float32, "sm_100"]()

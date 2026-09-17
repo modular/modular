@@ -23,7 +23,6 @@ from std.math import ceildiv
 from max.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import GPUInfo
-from std.sys.info import _accelerator_arch
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -186,7 +185,7 @@ def dequant_mxfp4[
         "num_cols must be a multiple of ELEMENTS_PER_THREAD (8)",
     )
     comptime num_max_threads = 512
-    comptime _gpu = GPUInfo.from_name[_accelerator_arch()]()
+    comptime _gpu = GPUInfo.current_accelerator()
     comptime num_SMs = _gpu.sm_count
 
     var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)

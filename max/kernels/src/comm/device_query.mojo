@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Provides device query utilities for communication primitives."""
 
-from std.sys.info import _accelerator_arch
 from internal_utils import TuningConfig, Table
 from max.gpu.host.info import GPUInfo
 
@@ -227,5 +226,5 @@ def get_sm_version() -> StaticString:
     Returns:
         The SM version string for the target GPU architecture.
     """
-    comptime default_device_info = GPUInfo.from_name[_accelerator_arch()]()
+    comptime default_device_info = GPUInfo.current_accelerator()
     return default_device_info.version

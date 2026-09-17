@@ -69,7 +69,7 @@ def _resolve_warp_size() -> Int:
     elif _accelerator_arch() == "":
         return 0
     else:
-        return GPUInfo.from_name[_accelerator_arch()]().warp_size
+        return GPUInfo.current_accelerator().warp_size
 
 
 # ===-----------------------------------------------------------------------===#

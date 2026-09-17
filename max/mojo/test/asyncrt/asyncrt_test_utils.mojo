@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.info import _accelerator_arch
 from std.sys.defines import get_defined_string, is_defined
 
 from max.gpu.host import DeviceContext
@@ -23,7 +22,7 @@ def api() -> String:
         comptime api = get_defined_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         comptime if api == "gpu":
-            return String(GPUInfo.from_name[_accelerator_arch()]().api)
+            return String(GPUInfo.current_accelerator().api)
         return String(api)
     return "default"
 
