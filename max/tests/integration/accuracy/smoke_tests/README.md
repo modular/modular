@@ -28,8 +28,8 @@ a large model (subsequent runs reuse the compile cache).
 
 `smoke_test_github_matrix.py` holds two model sets:
 
-- `MODELS` is every model CI knows how to smoke test, with its per-framework
-  and per-GPU exclusions.
+- `MODELS` is every model CI knows how to smoke test, with its per-GPU
+  exclusions.
 - `NIGHTLY_MODELS` is the subset the nightly suite runs (`--tier nightly`).
 
 To run anything outside `NIGHTLY_MODELS`, dispatch the Serve Smoke Tests

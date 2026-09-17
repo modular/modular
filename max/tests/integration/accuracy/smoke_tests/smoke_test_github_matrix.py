@@ -43,69 +43,59 @@ B200_8X_ONLY = set(RUNNERS) - {"8xB200"}
 # sweep over every entry that forgot to mention it.
 AMD_XL = {"4xMI355", "8xMI355"}
 
-# Model → set of exclusion tags:
-#   - framework        (e.g. "max")
-#   - gpu              (e.g. "MI355")
-#   - framework@gpu    (e.g. "sglang@B200")
+# Model → set of excluded runners. A model runs on all HW by default; listing
+# a runner, like "MI355", excludes the model from running on that HW.
 #   - use XL           to skip on 8xB200, 4xMI355 and 8xMI355
 #   - use MULTI        to skip on all multi-GPU runners
 #   - use NON_XL       to skip on everything except 8xB200, 4xMI355 and 8xMI355
 #   - use DISABLE      to skip on all runners (temporarily disable a model)
 #
-# Custom recipe variants (CUSTOM_MODELS, any key with "__") are MAX only and are
-# auto-excluded from vllm and sglang by excluded(); no per-entry tag needed.
-#
 # If you want to add a model to the smoke test:
 #   1. Trigger the smoke test job with the model name you want to add:
 #   https://github.com/modularml/modular/actions/workflows/pipelineVerification.yaml
-#   2. Review the results, and the need for framework/GPU exclusions (if any)
+#   2. Review the results, and the need for GPU exclusions (if any)
 #   3. Add the model to the dictionary below, with the appropriate exclusions
 #    3a) For VLMs, add it to the is_vision_model check in smoke_test.py
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 # fmt: off
 HF_MODELS: Mapping[str, set[str]] = {
-    "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
-    "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
+    "allenai/Olmo-3-7B-Instruct": MULTI,
+    "allenai/olmOCR-2-7B-1025-FP8": MULTI,
     "amd/Kimi-K2.7-Code-MXFP4": NON_XL | {"8xB200", "8xMI355"},
     "nvidia/Kimi-K2.7-Code-NVFP4": NON_XL | AMD_XL,
-    # MODELS-1611: M3 is a private arch, so max-ci only.
-    "amd/MiniMax-M3-MXFP4": NON_XL | {"8xB200", "8xMI355", "max"},
-    "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
-    "deepseek-ai/DeepSeek-V2-Lite-Chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
+    "amd/MiniMax-M3-MXFP4": NON_XL | {"8xB200", "8xMI355"},
+    "ByteDance-Seed/academic-ds-9B": DISABLE,  # SERVOPT-1120
+    "deepseek-ai/DeepSeek-V2-Lite-Chat": DISABLE,  # SERVOPT-1120
     "deepseek-ai/DeepSeek-V3.1-Terminus": NON_XL | AMD_XL,
-    "google/diffusiongemma-26B-A4B-it": MULTI | {"max", "max-ci"},
-    "google/gemma-3-1b-it": MULTI | {"vllm@B200", "MI355"},  # TODO(KERN-3014)
+    "google/diffusiongemma-26B-A4B-it": DISABLE,
+    "google/gemma-3-1b-it": MULTI | {"MI355"},  # TODO(KERN-3014)
     "google/gemma-3-27b-it": MULTI,
     "google/gemma-4-26B-A4B-it": MULTI,
     "google/gemma-4-31B-it": MULTI,
     "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"MI355"},
-    "nvidia/diffusiongemma-26B-A4B-it-NVFP4": MULTI | {"max", "max-ci", "MI355"},
+    "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
     "nvidia/Gemma-4-31B-IT-NVFP4": XL | {"MI355", "2xMI355"},
     "meta-llama/Llama-3.1-8B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
-    # MODELS-1611: MXFP8 runs on 8xB200 and 8xMI355 -- the one model that wants
-    # the AMD 8x runner, hence the literal 4xMI355 where its neighbours use
-    # AMD_XL. max-ci exercises the private M3 arch; sglang serves the HF
-    # checkpoint as a reference. vLLM and released MAX are excluded.
-    # 8xB200 serves the production MTP recipe, which is the __mtp alias below;
-    # sglang still runs the plain checkpoint there as the reference.
-    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL
-    | {"4xMI355", "max", "vllm", "max-ci@8xB200"},
-    "modularai/MiniMax-M3-MXFP6": NON_XL | {"8xB200", "max"},
-    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
-    "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"8xMI355", "max"},
+    # MODELS-1611: MXFP8 runs on 8xMI355 -- the one model that wants the AMD 8x
+    # runner, hence the literal 4xMI355 where its neighbours use AMD_XL. 8xB200
+    # serves the production MTP recipe, which is the __mtp alias below.
+    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "8xB200"},
+    "modularai/MiniMax-M3-MXFP6": NON_XL | {"8xB200"},
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI,
+    "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"8xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | AMD_XL,
-    "OpenGVLab/InternVL3_5-8B-Instruct": MULTI | {"max", "sglang"},
+    "OpenGVLab/InternVL3_5-8B-Instruct": MULTI,
     "Qwen/Qwen2.5-7B-Instruct": MULTI,
     "Qwen/Qwen2.5-VL-7B-Instruct": MULTI,
     "Qwen/Qwen3-8B": MULTI,
     "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
-    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@B200", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
-    "Qwen/Qwen3.5-9B": MULTI | {"max", "max-ci@MI355"},
-    "Qwen/Qwen3.6-27B": MULTI | {"max", "max-ci@MI355"},
+    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
+    "Qwen/Qwen3.5-9B": MULTI | {"MI355"},
+    "Qwen/Qwen3.6-27B": MULTI | {"MI355"},
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": MULTI,  # TODO(MODELS-1021)
-    "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | AMD_XL | {"max"},
+    "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | AMD_XL,
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL | {"8xMI355"},
     "openai/gpt-oss-20b": XL | {"2xMI355"},
     "thinkingmachines/Inkling-Small-NVFP4": B200_2X_ONLY,
@@ -116,7 +106,7 @@ HF_MODELS: Mapping[str, set[str]] = {
 CUSTOM_MODELS: Mapping[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
     "google/gemma-3-27b-it__modulev3": XL,
-    "google/gemma-4-31B-it__modulev3": MULTI | {"max"},
+    "google/gemma-4-31B-it__modulev3": MULTI,
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": MULTI,
@@ -129,11 +119,9 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__dflash": MULTI,
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | AMD_XL,
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | AMD_XL,
-    # The experimental_device_graph_synthesis flag is not in a released MAX yet, so
-    # max-ci only. Synthesis is single-device (first cut), hence MULTI.
-    "google/gemma-4-12B-it__device_graph_synthesis": MULTI | {"max"},
-    # DSpark arch is not in a released MAX yet, so max-ci only.
-    "google/gemma-4-12B-it__dspark": MULTI | {"max"},
+    # Synthesis is single-device (first cut), hence MULTI.
+    "google/gemma-4-12B-it__device_graph_synthesis": MULTI,
+    "google/gemma-4-12B-it__dspark": MULTI,
     # Tuned recipes use an FP8 KV cache that does not support MI355.
     "google/gemma-4-26B-A4B-it__tuned": MULTI | {"MI355"},
     "google/gemma-4-31B-it__tuned": MULTI | {"MI355"},
@@ -144,7 +132,7 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | AMD_XL,
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NON_XL | AMD_XL,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": B200_2X_ONLY,
-    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": B200_8X_ONLY | {"max"},
+    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": B200_8X_ONLY,
 }
 
 # Aliases whose recipe ships with a private arch, so it cannot appear in
@@ -157,7 +145,6 @@ MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}
 
 NIGHTLY_MODELS = frozenset(
     {
-        "google/diffusiongemma-26B-A4B-it",
         "google/gemma-4-12B-it__dspark",
         "google/gemma-4-26B-A4B-it",
         "google/gemma-4-26B-A4B-it__tuned",
@@ -167,7 +154,6 @@ NIGHTLY_MODELS = frozenset(
         "nvidia/Gemma-4-26B-A4B-NVFP4__tuned",
         "nvidia/Gemma-4-31B-IT-NVFP4",
         "nvidia/Gemma-4-31B-IT-NVFP4__tuned",
-        "nvidia/diffusiongemma-26B-A4B-it-NVFP4",
         "MiniMaxAI/MiniMax-M3-MXFP8",
         "MiniMaxAI/MiniMax-M3-MXFP8__mtp",
         "amd/MiniMax-M3-MXFP4",
@@ -203,8 +189,7 @@ def excluded(framework: str, gpu: str, model: str) -> bool:
     # Custom MAX recipe variants are MAX only; no vLLM/SGLang equivalent.
     if model in CUSTOM_MODELS and framework in {"vllm", "sglang"}:
         return True
-    tags = MODELS.get(model, set())
-    return framework in tags or gpu in tags or f"{framework}@{gpu}" in tags
+    return gpu in MODELS.get(model, set())
 
 
 def parse_override(raw: str | None) -> list[str]:

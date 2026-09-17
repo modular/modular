@@ -99,19 +99,7 @@ def test_8xmi355_stays_opt_in() -> None:
     here instead of quietly consuming the runner. Widen the expectation only
     when a model is meant to run on it.
     """
-    expected = {
-        "max-ci": {
-            "MiniMaxAI/MiniMax-M3-MXFP8",
-            "modularai/MiniMax-M3-MXFP6",
-        },
-        "max": set(),
-        "vllm": {"modularai/MiniMax-M3-MXFP6"},
-        "sglang": {
-            "MiniMaxAI/MiniMax-M3-MXFP8",
-            "modularai/MiniMax-M3-MXFP6",
-        },
-    }
-    for framework, models in expected.items():
+    for framework in ("max-ci", "max", "vllm", "sglang"):
         result = CliRunner().invoke(
             smoke_test_github_matrix.main,
             ["--framework", framework, "--run-on-8xmi355"],
@@ -120,7 +108,10 @@ def test_8xmi355_stays_opt_in() -> None:
         scheduled = {
             job["model"] for job in json.loads(result.output)["include"]
         }
-        assert scheduled == models, f"{framework} on 8xMI355"
+        assert scheduled == {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        }, f"{framework} on 8xMI355"
 
 
 def test_smoke_test_github_matrix_b200_max_ci() -> None:
