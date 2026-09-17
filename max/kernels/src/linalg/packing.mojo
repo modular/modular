@@ -20,7 +20,7 @@ from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import unswitch
 from linalg.utils import partial_simd_load
-from layout import Coord, Idx, TensorEngine, TileTensor
+from layout import Coord, DefaultEngine, Idx, TensorEngine, TileTensor
 from layout.coord import DynamicCoord
 from layout.tile_layout import RowMajorLayout
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
@@ -1111,7 +1111,15 @@ struct BTileGenerator[
         global_offset: GemmShape,
         tile_dim_nk: IndexList[2],
         valid_data_dim_nk: IndexList[2],
-    ) -> TileTensor[Self.b_type, Self.PackedTileLayout, ImmutAnyOrigin]:
+        # The returned tile views either a stack scratch buffer or a raw
+        # offset into `self.b`, both raw-pointer addressed, so pin
+        # DefaultEngine.
+    ) -> TileTensor[
+        Self.b_type,
+        Self.PackedTileLayout,
+        ImmutAnyOrigin,
+        Engine=DefaultEngine[element_width=1],
+    ]:
         """Get a packed matrix (B) tile.
 
         Parameters:

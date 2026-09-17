@@ -75,7 +75,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     # Use minimal buffer size for efficiency since nothing will execute
     var total_tokens = max(max_num_tokens_per_expert, 16)
     var num_offsets = max(num_active_experts + 1, 1)
-    var num_expert_ids = max(num_active_experts, 0)
+    # Floor at 1: a device tile cannot wrap a zero-size buffer, and the
+    # launcher early-returns before reading expert ids when there are none.
+    var num_expert_ids = max(num_active_experts, 1)
 
     # Create host buffers
     var a_size = total_tokens * K

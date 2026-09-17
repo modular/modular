@@ -1285,14 +1285,10 @@ def gemv_gpu_dispatch[
                     attributes=pdl_launch_attributes(pdl_level),
                 )
             else:
-                # runtime transpose since TileTensor.transpose requires static shape
-                var b_n_major_layout = row_major(Coord(n, k))
-                var b_ptr = UnsafePointer[Scalar[b_type], b.origin](
-                    unsafe_from_address=Int(b.ptr)
-                )
-                var b_tile_n_major = TileTensor[
-                    b_type, type_of(b_n_major_layout), b.origin
-                ](b_ptr, b_n_major_layout)
+                # Runtime transpose (TileTensor.transpose needs a static
+                # shape). `reshape` reuses b's storage, so the view keeps b's
+                # engine.
+                var b_tile_n_major = b.reshape(row_major(Coord(n, k)))
 
                 comptime kernel = gemv_kernel_vector[
                     c_type,
@@ -1765,6 +1761,7 @@ struct _MmaCpAsyncGmemLoaderA[
     //,
     a_type: DType,
     a_layout: TensorLayout,
+    a_engine: TensorEngine,
     tile_m: Int,
     tile_k: Int,
     stage_cnt: Int,
@@ -1782,7 +1779,9 @@ struct _MmaCpAsyncGmemLoaderA[
         Self.a_type, Self.tile_m, Self.tile_k, Self.stage_cnt
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
-    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, Self.origin]
+    comptime ActTensor = TileTensor[
+        Self.a_type, Self.a_layout, Self.origin, Engine=Self.a_engine
+    ]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
     @inline(.always)
@@ -1903,6 +1902,7 @@ struct _MmaCpAsyncGmemLoaderB[
     //,
     b_type: DType,
     b_layout: TensorLayout,
+    b_engine: TensorEngine,
     tile_n: Int,
     tile_k: Int,
     stage_cnt: Int,
@@ -1921,7 +1921,7 @@ struct _MmaCpAsyncGmemLoaderB[
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
     comptime WeightTensor = TileTensor[
-        Self.b_type, Self.b_layout, Self.weight_origin
+        Self.b_type, Self.b_layout, Self.weight_origin, Engine=Self.b_engine
     ]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
@@ -2258,6 +2258,9 @@ def gemm_mma_cpasync_kernel[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
     *,
     tile_m: Int = 16,
     tile_n: Int = 8,
@@ -2268,9 +2271,9 @@ def gemm_mma_cpasync_kernel[
     pdl_level: PDLLevel = PDLLevel(),
     swapAB: Bool = False,
 ](
-    output: TileTensor[c_type, c_layout, MutAnyOrigin],
-    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     gemm_m: Int32,
     gemm_k: Int32,
     gemm_n: Int32,
@@ -2338,7 +2341,12 @@ def gemm_mma_cpasync_kernel[
         comptime if pdl_level > PDLLevel.OFF and not swapAB:
             wait_on_dependent_grids()
         var loader = _MmaCpAsyncGmemLoaderA[
-            a_type, type_of(act).LayoutType, tile_m, tile_k, stage_cnt
+            a_type,
+            type_of(act).LayoutType,
+            type_of(act).Engine,
+            tile_m,
+            tile_k,
+            stage_cnt,
         ](
             act,
             smem_a,
@@ -2359,6 +2367,7 @@ def gemm_mma_cpasync_kernel[
             weight_origin=weight.origin,
             a_type,
             type_of(weight).LayoutType,
+            type_of(weight).Engine,
             tile_n,
             tile_k,
             stage_cnt,
@@ -2525,6 +2534,9 @@ def gemm_mma_cpasync[
                 type_of(c).LayoutType,
                 type_of(weight).LayoutType,
                 type_of(act).LayoutType,
+                type_of(c).Engine,
+                type_of(weight).Engine,
+                type_of(act).Engine,
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,
@@ -2557,6 +2569,9 @@ def gemm_mma_cpasync[
                 type_of(c).LayoutType,
                 type_of(act).LayoutType,
                 type_of(weight).LayoutType,
+                type_of(c).Engine,
+                type_of(act).Engine,
+                type_of(weight).Engine,
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,
@@ -2593,6 +2608,9 @@ def gemm_mma_cpasync[
                 type_of(c3d).LayoutType,
                 type_of(w3d).LayoutType,
                 type_of(a3d).LayoutType,
+                type_of(c3d).Engine,
+                type_of(w3d).Engine,
+                type_of(a3d).Engine,
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,
@@ -2625,6 +2643,9 @@ def gemm_mma_cpasync[
                 type_of(c3d).LayoutType,
                 type_of(a3d).LayoutType,
                 type_of(w3d).LayoutType,
+                type_of(c3d).Engine,
+                type_of(a3d).Engine,
+                type_of(w3d).Engine,
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,

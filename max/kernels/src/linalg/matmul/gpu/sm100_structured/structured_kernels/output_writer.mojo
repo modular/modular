@@ -729,6 +729,7 @@ struct TileWriter[
     @inline(.always)
     def write_absolute_with_bounds_check[
         c_tensor_layout: TensorLayout,
+        c_tensor_engine: TensorEngine,
     ](
         self,
         c_tiles: Self.CTileArray,
@@ -738,7 +739,11 @@ struct TileWriter[
         m_end: UInt32,
         expert_scale: Float32,
         c_tensor: TileTensor[
-            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
+            mut=True,
+            Self.c_type,
+            LayoutType=c_tensor_layout,
+            Engine=c_tensor_engine,
+            ...,
         ],
         # Peer scatter-send direct from SMEM, bytes only; the arrival protocol
         # is the caller's. Default -1/disabled() leaves every existing caller
@@ -754,6 +759,7 @@ struct TileWriter[
 
         Parameters:
             c_tensor_layout: Layout of the C tensor in GMEM (inferred).
+            c_tensor_engine: Engine of the C tensor in GMEM (inferred).
 
         Args:
             c_tiles: SMEM tile array for the C output.
@@ -1306,6 +1312,7 @@ struct TileWriter[
     @inline(.always)
     def _write_absolute_with_bounds_check[
         c_tensor_layout: TensorLayout,
+        c_tensor_engine: TensorEngine,
     ](
         self,
         c_tiles: Self.CTileArray,
@@ -1315,7 +1322,11 @@ struct TileWriter[
         m_end: UInt32,
         expert_scale: Float32,
         c_tensor: TileTensor[
-            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
+            mut=True,
+            Self.c_type,
+            LayoutType=c_tensor_layout,
+            Engine=c_tensor_engine,
+            ...,
         ],
         p3_control: Int = -1,
         p3_expert_id: Int32 = 0,
@@ -2049,12 +2060,17 @@ struct TileWriter[
     def _store_with_bounds_check[
         c_tensor_layout: TensorLayout,
         c_smem_layout: TensorLayout,
+        c_tensor_engine: TensorEngine,
     ](
         c_smem_tile: TileTensor[
             Self.c_type, c_smem_layout, MutAnyOrigin, address_space=.SHARED
         ],
         c_tensor: TileTensor[
-            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
+            mut=True,
+            Self.c_type,
+            LayoutType=c_tensor_layout,
+            Engine=c_tensor_engine,
+            ...,
         ],
         m_abs: UInt32,
         n_abs: UInt32,
@@ -2175,12 +2191,17 @@ struct TileWriter[
     @inline(.always)
     def _store_with_bounds_check_transpose[
         c_tensor_layout: TensorLayout,
+        c_tensor_engine: TensorEngine,
     ](
         c_smem_ptr: UnsafePointer[
             Scalar[Self.c_type], _, address_space=.SHARED
         ],
         c_tensor: TileTensor[
-            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
+            mut=True,
+            Self.c_type,
+            LayoutType=c_tensor_layout,
+            Engine=c_tensor_engine,
+            ...,
         ],
         m_abs: UInt32,
         n_abs: UInt32,

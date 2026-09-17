@@ -146,27 +146,27 @@ def test[
     )
     var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
-    var a_dev = TileTensor[a_type](
+    var a_dev = TileTensor(
         a_dev_buffer,
         row_major(Coord(total_num_tokens, Idx[K])),
     )
-    var c_dev = TileTensor[c_type](
+    var c_dev = TileTensor(
         c_dev_buffer,
         row_major(Coord(total_num_tokens, Idx[actual_N])),
     )
-    var c_ref_dev = TileTensor[c_type](
+    var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
         row_major(Coord(total_num_tokens, Idx[actual_N])),
     )
-    var b_dev = TileTensor[b_type](
+    var b_dev = TileTensor(
         b_dev_buffer,
         row_major[num_experts, 3 * N if qkv_perm_dim else N, K](),
     )
-    var a_offsets_dev = TileTensor[.uint32](
+    var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
         row_major(Coord(num_experts + 1)),
     )
-    var expert_ids_dev = TileTensor[.int32](
+    var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
         row_major(Coord(Idx[num_experts])),
     )
@@ -190,14 +190,17 @@ def test[
     )
     ctx.synchronize()
 
-    var c_dev_tile = c_dev
+    # Capture the bare device address, not the device tile: a
+    # `DevicePointerEngine` tile only resolves to a pointer through its host
+    # `DeviceBuffer` handle, which is invalid inside the device epilogue.
+    var c_dev_ptr = c_dev.ptr
 
     comptime assert not (
         qkv_perm_dim and has_epilogue
     ), "qkv_perm_dim and has_epilogue cannot be True at the same time"
 
     @inline(.always)
-    @__copy_capture(c_dev_tile)
+    @__copy_capture(c_dev_ptr)
     @__parameter
     def epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -207,16 +210,12 @@ def test[
         comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        var ptr = (
-            c_dev_tile._storage.bitcast[Scalar[out_type]]()
-            + idx[0] * N
-            + idx[1]
-        )
+        var ptr = c_dev_ptr.bitcast[Scalar[out_type]]() + idx[0] * N + idx[1]
 
         ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
 
     @inline(.always)
-    @__copy_capture(c_dev_tile, total_num_tokens)
+    @__copy_capture(c_dev_ptr, total_num_tokens)
     @__parameter
     def perm_dim_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -231,7 +230,7 @@ def test[
         # The permdim tensor has the shape 3 x M x N, so the index is then
         # [new_j, i, new_k].
         var ptr = (
-            c_dev_tile._storage.bitcast[Scalar[out_type]]()
+            c_dev_ptr.bitcast[Scalar[out_type]]()
             + new_j * total_num_tokens * N
             + i * N
             + new_k
@@ -396,23 +395,23 @@ def test_negative_lora_id[
         num_active_experts
     )
 
-    var a_dev = TileTensor[a_type](
+    var a_dev = TileTensor(
         a_dev_buffer,
         row_major(Coord(total_num_tokens, Idx[K])),
     )
-    var c_dev = TileTensor[c_type](
+    var c_dev = TileTensor(
         c_dev_buffer,
         row_major(Coord(total_num_tokens, Idx[N])),
     )
-    var b_dev = TileTensor[b_type](
+    var b_dev = TileTensor(
         b_dev_buffer,
         row_major[num_experts, N, K](),
     )
-    var a_offsets_dev = TileTensor[.uint32](
+    var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
         row_major(Coord(num_active_experts + 1)),
     )
-    var expert_ids_dev = TileTensor[.int32](
+    var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
         row_major(Coord(num_active_experts)),
     )
@@ -587,25 +586,17 @@ def test_step3p5_moe_dims[
     var off_dev_buf = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
     var eid_dev_buf = ctx.enqueue_create_buffer[.int32](num_experts)
 
-    var a_dev = TileTensor[in_type](
-        a_dev_buf, row_major(Coord(total_tokens, Idx[K]))
-    )
-    var b_dev = TileTensor[in_type](
+    var a_dev = TileTensor(a_dev_buf, row_major(Coord(total_tokens, Idx[K])))
+    var b_dev = TileTensor(
         b_dev_buf,
         row_major[num_experts, N, K](),
     )
-    var c_dev = TileTensor[out_type](
-        c_dev_buf, row_major(Coord(total_tokens, Idx[N]))
-    )
-    var c_ref_dev = TileTensor[out_type](
+    var c_dev = TileTensor(c_dev_buf, row_major(Coord(total_tokens, Idx[N])))
+    var c_ref_dev = TileTensor(
         c_ref_dev_buf, row_major(Coord(total_tokens, Idx[N]))
     )
-    var off_dev = TileTensor[.uint32](
-        off_dev_buf, row_major(Coord(num_experts + 1))
-    )
-    var eid_dev = TileTensor[.int32](
-        eid_dev_buf, row_major(Coord(Idx[num_experts]))
-    )
+    var off_dev = TileTensor(off_dev_buf, row_major(Coord(num_experts + 1)))
+    var eid_dev = TileTensor(eid_dev_buf, row_major(Coord(Idx[num_experts])))
 
     ctx.enqueue_copy(a_dev_buf, a_host_ptr)
     ctx.enqueue_copy(b_dev_buf, b_host_ptr)

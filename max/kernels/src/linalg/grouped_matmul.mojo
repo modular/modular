@@ -97,15 +97,32 @@ def naive_grouped_matmul_kernel[
     BLayout: TensorLayout,
     AOffsetsLayout: TensorLayout,
     ExpertIdsLayout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    a_offsets_engine: TensorEngine,
+    expert_ids_engine: TensorEngine,
     *,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
-    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin],
-    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin],
-    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
-    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin, Engine=a_engine],
+    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin, Engine=b_engine],
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
+        MutAnyOrigin,
+        Engine=a_offsets_engine,
+    ],
+    expert_ids: TileTensor[
+        mut=False,
+        .int32,
+        ExpertIdsLayout,
+        MutAnyOrigin,
+        Engine=expert_ids_engine,
+    ],
 ):
     """Computes one element per thread of the grouped matmul product ``C[a_offsets[z]:a_offsets[z+1], :] = A[...] @ B[expert_ids[z], :, :].T`` for each active expert ``z``, with an optional elementwise epilogue.
 
@@ -122,9 +139,9 @@ def naive_grouped_matmul_kernel[
     var N = Int(b.dim[1]())
     var K = Int(b.dim[2]())
 
-    var a_start_row = a_offsets[block_idx.z]
+    var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
 
-    var expert = expert_ids[block_idx.z]
+    var expert = rebind[Int32](expert_ids[block_idx.z])
     var b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
@@ -198,6 +215,9 @@ def grouped_matmul_kernel_sm100[
     ExpertIdsLayout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
+    c_engine: TensorEngine,
+    a_offsets_engine: TensorEngine,
+    expert_ids_engine: TensorEngine,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -207,9 +227,21 @@ def grouped_matmul_kernel_sm100[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
-    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
-    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
+        MutAnyOrigin,
+        Engine=a_offsets_engine,
+    ],
+    expert_ids: TileTensor[
+        mut=False,
+        .int32,
+        ExpertIdsLayout,
+        MutAnyOrigin,
+        Engine=expert_ids_engine,
+    ],
+    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Engine=c_engine],
     num_iters: Int32,
 ):
     var _num_iters = Int(num_iters)
@@ -218,7 +250,7 @@ def grouped_matmul_kernel_sm100[
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-    var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
+    var M = rebind[UInt32](a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
     comptime N = c.static_shape[1]
     comptime K = static_K
 
@@ -232,8 +264,8 @@ def grouped_matmul_kernel_sm100[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    var a_start_row = a_offsets[block_idx.z]
-    var expert = expert_ids[block_idx.z]
+    var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
+    var expert = rebind[Int32](expert_ids[block_idx.z])
     var b_start_row = expert * Int32(N)
 
     var m_start = block_idx.y * BM
@@ -569,6 +601,9 @@ def grouped_matmul_sm100[
         type_of(expert_ids).LayoutType,
         block_tile_shape,
         mma_shape,
+        type_of(c).Engine,
+        type_of(a_offsets).Engine,
+        type_of(expert_ids).Engine,
         a_swizzle,
         b_swizzle,
         c_swizzle,
@@ -609,13 +644,32 @@ def grouped_matmul_amd_kernel_launcher[
     ExpertIdsLayout: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    a_offsets_engine: TensorEngine,
+    expert_ids_engine: TensorEngine,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_tensor: TileTensor[mut=True, c_type, LayoutC, MutAnyOrigin],
-    a_tensor: TileTensor[a_type, LayoutA, MutAnyOrigin],
-    b_tensor: TileTensor[b_type, LayoutB, MutAnyOrigin],
-    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
-    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
+    c_tensor: TileTensor[
+        mut=True, c_type, LayoutC, MutAnyOrigin, Engine=c_engine
+    ],
+    a_tensor: TileTensor[a_type, LayoutA, MutAnyOrigin, Engine=a_engine],
+    b_tensor: TileTensor[b_type, LayoutB, MutAnyOrigin, Engine=b_engine],
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
+        MutAnyOrigin,
+        Engine=a_offsets_engine,
+    ],
+    expert_ids: TileTensor[
+        mut=False,
+        .int32,
+        ExpertIdsLayout,
+        MutAnyOrigin,
+        Engine=expert_ids_engine,
+    ],
     num_active_experts: Int32,
 ):
     """Computes the AMD GPU grouped matmul by dispatching per-expert tiles through ``AMDMatmul``, with separate zero-fill handling for inactive (``expert_id == -1``) blocks.
@@ -629,12 +683,12 @@ def grouped_matmul_amd_kernel_launcher[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
-    var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
+    var M = rebind[UInt32](a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
     comptime N = c_tensor.static_shape[1]
     comptime K = b_tensor.static_shape[1]
 
-    var expert_id = expert_ids[block_idx.z]
-    var a_start_row = a_offsets[block_idx.z]
+    var expert_id = rebind[Int32](expert_ids[block_idx.z])
+    var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
 
     var a_ptr = a_tensor.ptr + a_start_row * UInt32(K)
     var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K)
@@ -910,6 +964,11 @@ def grouped_matmul_amd[
             type_of(expert_ids).LayoutType,
             transpose_b,
             config,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(b_2d).Engine,
+            type_of(a_offsets).Engine,
+            type_of(expert_ids).Engine,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         ctx.enqueue_function[kernel](
@@ -1329,6 +1388,11 @@ def naive_grouped_matmul[
         type_of(b).LayoutType,
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
+        type_of(a_offsets).Engine,
+        type_of(expert_ids).Engine,
         elementwise_lambda_fn=elementwise_lambda_fn,
         a_plane_splits=a_plane_splits,
     ]
