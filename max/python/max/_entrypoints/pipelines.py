@@ -736,6 +736,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 )
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
+    from max.engine import CompilationStopped
     from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
     # Log what we're doing if target mode is enabled
@@ -757,7 +758,12 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     task = PIPELINE_REGISTRY.retrieve_pipeline_task(
         pipeline_config.models.main_architecture_name
     )
-    PIPELINE_REGISTRY.retrieve(pipeline_config, task=task)
+    try:
+        PIPELINE_REGISTRY.retrieve(pipeline_config, task=task)
+    except CompilationStopped as stopped:
+        # `pre-jit` asked for the emitted Mojo and nothing more; the
+        # pipeline has nothing left to warm.
+        logging.info(str(stopped))
 
 
 def _render_warm_progress(

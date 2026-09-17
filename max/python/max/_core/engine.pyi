@@ -450,6 +450,14 @@ class DebugConfig:
     @source_tracebacks.setter
     def source_tracebacks(self, arg: bool, /) -> None: ...
     @property
+    def pre_jit(self) -> bool:
+        """
+        A boolean that, when ``True``, stops graph compilation once the Mojo for the graph has been emitted (see ``ir_output_dir``), skipping the kernel JIT. ``InferenceSession.compile`` then raises :class:`~max.engine.CompilationStopped`. Takes effect at model build time.
+        """
+
+    @pre_jit.setter
+    def pre_jit(self, arg: bool, /) -> None: ...
+    @property
     def op_log_level(self) -> str:
         r"""
         A string that sets the log level for per-op tracing. One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``. Takes effect at model build time.

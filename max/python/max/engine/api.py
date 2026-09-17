@@ -387,6 +387,17 @@ class LogLevel(str, Enum):
     CRITICAL = "critical"
 
 
+class CompilationStopped(RuntimeError):
+    """Raised by :meth:`InferenceSession.compile` when ``pre_jit`` stopped it.
+
+    With :attr:`DebugConfig.pre_jit` set, the graph compiler writes the Mojo
+    for the graph into :attr:`DebugConfig.ir_output_dir` and stops there, so
+    there is no compiled artifact to return. This is the requested outcome,
+    not a failure; callers that only wanted the emitted Mojo catch it and
+    carry on.
+    """
+
+
 class CompiledModel:
     """A compiled model artifact, ready for initialization with weights.
 
@@ -976,6 +987,8 @@ class InferenceSession:
         exception = handle.exception()
         if exception is None:
             return compiled
+        if self.debug.pre_jit and "pre-jit" in str(exception):
+            raise CompilationStopped(str(exception)) from exception
         # compile_async surfaces the compile failure here rather than from the
         # compile call, so the Graph/Module wrapping that _compile_module
         # applies to synchronous setup errors is repeated here for the async

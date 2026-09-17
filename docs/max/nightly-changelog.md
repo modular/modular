@@ -35,6 +35,15 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added the `pre-jit` debug option (`MODULAR_DEBUG=pre-jit`,
+  `[max-debug] pre-jit`, or `InferenceSession.debug.pre_jit`). It stops graph
+  compilation once the Mojo for the graph has been emitted into
+  `ir-output-dir`, skipping the kernel JIT, and `InferenceSession.compile()`
+  raises `max.engine.CompilationStopped` in place of returning a model.
+  `max warm-cache` treats that as success, so
+  `MODULAR_DEBUG=ir-output-dir=<dir>,pre-jit max warm-cache ...` is a quick
+  way to get the Mojo a model compiles to.
+
 - `max serve` gained a `--cascade` flag that routes the request to the
   experimental Cascade server (`max.experimental.cascade.serve.main.serve`)
   instead of the standard API server + model worker. The resolved `PipelineArgs`

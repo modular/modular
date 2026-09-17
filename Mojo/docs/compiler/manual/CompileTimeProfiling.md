@@ -153,14 +153,15 @@ compile that with the timing flags. The example uses gemma-4-31B.
 ### 1. Get the emitted Mojo
 
 ```bash
-MODULAR_DEBUG=ir-output-dir=/tmp/gemma4/out-dir \
+MODULAR_DEBUG=ir-output-dir=/tmp/gemma4/out-dir,pre-jit \
 ./bazelw run //max/python/max/_entrypoints:pipelines -- warm-cache \
   --model-path google/gemma-4-31B-it --target cuda:sm_100a
 ```
 
-This runs the whole pipeline, so it fails without the matching GPU. Run it
-anyway: the emitted files land before the failure. The output directory holds
-the graph IR at each stage plus two Mojo files:
+`pre-jit` stops the graph compiler as soon as the Mojo is written, so this
+needs no GPU and skips the kernel compile, which is most of the time a full
+`warm-cache` takes. The output directory holds the graph IR at each stage plus
+two Mojo files:
 
 - `gemma4_vision+gemma4_language.mojo` — about 3 MB, the file to compile.
 - `gemma4_vision_constant_subgraphs.mojo` — about 12 KB, the constant

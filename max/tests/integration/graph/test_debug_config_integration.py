@@ -583,7 +583,7 @@ class TestReaderMigration:
             """\
             from max.driver import CPU
             from max.dtype import DType
-            from max.engine import InferenceSession
+            from max.engine import CompilationStopped, InferenceSession
             from max.graph import DeviceRef, Graph, TensorType
 
             graph = Graph(
@@ -605,9 +605,7 @@ class TestReaderMigration:
             session = InferenceSession(devices=[CPU()])
             try:
                 session.load(graph)
-            except Exception as e:
-                cause = e.__cause__ or e
-                assert "pre-jit" in str(cause), str(cause)
+            except CompilationStopped:
                 print("PASS")
             else:
                 raise AssertionError("load succeeded despite pre-jit")
