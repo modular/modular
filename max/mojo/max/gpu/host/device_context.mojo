@@ -53,7 +53,6 @@ from std.sys.compile import DebugLevel, OptimizationLevel
 from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
-    _current_target,
     is_triple,
 )
 from std.sys.defines import _is_bool_like
@@ -82,6 +81,7 @@ from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
 from std._gpu.host import get_gpu_target
+from .info import _device_type_encoder_target
 from std._gpu.host.info import GPUInfo
 
 from .compile import (
@@ -1418,7 +1418,7 @@ struct DevicePointer[
 struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
     """Provides a default implementation of the `DeviceTypeEncoder` trait."""
 
-    comptime _raw_mlir_target = _current_target()
+    comptime _raw_mlir_target = _device_type_encoder_target()
 
     def encode_device_ptr[
         DevicePointerType: DevicePointerLike

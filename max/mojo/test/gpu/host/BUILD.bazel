@@ -2,6 +2,15 @@ load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
+mojo_test(
+    name = "test_device_type_encoder_target.mojo.test",
+    srcs = ["test_device_type_encoder_target.mojo"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 # Metal-only: `MetalDeviceTypeEncoder._buffers` is Metal-specific state, so this
 # test is compatible only with the Apple GPU toolchain.
 mojo_test(

@@ -144,6 +144,8 @@ struct TargetAccelerator[
 trait TargetAcceleratorCollection:
     comptime vendor_name: String
 
+    comptime encode_device_types_with_host_layout: Bool = False
+
     comptime RAW_TARGETS: TypeList[Trait=TargetAcceleratorType]._mlir_type
 
     comptime TARGETS = TypeList[Trait=TargetAcceleratorType, Self.RAW_TARGETS]()

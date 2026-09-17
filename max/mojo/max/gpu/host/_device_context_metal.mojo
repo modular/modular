@@ -26,7 +26,7 @@ from std.memory import (
 )
 from std.reflection import SourceLocation
 from std.sys import size_of
-from std.sys.info import _current_target
+from .info import _device_type_encoder_target
 
 from .device_context import (
     _checked_call,
@@ -67,7 +67,7 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
         """Initializes the encoder with an empty buffer list."""
         self._buffers = []
 
-    comptime _raw_mlir_target = _current_target()
+    comptime _raw_mlir_target = _device_type_encoder_target()
 
     def encode_device_ptr[
         DevicePointerType: DevicePointerLike

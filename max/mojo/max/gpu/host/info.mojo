@@ -18,6 +18,12 @@ memory specifications, thread organization, and performance characteristics.
 """
 
 
+from std.sys.info import _TargetType, _accelerator_arch, _current_target
+
+from std._gpu.host.info import _get_gpu_target
+from std._plugin._overlay import ADDITIONAL_TARGETS
+
+
 @__doc_inline
 from std._gpu.host.info import (
     AcceleratorArchitectureFamily,
@@ -106,3 +112,20 @@ from std._gpu.host._builtin_targets import (
     _is_sm10x_gpu,
     _is_sm12x_gpu,
 )
+
+
+@inline(.always)
+def _device_type_encoder_target() -> _TargetType:
+    """Returns the target a `DeviceTypeEncoder` encodes for.
+
+    Encoded field offsets have to match the layout the device reads them with.
+
+    Returns:
+        The target to compute device type layout with.
+    """
+    comptime if _accelerator_arch() == "":
+        return _current_target()
+    elif ADDITIONAL_TARGETS.encode_device_types_with_host_layout:
+        return _current_target()
+    else:
+        return _get_gpu_target()
