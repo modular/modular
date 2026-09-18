@@ -218,18 +218,19 @@ LIT::replaceIndexRefsWithNamedRefs(FunctionType functionType,
   return replaceIndexRefsWithNamedRefs(functionType, explicitParamDecls, {});
 }
 
-void LIT::generateConversionThunkName(llvm::raw_ostream &os, Type expected,
-                                      Type actual) {
-  ASTType(expected).print(os, /*diags=*/{});
-  os << '|';
-  ASTType(actual).print(os, /*diags=*/{});
+void LIT::generateConversionThunkName(llvm::raw_ostream &os,
+                                      ArrayRef<Type> keys) {
 
+  for (auto k : keys) {
+    ASTType(k).print(os, /*diags=*/{});
+    os << '|';
+  }
   // Mix in the full signatures to disambiguate.
   std::string sigHash;
   llvm::raw_string_ostream sigHashOs(sigHash);
-  expected.print(sigHashOs);
-  actual.print(sigHashOs);
-  os << '|';
+  for (auto k : keys)
+    k.print(sigHashOs);
+
   os << llvm::utohexstr(llvm::xxh3_64bits(sigHash),
                         /*LowerCase=*/true, /*Width=*/16);
 }

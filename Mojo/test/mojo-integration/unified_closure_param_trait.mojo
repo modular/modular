@@ -16,19 +16,19 @@
 
 @fieldwise_init
 struct Foo[T: Writable](def(T)):
-    def __call__(mut self, arg: Self.T):
+    def __call__(self, arg: Self.T):
         print("via struct:", arg)
 
 
-def call_int[T: def(Int)](mut closure: T):
-    closure.__call__(1)
+def call_int[T: def(Int)](closure: T):
+    closure(1)
 
 
-def sink[T: Writable, C: def(T)](mut c: C, arg: T):
-    c.__call__(arg)
+def sink[T: Writable, C: def(T)](c: C, arg: T):
+    c(arg)
 
 
-def forward[T: Writable & TrivialRegisterPassable, C: def(T)](mut c: C, arg: T):
+def forward[T: Writable & TrivialRegisterPassable, C: def(T)](c: C, arg: T):
     # `sink` bounds the argument type more loosely, so `C` reaches its closure
     # trait only through a bridging thunk. The extension struct carrying that
     # thunk is parameterized on this scope's `T` and `C`.
@@ -57,3 +57,9 @@ def main():
     forward(add, 40)
     # CHECK: via extension: 40
     print("via extension:", total)
+
+    def thin_closure(x: Int):
+        # CHECK: via thin: 30
+        print("via thin:", x)
+
+    forward(thin_closure, 30)

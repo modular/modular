@@ -697,19 +697,29 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   }
 
   if (auto expectedTrait = dyn_cast<TraitType>(expectedType)) {
-    auto expected = extractClosureSymbol(shared, expectedTrait);
-    // We can infer from a parametric closure trait.
-    auto actual = extractClosureSymbol(
-        shared, ASTType(actualType).getProvidedTrait(shared));
-    if (actual && expected) {
-      FnTypeGeneratorType f0 = shared.getClosureFnSigWithoutSelf(actual);
-      FnTypeGeneratorType f1 = shared.getClosureFnSigWithoutSelf(expected);
-      // TODO: Be more specific about the matching failure!
-      if (failed(matchFunctionTypes(f0, f1)))
-        return error(MatchFailure::Unclassified{});
+    if (auto expected = extractClosureSymbol(shared, expectedTrait)) {
+      // We can infer from a parametric closure trait and a fn literal type.
+      FnTypeGeneratorType fnSigActual = [&]() {
+        if (auto actual = extractClosureSymbol(
+                shared, ASTType(actualType).getProvidedTrait(shared))) {
+          return shared.getClosureFnSigWithoutSelf(actual);
+        } else if (auto actual =
+                       dyn_cast<FnLiteralTypeGeneratorMetaType>(actualType)) {
+          return cast<FnTypeGeneratorType>(
+              actual.getType().getSymbolConstantAttr().getType());
+        }
+        return FnTypeGeneratorType();
+      }();
+      if (fnSigActual) {
+        FnTypeGeneratorType fnSigExpected =
+            shared.getClosureFnSigWithoutSelf(expected);
+        // TODO: Be more specific about the matching failure!
+        if (failed(matchFunctionTypes(fnSigActual, fnSigExpected)))
+          return error(MatchFailure::Unclassified{});
 
-      // The expected trait type might be refined.
-      expectedType = state.evaluator.getReboundType(expectedType);
+        // The expected trait type might be refined.
+        expectedType = state.evaluator.getReboundType(expectedType);
+      }
     }
   }
 

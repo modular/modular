@@ -176,8 +176,13 @@ public:
                                  ASTType sourceMetaType, SMLoc location);
   Type getConcreteClosureWrapperTypeForFnSymbol(ASTDecl &declScope, SMLoc loc,
                                                 PValue fnPValue);
+
   /// True if wrapping `fnSymbol` as a PtrWrapper produces `wrapper`.
   bool isWrapperStructForFnSymbol(PValue fnSymbol, LIT::StructType wrapper);
+
+  LIT::StructType getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
+                                                PValue fnPValue);
+  bool isInflatedClosureForFnSymbol(PValue fnSymbol, LIT::StructType wrapper);
 
 private:
   MLIRContext *ctx;
@@ -291,6 +296,10 @@ public:
   };
 
 private:
+  /// Augment a synthesized struct with trivial lifecycle traits.
+  void addTrivialClosureLifecycle(ASTDecl &structDecl,
+                                  const ClosureParent &callParent);
+
   /// Given a name, a list of builtin parent traits (like "Movable" for
   /// example), a location, and a populate method, return a trait declaration
   /// that inherits from the parent and contains the methods added to the

@@ -38,7 +38,7 @@
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!AnyType_Copyable_Movable>],
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable *(0,1)>>, imm *[0,1]>>],
 # CHECK-SAME:     :type #kgen.quote<!NoneType>,
-# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, imm_mem], "none", #lit.fn_meta_origin_data<2>>
+# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[imm_mem, imm_mem], "none", #lit.fn_meta_origin_data<2>>
 comptime ClosureTraitP = def[T: Copyable](List[T]) -> NoneType
 
 
@@ -47,7 +47,7 @@ comptime ClosureTraitP = def[T: Copyable](List[T]) -> NoneType
 struct Foo[T: AnyType](def(T)):
     # CHECK:      kgen.conformance @"##__mojo_closure__##"
     # CHECK-NEXT:   kgen.witness "__call__" : {{.*}} @unified_closures_parametric_trait::@Foo::@"__call__(unified_closures_parametric_trait::Foo[$0],$0)"<:!AnyType T>)
-    def __call__(mut self, arg: Self.T):
+    def __call__(self, arg: Self.T):
         pass
 
 
@@ -73,7 +73,7 @@ struct MemOnly:
 
 @fieldwise_init
 struct Foo[T: AnyType](def(T)):
-    def __call__(mut self, arg: Self.T):
+    def __call__(self, arg: Self.T):
         pass
 
 
@@ -191,11 +191,11 @@ def main():
 # CHECK-SAME:       #kgen.get_witness<{{.*}} *"#Closure_Ext#", @"##__mojo_closure__##"{{.*}}"__call__">
 
 
-def sink[T: AnyType, C: def(T)](mut c: C, arg: T):
+def sink[T: AnyType, C: def(T)](c: C, arg: T):
     pass
 
 
-def forward[T: TrivialRegisterPassable, C: def(t : T)](mut c: C, arg: T):
+def forward[T: TrivialRegisterPassable, C: def(t : T)](c: C, arg: T):
     # The extension leaves `c`'s physical type alone: `sink`'s `C` is bound to
     # a `#kgen.extension` anchored at `C`, with the struct above -- its
     # parameters bound to this scope's `T` and `C` -- supplying the conformance.

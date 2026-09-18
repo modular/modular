@@ -366,6 +366,7 @@ struct SharedState::Impl {
   /// closure instances the extension bridges between.
   DenseMap<std::pair<TraitSymbolAttr, TraitSymbolAttr>, StructDeclOp>
       paramClosureExtensions;
+  DenseMap<FnTypeGeneratorType, StructDeclOp> inflatedClosureStructs;
 
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
@@ -1855,6 +1856,14 @@ StructDeclOp SharedState::getOrCreateParamClosureExtension(
   if (!extension)
     extension = create();
   return extension;
+}
+
+StructDeclOp SharedState::getOrCreateInflatedClosureForSig(
+    FnTypeGeneratorType fnSig, CreateParamClosureExtensionFn create) {
+  StructDeclOp &inflated = impl->inflatedClosureStructs[fnSig];
+  if (!inflated)
+    inflated = create();
+  return inflated;
 }
 
 const llvm::MapVector<StringRef, Capture> &

@@ -318,7 +318,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Generate a mangled name.
   std::string name;
   llvm::raw_string_ostream os(name);
-  generateConversionThunkName(os, thunkSignature, actualSignature);
+  generateConversionThunkName(os, {thunkSignature, actualSignature});
 
   // Extract the callee's where-clause constraints from the rebound callee
   // type. The evaluator has already remapped index-based parameter references
@@ -1923,6 +1923,14 @@ canMetaTypeUpCastToImpl(SharedState &shared, SMLoc loc, ASTType fromType,
       return succeeded(shared.getClosureEmitter().isCompatibleWith(
           concreteWrapperType, traitDecl));
     }
+
+    if (TraitSymbolAttr tgtInst = extractClosureSymbol(shared, closureTrait)) {
+      auto srcSig = cast<FnTypeGeneratorType>(fnPValue.getType());
+      auto tgtSig = shared.getClosureFnSigWithoutSelf(tgtInst);
+      SyntheticNode dummyNode(declScope->getLoc());
+      return canConvertFunctionTypes(srcSig, tgtSig, &dummyNode, *declScope);
+    }
+
     // Maintain convertibility as a MLIR type ...
     return checkMLIRTypeConformance(shared, loc, closureTrait);
   };
@@ -2209,7 +2217,9 @@ static TriBool classifyImplicitConversionImpl(
       if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
         target = PValue(fnLiteral.getSymbolConstantAttr());
       if (shared.getClosureEmitter().isWrapperStructForFnSymbol(target,
-                                                                structTy))
+                                                                structTy) ||
+          shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
+                                                                  structTy))
         return cacheAndReturnVal(rvType, requiredType, true);
     }
   }
@@ -2281,6 +2291,18 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
           structWrapper, traitDecl);
       return emitMetaTypeToTraitConversion(
           {PValue(structWrapper), valueExpr.expr}, closureTrait);
+    }
+    if (auto tgtTrait = extractClosureSymbol(shared, closureTrait)) {
+      LIT::StructType structType =
+          shared.getClosureEmitter().getInflatedClosureForFnSymbol(
+              *this, valueExpr.expr->getLoc(), fnPValue);
+
+      // Now that we have the struct, upcast struct -> trait.
+      FailureOr<PValue> ret = emitTypeValueUpCastToTrait(
+          {PValue(structType), valueExpr.expr}, closureTrait);
+      assert(succeeded(ret) && "the literal struct to closure trait conversion "
+                               "must have a relevant case.");
+      return *ret;
     }
     // FnTypeGeneratorType is still a non-struct type...
     return bindNonStructTypeToTrait(valueExpr, anyTrait.getTraitType());
@@ -2463,7 +2485,9 @@ CValue IREmitter::emitImplicitConversionToType(
       if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
         target = PValue(fnLiteral.getSymbolConstantAttr());
       if (shared.getClosureEmitter().isWrapperStructForFnSymbol(target,
-                                                                structTy)) {
+                                                                structTy) ||
+          shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
+                                                                  structTy)) {
         return emitConstructorCall(
             structTy,
             CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));

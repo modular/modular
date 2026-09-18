@@ -108,8 +108,7 @@ bool isInternalName(StringRef name);
 /// signature `actual` into one of signature `expected`. The AST-level spelling
 /// of both types keeps the name readable, and a hash of the full signatures
 /// disambiguates types that share a spelling but differ in parameters.
-void generateConversionThunkName(llvm::raw_ostream &os, Type expected,
-                                 Type actual);
+void generateConversionThunkName(llvm::raw_ostream &os, ArrayRef<Type> keys);
 
 } // namespace M::KGEN::LIT
 

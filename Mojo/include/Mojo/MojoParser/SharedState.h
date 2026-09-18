@@ -612,6 +612,10 @@ public:
                                    TraitSymbolAttr tgtClosureInst,
                                    CreateParamClosureExtensionFn create);
 
+  StructDeclOp
+  getOrCreateInflatedClosureForSig(FnTypeGeneratorType fnSig,
+                                   CreateParamClosureExtensionFn create);
+
   /// Given a scope that refers to a nested function, return the set of captured
   /// values. The name of the capture is paired with the metadata.
   const llvm::MapVector<StringRef, Capture> &

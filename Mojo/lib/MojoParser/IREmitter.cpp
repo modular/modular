@@ -2325,7 +2325,8 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
       sig.getFnMetaOriginData().getIsNestedOriginsReadOnly(),
       sig.getFnMetaOriginData().getDefinesInteriorOrigins());
   SmallVector<ArgConvention> argConventions;
-  argConventions.push_back(ArgConvention::Mut);
+  // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
+  argConventions.push_back(ArgConvention::ImmMem);
   llvm::append_range(argConventions, sig.getFnMetadata().getArgConventions());
   auto metadata = FnMetadataAttr::get(
       ctx, argConventions, sig.getFnMetadata().getFnEffects(), originData);
