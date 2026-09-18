@@ -694,6 +694,27 @@ def test_split() raises:
     assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
+def _check_empty_sep_split(s: StaticString) raises:
+    var parts = s.split("")
+    assert_equal(len(parts), s.count_codepoints() + 2)
+    # An empty slice compares equal to "" wherever it points, so only these
+    # addresses tell a correct split from an out-of-bounds one.
+    assert_equal(Int(parts[0].unsafe_ptr()), Int(s.unsafe_ptr()))
+    assert_equal(
+        Int(parts[len(parts) - 1].unsafe_ptr()),
+        Int(s.unsafe_ptr()) + s.byte_length(),
+    )
+    assert_equal(StaticString("").join(parts), s)
+
+
+def test_split_empty_separator_bounds() raises:
+    _check_empty_sep_split("")
+    _check_empty_sep_split("1")
+    _check_empty_sep_split("123")
+    _check_empty_sep_split("héllo")
+    _check_empty_sep_split("🔥ab🔥")
+
+
 def test_splitlines() raises:
     comptime S = StaticString
 

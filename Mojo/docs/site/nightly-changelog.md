@@ -168,3 +168,6 @@ This version is still a work in progress.
   elements and add them yourself if you really want a sum.
 
 ## Fixed
+
+- Splitting on an empty separator no longer puts the trailing empty slice out
+  of bounds.

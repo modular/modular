@@ -2831,16 +2831,16 @@ def _split[
     var ptr = src_str.unsafe_ptr()
     var sep_len = sep.byte_length()
     if sep_len == 0:
-        var iterator = src_str.codepoint_slices()
-        var i_len = len(iterator) + 2
-        output = {capacity = i_len}
+        # The byte length bounds the codepoint count without a counting pass.
+        var byte_len = src_str.byte_length()
+        output = {capacity = byte_len + 2}
         output.append(S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=0)))
-        for s in iterator:
+        for s in src_str.codepoint_slices():
             output.append(s)
         output.append(
             S(
                 unsafe_from_utf8=Span(
-                    unsafe_ptr=ptr.unsafe_offset(i_len - 1), length=0
+                    unsafe_ptr=ptr.unsafe_offset(byte_len), length=0
                 )
             )
         )
