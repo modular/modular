@@ -193,6 +193,7 @@ class InklingDecoderLayer(Module):
     def __call__(
         self,
         hs: Sequence[TensorValue],
+        delta_in: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
         log_scaling: Sequence[TensorValue],
@@ -202,8 +203,50 @@ class InklingDecoderLayer(Module):
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
-        """Runs the layer over one ragged batch; compiled as a subgraph."""
-        norm_xs = forward_sharded_layers(self.attn_norm_shards, hs)
+        """Runs the layer over one ragged batch; compiled as a subgraph.
+
+        Takes the residual stream and the previous layer's unreduced
+        mlp-branch delta, and returns the same pair. Reducing the
+        predecessor's delta here, rather than at the end of the layer that
+        produced it, keeps the collective, the residual add and the norm in
+        one subgraph, which is where the graph compiler can fuse them. Layer
+        0 gets a zero delta so every layer shares one signature; the stack
+        reduces the last layer's delta.
+        """
+        hs, norm_xs = _reduce_add_norm(
+            delta_in, hs, self.attn_norm_shards, signal_buffers
+        )
+        return self._body(
+            hs,
+            norm_xs,
+            kv_collections,
+            input_row_offsets,
+            log_scaling,
+            conv_pools,
+            conv_rows,
+            has_initial_state,
+            cache_layer_idx,
+            signal_buffers,
+        )
+
+    def _body(
+        self,
+        hs: Sequence[TensorValue],
+        norm_xs: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        log_scaling: Sequence[TensorValue],
+        conv_pools: Sequence[Sequence[BufferValue]],
+        conv_rows: Sequence[Sequence[TensorValue]],
+        has_initial_state: Sequence[TensorValue],
+        cache_layer_idx: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Runs the layer from its attention norm's output to ``[hs, delta]``.
+
+        Split out for callers with no delta to reduce, see
+        :meth:`forward_standalone`.
+        """
         attention = [
             shard(
                 norm_xs[rank],
@@ -220,28 +263,86 @@ class InklingDecoderLayer(Module):
             for rank, shard in enumerate(self.attn_shards)
         ]
         # wo_ud is row-parallel: each rank holds a partial sum of the delta.
-        hs, norm_outs = self._branch_delta(
+        attn_delta = self._convolve(
             self.attn_sconv_shards,
             attention,
-            hs,
             [pools[ConvSite.ATTN_OUT] for pools in conv_pools],
             [rows[ConvSite.ATTN_OUT] for rows in conv_rows],
             has_initial_state,
             input_row_offsets,
-            signal_buffers,
-            self.mlp_norm_shards,
         )
-
-        return self._branch_delta(
+        hs, norm_outs = _reduce_add_norm(
+            attn_delta, hs, self.mlp_norm_shards, signal_buffers
+        )
+        mlp_delta = self._convolve(
             self.mlp_sconv_shards,
             self._feed_forward(norm_outs),
-            hs,
             [pools[ConvSite.MLP_OUT] for pools in conv_pools],
             [rows[ConvSite.MLP_OUT] for rows in conv_rows],
             has_initial_state,
             input_row_offsets,
+        )
+        return hs + mlp_delta
+
+    def forward_standalone(
+        self,
+        hs: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        log_scaling: Sequence[TensorValue],
+        conv_pools: Sequence[Sequence[BufferValue]],
+        conv_rows: Sequence[Sequence[TensorValue]],
+        has_initial_state: Sequence[TensorValue],
+        cache_layer_idx: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Runs the layer from a reduced residual stream to a reduced one.
+
+        For callers with no neighbouring layer to hand the delta to, such as
+        the MTP draft's single layer per depth: the attention norm runs on its
+        own and the layer's delta is reduced at the end, one collective per
+        branch.
+        """
+        norm_xs = forward_sharded_layers(self.attn_norm_shards, hs)
+        out = self._body(
+            hs,
+            norm_xs,
+            kv_collections,
+            input_row_offsets,
+            log_scaling,
+            conv_pools,
+            conv_rows,
+            has_initial_state,
+            cache_layer_idx,
             signal_buffers,
-        )[0]
+        )
+        n = len(hs)
+        return _reduce_delta(out[:n], out[n:], signal_buffers)
+
+    @staticmethod
+    def _convolve(
+        convs: Sequence[ShortConvolution],
+        partials: Sequence[TensorValue],
+        pools: Sequence[BufferValue],
+        rows: Sequence[TensorValue],
+        has_initial_state: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        """Convolves each rank's full-width partial sum of a branch's output.
+
+        The ranks are reduced afterwards; the convolution's linearity makes
+        that equivalent to reducing first.
+        """
+        return [
+            conv(
+                partials[rank],
+                pools[rank],
+                rows[rank],
+                input_row_offsets[rank],
+                has_initial_state[rank],
+            )
+            for rank, conv in enumerate(convs)
+        ]
 
     def _feed_forward(
         self, norm_xs: Sequence[TensorValue]
@@ -262,40 +363,44 @@ class InklingDecoderLayer(Module):
             )
         ]
 
-    def _branch_delta(
-        self,
-        convs: Sequence[ShortConvolution],
-        partials: Sequence[TensorValue],
-        hs: Sequence[TensorValue],
-        pools: Sequence[BufferValue],
-        rows: Sequence[TensorValue],
-        has_initial_state: Sequence[TensorValue],
-        input_row_offsets: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
-        norm: Sequence[RMSNorm] = (),
-    ) -> tuple[list[TensorValue], list[TensorValue]]:
-        """Returns ``hs`` plus this branch's convolved delta, and its norm.
 
-        Each rank convolves its own full-width partial sum and the ranks are
-        reduced afterwards, which the convolution's linearity makes equivalent
-        to reducing first.
-        """
-        convolved = [
-            conv(
-                partials[rank],
-                pools[rank],
-                rows[rank],
-                input_row_offsets[rank],
-                has_initial_state[rank],
-            )
-            for rank, conv in enumerate(convs)
-        ]
-        if self.num_devices > 1:
-            convolved = ops.allreduce.sum(convolved, signal_buffers)
-        outs = [h + delta for h, delta in zip(hs, convolved, strict=True)]
-        if not norm:
-            return outs, []
-        return outs, forward_sharded_layers(list(norm), outs)
+def _zero_deltas(hs: Sequence[TensorValue]) -> list[TensorValue]:
+    """A zero per-rank delta for a layer with no predecessor to inherit from.
+
+    Lets layer 0 share a compiled subgraph with its group. Reducing zeros
+    measures cheaper than the standalone norm kernel it replaces.
+    """
+    return [
+        ops.broadcast_to(ops.constant(0.0, h.dtype, device=h.device), h.shape)
+        for h in hs
+    ]
+
+
+def _reduce_delta(
+    hs: Sequence[TensorValue],
+    delta: Sequence[TensorValue],
+    signal_buffers: Sequence[BufferValue],
+) -> list[TensorValue]:
+    """Sums ``delta`` across ranks and adds it to the residual stream."""
+    if len(hs) > 1:
+        delta = ops.allreduce.sum(delta, signal_buffers)
+    return [h + d for h, d in zip(hs, delta, strict=True)]
+
+
+def _reduce_add_norm(
+    partials: Sequence[TensorValue],
+    hs: Sequence[TensorValue],
+    norm_shards: Sequence[RMSNorm],
+    signal_buffers: Sequence[BufferValue],
+) -> tuple[list[TensorValue], list[TensorValue]]:
+    """Reduces ``partials`` across ranks, adds them to ``hs``, and norms.
+
+    Returns ``(hs + reduced, norm(hs + reduced))``. The graph compiler fuses
+    the three into one collective launch, so the reduced sum never round-trips
+    through global memory.
+    """
+    outs = _reduce_delta(hs, partials, signal_buffers)
+    return outs, forward_sharded_layers(norm_shards, outs)
 
 
 def _subgraph_layer_groups(
@@ -539,8 +644,10 @@ class Inkling(Module):
             layer_idx: int, previous: list[TensorValue]
         ) -> list[Tree[Any]]:
             pools, rows = sites_for_layer(layer_idx)
+            # Each layer consumes and returns [hs..., delta...].
             return [
-                previous,
+                previous[:num_devices],
+                previous[num_devices:],
                 kv_collections[self.layer_kv_keys[layer_idx]],
                 row_offsets,
                 log_scaling,
@@ -555,16 +662,18 @@ class Inkling(Module):
                 signal_buffers,
             ]
 
-        hs = forward_sequential_layers(
+        h = forward_sequential_layers(
             list(self.layers),
             inputs_for_layer=inputs_for_layer,
-            initial_hidden_states=hs,
+            initial_hidden_states=hs + _zero_deltas(hs),
             subgraph_layer_groups=(
                 self.subgraph_groups if self.use_subgraphs else None
             ),
             name_for_subgraph=lambda group: self.subgraph_names[group],
             weight_prefix_for_layer=lambda layer_idx: f"layers.{layer_idx}.",
         )
+        # Only the last layer's delta is still unreduced.
+        hs = _reduce_delta(h[:num_devices], h[num_devices:], signal_buffers)
 
         if self.num_devices > 1:
             return distributed_logits_postprocess(

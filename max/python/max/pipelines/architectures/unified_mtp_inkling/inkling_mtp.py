@@ -129,7 +129,7 @@ class InklingMTPDepthLayer(Module):
         cache_idx = ops.constant(
             self.cache_layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
-        return self.decoder_layer(
+        return self.decoder_layer.forward_standalone(
             hs,
             kv_collections,
             input_row_offsets,
