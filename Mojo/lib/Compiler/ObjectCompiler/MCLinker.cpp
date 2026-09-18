@@ -350,9 +350,8 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   // Add RuntimeLibraryInfoWrapper for libcall lowering decisions.
   // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
   const llvm::TargetOptions &tmOptions = llvmTargetMachine.Options;
-  passMgr.add(new llvm::RuntimeLibraryInfoWrapper(
-      tmOptions.ExceptionModel, tmOptions.EABIVersion,
-      tmOptions.MCOptions.ABIName, tmOptions.VecLib));
+  passMgr.add(new llvm::RuntimeLibraryInfoWrapper(tmOptions.MCOptions.ABIName,
+                                                  tmOptions.VecLib));
 
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
                                 emitAssembly

@@ -1,35 +1,26 @@
 diff --git a/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp b/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp
-index c757e2b7af1d..8c5f4c7fbd5e 100644
+index 7c42451a8df8..2d6cd901606c 100644
 --- a/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp
 +++ b/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp
-@@ -1752,8 +1752,9 @@ size_t ObjectFileELF::GetSectionHeaderInfo(SectionHeaderColl &section_headers,
-         const ELFSectionHeaderInfo &sheader = *I;
+@@ -1754,7 +1754,7 @@ size_t ObjectFileELF::GetSectionHeaderInfo(SectionHeaderColl &section_headers,
          const uint64_t section_size =
              sheader.sh_type == SHT_NOBITS ? 0 : sheader.sh_size;
--        llvm::StringRef name(shstr_data.PeekCStr(I->sh_name));
+         llvm::StringRef name(shstr_data.PeekCStr(I->sh_name));
 -        I->section_name = name.str();
-+        ConstString name(shstr_data.PeekCStr(I->sh_name));
-+
-+        I->section_name = name;
++        I->section_name = ConstString(name);
  
          if (arch_spec.IsMIPS()) {
            uint32_t arch_flags = arch_spec.GetFlags();
-@@ -1911,11 +1912,11 @@ ObjectFileELF::GetSectionHeaderByIndex(lldb::user_id_t id) {
-   return nullptr;
- }
- 
--lldb::user_id_t ObjectFileELF::GetSectionIndexByName(llvm::StringRef name) {
--  if (name.empty() || !ParseSectionHeaders())
-+lldb::user_id_t ObjectFileELF::GetSectionIndexByName(const char *name) {
-+  if (!name || !name[0] || !ParseSectionHeaders())
+@@ -1917,7 +1917,7 @@ lldb::user_id_t ObjectFileELF::GetSectionIndexByName(llvm::StringRef name) {
+   if (name.empty() || !ParseSectionHeaders())
      return 0;
    for (size_t i = 1; i < m_section_headers.size(); ++i)
 -    if (m_section_headers[i].section_name == name)
-+    if (m_section_headers[i].section_name == ConstString(name))
++    if (m_section_headers[i].section_name.GetStringRef() == name)
        return i;
    return 0;
  }
-@@ -1959,7 +1960,7 @@ SectionType ObjectFileELF::GetSectionType(const ELFSectionHeaderInfo &H) const {
+@@ -1961,7 +1961,7 @@ SectionType ObjectFileELF::GetSectionType(const ELFSectionHeaderInfo &H) const {
    case SHT_DYNAMIC:
      return eSectionTypeELFDynamicLinkInfo;
    }
@@ -38,27 +29,25 @@ index c757e2b7af1d..8c5f4c7fbd5e 100644
  }
  
  static Permissions GetPermissions(const ELFSectionHeader &H) {
-@@ -2165,7 +2166,7 @@ void ObjectFileELF::CreateSections(SectionList &unified_section_list) {
+@@ -2167,7 +2167,7 @@ void ObjectFileELF::CreateSections(SectionList &unified_section_list) {
         I != m_section_headers.end(); ++I) {
      const ELFSectionHeaderInfo &header = *I;
  
 -    const std::string &name = I->section_name;
-+    ConstString &name = I->section_name;
++    llvm::StringRef name = I->section_name.GetStringRef();
      const uint64_t file_size =
          header.sh_type == SHT_NOBITS ? 0 : header.sh_size;
  
-@@ -2185,8 +2186,8 @@ void ObjectFileELF::CreateSections(SectionList &unified_section_list) {
+@@ -2187,7 +2187,7 @@ void ObjectFileELF::CreateSections(SectionList &unified_section_list) {
          this,            // ObjectFile to which this section belongs and should
                           // read section data from.
          SectionIndex(I), // Section ID.
--        ConstString(name),            // Section name.
--        sect_type,                    // Section type.
-+        name,            // Section name.
-+        sect_type,       // Section type.
+-        name,            // Section name.
++        name.str(),      // Section name.
+         sect_type,       // Section type.
          InfoOr->Range.GetRangeBase(), // VM address.
          InfoOr->Range.GetByteSize(),  // VM size in bytes of this section.
-         header.sh_offset,             // Offset of this section in the file.
-@@ -3412,7 +3413,7 @@ void ObjectFileELF::RelocateSection(lldb_private::Section *section)
+@@ -3423,7 +3423,7 @@ void ObjectFileELF::RelocateSection(lldb_private::Section *section)
    for (SectionHeaderCollIter I = m_section_headers.begin();
         I != m_section_headers.end(); ++I) {
      if (I->sh_type == SHT_RELA || I->sh_type == SHT_REL) {
@@ -67,19 +56,17 @@ index c757e2b7af1d..8c5f4c7fbd5e 100644
        if (hay_name.empty())
          continue;
        if (needle == hay_name || needlea == hay_name) {
-@@ -3759,8 +3760,8 @@ void ObjectFileELF::DumpELFSectionHeaders(Stream *s) {
+@@ -3770,7 +3770,7 @@ void ObjectFileELF::DumpELFSectionHeaders(Stream *s) {
         I != m_section_headers.end(); ++I, ++idx) {
      s->Printf("[%2u] ", idx);
      ObjectFileELF::DumpELFSectionHeader(s, *I);
 -    const std::string &section_name = I->section_name;
--    if (!section_name.empty())
-+    const char *section_name = I->section_name.AsCString("");
-+    if (section_name)
++    llvm::StringRef section_name = I->section_name.GetStringRef();
+     if (!section_name.empty())
        *s << ' ' << section_name << "\n";
    }
- }
 diff --git a/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.h b/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.h
-index 8adb8af10fe1..0736c6323ab7 100644
+index 8adb8af10fe1..977651ae8a9f 100644
 --- a/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.h
 +++ b/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.h
 @@ -182,7 +182,7 @@ private:
@@ -91,12 +78,3 @@ index 8adb8af10fe1..0736c6323ab7 100644
    };
  
    typedef std::vector<ELFSectionHeaderInfo> SectionHeaderColl;
-@@ -354,7 +354,7 @@ private:
-   /// index of the corresponding section or zero if no section with the given
-   /// name can be found (note that section indices are always 1 based, and so
-   /// section index 0 is never valid).
--  lldb::user_id_t GetSectionIndexByName(llvm::StringRef name);
-+  lldb::user_id_t GetSectionIndexByName(const char *name);
- 
-   /// Returns the section header with the given id or NULL.
-   const ELFSectionHeaderInfo *GetSectionHeaderByIndex(lldb::user_id_t id);
