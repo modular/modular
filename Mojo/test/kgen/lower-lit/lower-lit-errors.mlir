@@ -10,7 +10,7 @@ lit.struct.decl @foo<T: type> register_passable {
   lit.struct.field field : !kgen.struct<(T)>
 }
 
-// expected-error @below {{struct has recursive reference to itself}}
+// expected-error @below {{'bar' must not contain itself by value}}
 lit.struct.decl @bar register_passable {
   lit.struct.field address : !lit.struct<@foo<:type @bar>>
 }

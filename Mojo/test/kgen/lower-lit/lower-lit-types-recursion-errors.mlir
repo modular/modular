@@ -1,9 +1,10 @@
 // RUN: kgen-opt %s -lower-lit -split-input-file -verify-parameters \
 // RUN:   -verify-diagnostics
 
-// Struct layouts that are *wrongly* rejected: in every case below the recursion
-// is broken by an indirection, so the layout is finite and the struct should
-// lower. Each `expected-error` records today's incorrect behaviour.
+// Struct layouts that are legal but that this pass cannot build: in every case
+// below the recursion is broken by an indirection, so the layout is finite and
+// the struct should lower. Each `expected-error` records the limitation, which
+// the diagnostic reports as such rather than blaming the code.
 //
 // Every case here has one cause: the recursion reaches the layout through the
 // parameter list of a parametric type, where there is no indirection to erase
@@ -16,14 +17,15 @@
 // form of `@Ptr<:type @Node>`, which carries @Node's layout.
 //===----------------------------------------------------------------------===//
 
-// FIXME: should lower. Note the diagnostic also blames the wrong
-// decl - @Ptr is the wrapper that breaks the recursion, not the struct that
-// recurses.
-// expected-error @below {{struct has recursive reference to itself}}
+// FIXME: should lower. The error is anchored on the wrapper the cycle was
+// re-entered on, so a note names @Node, the struct the recursive field
+// actually belongs to.
+// expected-error @below {{'Ptr' requires a recursive layout, which is not supported}}
 lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
 
+// expected-note @below {{'Node' recurses through 'Ptr'}}
 lit.struct.decl @Node {
   lit.struct.field next : !kgen.struct<(!lit.struct<@Ptr<:type !lit.struct<@Node>>>)>
 }
@@ -35,7 +37,7 @@ lit.struct.decl @Node {
 //===----------------------------------------------------------------------===//
 
 // FIXME: should lower, same cause as above.
-// expected-error @below {{struct has recursive reference to itself}}
+// expected-error @below {{'Ptr' requires a recursive layout, which is not supported}}
 lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
@@ -44,6 +46,7 @@ lit.struct.decl @Wrap<ty: type> register_passable {
   lit.struct.field x : !kgen.struct<(ty)>
 }
 
+// expected-note @below {{'Node' recurses through 'Ptr'}}
 lit.struct.decl @Node {
   lit.struct.field next :
       !lit.struct<@Wrap<:type !lit.struct<@Ptr<:type !lit.struct<@Node>>>>>
@@ -61,7 +64,7 @@ lit.struct.decl @Node {
 lit.trait.decl @AnyType {}
 
 // FIXME: should lower, same cause as above.
-// expected-error @below {{struct has recursive reference to itself}}
+// expected-error @below {{'Ptr' requires a recursive layout, which is not supported}}
 lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
@@ -70,6 +73,7 @@ lit.struct.decl @Tup<Ts: !kgen.param_list<!lit.trait<@AnyType>>> register_passab
   lit.struct.field storage : !kgen.struct<:!kgen.param_list<!lit.trait<@AnyType>> Ts isParamPack>
 }
 
+// expected-note @below {{'Node' recurses through 'Ptr'}}
 lit.struct.decl @Node {
   lit.struct.field next : !lit.struct<@Tup<:param_list<trait<@AnyType>>
       [!lit.struct<@Ptr<:type !lit.struct<@Node>>>]>>
@@ -85,11 +89,12 @@ lit.struct.decl @Node {
 // ===----------------------------------------------------------------------===//
 
 // FIXME: should lower, same cause as above.
-// expected-error @below {{struct has recursive reference to itself}}
+// expected-error @below {{'Ptr' requires a recursive layout, which is not supported}}
 lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
 
+// expected-note @below {{'Node' recurses through 'Ptr'}}
 lit.struct.decl @Node {
   lit.struct.field next :
       !kgen.variant<!lit.struct<@Ptr<:type !lit.struct<@Node>>>, !kgen.scalar<index>>
@@ -102,7 +107,7 @@ lit.struct.decl @Node {
 //===----------------------------------------------------------------------===//
 
 // FIXME: should lower, same cause as above.
-// expected-error @below {{struct has recursive reference to itself}}
+// expected-error @below {{'Ptr' requires a recursive layout, which is not supported}}
 lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
@@ -111,6 +116,7 @@ lit.struct.decl @VarStorage<Ts: !kgen.param_list<!kgen.type>> register_passable 
   lit.struct.field impl : !kgen.variant<[rebind(:!kgen.param_list<!kgen.type> Ts)]>
 }
 
+// expected-note @below {{'Node' recurses through 'Ptr'}}
 lit.struct.decl @Node {
   lit.struct.field next : !lit.struct<@VarStorage<:param_list<type>
       [!lit.struct<@Ptr<:type !lit.struct<@Node>>>]>>
@@ -125,11 +131,12 @@ lit.struct.decl @Node {
 //===----------------------------------------------------------------------===//
 
 // FIXME: should lower, same cause as above.
-// expected-error @below {{struct has recursive reference to itself}}
+// expected-error @below {{'Ptr' requires a recursive layout, which is not supported}}
 lit.struct.decl @Ptr<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
 
+// expected-note @below {{'Rec' recurses through 'Ptr'}}
 lit.struct.decl @Rec<ty: type> {
   lit.struct.field next :
       !kgen.struct<(!lit.struct<@Ptr<:type !lit.struct<@Rec<:type ty>>>>)>

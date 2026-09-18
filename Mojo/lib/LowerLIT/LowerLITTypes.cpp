@@ -34,9 +34,13 @@
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include "Config/Version.h"
@@ -44,6 +48,285 @@
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+//===----------------------------------------------------------------------===//
+// Struct Layout Dependency Analysis
+//===----------------------------------------------------------------------===//
+//
+// A graph that captures struct references.
+
+namespace {
+struct StructRefNode {
+  /// Null on the virtual root.
+  StringAttr name;
+  /// The parameter positions the struct holds by value. A position counts when
+  /// building the struct's layout requires building the layout of the argument
+  /// in it: `@Box<ty> { v: !kgen.param<ty> }` has one, while
+  /// `@Ptr<ty> { p: !kgen.pointer<ty> }` has none, because the pointee is
+  /// erased.
+  llvm::BitVector byValueParams;
+  /// Every declared struct the fields reference, indirect ones included.
+  llvm::SmallSetVector<StructRefNode *, 4> refs;
+  /// Whether the struct is on a cycle of `refs`, self edges included. Lowering
+  /// one re-enters it, which is legal once by-value recursion has been ruled
+  /// out, but needs an erased stand-in layout to close the cycle with.
+  bool onCycle = false;
+};
+
+/// One node per declared struct, under a root that points at every node.
+struct StructRefGraph {
+  explicit StructRefGraph(StructDecls &decls) {
+    // Reserve up front: the nodes point at each other.
+    nodes.reserve(decls.structDecls.size());
+    for (auto &[name, decl] : decls.structDecls) {
+      StructRefNode &node = nodes.emplace_back();
+      node.name = name;
+      node.byValueParams.resize(decl.decls ? decl.decls.size() : 0);
+      byName[name] = &node;
+      root.refs.insert(&node);
+    }
+  }
+  StructRefGraph(const StructRefGraph &) = delete;
+
+  StructRefNode *lookup(StringAttr name) const { return byName.lookup(name); }
+
+  StructRefNode root;
+  std::vector<StructRefNode> nodes;
+  DenseMap<StringAttr, StructRefNode *> byName;
+};
+
+class StructDependencyAnalysis;
+
+/// Walks a struct's field types, recording on its node which of its own
+/// parameters it holds by value and which structs it references.
+class StructDependencyWalker {
+public:
+  StructDependencyWalker(ParamDeclArrayAttr params,
+                         StructDependencyAnalysis &analysis,
+                         StructRefGraph &graph, StructRefNode &self)
+      : analysis(analysis), graph(graph), self(self) {
+    if (params) {
+      for (auto [index, param] : llvm::enumerate(params.getValue()))
+        paramIndex[param.getName()] = index;
+    }
+  }
+
+  void walk(Type type, bool indirect) {
+    if (!type || !visit(type.getAsOpaquePointer(), indirect))
+      return;
+    // A pointer field's pointee is replaced with `none` and never substituted,
+    // so nothing reachable through it can constrain this layout.
+    if (auto ptr = dyn_cast<PointerType>(type)) {
+      walk(ptr.getElementType(), /*indirect=*/true);
+      walk(ptr.getAddressSpace(), indirect);
+      return;
+    }
+    // A function-typed field also lowers to a pointer.
+    if (isa<FuncTypeGeneratorType>(type)) {
+      walkSubElements(type, /*indirect=*/true);
+      return;
+    }
+    if (auto ref = dyn_cast<LIT::StructType>(type)) {
+      walkStructRef(ref, indirect);
+      return;
+    }
+    walkSubElements(type, indirect);
+  }
+
+  void walk(Attribute attr, bool indirect) {
+    if (!attr || !visit(attr.getAsOpaquePointer(), indirect))
+      return;
+    if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
+      if (!indirect)
+        markByValue(paramRef.getName());
+      // A parameter's declared type is not part of the layout of the struct
+      // declaring it, so there is nothing further to walk here.
+      return;
+    }
+    walkSubElements(attr, indirect);
+  }
+
+private:
+  /// Types and attributes are uniqued into a DAG, so a shared subterm can be
+  /// reached many ways.
+  bool visit(const void *ptr, bool indirect) {
+    return visited[indirect].insert(ptr).second;
+  }
+
+  void markByValue(StringAttr name) {
+    auto it = paramIndex.find(name);
+    // Not a parameter of this struct: it belongs to some nested signature.
+    if (it == paramIndex.end())
+      return;
+    if (it->second < self.byValueParams.size())
+      self.byValueParams.set(it->second);
+  }
+
+  void walkStructRef(LIT::StructType ref, bool indirect);
+
+  void walkSubElements(Type type, bool indirect) {
+    type.walkImmediateSubElements([&](Attribute attr) { walk(attr, indirect); },
+                                  [&](Type type) { walk(type, indirect); });
+  }
+  void walkSubElements(Attribute attr, bool indirect) {
+    attr.walkImmediateSubElements([&](Attribute attr) { walk(attr, indirect); },
+                                  [&](Type type) { walk(type, indirect); });
+  }
+
+  StructDependencyAnalysis &analysis;
+  StructRefGraph &graph;
+  StructRefNode &self;
+  DenseMap<StringAttr, unsigned> paramIndex;
+  /// Indexed by the indirection state the subterm was reached under.
+  DenseSet<const void *> visited[2];
+};
+
+/// Fills the struct graph over every declaration, rejecting by-value recursion
+/// on the way.
+///
+/// Each struct is walked once, after a depth-first visit of the structs it
+/// depends on. The one kind of dependency that cannot be met is a struct still
+/// being visited and which is a struct that holds, by value, something that
+/// holds it by value. This represents a layout with no finite size.
+class StructDependencyAnalysis {
+public:
+  StructDependencyAnalysis(StructDecls &decls, StructRefGraph &graph)
+      : decls(decls), graph(graph) {}
+
+  /// Walks every declaration. Fails once every by-value cycle is reported.
+  LogicalResult run() {
+    for (StructRefNode &node : graph.nodes) {
+      if (!state.contains(node.name))
+        visit(node);
+    }
+    return failure(anyIllegal);
+  }
+
+  /// Called by the walk of the struct on top of the stack for a struct it holds
+  /// by value, before the arguments passed to it are walked.
+  void markDependsOnByValue(StructRefNode &node) {
+    auto it = state.find(node.name);
+    if (it == state.end()) {
+      visit(node);
+    } else if (it->second == State::Visiting) {
+      anyIllegal = true;
+      ArrayRef<StringAttr> cycle(stack);
+      cycle = cycle.drop_front(llvm::find(cycle, node.name) - cycle.begin());
+      // One report per struct is enough to act on.
+      if (llvm::any_of(cycle,
+                       [&](StringAttr s) { return reported.contains(s); }))
+        return;
+      reported.insert(cycle.begin(), cycle.end());
+      auto diag = mlir::emitError(decls.get(node.name).loc)
+                  << "'" << node.name.getValue()
+                  << "' must not contain itself by value; store the recursive "
+                     "field behind a pointer";
+      for (StringAttr hop : cycle.drop_front()) {
+        diag.attachNote(decls.get(hop).loc)
+            << "'" << hop.getValue() << "' holds its parameter by value";
+      }
+    }
+  }
+
+private:
+  enum class State { Visiting, Done };
+
+  void visit(StructRefNode &node) {
+    state[node.name] = State::Visiting;
+    stack.push_back(node.name);
+    StructDecl &decl = decls.get(node.name);
+    StructDependencyWalker walker(decl.decls, *this, graph, node);
+    for (Type field : llvm::make_second_range(decl.fields))
+      walker.walk(field, /*indirect=*/false);
+    stack.pop_back();
+    state[node.name] = State::Done;
+  }
+
+  StructDecls &decls;
+  StructRefGraph &graph;
+  DenseMap<StringAttr, State> state;
+  SmallVector<StringAttr> stack;
+  DenseSet<StringAttr> reported;
+  bool anyIllegal = false;
+};
+
+void StructDependencyWalker::walkStructRef(LIT::StructType ref, bool indirect) {
+  StructRefNode *target = graph.lookup(ref.getName());
+  assert(target && "Reference to unknown struct");
+
+  self.refs.insert(target);
+
+  // Under an indirection nothing constrains the layout, so which positions the
+  // struct holds by value is beside the point.
+  if (indirect) {
+    for (TypedAttr arg : ref.getParamValues())
+      walk(arg, /*indirect=*/true);
+    return;
+  }
+
+  // Held by value, so an argument to a position the struct holds by value is
+  // held by value here too. Its positions are final once it has been visited.
+  analysis.markDependsOnByValue(*target);
+  const llvm::BitVector &argByValue = target->byValueParams;
+  for (auto [index, arg] : llvm::enumerate(ref.getParamValues())) {
+    bool byValueArg = index < argByValue.size() && argByValue.test(index);
+    walk(arg, !byValueArg);
+  }
+}
+
+} // namespace
+
+namespace llvm {
+template <>
+struct GraphTraits<StructRefGraph *> {
+  using NodeRef = StructRefNode *;
+  using ChildIteratorType =
+      llvm::SmallSetVector<StructRefNode *, 4>::const_iterator;
+
+  static NodeRef getEntryNode(StructRefGraph *graph) { return &graph->root; }
+  static ChildIteratorType child_begin(NodeRef node) {
+    return node->refs.begin();
+  }
+  static ChildIteratorType child_end(NodeRef node) { return node->refs.end(); }
+};
+} // namespace llvm
+
+/// Fills `graph` from every declaration, rejecting struct layouts that contain
+/// themselves by value, which have no finite size.
+static LogicalResult analyzeStructRefs(StructDecls &decls,
+                                       StructRefGraph &graph) {
+  if (failed(StructDependencyAnalysis(decls, graph).run()))
+    return failure();
+  // A struct is on a cycle exactly when its strongly connected component has
+  // another member, or it has an edge to itself.
+  for (auto scc = llvm::scc_begin(&graph); !scc.isAtEnd(); ++scc) {
+    if (scc.hasCycle()) {
+      for (StructRefNode *node : *scc)
+        node->onCycle = true;
+    }
+  }
+  return success();
+}
+
+/// Report a recursion the pass reached but could not break.
+static void reportUnsupportedRecursion(StructDecls &decls,
+                                       const StructRefGraph *graph,
+                                       StringAttr name) {
+  auto diag = mlir::emitError(decls.get(name).loc)
+              << "'" << name.getValue()
+              << "' requires a recursive layout, which is not supported";
+  if (!graph)
+    return;
+
+  StructRefNode *wrapper = graph->lookup(name);
+  for (const StructRefNode &owner : graph->nodes) {
+    if (&owner == wrapper || !owner.onCycle || !owner.refs.contains(wrapper))
+      continue;
+    diag.attachNote(decls.get(owner.name).loc)
+        << "'" << owner.name.getValue() << "' recurses through '"
+        << name.getValue() << "'";
+  }
+}
 
 namespace {
 /// A DomainAwareReplacer that distinguishes the two roles of a mojo type:
@@ -131,6 +414,9 @@ public:
   /// type (parameter values included). Pointer and function-generator fields
   /// are erased to pointer-sized indirections.
   llvm::DenseMap<LIT::StructType, Type> erasedStructs;
+
+  /// The graph of struct -> struct references.
+  const StructRefGraph *structGraph = nullptr;
 };
 
 using TypeDomain = LowerLITReplacer::TypeDomain;
@@ -396,12 +682,11 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   for (TypeDomain domain : {TypeDomain::AsType, TypeDomain::AsValue}) {
     // Simply report the error after cycle detected.
     replacer.addCycleBreaker(
-        [&decls](Type t) -> std::optional<Type> {
-          auto structTp = dyn_cast<LIT::StructType>(t);
-          if (structTp) {
-            // Simply return a nullptr to signal a error has occurs.
-            mlir::emitError(decls.get(structTp.getName()).loc,
-                            "struct has recursive reference to itself");
+        [&decls, &replacer](Type t) -> std::optional<Type> {
+          if (auto structTp = dyn_cast<LIT::StructType>(t)) {
+            // Returning a null Type signals that an error occurred.
+            reportUnsupportedRecursion(decls, replacer.structGraph,
+                                       structTp.getName());
             return Type();
           }
           // Should be unreachable? must be a aggregated type in order to have
@@ -539,8 +824,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
           return std::nullopt;
         auto it = replacer.erasedStructs.find(structTp);
         if (it == replacer.erasedStructs.end()) {
-          mlir::emitError(decls.get(structTp.getName()).loc,
-                          "struct has recursive reference to itself");
+          reportUnsupportedRecursion(decls, replacer.structGraph,
+                                     structTp.getName());
           return Type();
         }
         return it->second;
@@ -684,135 +969,6 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       TypeDomain::AsValue);
 }
 
-// Check if there exists an illegal recursion among struct decls.
-static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
-  struct RecursionFrame {
-    // The type forming an indirection boundary (a function type or a pointer)
-    Type boundary;
-    StringAttr structName;
-
-    bool isBoundary() const { return static_cast<bool>(boundary); }
-  };
-  enum class StructRecursionStatus { NoMatch, Boundary, Recursive };
-
-  SmallVector<RecursionFrame> recursionStack;
-  auto containsBoundary = [&](Type type) {
-    return llvm::any_of(recursionStack, [&](const RecursionFrame &frame) {
-      return frame.boundary == type;
-    });
-  };
-  auto getStructRecursionStatus = [&](StringAttr name) {
-    bool crossedBoundary = false;
-    for (const RecursionFrame &frame : llvm::reverse(recursionStack)) {
-      if (frame.isBoundary())
-        crossedBoundary = true;
-      if (frame.structName == name)
-        return crossedBoundary ? StructRecursionStatus::Boundary
-                               : StructRecursionStatus::Recursive;
-    }
-    return StructRecursionStatus::NoMatch;
-  };
-
-  // DFS through the parametric types to see if there is recursion.
-  mlir::AttrTypeReplacer dfs;
-  auto walkBehindBoundary =
-      [&](Type boundary, llvm::function_ref<LogicalResult()> walkContents)
-      -> std::pair<Type, WalkResult> {
-    if (containsBoundary(boundary))
-      return std::make_pair(boundary, WalkResult::skip());
-
-    recursionStack.push_back({boundary, StringAttr()});
-    LogicalResult walked = walkContents();
-    recursionStack.pop_back();
-    if (failed(walked))
-      return std::make_pair(Type(), WalkResult::interrupt());
-    return std::make_pair(boundary, WalkResult::skip());
-  };
-  dfs.addReplacement([&](FuncTypeGeneratorType type) {
-    return walkBehindBoundary(type, [&] {
-      for (Type inputParamType : type.getInputParamTypes())
-        if (!dfs.replace(inputParamType))
-          return failure();
-      if (!dfs.replace(type.getBody()))
-        return failure();
-      if (PogListAttr metadata = type.getParamListAttrs())
-        if (!dfs.replace(metadata))
-          return failure();
-      return LogicalResult::success();
-    });
-  });
-  dfs.addReplacement([&](PointerType type) {
-    return walkBehindBoundary(type, [&] {
-      return LogicalResult::success(
-          static_cast<bool>(dfs.replace(type.getElementType())));
-    });
-  });
-
-  std::function<LogicalResult(StringAttr)> computeLoweredType =
-      [&](StringAttr name) -> LogicalResult {
-    StructDecl &decl = decls.get(name);
-    if (decl.done)
-      return success();
-
-    // If the struct is already in the active path, then there is recursion.
-    if (getStructRecursionStatus(name) == StructRecursionStatus::Recursive) {
-      // TODO: Improve the error message. We could show the recursive path.
-      mlir::emitError(decl.loc, "struct has recursive reference to itself");
-      return failure();
-    }
-    if (getStructRecursionStatus(name) == StructRecursionStatus::Boundary)
-      return success();
-
-    recursionStack.push_back({Type(), name});
-
-    // Now recurse on the field types.
-    for (Type type : llvm::make_second_range(decl.fields)) {
-      if (!dfs.replace(type)) {
-        recursionStack.pop_back();
-        return failure();
-      }
-    }
-    // We know the type can be lowered.
-    recursionStack.pop_back();
-    decl.done = true;
-    return success();
-  };
-
-  dfs.addReplacement([&](LIT::StructType ref) -> std::pair<Type, WalkResult> {
-    StringAttr name = ref.getName();
-    // Break cycles by checking whether the reference points back into the
-    // active struct-layout path before crossing a function-typed field.
-    StructRecursionStatus status = getStructRecursionStatus(name);
-    if (status == StructRecursionStatus::Recursive) {
-      mlir::emitError(decls.get(name).loc,
-                      "struct has recursive reference to itself");
-      return {{}, WalkResult::interrupt()};
-    }
-    if (status == StructRecursionStatus::Boundary) {
-      decls.get(name).needsErasure = true;
-      return {ref, WalkResult::skip()};
-    }
-
-    // Recurse into a the definition of a struct.
-    if (failed(computeLoweredType(name)))
-      return {{}, WalkResult::interrupt()};
-    return {ref, WalkResult::skip()};
-  });
-
-  dfs.addReplacement([&](SugarAttr sugar) -> std::pair<Attribute, WalkResult> {
-    // Only look at the canonical value, not the sugar.
-    return {dfs.replace(sugar.getCanonical()), WalkResult::skip()};
-  });
-
-  // Start from any struct and make sure our DFS terminates.
-  for (auto &[name, decl] : decls.structDecls) {
-    (void)decl;
-    if (failed(computeLoweredType(name)))
-      return failure();
-  }
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // Type Lowering
 //===----------------------------------------------------------------------===//
@@ -821,7 +977,8 @@ namespace {
 /// Struct operations need to refer to the struct declaration symbol.
 struct LITTypeLowerer : public IRRewriter, LowerLITReplacer {
   explicit LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
-                          mlir::LockedSymbolTableCollection &symtab);
+                          mlir::LockedSymbolTableCollection &symtab,
+                          const StructRefGraph &structGraph);
 
   /// Get the index of the struct field.
   int getField(StringAttr name, LIT::StructType ref) {
@@ -901,9 +1058,11 @@ static DebugInfo::DIType buildDebugInfoForStructRef(
 }
 
 LITTypeLowerer::LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
-                               mlir::LockedSymbolTableCollection &symtab)
+                               mlir::LockedSymbolTableCollection &symtab,
+                               const StructRefGraph &structGraph)
     : IRRewriter(module.getContext()), evalContext(module, symtab, structDecls),
       structDecls(structDecls) {
+  this->structGraph = &structGraph;
   populateReplacer(structDecls, *this, evalContext, module.getContext());
 
   // Build a converter to handle updating converted types within debug info
@@ -1256,12 +1415,16 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
 
 LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
                                  mlir::LockedSymbolTableCollection &symtab) {
-  // Do a simple recursive type detection, this does not guarantees completeness
-  // as it does not take parameter into account. Additional cycle detection will
-  // be performed during lowering.
-  if (failed(detectIllegalStructDeclsRecursion(state)))
+  // Reject the layouts that contain themselves by value.
+  StructRefGraph structGraph(state);
+  if (failed(analyzeStructRefs(state, structGraph)))
     return failure();
-  LITTypeLowerer b(module, state, symtab);
+  // A struct whose lowering re-enters itself needs an erased stand-in layout
+  // pre-built for the cycle breaker to substitute.
+  for (const StructRefNode &node : structGraph.nodes)
+    if (node.onCycle)
+      state.get(node.name).needsErasure = true;
+  LITTypeLowerer b(module, state, symtab, structGraph);
 
   // Lower operations first.
   WalkResult result = module.walk([&](Operation *op) -> WalkResult {
