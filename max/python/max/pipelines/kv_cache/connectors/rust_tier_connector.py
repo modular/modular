@@ -22,6 +22,11 @@ starving GPU utilization).
 
 How it works:
 
+* The Rust connector answers only which blocks it holds (``lookup``) and loads
+  exactly the blocks it is handed (``load``), so it carries no notion of
+  attention shape, window widths or null blocks. What that presence is worth is
+  decided here, with the :mod:`~max.pipelines.kv_cache.prefix_hit` rules the
+  device pools and the dKV connector also run.
 * ``load``/``offload`` run on the scheduler thread (GIL released via pyo3) and
   do only cheap host block-pool bookkeeping, then hand the H2D/D2H copies and
   disk I/O to background Rust lanes. They return immediately with a transfer
@@ -47,7 +52,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import NamedTuple, Protocol
 
 import psutil
@@ -66,12 +71,19 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ..kv_connector import (
     ByteCount,
+    CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
     TransferDirection,
 )
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
+)
+from ..prefix_hit import (
+    blocks_held_of_hit,
+    longest_full_attention_hit,
+    longest_joint_prefix_hit,
+    longest_sliding_window_hit,
 )
 from ._offload_dir import OffloadDirectory, acquire_offload_dir
 
@@ -109,6 +121,32 @@ def _check_host_memory_capacity(requested_bytes: int) -> None:
             f"memory but only {to_human_readable_bytes(available_bytes)} is "
             "available. Reduce "
             "host_offload_max_gb or provision more host memory."
+        )
+
+
+# The device block id every leaf's null pages point at, as the block manager
+# allocates it, which is what a sliding leaf's slots below the window hold.
+_NULL_BLOCK_ID = 0
+
+
+def _validate_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
+    """Rejects a leaf tree whose hit the rules below cannot decide.
+
+    They cover full attention and sliding windows. A recurrent leaf's hit is
+    the deepest published state rather than a run, so treating it as either
+    shape would claim a prefix whose state pages are not the ones the row
+    needs. Refuse at construction instead of serving wrong KV, as
+    ``_validate_dkv_leaves`` does.
+    """
+    unsupported = {
+        leaf_id: group_id
+        for leaf_id, group_id in leaves.items()
+        if not (group_id.is_full() or group_id.is_sliding_window())
+    }
+    if unsupported:
+        raise ValueError(
+            "RustTierConnector supports full-attention and sliding-window "
+            f"leaves only. Found: {unsupported}"
         )
 
 
@@ -171,10 +209,20 @@ class _RustTierTransfer:
     positional ``g0_blocks_per_leaf`` corresponds to.
     """
 
-    def __init__(self, inner: _RawTierTransfer, leaves: Sequence[str]) -> None:
+    def __init__(
+        self,
+        inner: _RawTierTransfer,
+        leaves: Sequence[str],
+        g0_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
+    ) -> None:
         self._inner = inner
-        self._g0_blocks_per_leaf: Mapping[str, Sequence[int]] = dict(
-            zip(leaves, inner.g0_blocks_per_leaf, strict=True)
+        # A load passes its own rows: the Rust side is told exactly which
+        # blocks to copy, so it never sees the null slots a windowed leaf
+        # carries below its window, and those are padded back in here.
+        self._g0_blocks_per_leaf: Mapping[str, Sequence[int]] = (
+            dict(zip(leaves, inner.g0_blocks_per_leaf, strict=True))
+            if g0_blocks_per_leaf is None
+            else g0_blocks_per_leaf
         )
 
     @property
@@ -242,6 +290,10 @@ class RustTierConnector(KVConnector):
         Takes ownership of ``disk_dir``, releasing it in :py:meth:`shutdown`.
         It is ``None`` for a host-only connector with no disk last level.
         """
+        # Before the multi-GiB pinned staging region below, so a tree this
+        # connector cannot serve costs nothing to refuse.
+        _validate_leaves(leaves)
+
         # Lazy import: OSS MAX can import this module without the extension.
         from kv_tier_connector import (  # type: ignore[import-not-found]
             TierConnector,
@@ -272,6 +324,7 @@ class RustTierConnector(KVConnector):
                     )
 
         self._leaves = leaves
+        self._page_size = page_size
         self._disk_dir = disk_dir
         self._shutdown = False
 
@@ -290,12 +343,7 @@ class RustTierConnector(KVConnector):
                 "no disk tier the host tier is the last level."
             )
 
-        # Convert the KVCacheGroupId to an int for the Rust connector.
-        group_ids = [
-            group_id.blocks_in_window(page_size) for group_id in leaves.values()
-        ]
         self._rust = TierConnector(
-            group_ids,
             bytes_per_leaf,
             host_offload_num_huge_blocks,
             cache_ratios,
@@ -422,6 +470,74 @@ class RustTierConnector(KVConnector):
     def name(self) -> str:
         return "RustTieredConnector"
 
+    def _blocks_in_window_of(self, leaf_id: str) -> int | None:
+        """This leaf's window in whole blocks, or ``None`` if it attends fully.
+
+        ``KVCacheGroupId.blocks_in_window`` returns ``-1`` for a full leaf,
+        which reads as a width rather than an absence one call site later, so
+        the sentinel is translated here and never leaves this method.
+        """
+        group_id = self._leaves[leaf_id]
+        if not group_id.is_sliding_window():
+            return None
+        return group_id.blocks_in_window(self._page_size)
+
+    def _leaf_hit_rule(
+        self, leaf_id: str, resident: Sequence[bool]
+    ) -> Callable[[int], int]:
+        """How much of a candidate prefix this leaf serves, given residency.
+
+        The rules are the cache manager's -- the same functions the device tier
+        and the dKV connector run in :mod:`~max.pipelines.kv_cache.prefix_hit`
+        -- with this connector's host/disk residency swapped in. The connector
+        supplies presence and the shape of the leaf; it does not decide what
+        presence is worth.
+        """
+        blocks_in_window = self._blocks_in_window_of(leaf_id)
+        if blocks_in_window is not None:
+            return lambda candidate: longest_sliding_window_hit(
+                candidate, blocks_in_window, resident.__getitem__
+            )
+        return lambda candidate: longest_full_attention_hit(
+            candidate, resident.__getitem__
+        )
+
+    def _longest_joint_hit(self, block_hashes: Sequence[bytes]) -> int:
+        """The longest prefix of ``block_hashes`` every leaf can serve at once.
+
+        One ``lookup`` covers the whole cache tree -- the Rust side answers
+        ``(leaf_idx, hash)`` pairs positionally, so the flat answer is cut back
+        into a mask per leaf -- and the cache manager's rules decide what that
+        presence is worth.
+        """
+        width = len(block_hashes)
+        if not width:
+            return 0
+        leaf_ids = list(self._leaves)
+        resident = self._rust.lookup(
+            [
+                (leaf_idx, block_hash)
+                for leaf_idx in range(len(leaf_ids))
+                for block_hash in block_hashes
+            ]
+        )
+        # O(1), not O(blocks): a mis-sized answer has to fail here rather than
+        # as an IndexError inside a serving request.
+        if len(resident) != len(leaf_ids) * width:
+            raise ValueError(
+                f"kv_tier_connector lookup answered {len(resident)} blocks for "
+                f"a {len(leaf_ids)}-leaf tree over {width} blocks"
+            )
+        return longest_joint_prefix_hit(
+            width,
+            [
+                self._leaf_hit_rule(
+                    leaf_id, resident[idx * width : (idx + 1) * width]
+                )
+                for idx, leaf_id in enumerate(leaf_ids)
+            ],
+        )
+
     def load(
         self,
         block_ids: Mapping[str, Sequence[int]],
@@ -429,6 +545,14 @@ class RustTierConnector(KVConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
     ) -> KVConnectorTransfer:
+        """Loads the prefix of ``block_hashes`` every leaf can serve at once.
+
+        Two phases: :meth:`_longest_joint_hit` asks the tiers what they hold
+        and settles how much of it is serviceable, then the Rust connector is
+        handed each leaf's exact share to copy. Unlike dKV's, both run on this
+        thread against tiers this process owns, with only the ``reclaim`` below
+        between them, so the lookup cannot go stale.
+        """
         # ``hint`` is ignored: every tier this connector owns is host-local, so
         # a hint naming the instances that hold a prefix has nothing to route.
         if block_ids.keys() != self._leaves.keys():
@@ -436,10 +560,72 @@ class RustTierConnector(KVConnector):
                 f"RustTierConnector.load block_ids keys {sorted(block_ids)} do not "
                 f"match the connector's leaves {sorted(self._leaves)}"
             )
-        block_ids_2d = [block_ids[leaf_id] for leaf_id in self.leaves]
+        leaf_ids = list(self._leaves)
+        # Nothing was copied, so there is nothing for the manager to cordon or
+        # pin; an already-complete transfer with empty rows is what it reads as
+        # a miss.
+        miss = CompletedTransfer.load(leaf_ids)
+
+        # Apply what the lanes have handed back before looking anything up, so
+        # the lookup reads the same tiers the load will. This is the only
+        # mutation between the two, and it publishes and frees rather than
+        # evicting, so nothing the lookup reported can move.
+        self._rust.reclaim()
+        aligned = self._longest_joint_hit(block_hashes)
+        if aligned == 0:
+            return miss
+
+        # Every leaf's blocks END at the agreed bound, so a leaf holding only
+        # part of it holds the tail: the whole prefix for a full leaf, the
+        # window for a windowed one, whose blocks below it are null. This is
+        # NOT the hit depth -- a windowed leaf's hit covers the whole prefix
+        # while the leaf holds only its window.
+        wanted = {
+            leaf_id: blocks_held_of_hit(
+                aligned, self._blocks_in_window_of(leaf_id)
+            )
+            for leaf_id in leaf_ids
+        }
+        # A row shorter than its share slices short here, and the Rust side
+        # refuses a leaf handed fewer destination blocks than hashes rather
+        # than writing one leaf's blocks into another's slots. Reachable only
+        # if `num_blocks_needed_for_connector_load` and this disagree.
+        rows = {
+            leaf_id: list(block_ids[leaf_id])[: wanted[leaf_id]]
+            for leaf_id in leaf_ids
+        }
+        inner = self._rust.load(
+            [rows[leaf_id] for leaf_id in leaf_ids],
+            [
+                list(block_hashes[aligned - wanted[leaf_id] : aligned])
+                for leaf_id in leaf_ids
+            ],
+            replica_idx,
+        )
+        posted = [list(blocks) for blocks in inner.g0_blocks_per_leaf]
+        if posted != [rows[leaf_id] for leaf_id in leaf_ids]:
+            # The one way this happens is the Rust side giving the whole load
+            # up rather than truncating it -- its host pool is saturated by
+            # in-flight transfers, so a disk promotion had nowhere to land. It
+            # submits nothing and warns, which is what makes dropping the
+            # handle safe; a partial post would strand the blocks it pinned.
+            assert not any(posted), (
+                f"kv_tier_connector posted a partial load: asked {rows}, "
+                f"it reports {posted}"
+            )
+            return miss
+        # Every leaf's row must be exactly `aligned` long -- Jenga rejects
+        # ragged rows -- so the slots a windowed leaf has slid past get the
+        # null block, as `SlidingWindowKVGroupCoordinator.claim_hit_blocks`
+        # gives them for the device tier.
         return _RustTierTransfer(
-            self._rust.load(block_ids_2d, list(block_hashes), replica_idx),
-            list(self.leaves),
+            inner,
+            leaf_ids,
+            {
+                leaf_id: [_NULL_BLOCK_ID] * (aligned - wanted[leaf_id])
+                + rows[leaf_id]
+                for leaf_id in leaf_ids
+            },
         )
 
     def offload(
@@ -487,7 +673,10 @@ class RustTierConnector(KVConnector):
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
     ) -> tuple[int, int]:
-        return self._rust.count_cached_prefix(list(block_hashes))
+        # Read-only, so no ``reclaim`` first: this reports what the tiers hold
+        # right now, and callers treat it as an estimate. The host/disk split
+        # the tuple used to carry is gone; callers only use the total.
+        return self._longest_joint_hit(block_hashes), 0
 
     def shutdown(self) -> None:
         if self._shutdown:
