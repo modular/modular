@@ -95,7 +95,7 @@ def test_nightly_8xb200_pinned() -> None:
 def test_8xmi355_stays_opt_in() -> None:
     """8xMI355 nodes are scarce, so landing there must be a deliberate choice.
 
-    Pinning the schedule means a model added without an 8xMI355 exclusion fails
+    Pinning the schedule means a model that lists 8xMI355 in its HW tags fails
     here instead of quietly consuming the runner. Widen the expectation only
     when a model is meant to run on it.
     """

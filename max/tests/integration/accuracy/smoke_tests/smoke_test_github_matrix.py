@@ -31,108 +31,95 @@ RUNNERS = {
     "8xMI355": "modrunner-mi355-8x",
 }
 
-# Tags: skip model on multi-GPU runners.
-XL = {"8xB200", "4xMI355", "8xMI355"}
-MULTI = {"2xB200", "2xMI355"} | XL
-NON_XL = set(RUNNERS) - XL
-DISABLE = set(RUNNERS)
-B200_2X_ONLY = set(RUNNERS) - {"2xB200"}
-B200_8X_ONLY = set(RUNNERS) - {"8xB200"}
-# The AMD members of XL. A B200-only model excludes the whole set rather than
-# naming one runner, so adding the next AMD runner is a change here and not a
-# sweep over every entry that forgot to mention it.
-AMD_XL = {"4xMI355", "8xMI355"}
+_1xB200 = {"B200"}
+_1xMI355 = {"MI355"}
+_2xB200 = {"2xB200"}
+_2xMI355 = {"2xMI355"}
+_4xMI355 = {"4xMI355"}
+_8xB200 = {"8xB200"}
+_8xMI355 = {"8xMI355"}
+DISABLE: set[str] = set()
 
-# Model → set of excluded runners. A model runs on all HW by default; listing
-# a runner, like "MI355", excludes the model from running on that HW.
-#   - use XL           to skip on 8xB200, 4xMI355 and 8xMI355
-#   - use MULTI        to skip on all multi-GPU runners
-#   - use NON_XL       to skip on everything except 8xB200, 4xMI355 and 8xMI355
-#   - use DISABLE      to skip on all runners (temporarily disable a model)
+# Model → HW it runs on. DISABLE runs nowhere.
 #
-# If you want to add a model to the smoke test:
-#   1. Trigger the smoke test job with the model name you want to add:
-#   https://github.com/modularml/modular/actions/workflows/pipelineVerification.yaml
-#   2. Review the results, and the need for GPU exclusions (if any)
-#   3. Add the model to the dictionary below, with the appropriate exclusions
-#    3a) For VLMs, add it to the is_vision_model check in smoke_test.py
-#    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
+# To add a model, trigger the smoke test with it first:
+# https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
+# then list it below with the HW it passed on. VLMs also go in is_vision_model
+# and reasoning models in is_reasoning_model, both in smoke_test.py.
 # fmt: off
 HF_MODELS: Mapping[str, set[str]] = {
-    "allenai/Olmo-3-7B-Instruct": MULTI,
-    "allenai/olmOCR-2-7B-1025-FP8": MULTI,
-    "amd/Kimi-K2.7-Code-MXFP4": NON_XL | {"8xB200", "8xMI355"},
-    "nvidia/Kimi-K2.7-Code-NVFP4": NON_XL | AMD_XL,
-    "amd/MiniMax-M3-MXFP4": NON_XL | {"8xB200", "8xMI355"},
+    "allenai/Olmo-3-7B-Instruct": _1xB200 | _1xMI355,
+    "allenai/olmOCR-2-7B-1025-FP8": _1xB200 | _1xMI355,
+    "amd/Kimi-K2.7-Code-MXFP4": _4xMI355,
+    "nvidia/Kimi-K2.7-Code-NVFP4": _8xB200,
+    "amd/MiniMax-M3-MXFP4": _4xMI355,
     "ByteDance-Seed/academic-ds-9B": DISABLE,  # SERVOPT-1120
     "deepseek-ai/DeepSeek-V2-Lite-Chat": DISABLE,  # SERVOPT-1120
-    "deepseek-ai/DeepSeek-V3.1-Terminus": NON_XL | AMD_XL,
+    "deepseek-ai/DeepSeek-V3.1-Terminus": _8xB200,
     "google/diffusiongemma-26B-A4B-it": DISABLE,
-    "google/gemma-3-1b-it": MULTI | {"MI355"},  # TODO(KERN-3014)
-    "google/gemma-3-27b-it": MULTI,
-    "google/gemma-4-26B-A4B-it": MULTI,
-    "google/gemma-4-31B-it": MULTI,
-    "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"MI355"},
+    "google/gemma-3-1b-it": _1xB200,  # TODO(KERN-3014): MI355
+    "google/gemma-3-27b-it": _1xB200 | _1xMI355,
+    "google/gemma-4-26B-A4B-it": _1xB200 | _1xMI355,
+    "google/gemma-4-31B-it": _1xB200 | _1xMI355,
+    "nvidia/Gemma-4-26B-A4B-NVFP4": _1xB200,
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
-    "nvidia/Gemma-4-31B-IT-NVFP4": XL | {"MI355", "2xMI355"},
-    "meta-llama/Llama-3.1-8B-Instruct": MULTI,
-    "microsoft/Phi-3.5-mini-instruct": MULTI,
-    "microsoft/phi-4": MULTI,
-    # MODELS-1611: MXFP8 runs on 8xMI355 -- the one model that wants the AMD 8x
-    # runner, hence the literal 4xMI355 where its neighbours use AMD_XL. 8xB200
-    # serves the production MTP recipe, which is the __mtp alias below.
-    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "8xB200"},
-    "modularai/MiniMax-M3-MXFP6": NON_XL | {"8xB200"},
-    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI,
-    "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"8xMI355"},
-    "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | AMD_XL,
-    "OpenGVLab/InternVL3_5-8B-Instruct": MULTI,
-    "Qwen/Qwen2.5-7B-Instruct": MULTI,
-    "Qwen/Qwen2.5-VL-7B-Instruct": MULTI,
-    "Qwen/Qwen3-8B": MULTI,
-    "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
-    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
-    "Qwen/Qwen3.5-9B": MULTI | {"MI355"},
-    "Qwen/Qwen3.6-27B": MULTI | {"MI355"},
-    "RedHatAI/gemma-3-27b-it-FP8-dynamic": MULTI,  # TODO(MODELS-1021)
-    "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | AMD_XL,
-    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL | {"8xMI355"},
-    "openai/gpt-oss-20b": XL | {"2xMI355"},
-    "thinkingmachines/Inkling-Small-NVFP4": B200_2X_ONLY,
+    "nvidia/Gemma-4-31B-IT-NVFP4": _1xB200 | _2xB200,
+    "meta-llama/Llama-3.1-8B-Instruct": _1xB200 | _1xMI355,
+    "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
+    "microsoft/phi-4": _1xB200 | _1xMI355,
+    "MiniMaxAI/MiniMax-M3-MXFP8": _8xMI355,  # MODELS-1611: 8xB200 runs __mtp
+    "modularai/MiniMax-M3-MXFP6": _4xMI355 | _8xMI355,
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": _1xB200 | _1xMI355,
+    "modularai/Llama-3.1-405B-Instruct-autofp8": _4xMI355 | _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4": _8xB200,
+    "OpenGVLab/InternVL3_5-8B-Instruct": _1xB200 | _1xMI355,
+    "Qwen/Qwen2.5-7B-Instruct": _1xB200 | _1xMI355,
+    "Qwen/Qwen2.5-VL-7B-Instruct": _1xB200 | _1xMI355,
+    "Qwen/Qwen3-8B": _1xB200 | _1xMI355,
+    "Qwen/Qwen3-VL-4B-Instruct-FP8": _1xB200 | _2xB200,  # MI355: no FP8
+    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": _1xB200 | _2xB200,  # MI355: no FP8
+    "Qwen/Qwen3.5-9B": _1xB200,
+    "Qwen/Qwen3.6-27B": _1xB200,
+    # TODO(MODELS-1021)
+    "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,
+    "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
+    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": _4xMI355 | _8xB200,
+    "openai/gpt-oss-20b": _1xB200 | _1xMI355 | _2xB200,
+    "thinkingmachines/Inkling-Small-NVFP4": _2xB200,
 }
 
 # Models tested with custom MAX recipe presets. MODEL_RECIPES in
 # smoke_test.py maps each alias to its reusable recipe config.
 CUSTOM_MODELS: Mapping[str, set[str]] = {
-    "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
-    "google/gemma-3-27b-it__modulev3": XL,
-    "google/gemma-4-31B-it__modulev3": MULTI,
-    "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
-    "microsoft/phi-4__modulev3": MULTI,
-    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": MULTI,
-    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": NON_XL | AMD_XL,
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep": NON_XL | AMD_XL,
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": NON_XL | AMD_XL,
-    "nvidia/DeepSeek-V3.1-NVFP4__tptp": NON_XL | AMD_XL,
-    # TODO(SERVOPT-1168): Support multi-GPU eagle llama
-    "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI,
-    "meta-llama/Llama-3.1-8B-Instruct__dflash": MULTI,
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | AMD_XL,
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | AMD_XL,
-    # Synthesis is single-device (first cut), hence MULTI.
-    "google/gemma-4-12B-it__device_graph_synthesis": MULTI,
-    "google/gemma-4-12B-it__dspark": MULTI,
-    # Tuned recipes use an FP8 KV cache that does not support MI355.
-    "google/gemma-4-26B-A4B-it__tuned": MULTI | {"MI355"},
-    "google/gemma-4-31B-it__tuned": MULTI | {"MI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": MULTI | {"MI355"},
-    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
-    "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": NON_XL | AMD_XL,
-    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": MULTI | {"MI355"},
-    "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | AMD_XL,
-    "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NON_XL | AMD_XL,
-    "thinkingmachines/Inkling-Small-NVFP4__mtp": B200_2X_ONLY,
-    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": B200_8X_ONLY,
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": _1xB200 | _1xMI355,
+    "google/gemma-3-27b-it__modulev3": _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
+    "google/gemma-4-31B-it__modulev3": _1xB200 | _1xMI355,
+    "microsoft/Phi-3.5-mini-instruct__modulev3": _1xB200 | _1xMI355,
+    "microsoft/phi-4__modulev3": _1xB200 | _1xMI355,
+    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": _1xB200 | _1xMI355,
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": _8xB200,
+    # TODO(SERVOPT-1168): multi-GPU
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": _1xB200 | _1xMI355,
+    "meta-llama/Llama-3.1-8B-Instruct__dflash": _1xB200 | _1xMI355,
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": _8xB200,
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": _8xB200,
+    # Synthesis is single-device for now.
+    "google/gemma-4-12B-it__device_graph_synthesis": _1xB200 | _1xMI355,
+    "google/gemma-4-12B-it__dspark": _1xB200 | _1xMI355,
+    # Tuned recipes use an FP8 KV cache, which MI355 does not support.
+    "google/gemma-4-26B-A4B-it__tuned": _1xB200,
+    "google/gemma-4-31B-it__tuned": _1xB200,
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": _1xB200,
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": _1xB200,
+    "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": _8xB200,
+    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": _1xB200,
+    "nvidia/GLM-5.2-NVFP4__mtp_tpep": _8xB200,
+    "RadixArk/GLM-5.3-NVFP4__mtp_tpep": _8xB200,
+    "thinkingmachines/Inkling-Small-NVFP4__mtp": _2xB200,
+    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": _8xB200,
 }
 
 # Aliases whose recipe ships with a private arch, so it cannot appear in
@@ -170,7 +157,7 @@ TIERS = ("nightly", "all")
 
 
 def tier_models(tier: str) -> list[str]:
-    """Lists the models a tier schedules, before framework/GPU exclusions.
+    """Lists the models a tier schedules, before framework/GPU filtering.
 
     Args:
         tier: Either ``"nightly"`` for the deployed families or ``"all"`` for
@@ -185,11 +172,14 @@ def tier_models(tier: str) -> list[str]:
 
 
 def excluded(framework: str, gpu: str, model: str) -> bool:
-    """Check if a model is excluded from a given framework and/or GPU."""
+    """Check if a model is excluded from a given framework and/or GPU.
+
+    A model only runs on the HW listed for it in ``MODELS``.
+    """
     # Custom MAX recipe variants are MAX only; no vLLM/SGLang equivalent.
     if model in CUSTOM_MODELS and framework in {"vllm", "sglang"}:
         return True
-    return gpu in MODELS.get(model, set())
+    return gpu not in MODELS.get(model, set())
 
 
 def parse_override(raw: str | None) -> list[str]:
@@ -209,7 +199,7 @@ def parse_override(raw: str | None) -> list[str]:
 @click.option(
     "--models-override",
     default=None,
-    help="Comma list of models; skips exclusions.",
+    help="Comma list of models; ignores the per-model HW list.",
 )
 @click.option(
     "--tier",
