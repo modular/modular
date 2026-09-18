@@ -44,7 +44,7 @@ def create_mock_kv_cache() -> Mock:
     cache.page_size = 16
     cache.get_total_num_pages = Mock(return_value=128)
     cache.get_free_blocks_pct = Mock(return_value=0.5)
-    cache.alloc = Mock(return_value=CompletedTransfer.load())
+    cache.alloc = Mock(return_value=CompletedTransfer())
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)

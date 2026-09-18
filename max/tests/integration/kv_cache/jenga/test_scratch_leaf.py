@@ -265,9 +265,7 @@ def test_the_scratch_group_claims_nothing_from_a_hit() -> None:
     assert scratch_group(bm).claimable_hashes(keys) == ()
     assert scratch_group(bm).claim_hit_blocks(keys, 0) == {RING: []}
     assert scratch_group(bm).longest_cache_hit(keys, 0) == len(keys)
-    assert (
-        scratch_group(bm).num_blocks_needed_for_connector_load(len(keys)) == 0
-    )
+    assert scratch_group(bm).blocks_held_of_connector_hit(len(keys)) == 0
 
 
 def test_the_connector_is_not_told_about_a_scratch_leaf() -> None:

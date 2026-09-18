@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from max.pipelines.context import TextContext
@@ -63,15 +63,12 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     # The hit
     # ============================================================================
 
-    def longest_cache_hit(
-        self,
-        desired_hashes: Sequence[bytes],
-        replica_idx: int,
-        allow_cross_replica: bool = False,
+    def longest_hit(
+        self, num_hashes: int, is_cached: Callable[[int], bool]
     ) -> int:
         """Returns the deepest boundary a published state stands at."""
-        for idx in range(len(desired_hashes) - 1, -1, -1):
-            if self._holds_every_leaf(desired_hashes[idx], replica_idx):
+        for idx in range(num_hashes - 1, -1, -1):
+            if is_cached(idx):
                 return idx + 1
         return 0
 

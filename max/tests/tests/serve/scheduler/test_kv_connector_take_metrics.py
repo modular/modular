@@ -24,7 +24,7 @@ from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     CompletedTransfer,
     KVConnectorTransfer,
-    TransferDirection,
+    KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 
@@ -52,14 +52,22 @@ class _CountingConnector:
     def name(self) -> str:
         return "counting"
 
-    def load(
+    def lookup(
         self,
-        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        return CompletedTransfer.load()
+    ) -> Mapping[str, Sequence[bool]]:
+        return {"full": [False] * len(block_hashes)}
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        return CompletedTransfer()
 
     def offload(
         self,
@@ -67,12 +75,7 @@ class _CountingConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return CompletedTransfer(TransferDirection.OFFLOAD)
-
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        return (0, 0)
+        return CompletedTransfer()
 
     def touch(
         self,

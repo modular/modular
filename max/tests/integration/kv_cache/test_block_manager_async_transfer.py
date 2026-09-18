@@ -41,7 +41,7 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     KVConnectorTransfer,
-    TransferDirection,
+    KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
@@ -62,16 +62,9 @@ class _ControllableTransfer:
     manager takes the deferred-commit / pinning branch.
     """
 
-    def __init__(
-        self, direction: TransferDirection, g0_blocks: list[int]
-    ) -> None:
-        self._direction = direction
+    def __init__(self, g0_blocks: list[int]) -> None:
         self._g0_blocks = {"full": list(g0_blocks)}
         self.complete = False
-
-    @property
-    def direction(self) -> TransferDirection:
-        return self._direction
 
     @property
     def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
@@ -88,8 +81,8 @@ class _AsyncConnector:
     """A fake external-tier connector that returns in-flight transfers.
 
     ``host_byte_count.total`` is positive so the block manager runs its
-    host-onload path; ``num_blocks_to_load`` controls how many of a ``load``'s
-    requested hashes are reported as found. Every returned transfer is
+    host-onload path; ``num_blocks_to_load`` controls how many of a request's
+    leading hashes ``lookup`` reports as held. Every returned transfer is
     recorded so a test can flip it complete and then drive ``poll_transfers``.
     """
 
@@ -106,16 +99,25 @@ class _AsyncConnector:
     def name(self) -> str:
         return "async-fake"
 
-    def load(
+    def lookup(
         self,
-        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        bids = list(block_ids["full"])
-        num_loaded = min(len(block_hashes), self.num_blocks_to_load)
-        event = _ControllableTransfer(TransferDirection.LOAD, bids[:num_loaded])
+    ) -> Mapping[str, Sequence[bool]]:
+        held = min(len(block_hashes), self.num_blocks_to_load)
+        return {
+            "full": [idx < held for idx in range(len(block_hashes))],
+        }
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        event = _ControllableTransfer(list(block_ids["full"]))
         self.loads.append(event)
         return event
 
@@ -126,18 +128,13 @@ class _AsyncConnector:
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         bids = list(block_ids["full"])
-        event = _ControllableTransfer(TransferDirection.OFFLOAD, bids)
+        event = _ControllableTransfer(bids)
         self.offload_events.append(event)
         return event
 
     def touch(
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
     ) -> None: ...
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        return (0, 0)
-
     def wait_for_loads(self) -> None: ...
     def wait_for_offloads(self) -> None: ...
     def shutdown(self) -> None: ...
@@ -271,25 +268,24 @@ def test_poll_transfers_commits_and_unpins_on_completion() -> None:
         assert block.ref_cnt == 1
 
 
-def test_partial_onload_frees_surplus_blocks() -> None:
-    """A connector that loads fewer blocks than requested frees the surplus.
+def test_a_partial_hit_allocates_no_surplus_blocks() -> None:
+    """The manager draws one block per hash the LOOKUP reported, and no more.
 
-    The manager allocates one destination block per requested hash, but the
-    connector reports only ``num_blocks_to_load`` in ``g0_blocks``; the unused
-    destinations must be returned to the pool rather than leaked.
+    It used to allocate one per requested hash and free the surplus after the
+    load reported back. Asking first means the surplus is never drawn, so
+    there is nothing to leak.
     """
     bm, connector = _make_block_manager()
-    connector.num_blocks_to_load = 1  # only the first of two hashes loads
+    connector.num_blocks_to_load = 1  # only the first of two hashes is held
     pool = bm.device_block_pool
     free_before = pool.num_free_blocks
     rid = RequestID("req-partial")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    blocks, _, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 1
-    assert len(event.g0_blocks_per_leaf["full"]) == 1
-    # Exactly one block is held for the transfer; the surplus was freed.
+    # Exactly one block is held for the transfer, and only one was ever drawn.
     assert pool.num_free_blocks == free_before - 1
     assert bm.pending_transfers_exist()
 

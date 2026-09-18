@@ -40,7 +40,8 @@ from max.support.math import ceildiv
 from ..prefix_hit import longest_joint_prefix_hit
 from .block_manager import (
     CompletedTransfer,
-    KVConnectorTransfer,
+    KVLoadRefused,
+    KVTransfer,
     PrefixCacheHits,
     _compute_seq_len,
     _resolve_only_use_kv_connector_last_level_cache,
@@ -72,7 +73,7 @@ class _PendingTransfer:
     prefix-cache publish is deferred until the H2D has actually landed.
     """
 
-    event: KVConnectorTransfer
+    event: KVTransfer
     blocks: dict[str, list[LittleKVCacheBlock]]
     commit_hashes: list[bytes] | None = None
 
@@ -388,7 +389,7 @@ class JengaBlockManager:
     # ============================================================================
 
     @traced
-    def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
+    def alloc(self, ctx: TextContext) -> KVTransfer:
         """Gives every cache the pages the next forward needs.
 
         Raises:
@@ -469,6 +470,14 @@ class JengaBlockManager:
         Read-only. With cross-replica copies on, a block held by any replica
         counts as a hit, without checking there is room to copy it in.
 
+        Both halves run the same reconcile the reuse path runs -- the device
+        one over the block pools, the external one over the connector's
+        ``lookup`` masks -- so this cannot disagree with what a real admit
+        would serve. That costs a lookup per replica for a connector whose
+        tiers are not local, and nothing else: a lookup is advisory, and this
+        never goes on to load. Its one caller (prefix-aware DP prefill
+        balancing) fails open.
+
         Returns:
             A list of PrefixCacheHits for each replica.
         """
@@ -478,19 +487,18 @@ class JengaBlockManager:
             num_hit_blocks = self._find_longest_device_prefix_cache_hit(
                 desired_hashes, replica_idx, self._cross_replica_copy_enabled
             )
-            # Ask the connector to load the hashes that are remaining.
-            (num_hit_host_blocks, num_hit_disk_blocks) = (
-                self._connector.count_cached_prefix(
-                    desired_hashes[num_hit_blocks:]
+            remaining = desired_hashes[num_hit_blocks:]
+            num_external_blocks = (
+                self._find_longest_connector_prefix_cache_hit(
+                    remaining, replica_idx, ctx.dkv_cache_hint
                 )
-                if self._connector is not None
-                else (0, 0)
+                if self._connector is not None and remaining
+                else 0
             )
             hit_counts.append(
                 PrefixCacheHits(
                     device_blocks=num_hit_blocks,
-                    host_blocks=num_hit_host_blocks,
-                    disk_blocks=num_hit_disk_blocks,
+                    external_blocks=num_external_blocks,
                 )
             )
         return hit_counts
@@ -574,117 +582,126 @@ class JengaBlockManager:
         """Returns whether any async transfer is in flight on the replica."""
         return bool(self._pending_transfers[replica_idx])
 
+    def _find_longest_connector_prefix_cache_hit(
+        self, desired: Sequence[bytes], replica_idx: int, hint: bytes | None
+    ) -> int:
+        """Returns how many of ``desired`` the connector can serve at once.
+
+        One lookup over the whole tree, reconciled by the same rules the
+        device tier runs over its own block pools.
+        """
+        assert self._connector is not None
+        resident = self._connector.lookup(
+            desired, replica_idx=replica_idx, hint=hint
+        )
+
+        def rule(group: KVGroupCoordinatorInterface) -> Callable[[int], int]:
+            # A group's leaves are written in lockstep, so a hash only some
+            # of them hold is unusable -- what `_holds_every_leaf` does for
+            # the device pools. A factory, not a lambda over the loop
+            # variable, which would late-bind every rule to the last group.
+            return lambda candidate: group.longest_hit(
+                candidate,
+                lambda idx: all(
+                    resident[leaf_id][idx] for leaf_id in group.leaf_ids
+                ),
+            )
+
+        return longest_joint_prefix_hit(
+            len(desired), [rule(group) for group in self._cacheable_groups]
+        )
+
     @traced
     def _lookup_connector_prefix_cache_hit(
         self,
         desired: Sequence[bytes],
         replica_idx: int,
         hint: bytes | None,
-    ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVConnectorTransfer]:
-        """Loads the desired hashes from the connector's prefix cache.
+    ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVTransfer]:
+        """Loads the prefix of ``desired`` the connector's tiers can serve.
 
-        Fresh device pages are allocated for the hashes the connector can
-        serve and filled by its ``load``. The connector may serve some but not
-        all of the desired hashes.
-
-        ``hint`` is the request's raw ``dkv_cache_hint``, passed through to the
-        connector; see :meth:`KVConnector.load`.
-
-        Eg:
-        ```
-        > desired_hashes = [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10]
-        > staging_blocks = {
-        >   'sliding_window_group(1024)': [42, 43, 44, 45],
-        >   'full_group': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        > }
-        > event = connector.load(staging_blocks, desired_hashes)
-        > # Cache hit on 8 of 10 hashes
-        > assert event.g0_blocks_per_leaf == {
-        >   'sliding_window_group(1024)': [0, 0, 0, 0, 42, 43, 44, 45],
-        >   'full_group': [1, 2, 3, 4, 5, 6, 7, 8]
-        > }
-        ```
+        Two phases: ask what the connector holds and settle how deep a prefix
+        that is worth, then hand it the pages and the hashes to put in them.
+        Knowing the depth first means each leaf is allocated exactly what it
+        reads -- a windowed leaf gets its window, not the whole run -- and
+        the slots it has slid past get the null block here, the same row
+        :meth:`SlidingWindowKVGroupCoordinator.claim_hit_blocks` builds for
+        the device tier. Both phases get the same ``hint``.
 
         Returns:
-            A tuple containing:
-                The number of blocks loaded from the connector
-                The blocks that the contents are being loaded into, per leaf
-                The transfer tracking the copy
+            How many blocks were loaded, the blocks they are landing in per
+            leaf, and the transfer tracking the copy.
         """
         connector = self._connector
         empty: dict[str, list[LittleKVCacheBlock]] = {
             leaf_id: [] for leaf_id in self._cacheable_leaf_ids
         }
+        miss = (0, empty, CompletedTransfer())
         if connector is None or not desired:
-            return 0, empty, CompletedTransfer.load(self._cacheable_leaf_ids)
+            return miss
+        aligned = self._find_longest_connector_prefix_cache_hit(
+            desired, replica_idx, hint
+        )
+        if aligned == 0:
+            return miss
 
         pool = self.pools[replica_idx]
-
-        num_blocks_needed = {
-            leaf_id: group.num_blocks_needed_for_connector_load(len(desired))
+        # What each leaf READS of a hit that deep, which for a windowed leaf is
+        # its window rather than the whole prefix.
+        held = {
+            leaf_id: group.blocks_held_of_connector_hit(aligned)
             for group in self._cacheable_groups
             for leaf_id in group.leaf_ids
         }
-        # If there are insufficient blocks available, we will be unable to schedule
-        # this request. Return zero connector cache hits and let the caller raise
-        # InsufficientBlocksError after releasing all resources owned by this request.
-        if not pool.can_satisfy_demand(num_blocks_needed):
-            return 0, empty, CompletedTransfer.load(self._cacheable_leaf_ids)
+        # Too few blocks to schedule this request at all. Report no hit and let
+        # the caller raise InsufficientBlocksError once it has released what
+        # the request owns.
+        if not pool.can_satisfy_demand(held):
+            return miss
 
-        staging_blocks = {
+        rows = {
             leaf_id: [pool.alloc_block(leaf_id) for _ in range(num_blocks)]
-            for leaf_id, num_blocks in num_blocks_needed.items()
+            for leaf_id, num_blocks in held.items()
         }
-        event = connector.load(
-            {
-                leaf_id: [b.bid for b in leaf_blocks]
-                for leaf_id, leaf_blocks in staging_blocks.items()
-            },
-            desired,
-            replica_idx=replica_idx,
-            hint=hint,
-        )
-        # Note that for SWA groups, we expect the connector to pad the blocks
-        # with 0 to denote the null blocks. As such, the length of the blocks
-        # for each leaf should be the same.
-        unique_num_loaded = {
-            len(blocks) for blocks in event.g0_blocks_per_leaf.values()
-        }
-        if len(unique_num_loaded) != 1:
-            raise ValueError(
-                "Expected all leaves to have the same number of loaded blocks, "
-                f"but got {event.g0_blocks_per_leaf} from KVConnector.load(...)"
+        try:
+            event = connector.load(
+                {
+                    leaf_id: [block.bid for block in blocks]
+                    for leaf_id, blocks in rows.items()
+                },
+                {
+                    leaf_id: list(desired[aligned - held[leaf_id] : aligned])
+                    for leaf_id in rows
+                },
+                replica_idx=replica_idx,
+                hint=hint,
             )
-        num_loaded = unique_num_loaded.pop()
+        except KVLoadRefused as refused:
+            # Evicted between the two calls, or no room to stage the copy.
+            # There is no shorter hit to fall back to: a windowed leaf's
+            # remaining run no longer ends where the prefix does.
+            logger.warning("serving a request as a cache miss: %s", refused)
+            for blocks in rows.values():
+                for block in blocks:
+                    pool.free_block(block)
+            return miss
 
-        # Give the surplus blocks back.
-        for leaf_id in self._cacheable_leaf_ids:
-            all_bids = {b.bid for b in staging_blocks[leaf_id]}
-            loaded_bids = {bid for bid in event.g0_blocks_per_leaf[leaf_id]}
-            unused = all_bids - loaded_bids
-            for bid in unused:
-                block = pool.block(leaf_id, bid)
-                pool.free_block(block)
-
-        if num_loaded == 0:
-            return 0, empty, CompletedTransfer.load(self._cacheable_leaf_ids)
-
-        logger.debug(
-            f"KVConnector loaded {num_loaded} / {len(desired)} hashes. Blocks: {event.g0_blocks_per_leaf}"
-        )
+        # Every leaf's row has to be `aligned` long: the groups splice them onto
+        # rows that stay in lockstep.
         loaded_blocks = {
-            leaf_id: [pool.block(leaf_id, bid) for bid in blocks]
-            for leaf_id, blocks in event.g0_blocks_per_leaf.items()
+            leaf_id: [pool.null_little_blocks[leaf_id]]
+            * (aligned - held[leaf_id])
+            + rows[leaf_id]
+            for leaf_id in rows
         }
-
-        loaded_hashes = list(desired[:num_loaded])
+        loaded_hashes = list(desired[:aligned])
         if event.is_complete():
             self._commit_onloaded_blocks(pool, loaded_blocks, loaded_hashes)
         else:
             self._track_transfer(
                 event, loaded_blocks, replica_idx, commit_hashes=loaded_hashes
             )
-        return num_loaded, loaded_blocks, event
+        return aligned, loaded_blocks, event
 
     def _commit_onloaded_blocks(
         self,
@@ -705,7 +722,7 @@ class JengaBlockManager:
 
     def _track_transfer(
         self,
-        event: KVConnectorTransfer,
+        event: KVTransfer,
         blocks: Mapping[str, list[LittleKVCacheBlock]],
         replica_idx: int,
         commit_hashes: list[bytes] | None = None,
@@ -1045,7 +1062,7 @@ class JengaBlockManager:
 
     def _reuse_blocks_from_prefix_cache(
         self, ctx: TextContext, replica_idx: int = 0
-    ) -> KVConnectorTransfer:
+    ) -> KVTransfer:
         """Splices the longest prefix-cache hit into the request.
 
         The device hit is extended by whatever the connector's external tiers
@@ -1058,7 +1075,7 @@ class JengaBlockManager:
         """
         # Only try to reuse blocks if the ctx is fresh (ie: no tokens are processed)
         if not self._enable_prefix_caching or ctx.tokens.processed_length != 0:
-            return CompletedTransfer.load(self._cacheable_leaf_ids)
+            return CompletedTransfer()
 
         self._compute_hashes_for_request(ctx)
 

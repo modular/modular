@@ -17,18 +17,37 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from enum import Enum
 from typing import Protocol, runtime_checkable
 
 from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
-class TransferDirection(str, Enum):
-    """Whether a KV connector transfer is an onload or an offload."""
+class KVLoadRefused(Exception):
+    """A :meth:`KVConnector.load` could not move everything it was asked for.
 
-    LOAD = "load"
-    OFFLOAD = "offload"
+    Raised rather than short-loading, because the caller sized and padded the
+    rows it handed over: a leaf that came back one block shallower would leave
+    a row whose tail the caller then trusts as cached KV, and for a windowed
+    leaf the remaining run no longer ends where the prefix does. The cache
+    manager frees the rows and serves the request as a miss.
+
+    Two causes, both rare: a hash :meth:`KVConnector.lookup` reported was
+    evicted before the load asked for it, or the connector could not stage the
+    transfer at all (no room for a disk promotion, a degraded remote store).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        leaf_id: str | None = None,
+        block_hash: bytes | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.leaf_id = leaf_id
+        """The leaf whose block went missing, when one hash is to blame."""
+        self.block_hash = block_hash
+        """The hash that went missing, when one is to blame."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,15 +123,15 @@ class ByteCount:
 
 
 @runtime_checkable
-class KVConnectorTransfer(Protocol):
-    """Handle for one KV connector transfer (an onload or an offload).
+class KVTransfer(Protocol):
+    """Handle for one KV connector transfer, for overlapping it with compute.
 
-    Returned by :meth:`KVConnector.load` and :meth:`KVConnector.offload`. It lets
-    the manager overlap a transfer with GPU compute: the transfer owns the
-    ``g0`` device block ids it touches (a load's H2D destinations, an offload's
-    D2H sources), and the manager keeps those blocks pinned until
-    :meth:`is_complete` returns ``True``, then unpins them exactly once (see the
-    scheduler's ``poll_transfers`` loop).
+    Returned by :meth:`KVConnector.load`. The manager keeps the device blocks
+    it handed the connector pinned until :meth:`is_complete` returns ``True``,
+    then unpins them exactly once (see the scheduler's ``poll_transfers``
+    loop). A load does not report its blocks back -- the manager allocated
+    them and knows which they are; :class:`KVConnectorTransfer` adds that
+    reporting for an offload, where the connector chooses.
 
     Two completion models cross this handle:
 
@@ -132,20 +151,6 @@ class KVConnectorTransfer(Protocol):
     ``cudaEventQuery``-style check), safe to call every scheduler iteration.
     """
 
-    @property
-    def direction(self) -> TransferDirection:
-        """Whether this transfer is a ``load`` (onload) or an ``offload``."""
-        ...
-
-    @property
-    def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
-        """Device (G0) block ids this transfer pins until it completes, per leaf.
-
-        Each leaf should have the same number of blocks. For SWA groups, the list
-        of blocks may be null padded with block_id=0.
-        """
-        ...
-
     def is_complete(self) -> bool:
         """Returns whether the transfer has completed. Never blocks."""
         ...
@@ -155,33 +160,40 @@ class KVConnectorTransfer(Protocol):
         ...
 
 
+@runtime_checkable
+class KVConnectorTransfer(KVTransfer, Protocol):
+    """A :class:`KVTransfer` that also reports the blocks it chose.
+
+    Returned by :meth:`KVConnector.offload`, which is the direction where the
+    connector picks the device blocks: it skips a hash its tiers already hold
+    and a leaf it has no room for, so only it knows what it took.
+    """
+
+    @property
+    def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        """Device (G0) block ids this transfer pins until it completes, per leaf."""
+        ...
+
+
 class CompletedTransfer:
     """An already-complete :class:`KVConnectorTransfer`.
 
-    Returned by synchronous / stream-ordered connectors (dKV):
-    their copies ride the forward stream or are GPU-ordered ahead of it, so from
-    the manager's perspective the transfer is already done -- no pinning, no
-    deferred commit, no cordoning. ``g0_blocks_per_leaf`` still reports the device blocks
-    the connector loaded (fewer than requested is allowed), which the manager
-    uses to trim any surplus staging blocks.
+    Returned by synchronous / stream-ordered connectors (dKV): their copies
+    ride the forward stream or are GPU-ordered ahead of it, so from the
+    manager's perspective the transfer is already done -- no pinning, no
+    deferred commit, no cordoning.
     """
 
     def __init__(
         self,
-        direction: TransferDirection,
-        leaves: Sequence[str] | None = None,
-        g0_blocks: Sequence[int] | None = None,
+        g0_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
     ) -> None:
-        self._direction: TransferDirection = direction
-
-        leaves = leaves or []
-        g0_blocks = g0_blocks or []
-        self._g0_blocks_per_leaf = {leaf_id: g0_blocks for leaf_id in leaves}
-
-    @property
-    def direction(self) -> TransferDirection:
-        """The transfer direction (``load`` or ``offload``)."""
-        return self._direction
+        # Only an offload reports blocks. A load is handed the exact ones it
+        # has to fill and either fills them all or raises, so it has nothing
+        # to report back, and calls this with no arguments.
+        self._g0_blocks_per_leaf: Mapping[str, Sequence[int]] = (
+            g0_blocks_per_leaf or {}
+        )
 
     @property
     def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
@@ -195,16 +207,6 @@ class CompletedTransfer:
     def synchronize(self) -> None:
         """No-op: this transfer is already complete."""
         return
-
-    @classmethod
-    def load(cls, leaves: Sequence[str] | None = None) -> CompletedTransfer:
-        """Create a completed load transfer."""
-        return cls(TransferDirection.LOAD, leaves)
-
-    @classmethod
-    def offload(cls, leaves: Sequence[str] | None = None) -> CompletedTransfer:
-        """Create a completed offload transfer."""
-        return cls(TransferDirection.OFFLOAD, leaves)
 
 
 @runtime_checkable
@@ -254,23 +256,75 @@ class KVConnector(Protocol):
         """Connector name for logging/debugging."""
         ...
 
-    def load(
+    def lookup(
         self,
-        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        """Load data from external cache into device blocks.
+    ) -> Mapping[str, Sequence[bool]]:
+        """Reports which of ``block_hashes`` each leaf holds. Presence only.
+
+        What that presence is worth is the manager's to decide, since it
+        depends on how far each leaf's attention reads back. The manager
+        reconciles the masks with :mod:`~max.pipelines.kv_cache.prefix_hit`,
+        the same rules it runs over the device pools, so a connector needs no
+        notion of attention shape, window widths or null blocks.
+
+        Advisory, and the caller owes it nothing: it may look up and then not
+        load. A connector that keeps state between the two calls -- dKV holds
+        a lease its :meth:`load` reads out of -- must bound that itself and
+        stay correct when no load follows, or when two lookups run back to
+        back.
+
+        Not a reservation either. A block reported here can be evicted before
+        :meth:`load` asks for it, which surfaces as :class:`KVLoadRefused`.
 
         Args:
-            block_ids: Device block IDs to load data into per leaf. Each leaf
-                may have a different number of blocks depending on the group type.
-                For example, a full attn group may need 100 pages to load 100 hashes
-                while a sliding window group may only need 8 pages.
-            block_hashes: Hashes to load data for, in canonical bytes form
-                (8 big-endian bytes for ahash64-family, 32 bytes for
-                SHA-256).
+            block_hashes: Hashes to ask about, in prefix order and in canonical
+                bytes form (see the class docstring).
+            replica_idx: DP replica asking. The external tier is
+                replica-agnostic (keyed by hash); this only selects the client.
+            hint: As :meth:`load`, and it must be the SAME hint, or a lookup
+                would ask the co-located store about a peer-held prefix and
+                report it absent.
+
+        Returns:
+            One mask per leaf, keyed as :attr:`leaves` keys them, each exactly
+            ``len(block_hashes)`` long and positional. ``True`` means **every
+            TP shard** of that leaf holds the block -- not some shard, not a
+            count. A weaker predicate pads null pages into a full-attention row
+            while still claiming the whole prefix, which is silent wrong KV
+            rather than a missed hit.
+        """
+        ...
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        """Loads exactly the blocks it is told to, leaf by leaf.
+
+        ``block_hashes[leaf_id][i]`` is read into ``block_ids[leaf_id][i]``, so
+        the two are the same length on every leaf. Which hashes those are --
+        the whole prefix for a full-attention leaf, a window's worth for a
+        windowed one -- the caller settled from a :meth:`lookup`. The slots
+        below a leaf's share are the null block, which the caller fills in;
+        this never sees them.
+
+        Must follow a :meth:`lookup` with the same ``replica_idx`` and
+        ``hint``, at most once, since a connector may be reading out of what
+        that lookup found.
+
+        Args:
+            block_ids: Device block IDs to load into, per leaf. Leaf counts
+                differ by design: a full-attention leaf takes one block per
+                hash of the hit, a windowed leaf only its window's worth.
+            block_hashes: The hashes to read, per leaf, in the order that
+                leaf's row holds them. Canonical bytes form (8 big-endian
+                bytes for ahash64-family, 32 bytes for SHA-256).
             replica_idx: DP replica whose device buffers receive the loaded
                 blocks. The external tier itself is replica-agnostic (keyed by
                 hash); this only selects the H2D destination.
@@ -281,15 +335,13 @@ class KVConnector(Protocol):
                 costs a cache miss and nothing else.
 
         Returns:
-            A :class:`KVConnectorTransfer` for the H2D copy. ``g0_blocks_per_leaf``
-            reports the device blocks actually loaded (a prefix of the requested
-            ``block_ids``; fewer than requested is allowed).
-            Synchronous connectors return a :class:`CompletedTransfer`;
-            asynchronous ones return a handle the manager polls before reading
-            the loaded KV.
-            Note that all leaves must have the same number of blocks. This number
-            should be equal to the number of loaded hashes. For sliding window
-            groups, the list of blocks may be null padded with block_id=0.
+            A :class:`KVTransfer` for the H2D copy. Synchronous connectors
+            return a :class:`CompletedTransfer`; asynchronous ones return a
+            handle the manager polls before reading the loaded KV.
+
+        Raises:
+            KVLoadRefused: If it cannot move every block it was asked for.
+                Loading less is not an option -- see :class:`KVLoadRefused`.
         """
         ...
 
@@ -351,29 +403,6 @@ class KVConnector(Protocol):
                 client.
         """
         return
-
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        """Counts contiguous leading blocks resident in this connector's tiers.
-
-        Walks ``block_hashes`` in prefix order, counting blocks the connector
-        holds in its external tiers, and stops at the first block found in no
-        tier. Implementations must be strictly read-only: no transfers,
-        allocations, or LRU updates. Counts reflect index presence only and
-        may ignore transient constraints that the ``load`` path enforces
-        (e.g. free staging blocks required to onboard a disk hit).
-
-        Args:
-            block_hashes: Block hashes in prefix order, in canonical bytes
-                form (see the class docstring).
-
-        Returns:
-            ``(num_host_blocks, num_disk_blocks)`` counted along the
-            contiguous run. Connectors without a cheap local index (e.g.
-            remote block stores) return ``(0, 0)``.
-        """
-        return (0, 0)
 
     def wait_for_loads(self) -> None:
         """Order all posted loads before the forward pass.

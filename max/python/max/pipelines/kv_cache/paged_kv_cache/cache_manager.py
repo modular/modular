@@ -50,7 +50,7 @@ from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     ByteCount,
     KVConnector,
-    KVConnectorTransfer,
+    KVTransfer,
 )
 from max.profiler import traced
 from max.support.math import ceildiv
@@ -419,7 +419,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             for replica_idx, replica in enumerate(self._replica)
         ]
 
-    def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
+    def alloc(self, ctx: TextContext) -> KVTransfer:
         """Allocates blocks for a request.
 
         When prefix caching is enabled, some of the allocated blocks may be

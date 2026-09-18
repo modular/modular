@@ -37,7 +37,7 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     ByteCount,
-    KVConnectorTransfer,
+    KVTransfer,
 )
 
 from .block_manager import PrefixCacheHits
@@ -60,7 +60,7 @@ class PagedKVCacheManagerInterface(ABC):
         """Counts each replica's contiguous cached prefix for a request."""
 
     @abstractmethod
-    def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
+    def alloc(self, ctx: TextContext) -> KVTransfer:
         """Allocates blocks for a request."""
 
     @abstractmethod

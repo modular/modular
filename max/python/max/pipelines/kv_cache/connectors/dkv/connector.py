@@ -52,13 +52,8 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
-    TransferDirection,
-)
-from max.pipelines.kv_cache.prefix_hit import (
-    blocks_held_of_hit,
-    longest_full_attention_hit,
-    longest_joint_prefix_hit,
-    longest_sliding_window_hit,
+    KVLoadRefused,
+    KVTransfer,
 )
 from max.profiler import traced
 
@@ -116,9 +111,6 @@ class _DkvClient(Protocol):
 
 _DKV_RECENCY_FULL_SEQUENCE = 1
 _DKV_RECENCY_SLIDING_WINDOW = 2
-# Jenga's per-leaf null block is bid 0 (``JengaBlockPool.null_little_blocks``),
-# which is what a sliding leaf's slots below the window hold.
-_NULL_BLOCK_ID = 0
 
 
 def _validate_dkv_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
@@ -129,10 +121,10 @@ def _validate_dkv_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
     cache manager repeats the check -- a cache manager especially should not,
     since it would have to know which connector is configured.
 
-    The single-window restriction is :meth:`touch`'s, not :meth:`load`'s.
-    ``load`` derives each leaf's share from that leaf's own
-    ``blocks_in_window``, so differing widths are fine. ``touch`` still windows
-    every sliding leaf by the one ``_window_blocks`` it reads off
+    The single-window restriction is :meth:`touch`'s, not :meth:`load`'s. The
+    cache manager sizes each leaf's share off that leaf's own group, so
+    differing widths are fine by the time they reach here. ``touch`` still
+    windows every sliding leaf by the one ``_window_blocks`` it reads off
     ``_sliding_leaf_ids[0]``, so a second width would silently refresh the
     wrong range. Lifting this gate means fixing ``touch`` first.
 
@@ -195,31 +187,6 @@ def _group_recency(group_id: KVCacheGroupId) -> int:
     if group_id.is_sliding_window():
         return _DKV_RECENCY_SLIDING_WINDOW
     return _DKV_RECENCY_FULL_SEQUENCE
-
-
-def _loaded_row(
-    leaf_block_ids: Sequence[int], share: int, aligned: int
-) -> list[int]:
-    """One leaf's loaded row: nulls below its share, its blocks inside it.
-
-    Every leaf's row must be exactly ``aligned`` long -- Jenga rejects ragged
-    rows -- so a leaf that carries only ``share`` of the agreed prefix gets
-    ``aligned - share`` leading null blocks. A full leaf carries the whole
-    prefix and so gets none; a windowed leaf carries the window ending at
-    ``aligned``, which is what
-    ``SlidingWindowKVGroupCoordinator.claim_hit_blocks`` builds for the device
-    tier (``low = max(0, N - blocks_in_window)`` nulls, then the window).
-
-    ``share == 0`` (a windowed leaf whose ``window_size == 1``, so the window
-    spans no whole block) is an all-null row of the right length, not an empty
-    one -- again what the device coordinator produces, which counts it as a
-    full hit.
-
-    ``leaf_block_ids`` arrives already cut to ``share`` -- :meth:`load`
-    passes the row it handed the client, so ``share`` is only re-applied here
-    to keep the bound explicit alongside ``aligned``.
-    """
-    return [_NULL_BLOCK_ID] * (aligned - share) + list(leaf_block_ids[:share])
 
 
 def _to_dkv_u64(h: bytes) -> int:
@@ -907,27 +874,6 @@ def _admit_with_retry(
             backoff *= 2
 
 
-class _DKVCompletedTransfer(CompletedTransfer):
-    """Completed dKV transfer with distinct per-leaf device block rows.
-
-    Writes the base class's ``_g0_blocks_per_leaf`` from outside, as
-    ``rust_tier_connector`` also does. A per-leaf mapping is the general case
-    now, so the base constructor should own the shape and this subclass should
-    not exist -- SERVOPT-1614.
-    """
-
-    def __init__(
-        self,
-        direction: TransferDirection,
-        blocks_per_leaf: Mapping[str, Sequence[int]],
-    ) -> None:
-        super().__init__(direction)
-        self._g0_blocks_per_leaf = {
-            leaf_id: list(block_ids)
-            for leaf_id, block_ids in blocks_per_leaf.items()
-        }
-
-
 class DKVConnector(KVConnector):
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
@@ -1101,6 +1047,13 @@ class DKVConnector(KVConnector):
         # client-wide fan-outs (wait_for_*, metrics, take_metrics) iterate
         # every client of every replica.
         self._clients: list[dict[str, _DkvClient]] = []
+        # Per replica, the candidate its outstanding lookup leased, as depths:
+        # dkv hash -> how many blocks of the candidate end at it. `load` reads
+        # it to turn the manager's per-leaf hashes back into the depth
+        # `load_prepared` wants, and every path out of `load` pops it.
+        # One entry per replica at most: a replica's lookup is answered before
+        # the next one is asked, on the one scheduler thread.
+        self._leased_depths: dict[int, dict[int, int]] = {}
         # Each client registers its replica's FULL TP GPU set (that leaf's units
         # concatenated per shard by _make_client). For MLA this restores
         # device_buffers.len() == tp, so the Rust client's NVLink broadcast +
@@ -1337,6 +1290,10 @@ class DKVConnector(KVConnector):
         construct through ``__new__`` bind them by hand and call this, so the
         derived shape cannot drift from the real one.
         """
+        # Reset here rather than only in __init__: this is the hook a test
+        # that bypasses __init__ calls to finish construction, and `lookup`
+        # and `load` both assume it exists.
+        self._leased_depths = {}
         self._full_leaf_ids = [
             leaf_id
             for leaf_id, group_id in self._leaves.items()
@@ -1383,143 +1340,229 @@ class DKVConnector(KVConnector):
             self._sliding_leaf_ids
         )
 
-    def _blocks_in_window_of(self, leaf_id: str) -> int | None:
-        """This leaf's window in whole blocks, or ``None`` if it attends fully.
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        """Reports which of ``block_hashes`` dkv holds, per leaf, under a lease.
 
-        ``KVCacheGroupId.blocks_in_window`` returns ``-1`` for a full leaf,
-        which reads as a width rather than an absence one call site later, so
-        the sentinel is translated here and never leaves this method.
+        One leased read per leaf, because the lease has to live on the client
+        that will post the transfer. That is what lets :meth:`load` re-read
+        nothing, so a leaf falling short there is a fault rather than a race.
+
+        The lease is ours, not the caller's: the protocol has no release. A
+        lookup no load follows leaves one candidate's pins outstanding until
+        the next lookup abandons them, or the client's ``plan_ttl`` (10 s)
+        expires them. Bounded, and never a correctness problem.
+
+        ``hint`` routes the read to the peer that may hold the blocks;
+        :meth:`load` inherits it from the lease. See :meth:`_usable_hint`.
         """
-        group_id = self._leaves[leaf_id]
-        if not group_id.is_sliding_window():
-            return None
-        return group_id.blocks_in_window(self._page_size)
-
-    def _leaf_hit_rule(
-        self, leaf_id: str, resident: Sequence[bool]
-    ) -> Callable[[int], int]:
-        """How much of a candidate prefix this leaf serves, given dkv residency.
-
-        The rules are the cache manager's -- the same functions the device tier
-        runs in :mod:`.prefix_hit` -- with dkv residency
-        swapped in for the device pools. The connector supplies presence and
-        the shape of the leaf; it does not decide what presence is worth.
-        """
-        blocks_in_window = self._blocks_in_window_of(leaf_id)
-        if blocks_in_window is not None:
-            return lambda candidate: longest_sliding_window_hit(
-                candidate, blocks_in_window, resident.__getitem__
+        # `prepare_load` may well supersede its own plan, but that is the Rust
+        # client's business and not written down on this side of the FFI.
+        self._abandon_leases(replica_idx)
+        if not block_hashes:
+            return {leaf_id: [] for leaf_id in self._leaves}
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        leaf_ids = list(self._leaves)
+        clients = self._clients[replica_idx]
+        resident = {
+            leaf_id: clients[leaf_id].prepare_load(
+                group_id=self._wire_ids[leaf_id],
+                block_hashes=dkv_hashes,
+                hint=self._usable_hint(hint),
             )
-        return lambda candidate: longest_full_attention_hit(
-            candidate, resident.__getitem__
-        )
+            for leaf_id in leaf_ids
+        }
+        # O(leaves), not O(blocks): the manager indexes these masks
+        # positionally, so a mis-sized one has to fail here rather than as an
+        # IndexError inside a serving request.
+        short_mask = {
+            leaf_id: len(mask)
+            for leaf_id, mask in resident.items()
+            if len(mask) != len(dkv_hashes)
+        }
+        if short_mask:
+            self._abandon_leases(replica_idx)
+            raise ValueError(
+                f"dkv prepare_load answered {short_mask} blocks wide over "
+                f"{len(dkv_hashes)} blocks"
+            )
+        # `load_prepared` addresses the lease by DEPTH, and the manager hands
+        # `load` a suffix instead. See :meth:`_leased_end`.
+        self._leased_depths[replica_idx] = {
+            dkv_hash: depth for depth, dkv_hash in enumerate(dkv_hashes, 1)
+        }
+        return resident
+
+    def _abandon_leases(self, replica_idx: int) -> None:
+        """Hands back whatever leases this replica is still holding.
+
+        Runs at the top of every :meth:`lookup` and on every raising path out
+        of :meth:`lookup` and :meth:`load`. ``abandon_prepared`` is a no-op on
+        a client holding nothing, so this runs blindly over the tree; guarded
+        per leaf so one failure strands nothing after it.
+        """
+        self._leased_depths.pop(replica_idx, None)
+        for leaf_id, client in self._clients[replica_idx].items():
+            try:
+                client.abandon_prepared()
+            except BaseException:
+                _logger.exception(
+                    "dkv abandon_prepared failed for leaf %s; its pins wait "
+                    "on the lease TTL",
+                    leaf_id,
+                )
+
+    def _usable_hint(self, hint: bytes | None) -> bytes | None:
+        """The hint to put on the wire, which a hybrid tree cannot carry.
+
+        A v2 hint is group-major and names the producer's ids, so a peer
+        predating per-leaf ids has no id for a sliding leaf. On a hybrid tree
+        a hinted full leaf would read remotely while the sliding leaf reads
+        locally and misses, throwing the result away. Until a hint can name
+        per-leaf ids (SERVOPT-1617), a hybrid tree stays local on every leaf.
+        """
+        return None if self._sliding_leaf_ids else hint
+
+    @staticmethod
+    def _leased_end(
+        depths: Mapping[int, int],
+        block_hashes: Mapping[str, Sequence[bytes]],
+    ) -> int:
+        """How deep into the leased candidate the rows reach.
+
+        ``load_prepared`` takes the depth, not the hashes: it moves
+        ``num_blocks`` ending at ``end`` out of the plan its own
+        ``prepare_load`` built. The manager hands out a suffix per leaf
+        instead, so the depth comes back off the last hash of a row, which is
+        the block sitting at it.
+
+        Every non-empty row ends at the same depth, because the groups splice
+        them onto rows that stay in lockstep. Disagreement is a manager bug
+        worth failing on rather than loading through: the leaves would come
+        back holding KV from different prefixes, which no later check catches.
+        """
+        ends = {
+            leaf_id: depths[_to_dkv_u64(hashes[-1])]
+            for leaf_id, hashes in block_hashes.items()
+            if hashes
+        }
+        if len(set(ends.values())) > 1:
+            raise ValueError(
+                f"DKVConnector.load rows end at different depths: {ends}. "
+                "Every leaf's row has to end where the joint hit does."
+            )
+        return next(iter(ends.values()), 0)
 
     def load(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        """Loads external blocks into ``replica_idx``'s device memory by hash.
+    ) -> KVTransfer:
+        """Moves each leaf's share out of the lease its :meth:`lookup` took.
 
-        Each ``block_hashes`` element must be canonical bytes: 8 bytes for
-        ``ahash64`` / ``sha256_64`` or 32 bytes for full ``sha256``. 32-byte
-        digests are truncated to their first 8 bytes at the dkv boundary (see
-        :func:`_to_dkv_u64`).
+        One ``load_prepared`` per leaf, reading out of the locations that
+        leaf's own lookup already found. Which hashes each leaf gets -- the
+        whole prefix for a full leaf, the window for a windowed one -- the
+        cache manager settled from the lookup's masks; this only has to find
+        where they sit in the leased candidate.
 
-        ``hint`` is the request's ``dkv_cache_hint`` JSON bytes, forwarded
-        unparsed: the Rust client reads it to route each block to the peer that
-        holds it, and treats anything unusable as no hint, which costs a miss
-        rather than a failed load.
+        ``hint`` is ignored: it rode in on the lease, and honouring a different
+        one here would mean re-reading, which is what the lease exists to
+        avoid. The manager passes the same one either way.
 
-        Every tree takes the same two calls per leaf. :meth:`prepare_load`
-        LEASES what that leaf holds and reports it positionally; the cache
-        manager's own prefix rules reconcile the leaves and decide how much is
-        serviceable; then :meth:`load_prepared` moves each leaf's share out of
-        the locations its own lookup already fetched. dkv itself knows nothing
-        about attention shapes: a windowed leaf's hit is a suffix run whose
-        validity depends on where the prefix ends, and only this layer knows
-        which leaves are windowed.
+        Consumes the lease however this exits, raising included.
 
-        The lease is what makes it two calls rather than two round trips --
-        ``load_prepared`` re-reads nothing, and nothing can be evicted between
-        the two halves, so a leaf falling short is a fault rather than the
-        ordinary race it used to be. The cost is that a lookup pins the
-        resident subset of the candidate -- more than it will load -- and holds
-        it across the OTHER leaves' lookups as well as the reconcile, since the
-        first leaf leases before the last has been asked. The worst case is
-        therefore N leaves' pins held over N lookups, bounded by the client's
-        ``plan_ttl`` (10 s by default, clamped to the server's advertised
-        reader-lease deadline), which is the ceiling to size against because
-        pinned blocks are not evictable.
+        Raises:
+            ValueError: If the rows do not match the leaf tree one block per
+                hash, if no lookup leased this replica, or if the rows
+                disagree about where they end.
+            KVLoadRefused: If a leaf delivered less than its own lease
+                promised.
         """
-        if set(block_ids) != set(self._leaves):
-            raise ValueError(
-                "DKVConnector.load block IDs must match its leaf mapping. "
-                f"Expected {self._leaves}, got {block_ids}"
-            )
-        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
         clients = self._clients[replica_idx]
         leaf_ids = list(self._leaves)
-        miss = _DKVCompletedTransfer(
-            TransferDirection.LOAD, {leaf_id: [] for leaf_id in leaf_ids}
-        )
-
-        # A hint routes the leaves that carry it to a PEER. The sliding leaves
-        # cannot carry one (a v2 hint is group-major and names the producer's
-        # ids, and a peer predating per-leaf ids has no id for a sliding leaf),
-        # so on a hybrid tree a hinted full-leaf hit would be looked up
-        # remotely while the sliding leaf is looked up locally and misses --
-        # spending the bandwidth and the load barrier to throw the result away.
-        # Until a hint can name per-leaf ids (SERVOPT-1617), a hybrid tree
-        # takes the local path on every leaf.
-        if self._sliding_leaf_ids:
-            hint = None
-
-        # Leaves whose `load_prepared` posted, in call order. `_load_leased`
-        # fills it as it goes, because an H2D landing in a staging row the
-        # caller is about to free has to be waited on however this returns.
+        depths = self._leased_depths.pop(replica_idx, None)
+        # Leaves whose `load_prepared` posted, in call order. Filled as it
+        # goes, because an H2D landing in a staging row the caller is about to
+        # free has to be waited on however this returns.
         posted_leaves: list[str] = []
         try:
-            return self._load_leased(
-                block_ids,
-                dkv_hashes,
-                clients,
-                leaf_ids,
-                miss,
-                hint,
-                posted_leaves,
-            )
-        except BaseException:
-            # Every leaf leases BEFORE anything is decided, so a raise on any
-            # path below -- a short staging row, or an error out of the
-            # bindings themselves -- has to hand those pins back rather than
-            # leave them to the lease TTL. `abandon_prepared` is a no-op on a
-            # client with nothing outstanding, so this can run blindly over
-            # the whole tree without double-releasing what was consumed.
-            #
-            # Each call is guarded on its own: one leaf failing to release
-            # must not strand the leaves after it, nor mask the original
-            # exception with its own. `BaseException`, to match the handler
-            # this runs inside -- an `Exception` guard would let anything the
-            # FFI raises outside that hierarchy strand the remaining leaves,
-            # which is the case the guard exists for.
+            wanted = {
+                leaf_id: len(hashes) for leaf_id, hashes in block_hashes.items()
+            }
+            if set(wanted) != set(self._leaves) or any(
+                len(block_ids[leaf_id]) != n
+                for leaf_id, n in wanted.items()
+                if leaf_id in block_ids
+            ):
+                raise ValueError(
+                    "DKVConnector.load needs one destination block per hash "
+                    f"on every leaf of {sorted(self._leaves)}; got blocks "
+                    f"{ {k: len(v) for k, v in block_ids.items()} } and "
+                    f"hashes {wanted}"
+                )
+            if depths is None:
+                raise ValueError(
+                    "DKVConnector.load ran without a lease on replica "
+                    f"{replica_idx}; every load reads out of the plan its own "
+                    "lookup built."
+                )
+            end = self._leased_end(depths, block_hashes)
+
+            posted = {}
             for leaf_id in leaf_ids:
-                try:
+                share = wanted[leaf_id]
+                if not share:
+                    # Unreachable: `_derive_leaf_shape` asserts every sliding
+                    # leaf spans a whole block, so a share of a non-zero hit
+                    # cannot be 0. Kept because the alternative is posting
+                    # `num_blocks=0` against a live lease.
                     clients[leaf_id].abandon_prepared()
-                except BaseException:
-                    _logger.exception(
-                        "dkv abandon_prepared failed for leaf %s while "
-                        "unwinding; its pins wait on the lease TTL",
-                        leaf_id,
-                    )
-            # Leases are not the only thing outstanding. A leaf that already
-            # posted has reads landing into rows the caller frees as soon as
-            # this raises, so they have to be waited on before the exception
-            # leaves -- the same hazard the short-delivery branch drains for.
-            # Guarded per leaf, and swallowing here: the original exception is
-            # the one worth propagating.
+                    posted[leaf_id] = 0
+                    continue
+                posted[leaf_id] = clients[leaf_id].load_prepared(
+                    group_id=self._wire_ids[leaf_id],
+                    block_ids=list(block_ids[leaf_id]),
+                    end=end,
+                    num_blocks=share,
+                )
+                if posted[leaf_id]:
+                    posted_leaves.append(leaf_id)
+            if posted != wanted:
+                short_leaves = [
+                    leaf_id
+                    for leaf_id in leaf_ids
+                    if posted[leaf_id] != wanted[leaf_id]
+                ]
+                # Not an eviction race: the lease held across both halves.
+                # What is left is a fault -- degraded mid-request, an expired
+                # lease, or a hinted peer leaving the table. Drain only the
+                # leaves that posted; `wait_for_loads` is not scoped to one
+                # request, so draining the rest would wait on other requests'
+                # transfers from the scheduler thread.
+                self._drain_and_clear_posted(clients, posted_leaves)
+                raise KVLoadRefused(
+                    "dkv load_prepared fell short of its own lease: leaves "
+                    f"{short_leaves} delivered "
+                    f"{[posted[leaf_id] for leaf_id in short_leaves]} of "
+                    f"{[wanted[leaf_id] for leaf_id in short_leaves]}. The "
+                    "connector degraded, the lease expired mid-request, or a "
+                    "hinted peer left the table."
+                )
+            return CompletedTransfer()
+        except BaseException:
+            # Every leaf leased before anything was decided, so any raise
+            # above has to hand those pins back rather than wait for the TTL.
+            self._abandon_leases(replica_idx)
+            # A leaf that posted has reads landing into rows the caller frees
+            # as soon as this raises. Swallowing: the original exception is
+            # the one worth propagating. Empty on the short-delivery path.
             for leaf_id in posted_leaves:
                 try:
                     clients[leaf_id].wait_for_loads()
@@ -1563,173 +1606,6 @@ class DKVConnector(KVConnector):
                     )
         if first is not None:
             raise first
-
-    def _load_leased(
-        self,
-        block_ids: Mapping[str, Sequence[int]],
-        dkv_hashes: Sequence[int],
-        clients: Mapping[str, _DkvClient],
-        leaf_ids: Sequence[str],
-        miss: KVConnectorTransfer,
-        hint: bytes | None,
-        posted_leaves: list[str],
-    ) -> KVConnectorTransfer:
-        """The leased half of :meth:`load`, split out so one handler covers it.
-
-        Everything here runs with a lease outstanding on every leaf, and every
-        exit has to account for them: consumed by `load_prepared`, handed back
-        by `abandon_prepared`, or -- for anything that raises -- released by
-        the caller's handler.
-
-        The leases are not the only thing outstanding once a transfer is
-        posted. `posted_leaves` is appended to as each leaf posts, so the
-        caller's handler can drain exactly those on the way out; a leaf that
-        posted nothing has nothing of OURS in flight, and draining it anyway
-        would wait on other requests' reads (`wait_for_loads` takes the
-        client's whole `inflight_reads`, not this request's).
-        """
-        # One leased lookup per leaf. Each client answers only for its own
-        # keyspace now -- the whole-tree lookup is gone, because the lease has
-        # to live on the client that will post the transfer, and that is the
-        # leaf that owns the device buffers.
-        resident = {
-            leaf_id: clients[leaf_id].prepare_load(
-                group_id=self._wire_ids[leaf_id],
-                block_hashes=dkv_hashes,
-                hint=hint,
-            )
-            for leaf_id in leaf_ids
-        }
-        # O(leaves), not O(blocks): the masks index against `dkv_hashes`
-        # below, so a mis-sized one has to fail here rather than as an
-        # IndexError inside a serving request.
-        short_mask = {
-            leaf_id: len(mask)
-            for leaf_id, mask in resident.items()
-            if len(mask) != len(dkv_hashes)
-        }
-        if short_mask:
-            # The leases are handed back by `load`'s handler, which covers
-            # every raising path here rather than each one separately.
-            raise ValueError(
-                f"dkv prepare_load answered {short_mask} blocks wide over "
-                f"{len(dkv_hashes)} blocks"
-            )
-
-        aligned = longest_joint_prefix_hit(
-            len(dkv_hashes),
-            [
-                self._leaf_hit_rule(leaf_id, resident[leaf_id])
-                for leaf_id in leaf_ids
-            ],
-        )
-        if aligned == 0:
-            # Nothing the tree agrees on. Hand the leases straight back rather
-            # than leaving them to expire: every leaf took one, including the
-            # leaves that answered with plenty.
-            for leaf_id in leaf_ids:
-                clients[leaf_id].abandon_prepared()
-            return miss
-
-        # Every leaf's blocks END at the agreed bound, so a leaf holding only
-        # part of it holds the tail: the whole prefix for a full leaf, the
-        # window for a windowed one, whose blocks below it are null. This is
-        # NOT the hit depth -- a windowed leaf's hit covers the whole prefix
-        # while the leaf holds only its window.
-        wanted = {
-            leaf_id: blocks_held_of_hit(
-                aligned, self._blocks_in_window_of(leaf_id)
-            )
-            for leaf_id in leaf_ids
-        }
-        short = {
-            leaf_id: len(block_ids[leaf_id])
-            for leaf_id, share in wanted.items()
-            if len(block_ids[leaf_id]) < share
-        }
-        if short:
-            # Unreachable from either caller:
-            # `num_blocks_needed_for_connector_load` sizes every row to the
-            # same `blocks_held_of_hit` bound off the same `page_size`, and
-            # `alloc_block` raises rather than returning a short row. Kept
-            # loud because a row shorter than its share would otherwise write
-            # a leaf's blocks into another leaf's slots.
-            raise ValueError(
-                "DKVConnector.load was given staging rows too short for the "
-                f"prefix dkv holds ({aligned} blocks, shares {wanted}): "
-                f"{short}. num_blocks_needed_for_connector_load sizes these."
-            )
-
-        rows = {
-            leaf_id: list(block_ids[leaf_id])[: wanted[leaf_id]]
-            for leaf_id in leaf_ids
-        }
-        # Each leaf moves the WINDOW ending at the agreed prefix out of the
-        # locations its own `prepare_load` leased. `end=aligned` with
-        # `num_blocks=share` is the whole of it for a full leaf and the window
-        # for a windowed one.
-        posted = {}
-        for leaf_id in leaf_ids:
-            share = wanted[leaf_id]
-            if not share:
-                # Unreachable: `aligned` is non-zero by the check above, and
-                # `_derive_leaf_shape` asserts every sliding leaf spans a whole
-                # block, so `blocks_held_of_hit` cannot return 0. Kept because
-                # the alternative is posting `num_blocks=0` against a live
-                # lease; handing it back is the honest thing to do with a share
-                # of nothing.
-                clients[leaf_id].abandon_prepared()
-                posted[leaf_id] = 0
-                continue
-            posted[leaf_id] = clients[leaf_id].load_prepared(
-                group_id=self._wire_ids[leaf_id],
-                block_ids=rows[leaf_id],
-                end=aligned,
-                num_blocks=share,
-            )
-            if posted[leaf_id]:
-                posted_leaves.append(leaf_id)
-        if posted != wanted:
-            short_leaves = [
-                leaf_id
-                for leaf_id in leaf_ids
-                if posted[leaf_id] != wanted[leaf_id]
-            ]
-            # No longer the eviction race it used to be: the lease has been
-            # held since `prepare_load`, so nothing could be reclaimed under
-            # us. Three things are left, all faults rather than ordinary cache
-            # behaviour, and all still served as a miss: a connector that
-            # degraded mid-request, a lease that outlived its TTL while the
-            # reconcile ran, or -- for a lease granted by a PEER -- that peer
-            # leaving the connector's table between the two halves, since the
-            # attach pump runs in that window and evicts over its cap.
-            _logger.warning(
-                "dkv load_prepared fell short of its own lease: leaves %s "
-                "delivered %s of %s. The connector degraded, the lease expired "
-                "mid-request, or a hinted peer left the table; serving this "
-                "request as a miss.",
-                short_leaves,
-                [posted[leaf_id] for leaf_id in short_leaves],
-                [wanted[leaf_id] for leaf_id in short_leaves],
-            )
-            # Only the leaves that posted, and only if any did. `load_prepared`
-            # returning 0 for every leaf is reachable without an eviction --
-            # degraded between prepare and post, an expired lease, a lost
-            # handshake, a refused narrowing, a short row -- and those cluster
-            # during a dKV blip. Draining then would make this request wait,
-            # on the scheduler thread, for the transfers earlier requests in
-            # the same batch posted, since `wait_for_loads` is not scoped to
-            # one request.
-            self._drain_and_clear_posted(clients, posted_leaves)
-            return miss
-
-        return _DKVCompletedTransfer(
-            TransferDirection.LOAD,
-            {
-                leaf_id: _loaded_row(rows[leaf_id], wanted[leaf_id], aligned)
-                for leaf_id in leaf_ids
-            },
-        )
 
     def offload(
         self,
@@ -1785,10 +1661,7 @@ class DKVConnector(KVConnector):
             )
         # dKV registers its posted WRITEs in the deprecated ``wait_for_offloads``
         # barrier, so the manager keeps no pin on the source blocks.
-        return _DKVCompletedTransfer(
-            TransferDirection.OFFLOAD,
-            block_ids,
-        )
+        return CompletedTransfer(block_ids)
 
     def touch(
         self,

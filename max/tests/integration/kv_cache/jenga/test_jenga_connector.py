@@ -33,7 +33,8 @@ from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     KVConnector,
     KVConnectorTransfer,
-    TransferDirection,
+    KVLoadRefused,
+    KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
@@ -52,13 +53,8 @@ SLIDING = "sliding"
 class FakeTransfer:
     """A transfer that reports complete only once ``synchronize`` is called."""
 
-    def __init__(
-        self,
-        g0: Mapping[str, Sequence[int]],
-        direction: TransferDirection = TransferDirection.LOAD,
-    ) -> None:
-        self.g0_blocks_per_leaf = g0
-        self.direction = direction
+    def __init__(self, g0: Mapping[str, Sequence[int]] | None = None) -> None:
+        self.g0_blocks_per_leaf = {} if g0 is None else g0
         self.done = False
 
     def is_complete(self) -> bool:
@@ -84,45 +80,64 @@ class FakeConnector:
             else {leaf: KVCacheGroupId.full() for leaf in leaves}
         )
         self.held: set[bytes] = set()
+        self.evict_before_load: set[bytes] = set()
         self.asynchronous = asynchronous
-        self.loads: list[tuple[dict[str, list[int]], list[bytes], int]] = []
+        self.lookups: list[tuple[list[bytes], int, bytes | None]] = []
+        self.loads: list[
+            tuple[dict[str, list[int]], dict[str, list[bytes]], int]
+        ] = []
         self.offloads: list[tuple[dict[str, list[int]], list[bytes]]] = []
         self.touches: list[tuple[list[bytes], int]] = []
         self.transfers: list[FakeTransfer] = []
 
-    def load(
+    def lookup(
         self,
-        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        served = 0
-        for block_hash in block_hashes:
-            if block_hash not in self.held:
-                break
-            served += 1
+    ) -> Mapping[str, Sequence[bool]]:
+        """States residency and nothing else.
+
+        What a pattern of residency is WORTH is the manager's to work out from
+        each leaf's shape, which is the point of the split.
+        """
+        self.lookups.append((list(block_hashes), replica_idx, hint))
+        return {
+            leaf_id: [h in self.held for h in block_hashes]
+            for leaf_id in self.leaves
+        }
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
         self.loads.append(
             (
                 {leaf: list(ids) for leaf, ids in block_ids.items()},
-                list(block_hashes),
-                served,
+                {leaf: list(hs) for leaf, hs in block_hashes.items()},
+                replica_idx,
             )
         )
-        loaded_blocks = {}
-        for leaf_id, ids in block_ids.items():
-            group_id = self.leaves[leaf_id]
-            window_blocks = (
-                group_id.blocks_in_window(page_size=1)
-                if group_id.is_sliding_window()
-                else served
+        for leaf_id, hashes in block_hashes.items():
+            assert len(hashes) == len(block_ids[leaf_id]), (
+                f"leaf {leaf_id!r} got {len(block_ids[leaf_id])} blocks for "
+                f"{len(hashes)} hashes"
             )
-            null_padding = max(0, served - window_blocks)
-            loaded_blocks[leaf_id] = [0] * null_padding + list(ids)[
-                : served - null_padding
-            ]
-        transfer = FakeTransfer(loaded_blocks)
-        if not self.asynchronous or served == 0:
+            for block_hash in hashes:
+                if block_hash in self.evict_before_load:
+                    raise KVLoadRefused(
+                        f"evicted between lookup and load: {block_hash!r}",
+                        leaf_id=leaf_id,
+                        block_hash=block_hash,
+                    )
+                assert block_hash in self.held, (
+                    f"asked for {block_hash!r}, which lookup never reported"
+                )
+        transfer = FakeTransfer()
+        if not self.asynchronous:
             transfer.done = True
         self.transfers.append(transfer)
         return transfer
@@ -142,7 +157,6 @@ class FakeConnector:
         self.held.update(block_hashes)
         transfer = FakeTransfer(
             {leaf: list(ids) for leaf, ids in block_ids.items()},
-            TransferDirection.OFFLOAD,
         )
         if not self.asynchronous:
             transfer.done = True
@@ -153,11 +167,6 @@ class FakeConnector:
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
     ) -> None:
         self.touches.append((list(block_hashes), replica_idx))
-
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        return (0, 0)
 
     def wait_for_loads(self) -> None:
         return None
@@ -261,7 +270,8 @@ def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
     manager.claim(second)
     transfer = manager.alloc(second)
     assert connector.loads, "no load issued"
-    _, asked, served = connector.loads[-1]
+    asked = connector.loads[-1][1][FULL]
+    served = len(asked)
     assert served > 0
     assert second.tokens.processed_length == served
     assert not transfer.is_complete(), "async load should still be in flight"
@@ -338,7 +348,7 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
 
     # The replay's own last token is never hashed, so one block stays uncached.
     reusable = offloaded[:-1]
-    asked = connector.loads[-1][1]
+    asked = connector.loads[-1][1][FULL]
     assert manager.metrics.device_blocks_served == 1, (
         "device hit should stop at the one cached block"
     )
@@ -395,6 +405,25 @@ def test_onload_is_skipped_when_the_run_does_not_fit() -> None:
     assert not pool.prefix_caches[VALUES]
 
 
+def test_a_lookup_that_finds_nothing_posts_no_load() -> None:
+    """A miss asks and then stops. Nothing is owed back to the connector.
+
+    The connector holds nothing, so the reconcile agrees on no prefix. What a
+    leasing connector does with the lookup it took is its own business -- the
+    manager has no release to call.
+    """
+    connector = FakeConnector([VALUES, SCALES], asynchronous=False)
+    manager = make_manager(
+        connector, leaves=(VALUES, SCALES), num_huge_blocks=16
+    )
+    ctx = make_ctx([1, 2, 3, 4, 5])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+
+    assert connector.lookups, "the connector was never asked"
+    assert not connector.loads
+
+
 def test_last_level_cache_only_forces_every_hit_through_the_connector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -425,7 +454,7 @@ def test_last_level_cache_only_forces_every_hit_through_the_connector(
     assert manager.metrics.device_blocks_served == 0
     assert second.cached_prefix_external_length == second.cached_prefix_length
     assert second.cached_prefix_length > 0
-    assert connector.loads[-1][1] == list(offloaded[:-1])
+    assert connector.loads[-1][1][FULL] == list(offloaded[:-1])
     # The recency touch must still fire with NO device hit. This is the
     # regression guard for the call site's own rationale: gating it on
     # `num_hit_blocks` instead of the reused run skips it entirely under
@@ -500,10 +529,14 @@ def test_swa_connector_onload_null_pads_and_skips_prefix_cache_commit() -> None:
     manager.claim(replay)
     manager.alloc(replay)
 
-    block_ids, asked, served = connector.loads[-1]
+    block_ids, hashes, _ = connector.loads[-1]
+    asked = hashes[FULL]
     assert asked == list(offloaded[:-1])
-    assert served == len(asked)
-    assert len(block_ids[SLIDING]) == groups[SLIDING].blocks_in_window(1)
+    # The windowed leaf is asked only for the tail its attention reads, and
+    # given exactly that many blocks.
+    window = groups[SLIDING].blocks_in_window(1)
+    assert hashes[SLIDING] == asked[-window:]
+    assert len(block_ids[SLIDING]) == window
 
     pool = manager.pools[0]
     sliding_blocks = manager.get_req_blocks_per_leaf(replay)[SLIDING]

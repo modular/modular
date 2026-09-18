@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from max.nn.kv_cache import KVCacheGroupId
@@ -22,6 +22,7 @@ from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 
 from ..prefix_hit import (
+    blocks_held_of_hit,
     longest_full_attention_hit,
     longest_sliding_window_hit,
 )
@@ -124,6 +125,19 @@ class KVGroupCoordinatorInterface:
         """Which of ``desired_hashes`` this group would claim as a hit."""
         raise NotImplementedError("Subclasses must implement this method.")
 
+    def longest_hit(
+        self, num_hashes: int, is_cached: Callable[[int], bool]
+    ) -> int:
+        """Returns how many of the leading ``num_hashes`` this group can reuse.
+
+        The group's attention shape and nothing else: residency arrives as a
+        predicate over indices, so the device pools and a connector's
+        ``lookup`` masks both drive the same rule. Counted from the start, so
+        the answer is a prefix length even for a group that only reads the tail
+        of it.
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
+
     def longest_cache_hit(
         self,
         desired_hashes: Sequence[bytes],
@@ -146,7 +160,15 @@ class KVGroupCoordinatorInterface:
             allow_cross_replica: Whether hashes held only by another replica
                 count as hits.
         """
-        raise NotImplementedError("Subclasses must implement this method.")
+        return self.longest_hit(
+            len(desired_hashes),
+            lambda idx: (
+                self.find_replica_with_hash(
+                    desired_hashes[idx], replica_idx, allow_cross_replica
+                )
+                is not None
+            ),
+        )
 
     def claim_hit_blocks(
         self,
@@ -295,8 +317,14 @@ class KVGroupCoordinatorInterface:
         """Frees the blocks the group no longer reads, nulling their slots."""
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def num_blocks_needed_for_connector_load(self, num_hashes: int) -> int:
-        """The number of blocks needed to service a connector cache hit for all hashes."""
+    def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
+        """How many blocks of a hit that deep this group actually holds.
+
+        Not the hit depth: a windowed group's hit can cover a whole prefix
+        while the group holds only the window at the end of it, because the
+        slots below the window are never read. The manager sizes each leaf's
+        staging row from this and nulls the slots below it.
+        """
         raise NotImplementedError("Subclasses must implement this method.")
 
     def forward_blocks(
@@ -362,22 +390,11 @@ class KVGroupCoordinatorInterface:
 class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
     """A group whose caches read their whole history."""
 
-    def longest_cache_hit(
-        self,
-        desired_hashes: Sequence[bytes],
-        replica_idx: int,
-        allow_cross_replica: bool = False,
+    def longest_hit(
+        self, num_hashes: int, is_cached: Callable[[int], bool]
     ) -> int:
-        """Returns the run of committed hashes from the root."""
-        return longest_full_attention_hit(
-            len(desired_hashes),
-            lambda idx: (
-                self.find_replica_with_hash(
-                    desired_hashes[idx], replica_idx, allow_cross_replica
-                )
-                is not None
-            ),
-        )
+        """Returns the run of resident hashes from the root."""
+        return longest_full_attention_hit(num_hashes, is_cached)
 
     def claimable_hashes(
         self, desired_hashes: Sequence[bytes]
@@ -411,9 +428,9 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Keeps every block: this group reads its whole history."""
         return
 
-    def num_blocks_needed_for_connector_load(self, num_hashes: int) -> int:
-        """The full group needs one block per hash."""
-        return num_hashes
+    def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
+        """All of it: this group reads its whole history."""
+        return blocks_held_of_hit(num_hit_blocks, None)
 
 
 @dataclass(frozen=True)
@@ -429,11 +446,8 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
     def _blocks_in_window(self) -> int:
         return self.group_id.blocks_in_window(self.page_size)
 
-    def longest_cache_hit(
-        self,
-        desired_hashes: Sequence[bytes],
-        replica_idx: int,
-        allow_cross_replica: bool = False,
+    def longest_hit(
+        self, num_hashes: int, is_cached: Callable[[int], bool]
     ) -> int:
         """Returns the longest windowed cache hit we can serve.
 
@@ -472,14 +486,7 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         hit rate since the query token does not attend to any historical tokens.
         """
         return longest_sliding_window_hit(
-            len(desired_hashes),
-            self._blocks_in_window,
-            lambda idx: (
-                self.find_replica_with_hash(
-                    desired_hashes[idx], replica_idx, allow_cross_replica
-                )
-                is not None
-            ),
+            num_hashes, self._blocks_in_window, is_cached
         )
 
     def claimable_hashes(
@@ -532,9 +539,9 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
                 pool.free_block(req_blocks[idx])
                 req_blocks[idx] = null_block
 
-    def num_blocks_needed_for_connector_load(self, num_hashes: int) -> int:
-        """The number of blocks needed to service a connector cache hit for all hashes."""
-        return min(num_hashes, self._blocks_in_window)
+    def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
+        """Only the window ending at the hit; the rest has slid out of reach."""
+        return blocks_held_of_hit(num_hit_blocks, self._blocks_in_window)
 
     def extend(
         self,

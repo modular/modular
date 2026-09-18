@@ -1246,8 +1246,7 @@ def test_get_prefix_cache_hit_counts_reports_device_hits() -> None:
 
     assert len(hits) == 1
     assert hits[0].device_blocks > 0
-    assert hits[0].host_blocks == 0
-    assert hits[0].disk_blocks == 0
+    assert hits[0].external_blocks == 0
 
     assert bm.get_prefix_cache_hit_counts(
         make_ctx_with_tokens([100, 101, 102, 103, 104])

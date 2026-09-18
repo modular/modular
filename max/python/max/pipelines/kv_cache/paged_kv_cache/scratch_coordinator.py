@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from max.pipelines.context import TextContext
@@ -48,11 +48,8 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Returns nothing: this group's block is never published."""
         return ()
 
-    def longest_cache_hit(
-        self,
-        desired_hashes: Sequence[bytes],
-        replica_idx: int,
-        allow_cross_replica: bool = False,
+    def longest_hit(
+        self, num_hashes: int, is_cached: Callable[[int], bool]
     ) -> int:
         """Returns the whole run, leaving the length to the groups that cache.
 
@@ -61,7 +58,7 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         on. It is excluded from that cycle as well, which makes this
         unreachable rather than merely harmless.
         """
-        return len(desired_hashes)
+        return num_hashes
 
     def claim_hit_blocks(
         self, desired_hashes: Sequence[bytes], replica_idx: int
@@ -128,7 +125,7 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Frees nothing: the request reads its block until it is released."""
         return
 
-    def num_blocks_needed_for_connector_load(self, num_hashes: int) -> int:
+    def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """Returns zero: an external tier holds nothing for this group."""
         return 0
 

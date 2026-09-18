@@ -33,7 +33,7 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManagerInterface,
     TransferReqData,
 )
-from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
+from max.pipelines.kv_cache.kv_connector import KVTransfer
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     MemoryPlan,
@@ -103,7 +103,7 @@ class PendingDecodeRequest:
     # The admission-time KV onload (a reused-prefix H2D copy). Release
     # and TG-enqueue sites must wait for this too, not just the prefill
     # transfer.
-    onload_event: KVConnectorTransfer
+    onload_event: KVTransfer
     phase_entered_at: float = field(default_factory=time.monotonic)
     transfer: TransferReqData | None = None
     # Decode-clock receipt times for prefill's ping-back events, used to
@@ -392,7 +392,7 @@ class DecodeScheduler(Scheduler):
         req_id: RequestID,
         context: TextContext,
         replica_idx: int,
-        onload_event: KVConnectorTransfer,
+        onload_event: KVTransfer,
     ) -> None:
         """Sends a claimed request to the prefill node.
 

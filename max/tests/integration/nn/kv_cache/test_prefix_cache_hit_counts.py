@@ -17,8 +17,8 @@ Covers the two building blocks added for prefix-aware data-parallel routing:
 
 - ``compute_block_hashes``: pure block hashing that neither reads nor writes
   per-request state and chains onto existing hashes.
-- ``BlockManager.count_cached_prefix_blocks`` and the connectors'
-  ``count_cached_prefix``: contiguous, tier-ordered (device -> host -> disk)
+- ``BlockManager.count_cached_prefix_blocks`` over the device prefix cache
+  and ``KVConnector.lookup``: contiguous, tier-ordered (device -> external)
   hit counting with no side effects on pools, LRUs, or request state.
 """
 
@@ -35,7 +35,6 @@ from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     CompletedTransfer,
-    TransferDirection,
 )
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
@@ -98,20 +97,17 @@ def _seed_device_prefix_cache(
 
 
 class _TierStubConnector:
-    """KVConnector-shaped stub with host/disk membership sets.
+    """KVConnector-shaped stub with a membership set.
 
     Exercises the BlockManager -> connector hand-off: records the hashes it
     receives so tests can assert the walk starts where the device prefix
-    ended, and asserts the canonical bytes form crossing the boundary.
+    ended, and asserts the canonical bytes form crossing the boundary. Its
+    ``load`` raises on purpose, so a count path that transferred anything
+    would fail loudly.
     """
 
-    def __init__(
-        self,
-        host_hashes: set[bytes] | None = None,
-        disk_hashes: set[bytes] | None = None,
-    ) -> None:
-        self._host_hashes = host_hashes or set()
-        self._disk_hashes = disk_hashes or set()
+    def __init__(self, held: set[bytes] | None = None) -> None:
+        self._held = held or set()
         self.received_hashes: list[bytes] | None = None
 
     @property
@@ -126,26 +122,20 @@ class _TierStubConnector:
     def host_byte_count(self) -> ByteCount:
         return ByteCount(free=4 * 4096, total=4 * 4096)
 
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
         assert all(isinstance(h, bytes) for h in block_hashes)
         self.received_hashes = list(block_hashes)
-        num_host_hits = 0
-        num_disk_hits = 0
-        for h in block_hashes:
-            if h in self._host_hashes:
-                num_host_hits += 1
-            elif h in self._disk_hashes:
-                num_disk_hits += 1
-            else:
-                break
-        return (num_host_hits, num_disk_hits)
+        return {"full": [h in self._held for h in block_hashes]}
 
     def load(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
         hint: bytes | None = None,
     ) -> int:
@@ -183,36 +173,28 @@ class _ReusableTierStubConnector:
     def host_byte_count(self) -> ByteCount:
         return ByteCount(free=8 * 4096, total=8 * 4096)
 
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        num_host = 0
-        for h in block_hashes:
-            if h not in self._host_hashes:
-                break
-            num_host += 1
-        return (num_host, 0)
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        return {"full": [h in self._host_hashes for h in block_hashes]}
 
     def load(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
         hint: bytes | None = None,
     ) -> CompletedTransfer:
-        # Serve the leading run this stub holds; the manager frees the surplus
-        # staging blocks past what we report as loaded.
-        bids = list(block_ids["full"])
-        num_loaded = 0
-        for h in block_hashes:
-            if h not in self._host_hashes:
-                break
-            num_loaded += 1
-        return CompletedTransfer(
-            TransferDirection.LOAD,
-            leaves=["full"],
-            g0_blocks=bids[:num_loaded],
-        )
+        # The manager settled the run from `lookup`, so everything it asks for
+        # is here; anything else is the manager getting it wrong.
+        for h in block_hashes["full"]:
+            assert h in self._host_hashes, (
+                f"asked for {h!r}, which we never held"
+            )
+        return CompletedTransfer()
 
     def touch(
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
@@ -469,23 +451,20 @@ def test_count_is_read_only() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_count_continues_into_host_and_disk_tiers() -> None:
+def test_count_continues_into_the_connectors_tiers() -> None:
     connector = _TierStubConnector()
     bm = _make_block_manager(connector=connector)
     ctx = _make_ctx(np.arange(41, dtype=np.int32))  # 5 full blocks
     hashes = _compute_block_hashes(bm, ctx, [])
 
-    # Block 0 on device, block 1 on host, block 2 on disk, block 3 missing,
-    # block 4 on host (unreachable past the gap).
+    # Block 0 on device, blocks 1 and 2 in the connector, block 3 missing,
+    # block 4 in the connector but unreachable past the gap.
     _seed_device_prefix_cache(bm, hashes[:1])
-    connector._host_hashes = {hashes[1], hashes[4]}
-    connector._disk_hashes = {hashes[2]}
+    connector._held = {hashes[1], hashes[2], hashes[4]}
 
     hits = bm.count_cached_prefix_blocks(hashes)
 
-    assert hits == PrefixCacheHits(
-        device_blocks=1, host_blocks=1, disk_blocks=1
-    )
+    assert hits == PrefixCacheHits(device_blocks=1, external_blocks=2)
     assert hits.total_blocks == 3
     # The connector must only be asked about the run after the device prefix.
     assert connector.received_hashes == list(hashes[1:])
@@ -509,8 +488,8 @@ def test_count_all_device_hits_skips_connector() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_null_connector_counts_nothing() -> None:
-    assert NullConnector().count_cached_prefix([b"\x00" * 8]) == (0, 0)
+def test_null_connector_holds_nothing() -> None:
+    assert NullConnector().lookup([b"\x00" * 8]) == {"full": [False]}
 
 
 # The host/disk tier's own host-then-disk walk lives in Rust now; it is covered

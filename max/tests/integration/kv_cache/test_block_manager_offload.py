@@ -35,7 +35,7 @@ from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     CompletedTransfer,
     KVConnectorTransfer,
-    TransferDirection,
+    KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache import (
     block_manager as block_manager_module,
@@ -58,13 +58,14 @@ class RecordingConnector:
     def __init__(self) -> None:
         self.offloads: list[tuple[list[int], list[bytes]]] = []
         self.touches: list[tuple[list[bytes], int]] = []
-        # The ``hint`` each ``load`` was given, in call order.
+        # The ``hint`` each ``lookup`` / ``load`` was given, in call order.
+        self.lookup_hints: list[bytes | None] = []
         self.load_hints: list[bytes | None] = []
-        # Ordered log of ``load``/``touch`` call names, so a test can assert the
-        # load-path anchor touch fires AFTER the load (CLIN-1533).
+        # Ordered log of ``lookup``/``load``/``touch`` call names, so a test can
+        # assert the load-path anchor touch fires AFTER the load (CLIN-1533).
         self.calls: list[str] = []
-        # Blocks ``load`` reports as loaded from the host tier (0 == host miss);
-        # lets a test drive a cold-G0/warm-host hit without real device memory.
+        # Leading hashes ``lookup`` reports as held (0 == host miss); lets a
+        # test drive a cold-G0/warm-host hit without real device memory.
         self.num_blocks_to_load = 0
         self._h2d_bytes_copied = 0
         self._d2h_bytes_copied = 0
@@ -85,9 +86,7 @@ class RecordingConnector:
     ) -> KVConnectorTransfer:
         bids = list(block_ids["full"])
         self.offloads.append((bids, list(block_hashes)))
-        return CompletedTransfer(
-            TransferDirection.OFFLOAD, leaves=["full"], g0_blocks=bids
-        )
+        return CompletedTransfer({"full": bids})
 
     def touch(
         self,
@@ -97,25 +96,27 @@ class RecordingConnector:
         self.calls.append("touch")
         self.touches.append((list(block_hashes), replica_idx))
 
-    def load(
+    def lookup(
         self,
-        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
+    ) -> Mapping[str, Sequence[bool]]:
+        self.calls.append("lookup")
+        self.lookup_hints.append(hint)
+        held = min(len(block_hashes), self.num_blocks_to_load)
+        return {"full": [idx < held for idx in range(len(block_hashes))]}
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
         self.calls.append("load")
         self.load_hints.append(hint)
-        bids = list(block_ids["full"])
-        num_loaded = min(len(block_hashes), self.num_blocks_to_load)
-        return CompletedTransfer(
-            TransferDirection.LOAD, leaves=["full"], g0_blocks=bids[:num_loaded]
-        )
-
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        return (0, 0)
+        return CompletedTransfer()
 
     def wait_for_loads(self) -> None: ...
     def wait_for_offloads(self) -> None: ...
@@ -484,7 +485,7 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
     """Fully cold (no device hit AND no host hit) means no anchor touch.
 
     Nothing is resident on device and the host tier loads nothing
-    (``num_blocks_to_load == 0``), so both ``device_blocks`` and ``host_blocks``
+    (``num_blocks_to_load == 0``), so both the device and the external runs
     are empty and the ``if device_blocks or host_blocks`` gate suppresses the
     anchor -- even though the load path ran (``load`` was called). Uses an
     external-tier connector so the ``host_byte_count.total`` gate is passed
@@ -500,7 +501,9 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
     served, _, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert served == []  # nothing served
-    assert connector.calls == ["load"]  # load ran; gate suppressed the touch
+    # The lookup ran and found nothing, so no load was posted and the gate
+    # suppressed the touch. A lookup is advisory -- nothing is owed back.
+    assert connector.calls == ["lookup"]
     assert connector.touches == []
 
 
@@ -677,7 +680,7 @@ def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:
     # and the connector serves the whole prefix, so it is all `external` rather
     # than the `g0` it would have been with the copy enabled.
     assert num_external == 2
-    assert connector.calls == ["load", "touch"]  # host load, no device hit
+    assert connector.calls == ["lookup", "load", "touch"]  # no device hit
     assert bm.metrics.cross_replica_blocks_copied == 0
     assert bm._replica_kv_memory is not None
     for units in bm._replica_kv_memory:
@@ -727,6 +730,9 @@ def test_load_receives_the_requests_cache_hint() -> None:
         _make_ctx(bm, rid, dkv_cache_hint=hint)
     )
 
+    # Lookup and load must be given the same hint, or a load would go
+    # somewhere the lookup never asked about.
+    assert connector.lookup_hints == [hint]
     assert connector.load_hints == [hint]
 
 
@@ -740,6 +746,7 @@ def test_load_receives_no_hint_for_an_unhinted_request() -> None:
 
     bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
+    assert connector.lookup_hints == [None]
     assert connector.load_hints == [None]
 
 
@@ -768,7 +775,7 @@ def test_touch_anchor_fires_after_load_on_host_only_hit() -> None:
 
     assert len(served) == 2  # both served from the host tier (no device hit)
     assert num_external == 2  # every block is the connector's
-    assert connector.calls == ["load", "touch"]  # touch after load, once
+    assert connector.calls == ["lookup", "load", "touch"]  # touch last, once
     assert connector.touches == [([_b(111), _b(222)], 0)]
 
 

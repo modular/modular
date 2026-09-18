@@ -27,7 +27,7 @@ from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     PagedKVCacheManagerInterface,
 )
-from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
+from max.pipelines.kv_cache.kv_connector import KVTransfer
 from max.pipelines.lora import LoRAManagerV3, get_lora_manager
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -114,7 +114,7 @@ class _OnloadingRequest:
 
     ctx: TextContext
     replica_idx: int
-    event: KVConnectorTransfer
+    event: KVTransfer
 
 
 @dataclass

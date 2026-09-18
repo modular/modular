@@ -157,7 +157,7 @@ def test_sliding_connector_load_staging_is_capped_to_its_window(
     num_hashes: int, expected: int
 ) -> None:
     group = sliding_group(make_pool())
-    assert group.num_blocks_needed_for_connector_load(num_hashes) == expected
+    assert group.blocks_held_of_connector_hit(num_hashes) == expected
 
 
 def test_a_hash_is_present_only_when_every_leaf_holds_it() -> None:

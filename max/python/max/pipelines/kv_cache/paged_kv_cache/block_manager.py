@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from max.driver import Buffer, batch_inplace_copy
@@ -41,12 +41,14 @@ from max.pipelines.context import (
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
-    KVConnectorTransfer,
+    KVLoadRefused,
+    KVTransfer,
 )
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
+from ..prefix_hit import longest_full_attention_hit, longest_joint_prefix_hit
 from .block_pool import BlockPool
 from .block_utils import (
     InsufficientBlocksError,
@@ -56,6 +58,17 @@ from .block_utils import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _full_attention_rule(mask: Sequence[bool]) -> Callable[[int], int]:
+    """How much of a candidate prefix one full-attention leaf serves.
+
+    A factory, not a lambda over the loop variable, which would late-bind every
+    rule to the last leaf.
+    """
+    return lambda candidate: longest_full_attention_hit(
+        candidate, mask.__getitem__
+    )
 
 
 def compute_block_hashes(
@@ -143,7 +156,7 @@ class _PendingTransfer:
     never tracked.
     """
 
-    event: KVConnectorTransfer
+    event: KVTransfer
     blocks: list[KVCacheBlock]
     commit_hashes: list[bytes] | None = None
 
@@ -232,23 +245,25 @@ class PrefixCacheHits:
 
     Counts are blocks, not tokens, and describe one contiguous run from the
     start of the request's block hash chain: the leading ``device_blocks``
-    are resident in the device prefix cache, and ``host_blocks`` plus
-    ``disk_blocks`` continue that run from the connector's external tiers.
+    are resident in the device prefix cache, and ``external_blocks``
+    continue that run from the connector's tiers.
+
+    The external count is not split by tier. ``KVConnector.lookup`` reports
+    whether a connector holds a block, not which of its tiers holds it, and
+    which tier a block is read from is the connector's business -- a disk hit
+    is promoted through host memory on its way to the device anyway.
     """
 
     device_blocks: int = 0
     """Leading blocks resident in the device prefix cache."""
 
-    host_blocks: int = 0
-    """Blocks continuing the run that are resident in the host tier."""
-
-    disk_blocks: int = 0
-    """Blocks continuing the run that are resident in the disk tier."""
+    external_blocks: int = 0
+    """Blocks continuing the run that the connector's tiers hold."""
 
     @property
     def total_blocks(self) -> int:
         """Total contiguous cached blocks across all tiers."""
-        return self.device_blocks + self.host_blocks + self.disk_blocks
+        return self.device_blocks + self.external_blocks
 
 
 class BlockManager:
@@ -448,7 +463,7 @@ class BlockManager:
     def reuse_blocks_from_prefix_cache(
         self,
         ctx: TextContext,
-    ) -> tuple[int, KVConnectorTransfer]:
+    ) -> tuple[int, KVTransfer]:
         """Reuses blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
@@ -471,7 +486,7 @@ class BlockManager:
         self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
-            return 0, CompletedTransfer.load()
+            return 0, CompletedTransfer()
 
         # Identify a request's first admission so we record one cache-hit
         # observation per request, not one per chunked-prefill chunk.
@@ -724,7 +739,7 @@ class BlockManager:
         replica_idx: int = 0,
         *,
         hint: bytes | None,
-    ) -> tuple[list[KVCacheBlock], KVConnectorTransfer]:
+    ) -> tuple[list[KVCacheBlock], KVTransfer]:
         """Onloads device blocks with the desired hashes from the connector.
 
         The device blocks are newly allocated and initialized with the contents
@@ -751,34 +766,52 @@ class BlockManager:
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
         if not desired_hashes:
-            return [], CompletedTransfer.load()
+            return [], CompletedTransfer()
 
-        # Limit by available device blocks.
-        num_hashes_to_load = min(len(desired_hashes), pool.num_free_blocks)
-        desired_hashes = desired_hashes[:num_hashes_to_load]
-        blocks = [
-            self.allocate_device_block(replica_idx)
-            for _ in range(num_hashes_to_load)
-        ]
-
-        # Query connector for available blocks from host cache.
-        block_ids = [b.bid for b in blocks]
-        event = connector.load(
-            {leaf_id: block_ids for leaf_id in connector.leaves},
-            desired_hashes,
-            replica_idx=replica_idx,
-            hint=hint,
+        # Ask what the tiers hold, then reconcile. This manager declares every
+        # leaf full attention (see ``create_connector`` in ``cache_manager``),
+        # so each leaf's hit is its run from the root and the prefix they agree
+        # on is the shortest of those -- but the run is still settled by the
+        # shared rules rather than here, so a leaf tree that is not uniformly
+        # full attention cannot quietly get the wrong answer.
+        resident = connector.lookup(
+            desired_hashes, replica_idx=replica_idx, hint=hint
         )
+        num_loaded = longest_joint_prefix_hit(
+            len(desired_hashes),
+            [_full_attention_rule(mask) for mask in resident.values()],
+        )
+        # Truncating is safe: a full-attention hit is downward-closed, so a
+        # shorter prefix of an agreed one is also agreed.
+        num_loaded = min(num_loaded, pool.num_free_blocks)
+        if num_loaded == 0:
+            return [], CompletedTransfer()
 
-        # The connector may load fewer blocks than requested; its event reports
-        num_loaded = len(next(iter(event.g0_blocks_per_leaf.values())))
-        for surplus_block in blocks[num_loaded:]:
-            pool.free_block(surplus_block)
-        loaded_blocks = blocks[:num_loaded]
         loaded_hashes = list(desired_hashes[:num_loaded])
-
-        if not loaded_blocks:
-            return [], CompletedTransfer.load()
+        loaded_blocks = [
+            self.allocate_device_block(replica_idx) for _ in range(num_loaded)
+        ]
+        block_ids = [b.bid for b in loaded_blocks]
+        try:
+            event = connector.load(
+                {leaf_id: block_ids for leaf_id in connector.leaves},
+                {leaf_id: loaded_hashes for leaf_id in connector.leaves},
+                replica_idx=replica_idx,
+                hint=hint,
+            )
+        except KVLoadRefused as refused:
+            # A block the lookup reported is gone, which a connector that
+            # holds nothing between the two calls cannot rule out. Serve the
+            # request as a miss rather than a shallower hit.
+            logger.warning(
+                "%s refused a %d-block load; serving this request as a miss: %s",
+                connector.name,
+                num_loaded,
+                refused,
+            )
+            for block in loaded_blocks:
+                pool.free_block(block)
+            return [], CompletedTransfer()
 
         if event.is_complete():
             # Synchronous / stream-ordered connector (dKV): the
@@ -809,10 +842,11 @@ class BlockManager:
         """Counts contiguous leading blocks resident in this replica's caches.
 
         Walks ``block_hashes`` in prefix order through the device prefix
-        cache and then the connector's external tiers (host, then disk per
-        block), mirroring the reuse order of
+        cache and then the connector's tiers, mirroring the reuse order of
         :meth:`get_full_blocks_from_prefix_cache`, and stops at the first
-        block found in no tier.
+        block found in no tier. The external half runs the same
+        ``lookup``-and-reconcile the reuse path runs, so the two cannot
+        disagree about what a hit would be worth.
 
         Unlike the reuse path this is strictly read-only: no blocks are
         allocated or onboarded, no LRU state is touched, and no per-request
@@ -850,23 +884,23 @@ class BlockManager:
                 num_device_hits += 1
 
         remaining = block_hashes[num_device_hits:]
-        num_host_hits = 0
-        num_disk_hits = 0
+        num_external_hits = 0
         if remaining:
-            num_host_hits, num_disk_hits = self.connector.count_cached_prefix(
-                remaining
+            resident = self.connector.lookup(remaining, replica_idx=replica_idx)
+            num_external_hits = longest_joint_prefix_hit(
+                len(remaining),
+                [_full_attention_rule(mask) for mask in resident.values()],
             )
 
         return PrefixCacheHits(
             device_blocks=num_device_hits,
-            host_blocks=num_host_hits,
-            disk_blocks=num_disk_hits,
+            external_blocks=num_external_hits,
         )
 
     @traced
     def get_full_blocks_from_prefix_cache(
         self, ctx: TextContext
-    ) -> tuple[list[KVCacheBlock], KVConnectorTransfer, int]:
+    ) -> tuple[list[KVCacheBlock], KVTransfer, int]:
         """Gets the computed (cached) blocks for the request.
 
         Note that the computed blocks must be full.
@@ -895,7 +929,7 @@ class BlockManager:
         )
 
         if self.connector.name == "NullConnector":
-            return device_blocks, CompletedTransfer.load(), 0
+            return device_blocks, CompletedTransfer(), 0
 
         # remove the hashes that were found in the device prefix cache
         uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
@@ -997,7 +1031,7 @@ class BlockManager:
 
     def _track_transfer(
         self,
-        event: KVConnectorTransfer,
+        event: KVTransfer,
         blocks: list[KVCacheBlock],
         replica_idx: int,
         commit_hashes: list[bytes] | None = None,
