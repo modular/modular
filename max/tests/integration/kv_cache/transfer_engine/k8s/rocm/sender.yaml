@@ -77,6 +77,7 @@ spec:
               ls -la /sys/class/infiniband/ 2>&1 || echo 'no /sys/class/infiniband';
               ls -la /usr/lib/x86_64-linux-gnu/libibverbs/ 2>&1 || echo 'no providers dir';
               (dpkg -l | grep -iE 'ibverbs|rdma-core') 2>&1 || echo 'no rdma pkgs';
+              for d in /sys/class/infiniband/*/; do [ -r "$d/ports/1/state" ] || continue; echo "portstate $(basename "$d") $(cat "$d/ports/1/state") / $(cat "$d/ports/1/phys_state" 2>/dev/null)"; done 2>&1;
               echo '=== end preflight ===';
               python /smoke/test_transfer_engine_cross_node.py
               --role sender
