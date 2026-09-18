@@ -79,6 +79,7 @@ Factory functions
 
    available_port
    load_kv_manager
+   max_seq_len_fitting_in_cache
 
 Utilities
 ---------

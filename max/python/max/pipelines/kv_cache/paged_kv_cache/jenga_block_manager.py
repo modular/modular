@@ -47,7 +47,7 @@ from .block_manager import (
     compute_block_hashes,
 )
 from .block_utils import InsufficientBlocksError, KVHashAlgo, LittleKVCacheBlock
-from .jenga_block_pool import JengaBlockPool
+from .jenga_block_pool import JengaBlockPool, _pristine_pool_can_satisfy
 from .kv_group_coordinator import (
     FullKVGroupCoordinator,
     KVGroupCoordinatorInterface,
@@ -101,6 +101,47 @@ def create_pools(
     return [
         JengaBlockPool(num_huge_blocks, ratios) for _ in range(num_replicas)
     ]
+
+
+def _max_seq_len_fitting_in_geometry(
+    leaves: Mapping[str, KVLeafRegion],
+    block_size: int,
+    allocatable_huge_blocks: int,
+    cache_ratios: Mapping[str, int],
+) -> int | None:
+    """Returns the longest single request an empty pool of this geometry serves.
+
+    Binary search over the fit, which is monotonic because no leaf's demand
+    decreases with length. ``None`` when no length exhausts the pool, which
+    happens when every leaf's demand plateaus (sliding windows, states).
+
+    Args:
+        leaves: The leaves the pool serves.
+        block_size: Tokens per page.
+        allocatable_huge_blocks: Huge blocks excluding the null block.
+        cache_ratios: Little pages of each leaf per huge block.
+    """
+
+    def fits(seq_len: int) -> bool:
+        num_blocks = ceildiv(seq_len, block_size)
+        demand = {
+            leaf_id: leaf.blocks_to_reserve(num_blocks)
+            for leaf_id, leaf in leaves.items()
+        }
+        return _pristine_pool_can_satisfy(
+            allocatable_huge_blocks, cache_ratios, demand
+        )
+
+    # No request outruns one leaf given the whole budget at the largest ratio,
+    # so that bounds the search; fitting at the bound means no finite bound.
+    upper_bound = (
+        allocatable_huge_blocks * block_size * max(cache_ratios.values())
+    )
+    search_space = upper_bound + 2
+    idx = bisect_left(
+        range(search_space), True, key=lambda seq_len: not fits(seq_len)
+    )
+    return (idx - 1) if idx < search_space else None
 
 
 def _leaf_ids_by_group_id(
@@ -716,33 +757,14 @@ class JengaBlockManager:
 
     @property
     def effective_max_seq_length(self) -> int | None:
-        """Returns the longest single-request sequence every leaf could serve simultaneously.
-
-        ``None`` if there is no finite bound (every leaf is sliding-window
-        and each window fits the budget). Binary search over
-        :meth:`_fits_in_cache`, which is monotonic in ``seq_len``: a leaf's
-        block requirement never decreases -- it grows for full attention,
-        and plateaus once a sliding window is fully covered. That makes this
-        equivalent to the largest ``seq_len`` for which every leaf still
-        fits, without needing to simulate how the shared huge-block budget
-        gets partitioned across leaves.
-        """
-        # Nothing can outrun a single leaf handed the entire budget at the
-        # most generous ratio, so that is a safe ceiling to search up to.
-        # Still fitting AT the ceiling means there is no finite bound: every
-        # leaf must be sliding-window, since only their demand plateaus.
-        upper_bound = (
-            self.huge_block_count().total
-            * self._block_size
-            * max(self.pools[0].cache_ratios.values())
+        """Returns the longest single request an empty pool serves."""
+        pool = self.pools[0]
+        return _max_seq_len_fitting_in_geometry(
+            self._leaves,
+            self._block_size,
+            self.huge_block_count().total,
+            pool.cache_ratios,
         )
-        search_space = upper_bound + 2
-        idx = bisect_left(
-            range(search_space),
-            True,
-            key=lambda seq_len: not self._fits_in_cache(seq_len),
-        )
-        return (idx - 1) if idx < search_space else None
 
     def _blocks_to_reserve(self, seq_len: int) -> dict[str, int]:
         """Returns the blocks each leaf draws for a ``seq_len``-token request."""

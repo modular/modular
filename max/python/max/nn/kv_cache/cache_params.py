@@ -3415,10 +3415,10 @@ def compute_num_device_blocks(
         available_cache_memory: The amount of cache memory available across all devices.
         max_batch_size: The maximum batch size, or None.
         max_seq_len: The maximum sequence length, or None.
-        require_max_seq_len_fits: When True, raise instead of warn if a single
-            request at ``max_seq_len`` cannot fit in the allocable device
-            blocks. Memory estimation deliberately probes oversized configs,
-            so only the actual cache-allocation path should set this.
+        require_max_seq_len_fits: When True, raise if a single request at
+            ``max_seq_len`` cannot fit in the allocable device blocks. Set
+            only when allocating a uniform pool; memory estimation probes
+            oversized configs on purpose.
         include_null_block: Whether to include room for the null block.
 
     Returns:
@@ -3498,8 +3498,11 @@ def compute_num_device_blocks(
             f" ({cache_memory_str}{across_x_devices_str})."
         )
 
+    # A page of every leaf per slot is the uniform pool's cost model, so only
+    # its allocator may judge whether a request fits.
     if (
-        max_blocks_per_req is not None
+        require_max_seq_len_fits
+        and max_blocks_per_req is not None
         and max_blocks_per_req > num_allocable_blocks
     ):
         memory_needed_str = to_human_readable_bytes(
@@ -3511,24 +3514,20 @@ def compute_num_device_blocks(
             if slack > 0
             else ""
         )
-        msg = (
+        raise RuntimeError(
             "Insufficient cache memory to support a batch containing one"
             f" request at the max sequence length of {max_seq_len} tokens"
             f"{slack_str}. Need to allocate at least {max_blocks_per_req} pages"
             f" ({memory_needed_str}), but only have enough memory for"
             f" {num_allocable_blocks} pages"
             f" ({cache_memory_str}{across_x_devices_str})."
+            " A request approaching the max sequence length would"
+            " exhaust the KV cache and crash the model worker. Reduce"
+            " --max-length to at most"
+            f" {num_allocable_blocks * params.page_size} or increase the"
+            " available KV cache memory (e.g. raise"
+            " --device-memory-utilization)."
         )
-        if require_max_seq_len_fits:
-            raise RuntimeError(
-                msg + " A request approaching the max sequence length would"
-                " exhaust the KV cache and crash the model worker. Reduce"
-                " --max-length to at most"
-                f" {num_allocable_blocks * params.page_size} or increase the"
-                " available KV cache memory (e.g. raise"
-                " --device-memory-utilization)."
-            )
-        logger.warning(msg)
 
     return num_blocks
 

@@ -583,6 +583,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
     MAXConfig file."""
 
     @property
+    def max_num_input_tokens(self) -> int | None:
+        """Tokens one forward encodes, or None when a prompt is encoded whole.
+
+        Chunked prefill cuts a CE batch at ``max_batch_input_tokens``, which is
+        also what a request has to be allocated for. Without it a prompt is
+        admitted in full, so nothing bounds the allocation.
+        """
+        if not self.enable_chunked_prefill:
+            return None
+        return self.max_batch_input_tokens
+
+    @property
     def is_disaggregated(self) -> bool:
         """Whether this worker is part of a disaggregated prefill/decode deployment."""
         return self.pipeline_role in ("prefill_only", "decode_only")

@@ -331,8 +331,9 @@ def test_shrink_to_fit__runs_for_resolved_default_max_length(
 
     assert "Truncated model's default max_length" in caplog.text
     # Budget int(64 MiB * 1.5) - 50 MiB static = 46 MiB -> 23 pages of the
-    # dummy's 2 MiB page -> 23 * 128 tokens.
-    assert plan.planned_max_length == 2944
+    # dummy's 2 MiB page. The dummy is served by Jenga, which spends one page
+    # on the null block -> 22 * 128 tokens.
+    assert plan.planned_max_length == 2816
     assert config.model.max_length == 4096
 
 
@@ -364,8 +365,9 @@ def test_plan__kv_clamp_bounds_plan_not_config() -> None:
 
     With 64 MiB of device memory, the KV budget is ``int(0.9 * 64 MiB) - 1000``
     weight bytes, which holds 28 pages of the dummy's 2 MiB page (2 KV tensors
-    x 4 layers x 128 tokens x 8 heads x 128 head_dim x 2 bytes), so the real
-    clamp computation bounds a request to 28 x 128 = 3584 tokens -- below the
+    x 4 layers x 128 tokens x 8 heads x 128 head_dim x 2 bytes). The dummy is
+    served by Jenga, which spends one page on the null block, so the clamp
+    bounds a request to 27 x 128 = 3456 tokens -- below the
     construction-resolved 4096 (the model's ``max_position_embeddings``),
     which stays on the config untouched.
     """
@@ -384,8 +386,8 @@ def test_plan__kv_clamp_bounds_plan_not_config() -> None:
     ):
         device_mock.return_value = {"free_memory": 64 * 1024 * 1024}
         plan = MemoryEstimator.plan(config, arch)
-    assert plan.planned_max_length == 3584
-    assert plan.planned_max_batch_total_tokens == 3584
+    assert plan.planned_max_length == 3456
+    assert plan.planned_max_batch_total_tokens == 3456
     assert config.model.max_length == 4096
     assert config.runtime.max_batch_total_tokens is None
 

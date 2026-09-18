@@ -21,7 +21,13 @@ import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface, load_kv_manager
 from max.pipelines.kv_cache.registry import _use_jenga_kv_cache
 
@@ -61,6 +67,7 @@ def _load_kv_manager_with_defaults(
         available_cache_memory=available_cache_memory,
         is_di_enabled=is_di_enabled,
         model_name=model_name,
+        max_num_input_tokens=None,
     )
 
 
@@ -113,6 +120,42 @@ class TestUseJengaKvCache:
             create_kv_params(),
             is_di_enabled=False,
             model_name="openai/gpt-oss-20b",
+        )
+
+    def test_disaggregated_inference_disables_jenga(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
+        assert not _use_jenga_kv_cache(
+            create_kv_params(),
+            is_di_enabled=True,
+            model_name="openai/gpt-oss-20b",
+        )
+
+    def test_a_state_selects_jenga_whatever_else_says(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A recurrent state can only live on Jenga."""
+        monkeypatch.setenv("MODULAR_USE_LEGACY_KV_CACHE", "1")
+        attn = create_kv_params()
+        with_state = MultiKVCacheParams.from_params(
+            {
+                "attn": attn,
+                "state": RecurrentStateParams(
+                    regions=(
+                        RecurrentStateRegion(
+                            leaf_id="conv_state",
+                            num_layers=2,
+                            row_shape=(8, 3),
+                            dtype=DType.float32,
+                        ),
+                    ),
+                    devices=attn.devices,
+                ),
+            }
+        )
+        assert _use_jenga_kv_cache(
+            with_state, is_di_enabled=True, model_name="FAKE"
         )
 
 

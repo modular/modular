@@ -23,6 +23,7 @@ from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParamInterface,
+    compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     recurrent_leaf,
 )
@@ -51,12 +52,15 @@ _JENGA_MODEL_NAME_SUBSTRINGS = (
 def _use_jenga_kv_cache(
     params: KVCacheParamInterface, is_di_enabled: bool, model_name: str
 ) -> bool:
-    """Whether to use the Jenga-based KV cache.
+    """Whether the Jenga KV cache serves this cache.
 
-    Users can set `MODULAR_USE_LEGACY_KV_CACHE=1` to always use the legacy KV cache.
+    A recurrent state can only live on Jenga, so it overrides the allowlist.
+    `MODULAR_USE_LEGACY_KV_CACHE=1` otherwise forces the legacy KV cache.
 
     TODO: temporary flag for the Jenga cutover. Delete once the transition is complete.
     """
+    if recurrent_leaf(params) is not None:
+        return True
     name = model_name.lower()
     if not any(token in name for token in _JENGA_MODEL_NAME_SUBSTRINGS):
         return False
@@ -67,20 +71,34 @@ def _use_jenga_kv_cache(
         "y",
     )
     if prefer_legacy:
-        logger.info(
-            "Using legacy KV cache since user set MODULAR_USE_LEGACY_KV_CACHE=1"
-        )
         return False
-    if is_di_enabled:
-        # TODO(SERVOPT-1590)
-        logger.info(
-            "Using legacy KV cache since Disaggregated Inference is enabled and Jenga KV cache is incompatible with this feature"
+    # TODO(SERVOPT-1590): Jenga is incompatible with Disaggregated Inference.
+    return not is_di_enabled
+
+
+def max_seq_len_fitting_in_cache(
+    params: KVCacheParamInterface,
+    available_cache_memory: int,
+    is_di_enabled: bool,
+    model_name: str,
+) -> int | None:
+    """Returns the longest request the manager for this cache holds.
+
+    The cost of a request depends on the manager: the legacy pool charges
+    every leaf a page per slot, Jenga charges each leaf only what it retains.
+
+    Returns:
+        The longest sequence, or ``None`` when no length exhausts the cache.
+    """
+    if _use_jenga_kv_cache(params, is_di_enabled, model_name):
+        return JengaKVCacheManager.max_seq_len_fitting_in_cache(
+            params, available_cache_memory
         )
-        return False
-    logger.info(
-        "Using Jenga KV cache. To fall back to using the legacy KV cache, set MODULAR_USE_LEGACY_KV_CACHE=1"
+    return compute_max_seq_len_fitting_in_cache(
+        params=params,
+        available_cache_memory=available_cache_memory,
+        include_null_block=True,
     )
-    return True
 
 
 def load_kv_manager(
@@ -91,15 +109,13 @@ def load_kv_manager(
     available_cache_memory: int | None,
     is_di_enabled: bool,
     model_name: str,
+    max_num_input_tokens: int | None,
 ) -> PagedKVCacheManagerInterface:
     """Loads a KV cache manager from the given params.
 
     Accepts both ``KVCacheParams`` (single cache) and ``MultiKVCacheParams``
     (multiple caches).  The returned manager natively handles all caches
     with a single ``BlockManager`` and ``KVConnector``.
-
-    Only the Jenga manager can serve a state leaf, so a cache declaring one
-    selects it whatever the cutover heuristic says.
 
     TODO: remove `is_di_enabled` once Jenga supports DI.
     """
@@ -133,20 +149,26 @@ def load_kv_manager(
             "Page size must be a multiple of 128 and at least 128."
         )
 
-    holds_state = recurrent_leaf(params) is not None
-    if _use_jenga_kv_cache(params, is_di_enabled, model_name) or holds_state:
-        if holds_state:
+    if _use_jenga_kv_cache(params, is_di_enabled, model_name):
+        if recurrent_leaf(params) is not None:
             logger.info(
                 "Using Jenga KV cache: this model keeps recurrent state, whose"
                 " pages share the KV budget and eviction order with its KV."
+            )
+        else:
+            logger.info(
+                "Using Jenga KV cache. To fall back to using the legacy KV"
+                " cache, set MODULAR_USE_LEGACY_KV_CACHE=1"
             )
         return JengaKVCacheManager.create(
             params=params,
             available_bytes=available_cache_memory,
             max_batch_size=max_batch_size,
+            max_num_input_tokens=max_num_input_tokens,
             max_seq_len=max_seq_len,
         )
 
+    logger.info("Using legacy KV cache")
     # A single request at max_seq_len must fit in the device block pool:
     # otherwise it cannot be preempted (there is nothing else to evict) and
     # overflows the pool at runtime, crashing the model worker with

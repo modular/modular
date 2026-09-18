@@ -22,11 +22,8 @@ from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, DeviceSpec, is_virtual_device_mode, load_devices
 from max.dtype import DType
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    compute_max_seq_len_fitting_in_cache,
-    estimated_memory_size,
-)
+from max.nn.kv_cache import KVCacheParamInterface, estimated_memory_size
+from max.pipelines.kv_cache import max_seq_len_fitting_in_cache
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
@@ -336,11 +333,11 @@ class MemoryEstimator:
         arch_config: ArchConfig,
         signal_buffer_size: int = 0,
         available_cache_memory: int | None = None,
+        is_di_enabled: bool = False,
     ) -> int | None:
         """Computes the hard upper bound on tokens for a single request.
 
-        Mirrors the paged KV cache constraint: per replica, a request cannot
-        exceed total pages per device times page size.
+        A request cannot exceed what one replica's KV manager holds.
         """
         # In virtual device mode (cross-compilation), skip memory-based constraints
         # since we're only compiling and not actually running the model.
@@ -373,10 +370,11 @@ class MemoryEstimator:
                 devices,
                 signal_buffer_size,
             )
-        return compute_max_seq_len_fitting_in_cache(
+        return max_seq_len_fitting_in_cache(
             params=params,
             available_cache_memory=kvcache_mem,
-            include_null_block=True,
+            is_di_enabled=is_di_enabled,
+            model_name=model_config.model_name,
         )
 
     @classmethod
@@ -617,6 +615,7 @@ class MemoryEstimator:
             arch_config,
             signal_buffer_size,
             available_cache_memory=available_cache_memory,
+            is_di_enabled=pipeline_config.runtime.is_disaggregated,
         ):
             if max_length is None:
                 max_length = kv_capacity

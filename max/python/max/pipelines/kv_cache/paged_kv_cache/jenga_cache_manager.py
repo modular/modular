@@ -66,10 +66,15 @@ from .cache_manager_interface import PagedKVCacheManagerInterface
 from .jenga_block_manager import (
     JengaBlockManager,
     KVLeafInfo,
+    _max_seq_len_fitting_in_geometry,
     create_groups,
     create_pools,
 )
-from .jenga_block_pool import JengaBlockPool, plan_jenga_geometry
+from .jenga_block_pool import (
+    JengaBlockPool,
+    JengaGeometry,
+    plan_jenga_geometry,
+)
 from .kv_group_coordinator import KVGroupCoordinatorInterface
 
 logger = logging.getLogger("max.pipelines")
@@ -150,6 +155,51 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     memory.
     """
 
+    @staticmethod
+    def _plan_geometry(
+        params: KVCacheParamInterface, available_bytes: int
+    ) -> JengaGeometry:
+        """Fits one device's share of the budget to a huge-block geometry."""
+        leaves = params.leaves()
+        # A leaf reports one device's page, which is what a slab tiles in.
+        bytes_per_page = {
+            leaf_id: leaf.bytes_per_page for leaf_id, leaf in leaves.items()
+        }
+        # A row-addressed leaf reports 1 and so constrains nothing.
+        row_bytes = {
+            leaf_id: leaf.row_bytes for leaf_id, leaf in leaves.items()
+        }
+        n_devices = len(params.devices)
+        if n_devices < 1:
+            raise ValueError("Jenga KV cache requires at least one device")
+        return plan_jenga_geometry(
+            available_bytes // n_devices, bytes_per_page, row_bytes
+        )
+
+    @classmethod
+    def max_seq_len_fitting_in_cache(
+        cls, params: KVCacheParamInterface, available_bytes: int
+    ) -> int | None:
+        """Returns the longest request a slab of ``available_bytes`` holds one of.
+
+        Plans the geometry :meth:`create` allocates for the same budget, so
+        the answer is a length ``create`` accepts. Net of the
+        speculative-decode slack a request may occupy past its cap.
+
+        Returns:
+            The longest sequence, or ``None`` when no length exhausts the slab.
+        """
+        geometry = cls._plan_geometry(params, available_bytes)
+        longest = _max_seq_len_fitting_in_geometry(
+            params.leaves(),
+            params.page_size,
+            geometry.num_huge_blocks - 1,  # Huge block 0 is the null block.
+            geometry.ratios,
+        )
+        if longest is None:
+            return None
+        return max(1, longest - spec_decode_cache_slack(params))
+
     @classmethod
     def create(
         cls,
@@ -167,20 +217,9 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         device slab is sized from ``available_bytes // len(params.devices)``.
         """
         leaves = params.leaves()
-        # Every leaf reports what one device holds, which is what a slab
-        # tiles in.
         bytes_per_page = {
             leaf_id: leaf.bytes_per_page for leaf_id, leaf in leaves.items()
         }
-        # The planner wants an entry per cache; a row-addressed leaf reports
-        # 1 and so constrains nothing.
-        row_bytes = {
-            leaf_id: leaf.row_bytes for leaf_id, leaf in leaves.items()
-        }
-        n_devices = len(params.devices)
-        if n_devices < 1:
-            raise ValueError("Jenga KV cache requires at least one device")
-        per_device_available_bytes = available_bytes // n_devices
         is_kv_connector_enabled = (
             params.kv_connector_config.type.value != "null"
         )
@@ -192,11 +231,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 "Recurrent KV cache group is incompatible with KVConnector."
                 " Please disable KVConnector"
             )
-        # Pads each page up to a divisor of a searched huge block when exact
-        # tiling is too coarse to allocate.
-        geometry = plan_jenga_geometry(
-            per_device_available_bytes, bytes_per_page, row_bytes
-        )
+        geometry = cls._plan_geometry(params, available_bytes)
         num_huge_blocks = geometry.num_huge_blocks
         huge_page_bytes = geometry.huge_page_bytes
         ratios = geometry.ratios

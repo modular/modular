@@ -39,7 +39,7 @@ from .paged_kv_cache import (
     TransferReqData,
     available_port,
 )
-from .registry import load_kv_manager
+from .registry import load_kv_manager, max_seq_len_fitting_in_cache
 
 __all__ = [
     "BlockCount",
@@ -61,4 +61,5 @@ __all__ = [
     "available_port",
     "cache_dtype_for_encoding",
     "load_kv_manager",
+    "max_seq_len_fitting_in_cache",
 ]

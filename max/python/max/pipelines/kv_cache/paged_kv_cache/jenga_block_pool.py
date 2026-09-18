@@ -376,6 +376,24 @@ def plan_jenga_geometry(
     )
 
 
+def _pristine_pool_can_satisfy(
+    allocatable_huge_blocks: int,
+    cache_ratios: Mapping[str, int],
+    demand: Mapping[str, int],
+) -> bool:
+    """Returns whether an empty pool can carve ``demand`` blocks per cache.
+
+    A huge block is carved for exactly one cache, so every cache's demand,
+    converted at its own ratio, is charged against the same huge blocks.
+    Depends on the geometry alone, not on a pool instance.
+    """
+    claimable = allocatable_huge_blocks
+    for cache_id, num_blocks in demand.items():
+        if num_blocks > 0:
+            claimable -= ceildiv(num_blocks, cache_ratios[cache_id])
+    return claimable >= 0
+
+
 class JengaBlockPool:
     """A pool of huge blocks, each subdividable into one cache's little blocks.
 
@@ -728,39 +746,35 @@ class JengaBlockPool:
         of what it currently holds.
         """
         if at_capacity:
-            claimable = len(self.huge_blocks)
-            carved: dict[str, int] = dict.fromkeys(demand, 0)
-        else:
-            carved = {
-                cache_id: len(self.free_little_blocks[cache_id])
-                for cache_id in demand
-            }
-            # A parked huge block stays typed only while its cache needs it to
-            # satisfy demand. The remaining idle pages may be retyped.
-            claimable = len(self.free_huge_blocks)
-            for cache_id, num_blocks in demand.items():
-                ratio = self.cache_ratios[cache_id]
-                parked = self._parked_and_typed[cache_id]
-                fixed_free_blocks = carved[cache_id] - parked * ratio
-                parked_to_keep = min(
-                    parked,
-                    ceildiv(
-                        max(0, num_blocks - fixed_free_blocks),
-                        ratio,
-                    ),
-                )
-                claimable -= parked_to_keep
-        # A huge block is carved for exactly one cache, so the demands compete
-        # for the same claimable huge blocks: each cache's shortfall is
-        # converted at its own ratio and charged against a shared budget.
-        # Asking each cache on its own with num_free_blocks would instead let
-        # every one of them believe it has room while together they overrun
-        # the pool.
+            return _pristine_pool_can_satisfy(
+                len(self.huge_blocks), self.cache_ratios, demand
+            )
+        carved = {
+            cache_id: len(self.free_little_blocks[cache_id])
+            for cache_id in demand
+        }
+        # A parked huge block stays typed only while its cache needs it to
+        # satisfy demand. The remaining idle pages may be retyped.
+        claimable = len(self.free_huge_blocks)
         for cache_id, num_blocks in demand.items():
-            shortfall = num_blocks - carved[cache_id]
-            if shortfall > 0:
-                claimable -= ceildiv(shortfall, self.cache_ratios[cache_id])
-        return claimable >= 0
+            ratio = self.cache_ratios[cache_id]
+            parked = self._parked_and_typed[cache_id]
+            fixed_free_blocks = carved[cache_id] - parked * ratio
+            parked_to_keep = min(
+                parked,
+                ceildiv(
+                    max(0, num_blocks - fixed_free_blocks),
+                    ratio,
+                ),
+            )
+            claimable -= parked_to_keep
+        shortfall = {
+            cache_id: num_blocks - carved[cache_id]
+            for cache_id, num_blocks in demand.items()
+        }
+        return _pristine_pool_can_satisfy(
+            claimable, self.cache_ratios, shortfall
+        )
 
     def reset_prefix_cache(self) -> dict[str, int]:
         """Drops every commit no request is holding, in every cache.
