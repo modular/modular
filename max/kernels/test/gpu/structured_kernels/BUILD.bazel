@@ -52,6 +52,8 @@ _EXTRA_TAGS = {
     # red-flags unrelated presubmits. Re-enable once KERN-3589 is fixed; run
     # it by explicit target to check a fix.
     "test_mha_prefill_v2_lazy_rescale_crossrow_canary.mojo": ["manual"],
+    # https://linear.app/modularml/issue/KERN-3610
+    "test_mha_vs_naive_reference.mojo": ["manual"],
 }
 
 [
