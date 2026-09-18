@@ -5636,13 +5636,13 @@ def moe_sink_gate_router(
 
     Args:
         logits: Raw (pre-sigmoid) gate logits, routed experts followed by
-            sink experts. Must be float32, which is the only dtype the
-            kernel's joint softmax has been validated at. Shape:
+            sink experts, in any floating dtype. The kernel scores them in
+            float32 and stores the weights in ``logits.dtype``. Shape:
             [num_tokens, at least n_routed_experts + n_shared_experts]; a
             wider row's tail is not read, so a gate weight padded for
             alignment needs no slice.
         expert_bias: Per-routed-expert selection bias. Shape: [n_routed_experts].
-        global_scale: Scalar output-scaling weight. Shape: [1].
+        global_scale: Scalar float32 output-scaling weight. Shape: [1].
         n_routed_experts: Total number of routed experts. Must be a positive
             multiple of the target's warp width, no greater than 1024: the
             kernel runs one thread per routed expert.
@@ -5672,9 +5672,9 @@ def moe_sink_gate_router(
     """
     _check_rank(2, logits=logits)
     _check_rank(1, expert_bias=expert_bias, global_scale=global_scale)
-    _check_same_dtype(logits=logits, global_scale=global_scale)
-    if logits.dtype != DType.float32:
-        raise ValueError(f"expected float32 logits but got {logits.dtype}")
+    if not logits.dtype.is_float():
+        raise ValueError(f"expected floating point logits, was {logits.dtype}")
+    _check_dtype(DType.float32, global_scale=global_scale)
 
     # The kernel runs one thread per routed expert and normalizes the
     # selected-plus-sink weights with a single warp-level reduction, so both

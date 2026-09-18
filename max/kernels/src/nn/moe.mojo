@@ -1253,9 +1253,9 @@ def single_group_router[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(t"sink_gate_router_{scores_type}_{bias_type}_t{num_threads}")
+@__name(t"sink_gate_router_{dtype}_{bias_type}_t{num_threads}")
 def sink_gate_router_kernel[
-    scores_type: DType,
+    dtype: DType,
     bias_type: DType,
     ExpertIndicesLayoutType: TensorLayout,
     ExpertWeightsLayoutType: TensorLayout,
@@ -1272,16 +1272,14 @@ def sink_gate_router_kernel[
         mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],
     expert_weights: TileTensor[
-        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+        mut=True, dtype, ExpertWeightsLayoutType, MutAnyOrigin
     ],
     sink_weights: TileTensor[
-        mut=True, scores_type, SinkWeightsLayoutType, MutAnyOrigin
+        mut=True, dtype, SinkWeightsLayoutType, MutAnyOrigin
     ],
-    logits: TileTensor[scores_type, LogitsLayoutType, ImmutAnyOrigin],
+    logits: TileTensor[dtype, LogitsLayoutType, ImmutAnyOrigin],
     expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
-    global_scale: TileTensor[
-        scores_type, GlobalScaleLayoutType, ImmutAnyOrigin
-    ],
+    global_scale: TileTensor[.float32, GlobalScaleLayoutType, ImmutAnyOrigin],
     route_scale: Float32,
 ):
     """Fused sigmoid-gate MoE router with always-on sink (shared-expert) lanes.
@@ -1303,7 +1301,10 @@ def sink_gate_router_kernel[
     per-token-block kernel cannot provide without a grid-wide sync.
 
     Parameters:
-        scores_type: DType of the logits and the output weights.
+        dtype: DType of the logits input and the output weights. The score
+            math itself runs in float32, the only precision the joint
+            softmax has been validated at, so a low-precision dtype costs
+            only the output rounding.
         bias_type: DType of the per-routed-expert selection bias.
         ExpertIndicesLayoutType: `TensorLayout` of the `expert_indices`
             output tensor.
@@ -1337,17 +1338,12 @@ def sink_gate_router_kernel[
             n_shared_experts]; a wider row's tail is not read.
         expert_bias: Per-routed-expert bias added during selection only.
             Shape [n_routed_experts].
-        global_scale: Single scalar multiplied into every weight. Shape [1].
+        global_scale: Single float32 scalar multiplied into every weight.
+            Shape [1].
         route_scale: Compile-time-known-per-model scalar multiplied into
             every weight alongside global_scale.
     """
-    # is_floating_point is what proves exp/log1p below well-formed; the
-    # float32 bound is narrower, and is all the joint softmax's reduce and
-    # divide have been validated at.
-    comptime assert (
-        scores_type.is_floating_point()
-    ), "scores_type must be floating point"
-    comptime assert scores_type == .float32, "scores_type must be float32"
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert expert_indices.flat_rank == 2
     comptime assert expert_weights.flat_rank == 2
     comptime assert sink_weights.flat_rank == 2
@@ -1393,10 +1389,8 @@ def sink_gate_router_kernel[
     var lane_id = lane_id()
 
     with PDL():
-        var thread_bias = expert_bias.load[width=1](Coord(tid)).cast[
-            scores_type
-        ]()
-        var thread_logit = logits.load[width=1]((token_idx, tid))
+        var thread_bias = Float32(expert_bias[tid])
+        var thread_logit = Float32(logits[token_idx, tid])
         var biased_score = sigmoid(thread_logit) + thread_bias
 
         var sorted_val3 = _block_top_k[n_experts_per_tok, num_threads](
@@ -1410,31 +1404,25 @@ def sink_gate_router_kernel[
             # the raw logit, so winner lanes reload it by the winning index
             # and sink lanes read their fixed columns. Lanes >= k_total sit
             # outside this reduction's warp segment and never get read.
-            var raw_val: Scalar[scores_type] = 0
+            var raw_val: Float32 = 0
             if lane_id < n_experts_per_tok:
-                raw_val = logits.load[width=1]((token_idx, sorted_val3.p))
+                raw_val = Float32(logits[token_idx, sorted_val3.p])
             elif lane_id < k_total:
                 var sink_idx = n_routed_experts + (
                     Int(lane_id) - n_experts_per_tok
                 )
-                raw_val = logits.load[width=1]((token_idx, sink_idx))
+                raw_val = Float32(logits[token_idx, sink_idx])
 
             # log_sigmoid(x) = min(x, 0) - log1p(exp(-abs(x))), stable where
             # sigmoid(x) itself would underflow.
-            var zero = Scalar[scores_type](0)
-            var log_score = min(raw_val, zero) - log1p(exp(-abs(raw_val)))
+            var log_score = min(raw_val, 0) - log1p(exp(-abs(raw_val)))
 
             var shift = warp.lane_group_max[num_lanes=k_total](log_score)
             var score = exp(log_score - shift)
             var sum_score = warp.lane_group_sum[num_lanes=k_total](score)
 
-            var global_scale_val = global_scale.load[width=1](Coord(0)).cast[
-                scores_type
-            ]()
-            var factor = (
-                Scalar[scores_type](route_scale) * global_scale_val
-            ) / sum_score
-            var weight = score * factor
+            var factor = route_scale * global_scale[0] / sum_score
+            var weight = (score * factor).cast[dtype]()
 
             if lane_id < n_experts_per_tok:
                 expert_indices.store((token_idx, lane_id), Int32(sorted_val3.p))
@@ -1447,7 +1435,7 @@ def sink_gate_router_kernel[
 
 @inline(.always)
 def sink_gate_router[
-    scores_type: DType,
+    dtype: DType,
     bias_type: DType,
     //,
     n_routed_experts: Int,
@@ -1456,11 +1444,11 @@ def sink_gate_router[
     target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
-    expert_weights: TileTensor[mut=True, scores_type, ...],
-    sink_weights: TileTensor[mut=True, scores_type, ...],
-    logits: TileTensor[mut=False, scores_type, ...],
+    expert_weights: TileTensor[mut=True, dtype, ...],
+    sink_weights: TileTensor[mut=True, dtype, ...],
+    logits: TileTensor[mut=False, dtype, ...],
     expert_bias: TileTensor[mut=False, bias_type, ...],
-    global_scale: TileTensor[mut=False, scores_type, ...],
+    global_scale: TileTensor[mut=False, .float32, ...],
     route_scale: Float32,
     context: DeviceContext,
 ) raises:
@@ -1470,7 +1458,7 @@ def sink_gate_router[
     token, one thread per routed expert.
 
     Parameters:
-        scores_type: DType of logits and output weights.
+        dtype: DType of the logits input and the output weights.
         bias_type: DType of the expert selection bias.
         n_routed_experts: Total number of routed experts (e.g. 256 for
             Inkling-Small).
@@ -1491,7 +1479,7 @@ def sink_gate_router[
             [num_tokens, at least n_routed_experts + n_shared_experts]; a
             wider row's tail is not read.
         expert_bias: Per-routed-expert selection bias.
-        global_scale: Scalar output-scaling weight.
+        global_scale: Scalar float32 output-scaling weight.
         route_scale: Scalar output-scaling factor.
         context: The device context.
     """
@@ -1510,7 +1498,7 @@ def sink_gate_router[
         comptime num_threads = n_routed_experts
 
         comptime kernel = sink_gate_router_kernel[
-            scores_type,
+            dtype,
             bias_type,
             expert_indices.LayoutType,
             expert_weights.LayoutType,

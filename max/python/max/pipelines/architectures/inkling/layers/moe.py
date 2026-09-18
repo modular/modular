@@ -33,8 +33,6 @@ from max.nn.quant_config import fp4_packed_k
 from max.support.math import ceildiv
 from typing_extensions import Self
 
-_ROUTER_DTYPE = DType.float32
-
 # Inkling's 256 routed + 2 sink rows are the router GEMM's N, 2 short of the
 # 16-byte alignment a bf16 TMA epilogue needs. Padding to 264 costs 2.3% of
 # this narrow projection and keeps every batch size on the aligned path.
@@ -101,28 +99,23 @@ class InklingGate(MoEGate):
                 [self.router_dim, hidden_dim],
                 device=devices[0],
             )
+            # The router scores in float32 and reads both of these directly.
             self.bias = Weight(
-                "bias",
-                _ROUTER_DTYPE,
-                [num_experts],
-                device=devices[0],
+                "bias", DType.float32, [num_experts], device=devices[0]
             )
             self.global_scale = Weight(
-                "global_scale",
-                _ROUTER_DTYPE,
-                [1],
-                device=devices[0],
+                "global_scale", DType.float32, [1], device=devices[0]
             )
 
     def route(self, hidden_states: TensorValue) -> InklingRouting:
         """Routes one ragged batch of tokens."""
         device = hidden_states.device
-        # Only the score math needs float32; the GEMM runs in the activation
-        # dtype, as in the minimax/deepseek gate pattern.
+        # The GEMM and the router's weights stay in the activation dtype; the
+        # kernel scores in float32 internally.
         weight = ops.cast(self.weight, hidden_states.dtype).to(device)
         # The router reads only the routed and sink columns, so the padded
         # tail needs no slice to trim it.
-        logits = ops.cast(hidden_states @ weight.T, _ROUTER_DTYPE)
+        logits = hidden_states @ weight.T
 
         return InklingRouting(
             *moe_sink_gate_router(
@@ -343,9 +336,11 @@ class InklingMoE(MoEQuantized):
             x, ops.reshape(routing.expert_ids, [-1])
         )
 
-        weights = ops.cast(routing.expert_weights, down_projs.dtype)
         return ops.squeeze(
-            ops.sum(ops.unsqueeze(weights, axis=-1) * down_projs, axis=1),
+            ops.sum(
+                ops.unsqueeze(routing.expert_weights, axis=-1) * down_projs,
+                axis=1,
+            ),
             axis=1,
         )
 
@@ -363,15 +358,14 @@ class InklingMoE(MoEQuantized):
         if len(sinks_here) != int(sink_weights.shape[1]):
             # A TP shard sees only the sinks its column range falls in.
             sink_weights = sink_weights[:, sinks_here.start : sinks_here.stop]
-        weights = ops.cast(sink_weights, hidden.dtype)
         if len(sinks_here) == 1:
             # Rank-2 saves a kernel launch here: the rank-3 reshape stops
             # folding once the intermediate comes from split slices.
-            weighted = hidden * weights
+            weighted = hidden * sink_weights
         else:
             weighted = ops.reshape(
                 ops.reshape(hidden, [hidden.shape[0], len(sinks_here), -1])
-                * ops.unsqueeze(weights, axis=-1),
+                * ops.unsqueeze(sink_weights, axis=-1),
                 hidden.shape,
             )
         return mlp.down_proj(weighted)

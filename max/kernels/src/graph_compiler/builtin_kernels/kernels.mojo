@@ -2271,7 +2271,7 @@ struct Struct_moe_sink_gate_router:
     @staticmethod
     @__parameter
     def execute[
-        scores_type: DType,
+        dtype: DType,
         bias_type: DType,
         //,
         n_routed_experts: Int,
@@ -2280,11 +2280,11 @@ struct Struct_moe_sink_gate_router:
         target: StaticString,
     ](
         expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        sink_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        logits: InputTensor[dtype=scores_type, rank=2, ...],
+        expert_weights: OutputTensor[dtype=dtype, rank=2, ...],
+        sink_weights: OutputTensor[dtype=dtype, rank=2, ...],
+        logits: InputTensor[dtype=dtype, rank=2, ...],
         expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
-        global_scale: InputTensor[dtype=scores_type, rank=1, ...],
+        global_scale: InputTensor[dtype=.float32, rank=1, ...],
         route_scale: Float32,
         context: DeviceContext,
     ) raises:
