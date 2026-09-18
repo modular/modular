@@ -538,3 +538,38 @@ modular_py_binary(
         requirement("transformers"),
     ],
 )
+
+# The package is its own library so that the binary and the unit tests can
+# both depend on it; a source file may belong to only one rule.
+modular_py_library(
+    name = "spec_dec_check",
+    testonly = True,
+    srcs = glob(["spec_dec_check/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("httpx"),
+        requirement("numpy"),
+        requirement("tqdm"),
+        requirement("typing-extensions"),  # TypeIs; stdlib typing in 3.13+
+    ],
+)
+
+modular_py_binary(
+    name = "spec-dec-check",
+    testonly = True,
+    srcs = ["spec_dec_check_main.py"],
+    main = "spec_dec_check_main.py",
+    visibility = ["//max_private:__subpackages__"],
+    deps = [":spec_dec_check"],
+)
+
+modular_py_test(
+    name = "test_spec_dec_check",
+    size = "small",
+    srcs = ["test_spec_dec_check.py"],
+    deps = [
+        ":spec_dec_check",
+        requirement("numpy"),
+    ],
+)
