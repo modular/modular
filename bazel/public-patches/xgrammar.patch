@@ -8762,6 +8762,100 @@ index d2f78ed..389b3be 100644
  };
 
  /*!
+diff --git a/cpp/support/logging.cc b/cpp/support/logging.cc
+index f14cf8a..ef3e8e1 100644
+--- a/cpp/support/logging.cc
++++ b/cpp/support/logging.cc
+@@ -4,6 +4,11 @@
+  */
+ #include "logging.h"
+
++#include <ctime>
++#include <iomanip>
++#include <iostream>
++#include <sstream>
++
+ namespace xgrammar {
+
+ #if XGRAMMAR_LOG_CUSTOMIZE == 0
+@@ -19,6 +24,29 @@ const char* LogMessage::level_strings_[] = {
+     ": Warning: ",  // XGRAMMAR_LOG_LEVEL_WARNING
+ };
+
++namespace {
++LogHandler& InstalledLogHandler() {
++  static LogHandler handler = nullptr;
++  return handler;
++}
++}  // namespace
++
++void SetLogHandler(LogHandler handler) { InstalledLogHandler() = handler; }
++
++void LogMessage::Emit(
++    const std::string& file, int lineno, int level, const std::string& message
++) {
++  if (LogHandler handler = InstalledLogHandler()) {
++    handler(file, lineno, level, message);
++    return;
++  }
++  std::time_t t = std::time(nullptr);
++  std::ostringstream line;
++  line << "[" << std::put_time(std::localtime(&t), "%H:%M:%S") << "] " << file << ":" << lineno
++       << level_strings_[level] << message << "\n";
++  std::cerr << line.str();
++}
++
+ #endif  // XGRAMMAR_LOG_CUSTOMIZE
+
+ }  // namespace xgrammar
+diff --git a/cpp/support/logging.h b/cpp/support/logging.h
+index ea8c0c5..a93a52d 100644
+--- a/cpp/support/logging.h
++++ b/cpp/support/logging.h
+@@ -167,21 +167,37 @@ class LogFatal {
+   static Entry& GetEntry();
+ };
+
++/*!
++ * \brief A sink for log messages below FATAL. The level is one of the XGRAMMAR_LOG_LEVEL_*
++ * values and the message carries no prefix.
++ */
++using LogHandler = void (*)(const std::string& file, int lineno, int level, const std::string& message);
++
++/*!
++ * \brief Route log messages below FATAL to a host logger instead of stderr. A host that embeds
++ * the library and classifies its own log lines by level should install one, because the default
++ * writes every level to stderr. Passing nullptr restores the default. Not thread safe against
++ * concurrent logging; install it before any grammar is compiled.
++ */
++void SetLogHandler(LogHandler handler);
++
+ /*!
+  * \brief Class to accumulate an log message. Do not use directly, instead use
+  * XGRAMMAR_LOG(INFO), XGRAMMAR_LOG(WARNING), XGRAMMAR_LOG(ERROR).
+  */
+ class LogMessage {
+  public:
+-  LogMessage(const std::string& file, int lineno, int level) {
+-    std::time_t t = std::time(nullptr);
+-    stream_ << "[" << std::put_time(std::localtime(&t), "%H:%M:%S") << "] " << file << ":" << lineno
+-            << level_strings_[level];
+-  }
+-  ~LogMessage() { std::cerr << (stream_.str() + "\n"); }
++  LogMessage(const std::string& file, int lineno, int level)
++      : file_(file), lineno_(lineno), level_(level) {}
++  ~LogMessage() { Emit(file_, lineno_, level_, stream_.str()); }
+   std::ostringstream& stream() { return stream_; }
+
+  private:
++  static void Emit(const std::string& file, int lineno, int level, const std::string& message);
++
++  std::string file_;
++  int lineno_;
++  int level_;
+   std::ostringstream stream_;
+   static const char* level_strings_[];
+ };
 diff --git a/cpp/tokenizer_info.cc b/cpp/tokenizer_info.cc
 index 24f5d27..f1406b3 100644
 --- a/cpp/tokenizer_info.cc

@@ -3852,6 +3852,30 @@ def test_xml_bare_value_bound_past_budget_keeps_min_length() -> None:
     assert _accepts(loose, _qwen_state("N"))
 
 
+def test_xml_bare_value_dropped_bound_warns_through_max_logger(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # xgrammar's own logger writes every level to stderr, which the log
+    # collector files as an error. The binding routes it through the MAX
+    # logger instead, so a dropped bound arrives as a WARN line on stdout.
+    _compile_xml_length(2, 100_000)
+    # The MAX logger writes from its own thread, so give it a moment.
+    out = err = ""
+    for _ in range(50):
+        chunk_out, chunk_err = capfd.readouterr()
+        out += chunk_out
+        err += chunk_err
+        if "too large to enforce" in out:
+            break
+        time.sleep(0.05)
+    warning = [
+        line for line in out.splitlines() if "too large to enforce" in line
+    ]
+    assert len(warning) == 1, out
+    assert "WARN" in warning[0]
+    assert "too large to enforce" not in err
+
+
 def test_xml_bare_value_bound_near_budget_compiles() -> None:
     # 13 trie states x (2 * 70 + 1) constraint states sits just under the cap.
     compiled = _compile_xml_length(1, 70)
