@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+import pytest
 from max.pipelines.kv_cache.prefix_hit import (
     blocks_held_of_hit,
     longest_full_attention_hit,
@@ -74,11 +75,13 @@ def test_sliding_window_falls_back_to_a_root_anchored_run() -> None:
     assert longest_sliding_window_hit(4, 3, held(mask)) == 2
 
 
-def test_a_window_spanning_no_whole_block_is_a_total_hit() -> None:
-    # window_size == 1: the query token attends to no history, so nothing has
-    # to be resident. Folding this onto "full attention" would instead demand
-    # every block from the root.
-    assert longest_sliding_window_hit(5, 0, held([False] * 5)) == 5
+def test_a_window_spanning_no_whole_block_is_rejected() -> None:
+    # window_size == 1: the query token attends to no history, so every block
+    # would be a hit that attention never reads back. The window is refused
+    # when the group is built, so reaching the rule with one is a caller bug
+    # rather than a shape to serve (SERVOPT-1627).
+    with pytest.raises(ValueError, match="at least one block"):
+        longest_sliding_window_hit(5, 0, held([False] * 5))
 
 
 # -------------------------------------------------------------- joint rules

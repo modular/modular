@@ -112,9 +112,15 @@ class KVCacheGroupId:
             if self.window_size != -1:
                 raise ValueError("Window size must be -1 for full groups.")
         elif self.type == "sliding_window":
-            if self.window_size <= 0:
+            # A window of 1 reads no history back: the query token attends to
+            # itself alone, so every block is a prefix hit that attention
+            # never looks at. The prefix rules used to serve that as a 100%
+            # hit; they no longer carry the case, so it is rejected here
+            # instead (SERVOPT-1627).
+            if self.window_size <= 1:
                 raise ValueError(
-                    "Window size must be positive for sliding window groups."
+                    "Window size must be greater than 1 for sliding window"
+                    f" groups, got {self.window_size}."
                 )
         elif self.type == "recurrent":
             if self.window_size != -1:

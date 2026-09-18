@@ -131,10 +131,9 @@ def test_dispatch_matches_the_attention_pattern() -> None:
 @pytest.mark.parametrize(
     ("window", "expected"),
     [
-        # When window_size=1, we hit a degenerate case where we always get 100%
-        # cache hit rate since the query token does not attend to any historical
-        # tokens.
-        (1, 0),
+        # 2 is the shallowest window a group may declare, and the query
+        # token's own page still comes off it.
+        (2, 1),
         (BLOCK_SIZE, 1),
         (BLOCK_SIZE + 1, 1),
         (BLOCK_SIZE + 2, 2),
@@ -241,16 +240,18 @@ def test_no_cache_hit_with_empty_prefix_cache() -> None:
     assert sliding_group(pool).longest_cache_hit(keys, 0) == 0
 
 
-def test_sliding_window_with_window_size_1_gets_cache_hit_anywhere() -> None:
-    pool = make_pool()
-    keys = block_keys(10)
+@pytest.mark.parametrize("window", [0, 1])
+def test_sliding_window_refuses_a_window_that_reads_no_history(
+    window: int,
+) -> None:
+    """A w_size<=1 group attends to nothing below the query token.
 
-    # Despite nothing being committed, we still get maximal cache hit since the
-    # query token does not attend to any historical tokens when window_size=1.
-    assert (
-        sliding_group(pool, window=1, block_size=1).longest_cache_hit(keys, 0)
-        == 10
-    )
+    It used to be served as a 100% cache hit: every block counted as a hit
+    that attention then never read back. Refusing the group is what keeps
+    that answer from being produced at all (SERVOPT-1627).
+    """
+    with pytest.raises(ValueError, match="greater than 1"):
+        sliding_group(make_pool(), window=window, block_size=1)
 
 
 def test_sliding_claim_nulls_everything_below_the_window() -> None:

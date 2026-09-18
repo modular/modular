@@ -77,13 +77,25 @@ def longest_sliding_window_hit(
     window covers different blocks -- so this cannot be found by shortening a
     full-attention answer.
 
-    ``blocks_in_window == 0`` (``window_size == 1``, where the query token
-    attends to no history) is a degenerate 100% hit. A run that survives to
-    index 0 is a hit of just that run, with no window check: nothing sits below
-    the root to be missing.
+    A run that survives to index 0 is a hit of just that run, with no window
+    check: nothing sits below the root to be missing.
+
+    ``blocks_in_window`` is at least 1 for every group that gets here. Zero is
+    ``window_size == 1``, a query token attending to no history, which would
+    make every block a hit that attention never reads back;
+    :class:`~max.nn.kv_cache.cache_params.KVCacheGroupId` rejects that window
+    and so does Mach's ``KVCacheConfig::validate``, so a zero arriving here is
+    a caller bug rather than a shape to serve (SERVOPT-1627).
+
+    Raises:
+        ValueError: If ``blocks_in_window`` is not positive.
     """
-    if blocks_in_window == 0:
-        return num_hashes
+    if blocks_in_window < 1:
+        raise ValueError(
+            "A sliding-window group spans at least one block; got"
+            f" blocks_in_window={blocks_in_window}. window_size must be"
+            " greater than 1."
+        )
 
     run = 0
     for idx in range(num_hashes - 1, -1, -1):

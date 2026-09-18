@@ -465,7 +465,6 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
              ^ : Eligible Prefix Cache hit
 
               Tokens [A]  [B]   .   [D]  [E]  [F]   .    .   [I]  [J]  [K]  [L]  [M]
-            w_size=1  ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^    ^
             w_size=2  ^    ^         ^    ^    ^              ^    ^    ^    ^    ^
             w_size=3  ^    ^              ^    ^                   ^    ^    ^    ^
             w_size=4  ^    ^                   ^                        ^    ^    ^
@@ -482,8 +481,9 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         the start of sequence. For example, [A] and [AB] are valid cache hits for
         any window size.
 
-        Also window_size=1 is a degenerate case where we always get 100% cache
-        hit rate since the query token does not attend to any historical tokens.
+        The table starts at w_size=2 because a w_size=1 group is rejected
+        outright: it reads no history back, so every token would be a hit
+        nothing ever attends to (SERVOPT-1627).
         """
         return longest_sliding_window_hit(
             num_hashes, self._blocks_in_window, is_cached

@@ -1306,7 +1306,7 @@ class DKVConnector(KVConnector):
         ]
         # One window for every sliding leaf (``_validate_dkv_leaves`` rejects a
         # tree with two), so resolve it once. 0 only when there is no sliding
-        # leaf at all: a sliding leaf is asserted below to span a whole block.
+        # leaf at all, per the note below.
         self._window_blocks = (
             self._leaves[self._sliding_leaf_ids[0]].blocks_in_window(
                 self._page_size
@@ -1314,19 +1314,14 @@ class DKVConnector(KVConnector):
             if self._sliding_leaf_ids
             else 0
         )
-        # ``window_size == 1`` spans no whole block, and such a leaf is pure
-        # overhead on the leased path: :func:`longest_sliding_window_hit`
-        # returns the whole candidate without ever reading its mask, and
-        # :func:`blocks_held_of_hit` then makes its share 0 -- so it would take
-        # a lease and hand it straight back on every request while never
-        # posting a block. No served model attends to zero history, so this is
-        # not a shape worth carrying a path for.
-        # TODO(SERVOPT-1627): Reject such a leaf outright.
-        assert not self._sliding_leaf_ids or self._window_blocks > 0, (
-            f"sliding leaf {self._sliding_leaf_ids[0]!r} has window_size="
-            f"{self._leaves[self._sliding_leaf_ids[0]].window_size}, which "
-            f"spans no whole block at page_size={self._page_size}"
-        )
+        # A sliding leaf always spans a whole block: ``KVCacheGroupId``
+        # refuses ``window_size <= 1`` (SERVOPT-1627), and every window above
+        # that leaves at least one block once the query token's own page comes
+        # off. That is what the leased path needs -- a leaf spanning none
+        # would take a lease and hand it straight back on every request
+        # without ever posting a block, because
+        # :func:`longest_sliding_window_hit` would return the whole candidate
+        # unread and :func:`blocks_held_of_hit` would then make its share 0.
         # Recency is a property of the leaf's attention group, so it is fixed
         # here rather than rebuilt inside the per-replica admission loop.
         self._group_recencies = [
