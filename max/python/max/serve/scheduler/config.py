@@ -55,10 +55,25 @@ class TokenGenerationSchedulerConfig:
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
     prefill_coalesce_min_pending: int = 0
-    """Minimum pending fresh prefills before in-flight batching mixes them
-    into a decode step. Every mixed step forfeits device graph capture for
-    all of its decode rows. A held prefill is admitted after at most this many
-    decode steps. 0 admits immediately (the default behavior)."""
+    """Minimum pending fresh prefills, summed across the data-parallel group,
+    before in-flight batching mixes them into a decode step. Every mixed step
+    forfeits device graph capture for all of its decode rows, on every
+    replica. A held prefill is admitted after at most this many decode steps
+    unless ``prefill_coalesce_max_held_steps`` overrides that deadline.
+    0 admits immediately (the default behavior)."""
+
+    prefill_coalesce_max_held_steps: int = 0
+    """Ceiling on consecutive prefill-admitting steps a held prefill waits
+    before it is admitted regardless of queue depth. With
+    ``prefill_schedule_interval`` > 1 only cadence-open steps count, so the
+    worst-case wait is the product of the two. 0 falls back to
+    ``prefill_coalesce_min_pending`` (the default behavior)."""
+
+    prefill_schedule_interval: int = 1
+    """Admit prefill work only on every Nth scheduler step. Data-parallel
+    ranks advance in lockstep, so prefill on any rank stalls the whole
+    group; confining it to a shared cadence leaves the steps in between
+    entirely to decode. 1 admits every step (the default behavior)."""
 
     data_parallel_degree: int = 1
     """Data-parallelism parameter. The degree to which the model is replicated
@@ -160,6 +175,16 @@ class TokenGenerationSchedulerConfig:
                 "`prefill_coalesce_min_pending` must be non-negative, found"
                 f" {self.prefill_coalesce_min_pending}"
             )
+        if self.prefill_coalesce_max_held_steps < 0:
+            raise ValueError(
+                "`prefill_coalesce_max_held_steps` must be non-negative, found"
+                f" {self.prefill_coalesce_max_held_steps}"
+            )
+        if self.prefill_schedule_interval < 1:
+            raise ValueError(
+                "`prefill_schedule_interval` must be at least 1, found"
+                f" {self.prefill_schedule_interval}"
+            )
 
     @classmethod
     def from_pipeline_config(
@@ -194,6 +219,12 @@ class TokenGenerationSchedulerConfig:
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             prefill_coalesce_min_pending=(
                 pipeline_config.runtime.prefill_coalesce_min_pending
+            ),
+            prefill_coalesce_max_held_steps=(
+                pipeline_config.runtime.prefill_coalesce_max_held_steps
+            ),
+            prefill_schedule_interval=(
+                pipeline_config.runtime.prefill_schedule_interval
             ),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             decode_stall_timeout_s=pipeline_config.runtime.decode_stall_timeout_s,

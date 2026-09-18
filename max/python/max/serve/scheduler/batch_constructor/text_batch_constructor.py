@@ -530,9 +530,18 @@ class TextBatchConstructor:
         self._prev_dp_padding: DPPaddingInfo | None = None
         self._current_dp_padding: DPPaddingInfo | None = None
 
-        # Per-replica count of consecutive TG steps that held pending fresh
-        # prefills below ``prefill_coalesce_min_pending``.
-        self._prefill_coalesce_held_steps: list[int] = [0] * self.num_replicas
+        # Consecutive steps on which the coalescing gate held the group's
+        # pending fresh prefills back, and this step's gate decision. Both are
+        # group-wide: capture is a property of the whole DP group.
+        self._prefill_coalesce_held_steps: int = 0
+        self._ce_backfill_open: bool = True
+
+        # Prefill admission cadence. One call builds every replica's batch,
+        # so a scalar phase is already aligned across DP ranks. Only the phase
+        # modulo the interval is ever read, so it wraps there rather than
+        # counting steps for the life of the process.
+        self._prefill_interval_phase: int = 0
+        self._prefill_interval_open: bool = True
 
     def _create_new_token_budget(
         self, ce_capacity: int | None = None
@@ -1026,12 +1035,17 @@ class TextBatchConstructor:
         # from a genuine TG preference to any caller that aggregates priority
         # across replicas (SERVOPT-1560: a spurious TG "vote" from an idle
         # replica broadcast as a batch-wide override, starving a sibling
-        # replica's real, ready CE request forever).
+        # replica's real, ready CE request forever). This sits above the
+        # cadence check so an idle replica stays silent on a held step too.
         if (
             not self.replicas[replica_idx].ce_reqs
             and not self.replicas[replica_idx].tg_reqs
         ):
             return None
+
+        # Off-cadence step: run TG (only held when some replica has TG work).
+        if not self._prefill_interval_open:
+            return RequestType.TG
 
         # If there are no CE requests, prioritize TG
         if len(self.replicas[replica_idx].ce_reqs) == 0:
@@ -1111,6 +1125,12 @@ class TextBatchConstructor:
         # Deferred by the DP CE balancer this iteration (also covers paths
         # that bypass _identify_priority, e.g. in-flight batching).
         if replica_idx in self._ce_deferred_replicas:
+            return
+
+        # Off-cadence step. Also covers the in-flight batching backfill,
+        # which runs under a TG priority and so slips past the cadence
+        # check in _identify_priority.
+        if not self._prefill_interval_open:
             return
 
         replica_requests = self.replicas[replica_idx]
@@ -1308,38 +1328,83 @@ class TextBatchConstructor:
                     raise ValueError(f"Unexpected budget status: {status}")
 
     @traced
-    def _should_backfill_ce(self, replica_idx: int) -> bool:
-        """Whether this TG step should mix pending CE work into the batch.
+    def _should_backfill_ce(self) -> bool:
+        """Whether this step should mix pending CE work into decode batches.
 
         Every mixed step runs eagerly (device graph capture replays only
         pure-decode shapes), so admitting prefills the moment a slot frees
         converts most decode steps to eager execution.
 
-        This decision is per replica. However, capture depends on the whole
-        DP group. One fresh prefill on any rank runs that step eagerly
-        everywhere, so at DP > 1 the threshold buys little.
-
-        TODO(MXSERV-497): decide admission once per step for the group
-        and split the threshold from the decode-step deadline it also
-        serves.
+        Decided once for the whole group, because capture is a group
+        property: one fresh prefill on any rank runs that step eagerly
+        everywhere. So the count that clears the threshold is the group
+        total, since one eager step absorbs every replica's admissions. A
+        continuation on any rank releases the group too, that step having
+        forfeited capture already.
         """
         threshold = self.scheduler_config.prefill_coalesce_min_pending
         if threshold <= 0:
             return True
-        ce_reqs = self.replicas[replica_idx].ce_reqs
-        if not ce_reqs:
-            self._prefill_coalesce_held_steps[replica_idx] = 0
+        # The only call site is the in-flight batching backfill, so with that
+        # off nothing reads the result and the held-steps clock would only
+        # drift. A second call site would have to check the flag itself.
+        if not self.scheduler_config.enable_in_flight_batching:
             return True
-        head = next(iter(ce_reqs.values()))
+        # The cadence gate refuses admission before the backfill is consulted,
+        # so ticking here spends the deadline on a step that admits nothing --
+        # and the reset leaves the two gates permanently out of phase.
+        if not self._prefill_interval_open:
+            return False
+        # No decode work anywhere, so no captured step to protect -- and the
+        # CE branch admits prefill regardless, so ticking here would spend
+        # the deadline on a step that ran prefill anyway.
+        if not any(replica.tg_reqs for replica in self.replicas):
+            self._prefill_coalesce_held_steps = 0
+            return True
+
+        # Deferred replicas' CE work cannot be admitted this step, so it must
+        # neither clear the threshold nor release the group on a continuation.
+        admissible = [
+            replica
+            for idx, replica in enumerate(self.replicas)
+            if idx not in self._ce_deferred_replicas and replica.ce_reqs
+        ]
+        if not admissible:
+            if any(replica.ce_reqs for replica in self.replicas):
+                # All of it is deferred: nothing could be admitted, so the
+                # clock neither ticks nor resets.
+                return False
+            self._prefill_coalesce_held_steps = 0
+            return True
+
+        heads = [next(iter(r.ce_reqs.values())) for r in admissible]
+        pending = sum(len(r.ce_reqs) for r in admissible)
+        max_held_steps = self.scheduler_config.prefill_coalesce_max_held_steps
+        deadline = max_held_steps if max_held_steps > 0 else threshold
         if (
-            head.tokens.processed_length > 0
-            or len(ce_reqs) >= threshold
-            or self._prefill_coalesce_held_steps[replica_idx] >= threshold
+            any(head.tokens.processed_length > 0 for head in heads)
+            or pending >= threshold
+            or self._prefill_coalesce_held_steps >= deadline
         ):
-            self._prefill_coalesce_held_steps[replica_idx] = 0
+            self._prefill_coalesce_held_steps = 0
             return True
-        self._prefill_coalesce_held_steps[replica_idx] += 1
+        self._prefill_coalesce_held_steps += 1
         return False
+
+    def _is_prefill_interval_open(self) -> bool:
+        """Whether this step may admit prefill work.
+
+        Decided once for the group, unlike ``_should_backfill_ce``, and holds
+        mid-prefill continuations: the token budget emits one chunk per step,
+        so exempting them would defeat the cadence.
+        """
+        interval = self.scheduler_config.prefill_schedule_interval
+        if interval <= 1:
+            return True
+        # No decode work anywhere, so no lockstep stall to protect.
+        if not any(replica.tg_reqs for replica in self.replicas):
+            return True
+        return self._prefill_interval_phase == 0
 
     def _construct_replica_batch(
         self, replica_idx: int, priority_override: RequestType | None = None
@@ -1404,7 +1469,7 @@ class TextBatchConstructor:
                     self.scheduler_config.enable_in_flight_batching
                     and len(batch) > 0
                     and priority_override is None
-                    and self._should_backfill_ce(replica_idx)
+                    and self._ce_backfill_open
                 ):
                     self._add_ce_requests(batch, replica_idx)
 
@@ -1638,9 +1703,19 @@ class TextBatchConstructor:
 
         self._promote_grammar_ready_requests()
 
+        self._prefill_interval_open = self._is_prefill_interval_open()
+        # At least 1 by scheduler config validation, so the wrap is safe.
+        interval = self.scheduler_config.prefill_schedule_interval
+        phase = self._prefill_interval_phase + 1
+        self._prefill_interval_phase = phase % interval
+
         # DP-balanced CE deferral: decide this iteration's CE work (late
         # binding + per-replica deferral) before priorities are identified.
         self._plan_ce_step()
+
+        # After planning: it binds pooled CE requests into replica queues, and
+        # only bound requests can be admitted this step.
+        self._ce_backfill_open = self._should_backfill_ce()
 
         priority_override = None
         # None entries (replicas with no CE and no TG requests -- see

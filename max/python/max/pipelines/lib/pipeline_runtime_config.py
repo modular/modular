@@ -203,14 +203,42 @@ class PipelineRuntimeConfig(ConfigFileModel):
     prefill_coalesce_min_pending: int = Field(
         default=0,
         description=(
-            "Under in-flight batching each replica holds queued fresh prefill "
-            "requests until enough can share one decode step. The same number "
-            "is used two ways. Prefills are released once this many are "
-            "queued. A held prefill is also released after this many decode "
-            "steps so it never waits indefinitely. Holding keeps more steps "
-            "pure decode so they can replay the captured graph. A step "
-            "holding a prefill request runs eager. The default of 0 holds "
-            "nothing back."
+            "Under in-flight batching the scheduler holds queued fresh "
+            "prefill requests until enough can share one decode step. "
+            "Prefills are released once this many are queued, counted across "
+            "the whole data-parallel group, since one eager step serves every "
+            "replica at once. A held prefill is also released after this many "
+            "decode steps so it never waits indefinitely, unless "
+            "prefill_coalesce_max_held_steps sets that deadline separately. "
+            "Holding keeps more steps pure decode so they can replay the "
+            "captured graph. A step holding a prefill request runs eager. "
+            "The default of 0 holds nothing back."
+        ),
+    )
+
+    prefill_coalesce_max_held_steps: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Ceiling on how many consecutive decode steps a prefill is held "
+            "before it is admitted regardless of how few are queued. This "
+            "splits the release deadline out of prefill_coalesce_min_pending, "
+            "which otherwise serves as both the queue depth that opens the "
+            "gate and the step count that expires it. The default of 0 falls "
+            "back to prefill_coalesce_min_pending."
+        ),
+    )
+
+    prefill_schedule_interval: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Admit prefill work only on every Nth scheduler step. "
+            "Data-parallel ranks advance in lockstep, so prefill on any rank "
+            "stalls the whole group; confining it to a shared cadence leaves "
+            "the steps in between entirely to decode. A step with no decode "
+            "work anywhere admits prefill regardless, rather than run an "
+            "empty batch. The default of 1 admits prefill every step."
         ),
     )
 

@@ -2493,3 +2493,339 @@ def test_text_batch_constructor__oom_deferred_while_onload_in_flight(
     assert len(inputs.batches[0]) == 0
     assert ctx_a.request_id in batch_constructor._onloading_reqs
     assert ctx_b.request_id in batch_constructor.replicas[0].ce_reqs
+
+
+# ---------------------------------------------------------------------------
+# Prefill schedule interval (_is_prefill_interval_open) tests
+# ---------------------------------------------------------------------------
+
+
+def _interval_constructor(
+    interval: int = 1,
+    dp: int = 1,
+    in_flight_batching: bool = False,
+    coalesce_min_pending: int = 0,
+    coalesce_max_held_steps: int = 0,
+    chunked: bool = False,
+) -> TextBatchConstructor:
+    """A constructor that admits exactly one prefill per open step.
+
+    With chunking off the CE target is a soft limit, so the first 30-token
+    prefill is admitted whole and ends the pass, leaving the rest queued.
+    """
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+    kv_cache = create_mock_kv_cache()
+    kv_cache.num_replicas = dp
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        target_tokens_per_batch_ce=20,
+        enable_chunked_prefill=chunked,
+        data_parallel_degree=dp,
+        enable_in_flight_batching=in_flight_batching,
+        prefill_coalesce_min_pending=coalesce_min_pending,
+        prefill_coalesce_max_held_steps=coalesce_max_held_steps,
+        prefill_schedule_interval=interval,
+    )
+    return TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+
+
+def _enqueue_ce(
+    batch_constructor: TextBatchConstructor,
+    count: int = 1,
+    replica_idx: int = 0,
+) -> None:
+    for _ in range(count):
+        batch_constructor.enqueue_new_request(
+            create_lora_context(), replica_idx=replica_idx
+        )
+
+
+def _enqueue_tg(
+    batch_constructor: TextBatchConstructor, replica_idx: int = 0
+) -> None:
+    batch_constructor.enqueue_new_request(
+        create_lora_context(is_tg=True), replica_idx=replica_idx
+    )
+
+
+def _has_prefill(batch: list[TextContext]) -> bool:
+    return any(ctx.tokens.generated_length == 0 for ctx in batch)
+
+
+def test_prefill_schedule_interval__admits_prefill_only_on_cadence_steps() -> (
+    None
+):
+    batch_constructor = _interval_constructor(interval=4)
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor, count=2)
+
+    admitted = [
+        _has_prefill(batch_constructor.construct_batch().batches[0])
+        for _ in range(5)
+    ]
+    assert admitted == [True, False, False, False, True]
+
+
+def test_prefill_schedule_interval__admits_prefill_when_nothing_decodes() -> (
+    None
+):
+    batch_constructor = _interval_constructor(interval=4)
+    _enqueue_ce(batch_constructor)
+
+    # No TG work anywhere: holding would idle the GPU for nothing.
+    assert _has_prefill(batch_constructor.construct_batch().batches[0])
+
+
+def test_prefill_schedule_interval__one_matches_the_flag_being_absent() -> None:
+    # An absent flag is exactly an interval of 1.
+    absent = TokenGenerationSchedulerConfig(
+        max_batch_size=10, target_tokens_per_batch_ce=20
+    )
+    assert absent.prefill_schedule_interval == 1
+
+    batch_constructor = _interval_constructor(interval=1)
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor, count=3)
+
+    steps: list[tuple[int, bool]] = []
+    for _ in range(4):
+        batch = batch_constructor.construct_batch().batches[0]
+        steps.append((len(batch), _has_prefill(batch)))
+
+    # Three queued prefills, one per step, then a pure decode step.
+    assert steps == [(1, True), (1, True), (1, True), (1, False)]
+
+
+def test_prefill_schedule_interval__dp_replicas_prefill_on_the_same_step() -> (
+    None
+):
+    dp = 4
+    batch_constructor = _interval_constructor(interval=4, dp=dp)
+    for replica_idx in range(dp):
+        _enqueue_tg(batch_constructor, replica_idx=replica_idx)
+
+    # Step 0 is pure decode; each replica's prefill then arrives on a
+    # different step, and all of them wait for the shared cadence step.
+    batch_constructor.construct_batch()
+    for step in range(1, 5):
+        _enqueue_ce(batch_constructor, replica_idx=step - 1)
+        inputs = batch_constructor.construct_batch()
+        admitted = [_has_prefill(inputs.batches[i]) for i in range(dp)]
+        assert admitted == [step == 4] * dp
+
+
+def test_prefill_schedule_interval__holds_in_flight_batching_backfill() -> None:
+    batch_constructor = _interval_constructor(
+        interval=4, in_flight_batching=True
+    )
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor, count=2)
+
+    # The backfill path never consults _identify_priority, so this covers
+    # the _add_ce_requests guard on its own.
+    admitted = [
+        _has_prefill(batch_constructor.construct_batch().batches[0])
+        for _ in range(5)
+    ]
+    assert admitted == [True, False, False, False, True]
+
+
+def test_prefill_schedule_interval__composes_with_prefill_coalescing() -> None:
+    batch_constructor = _interval_constructor(
+        interval=4, in_flight_batching=True, coalesce_min_pending=2
+    )
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor)
+
+    # Cadence open, but one pending prefill is below the coalesce threshold.
+    assert not _has_prefill(batch_constructor.construct_batch().batches[0])
+
+    # A second pending opens the coalesce gate; the cadence still holds.
+    _enqueue_ce(batch_constructor)
+    for _ in range(3):
+        assert not _has_prefill(batch_constructor.construct_batch().batches[0])
+
+    assert _has_prefill(batch_constructor.construct_batch().batches[0])
+
+
+def test_prefill_schedule_interval__idle_replica_stays_silent_when_held() -> (
+    None
+):
+    """A held step must not turn an idle replica into a TG vote.
+
+    SERVOPT-1560: a batch-wide override assembled from idle replicas'
+    priorities starves a sibling's real CE request.
+    """
+    batch_constructor = _interval_constructor(interval=4, dp=2)
+    _enqueue_tg(batch_constructor, replica_idx=0)
+    _enqueue_ce(batch_constructor, replica_idx=0)
+
+    # construct_batch decides the cadence for the step it is starting, so it
+    # takes two passes to reach one that is held: step 0 is open, step 1 is not.
+    batch_constructor.construct_batch()
+    batch_constructor.construct_batch()
+    assert not batch_constructor._prefill_interval_open
+
+    assert batch_constructor._identify_priority(0) == RequestType.TG
+    assert batch_constructor._identify_priority(1) is None
+
+
+# ---------------------------------------------------------------------------
+# Prefill coalescing (_should_backfill_ce) tests
+# ---------------------------------------------------------------------------
+
+
+def test_prefill_coalescing__threshold_counts_the_group_not_each_replica() -> (
+    None
+):
+    """MXSERV-497: prefills spread thin across replicas still clear the bar.
+
+    One eager step serves the whole DP group, so what the threshold has to
+    price is how many prefills that one step absorbs in total.
+    """
+    dp = 4
+    batch_constructor = _interval_constructor(
+        dp=dp, in_flight_batching=True, coalesce_min_pending=4
+    )
+    for replica_idx in range(dp):
+        _enqueue_tg(batch_constructor, replica_idx=replica_idx)
+        _enqueue_ce(batch_constructor, replica_idx=replica_idx)
+
+    # One prefill per replica: each is below a threshold of 4 on its own, the
+    # group is exactly at it. Counting per replica would hold all four.
+    inputs = batch_constructor.construct_batch()
+    assert [_has_prefill(inputs.batches[i]) for i in range(dp)] == [True] * dp
+    assert batch_constructor._prefill_coalesce_held_steps == 0
+
+
+def test_prefill_coalescing__max_held_steps_releases_before_the_threshold() -> (
+    None
+):
+    batch_constructor = _interval_constructor(
+        in_flight_batching=True,
+        coalesce_min_pending=10,
+        coalesce_max_held_steps=2,
+    )
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor)
+
+    # A single pending prefill never reaches a threshold of 10, so the
+    # separate two-step deadline is the only thing that can release it.
+    admitted = [
+        _has_prefill(batch_constructor.construct_batch().batches[0])
+        for _ in range(3)
+    ]
+    assert admitted == [False, False, True]
+
+
+def test_prefill_coalescing__max_held_steps_zero_keeps_one_number() -> None:
+    batch_constructor = _interval_constructor(
+        in_flight_batching=True, coalesce_min_pending=3
+    )
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor)
+
+    # Unset, the threshold is still the deadline: one pending prefill waits
+    # exactly three steps, as it did before the deadline was split out.
+    admitted = [
+        _has_prefill(batch_constructor.construct_batch().batches[0])
+        for _ in range(4)
+    ]
+    assert admitted == [False, False, False, True]
+
+
+def test_prefill_coalescing__no_decode_work_anywhere_does_not_hold() -> None:
+    """A step with no decode work runs prefill through the CE branch anyway.
+
+    Counting those as held would spend the deadline on steps that admitted
+    prefill, releasing the next genuinely held one early.
+    """
+    batch_constructor = _interval_constructor(
+        in_flight_batching=True, coalesce_min_pending=3
+    )
+    _enqueue_ce(batch_constructor, count=2)
+
+    for step in range(3):
+        inputs = batch_constructor.construct_batch()
+        assert _has_prefill(inputs.batches[0]) == (step < 2)
+        assert batch_constructor._prefill_coalesce_held_steps == 0
+
+
+def test_prefill_coalescing__deadline_releases_on_a_cadence_step() -> None:
+    """The held-steps clock must not tick while the cadence is shut.
+
+    Ticking there lets the deadline expire on a step that admits nothing, and
+    the reset then keeps the two gates permanently out of phase: coalescing
+    opens every deadline+1 steps, the cadence every interval steps, and with
+    the wrong offset they never coincide. The threshold here is far above the
+    queue depth so only the deadline can release.
+    """
+    interval, deadline = 4, 3
+    batch_constructor = _interval_constructor(
+        interval=interval,
+        in_flight_batching=True,
+        coalesce_min_pending=10,
+        coalesce_max_held_steps=deadline,
+    )
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor)
+
+    admitted = [
+        _has_prefill(batch_constructor.construct_batch().batches[0])
+        for _ in range(interval * (deadline + 1) + 1)
+    ]
+    assert any(admitted)
+
+
+def test_prefill_coalescing__deferred_replicas_do_not_clear_the_threshold() -> (
+    None
+):
+    """Deferred CE work cannot be admitted, so it must not clear the gate.
+
+    Counting it would let prefills that provably cannot run this step clear
+    the threshold and reset the held-steps clock.
+    """
+    batch_constructor = _interval_constructor(
+        dp=2, in_flight_batching=True, coalesce_min_pending=2
+    )
+    _enqueue_tg(batch_constructor, replica_idx=0)
+    _enqueue_tg(batch_constructor, replica_idx=1)
+    _enqueue_ce(batch_constructor, count=2, replica_idx=1)
+
+    batch_constructor._ce_deferred_replicas = {1}
+
+    assert not batch_constructor._should_backfill_ce()
+    assert batch_constructor._prefill_coalesce_held_steps == 0
+
+
+def test_prefill_schedule_interval__holds_mid_prefill_continuations() -> None:
+    """The cadence holds continuations; coalescing releases on them.
+
+    The budget emits one chunk per step, so a chunked prefill needs one
+    cadence-open step per chunk. Exempting continuations would let a long
+    prefill run every step and defeat the cadence entirely.
+    """
+    batch_constructor = _interval_constructor(interval=2, chunked=True)
+    _enqueue_tg(batch_constructor)
+    _enqueue_ce(batch_constructor)  # 30 tokens, 20-token budget -> 2 chunks
+
+    admitted = []
+    for _ in range(3):
+        inputs = batch_constructor.construct_batch()
+        batch = inputs.batches[0]
+        admitted.append(_has_prefill(batch))
+        # Stand in for execution: advancing past the processed chunk is what
+        # gives the request a non-zero processed_length, i.e. what makes it a
+        # continuation when advance_requests returns it to the CE queue.
+        for context in batch:
+            if context.tokens.actively_chunked:
+                context.tokens.advance_chunk()
+        batch_constructor.advance_requests(inputs)
+
+    # One chunk per open step; the continuation waits out the closed step.
+    assert admitted == [True, False, True]

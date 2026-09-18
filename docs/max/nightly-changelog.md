@@ -139,11 +139,23 @@ This version is still a work in progress.
 
 - Added `--prefill-coalesce-min-pending` (default 0, off): under in-flight
   batching, hold pending fresh prefills until that many can share one mixed
-  step instead of admitting them one by one. Mixed steps forfeit device graph
-  capture for their decode rows, so coalescing admissions keeps more decode
-  steps on the captured fast path, trading a bounded prefill-admission delay
-  (at most the same number of decode steps) for lower decode latency at high
-  concurrency. Mid-prefill chunked continuations are never held.
+  step instead of admitting them one by one. With data parallelism the count
+  is the total across all replicas, not one replica's queue. Mixed steps
+  forfeit device graph capture for their decode rows, so coalescing admissions
+  keeps more decode steps on the captured fast path, trading a bounded
+  prefill-admission delay for lower decode latency at high concurrency. That
+  delay is at most the same number of decode steps, or
+  `--prefill-coalesce-max-held-steps` when set. Mid-prefill chunked
+  continuations are never held.
+
+- Added `--prefill-coalesce-max-held-steps` (default 0): a cap on how many
+  decode steps in a row a held prefill waits before it is admitted, no matter
+  how few are queued. Without it, `--prefill-coalesce-min-pending` does both
+  jobs: it sets the queue depth that releases a prefill, and the number of
+  steps after which one is released anyway. So the queue depth could not be
+  raised without also making prefills wait longer. This flag splits the two.
+  At 0 it falls back to `--prefill-coalesce-min-pending`, and it does nothing
+  while that is 0.
 
 - Added `--max-request-input-tokens` (default 0, off): a ceiling on how many
   prefill tokens one request may draw from the batch's context-encoding budget
@@ -153,6 +165,16 @@ This version is still a work in progress.
   token for the interactivity of the short ones it no longer blocks. It
   requires chunked prefill and is inert without it, and
   `--chunked-prefill-min-chunk-size` must not exceed it.
+
+- Added `--prefill-schedule-interval` (default 1, every step): admit prefill
+  work only on every Nth scheduler step, leaving the steps in between entirely
+  to decode. Data-parallel ranks advance in lockstep, so prefill on any one
+  rank stalls the whole group; scattering it across steps pays that stall
+  repeatedly, while concentrating it onto a shared cadence pays it once. A step
+  with no decode work on any replica admits prefill regardless, rather than run
+  an empty batch. The cost is delayed prefill admission, bounded at N-1 steps.
+  Unlike prefill coalescing, mid-prefill chunked continuations are held too:
+  the budget emits one chunk per step, so exempting them defeats the cadence.
 
 ### Server metrics
 

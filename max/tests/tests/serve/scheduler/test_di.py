@@ -2834,6 +2834,8 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     pipeline_config.runtime.max_request_input_tokens = 0
     pipeline_config.runtime.enable_in_flight_batching = False
     pipeline_config.runtime.prefill_coalesce_min_pending = 0
+    pipeline_config.runtime.prefill_coalesce_max_held_steps = 0
+    pipeline_config.runtime.prefill_schedule_interval = 1
     pipeline_config.runtime.dp_ce_balance_threshold = 0.8
     pipeline_config.runtime.decode_stall_timeout_s = None
     pipeline_config.runtime.decode_request_ttl_s = 42.0
