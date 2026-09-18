@@ -55,14 +55,7 @@ struct PatternPath {
 };
 
 struct PatternCommand;
-
-/// Immutable command-list view for bump-stored Or alternatives.
-struct PatternCommandListRef {
-  ArrayRef<const PatternCommand *> commands;
-
-  void print(raw_ostream &os, unsigned indent = 0) const;
-  LLVM_DUMP_METHOD void dump() const;
-};
+struct PatternCommandList;
 
 /// One step in a case program: test the subject at `path`, nest alternatives,
 /// or record a name binding for later emission.
@@ -75,7 +68,7 @@ struct PatternCommand {
 
   // Equal / EnumTag / Or.
   size_t enumCaseIndex = 0;
-  ArrayRef<PatternCommandListRef> orAlternatives;
+  ArrayRef<PatternCommandList> orAlternatives;
 
   // Bind.
   StringRef bindName;
@@ -92,9 +85,9 @@ struct PatternBoundName {
   PatternDeclKind bindingKind;
 };
 
-/// Mutable case program (stack-owned; not bump-allocated).
+/// Immutable case program: bump-interned command pointer array.
 struct PatternCommandList {
-  SmallVector<const PatternCommand *, 8> commands;
+  ArrayRef<const PatternCommand *> commands;
 
   /// Emit HLCF match tests for this case against `subject` at `rootPath`.
   /// On mismatch emits `hlcf.match.next`; on success falls through. Appends
@@ -178,7 +171,7 @@ public:
     return cmd;
   }
   PatternCommand *createOr(const PatternPath *path, const ExprNode *expr,
-                           ArrayRef<PatternCommandListRef> alternatives) {
+                           ArrayRef<PatternCommandList> alternatives) {
     auto *cmd = create<PatternCommand>();
     cmd->kind = PatternCommand::Or;
     cmd->path = path;
@@ -197,8 +190,9 @@ public:
     return cmd;
   }
 
-  PatternCommandListRef internCommandList(const PatternCommandList &list) {
-    return {internArray(ArrayRef<const PatternCommand *>(list.commands))};
+  /// Bump-allocate `commands` and return an immutable command list.
+  PatternCommandList internCommandList(ArrayRef<const PatternCommand *> cmds) {
+    return {internArray(cmds)};
   }
 
 private:

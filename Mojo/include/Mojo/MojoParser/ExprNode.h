@@ -40,6 +40,7 @@ class IREmitter;
 class ExprDest;
 class PatternMatchBuilder;
 struct PatternPath;
+struct PatternCommand;
 struct PatternCommandList;
 
 //===----------------------------------------------------------------------===//
@@ -217,10 +218,12 @@ public:
   /// emission. Comptime lookups use `builder.getParamEmitter()`; the current
   /// `var`/`ref` binding mode lives on `builder`. Does not emit match IR;
   /// failure is for type / pattern errors only. Guards are not part of the
-  /// list.
-  virtual LogicalResult buildCheckList(PatternMatchBuilder &builder,
-                                       CValue subject, const PatternPath *path,
-                                       PatternCommandList &out) const;
+  /// list. Appends to `out`; the caller bump-interns via
+  /// `PatternMatchBuilder::internCommandList`.
+  virtual LogicalResult
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// ExprDest indicates information about where to emit the expression result

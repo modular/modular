@@ -152,7 +152,7 @@ void PatternCommand::print(raw_ostream &os, unsigned indent) const {
 
 void PatternCommand::dump() const { print(llvm::errs()); }
 
-void PatternCommandListRef::print(raw_ostream &os, unsigned indent) const {
+void PatternCommandList::print(raw_ostream &os, unsigned indent) const {
   if (commands.empty()) {
     os.indent(indent) << "<empty>\n";
     return;
@@ -165,21 +165,16 @@ void PatternCommandListRef::print(raw_ostream &os, unsigned indent) const {
   }
 }
 
-void PatternCommandListRef::dump() const { print(llvm::errs()); }
-
-void PatternCommandList::print(raw_ostream &os, unsigned indent) const {
-  PatternCommandListRef{commands}.print(os, indent);
-}
-
 void PatternCommandList::dump() const { print(llvm::errs()); }
 
 //===----------------------------------------------------------------------===//
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
 
-LogicalResult ExprNode::buildCheckList(PatternMatchBuilder &builder,
-                                       CValue subject, const PatternPath *path,
-                                       PatternCommandList &out) const {
+LogicalResult
+ExprNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                         const PatternPath *path,
+                         SmallVectorImpl<const PatternCommand *> &out) const {
   builder.emitError(getLoc(), "expression is not a valid match pattern");
   return failure();
 }
@@ -255,52 +250,46 @@ static LogicalResult emitMatchAgainstValue(const ExprNode *expr,
   return emitMatchOutcome(emitter, expr->getLocation(emitter), matches, expr);
 }
 
-LogicalResult SimpleLiteralNode::buildCheckList(PatternMatchBuilder &builder,
-                                                CValue subject,
-                                                const PatternPath *path,
-                                                PatternCommandList &out) const {
+LogicalResult SimpleLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
   // `_` is irrefutable: no check, no binding.
   if (kind == kDiscardLiteral)
     return success();
   return ExprNode::buildCheckList(builder, subject, path, out);
 }
 
-LogicalResult BoolLiteralNode::buildCheckList(PatternMatchBuilder &builder,
-                                              CValue subject,
-                                              const PatternPath *path,
-                                              PatternCommandList &out) const {
-  out.commands.push_back(builder.createEqual(path, this));
+LogicalResult BoolLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
+  out.push_back(builder.createEqual(path, this));
   return success();
 }
 
-LogicalResult IntLiteralNode::buildCheckList(PatternMatchBuilder &builder,
-                                             CValue subject,
-                                             const PatternPath *path,
-                                             PatternCommandList &out) const {
-  out.commands.push_back(builder.createEqual(path, this));
+LogicalResult IntLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
+  out.push_back(builder.createEqual(path, this));
   return success();
 }
 
-LogicalResult FloatLiteralNode::buildCheckList(PatternMatchBuilder &builder,
-                                               CValue subject,
-                                               const PatternPath *path,
-                                               PatternCommandList &out) const {
-  out.commands.push_back(builder.createEqual(path, this));
+LogicalResult FloatLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
+  out.push_back(builder.createEqual(path, this));
   return success();
 }
 
-LogicalResult StringLiteralNode::buildCheckList(PatternMatchBuilder &builder,
-                                                CValue subject,
-                                                const PatternPath *path,
-                                                PatternCommandList &out) const {
-  out.commands.push_back(builder.createEqual(path, this));
+LogicalResult StringLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
+  out.push_back(builder.createEqual(path, this));
   return success();
 }
 
-LogicalResult DeclRefNode::buildCheckList(PatternMatchBuilder &builder,
-                                          CValue subject,
-                                          const PatternPath *path,
-                                          PatternCommandList &out) const {
+LogicalResult DeclRefNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
   PatternDeclKind patternKind = builder.getPatternKind();
   if (patternKind == PatternDeclKind::kNone) {
     builder.emitError(getLoc(), "bare identifier '")
@@ -308,13 +297,14 @@ LogicalResult DeclRefNode::buildCheckList(PatternMatchBuilder &builder,
         << "' or 'ref " << spelling << "' to bind a name";
     return failure();
   }
-  out.commands.push_back(builder.createBind(path, this, spelling, patternKind));
+  out.push_back(builder.createBind(path, this, spelling, patternKind));
   return success();
 }
 
-LogicalResult ParenNode::buildCheckList(PatternMatchBuilder &builder,
-                                        CValue subject, const PatternPath *path,
-                                        PatternCommandList &out) const {
+LogicalResult
+ParenNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                          const PatternPath *path,
+                          SmallVectorImpl<const PatternCommand *> &out) const {
   return subExpr->buildCheckList(builder, subject, path, out);
 }
 
@@ -334,9 +324,10 @@ addOrPatternAlternatives(SmallVectorImpl<const ExprNode *> &alternatives,
   }
 }
 
-LogicalResult BinOpNode::buildCheckList(PatternMatchBuilder &builder,
-                                        CValue subject, const PatternPath *path,
-                                        PatternCommandList &out) const {
+LogicalResult
+BinOpNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                          const PatternPath *path,
+                          SmallVectorImpl<const PatternCommand *> &out) const {
   if (kind == kOr)
     return buildOrCheckList(builder, subject, path, out);
   if (kind == kAsPat)
@@ -344,32 +335,30 @@ LogicalResult BinOpNode::buildCheckList(PatternMatchBuilder &builder,
   return ExprNode::buildCheckList(builder, subject, path, out);
 }
 
-LogicalResult BinOpNode::buildOrCheckList(PatternMatchBuilder &builder,
-                                          CValue subject,
-                                          const PatternPath *path,
-                                          PatternCommandList &out) const {
+LogicalResult BinOpNode::buildOrCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
   SmallVector<const ExprNode *, 2> alternatives;
   addOrPatternAlternatives(alternatives, this);
 
   // Each alternative is its own command list (including Bind steps). Binding
   // agreement across arms is verified when the or is emitted, not here.
-  SmallVector<PatternCommandListRef, 2> altRefs;
-  altRefs.reserve(alternatives.size());
+  SmallVector<PatternCommandList, 2> altLists;
+  altLists.reserve(alternatives.size());
   for (const ExprNode *alternative : alternatives) {
-    PatternCommandList altOut;
-    if (failed(alternative->buildCheckList(builder, subject, path, altOut)))
+    SmallVector<const PatternCommand *, 8> altCmds;
+    if (failed(alternative->buildCheckList(builder, subject, path, altCmds)))
       return failure();
-    altRefs.push_back(builder.internCommandList(altOut));
+    altLists.push_back(builder.internCommandList(altCmds));
   }
 
-  out.commands.push_back(builder.createOr(path, this, altRefs));
+  out.push_back(builder.createOr(path, this, altLists));
   return success();
 }
 
-LogicalResult BinOpNode::buildAsCheckList(PatternMatchBuilder &builder,
-                                          CValue subject,
-                                          const PatternPath *path,
-                                          PatternCommandList &out) const {
+LogicalResult BinOpNode::buildAsCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
   auto *name = dyn_cast<DeclRefNode>(rhs);
   if (!name) {
     builder.emitError(rhs->getLoc(), "expected a name after 'as'");
@@ -389,10 +378,9 @@ LogicalResult BinOpNode::buildAsCheckList(PatternMatchBuilder &builder,
   return lhs->buildCheckList(builder, subject, path, out);
 }
 
-LogicalResult UnaryOpNode::buildCheckList(PatternMatchBuilder &builder,
-                                          CValue subject,
-                                          const PatternPath *path,
-                                          PatternCommandList &out) const {
+LogicalResult UnaryOpNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
   if (kind != kVarPat && kind != kRefPat)
     return ExprNode::buildCheckList(builder, subject, path, out);
 
@@ -408,9 +396,10 @@ LogicalResult UnaryOpNode::buildCheckList(PatternMatchBuilder &builder,
   return subExpr->buildCheckList(builder, subject, path, out);
 }
 
-LogicalResult TupleNode::buildCheckList(PatternMatchBuilder &builder,
-                                        CValue subject, const PatternPath *path,
-                                        PatternCommandList &out) const {
+LogicalResult
+TupleNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                          const PatternPath *path,
+                          SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
   ASTType tupleType =
       builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc());
@@ -446,9 +435,10 @@ LogicalResult TupleNode::buildCheckList(PatternMatchBuilder &builder,
   return success();
 }
 
-LogicalResult CallNode::buildCheckList(PatternMatchBuilder &builder,
-                                       CValue subject, const PatternPath *path,
-                                       PatternCommandList &out) const {
+LogicalResult
+CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                         const PatternPath *path,
+                         SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
 
   if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
@@ -670,10 +660,9 @@ emitEnumDiscriminantMatch(IREmitter &emitter, CValue subject, size_t caseIndex,
           caseIdxInt};
 }
 
-LogicalResult CallNode::buildEnumCheckList(PatternMatchBuilder &builder,
-                                           CValue subject,
-                                           const PatternPath *path,
-                                           PatternCommandList &out) const {
+LogicalResult CallNode::buildEnumCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
   IREmitter emitter = builder.getParamEmitter();
   StringRef caseName;
   if (auto *attr = dyn_cast<AttributeRefNode>(callee)) {
@@ -736,16 +725,15 @@ LogicalResult CallNode::buildEnumCheckList(PatternMatchBuilder &builder,
     return failure();
   }
 
-  out.commands.push_back(builder.createEnumTag(path, this, *caseIndex));
+  out.push_back(builder.createEnumTag(path, this, *caseIndex));
   const PatternPath *payloadPath =
       builder.getEnumPayload(path, *caseIndex, payloadType);
   return operands[0].expr->buildCheckList(builder, CValue(), payloadPath, out);
 }
 
-LogicalResult AttributeRefNode::buildCheckList(PatternMatchBuilder &builder,
-                                               CValue subject,
-                                               const PatternPath *path,
-                                               PatternCommandList &out) const {
+LogicalResult AttributeRefNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
   if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
                                                builder.shared, {})) {
@@ -755,16 +743,16 @@ LogicalResult AttributeRefNode::buildCheckList(PatternMatchBuilder &builder,
     auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, spelling, this);
     if (!caseIndex)
       return failure();
-    out.commands.push_back(builder.createEnumTag(path, this, *caseIndex));
+    out.push_back(builder.createEnumTag(path, this, *caseIndex));
     return success();
   }
-  out.commands.push_back(builder.createEqual(path, this));
+  out.push_back(builder.createEqual(path, this));
   return success();
 }
 
 LogicalResult InferredAttributeRefNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
-    PatternCommandList &out) const {
+    SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
   if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
                                                builder.shared, {})) {
@@ -772,10 +760,10 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
     auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, spelling, this);
     if (!caseIndex)
       return failure();
-    out.commands.push_back(builder.createEnumTag(path, this, *caseIndex));
+    out.push_back(builder.createEnumTag(path, this, *caseIndex));
     return success();
   }
-  out.commands.push_back(builder.createEqual(path, this));
+  out.push_back(builder.createEqual(path, this));
   return success();
 }
 

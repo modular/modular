@@ -303,6 +303,12 @@ struct StmtParser : public ParserBase {
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseMatchStmt(size_t curIndent);
 
+  /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
+  /// entry's command list is tested in its own case region; the match else is
+  /// a no-op fallthrough.
+  void emitCases(ArrayRef<MatchCaseEntry> caseEntries, BValue subjectBVal,
+                 const PatternPath *rootPath, Location matchLocation);
+
   // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
   // closure on success when in the scope of the loop, and the specified
   // 'errorFn' if there is a semantic error with the sequence expression or
@@ -1657,9 +1663,9 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     }
 
     // Lower the pattern to a command list (type/pattern errors only; no IR).
-    PatternCommandList commandList;
+    SmallVector<const PatternCommand *, 8> commands;
     if (failed(patternExpr->buildCheckList(checkListBuilder, subjectBVal,
-                                           rootPath, commandList))) {
+                                           rootPath, commands))) {
       skipUntilIndentation(caseIndent);
       hadError = true;
       continue;
@@ -1667,7 +1673,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
 
     // Okay, we successfully parsed a case block. Remember it for later.
     caseEntries.push_back({patternExpr, guardExpr, getLexer().getCursor(),
-                           caseIndent, std::move(commandList)});
+                           caseIndent,
+                           checkListBuilder.internCommandList(commands)});
     skipUntilIndentation(caseIndent);
   }
 
@@ -1685,6 +1692,23 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns
   // are emitted.  For now, we simply emit each linearly.
+  emitCases(caseEntries, subjectBVal, rootPath, matchLocation);
+
+  afterCaseCursor.restore(getLexer());
+  return success();
+}
+
+/// Emit a non-empty list of match case entries as one `hlcf.match`. Each
+/// entry's command list is tested in its own case region; the match else is
+/// a no-op fallthrough.
+void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
+                           BValue subjectBVal, const PatternPath *rootPath,
+                           Location matchLocation) {
+  assert(!caseEntries.empty() && "emitCases requires a non-empty list");
+
+  // Given a non-empty block of cases, check to see if any of them cluster by
+  // the first command in the PatternCommandList.
+  // TODO: Do this, but for now just handle the general case.
 
   // Emit as one `hlcf.match`. Each source case becomes a case region that tests
   // its pattern (and optional guard), runs the body on success via
@@ -1772,8 +1796,6 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
   HLCF::YieldOp::create(builder, matchLocation);
   builder.setInsertionPointAfter(matchOp);
-  afterCaseCursor.restore(getLexer());
-  return success();
 }
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
