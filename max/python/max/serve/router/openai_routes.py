@@ -145,6 +145,7 @@ from max.serve.schemas.openai import (
     Model,
     PromptTokensDetails,
     ResponseFormat,
+    TokenIdsMixin,
     TopLogprob,
     UnloadLoraRequest,
 )
@@ -527,9 +528,11 @@ class OpenAIChatResponseGenerator(
         fold_reasoning_into_content: bool = False,
         emit_reasoning_content: bool = False,
         response_format_json_schema: dict[str, Any] | None = None,
+        return_token_ids: bool = False,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
+        self.return_token_ids = return_token_ids
         # MiniMax ``reasoning_split=False`` folds reasoning into ``content`` as ``<think>...</think>``; ``_think_*`` track the stream fold.
         self.fold_reasoning_into_content = fold_reasoning_into_content
         self._think_opened = False
@@ -715,9 +718,16 @@ class OpenAIChatResponseGenerator(
 
         _first_batch_id: int | None = None
         _last_batch_id: int | None = None
+
         # Until a payload is emitted the response is not yet a 200, so a
         # failure can still be answered with a real HTTP status.
         emitted = False
+
+        # Ids of chunks whose delta was suppressed (structural tokens only)
+        # ride along with the next emitted choice, so the concatenation of the
+        # streamed deltas still matches the non-streaming token_ids.
+        pending_token_ids: list[int] = []
+        pending_prompt_token_ids: list[int] | None = None
 
         try:
             async for chunk in token_generator:
@@ -740,6 +750,14 @@ class OpenAIChatResponseGenerator(
 
                 if chunk.cached_token_count is not None:
                     n_cached_prompt_tokens = chunk.cached_token_count
+
+                if self.return_token_ids:
+                    if chunk.token_ids:
+                        pending_token_ids.extend(chunk.token_ids)
+                    if chunk.prompt_token_ids is not None:
+                        pending_prompt_token_ids = [
+                            int(token) for token in chunk.prompt_token_ids
+                        ]
 
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
@@ -976,6 +994,17 @@ class OpenAIChatResponseGenerator(
 
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
+
+                if self.return_token_ids:
+                    # A boundary chunk emits a reasoning delta and a content
+                    # delta for the same generated tokens; the ids ride the
+                    # last one so they aren't reported twice.
+                    choices[-1].token_ids = pending_token_ids or None
+                    pending_token_ids = []
+                    if pending_prompt_token_ids is not None:
+                        choices[0].prompt_token_ids = pending_prompt_token_ids
+                        pending_prompt_token_ids = None
+
                 # A boundary chunk yields an ordered reasoning-then-content
                 # pair (see CENG-892 above); every other case yields one
                 # choice. Emit each as its own SSE chunk so a single delta
@@ -1289,6 +1318,25 @@ class OpenAIChatResponseGenerator(
                             self._reasoning_field,
                             reasoning_message,
                         )
+
+            if self.return_token_ids:
+                token_ids = [
+                    token
+                    for chunk in completed_outputs
+                    if chunk.token_ids
+                    for token in chunk.token_ids
+                ]
+                prompt_token_ids = next(
+                    (
+                        [int(token) for token in chunk.prompt_token_ids]
+                        for chunk in completed_outputs
+                        if chunk.prompt_token_ids is not None
+                    ),
+                    None,
+                )
+                for choice in response_choices:
+                    choice.token_ids = token_ids
+                    choice.prompt_token_ids = prompt_token_ids
 
             usage = CompletionUsage(
                 prompt_tokens=n_prompt_tokens,
@@ -2318,6 +2366,7 @@ async def openai_create_chat_completion(
             fold_reasoning_into_content=fold_reasoning_into_content,
             emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
             response_format_json_schema=response_format_json_schema,
+            return_token_ids=completion_request.return_token_ids,
         )
         # Use request-level sampling params if provided, else server defaults.
         temp = (
@@ -2892,7 +2941,7 @@ async def openai_create_speech(request: Request) -> Response:
     )
 
 
-class CompletionResponseStreamChoice(BaseModel):
+class CompletionResponseStreamChoice(TokenIdsMixin):
     index: int
     text: str
     logprobs: CompletionLogprobs | None = None
@@ -3060,9 +3109,11 @@ class OpenAICompletionResponseGenerator(
         self,
         pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptionsParam | None = None,
+        return_token_ids: bool = False,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
+        self.return_token_ids = return_token_ids
 
     async def stream(
         self, request: TextGenerationRequest
@@ -3098,6 +3149,11 @@ class OpenAICompletionResponseGenerator(
         final_finish_reason: str | None = None
         _first_batch_id: int | None = None
         _last_batch_id: int | None = None
+        # Ids of skipped chunks ride along with the next emitted choice, so the
+        # concatenation of the streamed deltas still matches the non-streaming
+        # token_ids.
+        pending_token_ids: list[int] = []
+        pending_prompt_token_ids: list[int] | None = None
         try:
             async for chunk in token_generator:
                 if chunk.batch_id is not None:
@@ -3121,6 +3177,14 @@ class OpenAICompletionResponseGenerator(
                     n_cached_prompt_tokens = chunk.cached_token_count
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
+
+                if self.return_token_ids:
+                    if chunk.token_ids:
+                        pending_token_ids.extend(chunk.token_ids)
+                    if chunk.prompt_token_ids is not None:
+                        pending_prompt_token_ids = [
+                            int(token) for token in chunk.prompt_token_ids
+                        ]
 
                 log_probs = _process_log_probabilities([chunk])
 
@@ -3156,6 +3220,13 @@ class OpenAICompletionResponseGenerator(
                     # skip those chunks instead of forcing a terminal
                     # finish_reason.
                     continue
+
+                if self.return_token_ids:
+                    choices[0].token_ids = pending_token_ids or None
+                    pending_token_ids = []
+                    if pending_prompt_token_ids is not None:
+                        choices[0].prompt_token_ids = pending_prompt_token_ids
+                        pending_prompt_token_ids = None
 
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
@@ -3299,6 +3370,23 @@ class OpenAICompletionResponseGenerator(
                     else ""
                     for chunk in req_outputs
                 )
+                token_ids: list[int] | None = None
+                prompt_token_ids: list[int] | None = None
+                if self.return_token_ids:
+                    token_ids = [
+                        token
+                        for chunk in req_outputs
+                        if chunk.token_ids
+                        for token in chunk.token_ids
+                    ]
+                    prompt_token_ids = next(
+                        (
+                            [int(token) for token in chunk.prompt_token_ids]
+                            for chunk in req_outputs
+                            if chunk.prompt_token_ids is not None
+                        ),
+                        None,
+                    )
                 response_choices.append(
                     CompletionResponseChoice(
                         index=i,
@@ -3307,6 +3395,8 @@ class OpenAICompletionResponseGenerator(
                             req_outputs[-1].status, allow_none=False
                         ),
                         logprobs=log_probs,
+                        token_ids=token_ids,
+                        prompt_token_ids=prompt_token_ids,
                     )
                 )
             usage = CompletionUsage(
@@ -3445,7 +3535,9 @@ async def openai_create_completion(
                 )
 
         response_generator = OpenAICompletionResponseGenerator(
-            pipeline, stream_options=completion_request.stream_options
+            pipeline,
+            stream_options=completion_request.stream_options,
+            return_token_ids=completion_request.return_token_ids,
         )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []

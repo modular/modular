@@ -25,6 +25,7 @@ from max.pipelines.context import (
     TextAndVisionContext,
     TextContext,
     TextGenerationOutput,
+    TokenSlice,
 )
 from max.pipelines.lib import reasoning
 from max.pipelines.modeling.types import (
@@ -79,6 +80,15 @@ class TokenGeneratorOutput:
     batch_id: int | None = None
     """Monotonic forward-pass counter from the scheduler that produced this
     chunk. Used to correlate API-side OTel spans with model-worker spans."""
+    token_ids: list[int] | None = None
+    """Every token id committed by the sampler for this chunk, in generation
+    order, before reasoning-delimiter stripping and stop-string truncation."""
+    prompt_token_ids: Sequence[int] | TokenSlice | None = None
+    """Post-chat-template prompt token ids, carried on the first chunk only.
+    A ``TokenSlice`` is a zero-copy view into the context's token buffer, so
+    the type stays wide enough to hold one: the route materializes a list only
+    when the client asked for it. Test for presence with ``is not None``, never
+    truthiness, which an array of more than one element rejects."""
 
 
 def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
@@ -106,6 +116,7 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
         if c.top_log_probabilities
         for p in c.top_log_probabilities
     ]
+    token_ids = [t for c in chunks if c.token_ids for t in c.token_ids]
 
     def _first_not_none(attr: str) -> Any:
         for c in chunks:
@@ -134,6 +145,8 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
         or None,
         stop_sequence=stop_sequence,
         batch_id=chunks[-1].batch_id,
+        token_ids=token_ids or None,
+        prompt_token_ids=_first_not_none("prompt_token_ids"),
     )
 
 
@@ -315,6 +328,9 @@ class TokenGeneratorPipeline(
 
         # Track whether we've yielded the first chunk (for TTFT metric)
         first_chunk_yielded = False
+        # Ids of chunks the reasoning parser reduced to nothing visible,
+        # carried onto the next emitted chunk so token_ids stays complete.
+        skipped_token_ids: list[int] = []
 
         # For reasoning models, we assume that there is always a reasoning span at the very start
         # We do not support multiple reasoning spans per response
@@ -509,7 +525,17 @@ class TokenGeneratorPipeline(
                                     if not first_chunk_yielded
                                     else None,
                                     batch_id=batch_id,
+                                    token_ids=(
+                                        skipped_token_ids
+                                        + list(response.tokens)
+                                    )
+                                    or None,
+                                    prompt_token_ids=context.tokens.prompt
+                                    if not first_chunk_yielded
+                                    else None,
                                 )
+                            else:
+                                skipped_token_ids.extend(response.tokens)
                             continue
 
                         token_count = len(tokens) if tokens is not None else 0
@@ -604,7 +630,12 @@ class TokenGeneratorPipeline(
                             reasoning_token_count=reasoning_token_count,
                             stop_sequence=stop_sequence_match,
                             batch_id=batch_id,
+                            token_ids=skipped_token_ids + list(response.tokens),
+                            prompt_token_ids=context.tokens.prompt
+                            if is_first_chunk
+                            else None,
                         )
+                        skipped_token_ids.clear()
             finally:
                 if first_chunk_yielded and num_generated_tokens > 1:
                     METRICS.time_per_output_token(

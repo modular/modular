@@ -52,6 +52,7 @@ from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
+    _merge_outputs,
 )
 from max.serve.telemetry.stopwatch import StopWatch
 
@@ -806,3 +807,156 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
 
     assert len(chunks) == 1
     assert chunks[0].status == GenerationStatus.END_OF_SEQUENCE
+
+
+# ============================================================================
+# Tests for token_ids / prompt_token_ids on TokenGeneratorOutput
+# ============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "token_lists",
+    [
+        pytest.param(
+            [[THINK_START_TOKEN_ID, 10, 20, THINK_END_TOKEN_ID], [30]],
+            id="reasoning_then_content",
+        ),
+        pytest.param(
+            [[THINK_START_TOKEN_ID, 10], [20, THINK_END_TOKEN_ID], [30]],
+            id="multi_chunk_reasoning",
+        ),
+    ],
+)
+async def test_token_ids_are_the_raw_generated_ids(
+    token_lists: list[list[int]],
+) -> None:
+    """``token_ids`` reports what the sampler committed, not what survived.
+
+    The reasoning parser strips delimiters out of the decoded text, but the
+    ids are the record of what the model actually generated, so the
+    delimiters must still be there -- otherwise a caller cannot replay the
+    turn or reconcile the ids against a token budget. Each emitted chunk's
+    ids are therefore the scheduler's token list for that chunk, verbatim.
+    """
+    chunks = await _run_reasoning_pipeline(_make_responses(token_lists))
+
+    assert [chunk.token_ids for chunk in chunks] == token_lists
+
+
+@pytest.mark.asyncio
+async def test_prompt_token_ids_ride_the_first_chunk_only() -> None:
+    """The prompt is a one-time report, like prompt_token_count."""
+    prompt = [99, 98, 97]
+    chunks = await _run_reasoning_pipeline(
+        _make_responses([[THINK_START_TOKEN_ID, 10, THINK_END_TOKEN_ID], [30]]),
+        prompt_tokens=prompt,
+    )
+
+    assert len(chunks) > 1
+    assert chunks[0].prompt_token_ids is not None
+    assert list(chunks[0].prompt_token_ids) == prompt
+    assert [chunk.prompt_token_ids for chunk in chunks[1:]] == [None] * (
+        len(chunks) - 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_token_ids_survive_a_fully_stripped_chunk() -> None:
+    """A chunk stripped to nothing still contributes its ids.
+
+    The parser can consume every token in a chunk as a delimiter, and that
+    chunk is never yielded -- there is no visible text to send. Its ids were
+    still generated, so they have to ride the next emitted chunk or the id
+    stream silently loses tokens.
+    """
+    chunks = await _run_reasoning_pipeline(
+        _make_responses(
+            [[THINK_START_TOKEN_ID], [10], [THINK_END_TOKEN_ID, 30]]
+        )
+    )
+
+    # The bare think-start chunk is not emitted...
+    assert len(chunks) == 2
+    # ...but its id reappears at the head of the next one.
+    assert chunks[0].token_ids == [THINK_START_TOKEN_ID, 10]
+    assert chunks[1].token_ids == [THINK_END_TOKEN_ID, 30]
+    assert [t for chunk in chunks for t in chunk.token_ids or []] == [
+        THINK_START_TOKEN_ID,
+        10,
+        THINK_END_TOKEN_ID,
+        30,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_token_ids_on_a_terminal_stripped_chunk() -> None:
+    """CENG-932's shape: the only generated token is a stripped delimiter.
+
+    With max_tokens=1 a reasoning model often spends its whole budget on the
+    think-start delimiter. That terminal chunk is the only one the route ever
+    sees, so it must carry the id rather than defer it to a chunk that never
+    comes.
+    """
+    chunks = await _run_reasoning_pipeline(
+        _make_responses([[THINK_START_TOKEN_ID]])
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0].token_ids == [THINK_START_TOKEN_ID]
+
+
+def test_merge_outputs_concatenates_token_ids() -> None:
+    """``all_tokens`` folds chunks into one output; ids must concatenate.
+
+    The prompt is taken from whichever chunk carried it rather than the first
+    chunk blindly, because the first chunk of a stripped turn can be absent.
+    """
+    merged = _merge_outputs(
+        [
+            TokenGeneratorOutput(
+                status=GenerationStatus.ACTIVE,
+                decoded_tokens="a",
+                token_count=1,
+                token_ids=[11],
+                prompt_token_ids=[101, 102],
+            ),
+            TokenGeneratorOutput(
+                status=GenerationStatus.ACTIVE,
+                decoded_tokens="b",
+                token_count=1,
+                token_ids=[12, 13],
+            ),
+            TokenGeneratorOutput(
+                status=GenerationStatus.END_OF_SEQUENCE,
+                decoded_tokens="c",
+                token_count=1,
+                token_ids=[14],
+            ),
+        ]
+    )
+
+    assert merged.token_ids == [11, 12, 13, 14]
+    assert merged.prompt_token_ids is not None
+    assert list(merged.prompt_token_ids) == [101, 102]
+
+
+def test_merge_outputs_leaves_token_ids_unset_when_absent() -> None:
+    """Merging chunks that carry no ids must not invent an empty list.
+
+    ``None`` is what makes the route drop the fields from the payload, so a
+    ``[]`` here would put empty arrays on the wire for every client that
+    never asked for ids.
+    """
+    merged = _merge_outputs(
+        [
+            TokenGeneratorOutput(
+                status=GenerationStatus.END_OF_SEQUENCE,
+                decoded_tokens="a",
+                token_count=1,
+            ),
+        ]
+    )
+
+    assert merged.token_ids is None
+    assert merged.prompt_token_ids is None

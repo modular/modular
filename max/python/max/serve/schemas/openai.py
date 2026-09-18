@@ -14,8 +14,9 @@
 """OpenAI-compatible request/response schemas for MAX Serve.
 
 Response models are the official Pydantic types from the ``openai`` SDK,
-with small subclasses to expose MAX-only response extensions (currently the
-``reasoning`` text emitted by reasoning models). Subclassing rather than
+with small subclasses to expose MAX-only response extensions (the
+``reasoning`` text emitted by reasoning models, and the token ids requested
+via ``return_token_ids``). Subclassing rather than
 relying on pydantic's ``extra='allow'`` keeps the surface explicit so a
 typo in field handling code is a static error rather than a silent extra.
 
@@ -66,9 +67,9 @@ from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from openai.types.chat.completion_create_params import (
     CompletionCreateParamsBase as _OpenAIChatCompletionParams,
 )
-from openai.types.completion import Completion as CreateCompletionResponse
+from openai.types.completion import Completion as _OpenAICompletion
 from openai.types.completion_choice import (
-    CompletionChoice as CompletionResponseChoice,
+    CompletionChoice as _OpenAICompletionChoice,
     Logprobs as CompletionLogprobs,
 )
 from openai.types.completion_create_params import (
@@ -96,7 +97,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     create_model,
+    model_serializer,
     model_validator,
 )
 from typing_extensions import NotRequired, TypedDict
@@ -104,13 +107,13 @@ from typing_extensions import NotRequired, TypedDict
 # ---------------------------------------------------------------------------
 # Response models.
 #
-# We subclass the OpenAI SDK pydantic types only to declare the MAX-specific
-# ``reasoning`` field (emitted by reasoning models). OpenAI's official chat
-# completion shapes don't have this field today (it lives on the newer
-# Responses API); other inference servers expose an analogous
-# ``reasoning_content``. Clients that don't know about ``reasoning`` will
-# either accept it as an OpenAI ``extra='allow'`` field or drop it, so we
-# remain a strict superset of the OpenAI wire format.
+# We subclass the OpenAI SDK pydantic types to declare the MAX-specific
+# ``reasoning`` field (emitted by reasoning models) and the opt-in token id
+# fields. OpenAI's official chat completion shapes don't have ``reasoning``
+# today (it lives on the newer Responses API); other inference servers expose
+# an analogous ``reasoning_content``. Clients that don't know about these
+# fields will either accept them as OpenAI ``extra='allow'`` fields or drop
+# them, so we remain a strict superset of the OpenAI wire format.
 # ---------------------------------------------------------------------------
 
 
@@ -140,13 +143,38 @@ class ChatCompletionStreamResponseDelta(_OpenAIChoiceDelta):
     reasoning_content: str | None = None
 
 
-class ChatCompletionResponseChoice(_OpenAIChatCompletionChoice):
+class TokenIdsMixin(BaseModel):
+    """Per-choice token ids, returned only when ``return_token_ids`` is set.
+
+    ``token_ids`` holds the ids the sampler committed for the choice (a delta
+    per chunk when streaming); ``prompt_token_ids`` holds the post-chat-template
+    prompt and is sent once. Both are dropped from the serialized output when
+    unset so the wire format is unchanged for clients that didn't ask.
+    """
+
+    token_ids: list[int] | None = None
+    prompt_token_ids: list[int] | None = None
+
+    @model_serializer(mode="wrap")
+    def _drop_unset_token_ids(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        for field in ("token_ids", "prompt_token_ids"):
+            if data.get(field) is None:
+                data.pop(field, None)
+        return data
+
+
+class ChatCompletionResponseChoice(TokenIdsMixin, _OpenAIChatCompletionChoice):
     """Non-streaming chat completion choice using the MAX-extended message."""
 
     message: ChatCompletionResponseMessage
 
 
-class ChatCompletionStreamResponseChoice(_OpenAIChatCompletionStreamChoice):
+class ChatCompletionStreamResponseChoice(
+    TokenIdsMixin, _OpenAIChatCompletionStreamChoice
+):
     """Streaming chat completion choice using the MAX-extended delta."""
 
     delta: ChatCompletionStreamResponseDelta
@@ -164,6 +192,18 @@ class CreateChatCompletionStreamResponse(_OpenAIChatCompletionChunk):
     """Streaming chat completion response using MAX-extended choices."""
 
     choices: list[ChatCompletionStreamResponseChoice]  # type: ignore[assignment]
+
+
+class CompletionResponseChoice(TokenIdsMixin, _OpenAICompletionChoice):
+    """Text completion choice extended with MAX token ids."""
+
+
+class CreateCompletionResponse(_OpenAICompletion):
+    """Text completion response using MAX-extended choices."""
+
+    # ``list`` is invariant in pydantic field overrides; mypy needs the ignore
+    # but pydantic accepts the narrowed element type at runtime.
+    choices: list[CompletionResponseChoice]  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +391,8 @@ class _MaxRequestExtensions(BaseModel):
     min_tokens: int | None = None
     stop_token_ids: list[int] | None = None
     ignore_eos: bool = False
+    # Returns the prompt and generated token ids on each response choice.
+    return_token_ids: bool = False
 
     # Routing / cache hints used by disaggregated serving.
     target_endpoint: str | None = None

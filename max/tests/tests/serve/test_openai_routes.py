@@ -4027,3 +4027,315 @@ async def test_chat_completion_tool_choice_none_records_no_tool_metrics(
     assert response.status_code == 200
     mock_metrics.tool_call_requests.assert_not_called()
     mock_metrics.tool_call_tools_per_request.assert_not_called()
+
+
+# ============================================================================
+# Tests for return_token_ids
+# ============================================================================
+
+
+_PROMPT_IDS = [101, 102, 103]
+
+
+def _token_id_pipeline(chunks: list[TokenGeneratorOutput]) -> Mock:
+    """Mock pipeline replaying ``chunks`` through stream() and complete()."""
+    pipeline = Mock()
+    pipeline.model_name = "test-model"
+    pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
+
+    pipeline.next_token_chunk = mock_next_token_chunk
+    return pipeline
+
+
+async def _raw_stream_payloads(generator: Any, request: Mock) -> list[str]:
+    """The SSE payloads a generator emits, before parsing.
+
+    Absence of a field is only observable on the wire, so the omission tests
+    read the raw JSON rather than a re-validated model, which would
+    resurrect every unset field as ``None``.
+    """
+    return [
+        payload
+        async for payload in await generator.stream(request)
+        if isinstance(payload, str) and payload != "[DONE]"
+    ]
+
+
+def _content_only_turn() -> list[TokenGeneratorOutput]:
+    """A two-chunk turn with ids on both chunks and the prompt on the first."""
+    return [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="hello",
+            token_count=1,
+            prompt_token_count=3,
+            token_ids=[11],
+            prompt_token_ids=_PROMPT_IDS,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens=" world",
+            token_count=2,
+            prompt_token_count=3,
+            token_ids=[12, 13],
+        ),
+    ]
+
+
+def _turn_with_a_suppressed_chunk() -> list[TokenGeneratorOutput]:
+    """A turn whose middle chunk has no user-visible delta.
+
+    The middle chunk is what a reasoning parser produces when every token in
+    it was a structural delimiter: the route drops it rather than pushing an
+    empty packet, so its ids have nowhere to ride but the next chunk.
+    """
+    return [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=1,
+            token_count=0,
+            prompt_token_count=3,
+            token_ids=[11],
+            prompt_token_ids=_PROMPT_IDS,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            token_count=0,
+            reasoning_token_count=1,
+            prompt_token_count=3,
+            token_ids=[12],
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=" more",
+            reasoning_token_count=1,
+            decoded_tokens="answer",
+            token_count=1,
+            prompt_token_count=3,
+            token_ids=[13, 14],
+        ),
+    ]
+
+
+def test_return_token_ids_defaults_to_off() -> None:
+    """The flag is opt-in, so an unmodified request must not request ids."""
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert request.return_token_ids is False
+
+    asked = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "return_token_ids": True,
+        }
+    )
+    assert asked.return_token_ids is True
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_omits_token_ids_unless_requested(
+    patch_openai_metrics: None,
+) -> None:
+    """A client that didn't opt in must see an unchanged wire format.
+
+    Leaving the fields at ``None`` is not sufficient: serialized as ``null``
+    they are still two new keys on every choice, so ``TokenIdsMixin`` has to
+    drop them from the payload entirely.
+    """
+    generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(_content_only_turn())
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.token_ids is None
+    assert choice.prompt_token_ids is None
+    dumped = response.model_dump()["choices"][0]
+    assert "token_ids" not in dumped
+    assert "prompt_token_ids" not in dumped
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_returns_token_ids(
+    patch_openai_metrics: None,
+) -> None:
+    """Non-streaming ids are every generated id, plus the prompt once."""
+    generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(_content_only_turn()), return_token_ids=True
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.token_ids == [11, 12, 13]
+    assert choice.prompt_token_ids == _PROMPT_IDS
+    dumped = response.model_dump()["choices"][0]
+    assert dumped["token_ids"] == [11, 12, 13]
+    assert dumped["prompt_token_ids"] == _PROMPT_IDS
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        pytest.param(_content_only_turn(), id="content_only"),
+        pytest.param(
+            _turn_with_a_suppressed_chunk(), id="with_suppressed_chunk"
+        ),
+    ],
+)
+async def test_chat_stream_token_ids_match_non_streaming(
+    chunks: list[TokenGeneratorOutput],
+    patch_openai_metrics: None,
+) -> None:
+    """Concatenated streamed ids must equal the non-streaming ids.
+
+    This is the invariant the feature rests on: a caller reconstructing a
+    turn from the SSE deltas has to end up with the same id sequence the
+    non-streaming route would have handed them. It can break in two
+    directions -- a dropped chunk (one the route suppressed because its delta
+    was empty) or a double-reported one (a boundary chunk emits a reasoning
+    delta and a content delta for the same generated tokens).
+    """
+    expected = [
+        token
+        for chunk in chunks
+        if chunk.token_ids
+        for token in chunk.token_ids
+    ]
+
+    complete_generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(chunks), return_token_ids=True
+    )
+    completed = await complete_generator.complete([_make_mock_request()])
+
+    stream_generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(chunks), return_token_ids=True
+    )
+    streamed = [
+        CreateChatCompletionStreamResponse.model_validate_json(payload)
+        for payload in await _raw_stream_payloads(
+            stream_generator, _make_mock_request()
+        )
+    ]
+
+    streamed_ids = [
+        token
+        for response in streamed
+        for choice in response.choices
+        if choice.token_ids
+        for token in choice.token_ids
+    ]
+    assert streamed_ids == expected
+    assert completed.choices[0].token_ids == expected
+
+    # The prompt is sent once, not repeated on every delta.
+    prompts = [
+        choice.prompt_token_ids
+        for response in streamed
+        for choice in response.choices
+        if choice.prompt_token_ids is not None
+    ]
+    assert prompts == [_PROMPT_IDS]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_omits_token_ids_unless_requested(
+    patch_openai_metrics: None,
+) -> None:
+    """No id keys on any delta when the client didn't ask."""
+    generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(_content_only_turn())
+    )
+    payloads = await _raw_stream_payloads(generator, _make_mock_request())
+
+    assert payloads
+    for payload in payloads:
+        for choice in json.loads(payload)["choices"]:
+            assert "token_ids" not in choice
+            assert "prompt_token_ids" not in choice
+
+
+@pytest.mark.asyncio
+async def test_completion_returns_token_ids(
+    patch_openai_metrics: None,
+) -> None:
+    """Legacy /v1/completions carries the ids on its choice too."""
+    request = _make_mock_request()
+    request.request_path = "/v1/completions"
+    generator = OpenAICompletionResponseGenerator(
+        _token_id_pipeline(_content_only_turn()), return_token_ids=True
+    )
+    response = await generator.complete([request])
+
+    choice = response.choices[0]
+    assert choice.token_ids == [11, 12, 13]
+    assert choice.prompt_token_ids == _PROMPT_IDS
+
+
+@pytest.mark.asyncio
+async def test_completion_stream_token_ids_match_non_streaming(
+    patch_openai_metrics: None,
+) -> None:
+    """Same streamed-equals-complete invariant for legacy /v1/completions."""
+    chunks = _content_only_turn()
+    expected = [11, 12, 13]
+
+    request = _make_mock_request()
+    request.request_path = "/v1/completions"
+    generator = OpenAICompletionResponseGenerator(
+        _token_id_pipeline(chunks), return_token_ids=True
+    )
+    streamed = [
+        CompletionStreamResponse.model_validate_json(payload)
+        for payload in await _raw_stream_payloads(generator, request)
+    ]
+
+    streamed_ids = [
+        token
+        for response in streamed
+        for choice in response.choices
+        if choice.token_ids
+        for token in choice.token_ids
+    ]
+    assert streamed_ids == expected
+    prompts = [
+        choice.prompt_token_ids
+        for response in streamed
+        for choice in response.choices
+        if choice.prompt_token_ids is not None
+    ]
+    assert prompts == [_PROMPT_IDS]
+
+
+@pytest.mark.asyncio
+async def test_completion_stream_omits_token_ids_unless_requested(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression guard for the legacy streaming payload specifically.
+
+    Unlike the chat stream, this path serializes without ``exclude_none``, so
+    ``TokenIdsMixin`` is the only thing keeping ``"token_ids": null`` off
+    every chunk of an endpoint that predates the feature.
+    """
+    request = _make_mock_request()
+    request.request_path = "/v1/completions"
+    generator = OpenAICompletionResponseGenerator(
+        _token_id_pipeline(_content_only_turn())
+    )
+    payloads = await _raw_stream_payloads(generator, request)
+
+    assert payloads
+    for payload in payloads:
+        for choice in json.loads(payload)["choices"]:
+            assert "token_ids" not in choice
+            assert "prompt_token_ids" not in choice
