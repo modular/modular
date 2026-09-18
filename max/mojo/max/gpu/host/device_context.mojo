@@ -3311,11 +3311,12 @@ struct DeviceFunction[
     def _validate_arguments[
         *Ts: DevicePassable,
         num_args: Int,
+        extra_declared: Int = 0,
     ]() -> Tuple[Int, Array[Int, num_args]]:
         comptime declared_num_args = Self.declared_arg_types.length
 
         comptime assert (
-            declared_num_args == num_args
+            declared_num_args == num_args + extra_declared
         ), "Wrong number of arguments to enqueue"
 
         # For each argument determine the size of the device dtype and
@@ -3364,13 +3365,29 @@ struct DeviceFunction[
         return (num_translated_args, translated_arg_offsets^)
 
     @inline(.always)
+    @staticmethod
+    def _check_trailing_host[Host: RegisterPassable, index: Int]():
+        """Require `Host` to be the declared kernel argument at `index`."""
+        comptime declared_host_type = Self.declared_arg_types[index]
+        comptime assert Host == declared_host_type, String(
+            "host argument of type '",
+            reflect[Host].name(),
+            "' does not match the declared function argument type '",
+            reflect[declared_host_type].name(),
+            "'",
+        )
+
+    @inline(.always)
     @__parameter
     def _call_with_pack_checked[
         *Ts: DevicePassable,
+        extra_host_count: Int = 0,
     ](
         imm self,
         ctx: Some[_FunctionEnqueuer],
         *args: *Ts,
+        host0: Optional[OpaquePointer[MutAnyOrigin]] = None,
+        host1: Optional[OpaquePointer[MutAnyOrigin]] = None,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -3381,14 +3398,19 @@ struct DeviceFunction[
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
-        comptime num_passed_args = Ts.length
+        comptime num_encoded = Ts.length
+        comptime num_passed_args = num_encoded + extra_host_count
 
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
         var validated_args = Self._validate_arguments[
-            *Ts, num_args=num_passed_args
+            *Ts, num_args=num_encoded, extra_declared=extra_host_count
         ]()
         var num_translated_args = validated_args[0]
+        if extra_host_count >= 1 and host0:
+            num_translated_args += 1
+        if extra_host_count >= 2 and host1:
+            num_translated_args += 1
         var translated_arg_offsets = validated_args[1].copy()
 
         var num_captures = max(0, self._func_impl.num_captures)
@@ -3402,7 +3424,7 @@ struct DeviceFunction[
         def calculate_args_size() -> Int:
             var tmp_args_size = 8  # always reserve 8 extra bytes for alignment.
 
-            comptime for i in range(num_passed_args):
+            comptime for i in range(num_encoded):
                 comptime actual_arg_type = Ts[i]
                 tmp_args_size += align_up(
                     size_of[actual_arg_type.device_type, target=Self.target](),
@@ -3466,9 +3488,15 @@ struct DeviceFunction[
             )
 
         comptime if _is_apple_gpu[Self.target]():
+            comptime assert (
+                extra_host_count == 0
+            ), "host-argument enqueue pack is not implemented for Metal"
+            # Offsets cover encoded args only. Metal does not take extra host
+            # slots, so this must stay `num_encoded` even though the CUDA path
+            # uses `num_encoded + extra_host_count`.
             call_with_pack_checked_metal[
                 Self.func,
-                num_passed_args=num_passed_args,
+                num_passed_args=num_encoded,
                 num_captures_static=num_captures_static,
             ](
                 ctx,
@@ -3504,7 +3532,7 @@ struct DeviceFunction[
             # encoding of device types.
             var device_type_encoder = DefaultDeviceTypeEncoder()
 
-            comptime for i in range(num_passed_args):
+            comptime for i in range(num_encoded):
                 # If the arg offset is negative then the corresponding declared
                 # dtype is zero sized and we do not push the argument to the
                 # kernel.
@@ -3523,6 +3551,17 @@ struct DeviceFunction[
                         unsafe_offset=translated_arg_idx
                     ] = first_word_addr.as_unsafe_any_origin()
                     translated_arg_idx += 1
+
+            if extra_host_count >= 1 and host0:
+                dense_args_addrs[
+                    unsafe_offset=translated_arg_idx
+                ] = host0.value()
+                translated_arg_idx += 1
+            if extra_host_count >= 2 and host1:
+                dense_args_addrs[
+                    unsafe_offset=translated_arg_idx
+                ] = host1.value()
+                translated_arg_idx += 1
 
             # Drop zero-sized captures so the packed slots match the device
             # kernel's declared parameter order; see
@@ -3556,6 +3595,106 @@ struct DeviceFunction[
                     unsafe_owned_ptr=dense_args_addrs
                 ).unsafe_with_layout({count = num_captures + num_passed_args})
             )
+
+    @inline(.always)
+    @__parameter
+    def _call_with_pack_checked[
+        Host: RegisterPassable,
+        *Encoded: DevicePassable,
+    ](
+        imm self,
+        ctx: Some[_FunctionEnqueuer],
+        *encoded_args: *Encoded,
+        host_arg: Host,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Encode `DevicePassable` args, then pass `host_arg` by host layout.
+
+        Use when the named kernel's trailing parameter is a capturing
+        closure compiled as the host callable. Encoding that closure would
+        rewrite it to a synthesized `device_type` the kernel cannot read.
+        """
+        Self._check_trailing_host[Host, Encoded.length]()
+        var host0 = Optional[OpaquePointer[MutAnyOrigin]](None)
+        comptime if size_of[Host, target=Self.target]() != 0:
+            host0 = Optional(
+                Pointer(to=host_arg)
+                .unsafe_bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
+            )
+        self._call_with_pack_checked[*Encoded, extra_host_count=1](
+            ctx,
+            *encoded_args,
+            host0=host0^,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location,
+        )
+
+    @inline(.always)
+    @__parameter
+    def _call_with_pack_checked[
+        Host0: RegisterPassable,
+        Host1: RegisterPassable,
+        *Encoded: DevicePassable,
+    ](
+        imm self,
+        ctx: Some[_FunctionEnqueuer],
+        *encoded_args: *Encoded,
+        host_arg: Host0,
+        host_arg2: Host1,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Encode `DevicePassable` args, then pass two host arguments by layout.
+        """
+        Self._check_trailing_host[Host0, Encoded.length]()
+        Self._check_trailing_host[Host1, Encoded.length + 1]()
+        var host0 = Optional[OpaquePointer[MutAnyOrigin]](None)
+        var host1 = Optional[OpaquePointer[MutAnyOrigin]](None)
+        comptime if size_of[Host0, target=Self.target]() != 0:
+            host0 = Optional(
+                Pointer(to=host_arg)
+                .unsafe_bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
+            )
+        comptime if size_of[Host1, target=Self.target]() != 0:
+            host1 = Optional(
+                Pointer(to=host_arg2)
+                .unsafe_bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
+            )
+        self._call_with_pack_checked[*Encoded, extra_host_count=2](
+            ctx,
+            *encoded_args,
+            host0=host0^,
+            host1=host1^,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location,
+        )
 
     @inline(.always)
     def get_attribute(self, attr: Attribute) raises -> Int:
