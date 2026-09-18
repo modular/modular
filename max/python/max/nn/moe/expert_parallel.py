@@ -321,12 +321,20 @@ def _ep_forward(
         // batch_mgr.config.n_gpus_per_node
     ).cast(DType.uint32)
 
-    # Per-shard local expert compute.
-    all_down_projs: list[TensorValue] = []
-    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
-        expert_inputs = all_dispatch_results[i]
-        down = shard._local_ep_compute(expert_inputs, x, estimated_total_m)
-        all_down_projs.append(down)
+    # Per-shard local expert compute. A shard whose FFN epilogue performs
+    # the combine send itself returns None: its output went straight to the
+    # peers, so there is no local tensor to hand to a combine.
+    downs = [
+        shard._local_ep_compute(all_dispatch_results[i], x, estimated_total_m)
+        for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True))
+    ]
+    all_down_projs = [down for down in downs if down is not None]
+    ffn_sent = len(all_down_projs) < len(downs)
+    if ffn_sent and all_down_projs:
+        raise ValueError(
+            "the FFN-fused combine send must be all-or-nothing across shards:"
+            " a shard that kept its output would have no send to wait on"
+        )
 
     if batch_mgr.config.use_allreduce:
         # launch per-device combine since they don't need to do cross-device
@@ -346,10 +354,15 @@ def _ep_forward(
         # earlier between dispatch_async and dispatch_wait; combine_async +
         # combine_wait gives the scheduler a second window to absorb any
         # remaining shared-expert work.
-        for i, shard in enumerate(moe_shards):
-            shard.ep_batch_manager.ep_combine_async(
-                all_down_projs[i], device_ids[i]
-            )
+        #
+        # When the FFN epilogue already sent, there is nothing to launch here:
+        # the payload is in the peer buffers and the arrival signal is
+        # published, so the wait below is the only remaining step.
+        if not ffn_sent:
+            for i, shard in enumerate(moe_shards):
+                shard.ep_batch_manager.ep_combine_async(
+                    all_down_projs[i], device_ids[i]
+                )
         combine_results = [
             shard.ep_batch_manager.ep_combine_wait(
                 all_router_weights[i], device_ids[i]

@@ -323,13 +323,56 @@ class MoEQuantized(MoE):
             return self._nvfp4_scales().gate_up_input
         return None
 
+    def _can_fuse_ep_combine_send(self) -> bool:
+        """Whether the FFN should send its output straight to the peers.
+
+        Off unless the EP config opts in. Once it does, this RAISES rather
+        than falling back: the memory planner has already dropped the FFN's
+        output tensor from its estimate on the same flag, so a silent
+        fallback here is an under-reserve, not a degradation. The pipeline
+        resolver has already excluded everything visible to it; what is left
+        is visible only from inside the layer.
+
+        Raises:
+            ValueError: If the send was requested but this layer cannot
+                perform it.
+        """
+        if not self._ep_batch_manager:
+            return False
+        if not self.ep_batch_manager.config.fuse_ffn_combine_send:
+            return False
+
+        if not self._can_fuse_swiglu_nvfp4():
+            raise ValueError(
+                "the fused MegaFFN combine send needs the fused-SwiGLU weight"
+                " layout, which this layer does not use"
+            )
+        # NVFP4 only. The op's per-expert input-scale operand has no MXFP8
+        # counterpart (E8M0 cannot carry a non-power-of-2 multiplier), so that
+        # path would need a placeholder tensor and its numerics have not been
+        # walked through here.
+        if self.quant_config is None or not self.quant_config.is_nvfp4:
+            raise ValueError("the fused MegaFFN combine send is NVFP4-only")
+        if not self.has_shared_experts:
+            raise ValueError(
+                "the fused MegaFFN combine send needs the split"
+                " combine_async/combine_wait pair, which the EP forward only"
+                " takes when there is an unfused shared expert to overlap"
+            )
+        return True
+
     def _local_ep_compute(
         self,
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
         estimated_total_m: TensorValue,
-    ) -> TensorValue:
-        """Runs quantized local expert matmuls on dispatched tokens."""
+    ) -> TensorValue | None:
+        """Runs quantized local expert matmuls on dispatched tokens.
+
+        Returns ``None`` when the combine send is fused into the FFN epilogue:
+        the output went straight to the peers and there is no local tensor for
+        the caller to hand to a combine.
+        """
         if self.gated_activation_fn is not None:
             raise ValueError(
                 "Custom gated_activation_fn is not supported in the EP"
@@ -393,6 +436,50 @@ class MoEQuantized(MoE):
             )
             else 0
         )
+
+        if self._can_fuse_ep_combine_send():
+            assert isinstance(strategy, NvMxf4f8Strategy)
+            assert nvfp4 is not None, (
+                "the fused combine send is NVFP4-only; the predicate should"
+                " have excluded every other encoding"
+            )
+            # This op replaces BOTH legs, so it takes its operands from the
+            # same normalizer the two it replaces use -- the inverted SiLU
+            # scale and the host usage stats are easy to re-derive wrongly.
+            prepared = strategy.prepare_swiglu_operands(
+                expert_inputs,
+                expert_scales=nvfp4.gate_up_expert,
+                input_scales=nvfp4.down_input,
+            )
+            # Both are NVFP4-only operands, and the predicate above already
+            # required NVFP4; `prepare_swiglu_operands` raises without them.
+            assert prepared.expert_scales is not None
+            assert prepared.c_input_scales is not None
+            # One launch for both legs AND the peer scatter-send, so the down
+            # projection's output never lands in a local tensor. Returns None:
+            # the caller drops its `ep_combine_async` and goes straight to the
+            # wait, which reads only the symmetric receive buffers.
+            self.ep_batch_manager.mega_ffn_ep_combine_send(
+                self.devices[0].id,
+                n_local_experts=int(self.gate_up_proj.shape[0]),
+                max_recv_tokens=self.ep_batch_manager.config.get_max_recv_tokens(),
+                hidden_states=prepared.hidden,
+                gate_up_weight=self.gate_up_proj,
+                gate_up_a_scales=prepared.hidden_scales,
+                gate_up_b_scales=gate_up_scales,
+                down_weight=self.down_proj,
+                down_b_scales=down_scales,
+                expert_start_indices=prepared.expert_start,
+                a_scale_offsets=prepared.scales_offsets,
+                expert_ids=prepared.expert_ids,
+                gate_up_expert_scales=prepared.expert_scales,
+                down_expert_scales=nvfp4.down_expert.to(prepared.hidden.device),
+                c_input_scales=prepared.c_input_scales,
+                estimated_total_m=estimated_total_m,
+                num_active_experts=prepared.usage_stats[1],
+                clamp_activation=self.use_swigluoai,
+            )
+            return None
 
         if self._can_fuse_swiglu_nvfp4():
             assert isinstance(strategy, NvMxf4f8Strategy)

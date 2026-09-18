@@ -1212,7 +1212,12 @@ def run_case(
     var c_ref_dev = ctx.enqueue_create_buffer[c_type](c_size)
     var c_test_dev = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var ac_len = (m_blocks + 1) * ATOMIC_PAD
+    # The pool needs `m_blocks` slots, but the P4 election marker lives in
+    # slot `e`'s padding for every local expert, so the buffer also has a
+    # `num_experts` floor -- `m_blocks` alone goes below it whenever the
+    # drawn token counts are small. The gate and the fusion pattern both
+    # carry the same term.
+    var ac_len = (max(m_blocks, num_experts) + 1) * ATOMIC_PAD
     var arrival_dev = ctx.enqueue_create_buffer[DType.uint32](ac_len)
     ctx.enqueue_memset(arrival_dev, UInt32(0))
 

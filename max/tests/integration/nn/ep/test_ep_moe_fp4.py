@@ -329,6 +329,30 @@ def torch_moe(
     return result
 
 
+def _assert_staging_output_follows_the_send(
+    ir: str, ep_config: EPConfig, n_devices: int, fused: bool
+) -> None:
+    """The FFN's output tensor is in the graph iff it was not sent instead.
+
+    What the fusion buys is a tensor that is never allocated, so the graph is
+    the only place to see it: the numerical checks below pass either way.
+    """
+    rows = ep_config.get_max_recv_tokens()
+    if ep_config.fused_shared_expert:
+        rows += ep_config.max_tokens_per_rank
+    staging = f"[{rows}, {HIDDEN_DIM}], bf16"
+    send = 'symbol = "mega_ffn.ep_combine_send"'
+
+    if fused:
+        assert staging not in ir, f"the FFN output {staging} survived the send"
+        assert ir.count(send) == n_devices
+        assert 'symbol = "ep.combine_async"' not in ir
+        assert ir.count('symbol = "ep.combine_wait"') == n_devices
+    else:
+        assert staging in ir, f"the FFN output {staging} was never emitted"
+        assert send not in ir
+
+
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="FP4 kernel only supports Nvidia GPUs"
 )
@@ -337,8 +361,14 @@ def torch_moe(
     reason="FP4 kernel requires B100 or B200",
 )
 @pytest.mark.parametrize("n_devices", [2])
+@pytest.mark.parametrize(
+    "fuse_ffn_combine_send",
+    [False, True],
+    ids=["staged-combine-async", "ffn-fused-send"],
+)
 def test_ep_moe_nvfp4(
     n_devices: int,
+    fuse_ffn_combine_send: bool,
     moe_weights_nvfp4: dict[str, torch.Tensor],
 ) -> None:
     assert n_devices <= accelerator_count(), (
@@ -392,9 +422,12 @@ def test_ep_moe_nvfp4(
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
         format=QuantFormat.NVFP4,
+        can_use_fused_swiglu=fuse_ffn_combine_send,
     )
 
-    # Create EP configuration
+    # The send replaces the very tensor a fused shared expert writes its rows
+    # into, so the two are mutually exclusive. Pairing them this way keeps the
+    # off arm covering the fused-shared-expert path exactly as before.
     ep_config = EPConfig(
         dispatch_dtype=dtype,
         combine_dtype=DType.bfloat16,
@@ -405,7 +438,8 @@ def test_ep_moe_nvfp4(
         n_gpus_per_node=n_devices,
         n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
         dispatch_quant_config=fp4_config,
-        fused_shared_expert=True,
+        fused_shared_expert=not fuse_ffn_combine_send,
+        fuse_ffn_combine_send=fuse_ffn_combine_send,
     )
 
     # Initialize EP communication
@@ -471,6 +505,10 @@ def test_ep_moe_nvfp4(
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
         graph.output(*outputs)
+
+    _assert_staging_output_follows_the_send(
+        str(graph), ep_config, n_devices, fuse_ffn_combine_send
+    )
 
     # Compile and execute MoE
     compiled = session.load(graph, weights_registry=moe.state_dict())

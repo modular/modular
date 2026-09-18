@@ -653,6 +653,131 @@ def call_ep_combine_async(
         return None
 
 
+def _validate_ffn_combine_send_config(config: EPConfig) -> None:
+    """Rejects EP configurations the fused combine send cannot serve.
+
+    Kept separate from the op emission so it can be exercised without a graph:
+    an unenforced guard and an untested one fail the same way.
+
+    Args:
+        config: EP configuration to check.
+
+    Raises:
+        ValueError: If the configuration cannot support the fused send.
+    """
+    if config.use_allreduce:
+        raise ValueError(
+            "the fused MegaFFN combine send writes peer receive buffers"
+            " directly, which the allreduce backend does not use"
+        )
+    if config.fused_shared_expert:
+        raise ValueError(
+            "the fused MegaFFN combine send elides the FFN's local output, but"
+            " fused_shared_expert keeps the shared expert's rows in it for the"
+            " reduce to read"
+        )
+
+
+def _call_mega_ffn_ep_combine_send(
+    arrival_count: BufferValue,
+    atomic_counter: BufferValue,
+    hidden_states: TensorValue,
+    gate_up_weight: TensorValue,
+    gate_up_a_scales: TensorValue,
+    gate_up_b_scales: TensorValue,
+    down_weight: TensorValue,
+    down_b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    a_scale_offsets: TensorValue,
+    gate_up_expert_scales: TensorValue,
+    down_expert_scales: TensorValue,
+    c_input_scales: TensorValue,
+    src_info: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    estimated_total_m: TensorValue,
+    num_active_experts: TensorValue,
+    config: EPConfig,
+    clamp_activation: bool = False,
+) -> None:
+    """Runs the MoE FFN with the EP combine send fused into its epilogue.
+
+    Replaces the FFN's two grouped matmuls *and* :func:`call_ep_combine_async`
+    with one launch. The kernel's down-projection epilogue scatters each
+    finished row straight into the owning rank's receive buffer and releases
+    the arrival signal itself, so the FFN's output never lands in a local
+    tensor: the ``(max_recv_tokens, hidden_size)`` staging buffer that the
+    unfused chain has to materialize is not allocated at all.
+
+    This op has no result. The caller still runs :func:`call_ep_combine_wait`
+    to drain the peer buffers and reduce; that op reads only the symmetric
+    receive buffers and never took the FFN's output, which is what makes
+    dropping the staging tensor possible.
+
+    Args:
+        arrival_count: Persistent cross-CTA pool-slot buffer, zeroed once at
+            init and never per launch. Also carries the send's own per-expert
+            state, so this op needs no per-launch-zeroed operand.
+        atomic_counter: EP sync counters for this device.
+        hidden_states: Dispatched tokens.
+        gate_up_weight: Pre-permuted gate/up weights.
+        gate_up_a_scales: Token A-scale tile for the gate/up matmul.
+        gate_up_b_scales: Pre-permuted gate/up weight scale tile.
+        down_weight: Down-projection weights.
+        down_b_scales: Down-projection weight scale tile.
+        expert_start_indices: Per-expert prefix-sum token offsets.
+        expert_ids: Active local expert IDs.
+        a_scale_offsets: Per-expert scale-block offsets.
+        gate_up_expert_scales: Per-expert output scaling for the gate/up leg.
+        down_expert_scales: Per-expert output scaling for the down leg.
+        c_input_scales: Per-expert input scale for the intermediate re-quant.
+        src_info: Per-row dispatch metadata the send resolves destinations
+            from.
+        recv_buf_ptrs: Peer combine receive-buffer addresses, one per GPU.
+        recv_count_ptrs: Peer receive-count addresses the arrival signal
+            releases, one per GPU.
+        estimated_total_m: Estimated total non-padded tokens; the tile-regime
+            gate's numerator.
+        num_active_experts: Active expert slots.
+        config: EP configuration.
+        clamp_activation: Select the clamped (``swigluoai``) activation.
+    """
+    _validate_ffn_combine_send_config(config)
+
+    parameters = _ep_common_parameters(config)
+    parameters["combine_dtype"] = config.combine_dtype
+    parameters["clamp_activation"] = clamp_activation
+
+    ops.inplace_custom(
+        "mega_ffn.ep_combine_send",
+        device=hidden_states.device,
+        values=[
+            arrival_count,
+            atomic_counter,
+            hidden_states,
+            gate_up_weight,
+            gate_up_a_scales,
+            gate_up_b_scales,
+            down_weight,
+            down_b_scales,
+            expert_start_indices,
+            expert_ids,
+            a_scale_offsets,
+            gate_up_expert_scales,
+            down_expert_scales,
+            c_input_scales,
+            src_info,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            estimated_total_m,
+            num_active_experts,
+        ],
+        out_types=[],
+        parameters=parameters,
+    )
+
+
 def call_ep_combine_wait(
     atomic_counter: BufferValue,
     recv_buf_ptrs: TensorValue,

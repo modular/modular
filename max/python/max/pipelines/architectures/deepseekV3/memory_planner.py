@@ -86,6 +86,55 @@ def _ep_max_rank_send_tokens_for_pipeline(
     )
 
 
+def ep_fuse_ffn_combine_send_for_pipeline(
+    pipeline_config: PipelineConfig,
+    huggingface_config: AutoConfig,
+) -> bool:
+    """Whether the MoE FFN should send its output straight to the peers.
+
+    Called by both the model that builds the graph and the planner that sizes
+    memory for it, because the planner drops a buffer on this answer: it must
+    never be true where the graph would keep the tensor. An over-reserve
+    wastes memory, an under-reserve is an OOM. Conditions only the layer can
+    see raise there instead of narrowing here, so a condition the planner
+    cannot predict never widens what it drops.
+
+    Defaults on except for a decode-only worker. Allocation is a graph-level
+    property, so a role serving both phases gets one answer for both.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+
+    Returns:
+        Whether to fuse the combine send into the FFN epilogue.
+    """
+    explicit = pipeline_config.runtime.ep_fuse_ffn_combine_send
+    requested = (
+        explicit
+        if explicit is not None
+        else pipeline_config.runtime.pipeline_role != "decode_only"
+    )
+    if not requested:
+        return False
+
+    # Allreduce routes within the device and never writes peer buffers.
+    if pipeline_config.runtime.ep_use_allreduce:
+        return False
+
+    # The send has already done the async half of the combine, so it needs the
+    # split async/wait pair. The EP forward only takes that path when an
+    # unfused shared expert gives it something to overlap.
+    if getattr(huggingface_config, "n_shared_experts", 0) != 1:
+        return False
+
+    return is_float4_encoding(
+        _select_quantization_encoding(
+            pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+        )
+    )
+
+
 class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for DeepseekV3 models.
 
@@ -286,12 +335,20 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
                 * supported_encoding_dtype(encoding).size_in_bytes
             )
 
-            # The output would be of shape [max_recv_tokens_per_rank, hidden_size].
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * huggingface_config.hidden_size
-                * DType.bfloat16.size_in_bytes  # output is always bfloat16.
-            )
+            # The output would be of shape [max_recv_tokens_per_rank, hidden_size]
+            # -- unless the FFN sends it straight to the peers from its own
+            # epilogue, in which case it is never materialized and reserving
+            # for it would hand the KV cache a bill for a tensor that does not
+            # exist. Both sides read one flag so the estimate cannot disagree
+            # with the graph.
+            if not ep_fuse_ffn_combine_send_for_pipeline(
+                pipeline_config, huggingface_config
+            ):
+                moe_activation_memory += (
+                    max_recv_tokens_per_rank
+                    * huggingface_config.hidden_size
+                    * DType.bfloat16.size_in_bytes  # output is always bfloat16.
+                )
 
             # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
             moe_activation_memory += 256 * 1024 * 1024

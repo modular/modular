@@ -547,7 +547,9 @@ class Step3p5MoEWithSharedExpert(Module):
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
         estimated_total_m: TensorValue,
-    ) -> TensorValue:
+    ) -> TensorValue | None:
+        # Pure delegation, so it inherits the wrapped layer's contract:
+        # `None` means that layer already sent its output to the peers.
         return self.moe._local_ep_compute(expert_inputs, x, estimated_total_m)
 
     @property

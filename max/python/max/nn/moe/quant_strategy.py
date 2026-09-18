@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
@@ -215,6 +215,19 @@ class Fp8Strategy:
         )
 
 
+class _PreparedSwigluOperands(NamedTuple):
+    """Operands the fused SwiGLU kernels share, normalized once."""
+
+    hidden: TensorValue
+    hidden_scales: TensorValue
+    expert_start: TensorValue
+    scales_offsets: TensorValue
+    expert_ids: TensorValue
+    usage_stats: TensorValue
+    c_input_scales: TensorValue | None
+    expert_scales: TensorValue | None
+
+
 class NvMxf4f8Strategy:
     """NVIDIA NVFP4/MXFP4/MXFP8 quantization for MoE."""
 
@@ -368,6 +381,75 @@ class NvMxf4f8Strategy:
             scales_offsets,
         )
 
+    def prepare_swiglu_operands(
+        self,
+        expert_inputs: tuple[TensorValue, ...],
+        *,
+        expert_scales: TensorValue | None = None,
+        input_scales: TensorValue | None = None,
+    ) -> _PreparedSwigluOperands:
+        """Normalizes the operands every fused-SwiGLU kernel call needs.
+
+        Both the chained path and the EP-combine-send path hand the same
+        operands to the same kernel, so the two derivations that are easy to
+        get wrong live here instead of at each call site: the per-expert
+        SiLU-output scale must be INVERTED, and the usage stats must be on the
+        host. A call site that re-derived either one silently disagreed with
+        this one.
+
+        Args:
+            expert_inputs: ``(hidden, hidden_scales, expert_start,
+                scales_offsets, expert_ids, usage_stats)``.
+            expert_scales: Per-expert matmul-epilogue scaling factors.
+            input_scales: Raw per-expert SiLU-output scale.
+
+        Returns:
+            The normalized operands.
+
+        Raises:
+            ValueError: If NVFP4 is missing a required scale tensor.
+        """
+        if self.is_nvfp4 and input_scales is None:
+            raise ValueError("NVFP4 requires input_scales")
+        if self.is_nvfp4 and expert_scales is None:
+            raise ValueError("NVFP4 requires expert_scales")
+
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            scales_offsets,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+
+        # The kernel binds the active-expert count as a HOST scalar.
+        if usage_stats.device.is_gpu():
+            usage_stats = ops.constant(
+                [8192, int(expert_ids.shape[0])],
+                dtype=DType.uint32,
+                device=DeviceRef.CPU(),
+            )
+
+        return _PreparedSwigluOperands(
+            hidden=hidden,
+            hidden_scales=hidden_scales,
+            expert_start=expert_start,
+            scales_offsets=scales_offsets,
+            expert_ids=expert_ids,
+            usage_stats=usage_stats,
+            c_input_scales=(
+                (1.0 / input_scales).to(hidden.device)
+                if input_scales is not None
+                else None
+            ),
+            expert_scales=(
+                expert_scales.to(hidden.device)
+                if expert_scales is not None
+                else None
+            ),
+        )
+
     def grouped_matmul_swiglu(
         self,
         weight: TensorValue,
@@ -416,51 +498,23 @@ class NvMxf4f8Strategy:
             reference path byte-for-byte under the kernel's default
             ``match_bf16=True`` setting.
         """
-        if self.is_nvfp4 and input_scales is None:
-            raise ValueError("NVFP4 requires input_scales")
-        if self.is_nvfp4 and expert_scales is None:
-            raise ValueError("NVFP4 requires expert_scales")
-
-        (
-            hidden,
-            hidden_scales,
-            expert_start,
-            scales_offsets,
-            expert_ids,
-            usage_stats,
-        ) = expert_inputs
-
-        # Replace gpu usage stats with a dummy cpu usage stats (same as
-        # grouped_matmul above).
-        if usage_stats.device.is_gpu():
-            usage_stats = ops.constant(
-                [8192, int(expert_ids.shape[0])],
-                dtype=DType.uint32,
-                device=DeviceRef.CPU(),
-            )
-
-        c_input_scales = (
-            (1.0 / input_scales).to(hidden.device)
-            if input_scales is not None
-            else None
-        )
-        expert_scales = (
-            expert_scales.to(hidden.device)
-            if expert_scales is not None
-            else None
+        prepared = self.prepare_swiglu_operands(
+            expert_inputs,
+            expert_scales=expert_scales,
+            input_scales=input_scales,
         )
 
         return grouped_matmul_blocked_swiglu(
-            hidden,
+            prepared.hidden,
             weight,
-            hidden_scales,
+            prepared.hidden_scales,
             weight_scales,
-            expert_start,
-            scales_offsets,
-            expert_ids,
-            usage_stats,
-            expert_scales=expert_scales,
-            c_input_scales=c_input_scales,
+            prepared.expert_start,
+            prepared.scales_offsets,
+            prepared.expert_ids,
+            prepared.usage_stats,
+            expert_scales=prepared.expert_scales,
+            c_input_scales=prepared.c_input_scales,
             estimated_total_m=estimated_total_m,
             clamp_activation=use_swigluoai,
             swiglu_alpha=swiglu_alpha,

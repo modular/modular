@@ -92,6 +92,25 @@ class EPConfig:
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
 
+    fuse_ffn_combine_send: bool = False
+    """Fuse the combine send into the MoE FFN's own epilogue.
+
+    The FFN's down-projection epilogue scatters each finished row straight
+    into the owning rank's receive buffer and releases the arrival signal
+    itself, so the FFN's output is never staged in a local tensor: the
+    ``(max_recv_tokens, hidden_size)`` buffer the unfused chain has to
+    materialize -- the largest single activation in the MoE region -- is not
+    allocated. The caller drops its ``combine_async`` and goes straight to
+    the wait, which reads only the symmetric receive buffers.
+
+    Opt-in per model rather than always-on: the send pays for itself at
+    prefill-scale tokens per expert and is neutral below, so it is a recipe
+    choice rather than a universal default. Incompatible with
+    ``use_allreduce`` (no peer buffers to write) and with
+    ``fused_shared_expert`` (which keeps the shared expert's rows in the very
+    tensor being elided); both raise rather than degrade silently.
+    """
+
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
 

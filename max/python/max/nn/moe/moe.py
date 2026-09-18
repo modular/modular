@@ -733,12 +733,17 @@ class MoE(Module, Shardable):
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
         estimated_total_m: TensorValue,
-    ) -> TensorValue:
+    ) -> TensorValue | None:
         """Runs local expert matmuls on dispatched tokens.
 
         This is the computation between ``ep_dispatch`` and
         ``ep_combine``.  ``x`` is unused by :class:`MoE` but accepted
         for interface consistency with :class:`MoEQuantized`.
+
+        A subclass may return ``None`` to signal that it has already sent its
+        output to the peers itself -- the fused combine send does this -- in
+        which case there is no local tensor for the caller to hand to a
+        combine. :class:`MoE` always returns a tensor.
 
         Args:
             expert_inputs: Dispatch outputs (tokens, row_offsets, ...).

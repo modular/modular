@@ -117,6 +117,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    ep_fuse_ffn_combine_send: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the MoE FFN performs the expert-parallel combine send "
+            "from its own epilogue, which drops the local staging tensor for "
+            "its output. Unset defaults ON except for a decode-only worker, "
+            "since the span it speeds up grows with tokens per expert."
+        ),
+    )
+
     eplb_profile: bool = Field(
         default_factory=lambda: (
             os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()

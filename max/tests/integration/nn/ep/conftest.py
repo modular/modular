@@ -239,6 +239,7 @@ def moe_weights_nvfp4() -> dict[str, torch.Tensor]:
         out_dim: int,
         in_dim: int,
         weight_scale_2: torch.Tensor | None = None,
+        input_scale: float = 1.0,
     ) -> torch.Tensor:
         weight = torch.randint(
             0,
@@ -266,8 +267,8 @@ def moe_weights_nvfp4() -> dict[str, torch.Tensor]:
         moe_weights[f"{prefix}.weight"] = weight
         moe_weights[f"{prefix}.weight_scale"] = weight_scale
         moe_weights[f"{prefix}.weight_scale_2"] = weight_scale_2
-        moe_weights[f"{prefix}.input_scale"] = torch.ones(
-            (), dtype=torch.float32, device=device
+        moe_weights[f"{prefix}.input_scale"] = torch.full(
+            (), input_scale, dtype=torch.float32, device=device
         )
         return weight_scale_2
 
@@ -301,6 +302,11 @@ def moe_weights_nvfp4() -> dict[str, torch.Tensor]:
             f"experts.{expert_idx}.down_proj",
             HIDDEN_DIM,
             MOE_DIM,
+            # The kernel consumes the RECIPROCAL of this one. Left at 1.0 it
+            # is its own reciprocal, so a caller that skips the inversion --
+            # or reads another expert's scale -- produces identical numbers.
+            # Vary it per expert so both mistakes have somewhere to show up.
+            input_scale=0.75 + 0.5 * (expert_idx % 4) / 3,
         )
 
     # Shared experts weights -- gate_proj and up_proj share weight_scale_2.

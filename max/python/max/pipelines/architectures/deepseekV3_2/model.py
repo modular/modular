@@ -27,6 +27,7 @@ from typing_extensions import override
 
 from ..deepseekV3.memory_planner import (
     _ep_max_rank_send_tokens_for_pipeline,
+    ep_fuse_ffn_combine_send_for_pipeline,
 )
 from ..deepseekV3.model import DeepseekV3Model
 from .deepseekV3_2 import DeepseekV3_2
@@ -95,6 +96,9 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
                 use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
+                fuse_ffn_combine_send=ep_fuse_ffn_combine_send_for_pipeline(
+                    self.pipeline_config, config
+                ),
             )
 
             if config.n_shared_experts == 1:

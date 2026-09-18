@@ -15,9 +15,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, NonCallableMock
 
+import pytest
 from max.driver import DeviceSpec
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,
+    ep_fuse_ffn_combine_send_for_pipeline,
 )
 from max.pipelines.kv_cache.memory_planner import ModelConfigWithKVCache
 from max.pipelines.lib import (
@@ -62,6 +64,7 @@ def mock_pipeline_config(
     pipeline_config.runtime.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
     pipeline_config.runtime.device_graph_capture = False
     pipeline_config.runtime.ep_use_allreduce = False
+    pipeline_config.runtime.ep_fuse_ffn_combine_send = False
     pipeline_config.speculative = None
 
     return pipeline_config
@@ -285,3 +288,115 @@ def test_deepseekv3_estimate_weights_size_routing_experts_scaling() -> None:
 
     # EP=8 vs EP=16: EP=16 splits across 2 nodes, so routing_experts_size / 2
     assert mem_ep8 - mem_ep16 == routing_experts_size // 2
+
+
+def test_deepseekv3_memory_estimation_drops_c_when_ffn_sends() -> None:
+    """The fused combine send removes the down-projection output term exactly.
+
+    When the FFN scatters its output to the peers from its own epilogue, that
+    `(max_recv_tokens_per_rank, hidden_size)` bf16 tensor is never
+    materialized. The estimate has to drop by exactly its size and nothing
+    else: reserving for a tensor that does not exist bills the KV cache for
+    it, and under-dropping leaves the same bug in smaller form.
+    """
+    huggingface_config = mock_huggingface_config()
+
+    # NVFP4, because that is the only encoding the send serves; the flag alone
+    # must not move the estimate anywhere else.
+    unfused = _make_planner().estimate_activation_memory(
+        mock_pipeline_config("decode_only", "float4_e2m1fnx2"),
+        huggingface_config,
+    )
+
+    fused_config = mock_pipeline_config("decode_only", "float4_e2m1fnx2")
+    fused_config.runtime.ep_fuse_ffn_combine_send = True
+    fused = _make_planner().estimate_activation_memory(
+        fused_config, huggingface_config
+    )
+
+    max_recv_tokens_per_rank = MAX_SEND_TOKENS_PER_RANK * min(
+        huggingface_config.n_routed_experts,
+        NUM_RANKS * huggingface_config.num_experts_per_tok,
+    )
+    # The planner scales the per-device MoE term by the device count.
+    expected_drop = (
+        max_recv_tokens_per_rank
+        * huggingface_config.hidden_size
+        * 2  # bfloat16
+        * NUM_RANKS
+    )
+
+    assert unfused - fused == expected_drop
+
+
+@pytest.mark.parametrize(
+    ("pipeline_role", "encoding", "explicit", "expected"),
+    [
+        # Unset: on for anything that serves prefill, off for decode-only.
+        # One graph serves both phases under the default role, so it gets the
+        # send for decode batches too -- deliberate, not an oversight. The
+        # first row is the shipping NVFP4 MoE recipes: they set neither the
+        # role nor the flag, so the whole gate rides on these two defaults.
+        ("prefill_and_decode", "float4_e2m1fnx2", None, True),
+        ("prefill_only", "float4_e2m1fnx2", None, True),
+        ("decode_only", "float4_e2m1fnx2", None, False),
+        # An explicit setting wins over the role, but NOT over a config the
+        # send cannot serve -- dropping the buffer there would under-reserve.
+        ("decode_only", "float4_e2m1fnx2", True, True),
+        ("prefill_only", "float4_e2m1fnx2", False, False),
+        ("prefill_only", "float8_e4m3fn", True, False),
+    ],
+)
+def test_ep_fuse_ffn_combine_send_follows_role_and_capability(
+    pipeline_role: PipelineRole,
+    encoding: SupportedEncoding,
+    explicit: bool | None,
+    expected: bool,
+) -> None:
+    """On for prefill, and only where the graph can actually elide the tensor.
+
+    The planner drops a buffer on this answer, so it must never outrun what
+    the graph will do: an over-reserve wastes memory, an under-reserve OOMs.
+    """
+    pipeline_config = mock_pipeline_config(pipeline_role, encoding)
+    pipeline_config.runtime.ep_fuse_ffn_combine_send = explicit
+    assert (
+        ep_fuse_ffn_combine_send_for_pipeline(
+            pipeline_config, mock_huggingface_config()
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("attr", "value"),
+    [
+        # Allreduce routes within the device; there are no peer buffers.
+        ("ep_use_allreduce", True),
+    ],
+)
+def test_ep_fuse_ffn_combine_send_off_without_peer_buffers(
+    attr: str, value: bool
+) -> None:
+    """A runtime setting the send cannot serve turns it off, not on."""
+    pipeline_config = mock_pipeline_config("prefill_only", "float4_e2m1fnx2")
+    pipeline_config.runtime.ep_fuse_ffn_combine_send = True
+    setattr(pipeline_config.runtime, attr, value)
+    assert not ep_fuse_ffn_combine_send_for_pipeline(
+        pipeline_config, mock_huggingface_config()
+    )
+
+
+def test_ep_fuse_ffn_combine_send_needs_an_unfused_shared_expert() -> None:
+    """The send leaves only the WAIT half of the combine to run.
+
+    The EP forward takes that split path only when a shared expert gives it
+    something to overlap, so a model without one keeps the staging buffer.
+    """
+    pipeline_config = mock_pipeline_config("prefill_only", "float4_e2m1fnx2")
+    pipeline_config.runtime.ep_fuse_ffn_combine_send = True
+    huggingface_config = mock_huggingface_config()
+    huggingface_config.n_shared_experts = 0
+    assert not ep_fuse_ffn_combine_send_for_pipeline(
+        pipeline_config, huggingface_config
+    )
