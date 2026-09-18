@@ -191,16 +191,17 @@ parametric aliases), reached through `Self`.
 <Panel title="Inlining" summary="force or forbid">
 
 ```mojo
-@always_inline
+@inline(.always)
 def lerp(a: Float64, b: Float64, t: Float64) -> Float64:
     return a + (b - a) * t # expanded at every call site
-@no_inline
+@inline(.never)
 def cold_path(): ... # kept as a real call
 ```
 
 Inlining replaces a function call with the function body, reducing call
-overhead for small, frequently called functions. Add `@always_inline` to request
-inlining, `@no_inline` to exclude the option, or let the compiler decide.
+overhead for small, frequently called functions. Add `@inline(.always)` to
+request inlining, `@inline(.never)` to exclude the option, or let the compiler
+decide with `@inline(.automatic)`.
 
 </Panel>
 

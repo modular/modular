@@ -175,6 +175,7 @@
         "docs/reference/decorators/export",
         "docs/reference/decorators/fieldwise-init",
         "docs/reference/decorators/implicit",
+        "docs/reference/decorators/inline",
         "docs/reference/decorators/no-inline",
         "docs/reference/decorators/parameter",
         "docs/reference/decorators/staticmethod"

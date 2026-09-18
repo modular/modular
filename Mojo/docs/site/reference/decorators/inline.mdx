@@ -1,0 +1,146 @@
+---
+title: '@inline'
+description: Sets a function's inline level.
+codeTitle: true
+---
+
+You can add the `@inline` decorator on any function to control whether the Mojo
+compiler "inlines" the body of the function (copies it) directly into the body
+of each calling function. Inlining eliminates the performance cost of a
+function call jumping to a new point in code. The downside is that it can
+increase the binary size by duplicating the function at every call site.
+
+The decorator takes exactly one positional argument: a level from the
+[`InlineLevel`](/docs/std/builtin/inline_level/InlineLevel/) struct, which is
+in the prelude, so it needs no import.
+
+```mojo
+@inline(.always)
+def add(a: Int, b: Int) -> Int:
+    return a + b
+
+def main():
+    print(add(1, 2))  # Prints 3
+```
+
+Because `add()` carries `@inline(.always)`, Mojo compiles this program without
+adding the `add()` function to the call stack, and it instead performs the
+addition directly at the [`print()`](/docs/std/io/io/print/) call site, as if
+you had written it like this:
+
+```mojo no-test
+print(1 + 2)
+```
+
+## Inline levels
+
+`InlineLevel` names four levels:
+
+| Level        | Effect                                                               |
+|--------------|----------------------------------------------------------------------|
+| `.automatic` | Leaves the decision to the compiler's heuristics.                    |
+| `.always`    | Always inlines the function.                                         |
+| `.nodebug`   | Always inlines the function, and drops its debug info when inlining. |
+| `.never`     | Never inlines the function.                                          |
+
+```mojo
+@inline(.always)
+def scale(x: Int) -> Int:
+    return x * 2
+
+@inline(.nodebug)
+def offset(x: Int) -> Int:
+    return x + 1
+
+@inline(.never)
+def cold_path(x: Int) -> Int:
+    return x - 1
+
+@inline(.automatic)
+def compiler_decides(x: Int) -> Int:
+    return x
+```
+
+Each of the inline levels has its own applications:
+
+- Use `.always` to unconditionally inline a function at every call site.
+  Use with discretion; this can significantly expand code size and compile
+  time.
+
+- Use `.automatic` to leave the decision to the compiler's heuristics. This
+  is the same as not adding an inline decorator, and it's useful when
+  setting the inline level from a parameter.
+
+- Use `.nodebug` on the low-level functions in a library, which may wrap
+  primitive functions, MLIR operations, or inline assembly. Dropping the debug
+  info prevents users from accidentally stepping into low-level non-Mojo code
+  when debugging.
+
+- Use `.never` for functions where inlining doesn't pay. Too many inlined
+  functions can slow compilation and substantially increase the binary size of
+  the compiled program. In particular, large or complex functions may not
+  benefit as much from inlining.
+
+## Inline levels from a parameter
+
+The argument doesn't need to be a constant. Any compile-time expression of
+type `InlineLevel` works, including a parameter, so the compiler can inline a
+single definition for some instantiations and not others. In the following
+example, the `scaled()` function takes the inline level as a parameter:
+
+```mojo
+@inline(inlineLevel)
+def scaled[inlineLevel: InlineLevel = .automatic](x: Int) -> Int:
+    return x * 3
+
+def main():
+    print(scaled(2))  # Inlined heuristically (default)
+    print(scaled[.never](2))  # Don't inline
+    print(scaled[.always](2))  # Always inline
+```
+
+The compiler resolves a constant when it parses the decorator, and resolves a
+value that depends on a parameter once it binds that parameter.
+
+The shorthand form, `.never`, works only where there's a contextual type to
+infer it from. Spell the struct out as `InlineLevel.never` elsewhere, such as
+in a compile-time alias:
+
+```mojo
+comptime NEVER = InlineLevel.never
+
+@inline(NEVER)
+def never_inlined(x: Int) -> Int:
+    return x + 1
+```
+
+## Conflicting inline decorators
+
+A function can carry only one inline level. Two decorators that disagree are
+an error:
+
+```mojo no-test
+@inline(.never)
+@inline(.always)  # Error: conflicting inline level
+def ambiguous():
+    pass
+```
+
+This applies across spellings, so combining `@inline` with
+[`@always_inline`](/docs/reference/decorators/always-inline/) or
+[`@no_inline`](/docs/reference/decorators/no-inline/) is an error too. Because
+decorators apply bottom-up, the compiler reports the conflict on the decorator
+written above the one it disagrees with.
+
+## Relationship to `@always_inline` and `@no_inline`
+
+`@inline` covers what the older `@always_inline` and `@no_inline` decorators
+do, and adds levels those two can't express. Prefer `@inline` in new code. The
+following table lists each older spelling and its `@inline` equivalent:
+
+| Older spelling              | Equivalent            |
+|-----------------------------|-----------------------|
+| `@always_inline`            | `@inline(.always)`    |
+| `@always_inline("nodebug")` | `@inline(.nodebug)`   |
+| `@no_inline`                | `@inline(.never)`     |
+| None                        | `@inline(.automatic)` |

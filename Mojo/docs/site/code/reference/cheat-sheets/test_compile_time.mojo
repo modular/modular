@@ -116,12 +116,12 @@ def test_comptime_if() raises:
 
 
 # --- inlining: force or forbid ---
-@always_inline
+@inline(.always)
 def add_inline(a: Int, b: Int) -> Int:
     return a + b
 
 
-@no_inline
+@inline(.never)
 def add_separate(a: Int, b: Int) -> Int:
     return a + b
 
