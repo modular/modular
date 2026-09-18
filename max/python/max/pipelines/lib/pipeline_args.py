@@ -298,8 +298,8 @@ class PipelineArgs(ConfigFileModel):
     chat_template: Path | None = Field(
         default=None,
         description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config."
+            "Path to an optional custom chat template that overrides the one "
+            "from the Hugging Face model config."
         ),
     )
 

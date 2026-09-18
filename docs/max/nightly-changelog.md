@@ -8,6 +8,9 @@ This version is still a work in progress.
 
 ## Documentation
 
+- Added a [chat templates](/serve/chat-templates) guide that covers information
+  about the `--chat-template` flag for the `max serve` CLI command.
+
 ## MAX models
 
 - The fused Qwen3.5 speculative-decoding graph

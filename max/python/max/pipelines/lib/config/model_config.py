@@ -917,10 +917,9 @@ class MAXModelConfig(MAXModelConfigBase):
     chat_template: Path | None = Field(
         default=None,
         description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config. If a path is provided, the file is "
-            "read lazily by the registry when building the tokenizer. If "
-            "``None``, the model's default chat template is used."
+            "Path to a custom chat template that overrides the one from "
+            "the Hugging Face model (the default). The file is either a Jinja template "
+            "or a JSON object with a ``chat_template`` key. "
         ),
     )
     """An optional custom chat template to override the one shipped with the model."""

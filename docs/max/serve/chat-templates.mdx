@@ -1,0 +1,300 @@
+---
+title: Chat templates
+description: Use chat templates to format messages before tokenization.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+A chat template defines how MAX formats [chat
+completions](/rest-api/create-chat-completion/) messages before sending them to
+the model. By default, MAX uses the chat template provided by the model in
+Hugging Face, but you can override it with your own template.
+
+## Quickstart
+
+To use a custom chat template, use the `--chat-template` flag:
+
+```bash
+max serve --model google/gemma-4-31B-it \
+  --chat-template path/to/template.jinja
+```
+
+See the [file formats](#chat-template-file-formats) section for accepted file
+formats.
+
+:::note
+Whether the flag takes effect depends on the model's tokenizer. The default
+[`TextTokenizer`](/api/python/generated/max.pipelines.TextTokenizer/) always
+applies your template, and some model-specific tokenizers do too. To check if
+the tokenizer uses the flag, look for a `chat_template` argument in the
+tokenizer's constructor. If it isn't there, the tokenizer ignores the flag.
+:::
+
+## How chat templates work
+
+Chat models are typically trained on conversations that use a specific
+serialization format. During inference, use the same format that the model was
+trained on.
+
+For example, a model might be trained on conversations formatted like this:
+
+```text
+<|user|>
+Hello
+<|assistant|>
+Hi!
+```
+
+If you instead provide the same conversation in a different format:
+
+```text
+User: Hello
+Assistant: Hi!
+```
+
+the model may still generate a reasonable response. However, the input no
+longer matches the format used during training, which can reduce model
+performance. To avoid this, chat templates ensure that your messages have a
+consistent format.
+
+## Why provide a custom chat template
+
+Writing a chat template requires a detailed understanding of the format used to
+train the model. For this reason, models usually ship with a tested chat
+template. However, you might still need to provide a custom template in the
+following cases:
+
+- **The model doesn't include a chat template**. For example, you want to use a
+  base model for chat instead of an instruct model that already provides a chat
+  template.
+- **You want to support features that the default template doesn't expose**.
+  A common use case is to add support for tool calling.
+- **You're fine-tuning the model with a different conversational format**. The
+  chat template should match the format that your fine-tuning data uses.
+
+If possible, create a custom chat template by copying and modifying the
+model's existing template (rather than starting from scratch).
+
+:::note
+Changing the chat template can affect model accuracy and performance. Keep this
+in mind while serving a model with a custom chat template.
+:::
+
+## Chat template file formats
+
+In a model repository, chat templates typically use one of two formats:
+
+- `chat_template.jinja`: A standalone Jinja template file.
+- `tokenizer_config.json`: A tokenizer config that stores the template
+  in the `chat_template` key.
+
+The following example shows a Jinja chat template:
+
+```jinja title="template.jinja"
+{{ bos_token }}
+{%- for message in messages %}
+<|{{ message.role }}|>
+{{ message.content }}<|end|>
+{%- endfor %}
+{%- if add_generation_prompt %}
+<|assistant|>
+{%- endif %}
+```
+
+You can also define the template in a JSON file. In this format, the
+`chat_template` value contains the Jinja template as a string:
+
+<!-- rumdl-disable MD013 -->
+
+```json title="template.json"
+{
+  "chat_template": "{{ bos_token }}\n{%- for message in messages %}\n<|{{ message.role }}|>\n{{ message.content }}<|end|>\n{%- endfor %}\n{%- if add_generation_prompt %}\n<|assistant|>\n{%- endif %}"
+}
+```
+
+<!-- rumdl-enable MD013 -->
+
+## Chat template variables
+
+When MAX renders a chat template, it resolves the template's Jinja variables
+from three sources:
+
+- **MAX-populated variables**: Names that MAX knows and fills in for you, such
+  as `messages` and `tools`. MAX derives their values from standard fields in
+  the request.
+- **Special tokens**: Names that come from the model's tokenizer, such as
+  `bos_token` and `eos_token`. The request doesn't influence these values.
+- **User-defined variables**: Custom variables you add to your template.
+  These aren't populated unless you name them in the request's
+  `chat_template_kwargs` field.
+
+Instead of using variables, you can also hardcode any value or token that the
+model recognizes or was trained to use.
+
+### MAX-populated variables
+
+Your template can reference any of these variables, which MAX populates from
+the standard fields in each request:
+
+- `messages`: The conversation messages, in order.
+  - `messages.role`: The role associated with the message.
+  - `messages.content`: The message text.
+  - `messages.tool_calls`: The tool calls that the request includes on a
+    message.
+  - `messages.tool_call_id`: The identifier of the tool call that a message with
+    the `tool` role responds to.
+  - `messages.reasoning_content`: Reasoning text from an earlier response that
+    the request sends back as history.
+- `tools`: The tool definitions from the request's `tools` field.
+- `add_generation_prompt`: A boolean that tells the template whether to append
+  the tokens that start the model's response. MAX renders it as `true` unless
+  you override it through `chat_template_kwargs`.
+- `enable_thinking`, `thinking`: Booleans that render as `true` when the request
+  asks for reasoning and `false` when it turns reasoning off.
+- `reasoning_effort`: The requested effort as a string, such as `low` or
+  `none`.
+
+These fields may have no value if you don't include them in your request. For
+example, `messages.tool_calls` is undefined for a request without tool calls.
+
+### Special tokens
+
+Special tokens serve specific purposes for the model rather than representing
+normal text. MAX makes the following special tokens available as template
+variables:
+
+- `bos_token`
+- `eos_token`
+- `unk_token`
+- `sep_token`
+- `pad_token`
+- `cls_token`
+- `mask_token`
+
+MAX gets the values for these variables from the model's
+`tokenizer_config.json` file on Hugging Face.
+
+If `tokenizer_config.json` defines a special token that the list above doesn't
+include, MAX doesn't expose it as a template variable. To use that token
+in your template, specify its value directly instead of its key.
+
+### User-defined variables
+
+Chat templates can use variables that MAX doesn't provide. You can supply
+these variables on a per-request basis with the `chat_template_kwargs` field.
+Because MAX doesn't provide a server-level setting for `chat_template_kwargs`,
+provide a variable in each request where you want to use it.
+
+For example, this request passes the value `26 Jul 2024` to the template under
+the variable name `date_string`:
+
+<Tabs groupId="client">
+<TabItem value="python" label="Python">
+
+```python title="send_request.py"
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://0.0.0.0:8000/v1",
+    api_key="EMPTY",
+)
+
+response = client.chat.completions.create(
+    model="google/gemma-4-31B-it",
+    messages=[
+        {
+            "role": "user",
+            "content": "Write a one-sentence summary of what a chat template does.",
+        }
+    ],
+    extra_body={"chat_template_kwargs": {"date_string": "26 Jul 2024"}},
+)
+```
+
+:::note
+When using the OpenAI SDK, you must pass fields that the SDK doesn't natively
+support through the `extra_body` field.
+:::
+
+</TabItem>
+<TabItem value="curl" label="curl">
+
+```bash
+curl http://0.0.0.0:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "google/gemma-4-31B-it",
+        "messages": [
+            {
+            "role": "user",
+            "content": "Write a one-sentence summary of what a chat template does."
+            }
+        ],
+        "chat_template_kwargs": { "date_string": "26 Jul 2024" }
+    }'
+```
+
+</TabItem>
+</Tabs>
+
+The chat template variable should match the key in `chat_template_kwargs`:
+
+```jinja
+{%- if date_string %}
+<|system|>
+Today's date: {{ date_string }}<|end|>
+{%- endif %}
+```
+
+When MAX renders the template, `date_string` evaluates to `26 Jul 2024`:
+
+```output
+Today's date: 26 Jul 2024
+```
+
+## Verify your template
+
+Render your template locally before you serve it. This renders the same
+template MAX renders:
+
+```python title="render_template.py"
+from pathlib import Path
+
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("google/gemma-4-31B-it")
+template = Path("template.jinja").read_text()
+
+messages = [
+    {"role": "system", "content": "You are helpful."},
+    {"role": "user", "content": "Hello!"},
+]
+
+print(
+    tokenizer.apply_chat_template(
+        messages,
+        chat_template=template,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+)
+```
+
+With the template from the beginning of this page, this outputs:
+
+```output
+<bos><|system|>
+You are helpful.<|end|><|user|>
+Hello!<|end|><|assistant|>
+```
+
+## Next steps
+
+Now that you can customize how MAX formats messages, explore related features:
+
+- [Function calling](/serve/function-calling): Configure the tools your model
+  can use for a request.
+- [Reasoning](/serve/reasoning): Serve models that separate chain-of-thought
+  from the final answer.
+- [`max serve`](/cli/serve): See every option the server accepts.
