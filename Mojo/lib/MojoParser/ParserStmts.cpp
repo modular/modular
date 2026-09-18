@@ -306,7 +306,7 @@ struct StmtParser : public ParserBase {
   /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
   /// entry's command list is tested in its own case region; the match else is
   /// a no-op fallthrough.
-  void emitCases(ArrayRef<MatchCaseEntry> caseEntries, BValue subjectBVal,
+  void emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
                  const PatternPath *rootPath, Location matchLocation);
 
   // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
@@ -1597,17 +1597,18 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   // convert the subject to a BValue before building patterns, so none of the
   // later pattern emission can consume the RValue.  For example, any "var"
   // bindings will have to do a copy.
-  // TODO: maintain RValueness for as long as we can.
-  BValue subjectBVal =
-      getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
-  if (!subjectBVal)
-    return failure();
+  if (subject.getIfRValue()) {
+    // TODO: maintain RValueness for as long as we can.
+    subject = getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
+    if (!subject)
+      return failure();
+  }
 
   // Shared path uniquing across all cases. Command lists are built while
   // parsing each case so a later step can optimize/emit them as a group.
   PatternMatchBuilder checkListBuilder(*curDeclScope, EC_Type);
   const PatternPath *rootPath =
-      checkListBuilder.getRootPath(subjectBVal.getRValueType());
+      checkListBuilder.getRootPath(subject.getRValueType());
 
   // Parse one or more case blocks. Cases may share the match indent (Mojo
   // style) or be indented beneath it (Python style).  We parse each of the
@@ -1664,8 +1665,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
 
     // Lower the pattern to a command list (type/pattern errors only; no IR).
     SmallVector<const PatternCommand *, 8> commands;
-    if (failed(patternExpr->buildCheckList(checkListBuilder, subjectBVal,
-                                           rootPath, commands))) {
+    if (failed(patternExpr->buildCheckList(checkListBuilder, subject, rootPath,
+                                           commands))) {
       skipUntilIndentation(caseIndent);
       hadError = true;
       continue;
@@ -1692,7 +1693,7 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns
   // are emitted.  For now, we simply emit each linearly.
-  emitCases(caseEntries, subjectBVal, rootPath, matchLocation);
+  emitCases(caseEntries, subject, rootPath, matchLocation);
 
   afterCaseCursor.restore(getLexer());
   return success();
@@ -1701,8 +1702,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
 /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
 /// entry's command list is tested in its own case region; the match else is
 /// a no-op fallthrough.
-void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
-                           BValue subjectBVal, const PatternPath *rootPath,
+void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
+                           const PatternPath *rootPath,
                            Location matchLocation) {
   assert(!caseEntries.empty() && "emitCases requires a non-empty list");
 
@@ -1729,8 +1730,8 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
 
     SmallVector<PatternBoundName> bindings;
-    if (failed(caseEntry.commandList.emit(emitter, subjectBVal, rootPath,
-                                          bindings)))
+    if (failed(
+            caseEntry.commandList.emit(emitter, subject, rootPath, bindings)))
       continue;
 
     // Materialize pattern bindings before the guard so guards can refer to

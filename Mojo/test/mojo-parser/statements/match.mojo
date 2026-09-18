@@ -654,8 +654,8 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
     case Optional.None:
         case_callee[1]()
 
-    # Mutable Optional: same match path; subject origin is mut (muttoimm on
-    # read-only EnumLike accessors until those use an interior origin).
+    # Mutable Optional: discriminant is read immutably (muttoimm); payload
+    # projection keeps the mut origin so `ref` bindings can mutate.
     # CHECK:       lit.ref.immut %mut_opt
     # CHECK:       lit.call {{.*}}@"_get_enum_discriminant{{.*}}[muttoimm *"mut_opt`
     # CHECK:       lit.call {{.*}}@"__eq__(
@@ -664,7 +664,7 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
     # CHECK:       } else {
     # CHECK:         hlcf.match.next
     # CHECK:       }
-    # CHECK:       lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}muttoimm *"mut_opt`
+    # CHECK:       lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%mut_opt)
     # CHECK:       [[MELT:%.*]] = lit.var.decl "elt" ref
     # CHECK:       lit.ref.store {{.*}}, [[MELT]]
     __match mut_opt:
@@ -684,3 +684,25 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
         case_callee[1]()
     case .Some:  # just check the tag, don't bind the value.
         case_callee[2]()
+
+
+# Owned Optional: `ref` into the payload keeps the subject's mut origin, so
+# mutating through the binding writes back into `a`.
+# CHECK-LABEL: lit.fn @"testLValueMutableMatch
+def testLValueMutableMatch(var a: Optional[Int]):
+    # Discriminant is read immutably; payload projection stays mut on `"a`.
+    # CHECK:       lit.ref.immut %a
+    # CHECK:       lit.call {{.*}}@"_get_enum_discriminant{{.*}}[muttoimm *"a`
+    # CHECK:       lit.call {{.*}}@"__eq__(
+    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:         hlcf.yield
+    # CHECK:       } else {
+    # CHECK:         hlcf.match.next
+    # CHECK:       }
+    # CHECK:       lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%a)
+    # CHECK:       [[VALUE:%.*]] = lit.var.decl "value" ref
+    # CHECK:       lit.ref.store {{.*}}, [[VALUE]]
+    # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}[mut *"a`
+    __match a:
+    case .Some(ref value):
+        value += 1
