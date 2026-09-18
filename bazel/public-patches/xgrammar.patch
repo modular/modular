@@ -798,7 +798,33 @@ index 4424aca..e1e2e7e 100644
    }
 
    int32_t VisitTokenTagDispatch(const GrammarExpr& grammar_expr) final {
-@@ -927,8 +926,14 @@ class AllowEmptyRuleAnalyzerImpl : public GrammarVisitor<std::vector<int32_t>> {
+@@ -778,6 +777,25 @@ class LookaheadAssertionAnalyzerImpl : public GrammarMutator {
+     if (!CanUseDerivedLookahead(rule_id)) {
+       return -1;
+     }
++    // The lookahead assertion is matched by EarleyParser::Predict/Scan on the expr path, which
++    // only handles atom elements. A composite element such as a choices expr (which a
++    // non-normalized rule body may leave inside a sequence) would abort the parser, so skip
++    // deriving a lookahead in that case. The derived lookahead is only an optimization, so
++    // skipping it never changes the accepted language.
++    for (int32_t element_id : rule_lookahead_infos_[rule_id].suffix_after_first_occurrence) {
++      switch (base_grammar_->GetGrammarExpr(element_id).type) {
++        case GrammarExprType::kByteString:
++        case GrammarExprType::kCharacterClass:
++        case GrammarExprType::kCharacterClassStar:
++        case GrammarExprType::kRuleRef:
++        case GrammarExprType::kRepeat:
++        case GrammarExprType::kToken:
++        case GrammarExprType::kExcludeToken:
++          break;
++        default:
++          return -1;
++      }
++    }
+     return builder_->AddSequence(rule_lookahead_infos_[rule_id].suffix_after_first_occurrence);
+   }
+
+@@ -927,8 +945,14 @@ class AllowEmptyRuleAnalyzerImpl : public GrammarVisitor<std::vector<int32_t>> {
      for (int i = 0; i < static_cast<int>(base_grammar_->NumRules()); ++i) {
        auto rule = base_grammar_->GetRule(i);
        auto grammar_expr = base_grammar_->GetGrammarExpr(rule.body_expr_id);
@@ -815,7 +841,7 @@ index 4424aca..e1e2e7e 100644
          empty_rule_id_set->insert(i);
          continue;
        }
-@@ -989,10 +994,11 @@ class AllowEmptyRuleAnalyzerImpl : public GrammarVisitor<std::vector<int32_t>> {
+@@ -989,10 +1013,11 @@ class AllowEmptyRuleAnalyzerImpl : public GrammarVisitor<std::vector<int32_t>> {
          auto rule = base_grammar_->GetRule(referer_rule_id);
          auto grammar_expr = base_grammar_->GetGrammarExpr(rule.body_expr_id);
 
@@ -828,7 +854,7 @@ index 4424aca..e1e2e7e 100644
 
          bool is_epsilon = std::any_of(grammar_expr.begin(), grammar_expr.end(), [&](int32_t i) {
            auto seq_expr = base_grammar_->GetGrammarExpr(i);
-@@ -1114,12 +1120,21 @@ class GrammarFSMBuilderImpl {
+@@ -1114,12 +1139,21 @@ class GrammarFSMBuilderImpl {
    static std::optional<FSMWithStartEnd> Choices(const GrammarExpr& expr, const Grammar& grammar);
    static std::optional<FSMWithStartEnd> TagDispatch(const Grammar::Impl::TagDispatch& tag_dispatch);
    static void AddCharacterRange(FSMWithStartEnd& fsm, int from, int to, uint32_t min, uint32_t max);
@@ -850,7 +876,7 @@ index 4424aca..e1e2e7e 100644
    static FSMWithStartEnd BuildNegativeCharacterClass(const GrammarExpr& expr);
  };
 
-@@ -1206,7 +1221,7 @@ void AddSameLengthCharacterRange(
+@@ -1206,7 +1240,7 @@ void AddSameLengthCharacterRange(
      if ((max & 0x00FFFF) != 0xBFBF) {
        int tmp_state_max = fsm.AddState();
        fsm.GetFsm().AddEdge(from, tmp_state_max, byte_max[2], byte_max[2]);
@@ -859,7 +885,7 @@ index 4424aca..e1e2e7e 100644
      } else {
        byte_max[2]++;
      }
-@@ -1336,22 +1351,32 @@ void GrammarFSMBuilderImpl::AddCharacterRange(
+@@ -1336,22 +1370,32 @@ void GrammarFSMBuilderImpl::AddCharacterRange(
    return;
  }
 
@@ -900,7 +926,7 @@ index 4424aca..e1e2e7e 100644
      }
    }
 
-@@ -1384,7 +1409,14 @@ FSMWithStartEnd GrammarFSMBuilderImpl::BuildNegativeCharacterClass(const Grammar
+@@ -1384,7 +1428,14 @@ FSMWithStartEnd GrammarFSMBuilderImpl::BuildNegativeCharacterClass(const Grammar
        i = right_bound;
      }
    }
@@ -916,7 +942,7 @@ index 4424aca..e1e2e7e 100644
    return result_fsm;
  }
 
-@@ -1406,12 +1438,10 @@ FSMWithStartEnd GrammarFSMBuilderImpl::CharacterClass(const GrammarExpr& expr) {
+@@ -1406,12 +1457,10 @@ FSMWithStartEnd GrammarFSMBuilderImpl::CharacterClass(const GrammarExpr& expr) {
    }
    result_fsm.AddEndState(end_state);
    for (int i = 1; i < static_cast<int>(expr.size()); i += 2) {
@@ -933,7 +959,7 @@ index 4424aca..e1e2e7e 100644
    }
    return result_fsm;
  }
-@@ -1649,9 +1679,220 @@ std::optional<FSMWithStartEnd> GrammarFSMBuilderImpl::BuildTagDispatch(
+@@ -1649,9 +1698,220 @@ std::optional<FSMWithStartEnd> GrammarFSMBuilderImpl::BuildTagDispatch(
    return FSMWithStartEnd(trie_fsm, start, ends);
  }
 
@@ -1154,7 +1180,7 @@ index 4424aca..e1e2e7e 100644
    std::vector<std::pair<std::string, int>> string_trigger_rules(
        tag_dispatch.tag_rule_pairs.begin(), tag_dispatch.tag_rule_pairs.end()
    );
-@@ -2737,6 +2978,12 @@ std::optional<FSMWithStartEnd> GrammarFSMBuilder::TagDispatch(
+@@ -2737,6 +2997,12 @@ std::optional<FSMWithStartEnd> GrammarFSMBuilder::TagDispatch(
    return GrammarFSMBuilderImpl::TagDispatch(tag_dispatch);
  }
 
