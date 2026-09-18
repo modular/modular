@@ -95,9 +95,16 @@ class KVCacheGroupId:
     ``recurrent`` names a cache whose entry is a state rather than a span of
     tokens. It shares the page pool, the prefix cache and the eviction order
     with the attention caches.
+
+    ``scratch`` names a cache that is never published: one block per request,
+    drawn when the request first grows and freed when it is released. It
+    draws from the same page pool as the others, so its bytes stay fungible
+    with theirs and admission counts them, but it carries no hash and so
+    takes no part in prefix hits, commits, eviction order or an external
+    tier.
     """
 
-    type: Literal["full", "sliding_window", "recurrent"]
+    type: Literal["full", "sliding_window", "recurrent", "scratch"]
     window_size: int = -1
 
     def __post_init__(self):
@@ -112,6 +119,9 @@ class KVCacheGroupId:
         elif self.type == "recurrent":
             if self.window_size != -1:
                 raise ValueError("Window size must be -1 for recurrent groups.")
+        elif self.type == "scratch":
+            if self.window_size != -1:
+                raise ValueError("Window size must be -1 for scratch groups.")
 
     def is_sliding_window(self) -> bool:
         return self.type == "sliding_window"
@@ -120,12 +130,20 @@ class KVCacheGroupId:
         return self.type == "full"
 
     def blocks_in_window(self, page_size: int) -> int:
+        if self.is_scratch():
+            raise ValueError(
+                "a scratch group has no window: it holds one block per request,"
+                " and nothing downstream of a window should reach it"
+            )
         if self.is_full():
             return -1
         return ceildiv(self.window_size - 1, page_size)
 
     def is_recurrent(self) -> bool:
         return self.type == "recurrent"
+
+    def is_scratch(self) -> bool:
+        return self.type == "scratch"
 
     @classmethod
     def full(cls) -> KVCacheGroupId:
@@ -135,6 +153,10 @@ class KVCacheGroupId:
     def recurrent(cls) -> KVCacheGroupId:
         return cls(type="recurrent")
 
+    @classmethod
+    def scratch(cls) -> KVCacheGroupId:
+        return cls(type="scratch")
+
     def __repr__(self) -> str:
         if self.type == "full":
             return "full_group"
@@ -142,6 +164,8 @@ class KVCacheGroupId:
             return f"sliding_window_group({self.window_size})"
         elif self.type == "recurrent":
             return "recurrent_group"
+        elif self.type == "scratch":
+            return "scratch_group"
 
 
 class KVConnectorType(str, Enum):
@@ -825,6 +849,16 @@ class KVLeafRegion:
     needs more alignment than a row gives. Defaults to 1 for leaves not
     addressed by row."""
 
+    @property
+    def cacheable(self) -> bool:
+        """Whether this leaf's blocks are addressed by content.
+
+        False makes the leaf invisible to everything keyed on a hash: prefix
+        hits, commits, and both directions of an external tier. It still
+        draws from the pool and still counts against admission.
+        """
+        return not self.group_id.is_scratch()
+
     def blocks_to_reserve(self, num_blocks: int) -> int:
         """Returns how many blocks one request draws to fill ``num_blocks`` slots.
 
@@ -932,6 +966,14 @@ class RecurrentStateRegion:
     row_shape: tuple[int, ...]
     """Shape of one layer's state, per device."""
     dtype: DType
+    scratch: bool = False
+    """Whether the region is per-request scratch rather than a checkpoint.
+
+    A scratch region is drawn once per request and never published, so it is
+    invisible to prefix hits, to eviction order and to an external tier, and
+    its block does not rotate at a page boundary. Its rows are addressed
+    exactly like a published state's, so a kernel reads it the same way.
+    """
 
     @property
     def rows_dim(self) -> str:
@@ -1005,6 +1047,20 @@ class RecurrentKVLeafRegion(KVLeafRegion):
     def bound_row_span(self, block: int) -> Mapping[str, range]:
         """Returns the rows one block's layers occupy."""
         return {self.region.pool_key: self.region.rows_of(block)}
+
+
+@dataclass(frozen=True)
+class ScratchKVLeafRegion(RecurrentKVLeafRegion):
+    """A row-addressed leaf drawn once per request and never published.
+
+    Addressed exactly like :class:`RecurrentKVLeafRegion`, one row per layer,
+    but its block does not rotate at a page boundary and carries no hash, so
+    a request holds the same one from its first forward to its release.
+    """
+
+    def blocks_to_reserve(self, num_blocks: int) -> int:
+        """Returns one: the block the request holds for its whole life."""
+        return 1
 
 
 class CacheLeafKind(Enum):
@@ -2824,18 +2880,31 @@ class RecurrentStateParams(CacheLeafParamInterface):
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns one pool leaf per state leaf, each one state wide.
 
+        A region marked ``scratch`` lands in the scratch group rather than the
+        recurrent one, so the same tree can declare a published state and the
+        per-request scratch that rides beside it.
+
         ``_prefix`` is unused, so the pool key and the name a layer asks for
         stay the same string.
         """
-        return {
-            region.leaf_id: RecurrentKVLeafRegion(
+
+        def leaf(region: RecurrentStateRegion) -> KVLeafRegion:
+            cls = (
+                ScratchKVLeafRegion if region.scratch else RecurrentKVLeafRegion
+            )
+            group_id = (
+                KVCacheGroupId.scratch()
+                if region.scratch
+                else KVCacheGroupId.recurrent()
+            )
+            return cls(
                 leaf_id=region.leaf_id,
-                group_id=KVCacheGroupId.recurrent(),
+                group_id=group_id,
                 bytes_per_page=region.bytes_per_page,
                 region=region,
             )
-            for region in self.regions
-        }
+
+        return {region.leaf_id: leaf(region) for region in self.regions}
 
 
 def recurrent_leaves(

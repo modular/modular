@@ -247,7 +247,13 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         # the replica_idx that selects the device endpoint.
         replica_kv_memory = [buf.to_memory() for buf in kv_buffers]
         connector = create_connector(
-            leaves={leaf_id: leaf.group_id for leaf_id, leaf in leaves.items()},
+            # A leaf carrying no hash has nothing an external tier can key on,
+            # so the connector is never told about it.
+            leaves={
+                leaf_id: leaf.group_id
+                for leaf_id, leaf in leaves.items()
+                if leaf.cacheable
+            },
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             params=params,

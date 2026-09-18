@@ -56,6 +56,9 @@ from .kv_group_coordinator import (
 from .recurrent_coordinator import (
     RecurrentKVGroupCoordinator,
 )
+from .scratch_coordinator import (
+    ScratchKVGroupCoordinator,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -159,6 +162,10 @@ def create_kv_group_coordinator(
             group_id=group_id,
             page_size=page_size,
         )
+    if group_id.is_scratch():
+        return ScratchKVGroupCoordinator(
+            pools=pools, leaf_ids=leaf_ids, group_id=group_id
+        )
     raise ValueError(f"no coordinator holds a {group_id} group")
 
 
@@ -248,6 +255,19 @@ class JengaBlockManager:
         self._leaf_ids = [
             leaf_id
             for group in self._groups.values()
+            for leaf_id in group.leaf_ids
+        ]
+        # A leaf carrying no hash cannot be looked up, committed, or handed to
+        # an external tier, so every content-addressed path iterates these
+        # instead. Allocation and admission still cover all of them.
+        self._cacheable_groups = [
+            group
+            for group in self._groups.values()
+            if not group.group_id.is_scratch()
+        ]
+        self._cacheable_leaf_ids = [
+            leaf_id
+            for group in self._cacheable_groups
             for leaf_id in group.leaf_ids
         ]
         self._requests: dict[RequestID, RequestCacheState] = {}
@@ -454,18 +474,18 @@ class JengaBlockManager:
         pool = self.pools[replica_idx]
         for hashes in self._pending_offloads[replica_idx]:
             src: dict[str, list[LittleKVCacheBlock]] = {
-                leaf_id: [] for leaf_id in self._leaf_ids
+                leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
             block_hashes: list[bytes] = []
             for block_hash in hashes:
                 if any(
                     block_hash not in pool.prefix_caches[leaf_id]
-                    for leaf_id in self._leaf_ids
+                    for leaf_id in self._cacheable_leaf_ids
                 ):
                     # Evicted from at least one leaf since it was committed, so
                     # the row is no longer whole: truncate the run here.
                     break
-                for leaf_id in self._leaf_ids:
+                for leaf_id in self._cacheable_leaf_ids:
                     block = pool.prefix_caches[leaf_id][block_hash]
                     src[leaf_id].append(block)
                 block_hashes.append(block_hash)
@@ -552,23 +572,23 @@ class JengaBlockManager:
         """
         connector = self._connector
         empty: dict[str, list[LittleKVCacheBlock]] = {
-            leaf_id: [] for leaf_id in self._leaf_ids
+            leaf_id: [] for leaf_id in self._cacheable_leaf_ids
         }
         if connector is None or not desired:
-            return 0, empty, CompletedTransfer.load(self._leaf_ids)
+            return 0, empty, CompletedTransfer.load(self._cacheable_leaf_ids)
 
         pool = self.pools[replica_idx]
 
         num_blocks_needed = {
             leaf_id: group.num_blocks_needed_for_connector_load(len(desired))
-            for group in self._groups.values()
+            for group in self._cacheable_groups
             for leaf_id in group.leaf_ids
         }
         # If there are insufficient blocks available, we will be unable to schedule
         # this request. Return zero connector cache hits and let the caller raise
         # InsufficientBlocksError after releasing all resources owned by this request.
         if not pool.can_satisfy_demand(num_blocks_needed):
-            return 0, empty, CompletedTransfer.load(self._leaf_ids)
+            return 0, empty, CompletedTransfer.load(self._cacheable_leaf_ids)
 
         staging_blocks = {
             leaf_id: [pool.alloc_block(leaf_id) for _ in range(num_blocks)]
@@ -597,7 +617,7 @@ class JengaBlockManager:
         num_loaded = unique_num_loaded.pop()
 
         # Give the surplus blocks back.
-        for leaf_id in self._leaf_ids:
+        for leaf_id in self._cacheable_leaf_ids:
             all_bids = {b.bid for b in staging_blocks[leaf_id]}
             loaded_bids = {bid for bid in event.g0_blocks_per_leaf[leaf_id]}
             unused = all_bids - loaded_bids
@@ -606,7 +626,7 @@ class JengaBlockManager:
                 pool.free_block(block)
 
         if num_loaded == 0:
-            return 0, empty, CompletedTransfer.load(self._leaf_ids)
+            return 0, empty, CompletedTransfer.load(self._cacheable_leaf_ids)
 
         logger.debug(
             f"KVConnector loaded {num_loaded} / {len(desired)} hashes. Blocks: {event.g0_blocks_per_leaf}"
@@ -862,7 +882,7 @@ class JengaBlockManager:
 
         return longest_joint_prefix_hit(
             len(desired_hashes),
-            [rule(group) for group in self._groups.values()],
+            [rule(group) for group in self._cacheable_groups],
         )
 
     def _lookup_device_prefix_cache_hit(
@@ -1016,7 +1036,7 @@ class JengaBlockManager:
         """
         # Only try to reuse blocks if the ctx is fresh (ie: no tokens are processed)
         if not self._enable_prefix_caching or ctx.tokens.processed_length != 0:
-            return CompletedTransfer.load(self._leaf_ids)
+            return CompletedTransfer.load(self._cacheable_leaf_ids)
 
         self._compute_hashes_for_request(ctx)
 
