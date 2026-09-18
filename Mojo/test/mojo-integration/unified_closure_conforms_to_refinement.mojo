@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo %s | FileCheck %s
 # RUN: %mojo %s | FileCheck %s
 
 # COM: Regression test for MOCO-4240: `where conforms_to(...)` refinement and

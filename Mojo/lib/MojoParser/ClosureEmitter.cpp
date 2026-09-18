@@ -1410,12 +1410,12 @@ ClosureEmitter::getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
           callee = BindParamsAttr::get(ctx, callee, forwardParams,
                                        &shared.getEvaluationContext());
         }
-
+        auto calleeSig = cast<FnTypeGeneratorType>(callee.getType());
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(fnName);
         assert(decls.size() == 1);
         if (failed(emitCallForwarderBody(
-                shared, callMethod, *decls.front(), callee, fnSig, result,
-                fnSig.getArguments(), /*skipFirst=*/true))) {
+                shared, callMethod, *decls.front(), callee, calleeSig, result,
+                calleeSig.getArguments(), /*skipFirst=*/true))) {
           llvm_unreachable("Internal Error: fail to forward closure call.");
         };
         addConformanceTable(
@@ -4451,7 +4451,8 @@ PValue ClosureEmitter::createParamClosureExtensionType(
          tgtSig.getInputParamTypes().size());
 
   // The generated thunk always append an extra parameter for the function.
-  assert(isEqualCanon(toConvert, thunkParams.back()));
+  assert(isEqualCanon(toConvert,
+                      ParamOperatorAttr::stripRebind(thunkParams.back())));
   thunkParams.pop_back();
 
 #ifndef MODULAR_PRODUCTION

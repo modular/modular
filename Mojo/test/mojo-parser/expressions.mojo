@@ -1272,8 +1272,7 @@ def infer_address_space[
 
   # The ref is rebound to match the `to:` parameter origin before
   # `Pointer.__init__`.
-  # CHECK: kgen.rebind %a
-  # CHECK-NEXT: lit.call {{.*}}@Pointer::@"__init__{{.*}}({{%.*}})
+  # CHECK: lit.call tail {{.*}}@Pointer::@"__init__{{.*}}({{%.*}})
   var x = Pointer(to=__get_litref_as_mvalue(a))
 
 

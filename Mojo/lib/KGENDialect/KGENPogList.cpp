@@ -257,9 +257,8 @@ SmallVector<PogMetadataAttr> PogListAttr::toPogs(
   return pogs;
 }
 
-bool PogListAttr::isConstant() const {
-  return llvm::all_of(getPogs(), ParameterAttr::isSimpleConstant);
-}
+// We can not parametrize a pog list at the moment.
+bool PogListAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
 // PogListAttr generator hooks

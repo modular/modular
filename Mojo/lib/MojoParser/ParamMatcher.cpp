@@ -717,8 +717,18 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
         if (failed(matchFunctionTypes(fnSigActual, fnSigExpected)))
           return error(MatchFailure::Unclassified{});
 
+        if (paramIndexRefDepth) {
+          // We might be at a non-zero depth, adjust it here such that rebind
+          // below works.
+          IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+          expectedType = adjuster.replace(expectedType);
+        }
         // The expected trait type might be refined.
         expectedType = state.evaluator.getReboundType(expectedType);
+        // If at this point, we still can not infer a concrete closure trait,
+        // then it is a hard error.
+        if (auto paramIdx = state.paramFinder.findOneReference(expectedType))
+          return error(MatchFailure::DependsOnUnresolved{*paramIdx});
       }
     }
   }
@@ -821,8 +831,20 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       // values that want index-based ones.  matchFunctionTypes should convert
       // the former to the latter and we should remove this redundant check for
       // implicit convertibility.
-      expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
+
       auto expectedType = getCanonicalType(expectedAttr.getType());
+      if (paramIndexRefDepth) {
+        // The match above might have inferred new value, to get a more refined
+        // type, we need to adjust the depth here.
+        //
+        // TODO: should we push it to the a new `matcher.reboundWithDepth()`,
+        // that is, every rebind should make sure the initial depth set to be
+        // paramIndexRefDepth (instead of doing this ad hoc on the callsite).
+        IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+        expectedType = adjuster.replace(expectedType);
+      }
+      expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
+      expectedType = state.evaluator.getReboundType(expectedType);
       if (IREmitter::canImplicitlyConvertToType(
               {actualAttr, expr}, expectedType, emitter.getDeclScope())) {
         actualAttr = emitter.emitPValue({actualAttr, expr}, EC_TypeParamValue,

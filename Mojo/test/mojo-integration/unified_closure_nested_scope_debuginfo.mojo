@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo -debug-level full %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 # Nested-scope capture into a unified closure must compile with full debug

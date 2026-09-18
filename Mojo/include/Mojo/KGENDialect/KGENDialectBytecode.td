@@ -357,7 +357,8 @@ def UpcastAttr : DialectAttribute<(attr
 )>;
 
 def TraitSymbolAttr : DialectAttribute<(attr
-  ConcreteAttribute<"SymbolRefAttr">:$symbol
+  ConcreteAttribute<"SymbolRefAttr">:$symbol,
+  TypedAttrArray:$paramValues
 )>;
 
 def TraitSymbolArrayAttr : DialectAttribute<(attr

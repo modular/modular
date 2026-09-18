@@ -2347,9 +2347,16 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   llvm::append_range(pogArgs, sig.getArgListAttrs().getPogs());
 
   auto traitDeclOp = cast<TraitDeclOp>(closureTraitDecl->getIfOperation());
-  return traitDeclOp.bindReference({paramDeclList, argTypeList, resultType,
-                                    metadata, PogListAttr::get(ctx, pogParams),
-                                    PogListAttr::get(ctx, pogArgs)});
+  return traitDeclOp.bindReference(
+      {paramDeclList, argTypeList, resultType, metadata,
+       PogListAttr::get(
+           ctx, pogParams,
+           /*bodyConstraints=*/{}, // Should we allow constraints on closure??
+           sig.getParamListAttrs().getOrigVariadicConvention()),
+       PogListAttr::get(
+           ctx, pogArgs,
+           /*bodyConstraints=*/{}, // Should we allow constraints on closure??
+           sig.getArgListAttrs().getOrigVariadicConvention())});
 }
 
 FnTypeGeneratorType

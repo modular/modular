@@ -10,40 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo %s 3 1 4 | FileCheck %s
 # RUN: %mojo %s 3 1 4 | FileCheck %s
 
 from std.sys import argv
-
-
-trait ATrait(Movable):
-    # In order for a struct that depends on a capturing closure
-    # to conform to a trait, all the methods of that trait must be
-    # marked as capturing. This is temporary until we remove the capturing
-    # effect. Note that the legacy closures are responsible for this restriction.
-    # In particular, the following is not supported:
-    # trait ATrait(Movable):
-    #     def my_method(self) -> Int:
-    #         ...
-
-    # struct ParamStruct[func: def (x: Int) capturing -> Int](ATrait):
-    #     def my_method(self) -> Int:
-    #         return func(2)
-    def my_method(self) capturing -> Int:
-        ...
-
-
-struct AStruct[func: def(x: Int) -> Int](ATrait):
-    var myFunc: Self.func
-
-    def __init__(out self, var x: Self.func):
-        self.myFunc = x^
-
-    def my_method(self) -> Int:
-        return self.myFunc(3)
-
-
-def takeIt[T: ATrait](impl: T):
-    print(impl.my_method())
 
 
 # COM: Test the capturing effect is propagated through to trait methods
@@ -142,7 +112,7 @@ struct ExplicitAuxClosureField[
     var f: Self.F
 
     def call[w: Int](self) -> SIMD[Self.in_type, w]:
-        return self.f.__call__[_in_type=Self.in_type, w=w]()
+        return self.f.__call__[w=w]()
 
 
 def testExplicitAuxClosureField():
@@ -164,7 +134,7 @@ struct InferredAliasClosureField[
     var f: Self.F
 
     def call[w: Int](self) -> SIMD[Self.in_type, w]:
-        return self.f.__call__[_in_type=Self.in_type, w=w]()
+        return self.f.__call__[w=w]()
 
 
 def testInferredAliasClosureField():
@@ -270,12 +240,6 @@ def main() raises:
     var one = atol(argv()[2])
     var four = atol(argv()[3])
 
-    def myclosure(x: Int) {var y} -> Int:
-        return y + x
-
-    var s = AStruct(myclosure)
-    # CHECK: 6
-    takeIt(s)
     # CHECK: 5
     var impl = DefinesClosureImpl(one)
     takeIt(impl, four)

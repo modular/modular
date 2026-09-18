@@ -28,6 +28,7 @@
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
@@ -1512,9 +1513,13 @@ createRequirementSignature(FnTypeGeneratorType signature, ASTType newSelfType,
 
   // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
   // used) not an UnboundAttr which remains an unbound parameter.
+  // NOTE: we need to adjust the depth by -1 since we are pulling out the `Self`
+  // from a parameter scope.
   ParameterEvaluator evaluator = declResolver.shared.getParameterEvaluator();
-  evaluator.appendIndexBinding(
-      UnknownAttr::get(signature.getInputParamTypes()[0]));
+  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  evaluator.appendIndexBinding(UnknownAttr::get(
+      minusOneAdjuster.replace(signature.getInputParamTypes()[0])));
+
   // Use UnboundAttr for any other parameters so they remain in the result.
   for (Type type : signature.getInputParamTypes().drop_front())
     evaluator.appendIndexBinding(

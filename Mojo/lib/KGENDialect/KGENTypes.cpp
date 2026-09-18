@@ -200,6 +200,8 @@ LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 Type TypeValueType::get(TypedAttr typeValue) {
+  // Strip extension to reveal the actual underlying type.
+  typeValue = ExtensionAttr::strip(typeValue);
   // Simply forward the value domain type from a TypeParamAttr.
   if (auto constant = dyn_cast<TypeParamAttr>(typeValue))
     return constant.getTypeValue();
