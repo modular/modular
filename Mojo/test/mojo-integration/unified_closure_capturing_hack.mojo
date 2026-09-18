@@ -46,6 +46,41 @@ def takeIt[T: ATrait](impl: T):
     print(impl.my_method())
 
 
+@no_inline
+def aThing[f: def(Int) capturing -> Int](y: Int):
+    def aClosure(z: Int) {var} -> Int:
+        return f(y)
+
+    takeIt(aClosure, y)
+
+
+@no_inline
+def itCaptures[THREE: Int](one: Int, four: Int):
+    @__parameter
+    def aParam(z: Int) -> Int:
+        return THREE + four + z
+
+    aThing[aParam](one)
+
+    # COM: Ensure nesting in legacy closure does not corrupt the symbol calculation
+    comptime if THREE == 3:
+
+        @__copy_capture(one, four)
+        @__parameter
+        def aParam2(zz: Int) -> Int:
+            def thing(z: Int) {var zz} -> Int:
+                return zz
+
+            takeIt(thing, four)
+            return one + one
+
+        aThing[aParam2](one)
+
+
+def takeIt[f: ImplicitlyCopyable & def(z: Int) -> Int](impl: f, y: Int):
+    print(impl(y))
+
+
 def main() raises:
     var y: Int = atol(argv()[1])
     var one = atol(argv()[2])
@@ -57,3 +92,8 @@ def main() raises:
     var s = AStruct(myclosure)
     # CHECK: 6
     takeIt(s)
+
+    # CHECK: 8
+    # CHECK: 1
+    # CHECK: 2
+    itCaptures[3](one, four)
