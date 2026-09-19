@@ -23,8 +23,12 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
     BatchProcessor,
+    BatchProcessorRuntime,
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
@@ -44,6 +48,14 @@ class Gemma4BatchProcessor(
     """Ragged batching with optional vision inputs for Gemma4 models."""
 
     _config: Gemma4ForConditionalGenerationConfig | None = None
+
+    def __init__(
+        self,
+        config: ArchConfig,
+        runtime: BatchProcessorRuntime,
+    ) -> None:
+        super().__init__(config, runtime)
+        self._declare_ragged_token_inputs()
 
     def bind_model_state(
         self,
@@ -107,16 +119,14 @@ class Gemma4BatchProcessor(
             dtype=DType.uint32, shape=(batch_size + 1,), device=dev
         )
 
-        device_tokens = self._device_input_allocator.alloc(
-            name="ragged_input_tokens",
-            dtype=DType.int64,
+        device_tokens = self._device_inputs.view(
+            name=RAGGED_INPUT_TOKENS,
             shape=(total_seq_len,),
             device=dev,
         )
         device_row_offsets = [
-            self._device_input_allocator.alloc(
-                name="ragged_input_row_offsets",
-                dtype=DType.uint32,
+            self._device_inputs.view(
+                name=RAGGED_INPUT_ROW_OFFSETS,
                 shape=(batch_size + 1,),
                 device=device,
             )

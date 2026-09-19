@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """EAGLE speculative decoding draft model for Llama 3 with unified graph compilation."""
 
-from max.pipelines.lib.interfaces.batch_processor import PersistentInputBuffers
-
 from .arch import unified_eagle_llama3_arch
 from .model import (
     UnifiedEagleLlama3Inputs,
@@ -22,7 +20,6 @@ from .model import (
 from .model_config import UnifiedEagleLlama3Config
 
 __all__ = [
-    "PersistentInputBuffers",
     "UnifiedEagleLlama3Config",
     "UnifiedEagleLlama3Inputs",
     "UnifiedEagleLlama3Model",

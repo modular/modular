@@ -26,6 +26,8 @@ from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
     BatchProcessorRuntime,
     SingleReplicaRaggedBatchProcessor,
     single_replica_context_batch,
@@ -38,6 +40,9 @@ from max.pipelines.lib.vision_batching import (
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 
 from .model_config import InklingConfig
+
+_TOKEN_POSITIONS = "token_positions"
+"""Device input holding each token's position within its own sequence."""
 
 
 @dataclass
@@ -91,6 +96,12 @@ class InklingBatchProcessor(
         self._signal_buffers = list(runtime.signal_buffers)
         self._return_n_logits_buffers: dict[int, Buffer] = {}
         self._no_images: tuple[Buffer, Buffer] | None = None
+        # One position per token, so the token stream's bound covers it too.
+        self._device_inputs.declare(
+            name=_TOKEN_POSITIONS,
+            dtype=DType.uint32,
+            max_shape=(runtime.max_batch_active_tokens,),
+        )
 
     def bind_runtime_state(self, vision_model: Model) -> None:
         """Hands over what only exists once the model is compiled and loaded."""
@@ -212,13 +223,12 @@ class InklingBatchProcessor(
 
         staged = []
         for name, host in (
-            ("ragged_input_tokens", host_tokens),
-            ("ragged_input_row_offsets", host_row_offsets),
-            ("token_positions", host_positions),
+            (RAGGED_INPUT_TOKENS, host_tokens),
+            (RAGGED_INPUT_ROW_OFFSETS, host_row_offsets),
+            (_TOKEN_POSITIONS, host_positions),
         ):
-            device_buffer = self._device_input_allocator.alloc(
+            device_buffer = self._device_inputs.view(
                 name=name,
-                dtype=host.dtype,
                 shape=tuple(host.shape),
                 device=device0,
             )

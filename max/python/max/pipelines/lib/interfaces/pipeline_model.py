@@ -447,11 +447,15 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                     pipeline_config=pipeline_config,
                     devices=devices,
                     return_logits=return_logits,
+                    max_batch_size=self.max_batch_size,
+                    max_seq_len=self.max_seq_len,
+                    max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+                    enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
+                    data_parallel_degree=pipeline_config.model.data_parallel_degree,
                     return_hidden_states=return_hidden_states,
                     signal_buffers=self.signal_buffers,
                     lora_manager=self._lora_manager,
                     pad_token_id=pad_token_id or 0,
-                    max_batch_size=self.max_batch_size,
                 ),
             )
 

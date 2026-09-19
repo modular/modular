@@ -27,6 +27,8 @@ from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
     BatchProcessorRuntime,
     InputsT,
     RaggedBatchProcessor,
@@ -96,15 +98,13 @@ class Llama3BatchProcessorBase(RaggedBatchProcessor[TextContext, InputsT]):
             # host buffers directly.
             return host_tokens, host_row_offsets, host_row_offsets
 
-        device_tokens = self._device_input_allocator.alloc(
-            name="ragged_input_tokens",
-            dtype=DType.int64,
+        device_tokens = self._device_inputs.view(
+            name=RAGGED_INPUT_TOKENS,
             shape=(total_seq_len,),
             device=device0,
         )
-        device_row_offsets = self._device_input_allocator.alloc(
-            name="ragged_input_row_offsets",
-            dtype=DType.uint32,
+        device_row_offsets = self._device_inputs.view(
+            name=RAGGED_INPUT_ROW_OFFSETS,
             shape=(batch_size + 1,),
             device=device0,
         )
