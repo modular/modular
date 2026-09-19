@@ -59,8 +59,9 @@ The following is a non-exhaustive list of changes we don't accept:
 - Changes where contributors aren't responsive.
 - Adding an entire new module without going through the proposal process.
 
-If you're interested in making a more significant change, start with the
-[proposal process](proposal-process.md).
+If you're interested in making a more significant change to the standard
+library, start with the
+[standard library proposal process](stdlib/proposal-process.md).
 
 For technical details on developing for the standard library, see the following
 documents:

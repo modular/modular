@@ -13,7 +13,6 @@
         },
         "contribution-areas",
         "contribution-process",
-        "proposal-process",
         "issue-pr-etiquette",
         "faq",
         {
@@ -22,6 +21,7 @@
           "className": "sidebar-heading",
           "collapsed": false,
           "items": [
+            "stdlib/proposal-process",
             "stdlib/stdlib-development",
             "stdlib/stdlib-code-style",
             "stdlib/docstring-style-guide",

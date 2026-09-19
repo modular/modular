@@ -66,8 +66,8 @@ the review it deserves. The best way to make both of those things happen is
 to talk with us *before* you start writing code.
 
 For anything beyond a small, obvious fix, please open a GitHub issue (or, for
-larger changes, a
-[proposal](Mojo/docs/contributing/proposal-process.md))
+larger standard library changes, a [standard library
+proposal](Mojo/docs/contributing/stdlib/proposal-process.md))
 that describes the problem you're solving and the approach you have in mind. A
 maintainer will respond to let you know whether the change aligns with where
 we're headed, suggest alternatives, or flag anything you should know before
