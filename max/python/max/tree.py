@@ -614,7 +614,13 @@ def flatten(
         finally:
             tracker.end_descent(value)
 
-    return flat, walk(tree, "")
+    try:
+        return flat, walk(tree, "")
+    finally:
+        # ``walk`` recurses through its own closure cell and closes over
+        # ``flat``, so without this the cycle pins every leaf until a gc
+        # pass; a leaf backed by device memory cannot wait for one.
+        del walk
 
 
 def unflatten(
@@ -861,8 +867,12 @@ def nodes(
         finally:
             tracker.end_descent(value)
 
-    visit(tree, "")
-    return found
+    try:
+        visit(tree, "")
+        return found
+    finally:
+        # Same self-referencing closure as ``flatten``'s walk.
+        del visit
 
 
 # ─── transform ──────────────────────────────────────────────────────────────
@@ -990,11 +1000,16 @@ def update(
                 _place_child(value, key, new)
         return value
 
-    result = visit(tree, "")
-    if unwritten:
-        raise ValueError(
-            "update: no leaf at "
-            f"{sorted(_path_or_root(path) for path in unwritten)}, so these "
-            "values were not written. Check them against paths(tree)."
-        )
-    return result
+    try:
+        result = visit(tree, "")
+        if unwritten:
+            raise ValueError(
+                "update: no leaf at "
+                f"{sorted(_path_or_root(path) for path in unwritten)}, so "
+                "these values were not written. Check them against "
+                "paths(tree)."
+            )
+        return result
+    finally:
+        # Same self-referencing closure as ``flatten``'s walk.
+        del visit

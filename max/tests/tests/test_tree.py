@@ -24,7 +24,7 @@ from __future__ import annotations
 import gc
 import weakref
 from collections import OrderedDict, defaultdict, namedtuple
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
 from types import MappingProxyType
 from typing import Any, NamedTuple
@@ -939,6 +939,45 @@ def test_unflatten_releases_its_leaves_without_a_gc_pass() -> None:
         unflatten(treedef, [leaf])  # the rebuilt tree is discarded
         del leaf
         assert dropped() is None, "a leaf outlived the call that rebuilt it"
+    finally:
+        gc.enable()
+
+
+def _walk_leaves(leaf: object) -> object:
+    return leaves([leaf, {"a": leaf}])
+
+
+def _walk_flatten(leaf: object) -> object:
+    return flatten([leaf, (leaf,)])
+
+
+def _walk_nodes(leaf: object) -> object:
+    return nodes([leaf, [leaf]], node_type=list)
+
+
+def _walk_update(leaf: object) -> object:
+    return update([leaf, {"a": leaf}], {"0": leaf, "1.a": leaf})
+
+
+@pytest.mark.parametrize(
+    "walk", [_walk_leaves, _walk_flatten, _walk_nodes, _walk_update]
+)
+def test_walks_release_their_leaves_without_a_gc_pass(
+    walk: Callable[[object], object],
+) -> None:
+    """Every recursive walk closes over its own cell; none may pin a leaf."""
+
+    class Leaf:
+        pass
+
+    leaf = Leaf()
+    dropped = weakref.ref(leaf)
+
+    gc.disable()
+    try:
+        walk(leaf)
+        del leaf
+        assert dropped() is None, "a leaf outlived the walk that visited it"
     finally:
         gc.enable()
 
