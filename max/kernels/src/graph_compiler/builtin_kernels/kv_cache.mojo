@@ -512,10 +512,9 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         )
 
         @inline(.always)
-        @__parameter
         def q_input_fn[
             width: Int, alignment: Int
-        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+        ](token: Int, head: Int, col: Int) {var q_proj} -> SIMD[dtype, width]:
             return q_proj._fused_load[width=width, element_alignment=alignment](
                 IndexList[3](token, head, col)
             )
@@ -524,9 +523,9 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
-            q_input_fn=q_input_fn,
         ](
             kv_collection,
+            q_input_fn,
             q_gamma.to_tile_tensor[.int64](),
             k_gamma.to_tile_tensor[.int64](),
             freqs_cis.to_tile_tensor[.int64](),
@@ -620,19 +619,21 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         )
 
         @inline(.always)
-        @__parameter
         def main_q_input_fn[
             width: Int, alignment: Int
-        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+        ](token: Int, head: Int, col: Int) {var q_main_proj} -> SIMD[
+            dtype, width
+        ]:
             return q_main_proj._fused_load[
                 width=width, element_alignment=alignment
             ](IndexList[3](token, head, col))
 
         @inline(.always)
-        @__parameter
         def index_q_input_fn[
             width: Int, alignment: Int
-        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+        ](token: Int, head: Int, col: Int) {var q_index_proj} -> SIMD[
+            dtype, width
+        ]:
             return q_index_proj._fused_load[
                 width=width, element_alignment=alignment
             ](IndexList[3](token, head, col))
@@ -641,8 +642,6 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
             target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
-            main_q_input_fn=main_q_input_fn,
-            index_q_input_fn=index_q_input_fn,
         ](
             main_kv_collection,
             index_kv_collection,
@@ -656,6 +655,8 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
             weight_offset,
             layer_idx,
             input_row_offsets.to_tile_tensor[.int64](),
+            main_q_input_fn,
+            index_q_input_fn,
             q_main_output.to_tile_tensor[.int64](),
             q_index_output.to_tile_tensor[.int64](),
             context,

@@ -346,20 +346,20 @@ def bench_fused_qk_rms_norm_rope[
             var q_src = q_fused_tile.as_immut()
 
             @inline(.always)
-            @__parameter
-            @__copy_capture(q_src)
             def q_input_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_src.load[width=width](Coord(Index(token, head, col)))
 
             fused_qk_rms_norm_rope_ragged_paged[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
-                q_input_fn=q_input_fn,
             ](
                 kv_fused,
+                q_input_fn,
                 gamma_q_tile.as_immut(),
                 gamma_k_tile.as_immut(),
                 freqs_tile.as_immut(),

@@ -395,21 +395,21 @@ def bench_fused_qkv_index_rms_norm_rope[
             ).as_immut()
 
             @inline(.always)
-            @__parameter
-            @__copy_capture(q_main_src)
             def q_main_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_main_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
 
             @inline(.always)
-            @__parameter
-            @__copy_capture(q_index_src)
             def q_index_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_index_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
@@ -418,9 +418,9 @@ def bench_fused_qkv_index_rms_norm_rope[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
-                q_input_fn=q_main_fn,
             ](
                 main_kv,
+                q_main_fn,
                 gamma_q_main_tile.as_immut(),
                 gamma_k_main_tile.as_immut(),
                 freqs_tile.as_immut(),
@@ -435,9 +435,9 @@ def bench_fused_qkv_index_rms_norm_rope[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
-                q_input_fn=q_index_fn,
             ](
                 index_kv,
+                q_index_fn,
                 gamma_q_index_tile.as_immut(),
                 gamma_k_index_tile.as_immut(),
                 freqs_tile.as_immut(),
@@ -520,21 +520,21 @@ def bench_fused_qkv_index_rms_norm_rope[
             ).as_immut()
 
             @inline(.always)
-            @__parameter
-            @__copy_capture(q_main_src)
             def q_main_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_main_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
 
             @inline(.always)
-            @__parameter
-            @__copy_capture(q_index_src)
             def q_index_fn[
                 width: Int, alignment: Int
-            ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
+                dtype, width
+            ]:
                 return q_index_src.load[width=width](
                     Coord(Index(token, head, col))
                 )
@@ -547,8 +547,6 @@ def bench_fused_qkv_index_rms_norm_rope[
                 target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
-                main_q_input_fn=q_main_fn,
-                index_q_input_fn=q_index_fn,
             ](
                 main_kv,
                 index_kv,
@@ -562,6 +560,8 @@ def bench_fused_qkv_index_rms_norm_rope[
                 Scalar[dtype](weight_offset),
                 UInt32(layer_idx),
                 row_offsets_tile.as_immut(),
+                q_main_fn,
+                q_index_fn,
                 q_main_out_fused_tile,
                 q_index_out_fused_tile,
                 ctx,

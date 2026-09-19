@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import unswitch
+from std.builtin.device_passable import DevicePassable
 from std.math import ceildiv, min
 from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
@@ -901,10 +902,11 @@ def _fused_qk_rms_norm_rope_process_row[
     dtype: DType,
     q_out_dtype: DType,
     freq_dtype: DType,
+    QInputFnType: ImplicitlyCopyable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
     //,
-    q_input_fn: def[width: Int, alignment: Int](
-        token: Int, head: Int, col: Int
-    ) capturing -> SIMD[dtype, width],
     simd_width: Int,
     warps_per_block: Int,
     multiply_before_cast: Bool,
@@ -930,6 +932,7 @@ def _fused_qk_rms_norm_rope_process_row[
     ],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
+    q_input_fn: QInputFnType,
     input_row_offsets: TileTensor[
         .uint32, offsets_layout, offsets_origin, Engine=offsets_engine
     ],
@@ -1129,10 +1132,13 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     dtype: DType,
     q_out_dtype: DType,
     freq_dtype: DType,
+    QInputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
     //,
-    q_input_fn: def[width: Int, alignment: Int](
-        token: Int, head: Int, col: Int
-    ) capturing -> SIMD[dtype, width],
     simd_width: Int,
     warps_per_block: Int,
     multiply_before_cast: Bool,
@@ -1161,6 +1167,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     ],
     q_num_heads: Int32,
     num_cols: Int32,
+    q_input_fn: QInputFnType,
 ):
     var _q_num_heads = Int(q_num_heads)
     var _num_cols = Int(num_cols)
@@ -1186,7 +1193,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         global_token_idx, head_idx = divmod(combined_row, _q_num_heads)
 
     _fused_qk_rms_norm_rope_process_row[
-        q_input_fn,
         simd_width,
         warps_per_block,
         multiply_before_cast,
@@ -1204,6 +1210,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         freqs_cis,
         epsilon,
         Scalar[dtype](weight_offset),
+        q_input_fn,
         input_row_offsets,
         _num_cols,
     )
@@ -1217,13 +1224,16 @@ def fused_qk_rms_norm_rope_ragged_paged[
     params: KVCacheStaticParams,
     page_size: Int,
     cache_dtype: DType,
+    QInputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
     //,
     target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
-    q_input_fn: def[width: Int, alignment: Int](
-        token: Int, head: Int, col: Int
-    ) capturing -> SIMD[dtype, width],
 ](
     kv_collection: PagedKVCacheCollection[
         cache_dtype,
@@ -1231,6 +1241,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
         page_size,
         ...,
     ],
+    q_input_fn: QInputFnType,
     q_gamma: TileTensor[mut=False, dtype, ...],
     k_gamma: TileTensor[mut=False, dtype, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
@@ -1375,7 +1386,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             dtype=dtype,
             q_out_dtype=q_out_dtype,
             freq_dtype=freq_dtype,
-            q_input_fn,
+            QInputFnType=type_of(q_input_fn),
             simd_width,
             warps_per_block,
             multiply_before_cast,
@@ -1395,6 +1406,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             input_row_offsets,
             Int32(q_num_heads),
             Int32(cols),
+            host_arg=q_input_fn,
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -1434,13 +1446,19 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     q_main_out_dtype: DType,
     q_index_out_dtype: DType,
     freq_dtype: DType,
+    MainQInputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    IndexQInputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
     //,
-    main_q_input_fn: def[width: Int, alignment: Int](
-        token: Int, head: Int, col: Int
-    ) capturing -> SIMD[dtype, width],
-    index_q_input_fn: def[width: Int, alignment: Int](
-        token: Int, head: Int, col: Int
-    ) capturing -> SIMD[dtype, width],
     simd_width: Int,
     warps_per_block: Int,
     multiply_before_cast: Bool,
@@ -1499,6 +1517,8 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     q_main_num_heads_dev: Int32,
     q_index_num_heads_dev: Int32,
     num_cols_dev: Int32,
+    main_q_input_fn: MainQInputFnType,
+    index_q_input_fn: IndexQInputFnType,
 ):
     var q_main_num_heads = Int(q_main_num_heads_dev)
     var q_index_num_heads = Int(q_index_num_heads_dev)
@@ -1527,7 +1547,6 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             global_token_idx, head_idx = divmod(combined_row, q_main_num_heads)
 
         _fused_qk_rms_norm_rope_process_row[
-            main_q_input_fn,
             simd_width,
             warps_per_block,
             multiply_before_cast,
@@ -1545,6 +1564,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             freqs_cis,
             main_epsilon,
             Scalar[dtype](weight_offset),
+            main_q_input_fn,
             input_row_offsets,
             num_cols,
         )
@@ -1561,7 +1581,6 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             global_token_idx, head_idx = divmod(idx_row, q_index_num_heads)
 
         _fused_qk_rms_norm_rope_process_row[
-            index_q_input_fn,
             simd_width,
             warps_per_block,
             multiply_before_cast,
@@ -1579,6 +1598,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             freqs_cis,
             index_epsilon,
             Scalar[dtype](weight_offset),
+            index_q_input_fn,
             input_row_offsets,
             num_cols,
         )
@@ -1596,16 +1616,22 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     index_params: KVCacheStaticParams,
     index_page_size: Int,
     index_cache_dtype: DType,
+    MainQInputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    IndexQInputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
     //,
     target: StaticString,
     multiply_before_cast: Bool,
     interleaved: Bool,
-    main_q_input_fn: def[width: Int, alignment: Int](
-        token: Int, head: Int, col: Int
-    ) capturing -> SIMD[dtype, width],
-    index_q_input_fn: def[width: Int, alignment: Int](
-        token: Int, head: Int, col: Int
-    ) capturing -> SIMD[dtype, width],
 ](
     main_kv_collection: PagedKVCacheCollection[
         main_cache_dtype,
@@ -1629,6 +1655,8 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
+    main_q_input_fn: MainQInputFnType,
+    index_q_input_fn: IndexQInputFnType,
     q_main_output: TileTensor[mut=True, q_main_out_dtype, ...],
     q_index_output: TileTensor[mut=True, q_index_out_dtype, ...],
     context: DeviceContext,
@@ -1817,8 +1845,8 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             q_main_out_dtype=q_main_out_dtype,
             q_index_out_dtype=q_index_out_dtype,
             freq_dtype=freq_dtype,
-            main_q_input_fn,
-            index_q_input_fn,
+            MainQInputFnType=type_of(main_q_input_fn),
+            IndexQInputFnType=type_of(index_q_input_fn),
             simd_width,
             warps_per_block,
             multiply_before_cast,
@@ -1844,6 +1872,8 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             Int32(q_main_num_heads),
             Int32(q_index_num_heads),
             Int32(cols),
+            host_arg=main_q_input_fn,
+            host_arg2=index_q_input_fn,
             grid_dim=rows,
             block_dim=block_dim_value,
         )

@@ -347,20 +347,18 @@ def run_fused_qk_rms_norm_rope[
     )
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(q_in_tt)
     def q_input_fn[
         width: Int, alignment: Int
-    ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+    ](token: Int, head: Int, col: Int) {var q_in_tt} -> SIMD[dtype, width]:
         return q_in_tt.load[width=width](Coord(Index(token, head, col)))
 
     fused_qk_rms_norm_rope_ragged_paged[
         target="gpu",
         multiply_before_cast=True,
         interleaved=False,
-        q_input_fn=q_input_fn,
     ](
         fused_collection,
+        q_input_fn,
         gamma_q_tt,
         gamma_k_tt,
         freqs_tt,
@@ -850,19 +848,18 @@ def run_fused_dual_qk_rms_norm_rope[
     )
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(q_main_in_tt)
+    @inline(.always)
     def main_q_input_fn[
         width: Int, alignment: Int
-    ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+    ](token: Int, head: Int, col: Int) {var q_main_in_tt} -> SIMD[dtype, width]:
         return q_main_in_tt.load[width=width](Coord(Index(token, head, col)))
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(q_index_in_tt)
     def index_q_input_fn[
         width: Int, alignment: Int
-    ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+    ](token: Int, head: Int, col: Int) {var q_index_in_tt} -> SIMD[
+        dtype, width
+    ]:
         return q_index_in_tt.load[width=width](Coord(Index(token, head, col)))
 
     # Reference: two separate single-kernel launches.
@@ -870,9 +867,9 @@ def run_fused_dual_qk_rms_norm_rope[
         target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
-        q_input_fn=main_q_input_fn,
     ](
         main_ref_collection,
+        main_q_input_fn,
         gamma_main_q_tt,
         gamma_main_k_tt,
         freqs_tt,
@@ -887,9 +884,9 @@ def run_fused_dual_qk_rms_norm_rope[
         target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
-        q_input_fn=index_q_input_fn,
     ](
         index_ref_collection,
+        index_q_input_fn,
         gamma_index_q_tt,
         gamma_index_k_tt,
         freqs_tt,
@@ -906,8 +903,6 @@ def run_fused_dual_qk_rms_norm_rope[
         target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
-        main_q_input_fn=main_q_input_fn,
-        index_q_input_fn=index_q_input_fn,
     ](
         main_fused_collection,
         index_fused_collection,
@@ -921,6 +916,8 @@ def run_fused_dual_qk_rms_norm_rope[
         Scalar[dtype](weight_offset),
         UInt32(layer_idx),
         row_offsets_tt,
+        main_q_input_fn,
+        index_q_input_fn,
         q_main_fused_tt,
         q_index_fused_tt,
         ctx,
@@ -1062,9 +1059,9 @@ def run_fused_dual_qk_rms_norm_rope[
         target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
-        q_input_fn=main_q_input_fn,
     ](
         main_ref_collection,
+        main_q_input_fn,
         gamma_main_q_tt,
         gamma_main_k_tt,
         freqs_tt,
@@ -1079,8 +1076,6 @@ def run_fused_dual_qk_rms_norm_rope[
         target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
-        main_q_input_fn=main_q_input_fn,
-        index_q_input_fn=index_q_input_fn,
     ](
         main_fused_collection,
         index_fused_collection,
@@ -1094,6 +1089,8 @@ def run_fused_dual_qk_rms_norm_rope[
         Scalar[dtype](weight_offset),
         UInt32(layer_idx),
         row_offsets_tt,
+        main_q_input_fn,
+        index_q_input_fn,
         q_main_dual_fp8_tt,
         q_index_fused_tt,
         ctx,

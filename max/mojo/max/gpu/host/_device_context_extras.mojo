@@ -464,7 +464,7 @@ __extension DeviceContext:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         Host: RegisterPassable,
         *encoded_types: DevicePassable,
         link_options: StaticString = "",
@@ -485,7 +485,7 @@ __extension DeviceContext:
         func_attribute: OptionalReg[FuncAttribute] = None,
         location: Optional[SourceLocation] = None,
     ) raises:
-        """Compiles and enqueues a kernel, encoding `DevicePassable` args and
+        """Compiles and enqueues a capturing kernel, encoding `DevicePassable` args and
         passing the trailing host argument by host layout.
 
         Put capturing closures in `host_arg`. The named kernel is compiled
@@ -569,7 +569,7 @@ __extension DeviceContext:
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         Host0: RegisterPassable,
         Host1: RegisterPassable,
         *encoded_types: DevicePassable,
@@ -592,7 +592,7 @@ __extension DeviceContext:
         func_attribute: OptionalReg[FuncAttribute] = None,
         location: Optional[SourceLocation] = None,
     ) raises:
-        """Compiles and enqueues a kernel, encoding `DevicePassable` args and
+        """Compiles and enqueues a capturing kernel, encoding `DevicePassable` args and
         passing two trailing host arguments by host layout.
 
         Put capturing closures in `host_arg` and `host_arg2`. The named kernel is compiled
