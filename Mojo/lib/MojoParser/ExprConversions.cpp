@@ -2599,7 +2599,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
   // If the value is a t-string, convert it to String first. TString cannot be
   // implicitly converted to StringSpan, but String has an explicit constructor
   // that accepts TString.
-  if (isa<TStringExprNode>(expr)) {
+  if (isa<TStringExprNode>(expr->getWithoutParens())) {
     auto stringType = shared.lookupBuiltinType("String", declScope, loc)
                           .getWithoutParameters(shared);
     if (val.getType().getDecl(shared) != stringType.getDecl(shared)) {
