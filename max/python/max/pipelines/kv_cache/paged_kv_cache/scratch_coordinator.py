@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from max.pipelines.context import TextContext
@@ -48,23 +48,11 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Returns nothing: this group's block is never published."""
         return ()
 
-    def longest_hit(
-        self, num_hashes: int, is_cached: Callable[[int], bool]
-    ) -> int:
-        """Returns the whole run, leaving the length to the groups that cache.
-
-        The manager settles a prefix by having every group accept it in turn,
-        so a group with no opinion has to accept whatever the others agree
-        on. It is excluded from that cycle as well, which makes this
-        unreachable rather than merely harmless.
-        """
-        return num_hashes
-
     def claim_hit_blocks(
         self, desired_hashes: Sequence[bytes], replica_idx: int
     ) -> dict[str, list[LittleKVCacheBlock]]:
         """Returns empty rows: a hit leaves this group nothing to take."""
-        return {leaf_id: [] for leaf_id in self.leaf_ids}
+        return {self.leaf_id: []}
 
     def _num_blocks_to_allocate(
         self, row: Sequence[LittleKVCacheBlock], num_required_blocks: int
@@ -79,11 +67,11 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         pool = self.pools[replica_idx]
         drawn: dict[str, LittleKVCacheBlock] = {}
         try:
-            for leaf_id in self.leaf_ids:
-                if self._num_blocks_to_allocate(
-                    self.rows[req_id][leaf_id], num_required_blocks
-                ):
-                    drawn[leaf_id] = pool.alloc_block(leaf_id)
+            leaf_id = self.leaf_id
+            if self._num_blocks_to_allocate(
+                self.rows[req_id][leaf_id], num_required_blocks
+            ):
+                drawn[leaf_id] = pool.alloc_block(leaf_id)
         except InsufficientBlocksError:
             for block in drawn.values():
                 pool.free_block(block)
@@ -99,8 +87,7 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Points the row at one null block, however long the dummy is."""
         pool = self.pools[replica_idx]
         self.rows[req_id] = {
-            leaf_id: [pool.null_little_blocks[leaf_id]]
-            for leaf_id in self.leaf_ids
+            self.leaf_id: [pool.null_little_blocks[self.leaf_id]]
         }
 
     def shrink_to_fit(
@@ -134,17 +121,15 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         self, batch: Sequence[TextContext], num_blocks: Sequence[int]
     ) -> dict[str, list[list[int]]]:
         """Returns the one block each request's scratch lives in."""
-        plans: dict[str, list[list[int]]] = {
-            leaf_id: [] for leaf_id in self.leaf_ids
-        }
+        plans: dict[str, list[list[int]]] = {self.leaf_id: []}
         for ctx in batch:
             row = self.rows[ctx.request_id]
-            for leaf_id in self.leaf_ids:
-                blocks = row[leaf_id]
-                if not blocks:
-                    raise ValueError(
-                        f"{ctx.request_id} has no {leaf_id!r} block; alloc"
-                        " must run before its inputs are built"
-                    )
-                plans[leaf_id].append([blocks[0].bid])
+            leaf_id = self.leaf_id
+            blocks = row[leaf_id]
+            if not blocks:
+                raise ValueError(
+                    f"{ctx.request_id} has no {leaf_id!r} block; alloc"
+                    " must run before its inputs are built"
+                )
+            plans[leaf_id].append([blocks[0].bid])
         return plans

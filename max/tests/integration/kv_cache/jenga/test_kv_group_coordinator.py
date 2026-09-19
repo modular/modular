@@ -30,6 +30,7 @@ from max.pipelines.kv_cache.paged_kv_cache.kv_group_coordinator import (
     KVGroupCoordinatorInterface,
     SlidingWindowKVGroupCoordinator,
 )
+from max.pipelines.kv_cache.prefix_hit import longest_joint_prefix_hit
 from max.pipelines.request.base import RequestID
 
 BLOCK_SIZE = 4
@@ -71,30 +72,30 @@ def commit(
 
 
 def full_group_across(
-    pools: Sequence[JengaBlockPool], leaf_ids: Sequence[str] = (VALUES,)
+    pools: Sequence[JengaBlockPool], leaf_id: str = VALUES
 ) -> KVGroupCoordinatorInterface:
-    """A full group whose pools are one per data-parallel replica."""
+    """A full leaf's coordinator, with one pool per data-parallel replica."""
     return create_kv_group_coordinator(
-        list(pools), list(leaf_ids), KVCacheGroupId.full(), BLOCK_SIZE
+        list(pools), leaf_id, KVCacheGroupId.full(), BLOCK_SIZE
     )
 
 
 def full_group(
-    pool: JengaBlockPool, leaf_ids: Sequence[str] = (VALUES,)
+    pool: JengaBlockPool, leaf_id: str = VALUES
 ) -> KVGroupCoordinatorInterface:
-    return full_group_across([pool], leaf_ids)
+    return full_group_across([pool], leaf_id)
 
 
 def sliding_group_across(
     pools: Sequence[JengaBlockPool],
     window: int = WINDOW,
     block_size: int = BLOCK_SIZE,
-    leaf_ids: Sequence[str] = (VALUES,),
+    leaf_id: str = VALUES,
 ) -> KVGroupCoordinatorInterface:
-    """A sliding group whose pools are one per data-parallel replica."""
+    """A sliding leaf's coordinator, one pool per data-parallel replica."""
     return create_kv_group_coordinator(
         list(pools),
-        list(leaf_ids),
+        leaf_id,
         KVCacheGroupId("sliding_window", window),
         block_size,
     )
@@ -104,9 +105,16 @@ def sliding_group(
     pool: JengaBlockPool,
     window: int = WINDOW,
     block_size: int = BLOCK_SIZE,
-    leaf_ids: Sequence[str] = (VALUES,),
+    leaf_id: str = VALUES,
 ) -> KVGroupCoordinatorInterface:
-    return sliding_group_across([pool], window, block_size, leaf_ids)
+    return sliding_group_across([pool], window, block_size, leaf_id)
+
+
+def joint(keys: Sequence[bytes], *groups: KVGroupCoordinatorInterface) -> int:
+    """What the given leaves agree they can serve, the way the manager asks."""
+    return longest_joint_prefix_hit(
+        [(g.group_id, g.residency(keys, 0)) for g in groups], BLOCK_SIZE
+    )
 
 
 def with_row(
@@ -114,8 +122,8 @@ def with_row(
 ) -> tuple[RequestID, list[LittleKVCacheBlock]]:
     """Seeds one request's row and returns the list the group mutates."""
     req_id = RequestID()
-    group.rows[req_id] = {leaf_id: list(blocks) for leaf_id in group.leaf_ids}
-    return req_id, group.rows[req_id][group.leaf_ids[0]]
+    group.rows[req_id] = {group.leaf_id: list(blocks)}
+    return req_id, group.rows[req_id][group.leaf_id]
 
 
 def bids(blocks: Sequence[LittleKVCacheBlock]) -> list[int]:
@@ -160,16 +168,23 @@ def test_sliding_connector_load_staging_is_capped_to_its_window(
 
 
 def test_a_hash_is_present_only_when_every_leaf_holds_it() -> None:
-    """The leaves are written together, so a half-present block is unusable."""
+    """The leaves are written together, so a half-present block is unusable.
+
+    Each leaf has its own coordinator, so this is the JOINT hit's job: one
+    leaf holding a block the other does not must not read as a hit.
+    """
     pool = make_pool()
     keys = block_keys(2)
-    group = full_group(pool, [VALUES, SCALES])
+    values, scales = full_group(pool, VALUES), full_group(pool, SCALES)
 
     commit(pool, [VALUES], keys)
-    assert group.find_replica_with_hash(keys[0], 0) is None
+    assert values.find_replica_with_hash(keys[0], 0) == 0
+    assert scales.find_replica_with_hash(keys[0], 0) is None
+    assert joint(keys, values, scales) == 0
 
     commit(pool, [SCALES], keys)
-    assert group.find_replica_with_hash(keys[0], 0) == 0
+    assert scales.find_replica_with_hash(keys[0], 0) == 0
+    assert joint(keys, values, scales) == 2
 
 
 def test_full_hit_is_the_run_from_the_root() -> None:
@@ -187,7 +202,7 @@ def test_full_hit_stops_at_the_first_gap() -> None:
     commit(pool, [VALUES, SCALES], keys)
     pool.uncommit_block(pool.prefix_caches[SCALES][keys[2]])
 
-    assert full_group(pool, [VALUES, SCALES]).longest_cache_hit(keys, 0) == 2
+    assert joint(keys, full_group(pool, VALUES), full_group(pool, SCALES)) == 2
 
 
 def test_full_claim_adopts_the_whole_prefix() -> None:
@@ -195,7 +210,10 @@ def test_full_claim_adopts_the_whole_prefix() -> None:
     keys = block_keys(3)
     commit(pool, [VALUES, SCALES], keys)
 
-    rows = full_group(pool, [VALUES, SCALES]).claim_hit_blocks(keys, 0)
+    # One coordinator per leaf, so the caller splices their rows together.
+    rows = {}
+    for leaf_id in (VALUES, SCALES):
+        rows.update(full_group(pool, leaf_id).claim_hit_blocks(keys, 0))
 
     for leaf_id in (VALUES, SCALES):
         assert bids(rows[leaf_id]) == [
@@ -385,12 +403,12 @@ def test_advance_stops_at_the_first_null() -> None:
 
 
 def test_only_the_group_leaves_are_touched() -> None:
-    """A coordinator reads and writes its own group's caches, nothing else."""
+    """A coordinator reads and writes its own leaf's cache, nothing else."""
     pool = make_pool()
     keys = block_keys(3)
     commit(pool, [VALUES, SCALES], keys)
 
-    rows = full_group(pool, [VALUES]).claim_hit_blocks(keys, 0)
+    rows = full_group(pool, VALUES).claim_hit_blocks(keys, 0)
 
     assert set(rows) == {VALUES}
     assert all(pool.prefix_caches[SCALES][key].ref_cnt == 0 for key in keys)

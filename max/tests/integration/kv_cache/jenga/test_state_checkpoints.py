@@ -71,30 +71,53 @@ STATE_LEAVES = {
 }
 
 
-def state_group(bm: JengaBlockManager) -> RecurrentKVGroupCoordinator:
-    """The group under test."""
-    group = bm.groups[KVCacheGroupId.recurrent()]
-    assert isinstance(group, RecurrentKVGroupCoordinator)
-    return group
+def state_groups(bm: JengaBlockManager) -> list[RecurrentKVGroupCoordinator]:
+    """The coordinators under test, one per state leaf.
+
+    The state tree has two recurrent leaves (conv and rec), and each is its
+    own coordinator now, so what used to be one group's answer is the union
+    of theirs.
+    """
+    groups = [
+        group
+        for group in bm.groups.values()
+        if isinstance(group, RecurrentKVGroupCoordinator)
+    ]
+    assert groups, "no recurrent leaf in this manager"
+    return groups
 
 
 def live(bm: JengaBlockManager, ctx: TextContext) -> dict[str, int] | None:
     """The blocks this request's recurrence runs in, drawing them if new."""
-    return state_group(bm).live_blocks(ctx.request_id)
+    merged: dict[str, int] = {}
+    for group in state_groups(bm):
+        blocks = group.live_blocks(ctx.request_id)
+        if blocks is None:
+            # One leaf without a live block means the state is not drawn,
+            # which is what a single group reported for the whole tree.
+            return None
+        merged.update(blocks)
+    return merged
 
 
 def resume(
     bm: JengaBlockManager, ctx: TextContext
 ) -> Mapping[str, tuple[int | None, int]]:
     """The block each leaf's next forward resumes its state from."""
-    return state_group(bm).resume(ctx, 0)
+    merged: dict[str, tuple[int | None, int]] = {}
+    for group in state_groups(bm):
+        merged.update(group.resume(ctx, 0))
+    return merged
 
 
 def checkpoint(
     bm: JengaBlockManager, ctx: TextContext
 ) -> Mapping[str, tuple[int | None, int]]:
     """The blocks the forward that just ran should be copied between."""
-    return state_group(bm).checkpoint(ctx, 0)
+    merged: dict[str, tuple[int | None, int]] = {}
+    for group in state_groups(bm):
+        merged.update(group.checkpoint(ctx, 0))
+    return merged
 
 
 def make_manager(

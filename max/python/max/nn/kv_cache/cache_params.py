@@ -145,6 +145,103 @@ class KVCacheGroupId:
             return -1
         return ceildiv(self.window_size - 1, page_size)
 
+    def longest_hit(self, page_size: int, resident: Sequence[bool]) -> int:
+        """How much of ``resident`` a leaf of this shape can reuse.
+
+        Residency in, prefix length out. The answer is counted from the start
+        even for a shape that only reads the tail of it, so the caller can
+        compare shapes against one another -- which
+        :func:`~max.pipelines.kv_cache.prefix_hit.longest_joint_prefix_hit`
+        does to settle what a whole tree serves at once.
+
+        ``len(resident)`` bounds the candidate, so narrowing means passing a
+        shorter view, not recomputing residency.
+
+        Computing eligible Prefix Cache hits for sliding window differs greatly
+        from full attn. Recall that the window size includes the query token.
+        Say the query token is idx=42 and the window size is 10. This means
+        that the query token will attend to tokens from idx=32 to idx=41.
+
+        For a concrete example:
+
+        .. code-block:: text
+
+            [X]: Token is in Prefix Cache
+             . : Token is not in Prefix Cache
+             ^ : Eligible Prefix Cache hit
+
+              Tokens [A]  [B]   .   [D]  [E]  [F]   .    .   [I]  [J]  [K]  [L]  [M]
+            w_size=2  ^    ^         ^    ^    ^              ^    ^    ^    ^    ^
+            w_size=3  ^    ^              ^    ^                   ^    ^    ^    ^
+            w_size=4  ^    ^                   ^                        ^    ^    ^
+            w_size=5  ^    ^                                                 ^    ^
+            w_size=6  ^    ^                                                      ^
+            w_size=7  ^    ^
+
+        Notice that as window_size increases, the number of indices eligible for
+        a cache hit decreases. Additionally, we can count consecutive runs of
+        window_size-1 tokens to determine eligibility. For example, [DEF] is a
+        run of 3 tokens so token F is a valid cache hit for w_size=4 and below.
+
+        Additionally, partial window cache hits is possible if the run starts from
+        the start of sequence. For example, [A] and [AB] are valid cache hits for
+        any window size.
+
+        window_size=1 is not a case this has to serve: ``__post_init__``
+        rejects it, since a query token attending to no historical tokens
+        would make every block a hit attention never reads back.
+
+        Args:
+            page_size: Tokens per block, which turns ``window_size`` into a
+                block count.
+            resident: Whether each block of the chain is held, positionally.
+        """
+        num_hashes = len(resident)
+        if self.is_scratch():
+            # Never published, so it has no opinion and must not shorten what
+            # the leaves that do cache agree on.
+            return num_hashes
+        if self.is_recurrent():
+            # A state is a single published boundary rather than a run, so
+            # the deepest one that stands is the answer.
+            for idx in range(num_hashes - 1, -1, -1):
+                if resident[idx]:
+                    return idx + 1
+            return 0
+        if self.is_full():
+            # Reads its whole history, so the hit is the run from the root.
+            for idx in range(num_hashes):
+                if not resident[idx]:
+                    return idx
+            return num_hashes
+
+        # Sliding window: the hit is a SUFFIX run, so walk back counting a
+        # consecutive run and take the first place it fills the window. A
+        # shallower stopping point covers different blocks, so this cannot be
+        # found by shortening a full-attention answer.
+        blocks_in_window = self.blocks_in_window(page_size)
+        if blocks_in_window < 1:
+            # window_size == 1, a query attending to no history, which would
+            # make every block a hit attention never reads back. __post_init__
+            # rejects that window and so does Mach's KVCacheConfig::validate,
+            # so one arriving here is a caller bug (SERVOPT-1627).
+            raise ValueError(
+                "A sliding-window group spans at least one block; got"
+                f" blocks_in_window={blocks_in_window}. window_size must be"
+                " greater than 1."
+            )
+        run = 0
+        for idx in range(num_hashes - 1, -1, -1):
+            if not resident[idx]:
+                run = 0
+                continue
+            run += 1
+            if run >= blocks_in_window:
+                return idx + run
+        # A run reaching the root is a hit of just that run: nothing sits
+        # below it to be missing.
+        return run
+
     def is_recurrent(self) -> bool:
         return self.type == "recurrent"
 

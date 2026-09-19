@@ -1484,7 +1484,7 @@ def test_a_dummy_points_at_its_own_replica_null_page() -> None:
     bm.alloc_dummy(dummy, replica_idx=1)
 
     # Every replica's null page has the same id, so compare by identity.
-    row = bm.groups[KVCacheGroupId.full()].blocks_of(dummy.request_id)
+    row = bm.groups[FULL].blocks_of(dummy.request_id)
     assert row[FULL][0] is bm.pools[1].null_little_blocks[FULL]
 
 

@@ -67,13 +67,17 @@ modular_py_library(
     ],
 )
 
-# The attention-shape prefix-hit rules as their own stdlib-only target, for the
-# same reason as :kv_connector above — the device tier (paged_kv_cache) and the
-# connectors both decide cache hits with them, and a connector cannot depend on
-# the full kv_cache library without forming a cycle.
+# The joint prefix-hit reconcile as its own small target, for the same reason
+# as :kv_connector above — the device tier (paged_kv_cache) and the connectors
+# both decide cache hits with it, and a connector cannot depend on the full
+# kv_cache library without forming a cycle. It needs //max/python/max/nn for
+# KVCacheGroupId, which owns the per-shape rule it reconciles.
 modular_py_library(
     name = "prefix_hit",
     srcs = ["prefix_hit.py"],
+    deps = [
+        "//max/python/max/nn",
+    ],
 )
 
 # The NIXL plugin RTLD_GLOBAL preload as its own stdlib-only target, for the

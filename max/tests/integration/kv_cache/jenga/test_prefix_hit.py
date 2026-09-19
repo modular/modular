@@ -22,32 +22,22 @@ Blocks are named A..G in the comments and indexed 0..6 in the code.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-
 import pytest
+from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.prefix_hit import (
     blocks_held_of_hit,
-    longest_full_attention_hit,
     longest_joint_prefix_hit,
-    longest_sliding_window_hit,
 )
 
-
-def held(mask: Sequence[bool]) -> Callable[[int], bool]:
-    """A residency predicate over a positional mask."""
-    return lambda idx: mask[idx]
-
-
-def full_rule(mask: Sequence[bool]) -> Callable[[int], int]:
-    return lambda candidate: longest_full_attention_hit(candidate, held(mask))
+# page_size 1, so a window size of N+1 spans N blocks and the masks below read
+# as one block per entry.
+PAGE = 1
+FULL = KVCacheGroupId.full()
 
 
-def window_rule(
-    mask: Sequence[bool], blocks_in_window: int
-) -> Callable[[int], int]:
-    return lambda candidate: longest_sliding_window_hit(
-        candidate, blocks_in_window, held(mask)
-    )
+def swa(blocks_in_window: int) -> KVCacheGroupId:
+    """A windowed shape whose window is ``blocks_in_window`` blocks wide."""
+    return KVCacheGroupId("sliding_window", blocks_in_window + 1)
 
 
 # ---------------------------------------------------------------- one group
@@ -57,14 +47,14 @@ def test_full_attention_stops_at_the_first_hole() -> None:
     # A B C held, D missing: a full group reads its whole history, so its hit
     # ends where the run from the root ends.
     mask = [True, True, True, False, True]
-    assert longest_full_attention_hit(5, held(mask)) == 3
+    assert FULL.longest_hit(PAGE, mask) == 3
 
 
 def test_sliding_window_takes_the_deepest_complete_window() -> None:
     # Window 2. Both [C D] and [F G] are complete, so the deepest bound wins:
     # stopping at G needs F and G, and it has them.
     mask = [False, False, True, True, False, True, True]
-    assert longest_sliding_window_hit(7, 2, held(mask)) == 7
+    assert swa(2).longest_hit(PAGE, mask) == 7
 
 
 def test_sliding_window_falls_back_to_a_root_anchored_run() -> None:
@@ -72,16 +62,25 @@ def test_sliding_window_falls_back_to_a_root_anchored_run() -> None:
     # the run that survives reaches index 0, and nothing sits below the root
     # to be missing, so those two blocks are still a hit.
     mask = [True, True, False, False]
-    assert longest_sliding_window_hit(4, 3, held(mask)) == 2
+    assert swa(3).longest_hit(PAGE, mask) == 2
 
 
 def test_a_window_spanning_no_whole_block_is_rejected() -> None:
     # window_size == 1: the query token attends to no history, so every block
-    # would be a hit that attention never reads back. The window is refused
-    # when the group is built, so reaching the rule with one is a caller bug
-    # rather than a shape to serve (SERVOPT-1627).
+    # would be a hit that attention never reads back. The shape refuses it at
+    # construction (SERVOPT-1627), which is why the rule never sees one.
+    with pytest.raises(ValueError, match="greater than 1"):
+        swa(0)
+
+
+def test_a_zero_width_window_reaching_the_rule_is_a_bug() -> None:
+    # Built around the ctor, so this can only come from a caller that made
+    # the shape some other way.
+    zero = KVCacheGroupId.full()
+    object.__setattr__(zero, "type", "sliding_window")
+    object.__setattr__(zero, "window_size", 1)
     with pytest.raises(ValueError, match="at least one block"):
-        longest_sliding_window_hit(5, 0, held([False] * 5))
+        zero.longest_hit(PAGE, [False] * 5)
 
 
 # -------------------------------------------------------------- joint rules
@@ -92,9 +91,7 @@ def test_two_full_groups_agree_on_the_shorter_run() -> None:
     # hold A..E, so A..E is present in both.
     values = [True] * 6 + [False]
     scales = [True] * 5 + [False, False]
-    assert (
-        longest_joint_prefix_hit(7, [full_rule(values), full_rule(scales)]) == 5
-    )
+    assert longest_joint_prefix_hit([(FULL, values), (FULL, scales)], PAGE) == 5
 
 
 def test_full_and_windowed_agree_below_both_their_answers() -> None:
@@ -109,10 +106,7 @@ def test_full_and_windowed_agree_below_both_their_answers() -> None:
     # not reachable by shortening either group's own answer once.
     full = [True] * 6 + [False]
     window = [False, False, True, True, False, True, True]
-    assert (
-        longest_joint_prefix_hit(7, [full_rule(full), window_rule(window, 2)])
-        == 4
-    )
+    assert longest_joint_prefix_hit([(FULL, full), (swa(2), window)], PAGE) == 4
 
 
 def test_a_window_the_full_group_cannot_reach_is_no_hit() -> None:
@@ -122,10 +116,7 @@ def test_a_window_the_full_group_cannot_reach_is_no_hit() -> None:
     # nothing shallower has two in a row either.
     full = [True] * 6 + [False]
     window = [False, False, False, False, False, True, True]
-    assert (
-        longest_joint_prefix_hit(7, [full_rule(full), window_rule(window, 2)])
-        == 0
-    )
+    assert longest_joint_prefix_hit([(FULL, full), (swa(2), window)], PAGE) == 0
 
 
 def test_narrowing_reopens_a_group_already_asked() -> None:
@@ -137,21 +128,18 @@ def test_narrowing_reopens_a_group_already_asked() -> None:
     # round-robin pass stops at 1 and claims a hit the KV cannot back.
     window = [False, True]
     full = [True, False]
-    assert (
-        longest_joint_prefix_hit(2, [window_rule(window, 1), full_rule(full)])
-        == 0
-    )
+    assert longest_joint_prefix_hit([(swa(1), window), (FULL, full)], PAGE) == 0
 
 
 def test_a_lone_windowed_group_needs_nothing_to_bound_it() -> None:
     # With no full group there is nothing to cap the candidate, so the whole
     # request is in play and the deepest complete window wins.
     window = [False, False, True, True]
-    assert longest_joint_prefix_hit(4, [window_rule(window, 2)]) == 4
+    assert longest_joint_prefix_hit([(swa(2), window)], PAGE) == 4
 
 
 def test_no_groups_is_no_hit() -> None:
-    assert longest_joint_prefix_hit(5, []) == 0
+    assert longest_joint_prefix_hit([], PAGE) == 0
 
 
 # ------------------------------------------------------------ what is held
@@ -171,3 +159,10 @@ def test_a_windowed_group_holds_only_its_window() -> None:
 
 def test_a_window_wider_than_the_hit_holds_the_whole_hit() -> None:
     assert blocks_held_of_hit(2, 8) == 2
+
+
+def test_masks_of_different_widths_are_refused() -> None:
+    # The masks index one chain, so a short one would quietly answer about a
+    # different prefix than the rest.
+    with pytest.raises(ValueError, match="same chain"):
+        longest_joint_prefix_hit([(FULL, [True, True]), (swa(1), [True])], PAGE)

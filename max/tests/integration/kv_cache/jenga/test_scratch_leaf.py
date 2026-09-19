@@ -112,13 +112,13 @@ def make_ctx(num_tokens: int, *, offset: int = 0) -> TextContext:
 
 
 def scratch_group(bm: JengaBlockManager) -> ScratchKVGroupCoordinator:
-    group = bm.groups[KVCacheGroupId.scratch()]
+    group = bm.groups[RING]
     assert isinstance(group, ScratchKVGroupCoordinator)
     return group
 
 
 def state_group(bm: JengaBlockManager) -> RecurrentKVGroupCoordinator:
-    group = bm.groups[KVCacheGroupId.recurrent()]
+    group = bm.groups[REC]
     assert isinstance(group, RecurrentKVGroupCoordinator)
     return group
 
@@ -274,7 +274,8 @@ def test_the_connector_is_not_told_about_a_scratch_leaf() -> None:
     assert RING in bm._leaf_ids
     assert RING not in bm._cacheable_leaf_ids
     assert all(
-        not group.group_id.is_scratch() for group in bm._cacheable_groups
+        not group.group_id.is_scratch()
+        for group in bm._cacheable_groups.values()
     )
 
 

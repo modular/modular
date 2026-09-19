@@ -30,7 +30,6 @@ from max.driver import (
 from max.dtype import DType
 from max.nn.kv_cache import (
     BatchCharacteristics,
-    KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -339,7 +338,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         max_batch_size: int,
         max_num_input_tokens: int | None = None,
         connector: KVConnector | None = None,
-        groups: Mapping[KVCacheGroupId, KVGroupCoordinatorInterface],
+        groups: Mapping[str, KVGroupCoordinatorInterface],
         slabs: Sequence[Buffer] = (),
     ) -> None:
         # Publicly accessible alias for the params object since it is accessed
@@ -790,6 +789,8 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     @property
     def chunk_alignment_tokens(self) -> int:
         """Returns the page size if any group needs the alignment, else zero."""
-        if any(group_id.is_recurrent() for group_id in self._groups):
+        if any(
+            group.group_id.is_recurrent() for group in self._groups.values()
+        ):
             return self.params.page_size
         return 0

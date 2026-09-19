@@ -27,10 +27,11 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from max.driver import Buffer, batch_inplace_copy
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import (
@@ -48,7 +49,7 @@ from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
-from ..prefix_hit import longest_full_attention_hit, longest_joint_prefix_hit
+from ..prefix_hit import longest_joint_prefix_hit
 from .block_pool import BlockPool
 from .block_utils import (
     InsufficientBlocksError,
@@ -58,17 +59,6 @@ from .block_utils import (
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-def _full_attention_rule(mask: Sequence[bool]) -> Callable[[int], int]:
-    """How much of a candidate prefix one full-attention leaf serves.
-
-    A factory, not a lambda over the loop variable, which would late-bind every
-    rule to the last leaf.
-    """
-    return lambda candidate: longest_full_attention_hit(
-        candidate, mask.__getitem__
-    )
 
 
 def compute_block_hashes(
@@ -778,8 +768,8 @@ class BlockManager:
             desired_hashes, replica_idx=replica_idx, hint=hint
         )
         num_loaded = longest_joint_prefix_hit(
-            len(desired_hashes),
-            [_full_attention_rule(mask) for mask in resident.values()],
+            [(KVCacheGroupId.full(), mask) for mask in resident.values()],
+            self.block_size,
         )
         # Truncating is safe: a full-attention hit is downward-closed, so a
         # shorter prefix of an agreed one is also agreed.
@@ -888,8 +878,8 @@ class BlockManager:
         if remaining:
             resident = self.connector.lookup(remaining, replica_idx=replica_idx)
             num_external_hits = longest_joint_prefix_hit(
-                len(remaining),
-                [_full_attention_rule(mask) for mask in resident.values()],
+                [(KVCacheGroupId.full(), mask) for mask in resident.values()],
+                self.block_size,
             )
 
         return PrefixCacheHits(

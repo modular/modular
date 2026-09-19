@@ -473,7 +473,9 @@ def test_a_connector_keeps_the_sliding_window_group(
         max_batch_size=4,
     )
 
-    assert set(mgr.groups) == {
+    # One coordinator per leaf, so the keys are leaf ids; what this pins is
+    # that the connector did not collapse the windowed leaf into the full one.
+    assert {group.group_id for group in mgr.groups.values()} == {
         KVCacheGroupId("sliding_window", 4),
         KVCacheGroupId.full(),
     }
@@ -544,7 +546,7 @@ def test_a_hybrid_tree_still_serves_a_prefix_hit() -> None:
     no reuse, and nothing in a correctness eval to show for it.
     """
     mgr = make_recurrent_manager(num_huge_blocks=400)
-    assert KVCacheGroupId.recurrent() in mgr.groups
+    assert any(group.group_id.is_recurrent() for group in mgr.groups.values())
 
     first = make_ctx(33)
     _run_until_committed(mgr, first)

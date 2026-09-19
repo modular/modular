@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from bisect import bisect_left
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from max.driver import Buffer, batch_inplace_copy
@@ -145,42 +145,37 @@ def _max_seq_len_fitting_in_geometry(
     return (idx - 1) if idx < search_space else None
 
 
-def _leaf_ids_by_group_id(
-    leaf_infos: Mapping[str, KVLeafInfo],
-) -> dict[KVCacheGroupId, list[str]]:
-    """Returns each group's leaf ids, in first-appearance order.
-
-    The order must not vary with the run's hash seed, hence the dict rather
-    than a set.
-    """
-    group_ids = dict.fromkeys(leaf.group_id for leaf in leaf_infos.values())
-    return {
-        group_id: [
-            leaf_id
-            for leaf_id, leaf in leaf_infos.items()
-            if leaf.group_id == group_id
-        ]
-        for group_id in group_ids
-    }
-
-
 def create_groups(
     leaf_infos: Mapping[str, KVLeafInfo],
     pools: Sequence[JengaBlockPool],
     page_size: int,
-) -> dict[KVCacheGroupId, KVGroupCoordinatorInterface]:
-    """Returns a coordinator per group the leaves fall into."""
+) -> dict[str, KVGroupCoordinatorInterface]:
+    """Returns one coordinator per leaf, keyed by leaf id.
+
+    One per LEAF, not one per attention group. A coordinator holding several
+    leaves had to reconcile them itself -- a hash only some of them held was
+    unusable, so every residency question was an AND over its leaves -- and
+    that is the same reconcile the manager already runs across coordinators.
+    Splitting them means the rule is written once: the joint prefix hit over
+    one-leaf coordinators agrees with what a multi-leaf coordinator computed
+    internally, because ANDing inside a group then across groups is ANDing.
+
+    TODO: "group" now means "leaf" everywhere in this module. Rename the
+    concept -- ``create_groups``, ``KVGroupCoordinatorInterface``,
+    ``self._groups`` -- in a follow-up. Kept here so this change stays
+    structural and reviewable.
+    """
     return {
-        group_id: create_kv_group_coordinator(
-            pools, group_leaves, group_id, page_size
+        leaf_id: create_kv_group_coordinator(
+            pools, leaf_id, leaf.group_id, page_size
         )
-        for group_id, group_leaves in _leaf_ids_by_group_id(leaf_infos).items()
+        for leaf_id, leaf in leaf_infos.items()
     }
 
 
 def create_kv_group_coordinator(
     pools: Sequence[JengaBlockPool],
-    leaf_ids: Sequence[str],
+    leaf_id: str,
     group_id: KVCacheGroupId,
     page_size: int,
 ) -> KVGroupCoordinatorInterface:
@@ -188,25 +183,31 @@ def create_kv_group_coordinator(
     if group_id.is_sliding_window():
         return SlidingWindowKVGroupCoordinator(
             pools=pools,
-            leaf_ids=leaf_ids,
+            leaf_id=leaf_id,
             group_id=group_id,
             page_size=page_size,
             window_size=group_id.window_size,
         )
     if group_id.is_full():
         return FullKVGroupCoordinator(
-            pools=pools, leaf_ids=leaf_ids, group_id=group_id
+            pools=pools,
+            leaf_id=leaf_id,
+            group_id=group_id,
+            page_size=page_size,
         )
     if group_id.is_recurrent():
         return RecurrentKVGroupCoordinator(
             pools=pools,
-            leaf_ids=leaf_ids,
+            leaf_id=leaf_id,
             group_id=group_id,
             page_size=page_size,
         )
     if group_id.is_scratch():
         return ScratchKVGroupCoordinator(
-            pools=pools, leaf_ids=leaf_ids, group_id=group_id
+            pools=pools,
+            leaf_id=leaf_id,
+            group_id=group_id,
+            page_size=page_size,
         )
     raise ValueError(f"no coordinator holds a {group_id} group")
 
@@ -252,7 +253,7 @@ class JengaBlockManager:
         replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]] | None = None,
         enable_dp_cross_replica_prefix_copy: bool = True,
         *,
-        groups: Mapping[KVCacheGroupId, KVGroupCoordinatorInterface],
+        groups: Mapping[str, KVGroupCoordinatorInterface],
         leaves: Mapping[str, KVLeafRegion],
     ) -> None:
         """Assigns blocks out of ``pools``, one per replica.
@@ -285,33 +286,24 @@ class JengaBlockManager:
             and replica_kv_memory is not None
         )
 
-        for group_id, group in groups.items():
+        for leaf_id, group in groups.items():
             assert list(group.pools) == self.pools, (
-                f"group {group_id} draws from other pools than this"
+                f"leaf {leaf_id} draws from other pools than this"
                 " manager's; both come from the same slabs or neither does"
             )
-        self._groups: dict[KVCacheGroupId, KVGroupCoordinatorInterface] = dict(
-            groups
-        )
+        # One coordinator per leaf, keyed by leaf id -- see `create_groups`.
+        self._groups: dict[str, KVGroupCoordinatorInterface] = dict(groups)
         self._leaves = dict(leaves)
-        self._leaf_ids = [
-            leaf_id
-            for group in self._groups.values()
-            for leaf_id in group.leaf_ids
-        ]
+        self._leaf_ids = list(self._groups)
         # A leaf carrying no hash cannot be looked up, committed, or handed to
         # an external tier, so every content-addressed path iterates these
         # instead. Allocation and admission still cover all of them.
-        self._cacheable_groups = [
-            group
-            for group in self._groups.values()
+        self._cacheable_groups = {
+            leaf_id: group
+            for leaf_id, group in self._groups.items()
             if not group.group_id.is_scratch()
-        ]
-        self._cacheable_leaf_ids = [
-            leaf_id
-            for group in self._cacheable_groups
-            for leaf_id in group.leaf_ids
-        ]
+        }
+        self._cacheable_leaf_ids = list(self._cacheable_groups)
         self._requests: dict[RequestID, RequestCacheState] = {}
 
         # State for the KVConnector.
@@ -344,8 +336,8 @@ class JengaBlockManager:
             group.claim(req_id)
 
     @property
-    def groups(self) -> Mapping[KVCacheGroupId, KVGroupCoordinatorInterface]:
-        """The cache groups this manager owns."""
+    def groups(self) -> Mapping[str, KVGroupCoordinatorInterface]:
+        """The per-leaf coordinators this manager owns, keyed by leaf id."""
         return self._groups
 
     def contains(self, ctx: TextContext) -> bool:
@@ -595,20 +587,15 @@ class JengaBlockManager:
             desired, replica_idx=replica_idx, hint=hint
         )
 
-        def rule(group: KVGroupCoordinatorInterface) -> Callable[[int], int]:
-            # A group's leaves are written in lockstep, so a hash only some
-            # of them hold is unusable -- what `_holds_every_leaf` does for
-            # the device pools. A factory, not a lambda over the loop
-            # variable, which would late-bind every rule to the last group.
-            return lambda candidate: group.longest_hit(
-                candidate,
-                lambda idx: all(
-                    resident[leaf_id][idx] for leaf_id in group.leaf_ids
-                ),
-            )
-
+        # Restricted to the cacheable leaves rather than passed straight
+        # through: a connector answering for a leaf this manager does not
+        # reconcile would otherwise decide part of the hit.
         return longest_joint_prefix_hit(
-            len(desired), [rule(group) for group in self._cacheable_groups]
+            [
+                (group.group_id, resident[leaf_id])
+                for leaf_id, group in self._cacheable_groups.items()
+            ],
+            self._block_size,
         )
 
     @traced
@@ -650,8 +637,7 @@ class JengaBlockManager:
         # its window rather than the whole prefix.
         held = {
             leaf_id: group.blocks_held_of_connector_hit(aligned)
-            for group in self._cacheable_groups
-            for leaf_id in group.leaf_ids
+            for leaf_id, group in self._cacheable_groups.items()
         }
         # Too few blocks to schedule this request at all. Report no hit and let
         # the caller raise InsufficientBlocksError once it has released what
@@ -906,22 +892,21 @@ class JengaBlockManager:
         replica_idx: int,
         allow_cross_replica: bool,
     ) -> int:
-        """Returns how many blocks every group can serve at once."""
-
-        def rule(
-            group: KVGroupCoordinatorInterface,
-        ) -> Callable[[int], int]:
-            # `candidate` is a length, and each group answers under it, so the
-            # slice is what narrowing means here. A factory rather than a
-            # lambda closing over the loop variable, which would late-bind
-            # every rule to the last group.
-            return lambda candidate: group.longest_cache_hit(
-                desired_hashes[:candidate], replica_idx, allow_cross_replica
-            )
-
+        """Returns how many blocks every leaf can serve at once."""
+        # One residency pass per leaf, read repeatedly by the settling loop
+        # below. It used to re-read the prefix caches on every turn, because
+        # narrowing meant re-slicing the hashes rather than moving a bound.
         return longest_joint_prefix_hit(
-            len(desired_hashes),
-            [rule(group) for group in self._cacheable_groups],
+            [
+                (
+                    group.group_id,
+                    group.residency(
+                        desired_hashes, replica_idx, allow_cross_replica
+                    ),
+                )
+                for group in self._cacheable_groups.values()
+            ],
+            self._block_size,
         )
 
     def _lookup_device_prefix_cache_hit(
@@ -936,11 +921,7 @@ class JengaBlockManager:
             The caller splices the pages onto the request.
         """
         if self._only_use_kv_connector_last_level_cache:
-            return {
-                leaf_id: []
-                for group in self._groups.values()
-                for leaf_id in group.leaf_ids
-            }, 0
+            return {leaf_id: [] for leaf_id in self._groups}, 0
 
         num_hit_blocks = self._find_longest_device_prefix_cache_hit(
             desired_hashes, replica_idx, self._cross_replica_copy_enabled
@@ -985,13 +966,13 @@ class JengaBlockManager:
                     )
                     if src is None:
                         break
+                    leaf_id = group.leaf_id
                     try:
-                        for leaf_id in group.leaf_ids:
-                            local = pool.prefix_caches[leaf_id].get(block_hash)
-                            if local is not None:
-                                pool.touch(local)
-                                held.append(local)
-                                continue
+                        local = pool.prefix_caches[leaf_id].get(block_hash)
+                        if local is not None:
+                            pool.touch(local)
+                            held.append(local)
+                        else:
                             dst = pool.alloc_block(leaf_id)
                             held.append(dst)
                             copies.append(

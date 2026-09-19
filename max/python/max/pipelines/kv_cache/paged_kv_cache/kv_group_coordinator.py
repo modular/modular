@@ -14,18 +14,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 
-from ..prefix_hit import (
-    blocks_held_of_hit,
-    longest_full_attention_hit,
-    longest_sliding_window_hit,
-)
+from ..prefix_hit import blocks_held_of_hit
 from .block_utils import LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
 
@@ -38,11 +34,18 @@ __all__ = [
 
 @dataclass(frozen=True)
 class KVGroupCoordinatorInterface:
-    """Finds and claims the prefix-cache hit one group of caches can serve.
+    """Finds and claims the prefix-cache hit one leaf can serve.
 
-    The leaves of a group are written in lockstep, so a hash is only reusable
-    when every one of them holds it, and how deep the group can resume depends
-    on how far back its attention reads.
+    How deep it can resume depends on how far back its attention reads: a
+    full leaf resumes its run from the root, a windowed one the window ending
+    at the prefix.
+
+    One of these per LEAF. It used to be one per attention group, holding
+    every leaf of that group and ANDing residency across them, which is the
+    same reconcile the manager runs across coordinators -- so the group-level
+    copy is gone.
+
+    TODO: rename this and its subclasses now that "group" means "leaf".
 
     The lifecycle every group implements, in order:
 
@@ -63,25 +66,16 @@ class KVGroupCoordinatorInterface:
     pools: Sequence[JengaBlockPool]
     """The block pools this group draws from, one per data-parallel
     replica."""
-    leaf_ids: Sequence[str]
-    """The pool leaves whose blocks this group manages in lockstep."""
+    leaf_id: str
+    """The pool leaf whose blocks this manages."""
     group_id: KVCacheGroupId
+    page_size: int
+    """Tokens per page, which turns a window width into a block count."""
 
     rows: dict[RequestID, dict[str, list[LittleKVCacheBlock]]] = field(
         default_factory=dict, kw_only=True
     )
     """Each live request's blocks, per leaf."""
-
-    def _holds_every_leaf(self, block_hash: bytes, replica_idx: int) -> bool:
-        """Whether every cache of the group has committed ``block_hash``.
-
-        The leaves are written in lockstep, so a hash only some of them hold
-        is unusable.
-        """
-        return all(
-            block_hash in self.pools[replica_idx].prefix_caches[leaf_id]
-            for leaf_id in self.leaf_ids
-        )
 
     def find_replica_with_hash(
         self,
@@ -100,7 +94,8 @@ class KVGroupCoordinatorInterface:
             The replica to read the block from, or None when no replica the
             search covered holds it.
         """
-        if self._holds_every_leaf(block_hash, replica_idx):
+        cache = self.pools[replica_idx].prefix_caches[self.leaf_id]
+        if block_hash in cache:
             return replica_idx
         if not allow_cross_replica:
             return None
@@ -108,7 +103,7 @@ class KVGroupCoordinatorInterface:
             candidate
             for candidate in range(len(self.pools))
             if candidate != replica_idx
-            and self._holds_every_leaf(block_hash, candidate)
+            and block_hash in self.pools[candidate].prefix_caches[self.leaf_id]
         ]
         if not holders:
             return None
@@ -125,18 +120,20 @@ class KVGroupCoordinatorInterface:
         """Which of ``desired_hashes`` this group would claim as a hit."""
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def longest_hit(
-        self, num_hashes: int, is_cached: Callable[[int], bool]
-    ) -> int:
-        """Returns how many of the leading ``num_hashes`` this group can reuse.
-
-        The group's attention shape and nothing else: residency arrives as a
-        predicate over indices, so the device pools and a connector's
-        ``lookup`` masks both drive the same rule. Counted from the start, so
-        the answer is a prefix length even for a group that only reads the tail
-        of it.
-        """
-        raise NotImplementedError("Subclasses must implement this method.")
+    def residency(
+        self,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int,
+        allow_cross_replica: bool = False,
+    ) -> list[bool]:
+        """Which of ``desired_hashes`` this leaf can serve, positionally."""
+        return [
+            self.find_replica_with_hash(
+                block_hash, replica_idx, allow_cross_replica
+            )
+            is not None
+            for block_hash in desired_hashes
+        ]
 
     def longest_cache_hit(
         self,
@@ -160,14 +157,11 @@ class KVGroupCoordinatorInterface:
             allow_cross_replica: Whether hashes held only by another replica
                 count as hits.
         """
-        return self.longest_hit(
-            len(desired_hashes),
-            lambda idx: (
-                self.find_replica_with_hash(
-                    desired_hashes[idx], replica_idx, allow_cross_replica
-                )
-                is not None
-            ),
+        # The shape owns the rule, so every coordinator answers the same way
+        # and a connector's masks drive the identical code.
+        return self.group_id.longest_hit(
+            self.page_size,
+            self.residency(desired_hashes, replica_idx, allow_cross_replica),
         )
 
     def claim_hit_blocks(
@@ -180,7 +174,7 @@ class KVGroupCoordinatorInterface:
 
     def claim(self, req_id: RequestID) -> None:
         """Starts an empty row in every leaf of the group."""
-        self.rows[req_id] = {leaf_id: [] for leaf_id in self.leaf_ids}
+        self.rows[req_id] = {self.leaf_id: []}
 
     def release(self, req_id: RequestID, replica_idx: int) -> None:
         """Frees every block the request holds in this group."""
@@ -215,11 +209,11 @@ class KVGroupCoordinatorInterface:
             replica_idx: Which pool the blocks came from.
         """
         row = self.rows[req_id]
-        for leaf_id in self.leaf_ids:
-            # A leaf read by row has nothing an external tier can onload.
-            row[leaf_id].extend(
-                [*hit_blocks[leaf_id], *loaded_blocks.get(leaf_id, ())]
-            )
+        leaf_id = self.leaf_id
+        # A leaf read by row has nothing an external tier can onload.
+        row[leaf_id].extend(
+            [*hit_blocks[leaf_id], *loaded_blocks.get(leaf_id, ())]
+        )
 
     def grow_with_padding(
         self, req_id: RequestID, num_required_blocks: int, replica_idx: int
@@ -227,8 +221,9 @@ class KVGroupCoordinatorInterface:
         """Points every row at the null block."""
         pool = self.pools[replica_idx]
         self.rows[req_id] = {
-            leaf_id: [pool.null_little_blocks[leaf_id]] * num_required_blocks
-            for leaf_id in self.leaf_ids
+            self.leaf_id: (
+                [pool.null_little_blocks[self.leaf_id]] * num_required_blocks
+            )
         }
 
     def shrink_to_fit(
@@ -253,10 +248,9 @@ class KVGroupCoordinatorInterface:
         """Returns how many blocks each leaf must be given."""
         row = self.rows[req_id]
         return {
-            leaf_id: self._num_blocks_to_allocate(
-                row[leaf_id], num_required_blocks
+            self.leaf_id: self._num_blocks_to_allocate(
+                row[self.leaf_id], num_required_blocks
             )
-            for leaf_id in self.leaf_ids
         }
 
     def grow(
@@ -264,12 +258,12 @@ class KVGroupCoordinatorInterface:
     ) -> None:
         """Allocates the blocks every row still needs."""
         pool = self.pools[replica_idx]
-        for leaf_id in self.leaf_ids:
-            req_blocks = self.rows[req_id][leaf_id]
-            for _ in range(
-                self._num_blocks_to_allocate(req_blocks, num_required_blocks)
-            ):
-                req_blocks.append(pool.alloc_block(leaf_id))
+        leaf_id = self.leaf_id
+        req_blocks = self.rows[req_id][leaf_id]
+        for _ in range(
+            self._num_blocks_to_allocate(req_blocks, num_required_blocks)
+        ):
+            req_blocks.append(pool.alloc_block(leaf_id))
 
     def _is_committable(
         self, row: Sequence[LittleKVCacheBlock], block_idx: int
@@ -297,16 +291,15 @@ class KVGroupCoordinatorInterface:
             replica_idx: Which pool the blocks belong to.
         """
         pool = self.pools[replica_idx]
-        for leaf_id in self.leaf_ids:
-            req_blocks = self.rows[req_id][leaf_id]
-            for block_idx in range(min(last_block, len(req_blocks))):
-                if not self._is_committable(req_blocks, block_idx):
-                    continue
-                twin = pool.get_or_commit_into_prefix_cache(
-                    hashes[block_idx], req_blocks[block_idx]
-                )
-                if twin is not None:
-                    req_blocks[block_idx] = twin
+        req_blocks = self.rows[req_id][self.leaf_id]
+        for block_idx in range(min(last_block, len(req_blocks))):
+            if not self._is_committable(req_blocks, block_idx):
+                continue
+            twin = pool.get_or_commit_into_prefix_cache(
+                hashes[block_idx], req_blocks[block_idx]
+            )
+            if twin is not None:
+                req_blocks[block_idx] = twin
 
     def advance(
         self,
@@ -336,19 +329,16 @@ class KVGroupCoordinatorInterface:
             batch: The requests the next forward runs, in row order.
             num_blocks: How far into each request's row the forward reaches.
         """
-        plans: dict[str, list[list[int]]] = {
-            leaf_id: [] for leaf_id in self.leaf_ids
-        }
+        plans: dict[str, list[list[int]]] = {self.leaf_id: []}
         for batch_idx, ctx in enumerate(batch):
             required = num_blocks[batch_idx]
             row = self.rows[ctx.request_id]
-            for leaf_id in self.leaf_ids:
-                blocks = row[leaf_id]
-                assert len(blocks) >= required, (
-                    f"leaf {leaf_id!r} holds {len(blocks)} blocks, needs"
-                    f" {required}"
-                )
-                plans[leaf_id].append([b.bid for b in blocks[:required]])
+            leaf_id = self.leaf_id
+            blocks = row[leaf_id]
+            assert len(blocks) >= required, (
+                f"leaf {leaf_id!r} holds {len(blocks)} blocks, needs {required}"
+            )
+            plans[leaf_id].append([b.bid for b in blocks[:required]])
         return plans
 
     def resume(
@@ -390,12 +380,6 @@ class KVGroupCoordinatorInterface:
 class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
     """A group whose caches read their whole history."""
 
-    def longest_hit(
-        self, num_hashes: int, is_cached: Callable[[int], bool]
-    ) -> int:
-        """Returns the run of resident hashes from the root."""
-        return longest_full_attention_hit(num_hashes, is_cached)
-
     def claimable_hashes(
         self, desired_hashes: Sequence[bytes]
     ) -> Sequence[bytes]:
@@ -409,14 +393,12 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
     ) -> dict[str, list[LittleKVCacheBlock]]:
         """Adopts every block of the hit: the group reads its whole history."""
         pool = self.pools[replica_idx]
-        rows: dict[str, list[LittleKVCacheBlock]] = {
-            leaf_id: [] for leaf_id in self.leaf_ids
-        }
+        rows: dict[str, list[LittleKVCacheBlock]] = {self.leaf_id: []}
         for block_hash in desired_hashes:
-            for leaf_id in self.leaf_ids:
-                block = pool.prefix_caches[leaf_id][block_hash]
-                pool.touch(block)
-                rows[leaf_id].append(block)
+            leaf_id = self.leaf_id
+            block = pool.prefix_caches[leaf_id][block_hash]
+            pool.touch(block)
+            rows[leaf_id].append(block)
         return rows
 
     def advance(
@@ -439,55 +421,10 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
 
     window_size: int
     """The sliding window's width in tokens."""
-    page_size: int
-    """Tokens per page, which turns the window width into a block count."""
 
     @property
     def _blocks_in_window(self) -> int:
         return self.group_id.blocks_in_window(self.page_size)
-
-    def longest_hit(
-        self, num_hashes: int, is_cached: Callable[[int], bool]
-    ) -> int:
-        """Returns the longest windowed cache hit we can serve.
-
-        Computing eligible Prefix Cache hits for sliding window differs greatly
-        from full attn. Recall that the window size includes the query token.
-        Say the query token is idx=42 and the window size is 10. This means
-        that the query token will attend to tokens from idx=32 to idx=41.
-
-        For a concrete example:
-
-        .. code-block:: text
-
-            [X]: Token is in Prefix Cache
-             . : Token is not in Prefix Cache
-             ^ : Eligible Prefix Cache hit
-
-              Tokens [A]  [B]   .   [D]  [E]  [F]   .    .   [I]  [J]  [K]  [L]  [M]
-            w_size=2  ^    ^         ^    ^    ^              ^    ^    ^    ^    ^
-            w_size=3  ^    ^              ^    ^                   ^    ^    ^    ^
-            w_size=4  ^    ^                   ^                        ^    ^    ^
-            w_size=5  ^    ^                                                 ^    ^
-            w_size=6  ^    ^                                                      ^
-            w_size=7  ^    ^
-
-        Notice that as window_size increases, the number of indices eligible for
-        a cache hit decreases. Additionally, we can count consecutive runs of
-        window_size-1 tokens to determine eligibility. For example, [DEF] is a
-        run of 3 tokens so token F is a valid cache hit for w_size=4 and below.
-
-        Additionally, partial window cache hits is possible if the run starts from
-        the start of sequence. For example, [A] and [AB] are valid cache hits for
-        any window size.
-
-        The table starts at w_size=2 because a w_size=1 group is rejected
-        outright: it reads no history back, so every token would be a hit
-        nothing ever attends to (SERVOPT-1627).
-        """
-        return longest_sliding_window_hit(
-            num_hashes, self._blocks_in_window, is_cached
-        )
 
     def claimable_hashes(
         self, desired_hashes: Sequence[bytes]
@@ -503,22 +440,19 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
     ) -> dict[str, list[LittleKVCacheBlock]]:
         """Adopts the window ending at the hit and nulls every slot below it."""
         pool = self.pools[replica_idx]
+        cache = pool.prefix_caches[self.leaf_id]
         low = max(0, len(desired_hashes) - self._blocks_in_window)
-        if not all(
-            self._holds_every_leaf(block_hash, replica_idx)
-            for block_hash in desired_hashes[low:]
-        ):
+        if not all(block_hash in cache for block_hash in desired_hashes[low:]):
             low = len(desired_hashes)
 
         rows: dict[str, list[LittleKVCacheBlock]] = {
-            leaf_id: [pool.null_little_blocks[leaf_id]] * low
-            for leaf_id in self.leaf_ids
+            self.leaf_id: [pool.null_little_blocks[self.leaf_id]] * low
         }
         for block_hash in desired_hashes[low:]:
-            for leaf_id in self.leaf_ids:
-                block = pool.prefix_caches[leaf_id][block_hash]
-                pool.touch(block)
-                rows[leaf_id].append(block)
+            leaf_id = self.leaf_id
+            block = pool.prefix_caches[leaf_id][block_hash]
+            pool.touch(block)
+            rows[leaf_id].append(block)
         return rows
 
     def advance(
@@ -530,14 +464,13 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Frees the blocks below the window, nulling their slots."""
         pool = self.pools[replica_idx]
         first_needed = max(0, num_committed_blocks - self._blocks_in_window)
-        for leaf_id in self.leaf_ids:
-            req_blocks = self.rows[req_id][leaf_id]
-            null_block = pool.null_little_blocks[leaf_id]
-            for idx in range(first_needed - 1, -1, -1):
-                if req_blocks[idx].is_null:
-                    break
-                pool.free_block(req_blocks[idx])
-                req_blocks[idx] = null_block
+        req_blocks = self.rows[req_id][self.leaf_id]
+        null_block = pool.null_little_blocks[self.leaf_id]
+        for idx in range(first_needed - 1, -1, -1):
+            if req_blocks[idx].is_null:
+                break
+            pool.free_block(req_blocks[idx])
+            req_blocks[idx] = null_block
 
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """Only the window ending at the hit; the rest has slid out of reach."""
@@ -559,11 +492,11 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         """
         pool = self.pools[replica_idx]
         row = self.rows[req_id]
-        for leaf_id in self.leaf_ids:
-            hit = list(hit_blocks[leaf_id])
-            loaded = loaded_blocks.get(leaf_id, ())
-            if loaded and loaded[0].is_null:
-                for block in hit:
-                    pool.free_block(block)
-                hit = [pool.null_little_blocks[leaf_id]] * len(hit)
-            row[leaf_id].extend([*hit, *loaded])
+        leaf_id = self.leaf_id
+        hit = list(hit_blocks[leaf_id])
+        loaded = loaded_blocks.get(leaf_id, ())
+        if loaded and loaded[0].is_null:
+            for block in hit:
+                pool.free_block(block)
+            hit = [pool.null_little_blocks[leaf_id]] * len(hit)
+        row[leaf_id].extend([*hit, *loaded])
