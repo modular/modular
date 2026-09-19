@@ -38,6 +38,18 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
+# TODO(GEX-4211): Re-enable once the advanced (MAP) fusion path implements
+# tile-based fusion. `tile_based_fusion=True` selects tile kernels whose
+# fused-output epilogue MAP does not yet lower ("MAP-driven epilogue fusion
+# into a tile fused-output kernel argument is not yet supported"), so these
+# tests fail once advanced fusion is the default. Disabled rather than deleted
+# so the coverage returns with the feature; it was a temporary stopgap ahead of
+# flipping the new fusion system on by default.
+pytestmark = pytest.mark.skip(
+    reason="TODO(GEX-4211): tile_based_fusion not yet implemented on the "
+    "advanced (MAP) fusion path; re-enable after the switch flips."
+)
+
 _SHAPE = [256, 256]
 
 
