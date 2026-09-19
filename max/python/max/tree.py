@@ -738,13 +738,20 @@ def unflatten(
         filled[slot] = value
         return value
 
-    result = build(treedef)
-    if exact and next(remaining, _MISSING) is not _MISSING:
-        raise ValueError(
-            f"too many leaves: the structure has {treedef.num_leaves} leaf "
-            "slots."
-        )
-    return result
+    try:
+        result = build(treedef)
+        if exact and next(remaining, _MISSING) is not _MISSING:
+            raise ValueError(
+                f"too many leaves: the structure has {treedef.num_leaves} "
+                "leaf slots."
+            )
+        return result
+    finally:
+        # ``build`` recurses through its own closure cell, so that cell holds
+        # every leaf reachable until a gc pass runs. A leaf backed by device
+        # memory is far too large to wait for one, so the cycle closes here
+        # and the leaves are released by reference count.
+        del build
 
 
 # ─── reads ──────────────────────────────────────────────────────────────────

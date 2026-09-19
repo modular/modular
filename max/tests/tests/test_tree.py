@@ -21,6 +21,8 @@ parent back-references -- because that is what the module layer depends on.
 
 from __future__ import annotations
 
+import gc
+import weakref
 from collections import OrderedDict, defaultdict, namedtuple
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
@@ -916,6 +918,29 @@ def test_unflatten_rejects_leaves_and_structures_it_cannot_use() -> None:
 
     with pytest.raises(TypeError, match="no way to rebuild"):
         unflatten(*_flat(Halfway()))
+
+
+def test_unflatten_releases_its_leaves_without_a_gc_pass() -> None:
+    """A leaf may own device memory, which must not wait on the collector.
+
+    The walk is a set of mutually referencing closures, so the leaves stay
+    reachable through them until the cycle is broken.
+    """
+
+    class Leaf:
+        pass
+
+    leaf = Leaf()
+    dropped = weakref.ref(leaf)
+    treedef, _ = _flat([Leaf()])
+
+    gc.disable()
+    try:
+        unflatten(treedef, [leaf])  # the rebuilt tree is discarded
+        del leaf
+        assert dropped() is None, "a leaf outlived the call that rebuilt it"
+    finally:
+        gc.enable()
 
 
 # ═══ Writing your own walk ════════════════════════════════════════════════════
