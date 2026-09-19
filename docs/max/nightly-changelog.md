@@ -236,6 +236,9 @@ This version is still a work in progress.
 
 ## Fixes
 
+- The functional kernel wrappers in `max.experimental.nn.common_layers` now
+  open a realization context, so eager attention with a paged KV cache runs.
+
 - Fixed `sampling_params.seed` not reproducing. The batch-slot fix above
   briefly salted each request's RNG key with a hash of its request id, which
   the server mints fresh per HTTP request, so two identical requests carrying

@@ -235,32 +235,34 @@ def _local_functional_op(
 
         num_devices = _local_map_num_devices(named.values())
 
-        distributed_kwargs: dict[str, Any] = {}
-        broadcast_kwargs: dict[str, Any] = {}
-        for k, v in named.items():
-            if isinstance(v, Tensor) and v.is_distributed:
-                distributed_kwargs[k] = v
-            elif isinstance(v, PagedCacheValues):
-                # local_map has no notion of PagedCacheValues; pre-unroll it
-                # into a per-device bundle it can index positionally.
-                distributed_kwargs[k] = [
-                    v.for_device(i) for i in range(num_devices)
-                ]
-            else:
-                broadcast_kwargs[k] = v
+        # One context spans the op so eager KV tensors can become graph values.
+        with ensure_context():
+            distributed_kwargs: dict[str, Any] = {}
+            broadcast_kwargs: dict[str, Any] = {}
+            for k, v in named.items():
+                if isinstance(v, Tensor) and v.is_distributed:
+                    distributed_kwargs[k] = v
+                elif isinstance(v, PagedCacheValues):
+                    # local_map has no notion of PagedCacheValues; pre-unroll
+                    # it into a per-device bundle it can index positionally.
+                    distributed_kwargs[k] = [
+                        v.for_device(i) for i in range(num_devices)
+                    ]
+                else:
+                    broadcast_kwargs[k] = v
 
-        per_device = local_map(
-            run_graph_op, distributed_kwargs, broadcast_kwargs
-        )
+            per_device = local_map(
+                run_graph_op, distributed_kwargs, broadcast_kwargs
+            )
 
-        mapping = _get_mapping(
-            op.__name__, sig, return_input_sharding, args, kwargs
-        )
-        # local_map returns a tuple of per-output shard lists for a
-        # multi-output op, or a single per-device shard list otherwise.
-        if isinstance(per_device, tuple):
-            return [_reassemble(out, mapping) for out in per_device]
-        return _reassemble(per_device, mapping)
+            mapping = _get_mapping(
+                op.__name__, sig, return_input_sharding, args, kwargs
+            )
+            # local_map returns a tuple of per-output shard lists for a
+            # multi-output op, or a single per-device shard list otherwise.
+            if isinstance(per_device, tuple):
+                return [_reassemble(out, mapping) for out in per_device]
+            return _reassemble(per_device, mapping)
 
     return wrapped
 
