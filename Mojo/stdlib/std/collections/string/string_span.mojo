@@ -1698,19 +1698,12 @@ struct StringSpan[origin: ImmOrigin](
         Args:
             prefix: The prefix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
-        if end == -1:
-            return self.find(prefix, start) == start
-        return StringSpan[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
-                length=end - start,
-            )
-        ).startswith(prefix)
+        return _affix_matches[from_end=False](self, prefix, start, end)
 
     def endswith(
         self, suffix: StringSpan, start: Int = 0, end: Int = -1
@@ -1724,25 +1717,12 @@ struct StringSpan[origin: ImmOrigin](
         Args:
             suffix: The suffix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
-        if suffix.byte_length() > self.byte_length():
-            return False
-        if end == -1:
-            return (
-                self.rfind(suffix, start) + suffix.byte_length()
-                == self.byte_length()
-            )
-        # FIXME: use normalize_index
-        return StringSpan[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
-                length=end - start,
-            )
-        ).endswith(suffix)
+        return _affix_matches[from_end=True](self, suffix, start, end)
 
     def removeprefix(self, prefix: StringSpan, /) -> Self:
         """Returns a view of the string with the prefix removed if it was
@@ -2596,6 +2576,50 @@ def _to_string_list[
         lambda (v: Span[Byte, O]) -> Int: len(v),
         lambda (v: Span[Byte, O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
     ](items)
+
+
+def _normalize_affix_bound(bound: Int, length: Int) -> Int:
+    return bound if bound >= 0 else max(bound + length, 0)
+
+
+def _affix_matches[
+    from_end: Bool
+](haystack: StringSpan, affix: StringSpan, start: Int, end: Int) -> Bool:
+    var length = haystack.byte_length()
+    var start_byte = _normalize_affix_bound(start, length)
+    if end == -1:
+        var affix_length = affix.byte_length()
+        # Subtract, don't add: the sum overflows near `Int.MAX`.
+        if start_byte > length - affix_length:
+            return False
+        if affix_length == 0:
+            return True
+        var offset: Int
+        comptime if from_end:
+            offset = length - affix_length
+        else:
+            offset = start_byte
+        return (
+            unsafe_memcmp(
+                haystack.unsafe_ptr().unsafe_offset(offset),
+                affix.unsafe_ptr(),
+                affix_length,
+            )
+            == 0
+        )
+    var end_byte = min(_normalize_affix_bound(end, length), length)
+    if start_byte > end_byte:
+        return False
+    var sub = type_of(haystack)(
+        unsafe_from_utf8={
+            unsafe_ptr = haystack.unsafe_ptr().unsafe_offset(start_byte),
+            length = end_byte - start_byte,
+        }
+    )
+    comptime if from_end:
+        return sub.endswith(affix)
+    else:
+        return sub.startswith(affix)
 
 
 @inline(.always)

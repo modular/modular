@@ -267,6 +267,44 @@ def bench_string_find_multiple[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string startswith
+# ===-----------------------------------------------------------------------===#
+def bench_string_startswith[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+    var prefix = "ZZZZ"  # something that is not there
+
+    @inline(.always)
+    def call_fn() {imm}:
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            var res = black_box(items).startswith(black_box(prefix))
+            keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string endswith
+# ===-----------------------------------------------------------------------===#
+def bench_string_endswith[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+    var suffix = "ZZZZ"  # something that is not there
+
+    @inline(.always)
+    def call_fn() {imm}:
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            var res = black_box(items).endswith(black_box(suffix))
+            keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
 def bench_string_is_valid_utf8[
@@ -471,6 +509,14 @@ def main() raises:
             m.bench_function(
                 bench_string_find_multiple[length, fname],
                 BenchId(String("bench_string_find_multiple", suffix)),
+            )
+            m.bench_function(
+                bench_string_startswith[length, fname],
+                BenchId(String("bench_string_startswith", suffix)),
+            )
+            m.bench_function(
+                bench_string_endswith[length, fname],
+                BenchId(String("bench_string_endswith", suffix)),
             )
             m.bench_function(
                 bench_string_is_valid_utf8[length, fname],

@@ -1955,7 +1955,7 @@ struct String(
         Args:
             prefix: The prefix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
@@ -1974,7 +1974,7 @@ struct String(
         Args:
             suffix: The suffix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.

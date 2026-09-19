@@ -950,6 +950,66 @@ def test_endswith() raises:
     assert_true(ab.endswith("ab"))
 
 
+def test_startswith_endswith_no_match_long() raises:
+    var long = StringSlice(
+        "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+    )
+    assert_false(long.startswith("zzz"))
+    assert_false(long.endswith("zzz"))
+
+    # An affix that occurs, but not at the end being checked.
+    assert_false(long.startswith("bcd"))
+    assert_false(long.endswith("hi"))
+    assert_true(long.startswith("abc"))
+    assert_true(long.endswith("hij"))
+
+    assert_false(long.startswith(StringSlice(String(long) + "x")))
+    assert_false(long.endswith(StringSlice(String(long) + "x")))
+
+    assert_false(long.startswith("a", start=long.byte_length()))
+    assert_false(long.startswith("", start=long.byte_length() + 1))
+    assert_false(long.endswith("", start=long.byte_length() + 1))
+
+    for i in range(long.byte_length() + 1):
+        assert_true(long.startswith("", start=i))
+        assert_true(long.endswith("", start=i))
+
+    assert_true(long.startswith("ghij", start=-4))
+    assert_false(long.startswith("ghia", start=-4))
+    assert_true(long.endswith("hij", start=-3))
+    assert_false(long.endswith("hij", start=-2))
+
+    # Must fail the bounds check rather than overflow it.
+    assert_false(long.startswith("abc", start=Int.MAX))
+    assert_false(long.startswith("", start=Int.MAX))
+    assert_false(long.endswith("hij", start=Int.MAX))
+    assert_false(long.endswith("", start=Int.MAX))
+
+
+def test_startswith_endswith_explicit_end() raises:
+    var s = StringSlice("hello")
+
+    assert_true(s.startswith("ell", start=1, end=4))
+    assert_false(s.startswith("ello", start=1, end=4))
+    assert_true(s.endswith("ll", start=1, end=4))
+    assert_false(s.endswith("llo", start=1, end=4))
+
+    assert_true(s.startswith("ell", start=-4, end=4))
+    assert_true(s.endswith("el", start=-4, end=-2))
+    assert_false(s.endswith("ll", start=-4, end=-2))
+
+    # `end=-1` means the whole string, not one byte before the end.
+    assert_true(s.endswith("o", start=0, end=-1))
+    assert_true(s.startswith("hello", start=0, end=-1))
+
+    assert_true(s.startswith("hello", start=0, end=Int.MAX))
+    assert_true(s.endswith("hello", start=0, end=Int.MAX))
+    assert_false(s.startswith("h", start=4, end=2))
+    assert_false(s.startswith("", start=99, end=100))
+    assert_false(s.endswith("", start=99, end=100))
+    assert_true(s.startswith("", start=2, end=2))
+
+
 def test_isupper() raises:
     assert_true(StringSlice("ASDG").isupper())
     assert_false(StringSlice("AsDG").isupper())
