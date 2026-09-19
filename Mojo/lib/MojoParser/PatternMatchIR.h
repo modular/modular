@@ -21,7 +21,6 @@
 #define KGEN_MOJOPARSER_PATTERNMATCHIR_H
 
 #include "Mojo/MojoParser/ExprDest.h"
-#include "Mojo/MojoParser/MojoDiags.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Hashing.h"
@@ -90,6 +89,7 @@ struct PatternEmitState {
   IREmitter &emitter;
   CValue rootSubject;
   const PatternPath *rootPath;
+  Location matchLocation;
   DenseMap<const PatternPath *, CValue> pathValues;
 
   CValue getPathValue(const PatternPath *path, const ExprNode *expr);

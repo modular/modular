@@ -306,8 +306,8 @@ struct StmtParser : public ParserBase {
   /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
   /// entry's command list is tested in its own case region; the match else is
   /// a no-op fallthrough.
-  void emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
-                 const PatternPath *rootPath, Location matchLocation);
+  void emitCases(ArrayRef<MatchCaseEntry> caseEntries,
+                 PatternEmitState &emissionState);
 
   // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
   // closure on success when in the scope of the loop, and the specified
@@ -1693,7 +1693,10 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns
   // are emitted.  For now, we simply emit each linearly.
-  emitCases(caseEntries, subject, rootPath, matchLocation);
+  IREmitter matchEmitter = getEmitter();
+  PatternEmitState emissionState{matchEmitter, subject, rootPath, matchLocation,
+                                 DenseMap<const PatternPath *, CValue>()};
+  emitCases(caseEntries, emissionState);
 
   afterCaseCursor.restore(getLexer());
   return success();
@@ -1702,9 +1705,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
 /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
 /// entry's command list is tested in its own case region; the match else is
 /// a no-op fallthrough.
-void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
-                           const PatternPath *rootPath,
-                           Location matchLocation) {
+void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
+                           PatternEmitState &emissionState) {
   assert(!caseEntries.empty() && "emitCases requires a non-empty list");
 
   // This emits a case body at the current insertion point, handling the case
@@ -1781,19 +1783,20 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
   // Emit as one `hlcf.match`. Each source case becomes a case region that tests
   // its pattern (and optional guard), runs the body on success via
   // `hlcf.match.complete`, or advances with `hlcf.match.next` on failure.
-  auto matchOp = HLCF::MatchOp::create(builder, matchLocation, TypeRange(),
-                                       /*caseRegionsCount=*/caseEntries.size());
+  auto matchOp =
+      HLCF::MatchOp::create(builder, emissionState.matchLocation, TypeRange(),
+                            /*caseRegionsCount=*/caseEntries.size());
   matchOp.getElseRegion().emplaceBlock();
 
   for (auto [idx, caseEntry] : llvm::enumerate(caseEntries)) {
     auto &region = matchOp.getCaseRegions()[idx];
     builder.setInsertionPointToStart(&region.emplaceBlock());
+    // Code in this case can reuse state within itself, but not across cases.
+    PatternEmitState caseEmissionState = emissionState;
+    *caseEmissionState.emitter.builder = builder;
 
-    IREmitter caseEmitter = getEmitter();
     SmallVector<PatternBoundName> bindings;
-    PatternEmitState state{caseEmitter, subject, rootPath,
-                           DenseMap<const PatternPath *, CValue>()};
-    if (failed(state.emitCommands(caseEntry.commandList, bindings)))
+    if (failed(caseEmissionState.emitCommands(caseEntry.commandList, bindings)))
       continue;
 
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
@@ -1834,7 +1837,7 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
   // The match else is a no-op fallthrough. TODO: Mark unreachable when there
   // is an irrefutable pattern so we don't get dead-code errors.
   builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
-  HLCF::YieldOp::create(builder, matchLocation);
+  HLCF::YieldOp::create(builder, emissionState.matchLocation);
   builder.setInsertionPointAfter(matchOp);
 }
 

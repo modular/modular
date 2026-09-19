@@ -16,6 +16,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "PatternMatchIR.h"
+
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
@@ -25,7 +27,6 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
-#include "PatternMatchIR.h"
 
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/IR/Builders.h"
@@ -1031,7 +1032,7 @@ PatternEmitState::emitOr(const PatternCommand &cmd,
     ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
     IREmitter caseEmitter(scope, *emitter.builder);
 
-    PatternEmitState altState{caseEmitter, rootSubject, rootPath,
+    PatternEmitState altState{caseEmitter, rootSubject, rootPath, matchLocation,
                               DenseMap<const PatternPath *, CValue>()};
     SmallVector<PatternBoundName, 4> caseBindings;
     if (failed(altState.emitCommands(alt, caseBindings)))
