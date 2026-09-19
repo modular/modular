@@ -41,6 +41,7 @@ class ExprDest;
 class PatternMatchBuilder;
 struct PatternPath;
 struct PatternCommand;
+class SharedStateUser;
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -178,7 +179,7 @@ public:
   virtual llvm::SMLoc getLoc() const = 0;
 
   /// Return the 'loc' for this node translated to an MLIR location.
-  Location getLocation(IREmitter &emitter) const;
+  Location getLocation(SharedStateUser &shared) const;
 
   /// Return the source range spanned by this expression.
   virtual SourceRange getRange() const = 0;

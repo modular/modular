@@ -1693,8 +1693,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns
   // are emitted.  For now, we simply emit each linearly.
-  IREmitter matchEmitter = getEmitter();
-  PatternEmitState emissionState{matchEmitter, subject, rootPath, matchLocation,
+  PatternEmitState emissionState{*curDeclScope, subject, rootPath,
+                                 matchLocation,
                                  DenseMap<const PatternPath *, CValue>()};
   emitCases(caseEntries, emissionState);
 
@@ -1793,10 +1793,10 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     builder.setInsertionPointToStart(&region.emplaceBlock());
     // Code in this case can reuse state within itself, but not across cases.
     PatternEmitState caseEmissionState = emissionState;
-    *caseEmissionState.emitter.builder = builder;
 
     SmallVector<PatternBoundName> bindings;
-    if (failed(caseEmissionState.emitCommands(caseEntry.commandList, bindings)))
+    if (failed(caseEmissionState.emitCommands(builder, caseEntry.commandList,
+                                              bindings)))
       continue;
 
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;

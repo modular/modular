@@ -33,6 +33,10 @@ namespace llvm {
 class raw_ostream;
 } // namespace llvm
 
+namespace mlir {
+class OpBuilder;
+} // namespace mlir
+
 namespace M::KGEN::LIT {
 using llvm::raw_ostream;
 class ASTDecl;
@@ -86,22 +90,32 @@ struct PatternBoundName {
 };
 
 /// Emit state for one command-list walk: path→value memoization + CF emission.
+/// `curDeclScope` is the scope new emitters are built against; each emit method
+/// takes the `OpBuilder` to insert into.
 struct PatternEmitState {
-  IREmitter &emitter;
+  ASTDecl &curDeclScope;
   CValue rootSubject;
   const PatternPath *rootPath;
   Location matchLocation;
   DenseMap<const PatternPath *, CValue> pathValues;
 
-  CValue getPathValue(const PatternPath *path, const ExprNode *expr);
-  LogicalResult emitCommands(ArrayRef<const PatternCommand *> commands,
+  CValue getPathValue(OpBuilder &builder, const PatternPath *path,
+                      const ExprNode *expr);
+  LogicalResult emitCommands(OpBuilder &builder,
+                             ArrayRef<const PatternCommand *> commands,
                              SmallVectorImpl<PatternBoundName> &bindings);
-  LogicalResult emitOr(const PatternCommand &cmd,
+  LogicalResult emitOr(OpBuilder &builder, const PatternCommand &cmd,
                        SmallVectorImpl<PatternBoundName> &bindings);
 
   /// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
   /// the discriminant.
-  CValue emitTestableValue(const PatternCommand *command);
+  CValue emitTestableValue(OpBuilder &builder, const PatternCommand *command);
+
+  /// Emit `__eq__` of `value` against the literal or enum tag in `command`,
+  /// as a scalar bool. `value` is the subject for `Equal` and the discriminant
+  /// for `EnumTag` (what `emitTestableValue` returns).
+  SRValue emitTestForValue(OpBuilder &builder, const PatternCommand *command,
+                           CValue value);
 };
 
 /// Bump storage, path uniquing, and binding-mode state for one `match`.

@@ -196,49 +196,6 @@ bool StringLiteralNode::isSameLiteral(const ExprNode *other) const {
   return rhs && getValue() == rhs->getValue();
 }
 
-/// Drive match CF from a success predicate: on mismatch take `hlcf.match.next`,
-/// on match fall through via `hlcf.yield`. Known-true predicates are a no-op;
-/// known-false predicates emit only `match.next`.
-///
-/// Dynamic form (equivalent to `elif !matches { next } else { yield }`):
-///   hlcf.elif matches {
-///     hlcf.yield
-///   } else {
-///     hlcf.match.next
-///   }
-static LogicalResult emitMatchOutcome(IREmitter &emitter, Location loc,
-                                      CValue matches, const ExprNode *expr) {
-  if (!matches)
-    return failure();
-
-  if (!emitter.builder) {
-    emitter.emitErrorForDynamicValueInParameter(expr);
-    return failure();
-  }
-
-  auto asBoolAttr = sugarDynCastIfPresent<SIMDAttr>(matches.getIfPValue());
-  if (asBoolAttr) {
-    if (!asBoolAttr.getAsBool())
-      HLCF::MatchNextOp::create(*emitter.builder, loc);
-    return success();
-  }
-
-  SRValue matchesSR = emitter.emitSRValue({matches, expr}, EC_BoolCondition);
-  if (!matchesSR)
-    return failure();
-  HLCF::ElifOp::create(
-      *emitter.builder, loc, TypeRange(), matchesSR,
-      [&]() -> LogicalResult {
-        HLCF::YieldOp::create(*emitter.builder, loc);
-        return success();
-      },
-      [&]() -> LogicalResult {
-        HLCF::MatchNextOp::create(*emitter.builder, loc);
-        return success();
-      });
-  return success();
-}
-
 LogicalResult SimpleLiteralNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
@@ -737,7 +694,8 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
 // PatternCommandList emission
 //===----------------------------------------------------------------------===//
 
-CValue PatternEmitState::getPathValue(const PatternPath *path,
+CValue PatternEmitState::getPathValue(OpBuilder &builder,
+                                      const PatternPath *path,
                                       const ExprNode *expr) {
   assert(path && "null pattern path");
   if (auto it = pathValues.find(path); it != pathValues.end())
@@ -748,9 +706,11 @@ CValue PatternEmitState::getPathValue(const PatternPath *path,
     return pathValues[path] = rootSubject;
   }
 
-  CValue parent = getPathValue(path->parent, expr);
+  CValue parent = getPathValue(builder, path->parent, expr);
   if (!parent)
     return {};
+
+  IREmitter emitter(curDeclScope, builder);
 
   switch (path->kind) {
   case PatternPath::Root:
@@ -808,106 +768,105 @@ CValue PatternEmitState::getPathValue(const PatternPath *path,
   llvm_unreachable("unknown PatternPath kind");
 }
 
-/// Match a literal / attribute pattern by emitting it as the subject's type
-/// and comparing with `__eq__`. Mismatch advances via `hlcf.match.next`:
-///
-///   hlcf.elif subject != lit {   // equivalently: elif eq { yield } else
-///     hlcf.match.next
-///   } else {
-///     hlcf.yield
-///   }
-static LogicalResult emitMatchAgainstValue(const ExprNode *expr,
-                                           IREmitter &emitter, CValue subject) {
-  // Emit this literal as a value of the subject's type, then compare.
-  ExprDest litDest(subject.getRValueType(), EC_MatchSubject);
-  AnyValue litValue = emitter.emitExpr(expr, litDest);
-  if (!litValue)
-    return failure();
+/// Emit `__eq__` of `value` against the literal or enum tag in `command`, as a
+/// scalar bool. `value` is the subject for `Equal` and the discriminant for
+/// `EnumTag`.
+SRValue PatternEmitState::emitTestForValue(OpBuilder &builder,
+                                           const PatternCommand *command,
+                                           CValue value) {
+  assert(command->kind == PatternCommand::Equal ||
+         command->kind == PatternCommand::EnumTag);
+  IREmitter emitter(curDeclScope, builder);
+  const ExprNode *expr = command->expr;
+  AnyValue rhs;
+  if (command->kind == PatternCommand::EnumTag) {
+    TypedAttr indexAttr = IntegerAttr::get(IndexType::get(emitter.getContext()),
+                                           command->enumCaseIndex);
+    CValue caseIdxInt = emitter.emitInt(
+        ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
+    if (!caseIdxInt)
+      return {};
+    rhs = caseIdxInt;
+  } else {
+    ExprDest litDest(value.getRValueType(), EC_MatchSubject);
+    rhs = emitter.emitExpr(expr, litDest);
+    if (!rhs)
+      return {};
+  }
 
   CValue eqResult = emitter.emitNamedMethodCall(
       "__eq__",
       CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
-                   {{AnyValue(subject), expr}, {litValue, expr}}));
-  if (!eqResult)
-    return failure();
+                   {{AnyValue(value), expr}, {rhs, expr}}));
+  auto resultSB = emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
+  auto result = emitter.emitSRValue({resultSB, expr}, EC_BoolCondition);
 
-  // Convert Bool (or other boolable) to scalar<bool> / i1 for hlcf.elif.
-  CValue matches = emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
-  return emitMatchOutcome(emitter, expr->getLocation(emitter), matches, expr);
-}
-
-/// Emit `_get_enum_discriminant() == caseIndex` as a scalar bool predicate.
-static CValue emitEnumDiscriminantMatch(IREmitter &emitter, CValue discriminant,
-                                        size_t caseIndex,
-                                        const ExprNode *expr) {
-  TypedAttr indexAttr =
-      IntegerAttr::get(IndexType::get(emitter.getContext()), caseIndex);
-  CValue caseIdxInt = emitter.emitInt(
-      ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
-  if (!caseIdxInt)
-    return {};
-
-  CValue eqResult = emitter.emitNamedMethodCall(
-      "__eq__",
-      CallOperands(
-          CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
-          {{AnyValue(discriminant), expr}, {AnyValue(caseIdxInt), expr}}));
-  if (!eqResult)
-    return {};
-
-  return emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
+  // The emitter may have moved the insertion point, keep the caller up to date.
+  builder = *emitter.builder;
+  return result;
 }
 
 /// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
 /// the discriminant.
-CValue PatternEmitState::emitTestableValue(const PatternCommand *command) {
+CValue PatternEmitState::emitTestableValue(OpBuilder &builder,
+                                           const PatternCommand *command) {
   assert(command->kind == PatternCommand::Equal ||
          command->kind == PatternCommand::EnumTag);
   // Emit the subject for equals and enum tests both.
-  CValue subject = getPathValue(command->path, command->expr);
+  CValue subject = getPathValue(builder, command->path, command->expr);
   if (!subject || command->kind == PatternCommand::Equal)
     return subject;
 
   // Enum tests need the discriminant of the enum, not the whole value.
+  IREmitter emitter(curDeclScope, builder);
   return emitGetEnumDiscriminant(emitter, subject, command->expr);
 }
 
 LogicalResult
-PatternEmitState::emitCommands(ArrayRef<const PatternCommand *> commands,
+PatternEmitState::emitCommands(OpBuilder &builder,
+                               ArrayRef<const PatternCommand *> commands,
                                SmallVectorImpl<PatternBoundName> &bindings) {
   for (const PatternCommand *cmd : commands) {
     assert(cmd && "null pattern command");
     switch (cmd->kind) {
-    case PatternCommand::Equal: {
-      CValue subject = getPathValue(cmd->path, cmd->expr);
-      if (!subject)
-        return failure();
-      if (failed(emitMatchAgainstValue(cmd->expr, emitter, subject)))
-        return failure();
-      break;
-    }
+    case PatternCommand::Equal:
     case PatternCommand::EnumTag: {
-      CValue discriminant = emitTestableValue(cmd);
-      if (!discriminant)
+      CValue value = emitTestableValue(builder, cmd);
+      if (!value)
         return failure();
-      CValue discMatch = emitEnumDiscriminantMatch(
-          emitter, discriminant, cmd->enumCaseIndex, cmd->expr);
-      if (!discMatch)
+      SRValue matches = emitTestForValue(builder, cmd, value);
+      if (!matches)
         return failure();
-      if (failed(emitMatchOutcome(emitter, cmd->expr->getLocation(emitter),
-                                  discMatch, cmd->expr)))
-        return failure();
+
+      /// Emit a dynamic test:
+      ///   hlcf.elif matches {
+      ///     hlcf.yield
+      ///   } else {
+      ///     hlcf.match.next
+      ///   }
+      Location loc =
+          curDeclScope.getShared().translateLocation(cmd->expr->getLoc());
+      HLCF::ElifOp::create(
+          builder, loc, TypeRange(), matches,
+          [&]() -> LogicalResult {
+            HLCF::YieldOp::create(builder, loc);
+            return success();
+          },
+          [&]() -> LogicalResult {
+            HLCF::MatchNextOp::create(builder, loc);
+            return success();
+          });
       break;
     }
     case PatternCommand::Bind: {
-      CValue subject = getPathValue(cmd->path, cmd->expr);
+      CValue subject = getPathValue(builder, cmd->path, cmd->expr);
       if (!subject)
         return failure();
       bindings.push_back({cmd->bindName, subject, cmd->declKind});
       break;
     }
     case PatternCommand::Or:
-      if (failed(emitOr(*cmd, bindings)))
+      if (failed(emitOr(builder, *cmd, bindings)))
         return failure();
       break;
     }
@@ -919,16 +878,16 @@ PatternEmitState::emitCommands(ArrayRef<const PatternCommand *> commands,
 /// temporary vardecls for the bound value, which is then initialized on each
 /// arm.  This sets up the temporary VarDecls to use for the intermediates.
 static LogicalResult
-initOrBindings(IREmitter &emitter, HLCF::MatchOp matchOp, SMLoc loc,
+initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
                SmallVectorImpl<PatternBoundName> &aggregateBindings,
-               ArrayRef<PatternBoundName> caseBindings) {
+               ArrayRef<PatternBoundName> caseBindings, ASTDecl &curDeclScope) {
   if (caseBindings.empty())
     return success();
 
   // Create one VarDecl per binding before the nested or-match so each
   // alternative can store into the same slots and the result dominates the
   // enclosing case.
-  OpBuilder::InsertionGuard guard(*emitter.builder);
+  IREmitter emitter(curDeclScope, builder);
   emitter.builder->setInsertionPoint(matchOp);
   Location mlirLoc = emitter.shared.translateLocation(loc);
 
@@ -973,10 +932,9 @@ initOrBindings(IREmitter &emitter, HLCF::MatchOp matchOp, SMLoc loc,
 
 /// Verify each alternative binds the same names/kinds/types as the aggregate
 /// slots, and copy each case binding into its aggregate VarDecl.
-static LogicalResult
-checkOrBindings(IREmitter &emitter, SMLoc loc,
-                ArrayRef<PatternBoundName> aggregateBindings,
-                ArrayRef<PatternBoundName> caseBindings) {
+static LogicalResult checkOrBindings(
+    OpBuilder &builder, SMLoc loc, ArrayRef<PatternBoundName> aggregateBindings,
+    ArrayRef<PatternBoundName> caseBindings, ASTDecl &curDeclScope) {
   if (aggregateBindings.empty() && caseBindings.empty())
     return success();
 
@@ -984,17 +942,18 @@ checkOrBindings(IREmitter &emitter, SMLoc loc,
   for (const PatternBoundName &bn : caseBindings)
     caseByName[bn.name] = &bn;
 
+  SharedState &shared = curDeclScope.getShared();
   for (const PatternBoundName &bn : aggregateBindings) {
     auto it = caseByName.find(bn.name);
     if (it == caseByName.end()) {
-      emitter.emitError(loc, "or-pattern alternatives must bind the same names")
+      shared.emitError(loc, "or-pattern alternatives must bind the same names")
           << "; '" << bn.name << "' is bound in one alternative but not "
           << "the other";
       return failure();
     }
     const PatternBoundName &caseBN = *it->second;
     if (bn.bindingKind != caseBN.bindingKind) {
-      emitter.emitError(loc, "or-pattern binding '")
+      shared.emitError(loc, "or-pattern binding '")
           << bn.name
           << "' must use the same 'var'/'ref' kind in each alternative";
       return failure();
@@ -1009,7 +968,7 @@ checkOrBindings(IREmitter &emitter, SMLoc loc,
         sugarIsa<RefType>(lhsType))
       lhsType = ASTType(sugarCast<RefType>(lhsType).getElementType());
     if (!lhsType.isEqualCanon(rhsType)) {
-      auto diag = emitter.emitError(loc, "or-pattern binding '")
+      auto diag = shared.emitError(loc, "or-pattern binding '")
                   << bn.name << "' has incompatible types across alternatives";
       diag.attachNote(loc) << "first alternative has type " << lhsType
                            << ", this alternative has type " << rhsType;
@@ -1027,13 +986,15 @@ checkOrBindings(IREmitter &emitter, SMLoc loc,
     }
     ExprDest storeDest(destLV, EC_VarInit);
     SyntheticNode locExpr(loc);
+    IREmitter emitter(curDeclScope, builder);
     if (!emitter.emitCResult(caseBN.value, &locExpr, storeDest))
       return failure();
+    builder = *emitter.builder; // Keep builder in sync.
     caseByName.erase(it);
   }
 
   if (!caseByName.empty()) {
-    emitter.emitError(loc, "or-pattern alternatives must bind the same names")
+    shared.emitError(loc, "or-pattern alternatives must bind the same names")
         << "; '" << caseByName.begin()->first()
         << "' is bound in one alternative but not the other";
     return failure();
@@ -1042,52 +1003,48 @@ checkOrBindings(IREmitter &emitter, SMLoc loc,
 }
 
 LogicalResult
-PatternEmitState::emitOr(const PatternCommand &cmd,
+PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
                          SmallVectorImpl<PatternBoundName> &bindings) {
-  if (!emitter.builder) {
-    emitter.emitErrorForDynamicValueInParameter(cmd.expr);
-    return failure();
-  }
+
+  SharedState &shared = curDeclScope.getShared();
 
   auto createBindingScope = [&](SMLoc scopeLoc) -> ASTDecl & {
-    return emitter.getDeclResolver().addFullyResolvedDecl(
-        /*declVal=*/nullptr, StringAttr(), scopeLoc, &emitter.declScope);
+    return shared.getDeclResolver().addFullyResolvedDecl(
+        /*declVal=*/nullptr, StringAttr(), scopeLoc, &curDeclScope);
   };
 
-  Location loc = cmd.expr->getLocation(emitter);
+  Location loc = shared.translateLocation(cmd.expr->getLoc());
   auto matchOp =
-      HLCF::MatchOp::create(*emitter.builder, loc, TypeRange(),
+      HLCF::MatchOp::create(builder, loc, TypeRange(),
                             /*caseRegionsCount=*/cmd.orAlternatives.size());
 
   SmallVector<PatternBoundName, 4> aggregateBindings;
   for (auto [idx, alt] : llvm::enumerate(cmd.orAlternatives)) {
     Block &block = matchOp.getCaseRegions()[idx].emplaceBlock();
-    emitter.builder->setInsertionPointToStart(&block);
-    ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
-    IREmitter caseEmitter(scope, *emitter.builder);
+    builder.setInsertionPointToStart(&block);
 
-    PatternEmitState altState{caseEmitter, rootSubject, rootPath, matchLocation,
+    ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
+    PatternEmitState altState{scope, rootSubject, rootPath, matchLocation,
                               DenseMap<const PatternPath *, CValue>()};
     SmallVector<PatternBoundName, 4> caseBindings;
-    if (failed(altState.emitCommands(alt, caseBindings)))
+    if (failed(altState.emitCommands(builder, alt, caseBindings)))
       return failure();
 
     if (idx == 0) {
-      if (failed(initOrBindings(emitter, matchOp, cmd.expr->getLoc(),
-                                aggregateBindings, caseBindings)))
+      if (failed(initOrBindings(builder, matchOp, cmd.expr->getLoc(),
+                                aggregateBindings, caseBindings, curDeclScope)))
         return failure();
     }
-    if (failed(checkOrBindings(caseEmitter, cmd.expr->getLoc(),
-                               aggregateBindings, caseBindings)))
+    if (failed(checkOrBindings(builder, cmd.expr->getLoc(), aggregateBindings,
+                               caseBindings, curDeclScope)))
       return failure();
-
-    HLCF::MatchCompleteOp::create(*caseEmitter.builder, loc);
+    HLCF::MatchCompleteOp::create(builder, loc);
   }
 
   Block &elseBlock = matchOp.getElseRegion().emplaceBlock();
-  emitter.builder->setInsertionPointToStart(&elseBlock);
-  HLCF::MatchNextOp::create(*emitter.builder, loc);
-  emitter.builder->setInsertionPointAfter(matchOp);
+  builder.setInsertionPointToStart(&elseBlock);
+  HLCF::MatchNextOp::create(builder, loc);
+  builder.setInsertionPointAfter(matchOp);
 
   for (const PatternBoundName &bn : aggregateBindings) {
     CValue resultBinding;
@@ -1095,7 +1052,7 @@ PatternEmitState::emitOr(const PatternCommand &cmd,
       resultBinding = MRValue(ml);
     } else {
       RLValue rl = bn.value.getIfRLValue();
-      Value refVal = RefLoadOp::create(*emitter.builder, loc, rl);
+      Value refVal = RefLoadOp::create(builder, loc, rl);
       resultBinding = CValue::getMValueForRef(refVal);
     }
     bindings.push_back({bn.name, resultBinding, bn.bindingKind});

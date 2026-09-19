@@ -528,8 +528,8 @@ llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
 llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
 /// Return the 'loc' for this node translated to an MLIR location.
-Location ExprNode::getLocation(IREmitter &emitter) const {
-  return emitter.translateLocation(getLoc());
+Location ExprNode::getLocation(SharedStateUser &shared) const {
+  return shared.translateLocation(getLoc());
 }
 /// Recursively dig through noop paren nodes (if present) to find what is
 /// inside of them.
