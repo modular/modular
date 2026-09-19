@@ -32,7 +32,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -214,11 +213,10 @@ def _rms_norm_fused_fp8_gpu[
     var cols = last_dim
 
     # Create 2D input function (following rms_norm_fused_residual_add pattern)
-    @__parameter
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, simd_width]:
+    ](row: Int, col: Int) {var shape} -> SIMD[in_dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width, rank](indices.canonicalize())
@@ -238,14 +236,13 @@ def _rms_norm_fused_fp8_gpu[
     ]()
 
     # Dispatch: select SIMD width and kernel strategy based on column count
-    @__parameter
-    def launch[sw: Int, warp_tiling: Bool]() raises:
+    @inline(.always)
+    def launch[sw: Int, warp_tiling: Bool]() raises {var input_fn_2d, imm}:
         _rms_norm_fused_fp8_gpu_launch[
             sw,
             in_dtype,
             out_dtype,
             scales_dtype,
-            input_fn_2d,
             use_warp_tiling=warp_tiling,
             compile_only=compile_only,
         ](
@@ -258,6 +255,7 @@ def _rms_norm_fused_fp8_gpu[
             scale_ub,
             scale_output_1d,
             ctx,
+            input_fn_2d,
         )
 
     if cols % base_simd_width == 0:
@@ -289,12 +287,12 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     //,
     simd_width: Int,
     threads_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
-    output_fn: def[width: Int](
-        row: Int, col: Int, val: SIMD[out_dtype, width]
-    ) capturing -> None,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Int, Int) -> SIMD[in_dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Int, Int, SIMD[out_dtype, width]) -> None,
 ](
     gamma: TileTensor[in_dtype, LayoutType, origin, Engine=Engine],
     scale_buffer: TileTensor[
@@ -308,10 +306,13 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     weight_offset: Float32,
     cols: Int32,
     scale_ub: Float32,
+    input_fn: InputFnType,
+    output_fn: OutputFnType,
 ):
-    """GPU kernel for fused RMSNorm + FP8 with warp-tiling - optimized like standalone RMS norm.
+    """GPU kernel for fused RMSNorm + FP8 with warp-tiling.
 
-    This kernel always multiplies by gamma before quantizing to FP8.
+    `input_fn` / `output_fn` are trailing host-layout arguments so enqueue
+    does not DevicePassable-encode those capturing closures.
     """
     var _cols = Int(cols)
     var _epsilon = Scalar[in_dtype](epsilon)
@@ -330,11 +331,11 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
 
     # Helper: Load gamma and apply to value (shared between both kernel variants)
     @inline(.always)
-    @__copy_capture(gamma, _weight_offset)
-    @__parameter
     def apply_gamma[
         width: Int
-    ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
+    ](val: SIMD[accum_type, width], col: Int) {
+        var gamma, var _weight_offset
+    } -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
@@ -392,109 +393,6 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
             output_fn[simd_width](row, idx, output_fp8)
 
 
-def _rms_norm_fused_fp8_gpu_launch[
-    simd_width: Int,
-    in_dtype: DType,
-    out_dtype: DType,
-    scales_dtype: DType,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
-    use_warp_tiling: Bool,
-    compile_only: Bool = False,
-](
-    rows: Int,
-    cols: Int,
-    output: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
-    scale_ub: Float32,
-    scale_output: TileTensor[mut=True, scales_dtype, ...],
-    ctx: DeviceContext,
-) raises:
-    """Unified kernel launcher for fused RMSNorm + FP8 quantization.
-
-    Selects between warp-tiling and block-tiling kernels at compile time.
-    """
-
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
-
-    var grid_dim = rows
-    var block_dim = threads_per_block
-
-    @inline(.always)
-    @__parameter
-    @__copy_capture(output)
-    def output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
-        """Write output to buffer."""
-        output.store_linear[width=width](IndexList[2](row, col), val)
-
-    comptime if use_warp_tiling:
-        comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
-            mut=gamma.mut,
-            origin=gamma.origin,
-            LayoutType=gamma.LayoutType,
-            Engine=gamma.Engine,
-            in_dtype=in_dtype,
-            out_dtype=out_dtype,
-            scales_dtype=scales_dtype,
-            scale_origin=scale_output.origin,
-            ScaleLayoutType=scale_output.LayoutType,
-            ScaleEngine=scale_output.Engine,
-            simd_width=simd_width,
-            threads_per_block=threads_per_block,
-            input_fn=input_fn,
-            output_fn=output_fn,
-        ]
-        comptime if compile_only:
-            _ = ctx.compile_function[kernel]()
-        else:
-            ctx.enqueue_function[kernel](
-                gamma,
-                scale_output,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
-                Int32(cols),
-                Float32(scale_ub),
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
-            )
-    else:
-        comptime kernel = _rms_norm_fused_fp8_kernel_block[
-            mut=gamma.mut,
-            origin=gamma.origin,
-            LayoutType=gamma.LayoutType,
-            Engine=gamma.Engine,
-            in_dtype=in_dtype,
-            out_dtype=out_dtype,
-            scales_dtype=scales_dtype,
-            scale_origin=scale_output.origin,
-            ScaleLayoutType=scale_output.LayoutType,
-            ScaleEngine=scale_output.Engine,
-            simd_width=simd_width,
-            threads_per_block=threads_per_block,
-            input_fn=input_fn,
-            output_fn=output_fn,
-        ]
-        comptime if compile_only:
-            _ = ctx.compile_function[kernel]()
-        else:
-            ctx.enqueue_function[kernel](
-                gamma,
-                scale_output,
-                epsilon.cast[.float32](),
-                weight_offset.cast[.float32](),
-                Int32(cols),
-                Float32(scale_ub),
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
-            )
-
-
 @__name(t"rms_norm_fused_fp8_block_{in_dtype}_{out_dtype}")
 def _rms_norm_fused_fp8_kernel_block[
     mut: Bool,
@@ -510,12 +408,12 @@ def _rms_norm_fused_fp8_kernel_block[
     //,
     simd_width: Int,
     threads_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        in_dtype, width
-    ],
-    output_fn: def[width: Int](
-        row: Int, col: Int, val: SIMD[out_dtype, width]
-    ) capturing -> None,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Int, Int) -> SIMD[in_dtype, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Int, Int, SIMD[out_dtype, width]) -> None,
 ](
     gamma: TileTensor[in_dtype, LayoutType, origin, Engine=Engine],
     scale_buffer: TileTensor[
@@ -529,10 +427,13 @@ def _rms_norm_fused_fp8_kernel_block[
     weight_offset: Float32,
     cols: Int32,
     scale_ub: Float32,
+    input_fn: InputFnType,
+    output_fn: OutputFnType,
 ):
-    """GPU kernel for fused RMSNorm + FP8 with block-tiling - optimized version.
+    """GPU kernel for fused RMSNorm + FP8 with block-tiling.
 
-    This kernel always multiplies by gamma before quantizing to FP8.
+    `input_fn` / `output_fn` are trailing host-layout arguments so enqueue
+    does not DevicePassable-encode those capturing closures.
     """
     var _cols = Int(cols)
     var _epsilon = Scalar[in_dtype](epsilon)
@@ -550,11 +451,11 @@ def _rms_norm_fused_fp8_kernel_block[
 
     # Helper: Load gamma and apply to value (same as warp-tiling variant)
     @inline(.always)
-    @__copy_capture(gamma, _weight_offset)
-    @__parameter
     def apply_gamma[
         width: Int
-    ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
+    ](val: SIMD[accum_type, width], col: Int) {
+        var gamma, var _weight_offset
+    } -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
@@ -616,3 +517,111 @@ def _rms_norm_fused_fp8_kernel_block[
                     normalized, scale_factor_recip
                 )
                 output_fn[simd_width](row, col, output_fp8)
+
+
+def _rms_norm_fused_fp8_gpu_launch[
+    simd_width: Int,
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Int, Int) -> SIMD[in_dtype, width],
+    use_warp_tiling: Bool,
+    compile_only: Bool = False,
+](
+    rows: Int,
+    cols: Int,
+    output: TileTensor[mut=True, out_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[in_dtype],
+    scale_ub: Float32,
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
+    ctx: DeviceContext,
+    input_fn: InputFnType,
+) raises:
+    """Unified kernel launcher for fused RMSNorm + FP8 quantization.
+
+    Selects between warp-tiling and block-tiling kernels at compile time.
+    """
+
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+
+    var grid_dim = rows
+    var block_dim = threads_per_block
+
+    @inline(.always)
+    def output_fn[
+        width: Int
+    ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
+        """Write output to buffer."""
+        output.store_linear[width=width](IndexList[2](row, col), val)
+
+    comptime if use_warp_tiling:
+        comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
+            mut=gamma.mut,
+            origin=gamma.origin,
+            LayoutType=gamma.LayoutType,
+            Engine=gamma.Engine,
+            in_dtype=in_dtype,
+            out_dtype=out_dtype,
+            scales_dtype=scales_dtype,
+            scale_origin=scale_output.origin,
+            ScaleLayoutType=scale_output.LayoutType,
+            ScaleEngine=scale_output.Engine,
+            simd_width=simd_width,
+            threads_per_block=threads_per_block,
+            InputFnType=type_of(input_fn),
+            OutputFnType=type_of(output_fn),
+        ]
+        comptime if compile_only:
+            _ = ctx.compile_function[kernel]()
+        else:
+            ctx.enqueue_function[kernel](
+                gamma,
+                scale_output,
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
+                Int32(cols),
+                Float32(scale_ub),
+                host_arg=input_fn,
+                host_arg2=output_fn,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
+    else:
+        comptime kernel = _rms_norm_fused_fp8_kernel_block[
+            mut=gamma.mut,
+            origin=gamma.origin,
+            LayoutType=gamma.LayoutType,
+            Engine=gamma.Engine,
+            in_dtype=in_dtype,
+            out_dtype=out_dtype,
+            scales_dtype=scales_dtype,
+            scale_origin=scale_output.origin,
+            ScaleLayoutType=scale_output.LayoutType,
+            ScaleEngine=scale_output.Engine,
+            simd_width=simd_width,
+            threads_per_block=threads_per_block,
+            InputFnType=type_of(input_fn),
+            OutputFnType=type_of(output_fn),
+        ]
+        comptime if compile_only:
+            _ = ctx.compile_function[kernel]()
+        else:
+            ctx.enqueue_function[kernel](
+                gamma,
+                scale_output,
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
+                Int32(cols),
+                Float32(scale_ub),
+                host_arg=input_fn,
+                host_arg2=output_fn,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
