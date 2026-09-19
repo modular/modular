@@ -327,9 +327,8 @@ def _run_case[
 
         # This branch owes the SAME outputs as the fused one; dropping the
         # `quantize_mx_amd` leaves them stale and arm A catches it (verified).
-        @__parameter
         @inline(.always)
-        def two_launch_with_quant() raises:
+        def two_launch_with_quant() raises {imm}:
             comptime if not route_two_launch:
                 # Poison: `threshold = full_bytes` forces the fused branch, so
                 # being called at all means the routing inverted -- which the
@@ -351,10 +350,7 @@ def _run_case[
                 )
                 quantize_mx_amd(ctx_i, quant_view, scale_view, normed_view)
 
-        _dispatch_ag_norm_quant[
-            two_launch_with_quant=two_launch_with_quant,
-            quant_epilogue=mx_epilogue,
-        ](
+        _dispatch_ag_norm_quant[quant_epilogue=mx_epilogue,](
             in_shards,
             normed_view,
             sum_view,
@@ -363,6 +359,7 @@ def _run_case[
             weight_offset,
             rank_sigs,
             ctx_i,
+            two_launch_with_quant,
             threshold=threshold,
         )
     group_end()

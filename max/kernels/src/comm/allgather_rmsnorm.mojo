@@ -635,8 +635,8 @@ def _dispatch_ag_norm[
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
+    TwoLaunchFnType: def() raises -> None,
     //,
-    two_launch: def() raises capturing -> None,
     group_size: Int = ngpus,
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
@@ -647,6 +647,7 @@ def _dispatch_ag_norm[
     weight_offset: Scalar[in_dtype],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    two_launch: TwoLaunchFnType,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,
 ) raises:
@@ -669,7 +670,7 @@ def _dispatch_ag_norm[
         ngpus: Total number of devices in the world.
         in_layout: Layout of the input shard TileTensors.
         in_origin: Origin of the input shard TileTensors.
-        two_launch: Caller-supplied standalone all-gather + RMSNorm closure.
+        TwoLaunchFnType: Type of the `two_launch` value argument.
         group_size: Number of devices per independent all-gather group. Must
             evenly divide `ngpus`. Defaults to `ngpus` (one full-world group,
             byte-identical to the pre-grouping behavior).
@@ -685,6 +686,7 @@ def _dispatch_ag_norm[
         rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
             device rank.
         ctx: Device context for this GPU.
+        two_launch: Caller-supplied standalone all-gather + RMSNorm closure.
         threshold: Full-`[rows, cols]`-bytes fuse threshold; fuse at/below, else
             `two_launch`. Defaults to `AG_NORM_FUSE_THRESHOLD`.
         my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`. Defaults to
@@ -761,8 +763,8 @@ def _dispatch_ag_norm_quant[
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
+    TwoLaunchFnType: def() raises -> None,
     //,
-    two_launch_with_quant: def() raises capturing -> None,
     quant_epilogue: def[width: Int](
         row: Int, col: Int, val: SIMD[in_dtype, width]
     ) capturing -> None,
@@ -776,6 +778,7 @@ def _dispatch_ag_norm_quant[
     weight_offset: Scalar[in_dtype],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    two_launch_with_quant: TwoLaunchFnType,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,
 ) raises:
@@ -793,8 +796,7 @@ def _dispatch_ag_norm_quant[
         ngpus: Total number of devices in the world.
         in_layout: Layout of the input shard TileTensors.
         in_origin: Origin of the input shard TileTensors.
-        two_launch_with_quant: Standalone all-gather + RMSNorm + quantize
-            closure.
+        TwoLaunchFnType: Type of the `two_launch_with_quant` value argument.
         quant_epilogue: Fused-path normed-value epilogue; see
             `allgather_rmsnorm_quant`.
         group_size: Number of devices per independent all-gather group. Must
@@ -812,6 +814,8 @@ def _dispatch_ag_norm_quant[
         rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
             device rank.
         ctx: Device context for this GPU.
+        two_launch_with_quant: Standalone all-gather + RMSNorm + quantize
+            closure.
         threshold: Full-`[rows, cols]`-bytes fuse threshold; fuse at/below, else
             `two_launch_with_quant`. Defaults to `AG_NORM_FUSE_THRESHOLD`. MUST
             be group-uniform -- see the deadlock note below.

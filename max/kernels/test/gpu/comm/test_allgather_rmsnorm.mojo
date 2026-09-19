@@ -282,9 +282,8 @@ def _run_case[
             # into the residual output `sum_full`, then `rms_norm_gpu` into
             # `normed`. `sum_out` must be the gathered stream on both branches
             # (op contract).
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 _allgather_full[in_dtype, ngpus, num_cols](
                     in_shards, sum_full, config, rank_sigs, list_of_ctx[i], i
                 )
@@ -298,7 +297,7 @@ def _run_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch](
+            _dispatch_ag_norm(
                 in_shards,
                 normed_view,
                 sum_view,
@@ -307,6 +306,7 @@ def _run_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 threshold=dispatch_threshold,
             )
         else:
@@ -712,9 +712,8 @@ def _run_prod_oracle_case[
         comptime if use_dispatch:
             # Two-launch fallback writes the residual into `sum_full` (the op
             # contract), then norms it into `normed`.
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 _allgather_full[
                     in_dtype, ngpus, num_cols, group_size=group_size
                 ](
@@ -735,7 +734,7 @@ def _run_prod_oracle_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch, group_size=group_size](
+            _dispatch_ag_norm[group_size=group_size](
                 world_shards,
                 normed_view,
                 sum_view,
@@ -744,6 +743,7 @@ def _run_prod_oracle_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
         else:
@@ -1334,9 +1334,8 @@ def _run_asymmetric_fuse_gate_case[
 
         # The op's own fallback. Windowed by each device's OWN group height,
         # which is what the symmetric `_allgather_full` cannot express.
-        @__parameter
         @inline(.always)
-        def two_launch() raises:
+        def two_launch() raises {imm}:
             var world_out_views = Array[FullType, ngpus * group_size](
                 uninitialized=True
             )
@@ -1397,7 +1396,6 @@ def _run_asymmetric_fuse_gate_case[
 
         comptime if quant:
             _dispatch_ag_norm_quant[
-                two_launch_with_quant=two_launch,
                 quant_epilogue=mx_epilogue,
                 group_size=group_size,
             ](
@@ -1409,10 +1407,11 @@ def _run_asymmetric_fuse_gate_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
         else:
-            _dispatch_ag_norm[two_launch=two_launch, group_size=group_size](
+            _dispatch_ag_norm[group_size=group_size](
                 world_shards,
                 normed_view,
                 sum_view,
@@ -1421,6 +1420,7 @@ def _run_asymmetric_fuse_gate_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
     group_end()

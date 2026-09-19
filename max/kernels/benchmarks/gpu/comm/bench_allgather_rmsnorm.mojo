@@ -629,15 +629,14 @@ def bench_allgather_rmsnorm[
     @inline(.always)
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises {mut in_shards, imm}:
+    ) raises {imm}:
         @inline(.always)
-        def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
-        ) raises {mut in_shards, imm}:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+            var in_shards = Array[ShardType, ngpus](uninitialized=True)
             _rebuild_shards(cache_iter, in_shards)
 
             @inline(.always)
-            def two_launch() raises capturing:
+            def two_launch() raises {imm}:
                 var out_base = rebind[
                     MutPointer[Scalar[in_dtype], MutAnyOrigin]
                 ](sum_full[ctx_idx].unsafe_ptr())
@@ -670,7 +669,7 @@ def bench_allgather_rmsnorm[
                         ctx_inner,
                     )
 
-            _dispatch_ag_norm[two_launch=two_launch](
+            _dispatch_ag_norm(
                 in_shards,
                 normed_views[ctx_idx],
                 sum_views[ctx_idx],
@@ -679,6 +678,7 @@ def bench_allgather_rmsnorm[
                 weight_offset,
                 rank_sigs,
                 ctx_inner,
+                two_launch,
             )
 
         bencher_iter_custom(bench, call_fn, ctx)

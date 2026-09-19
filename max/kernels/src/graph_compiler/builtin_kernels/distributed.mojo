@@ -1313,9 +1313,8 @@ struct DistributedAllGatherRMSNorm:
             # fabric-saturated standalone gather wins): all-gather into `sum_buf`,
             # then `rms_norm_gpu` into `normed_buf`. `sum_buf` is the residual on
             # both branches. mbc=True.
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 # Each shard gathers into its contiguous row-range of
                 # `sum_buf` (natural concat order), so the norm below runs
                 # over the whole tensor.
@@ -1363,7 +1362,7 @@ struct DistributedAllGatherRMSNorm:
                     dev_ctxs[index],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch, group_size=group_size](
+            _dispatch_ag_norm[group_size=group_size](
                 in_tensors,
                 normed_buf,
                 sum_buf,
@@ -1372,6 +1371,7 @@ struct DistributedAllGatherRMSNorm:
                 weight_offset,
                 rank_sigs,
                 dev_ctxs[index],
+                two_launch,
                 my_rank=index,
             )
 
@@ -1631,9 +1631,8 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
 
             # Above the fuse threshold. Owes the same outputs as the fused
             # path -- skipping the quantize leaves `outputs_quant` stale.
-            @__parameter
             @inline(.always)
-            def two_launch_with_quant() raises:
+            def two_launch_with_quant() raises {imm}:
                 allgather[
                     dtype=dtype, ngpus=num_devices, group_size=group_size
                 ](
@@ -1680,7 +1679,6 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                 )
 
             _dispatch_ag_norm_quant[
-                two_launch_with_quant=two_launch_with_quant,
                 quant_epilogue=mx_epilogue,
                 group_size=group_size,
             ](
@@ -1692,6 +1690,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                 weight_offset,
                 rank_sigs,
                 dev_ctxs[index],
+                two_launch_with_quant,
                 my_rank=index,
             )
 
@@ -1964,9 +1963,32 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                             e8m0,
                         )
 
-            @__parameter
             @inline(.always)
-            def two_launch_with_quant() raises:
+            def two_launch_with_quant() raises {imm}:
+                var base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    sum_buf._storage
+                )
+                comptime OutViewType = type_of(
+                    TileTensor(base, row_major(cols_rt, cols_rt))
+                )
+                # See `DistributedAllGatherRMSNorm.two_launch`: only THIS
+                # device's own slice of the world-view output array is ever
+                # read back by `allgather`.
+                var world_out_views = Array[
+                    OutViewType, num_devices * group_size
+                ](uninitialized=True)
+                var row_off = 0
+                comptime for i in range(group_size):
+                    var len_i = (
+                        Int(in_tensors[group_start + i].num_elements())
+                        // cols_rt
+                    )
+                    world_out_views[index * group_size + i] = TileTensor(
+                        base + row_off * cols_rt,
+                        row_major(len_i, cols_rt),
+                    )
+                    row_off += len_i
+
                 allgather[
                     dtype=dtype, ngpus=num_devices, group_size=group_size
                 ](
@@ -2013,7 +2035,6 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 )
 
             _dispatch_ag_norm_quant[
-                two_launch_with_quant=two_launch_with_quant,
                 quant_epilogue=mx_epilogue,
                 group_size=group_size,
             ](
@@ -2025,6 +2046,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 weight_offset,
                 rank_sigs,
                 dev_ctxs[index],
+                two_launch_with_quant,
                 my_rank=index,
             )
 
