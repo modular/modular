@@ -17,6 +17,30 @@
 # code is put out in the right place.
 def case_callee[p: Int](): pass
 
+# CHECK-LABEL: lit.fn @"match_trivial
+def match_trivial(i: Int):
+    # Irrefutable `case _` is not a match: the body is emitted inline.
+    # CHECK-NEXT:    lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK-NOT:     hlcf.match
+    __match i:
+    case _:
+        case_callee[0]()
+
+    # Guarded `case _` is an `hlcf.elif` on the guard; failure falls through.
+    # CHECK:       [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
+    # CHECK:       [[GT:%.*]] = lit.call {{.*}}@"__gt__({{.*}}(%i, [[ZERO]])
+    # CHECK:       [[B:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[GT]])
+    # CHECK:       hlcf.elif [[B]] {
+    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:         hlcf.yield
+    # CHECK:       } else {
+    # CHECK:         hlcf.yield
+    # CHECK:       }
+    __match i:
+    case _ if i > 0:
+        case_callee[1]()
+
+
 # CHECK-LABEL: lit.fn @"match_bindings
 def match_bindings(i: Int, var s: String):
     # Bare bindings are "imm" bindings: register values become `bound`,

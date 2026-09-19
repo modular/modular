@@ -1707,6 +1707,73 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
                            Location matchLocation) {
   assert(!caseEntries.empty() && "emitCases requires a non-empty list");
 
+  // This emits a case body at the current insertion point, handling the case
+  // guard (if present).  Any bindings must be installed and any preconditions
+  // checked.  If `inMatchCase` is true, we are emitting the body of a match
+  // case, otherwise we are emitting at top level.
+  auto emitCaseBody = [&](const MatchCaseEntry &caseEntry, IREmitter &emitter,
+                          bool inMatchCase) {
+    auto emitBody = [&]() {
+      // Change the parser cursor to the start of the case body so we can parse
+      // the right text. Use parseSuite (not parseLocalScopeSuite) so the body
+      // shares the case scope above — pattern bindings remain visible.
+      caseEntry.caseCursor.restore(getLexer());
+      (void)parseSuite(caseEntry.caseIndent);
+    };
+
+    // If a guard is present: `if guard { yield } else { match.next }` so
+    // a failing guard advances to the next case and a passing one
+    // continues into the case body below.
+    if (caseEntry.guardExpr) {
+      RValue guardRVal =
+          emitter.emitExprScalarBool(caseEntry.guardExpr, EC_BoolCondition);
+      Value guardVal = emitter.emitSRValue(
+          {AnyValue(guardRVal), caseEntry.guardExpr}, EC_BoolCondition);
+      if (!guardVal)
+        return;
+      auto guardLoc = translateLocation(caseEntry.guardExpr->getLoc());
+      HLCF::ElifOp::create(
+          builder, guardLoc, TypeRange{}, guardVal,
+          [&]() -> LogicalResult {
+            // If at the top level, emit the body into the "then" block.
+            if (!inMatchCase)
+              emitBody();
+            HLCF::YieldOp::create(builder, guardLoc);
+            return success();
+          },
+          [&]() -> LogicalResult {
+            // Failure in a match case does a hlcf.match.next, but failure at
+            // top-level just falls through.
+            if (inMatchCase)
+              HLCF::MatchNextOp::create(builder, guardLoc);
+            else
+              HLCF::YieldOp::create(builder, guardLoc);
+            return success();
+          });
+
+      // If we're at top level, we emitted the body into the 'then' block,
+      if (!inMatchCase)
+        return;
+    }
+
+    emitBody();
+
+    // Signal completion if in a match case.
+    if (inMatchCase) {
+      auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
+      HLCF::MatchCompleteOp::create(builder, caseLoc);
+    }
+  };
+
+  // If there is one entry and it has no commands, then we have a _ pattern
+  // only, which is a trivial base case in recursive matching.  Emit it
+  // efficiently.
+  if (caseEntries.size() == 1 && caseEntries.front().commandList.empty()) {
+    IREmitter emitter = getEmitter();
+    emitCaseBody(caseEntries.front(), emitter, /*inMatchCase*/ false);
+    return;
+  }
+
   // Given a non-empty block of cases, check to see if any of them cluster by
   // the first command in the command list.
   // TODO: Do this, but for now just handle the general case.
@@ -1723,8 +1790,6 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
     builder.setInsertionPointToStart(&region.emplaceBlock());
 
     IREmitter caseEmitter = getEmitter();
-    auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
-
     SmallVector<PatternBoundName> bindings;
     PatternEmitState state{caseEmitter, subject, rootPath,
                            DenseMap<const PatternPath *, CValue>()};
@@ -1762,36 +1827,8 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
     if (hadFailure)
       continue;
 
-    // If a guard is present: `if guard { yield } else { match.next }` so
-    // a failing guard advances to the next case and a passing one
-    // continues into the case body below.
-    if (caseEntry.guardExpr) {
-      RValue guardRVal =
-          emitter.emitExprScalarBool(caseEntry.guardExpr, EC_BoolCondition);
-      Value guardVal = emitter.emitSRValue(
-          {AnyValue(guardRVal), caseEntry.guardExpr}, EC_BoolCondition);
-      if (!guardVal)
-        continue;
-      auto guardLoc = translateLocation(caseEntry.guardExpr->getLoc());
-      HLCF::ElifOp::create(
-          builder, guardLoc, TypeRange{}, guardVal,
-          [&]() -> LogicalResult {
-            HLCF::YieldOp::create(builder, guardLoc);
-            return success();
-          },
-          [&]() -> LogicalResult {
-            HLCF::MatchNextOp::create(builder, guardLoc);
-            return success();
-          });
-    }
-
-    // Change the parser cursor to the start of the case body so we can parse
-    // the right text. Use parseSuite (not parseLocalScopeSuite) so the body
-    // shares the case scope above — pattern bindings remain visible.
-    caseEntry.caseCursor.restore(getLexer());
-    if (failed(parseSuite(caseEntry.caseIndent)))
-      continue;
-    HLCF::MatchCompleteOp::create(builder, caseLoc);
+    // Emit the pattern guard and body of the case.
+    emitCaseBody(caseEntry, emitter, /*inMatchCase*/ true);
   }
 
   // The match else is a no-op fallthrough. TODO: Mark unreachable when there
