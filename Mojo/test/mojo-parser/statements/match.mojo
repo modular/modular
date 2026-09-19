@@ -730,3 +730,60 @@ def testLValueMutableMatch(var a: Optional[Int]):
     __match a:
     case .Some(ref value):
         value += 1
+
+# Bool and tuple ladders: each case is its own `hlcf.match` region with an
+# equality test (or tuple projection + bind).
+# CHECK-LABEL: lit.fn @"testMatchLadder
+def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
+    # CHECK:       hlcf.match {
+    # CHECK:       lit.call {{.*}}@"__eq__(::Bool,::Bool)"(%x,
+    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:         hlcf.yield
+    # CHECK:       } else {
+    # CHECK:         hlcf.match.next
+    # CHECK:       }
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:       hlcf.match.complete
+    # CHECK:       case {
+    # CHECK:       lit.call {{.*}}@"__eq__(::Bool,::Bool)"(%x,
+    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:         hlcf.yield
+    # CHECK:       } else {
+    # CHECK:         hlcf.match.next
+    # CHECK:       }
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:       hlcf.match.complete
+    # CHECK:       } else {
+    # CHECK:         hlcf.yield
+    # CHECK:       }
+    __match x:
+    case True:
+        case_callee[0]()
+    case False:
+        case_callee[1]()
+
+    # Second element is irrefutable (`_`); first projects y[0] and compares.
+    # CHECK:       hlcf.match {
+    # CHECK:       lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
+    # CHECK:       lit.call {{.*}}@"__eq__(::Bool,::Bool)"(
+    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:         hlcf.yield
+    # CHECK:       } else {
+    # CHECK:         hlcf.match.next
+    # CHECK:       }
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:       hlcf.match.complete
+    # CHECK:       case {
+    # CHECK:       lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
+    # CHECK:       [[Y_ELT:%.*]] = lit.var.decl "y_elt" ref
+    # CHECK:       lit.ref.store {{.*}}, [[Y_ELT]]
+    # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:       hlcf.match.complete
+    # CHECK:       } else {
+    # CHECK:         hlcf.yield
+    # CHECK:       }
+    __match y:
+    case (True, _):
+        case_callee[0]()
+    case (_, y_elt):
+        case_callee[1]()

@@ -62,6 +62,7 @@ struct PatternCommand {
   enum Kind { Equal, EnumTag, Or, Bind };
 
   Kind kind;
+  /// The pattern path indicates what subobject is being tested.
   const PatternPath *path = nullptr;
   const ExprNode *expr = nullptr; ///< Source pattern (diags / later emit).
 
@@ -97,6 +98,10 @@ struct PatternEmitState {
                              SmallVectorImpl<PatternBoundName> &bindings);
   LogicalResult emitOr(const PatternCommand &cmd,
                        SmallVectorImpl<PatternBoundName> &bindings);
+
+  /// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
+  /// the discriminant.
+  CValue emitTestableValue(const PatternCommand *command);
 };
 
 /// Bump storage, path uniquing, and binding-mode state for one `match`.

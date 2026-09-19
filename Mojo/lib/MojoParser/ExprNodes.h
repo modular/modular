@@ -87,6 +87,7 @@ struct IntLiteralNode final : public ExprNode {
   buildCheckList(PatternMatchBuilder &builder, CValue subject,
                  const PatternPath *path,
                  SmallVectorImpl<const PatternCommand *> &out) const override;
+  bool isSameLiteral(const ExprNode *other) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -106,6 +107,7 @@ struct FloatLiteralNode final : public ExprNode {
   buildCheckList(PatternMatchBuilder &builder, CValue subject,
                  const PatternPath *path,
                  SmallVectorImpl<const PatternCommand *> &out) const override;
+  bool isSameLiteral(const ExprNode *other) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -127,6 +129,7 @@ struct BoolLiteralNode final : public ExprNode {
   buildCheckList(PatternMatchBuilder &builder, CValue subject,
                  const PatternPath *path,
                  SmallVectorImpl<const PatternCommand *> &out) const override;
+  bool isSameLiteral(const ExprNode *other) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -189,6 +192,7 @@ struct StringLiteralNode final : public ExprNode {
   buildCheckList(PatternMatchBuilder &builder, CValue subject,
                  const PatternPath *path,
                  SmallVectorImpl<const PatternCommand *> &out) const override;
+  bool isSameLiteral(const ExprNode *other) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 

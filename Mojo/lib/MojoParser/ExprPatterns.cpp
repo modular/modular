@@ -174,6 +174,28 @@ ExprNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
   return failure();
 }
 
+bool ExprNode::isSameLiteral(const ExprNode *) const { return false; }
+
+bool IntLiteralNode::isSameLiteral(const ExprNode *other) const {
+  auto *rhs = dyn_cast<IntLiteralNode>(other);
+  return rhs && spelling == rhs->spelling;
+}
+
+bool FloatLiteralNode::isSameLiteral(const ExprNode *other) const {
+  auto *rhs = dyn_cast<FloatLiteralNode>(other);
+  return rhs && spelling == rhs->spelling;
+}
+
+bool BoolLiteralNode::isSameLiteral(const ExprNode *other) const {
+  auto *rhs = dyn_cast<BoolLiteralNode>(other);
+  return rhs && value == rhs->value;
+}
+
+bool StringLiteralNode::isSameLiteral(const ExprNode *other) const {
+  auto *rhs = dyn_cast<StringLiteralNode>(other);
+  return rhs && getValue() == rhs->getValue();
+}
+
 /// Drive match CF from a success predicate: on mismatch take `hlcf.match.next`,
 /// on match fall through via `hlcf.yield`. Known-true predicates are a no-op;
 /// known-false predicates emit only `match.next`.
@@ -215,34 +237,6 @@ static LogicalResult emitMatchOutcome(IREmitter &emitter, Location loc,
         return success();
       });
   return success();
-}
-
-/// Match a literal / attribute pattern by emitting it as the subject's type
-/// and comparing with `__eq__`. Mismatch advances via `hlcf.match.next`:
-///
-///   hlcf.elif subject != lit {   // equivalently: elif eq { yield } else
-///     hlcf.match.next
-///   } else {
-///     hlcf.yield
-///   }
-static LogicalResult emitMatchAgainstValue(const ExprNode *expr,
-                                           IREmitter &emitter, CValue subject) {
-  // Emit this literal as a value of the subject's type, then compare.
-  ExprDest litDest(subject.getRValueType(), EC_MatchSubject);
-  AnyValue litValue = emitter.emitExpr(expr, litDest);
-  if (!litValue)
-    return failure();
-
-  CValue eqResult = emitter.emitNamedMethodCall(
-      "__eq__",
-      CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
-                   {{AnyValue(subject), expr}, {litValue, expr}}));
-  if (!eqResult)
-    return failure();
-
-  // Convert Bool (or other boolable) to scalar<bool> / i1 for hlcf.elif.
-  CValue matches = emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
-  return emitMatchOutcome(emitter, expr->getLocation(emitter), matches, expr);
 }
 
 LogicalResult SimpleLiteralNode::buildCheckList(
@@ -620,39 +614,16 @@ static bool isEnumCaseWithoutPayload(IREmitter &emitter, ASTType payloadType,
       .isEqualCanon(noneType.getWithoutParameters(emitter.shared));
 }
 
-/// Emit `_get_enum_discriminant() == caseIndex` as a scalar bool predicate.
-/// This returns the bool result as well as the case number as an Int.
-static std::pair<CValue, CValue>
-emitEnumDiscriminantMatch(IREmitter &emitter, CValue subject, size_t caseIndex,
-                          const ExprNode *expr) {
+/// Given a value of EnumLike type, extract the discriminant from it.
+static CValue emitGetEnumDiscriminant(IREmitter &emitter, CValue subject,
+                                      const ExprNode *expr) {
   BValue subjectBVal = emitter.emitBValue({subject, expr}, EC_MatchSubject);
   if (!subjectBVal)
-    return {{}, {}};
-
-  CValue discriminant = emitter.emitNamedMethodCall(
+    return {};
+  return emitter.emitNamedMethodCall(
       "_get_enum_discriminant",
       CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_MatchSubject),
                    {{AnyValue(subjectBVal), expr}}));
-  if (!discriminant)
-    return {{}, {}};
-
-  TypedAttr indexAttr =
-      IntegerAttr::get(IndexType::get(emitter.getContext()), caseIndex);
-  CValue caseIdxInt = emitter.emitInt(
-      ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
-  if (!caseIdxInt)
-    return {{}, {}};
-
-  CValue eqResult = emitter.emitNamedMethodCall(
-      "__eq__",
-      CallOperands(
-          CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
-          {{AnyValue(discriminant), expr}, {AnyValue(caseIdxInt), expr}}));
-  if (!eqResult)
-    return {{}, {}};
-
-  return {emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition),
-          caseIdxInt};
 }
 
 LogicalResult CallNode::buildEnumCheckList(
@@ -837,6 +808,70 @@ CValue PatternEmitState::getPathValue(const PatternPath *path,
   llvm_unreachable("unknown PatternPath kind");
 }
 
+/// Match a literal / attribute pattern by emitting it as the subject's type
+/// and comparing with `__eq__`. Mismatch advances via `hlcf.match.next`:
+///
+///   hlcf.elif subject != lit {   // equivalently: elif eq { yield } else
+///     hlcf.match.next
+///   } else {
+///     hlcf.yield
+///   }
+static LogicalResult emitMatchAgainstValue(const ExprNode *expr,
+                                           IREmitter &emitter, CValue subject) {
+  // Emit this literal as a value of the subject's type, then compare.
+  ExprDest litDest(subject.getRValueType(), EC_MatchSubject);
+  AnyValue litValue = emitter.emitExpr(expr, litDest);
+  if (!litValue)
+    return failure();
+
+  CValue eqResult = emitter.emitNamedMethodCall(
+      "__eq__",
+      CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
+                   {{AnyValue(subject), expr}, {litValue, expr}}));
+  if (!eqResult)
+    return failure();
+
+  // Convert Bool (or other boolable) to scalar<bool> / i1 for hlcf.elif.
+  CValue matches = emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
+  return emitMatchOutcome(emitter, expr->getLocation(emitter), matches, expr);
+}
+
+/// Emit `_get_enum_discriminant() == caseIndex` as a scalar bool predicate.
+static CValue emitEnumDiscriminantMatch(IREmitter &emitter, CValue discriminant,
+                                        size_t caseIndex,
+                                        const ExprNode *expr) {
+  TypedAttr indexAttr =
+      IntegerAttr::get(IndexType::get(emitter.getContext()), caseIndex);
+  CValue caseIdxInt = emitter.emitInt(
+      ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
+  if (!caseIdxInt)
+    return {};
+
+  CValue eqResult = emitter.emitNamedMethodCall(
+      "__eq__",
+      CallOperands(
+          CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
+          {{AnyValue(discriminant), expr}, {AnyValue(caseIdxInt), expr}}));
+  if (!eqResult)
+    return {};
+
+  return emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
+}
+
+/// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
+/// the discriminant.
+CValue PatternEmitState::emitTestableValue(const PatternCommand *command) {
+  assert(command->kind == PatternCommand::Equal ||
+         command->kind == PatternCommand::EnumTag);
+  // Emit the subject for equals and enum tests both.
+  CValue subject = getPathValue(command->path, command->expr);
+  if (!subject || command->kind == PatternCommand::Equal)
+    return subject;
+
+  // Enum tests need the discriminant of the enum, not the whole value.
+  return emitGetEnumDiscriminant(emitter, subject, command->expr);
+}
+
 LogicalResult
 PatternEmitState::emitCommands(ArrayRef<const PatternCommand *> commands,
                                SmallVectorImpl<PatternBoundName> &bindings) {
@@ -852,12 +887,11 @@ PatternEmitState::emitCommands(ArrayRef<const PatternCommand *> commands,
       break;
     }
     case PatternCommand::EnumTag: {
-      CValue subject = getPathValue(cmd->path, cmd->expr);
-      if (!subject)
+      CValue discriminant = emitTestableValue(cmd);
+      if (!discriminant)
         return failure();
       CValue discMatch = emitEnumDiscriminantMatch(
-                             emitter, subject, cmd->enumCaseIndex, cmd->expr)
-                             .first;
+          emitter, discriminant, cmd->enumCaseIndex, cmd->expr);
       if (!discMatch)
         return failure();
       if (failed(emitMatchOutcome(emitter, cmd->expr->getLocation(emitter),
