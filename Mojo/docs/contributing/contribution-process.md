@@ -14,6 +14,10 @@ report a bug rather than contribute code, use the
 Before you implement a change, check that the part of the codebase you want to
 improve is [open to receiving contributions](contribution-areas.md).
 
+> [!NOTE]
+> Keep each pull request inside a single area. See
+> [keep each pull request to one contribution](issue-pr-etiquette.md#keep-each-pull-request-to-one-contribution).
+
 ### Signal your intent
 
 Make sure there's a GitHub issue describing the bug you intend to fix or the
