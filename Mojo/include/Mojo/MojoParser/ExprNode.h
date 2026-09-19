@@ -41,7 +41,6 @@ class ExprDest;
 class PatternMatchBuilder;
 struct PatternPath;
 struct PatternCommand;
-struct PatternCommandList;
 
 //===----------------------------------------------------------------------===//
 // ExprNode

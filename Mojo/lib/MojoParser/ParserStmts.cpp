@@ -1708,7 +1708,7 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
   assert(!caseEntries.empty() && "emitCases requires a non-empty list");
 
   // Given a non-empty block of cases, check to see if any of them cluster by
-  // the first command in the PatternCommandList.
+  // the first command in the command list.
   // TODO: Do this, but for now just handle the general case.
 
   // Emit as one `hlcf.match`. Each source case becomes a case region that tests
@@ -1722,17 +1722,19 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries, CValue subject,
     auto &region = matchOp.getCaseRegions()[idx];
     builder.setInsertionPointToStart(&region.emplaceBlock());
 
-    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-    pushChildScope(scopeGuard, keepDecl);
-
-    IREmitter emitter = getEmitter();
+    IREmitter caseEmitter = getEmitter();
     auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
 
     SmallVector<PatternBoundName> bindings;
-    if (failed(
-            caseEntry.commandList.emit(emitter, subject, rootPath, bindings)))
+    PatternEmitState state{caseEmitter, subject, rootPath,
+                           DenseMap<const PatternPath *, CValue>()};
+    if (failed(state.emitCommands(caseEntry.commandList, bindings)))
       continue;
+
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+    IREmitter emitter = getEmitter();
 
     // Materialize pattern bindings before the guard so guards can refer to
     // them. Match subjects are borrowed (BValues), so `var` bindings copy and

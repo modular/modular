@@ -55,7 +55,7 @@ struct PatternPath {
 };
 
 struct PatternCommand;
-struct PatternCommandList;
+using PatternCommandList = ArrayRef<const PatternCommand *>;
 
 /// One step in a case program: test the subject at `path`, nest alternatives,
 /// or record a name binding for later emission.
@@ -85,22 +85,21 @@ struct PatternBoundName {
   PatternDeclKind bindingKind;
 };
 
-/// Immutable case program: bump-interned command pointer array.
-struct PatternCommandList {
-  ArrayRef<const PatternCommand *> commands;
+/// Emit state for one command-list walk: path→value memoization + CF emission.
+struct PatternEmitState {
+  IREmitter &emitter;
+  CValue rootSubject;
+  const PatternPath *rootPath;
+  DenseMap<const PatternPath *, CValue> pathValues;
 
-  /// Emit HLCF match tests for this case against `subject` at `rootPath`.
-  /// On mismatch emits `hlcf.match.next`; on success falls through. Appends
-  /// bindings for the caller to materialize (before any guard / body).
-  LogicalResult emit(IREmitter &emitter, CValue subject,
-                     const PatternPath *rootPath,
-                     SmallVectorImpl<PatternBoundName> &bindings) const;
-
-  void print(raw_ostream &os, unsigned indent = 0) const;
-  LLVM_DUMP_METHOD void dump() const;
+  CValue getPathValue(const PatternPath *path, const ExprNode *expr);
+  LogicalResult emitCommands(ArrayRef<const PatternCommand *> commands,
+                             SmallVectorImpl<PatternBoundName> &bindings);
+  LogicalResult emitOr(const PatternCommand &cmd,
+                       SmallVectorImpl<PatternBoundName> &bindings);
 };
 
-/// Bump storage, path uniquing, and binding-mode state for one `__match`.
+/// Bump storage, path uniquing, and binding-mode state for one `match`.
 class PatternMatchBuilder {
 public:
   PatternMatchBuilder(ASTDecl &declScope, ExprContext paramContext);

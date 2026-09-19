@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements match-pattern lowering: a command-list / access-path IR
-// (`buildCheckList`) and emission via `PatternCommandList::emit`.
+// (`buildCheckList`) and emission via `PatternEmitState`.
 //
 //===----------------------------------------------------------------------===//
 
@@ -142,7 +142,17 @@ void PatternCommand::print(raw_ostream &os, unsigned indent) const {
     os << " {\n";
     for (auto [altIdx, alt] : llvm::enumerate(orAlternatives)) {
       os.indent(indent + 2) << "alt #" << altIdx << ":\n";
-      alt.print(os, indent + 4);
+      unsigned altIndent = indent + 4;
+      if (alt.empty()) {
+        os.indent(altIndent) << "<empty>\n";
+        continue;
+      }
+      for (const PatternCommand *cmd : alt) {
+        if (cmd)
+          cmd->print(os, altIndent);
+        else
+          os.indent(altIndent) << "<null-command>\n";
+      }
     }
     os.indent(indent) << "}";
     break;
@@ -151,22 +161,6 @@ void PatternCommand::print(raw_ostream &os, unsigned indent) const {
 }
 
 void PatternCommand::dump() const { print(llvm::errs()); }
-
-void PatternCommandList::print(raw_ostream &os, unsigned indent) const {
-  if (commands.empty()) {
-    os.indent(indent) << "<empty>\n";
-    return;
-  }
-  for (const PatternCommand *cmd : commands) {
-    if (cmd)
-      cmd->print(os, indent);
-    else
-      os.indent(indent) << "<null-command>\n";
-  }
-}
-
-void PatternCommandList::dump() const { print(llvm::errs()); }
-
 //===----------------------------------------------------------------------===//
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
@@ -771,23 +765,6 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
 // PatternCommandList emission
 //===----------------------------------------------------------------------===//
 
-namespace {
-
-/// Emit state for one command-list walk: path→value memoization + CF emission.
-struct PatternEmitState {
-  IREmitter &emitter;
-  CValue rootSubject;
-  const PatternPath *rootPath;
-  DenseMap<const PatternPath *, CValue> pathValues;
-
-  CValue getPathValue(const PatternPath *path, const ExprNode *expr);
-  LogicalResult emitCommands(ArrayRef<const PatternCommand *> commands,
-                             SmallVectorImpl<PatternBoundName> &bindings);
-  LogicalResult emitOr(const PatternCommand &cmd,
-                       SmallVectorImpl<PatternBoundName> &bindings);
-};
-} // end anonymous namespace
-
 CValue PatternEmitState::getPathValue(const PatternPath *path,
                                       const ExprNode *expr) {
   assert(path && "null pattern path");
@@ -1057,7 +1034,7 @@ PatternEmitState::emitOr(const PatternCommand &cmd,
     PatternEmitState altState{caseEmitter, rootSubject, rootPath,
                               DenseMap<const PatternPath *, CValue>()};
     SmallVector<PatternBoundName, 4> caseBindings;
-    if (failed(altState.emitCommands(alt.commands, caseBindings)))
+    if (failed(altState.emitCommands(alt, caseBindings)))
       return failure();
 
     if (idx == 0) {
@@ -1089,13 +1066,4 @@ PatternEmitState::emitOr(const PatternCommand &cmd,
     bindings.push_back({bn.name, resultBinding, bn.bindingKind});
   }
   return success();
-}
-
-LogicalResult
-PatternCommandList::emit(IREmitter &emitter, CValue subject,
-                         const PatternPath *rootPath,
-                         SmallVectorImpl<PatternBoundName> &bindings) const {
-  PatternEmitState state{emitter, subject, rootPath,
-                         DenseMap<const PatternPath *, CValue>()};
-  return state.emitCommands(commands, bindings);
 }
