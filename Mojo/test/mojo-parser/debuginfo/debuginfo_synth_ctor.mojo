@@ -19,12 +19,14 @@
 # CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_Deinitable_Movable)
 # CHECK-SAME: attributes {sourceName = #MyValueStruct_name}
 
-# The only debug info comes from default trait method for copy.
+# Default trait methods for Copyable / Movable / Deinitable.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "copy($0)"
-
-# We also have Moveinit in Movable and __deinit__ in Deinitable.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:$0$)"
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__deinit__($0$)"
+
+# Bool EnumLike (and transitive SIMD stringification) from the stubs.
+# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__str__(::SIMD[$0, $1])"
+# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "_unsafe_get_enum_payload{{.*}}(::Bool%)"
 
 # CHECK-NOT: #debuginfo.subprogram
 

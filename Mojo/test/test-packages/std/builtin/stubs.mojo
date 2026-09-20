@@ -626,8 +626,17 @@ struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
 
 
 @stable
-struct Bool(TrivialRegisterPassable):
+struct Bool(EnumLike, TrivialRegisterPassable):
     var _mlir_value: __mlir_type.`!kgen.scalar<bool>`
+
+    # Enable pattern matching on Bool.
+    comptime _enum_case_length = 2
+    comptime _enum_case_names = ParameterList.of[
+        "False".value, "True".value
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
+        NoneType, NoneType
+    ].values
 
     @stable
     @always_inline("builtin")
@@ -680,6 +689,15 @@ struct Bool(TrivialRegisterPassable):
     @always_inline("nodebug")
     def __eq__(self, rhs: Bool) -> Bool:
         return True
+
+    def _get_enum_discriminant(self) -> Int:
+        return 1 if self else 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
 
 
 struct Slice(TrivialRegisterPassable):

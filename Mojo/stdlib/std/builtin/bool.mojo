@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std.builtin.variadics import _MLIR
 from std.collections import List, Set
 from std.hashlib.hasher import Hasher
 
@@ -69,6 +70,7 @@ struct Bool(
     Comparable,
     ConvertibleFromPython,
     Defaultable,
+    EnumLike,
     Floatable,
     Hashable,
     ImplicitlyCopyable,
@@ -94,6 +96,18 @@ struct Bool(
 
     comptime MAX: Bool = True
     """The maximum value of a Bool."""
+
+    # ===-------------------------------------------------------------------===#
+    # EnumLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime _enum_case_length = 2
+    comptime _enum_case_names = ParameterList.of[
+        "False".value, "True".value
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
 
     # ===-------------------------------------------------------------------===#
     # Trivial bits for special functions.
@@ -240,6 +254,22 @@ struct Bool(
             1 if the Bool is True, 0 otherwise.
         """
         return select[Int](self, 1, 0)
+
+    @always_inline("builtin")
+    def _get_enum_discriminant(self) -> Int:
+        """Return 0 for `False` and 1 for `True`."""
+        return self.__int__()
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Bool cases have no payload; this is never called for a valid match.
+        """
+        while True:
+            pass
 
     @inline(.nodebug)
     def __float__(self) -> Float64:
