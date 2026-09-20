@@ -121,6 +121,68 @@ href="/nightly/install/">switch to the nightly docs</Link>.
 
 </ConditionalVersionDocs>
 
+## What are uv, pixi, and conda?
+
+Mojo isn't a Python package, but it's *distributed* as Python and Conda
+packages. The Mojo toolchain—the compiler, standard library, debugger, and
+language server—consists of large native binaries with their own
+dependencies, and it includes a Python package for [Python
+interoperability](/docs/manual/python/). Instead of building a bespoke
+installer, Modular publishes `mojo` to standard package repositories (PyPI
+and a Conda channel), so you can install it with the same tools you might
+already use for other software and combine Mojo with other packages in one
+reproducible environment.
+
+Any Python or Conda package manager can install Mojo. Here's an overview of
+the most common tools:
+
+- [**pixi**](https://pixi.sh/latest/) is a package and environment manager
+  for the Conda ecosystem. Each project gets an isolated environment defined
+  by a `pixi.toml` manifest and locked to exact versions by a `pixi.lock`
+  file, so installs are reproducible across machines. Conda packages can
+  contain anything—not just Python code—so pixi can also manage compilers,
+  CUDA libraries, and other native dependencies (and it can install packages
+  from PyPI too). We recommend pixi for most Mojo projects; to learn more,
+  see [Pixi basics](/docs/pixi/).
+
+- [**uv**](https://docs.astral.sh/uv/) is a fast Python package and project
+  manager. It installs `mojo` from PyPI into a Python virtual environment,
+  which makes it a good fit if you already work in Python and want to add
+  Mojo to your project. Because uv manages Python packages only, use pixi or
+  conda if you need non-Python dependencies (such as GPU libraries) managed
+  in the same environment.
+
+- [**conda**](https://docs.conda.io/) is the long-standing package and
+  environment manager of the Conda ecosystem (Anaconda, miniconda, and
+  miniforge). Modular publishes `mojo` as a Conda package, so conda—or
+  compatible tools such as mamba—can install it from Modular's Conda channel.
+  Pixi installs these same Conda packages, but adds project manifests,
+  lockfiles, and faster dependency resolution.
+
+- [**pip**](https://pip.pypa.io/) also works: because `mojo` is on PyPI,
+  running `pip install mojo` in a virtual environment installs the stable
+  build. Pip is the lowest-common-denominator option; uv installs the same
+  PyPI packages with faster resolution and project management.
+
+No matter which tool you choose, you get the same `mojo` package with the
+same `mojo` CLI and toolchain. The tools differ only in how they create and
+manage the environment around it:
+
+| Tool    | Package source | Lockfile          | Non-Python deps | Good fit when                                                 |
+|---------|----------------|-------------------|-----------------|---------------------------------------------------------------|
+| `pixi`  | Conda + PyPI   | `pixi.lock`       | Yes             | You want reproducible, project-scoped environments            |
+| `uv`    | PyPI           | `uv.lock`         | No              | You already work in Python and want fast installs             |
+| `conda` | Conda          | Environment files | Yes             | Your team already uses conda                                  |
+| `pip`   | PyPI           | No                | No              | You want a quick install into an existing virtual environment |
+
+:::note What about a Mojo-native package manager?
+
+We're also working on plans for a native Mojo package manager. To follow along
+or share feedback, join the
+[forum discussion](https://forum.modular.com/t/open-question-what-would-you-like-to-see-from-a-mojo-package-manager/2799).
+
+:::
+
 ## Get the VS Code extension
 
 For syntax highlighting, code completion, and debugging support, install the

@@ -21,6 +21,14 @@ export default function InstallMAX({ folder = "example-project", extraLibraries 
   />);
   return (
     <>
+      <p>
+        Not sure which tool to use? <code>pixi</code> and <code>uv</code> are
+        package managers that create isolated project environments—see{' '}
+        <a href="https://mojolang.org/install/#what-are-uv-pixi-and-conda">
+          What are uv, pixi, and conda?
+        </a>{' '}
+        for a comparison.
+      </p>
       <Tabs groupId="install">
         <TabItem value="pixi" label="pixi">
           <ol>
