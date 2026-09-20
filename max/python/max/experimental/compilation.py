@@ -180,8 +180,9 @@ def _input_buffers(
     Each tensor is checked against its staged layout and contributes one
     buffer per shard. A single-device argument may be passed as its
     :class:`~max.driver.Buffer`, which is how the pipelines pass their
-    inputs. Raises ``TypeError`` if an argument is neither and ``ValueError``
-    if it does not match its layout.
+    inputs, or as a lazy tensor, which is realized here. Raises
+    ``TypeError`` if an argument is neither and ``ValueError`` if it does not
+    match its layout.
     """
     buffers: list[Buffer] = []
     for name, layout, arg in _align_signature(layouts, treedef, args, kwargs):
@@ -192,6 +193,10 @@ def _input_buffers(
                 f"argument {name}: expected a Tensor or Buffer, got "
                 f"{type(arg).__name__}"
             )
+        # The engine consumes buffers, so the call is what forces a lazy
+        # argument's value. A distributed one still has to arrive realized.
+        if not arg.is_distributed:
+            arg._sync_realize()
         shards = arg.local_shards
         devices = [shard.device for shard in shards]
         if isinstance(layout, BufferLayout):

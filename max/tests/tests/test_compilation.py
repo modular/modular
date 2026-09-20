@@ -250,6 +250,15 @@ class TestBoundary:
             run(_tensor(1.0, 2.0, 3.0)).to_numpy(), [2.0, 4.0, 6.0]
         )
 
+    def test_a_lazy_argument_realizes_at_the_call(self) -> None:
+        """A caller that batches its setup under ``F.lazy`` still holds
+        unrealized tensors when it calls, so the call forces them."""
+        run = compile(lambda x: x * 2)(_spec(2))
+        with F.lazy():
+            x = _tensor(1.0, 2.0) + 1.0
+        assert not x.real
+        np.testing.assert_allclose(run(x).to_numpy(), [4.0, 6.0])
+
     def test_a_spec_that_describes_nothing_is_rejected(self) -> None:
         # ``TensorLayout`` rules this out statically; the guard answers untyped callers.
         not_a_spec: Any = object()
