@@ -551,27 +551,6 @@ public:
   /// returns null on error.
   RValue emitExprScalarBool(const ExprNode *condExpr, ExprContext context);
 
-  /// Short-circuiting conjunction of match predicates (`lhs && emitRhs()`).
-  ///
-  /// When `lhs` is a known-true constant the rhs is emitted directly; when it
-  /// is known-false the rhs is skipped unless `evaluateRhsEvenIfLhsFalse` is
-  /// set (used by `case` guards so a never-matching pattern still typechecks
-  /// its guard). Otherwise this lowers to a nested `hlcf.elif` that yields the
-  /// rhs only if `lhs` is true.
-  CValue
-  emitAndMatchPredicates(ASTExprAnd<CValue> lhs,
-                         llvm::function_ref<ASTExprAnd<CValue>()> emitRhs,
-                         bool evaluateRhsEvenIfLhsFalse = false);
-
-  /// Short-circuiting disjunction of match predicates (`lhs || emitRhs()`).
-  ///
-  /// When `lhs` is a known-true constant the rhs is skipped; when it is
-  /// known-false the rhs is emitted directly. Otherwise this lowers to a
-  /// nested `hlcf.elif` that yields true if `lhs` matches, else the rhs.
-  CValue
-  emitOrMatchPredicates(ASTExprAnd<CValue> lhs,
-                        llvm::function_ref<ASTExprAnd<CValue>()> emitRhs);
-
   /// Given a value, emit it into an MLIR value by invoking its `__mlir_index__`
   /// method.
   CValue emitIndex(ASTExprAnd<AnyValue> value, ExprContext context);
