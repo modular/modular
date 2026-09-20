@@ -311,21 +311,33 @@ def match_bool(x: Bool):
         case_callee[2]()
 
 
-# Enum-like Color with inferred-member patterns (e.g. `case .red`).
-struct Color(ImplicitlyCopyable):
-    comptime red = Color()
-    comptime green = Color()
-    comptime blue = Color()
+# EnumLike Color with inferred-member patterns (e.g. `case .red`).
+struct Color(ImplicitlyCopyable, EnumLike):
+    comptime _enum_case_length = 3
+    comptime _enum_case_names = ParameterList.of[
+        "red".value, "green".value, "blue".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, NoneType, NoneType
+    ].values
 
     def __init__(out self):
         pass
 
-    def __eq__(self, other: Self) -> Bool:
-        return True
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        # No payload. The body only exists so the trait method is implemented.
+        while True:
+            pass
 
 
 # CHECK-LABEL: lit.fn @"match_color
 # CHECK:       hlcf.match {
+# CHECK:         lit.call {{.*}}@"_get_enum_discriminant{{.*}}
 # CHECK:         lit.call {{.*}}@"__eq__(
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
 # CHECK:       hlcf.elif %{{.*}} {
@@ -336,6 +348,7 @@ struct Color(ImplicitlyCopyable):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.match.complete
 # CHECK:       case {
+# CHECK:         lit.call {{.*}}@"_get_enum_discriminant{{.*}}
 # CHECK:         lit.call {{.*}}@"__eq__(
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
 # CHECK:       hlcf.elif %{{.*}} {
@@ -346,6 +359,7 @@ struct Color(ImplicitlyCopyable):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:         hlcf.match.complete
 # CHECK:       case {
+# CHECK:         lit.call {{.*}}@"_get_enum_discriminant{{.*}}
 # CHECK:         lit.call {{.*}}@"__eq__(
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
 # CHECK:       hlcf.elif %{{.*}} {
