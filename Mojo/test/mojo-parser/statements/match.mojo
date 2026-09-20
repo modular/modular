@@ -381,6 +381,67 @@ def match_color(c: Color):
         case_callee[3]()
 
 
+# CHECK-LABEL: lit.fn @"match_color_complex
+# One discriminant for `tc[0]`. Same Color tags are pulled together so `red`
+# is tested once; its Int residuals (0 and 4) share a nested elif.
+# CHECK:       lit.call {{.*}}@"__getitem_param__{{.*}}(%tc)
+# CHECK:       [[DISC:%.*]] = lit.call {{.*}}@"_get_enum_discriminant{{.*}}
+# CHECK:       [[TAG0:%.*]] = kgen.rebind [[DISC]]
+# CHECK:       lit.call {{.*}}@"__eq__({{.*}}([[TAG0]],
+# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:         lit.call {{.*}}@"__getitem_param__{{.*}}(%tc)
+# CHECK:         lit.call {{.*}}@"__eq__(
+# CHECK:         hlcf.elif %{{.*}} {
+# CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 0
+# CHECK:           hlcf.yield
+# CHECK:         } else {
+# CHECK:           lit.call {{.*}}@"__eq__(
+# CHECK:           hlcf.elif.yield
+# CHECK:         } then {
+# CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 2
+# CHECK:           hlcf.yield
+# CHECK:         } else {
+# CHECK:           hlcf.yield
+# CHECK:         }
+# CHECK:         hlcf.yield
+# CHECK:       } else {
+# CHECK:         [[TAG1:%.*]] = kgen.rebind [[DISC]]
+# CHECK:         lit.call {{.*}}@"__eq__({{.*}}([[TAG1]],
+# CHECK:         hlcf.elif.yield
+# CHECK:       } then {
+# CHECK:         hlcf.match {
+# CHECK:           lit.call {{.*}}@"__getitem_param__{{.*}}(%tc)
+# CHECK:           lit.call {{.*}}@"__eq__(
+# CHECK:           hlcf.elif %{{.*}} {
+# CHECK:             hlcf.yield
+# CHECK:           } else {
+# CHECK:             hlcf.match.next
+# CHECK:           }
+# CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK:           hlcf.match.complete
+# CHECK:         }
+# CHECK:         hlcf.yield
+# CHECK:       } else {
+# CHECK:         [[TAG2:%.*]] = kgen.rebind [[DISC]]
+# CHECK:         lit.call {{.*}}@"__eq__({{.*}}([[TAG2]],
+# CHECK:         hlcf.elif.yield
+# CHECK:       } then {
+# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 3
+# CHECK:         hlcf.yield
+# CHECK:       } else {
+# CHECK:         hlcf.yield
+# CHECK:       }
+def match_color_complex(tc: Tuple[Color, Int]):
+    __match tc:
+    case (Color.red, 0):
+        case_callee[0]()
+    case (Color.green, 0):
+        case_callee[1]()
+    case (Color.red, 4):
+        case_callee[2]()
+    case (Color.blue, _):
+        case_callee[3]()
+
 # CHECK-LABEL: lit.fn @"match_var_and_ref_binding
 def match_var_and_ref_binding(value: String, mut mutString: String):
     # `var x` copies the borrowed subject into an owned binding that can be mutated.

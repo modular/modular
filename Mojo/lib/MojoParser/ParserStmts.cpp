@@ -1735,9 +1735,8 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
     // We can cluster if the next case checks the same value with the same
     // comparison.
     auto nextCaseCommands = caseEntries.front().commandList;
-    if (nextCaseCommands.empty()) {
+    if (nextCaseCommands.empty())
       break;
-    }
     const PatternCommand *nextCommand = nextCaseCommands.front();
     if (nextCommand->kind != firstCommand->kind ||
         nextCommand->path != firstCommand->path)
@@ -1747,6 +1746,25 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
   }
 
   return clusterSize;
+}
+
+/// Whether two cases in one cluster test the same leading value. An empty
+/// command list is an irrefutable `_` and matches nothing, so it is not pulled
+/// into a value group.
+static bool sameLeadingTestValue(const MatchCaseEntry &lhs,
+                                 const MatchCaseEntry &rhs) {
+  if (lhs.commandList.empty() || rhs.commandList.empty())
+    return false;
+  const PatternCommand *a = lhs.commandList.front();
+  const PatternCommand *b = rhs.commandList.front();
+  if (a->kind != b->kind)
+    return false;
+  if (a->kind == PatternCommand::EnumTag)
+    return a->enumCaseIndex == b->enumCaseIndex;
+  StringRef aSpell = a->expr->getLiteralSpelling();
+  if (aSpell.empty())
+    return false; // Don't know what this is.
+  return aSpell == b->expr->getLiteralSpelling();
 }
 
 /// Emit a cluster of cases that share a leading pattern test. When
@@ -1772,8 +1790,43 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   if (!value)
     return;
 
-  // Emit an elif tree that tests each group with __eq__.
-  // TODO: Handle trailing _'s in an else region.
+  // We have some collection of cases that share a leading test.  We may have
+  // multiple entries for the same cluster, and they may not be next to each
+  // other, for example:
+  //   case .None, 4: body1
+  //   case .Some(x), 9: body2
+  //   case .None, 5: body3
+  //
+  // If we have exclusive entries, it is safe to reorder to test the tag once:
+  //   case .None, _:
+  //     case _, 4: body1
+  //     case _, 5: body3
+  //   case .Some(x), 9: body2
+  //
+  // NOTE: This implementation is an N^2 algorithm which could be made faster
+  // (at the cost of complexity) if we end up with tremendous number of cases.
+  SmallVector<MatchCaseEntry> orderedCases;
+  orderedCases.append(caseEntries.begin(), caseEntries.end());
+  size_t numClusters = 0;
+  for (size_t i = 0, e = caseEntries.size(); i != e;) {
+    // Pull every later case with this value up against `i`, keeping source
+    // order. Later iterations see an already-contiguous run and stop.
+    size_t insertAt = i + 1;
+    for (size_t j = insertAt; j != e; ++j) {
+      if (!sameLeadingTestValue(orderedCases[i], orderedCases[j]))
+        continue;
+      // Move `j` to `insertAt`, shifting the in-between cases right.
+      std::rotate(orderedCases.begin() + insertAt, orderedCases.begin() + j,
+                  orderedCases.begin() + j + 1);
+      ++insertAt;
+    }
+
+    // Don't reprocess the values we pulled in.
+    i = insertAt;
+    ++numClusters;
+  }
+
+  // Emit an elif tree that tests each leading value once (`numClusters` arms).
 
   // `__eq__` of the shared subject or discriminant against this case's expected
   // value, as an i1 for `hlcf.elif`.
@@ -1781,49 +1834,65 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
     return emissionState.emitTestForValue(builder, command, value);
   };
 
-  Value firstCond = emitEqCond(caseEntries.front().commandList.front());
+  Value firstCond = emitEqCond(orderedCases.front().commandList.front());
   if (!firstCond)
     return;
 
   Location loc = emissionState.matchLocation;
-  HLCF::ElifOp elifOp = HLCF::ElifOp::create(
-      builder, loc, TypeRange(), firstCond, (caseEntries.size() - 1) * 2);
+  assert(numClusters >= 1 && "cluster must have at least one leading value");
+  HLCF::ElifOp elifOp = HLCF::ElifOp::create(builder, loc, TypeRange(),
+                                             firstCond, (numClusters - 1) * 2);
 
-  // One then-region per caseEntry. The first condition is the elif
-  // operand; each later value adds a cond region and a then region.
-  for (auto [caseIdx, caseEntry] : llvm::enumerate(caseEntries)) {
-    // The first condition is emitted above the hclf.elif.
-    if (caseIdx != 0) {
+  // One then-region per distinct leading value. The first condition is the
+  // elif operand; each later value adds a cond region and a then region.
+  size_t arm = 0;
+  for (size_t i = 0, e = orderedCases.size(); i != e; ++arm) {
+    size_t groupEnd = i + 1;
+    while (groupEnd != e &&
+           sameLeadingTestValue(orderedCases[i], orderedCases[groupEnd]))
+      ++groupEnd;
+
+    // Later arms emit their condition into an elif cond region.
+    if (arm != 0) {
       builder.setInsertionPointToStart(
-          &elifOp.getElifRegions()[(caseIdx - 1) * 2].emplaceBlock());
-      SRValue cond = emitEqCond(caseEntry.commandList.front());
+          &elifOp.getElifRegions()[(arm - 1) * 2].emplaceBlock());
+      SRValue cond = emitEqCond(orderedCases[i].commandList.front());
       if (!cond)
         return;
 
-      auto condLoc = translateLocation(caseEntry.patternExpr->getLoc());
+      auto condLoc = translateLocation(orderedCases[i].patternExpr->getLoc());
       HLCF::ElifYieldOp::create(builder, condLoc, cond, ValueRange());
     }
 
-    // The first body goes in the "then" region.
-    if (caseIdx == 0) {
+    // The first body goes in the "then" region; later bodies are elif then
+    // regions.
+    if (arm == 0) {
       builder.setInsertionPointToStart(&elifOp.getThenRegion().emplaceBlock());
     } else {
       builder.setInsertionPointToStart(
-          &elifOp.getElifRegions()[(caseIdx - 1) * 2 + 1].emplaceBlock());
+          &elifOp.getElifRegions()[(arm - 1) * 2 + 1].emplaceBlock());
     }
 
-    // Okay, now emit the rest of the case entry tests.  We do this by forming
-    // a new MatchCaseEntry without this test.
-    MatchCaseEntry subCaseEntry = caseEntry;
-    subCaseEntry.commandList = subCaseEntry.commandList.drop_front();
+    // Emit the residual commands for every case that shares this leading
+    // value (the leading test is already handled by this elif arm).
+    SmallVector<MatchCaseEntry, 4> residuals;
+    for (const MatchCaseEntry &caseEntry :
+         ArrayRef(orderedCases).slice(i, groupEnd - i)) {
+      MatchCaseEntry subCaseEntry = caseEntry;
+      subCaseEntry.commandList = subCaseEntry.commandList.drop_front();
+      residuals.push_back(subCaseEntry);
+    }
 
     auto caseEmissionState = emissionState;
-    emitCases(subCaseEntry, caseEmissionState, /*inMatchCase*/ inMatchCase);
+    emitCases(residuals, caseEmissionState, /*inMatchCase*/ inMatchCase);
 
     // Emit cases will emit a terminator if inMatchCase is true.
     if (!inMatchCase)
       HLCF::YieldOp::create(builder, loc);
+
+    i = groupEnd;
   }
+  assert(arm == numClusters && "arm count must match numClusters");
 
   // Handle the else region.  It always falls through.
   builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());

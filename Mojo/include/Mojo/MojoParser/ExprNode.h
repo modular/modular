@@ -225,10 +225,10 @@ public:
                  const PatternPath *path,
                  SmallVectorImpl<const PatternCommand *> &out) const;
 
-  /// Return true when `other` is the same literal value as this node. The
-  /// base returns false so an unrecognized expression is not grouped with
-  /// another: a missed merge only retests, a wrong one would drop a case.
-  virtual bool isSameLiteral(const ExprNode *other) const;
+  /// Return the source spelling of this literal, or an empty `StringRef` when
+  /// this is not a literal (or not a single-token string). Empty means the
+  /// case is not grouped with another by value: a missed merge only retests.
+  virtual llvm::StringRef getLiteralSpelling() const;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// ExprDest indicates information about where to emit the expression result

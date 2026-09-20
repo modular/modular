@@ -174,26 +174,20 @@ ExprNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
   return failure();
 }
 
-bool ExprNode::isSameLiteral(const ExprNode *) const { return false; }
+StringRef ExprNode::getLiteralSpelling() const { return {}; }
 
-bool IntLiteralNode::isSameLiteral(const ExprNode *other) const {
-  auto *rhs = dyn_cast<IntLiteralNode>(other);
-  return rhs && spelling == rhs->spelling;
+StringRef IntLiteralNode::getLiteralSpelling() const { return spelling; }
+
+StringRef FloatLiteralNode::getLiteralSpelling() const { return spelling; }
+
+StringRef BoolLiteralNode::getLiteralSpelling() const {
+  return value ? "True" : "False";
 }
 
-bool FloatLiteralNode::isSameLiteral(const ExprNode *other) const {
-  auto *rhs = dyn_cast<FloatLiteralNode>(other);
-  return rhs && spelling == rhs->spelling;
-}
-
-bool BoolLiteralNode::isSameLiteral(const ExprNode *other) const {
-  auto *rhs = dyn_cast<BoolLiteralNode>(other);
-  return rhs && value == rhs->value;
-}
-
-bool StringLiteralNode::isSameLiteral(const ExprNode *other) const {
-  auto *rhs = dyn_cast<StringLiteralNode>(other);
-  return rhs && getValue() == rhs->getValue();
+StringRef StringLiteralNode::getLiteralSpelling() const {
+  // Only a single source token has a stable spelling StringRef; concatenated
+  // literals fall back to pointer equality at the grouping site.
+  return spellings.size() == 1 ? spellings.front() : StringRef();
 }
 
 LogicalResult SimpleLiteralNode::buildCheckList(
