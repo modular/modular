@@ -242,6 +242,29 @@ struct MatchCaseEntry {
   LexerCursor caseCursor;
   size_t caseIndent;
   PatternCommandList commandList;
+
+  /// True when every command is irrefutable (`Bind`), including the empty `_`
+  /// pattern, and there is no guard. Such a case cannot fail once control
+  /// reaches it.
+  ///
+  /// When `skipFirstCommand` is set, the leading test is ignored and only the
+  /// residual is checked — used to decide whether a trailing `_` is the
+  /// exclusive complement of a leading-value cluster.
+  bool alwaysMatches(bool skipFirstCommand = false) const {
+    // Cases with a guard expression can always fail.
+    if (guardExpr)
+      return false;
+    ArrayRef<const PatternCommand *> commands = commandList;
+    if (skipFirstCommand) {
+      assert(!commands.empty() &&
+             "skipFirstCommand requires a leading command");
+      commands = commands.drop_front();
+    }
+    // Name bindings always succeed, so we can ignore them.
+    return llvm::all_of(commands, [](const PatternCommand *command) {
+      return command->kind == PatternCommand::Bind;
+    });
+  }
 };
 
 /// This class provides the implementation details of the concrete Lightning
@@ -1713,7 +1736,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
 /// Determine if some number of the specified cases can be emitted as a cluster
 /// - this is possible when they share a common leading test, and that test can
 /// be expressed as a logical "switch" statement.  This includes tests against
-/// enum tags and literals. This returns 1 if no clusters are possible.
+/// enum tags and literals. This returns 1 if no clusters are possible - this
+/// will put the first case into its own unambiguous match case.
 static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
   ArrayRef<const PatternCommand *> firstCaseCommands =
       caseEntries.front().commandList;
@@ -1727,20 +1751,39 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
     return 1;
 
   // Great, now we check to see how big of a cluster we can make.  Absorb as
-  // many cases as we can that share the same leading test.
-  size_t clusterSize = 1;
-  caseEntries = caseEntries.drop_front(clusterSize);
-
+  // many cases as we can that share the same leading test. A trailing `_` (or
+  // other always-matching case) is included only while every prior case is
+  // fully decided by that leading test.
+  size_t clusterSize = 0;
+  bool allClusterEntriesExclusive = true;
   while (!caseEntries.empty()) {
-    // We can cluster if the next case checks the same value with the same
-    // comparison.
-    auto nextCaseCommands = caseEntries.front().commandList;
-    if (nextCaseCommands.empty())
+    const MatchCaseEntry &currentCase = caseEntries.front();
+    // If all the previous cases were unambiguously exclusive with each other,
+    // we can cluster a trailing always-matching case (e.g. `_`) into this
+    // "switch" as the unnamed else arm. We want "case True; case _" to know
+    // that the `_` is the False case. Only one such arm is absorbed.
+    if (allClusterEntriesExclusive &&
+        // FIXME: This isn't really right. We want to catch all of the things
+        // that DO NOT depend on the path that we're testing.  We want them to
+        // all fit into an ELSE clause. This is conservative though.
+        currentCase.alwaysMatches(/*skipFirstCommand=*/false)) {
+      ++clusterSize;
       break;
-    const PatternCommand *nextCommand = nextCaseCommands.front();
+    }
+    // Otherwise, we have an _ pattern or something similar that isn't
+    // exclusive with the previous patterns.
+    if (currentCase.commandList.empty())
+      break;
+    const PatternCommand *nextCommand = currentCase.commandList.front();
     if (nextCommand->kind != firstCommand->kind ||
         nextCommand->path != firstCommand->path)
       break;
+
+    // The cases we find are only exclusive if subsequent matches don't exist.
+    // For example, "case True, 4" isn't exhaustively covering "True".
+    allClusterEntriesExclusive &=
+        currentCase.alwaysMatches(/*skipFirstCommand=*/true);
+
     ++clusterSize;
     caseEntries = caseEntries.drop_front();
   }
@@ -1796,10 +1839,30 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   assert(caseEntries.size() > 1 &&
          "emitCaseCluster requires at least two cases");
 
+  // A trailing always-matching case (`_` or bind-only) is the exclusive
+  // complement of the tested leading values (e.g. `case False: ...; case _:
+  // ...` is `False` then everything else). findClusterSize only includes it
+  // when every tested case is fully decided by the leading test; emit it as
+  // the elif else, not as another tested arm.
+  const MatchCaseEntry *trailingWildcard = nullptr;
+  ArrayRef<MatchCaseEntry> testedEntries = caseEntries;
+  if (caseEntries.back().alwaysMatches(/*skipFirstCommand=*/false)) {
+    trailingWildcard = &caseEntries.back();
+    testedEntries = caseEntries.drop_back();
+    assert(
+        llvm::all_of(testedEntries,
+                     [](const MatchCaseEntry &e) {
+                       return e.alwaysMatches(/*skipFirstCommand=*/true);
+                     }) &&
+        "trailing catch-all requires tested cases with no residual patterns");
+  }
+  assert(!testedEntries.empty() &&
+         "cluster must contain at least one tested case");
+
   // This is either an enum tag test or a literal equality test.  Either way,
   // materialize the subject expression, and if this is an enum test,
   // materialize the tag value.
-  const PatternCommand *command = caseEntries.front().commandList.front();
+  const PatternCommand *command = testedEntries.front().commandList.front();
   auto value = emissionState.emitTestableValue(builder, command);
   if (!value)
     return;
@@ -1817,8 +1880,8 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   //     case _, 5: body3
   //   case .Some(x), 9: body2
   SmallVector<std::pair<SpellingOrEnumCase, MatchCaseEntry>, 8> orderedCases;
-  orderedCases.reserve(caseEntries.size());
-  for (const MatchCaseEntry &entry : caseEntries)
+  orderedCases.reserve(testedEntries.size());
+  for (const MatchCaseEntry &entry : testedEntries)
     orderedCases.emplace_back(SpellingOrEnumCase::getLeadingTest(entry), entry);
   llvm::stable_sort(orderedCases, [](const auto &a, const auto &b) {
     return a.first < b.first;
@@ -1898,10 +1961,21 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   }
   assert(arm == numClusters && "arm count must match numClusters");
 
-  // Handle the else region.  It always falls through.
+  // Else is the trailing `_` (exclusive complement) when present; otherwise
+  // fall through / match.next.
   builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
-  HLCF::YieldOp::create(builder, loc);
+  if (trailingWildcard) {
+    auto caseEmissionState = emissionState;
+    emitCases(*trailingWildcard, caseEmissionState,
+              /*inMatchCase*/ inMatchCase);
+    if (!inMatchCase)
+      HLCF::YieldOp::create(builder, loc);
+  } else {
+    HLCF::YieldOp::create(builder, loc);
+  }
   builder.setInsertionPointAfter(elifOp);
+  // Elif is not a terminator: even when every arm MatchCompletes (including a
+  // trailing catch-all else), the enclosing match case still needs one.
   if (inMatchCase)
     HLCF::MatchNextOp::create(builder, loc);
 }
@@ -1922,8 +1996,16 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
   // This emits a case body at the current insertion point, handling the case
   // guard (if present).  Any bindings must be installed and any preconditions
   // checked.  If `inMatchCase` is true, we are emitting the body of a match
-  // case, otherwise we are emitting at top level.
-  auto emitCaseBody = [&](const MatchCaseEntry &caseEntry, bool inMatchCase) {
+  // case, otherwise we are emitting at top level.  If `needsScope` is true,
+  // open a fresh child scope for the body (and any pattern bindings already
+  // installed by the caller should set this false so they stay visible).
+  auto emitCaseBody = [&](const MatchCaseEntry &caseEntry, bool inMatchCase,
+                          bool needsScope = true) {
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    if (needsScope)
+      pushChildScope(scopeGuard, keepDecl);
+
     auto emitBody = [&]() {
       // Change the parser cursor to the start of the case body so we can parse
       // the right text. Use parseSuite (not parseLocalScopeSuite) so the body
@@ -2000,7 +2082,7 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
 
   // If all of the cases are a cluster, emit them together.
   if (caseEntries.size() > 1 && clusterSizes.size() == 1) {
-    emitCaseCluster(caseEntries, emissionState, /*inMatchCase*/ false);
+    emitCaseCluster(caseEntries, emissionState, /*inMatchCase*/ inMatchCase);
     return;
   }
 
@@ -2069,8 +2151,9 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     if (hadFailure)
       continue;
 
-    // Emit the pattern guard and body of the case.
-    emitCaseBody(caseEntry, /*inMatchCase*/ true);
+    // Emit the pattern guard and body of the case. Scope already opened above
+    // so pattern bindings remain visible in the body.
+    emitCaseBody(caseEntry, /*inMatchCase*/ true, /*needsScope=*/false);
   }
 
   // The match else is a no-op fallthrough. TODO: Mark unreachable when there
