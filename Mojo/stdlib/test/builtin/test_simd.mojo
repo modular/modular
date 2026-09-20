@@ -2564,6 +2564,25 @@ def test_float_literal_init() raises:
         atol=1e-3,
     )
 
+    # Test explicit construction of integral types from float literals.
+    # The literal is truncated towards zero, matching the runtime
+    # `SIMD.cast` behavior (e.g. `Int(-3.7) == Int(Float64(-3.7))`).
+    assert_equal(Int(4.5), Int(4))
+    assert_equal(Int(-3.7), Int(-3))
+    assert_equal(UInt(400.7), UInt(400))
+    assert_equal(Int8(-7.9), Int8(-7))
+    assert_equal(UInt64(400.0), UInt64(400))
+    # Values outside the range of the dtype wrap, matching
+    # `UInt64(Float64(-3.7))` at runtime.
+    assert_equal(UInt64(-3.7), UInt64(-3))
+    assert_equal(Int8(260.0), Int8(4))
+    # Float literals also fold in comptime contexts (e.g. array sizes, the
+    # original report in https://github.com/modular/modular/issues/5290).
+    comptime comptime_size = UInt(400.0 / 0.1) * 8
+    assert_equal(comptime_size, UInt(32000))
+    var arr = Array[Float64, Int(UInt(8.0 / 0.1) * 2)](fill=Float64(0.0))
+    assert_equal(len(arr), 160)
+
 
 def test_int_literal_init() raises:
     assert_equal(UInt8(255), UInt8(-1))
