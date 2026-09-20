@@ -149,7 +149,6 @@ class UnifiedMTPGemma4Model(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -160,6 +159,7 @@ class UnifiedMTPGemma4Model(
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         # Force signal buffer initialization.
@@ -179,7 +179,7 @@ class UnifiedMTPGemma4Model(
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         self._vision_weights_dict = convert_safetensor_vision_state_dict(

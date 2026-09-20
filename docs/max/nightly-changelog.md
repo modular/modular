@@ -236,6 +236,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a crash serving Gemma 4, Gemma 3 multimodal, Pixtral, and Qwen 3
+  embedding with a batch larger than one. Each of these architectures accepted
+  `max_batch_size` and never handed it to `PipelineModel`, which left the base
+  at its default of 1 while the scheduler dispatched full batches. The model
+  input buffers a batch stages into are sized from that value, so the first
+  multi-context step overran them and the model worker crashed. The
+  architectures pass it up now.
+
 - The functional kernel wrappers in `max.experimental.nn.common_layers` now
   open a realization context, so eager attention with a paged KV cache runs.
 

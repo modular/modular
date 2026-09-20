@@ -82,7 +82,6 @@ class Gemma3MultiModalModelV3(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -92,6 +91,7 @@ class Gemma3MultiModalModelV3(
             adapter=adapter,
             return_logits=return_logits,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         self.vision_model, self.language_model = self.load_model()
@@ -103,7 +103,7 @@ class Gemma3MultiModalModelV3(
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         self._language_weights_dict = convert_safetensor_language_state_dict(
@@ -117,7 +117,7 @@ class Gemma3MultiModalModelV3(
     def _create_model_config(
         self, state_dict: dict[str, Any]
     ) -> Gemma3ForConditionalGenerationConfig:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         model_config = Gemma3ForConditionalGenerationConfig.initialize(
             self.pipeline_config, max_seq_len=self.max_seq_len

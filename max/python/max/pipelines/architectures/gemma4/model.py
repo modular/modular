@@ -155,7 +155,6 @@ class Gemma3_MultiModalModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -165,6 +164,7 @@ class Gemma3_MultiModalModel(
             adapter=adapter,
             return_logits=return_logits,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
@@ -243,7 +243,7 @@ class Gemma3_MultiModalModel(
         return self._cached_empty_embeddings
 
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
