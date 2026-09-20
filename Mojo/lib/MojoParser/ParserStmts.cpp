@@ -1592,17 +1592,21 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   return success();
 }
 
-/// match_stmt ::=  "match" subject_expr ":" NEWLINE
+/// match_stmt ::=  "match" expression_list ":" NEWLINE
 ///                 case_block+
-/// case_block  ::= "case" pattern ["if" expression] ":" suite
+/// case_block  ::= "case" pattern ["as" name] ["if" expression] ":" suite
 ///
+/// The subject and case pattern are expression_lists so `match a, b:` /
+/// `case True, False:` form tuples without requiring parentheses.  Case
+/// patterns stop before `if`/`as` so guards and `as` bindings stay statement
+/// suffixes rather than ternary/`as`-pattern operators.
 ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   SMLoc matchLoc = consumeToken(Token::kw___match).getLoc();
   Location matchLocation = translateLocation(matchLoc);
 
-  // Parse the match subject.
+  // Parse the match subject as an expression_list (commas form a tuple).
   ExprNode *subjectExpr = nullptr;
-  if (parseExpression(subjectExpr, curIndent, Precedence::kAssignExpr) ||
+  if (parseExpressionList(subjectExpr, curIndent, Token::colon) ||
       parseToken(Token::colon, "expected ':' after match subject"))
     return failure();
 
@@ -1652,12 +1656,15 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     size_t caseIndent = getToken().getIndentation().value_or(curIndent);
     consumeToken(Token::kw_case);
 
-    // Parse the case pattern as an expression. Stop before `if` so a trailing
-    // match guard is not absorbed as a ternary `x if y else z`. `as` is looser
-    // than `if`, so a top-level `case <pattern> as name` is attached here.
+    // Parse the case pattern as an expression_list. Stop before `if` so a
+    // trailing match guard is not absorbed as a ternary `x if y else z`, and
+    // before `as` so a top-level `case <pattern> as name` is attached here.
+    // Item precedence is tighter than `if`/`as` for the same reason.
     ExprNode *patternExpr = nullptr;
-    if (parseExpression(patternExpr, caseIndent,
-                        Precedence(int(Precedence::kIfElse) + 1))) {
+    if (parseExpressionList(
+            patternExpr, caseIndent,
+            /*terminators=*/{Token::colon, Token::kw_if, Token::kw_as},
+            Precedence(int(Precedence::kIfElse) + 1))) {
       skipUntilIndentation(caseIndent);
       hadError = true;
       continue;

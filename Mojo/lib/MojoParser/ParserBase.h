@@ -300,10 +300,13 @@ public:
                                   std::optional<size_t> stmtIndent);
 
   /// Parse an expression_list production, returning a single expression or a
-  /// tuple expression if there are commas.
-  ParseResult parseExpressionList(ExprNode *&result,
-                                  std::optional<size_t> stmtIndent,
-                                  ArrayRef<Token::Kind> terminators = {});
+  /// tuple expression if there are commas.  Each list item is parsed at
+  /// `itemMinPrec` (defaults to full expression precedence).
+  ParseResult
+  parseExpressionList(ExprNode *&result,
+                      std::optional<size_t> stmtIndent = std::nullopt,
+                      ArrayRef<Token::Kind> terminators = {},
+                      Precedence itemMinPrec = Precedence::kExpression);
 
   ParseResult parseStarredItem(ExprNode *&result);
 

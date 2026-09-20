@@ -164,6 +164,26 @@ def match_tuple_subject(point: Tuple[Int, Int]):
         case_callee[1]()
 
 
+# Unparenthesized commas form tuples in both the subject and case patterns.
+# CHECK-LABEL: lit.fn @"match_comma_subject
+# CHECK:       lit.ref.pack.create
+# CHECK:       lit.call {{.*}}@"__init__[LITImmOrigin,::Origin[False, $2]](*$0)"
+# CHECK:       hlcf.match {
+# CHECK:         lit.call {{.*}}@"__getitem_param__
+# CHECK:         lit.call {{.*}}@"__eq__(::Bool,::Bool)"
+# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
+# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
+def match_comma_subject(a: Bool, b: Bool):
+    __match a, b:
+    case True, True:
+        case_callee[0]()
+    case False, True:
+        case_callee[1]()
+    case _, _:
+        case_callee[2]()
+
+
 # CHECK-LABEL: lit.fn @"match_with_guard
 # CHECK-NEXT:    hlcf.match {
 # CHECK-NEXT:      [[Z0:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>

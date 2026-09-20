@@ -1600,12 +1600,12 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
 /// tuple expression if there are commas.
 ParseResult ParserBase::parseExpressionList(ExprNode *&result,
                                             std::optional<size_t> stmtIndent,
-                                            ArrayRef<Token::Kind> terminators) {
+                                            ArrayRef<Token::Kind> terminators,
+                                            Precedence itemMinPrec) {
   ExprParser parser(shared, getLexer(), stmtIndent);
   SmallVector<ExprNode *> exprs;
   auto parseItem = [&]() -> ParseResult {
-    return parser.parseExpression(exprs.emplace_back(nullptr),
-                                  Precedence::kExpression);
+    return parser.parseExpression(exprs.emplace_back(nullptr), itemMinPrec);
   };
 
   SMLoc firstCommaLoc;
