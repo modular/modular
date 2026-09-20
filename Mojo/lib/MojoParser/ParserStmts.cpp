@@ -1748,24 +1748,38 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
   return clusterSize;
 }
 
-/// Whether two cases in one cluster test the same leading value. An empty
-/// command list is an irrefutable `_` and matches nothing, so it is not pulled
-/// into a value group.
-static bool sameLeadingTestValue(const MatchCaseEntry &lhs,
-                                 const MatchCaseEntry &rhs) {
-  if (lhs.commandList.empty() || rhs.commandList.empty())
-    return false;
-  const PatternCommand *a = lhs.commandList.front();
-  const PatternCommand *b = rhs.commandList.front();
-  if (a->kind != b->kind)
-    return false;
-  if (a->kind == PatternCommand::EnumTag)
-    return a->enumCaseIndex == b->enumCaseIndex;
-  StringRef aSpell = a->expr->getLiteralSpelling();
-  if (aSpell.empty())
-    return false; // Don't know what this is.
-  return aSpell == b->expr->getLiteralSpelling();
-}
+namespace {
+/// Sort key for cases in one match cluster: either a literal spelling or an
+/// enum discriminant index. Within a cluster every case shares the same command
+/// kind, so these are never mixed.
+struct SpellingOrEnumCase {
+  StringRef spelling;
+  size_t enumCaseIndex;
+
+  SpellingOrEnumCase(StringRef spelling)
+      : spelling(spelling), enumCaseIndex(0) {}
+  SpellingOrEnumCase(size_t enumCaseIndex)
+      : spelling(), enumCaseIndex(enumCaseIndex) {}
+
+  static SpellingOrEnumCase getLeadingTest(const MatchCaseEntry &entry) {
+    const PatternCommand *cmd = entry.commandList.front();
+    if (cmd->kind == PatternCommand::EnumTag)
+      return SpellingOrEnumCase(cmd->enumCaseIndex);
+    StringRef spelling = cmd->expr->getLiteralSpelling();
+    assert(!spelling.empty() && "Unrecognized literal shape");
+    return SpellingOrEnumCase(spelling);
+  }
+
+  bool operator==(const SpellingOrEnumCase &other) const {
+    return enumCaseIndex == other.enumCaseIndex && spelling == other.spelling;
+  }
+  bool operator<(const SpellingOrEnumCase &other) const {
+    if (enumCaseIndex != other.enumCaseIndex)
+      return enumCaseIndex < other.enumCaseIndex;
+    return spelling < other.spelling;
+  }
+};
+} // namespace
 
 /// Emit a cluster of cases that share a leading pattern test. When
 /// `inMatchCase` is true, emission is already inside an `hlcf.match` case
@@ -1802,29 +1816,18 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   //     case _, 4: body1
   //     case _, 5: body3
   //   case .Some(x), 9: body2
-  //
-  // NOTE: This implementation is an N^2 algorithm which could be made faster
-  // (at the cost of complexity) if we end up with tremendous number of cases.
-  SmallVector<MatchCaseEntry> orderedCases;
-  orderedCases.append(caseEntries.begin(), caseEntries.end());
-  size_t numClusters = 0;
-  for (size_t i = 0, e = caseEntries.size(); i != e;) {
-    // Pull every later case with this value up against `i`, keeping source
-    // order. Later iterations see an already-contiguous run and stop.
-    size_t insertAt = i + 1;
-    for (size_t j = insertAt; j != e; ++j) {
-      if (!sameLeadingTestValue(orderedCases[i], orderedCases[j]))
-        continue;
-      // Move `j` to `insertAt`, shifting the in-between cases right.
-      std::rotate(orderedCases.begin() + insertAt, orderedCases.begin() + j,
-                  orderedCases.begin() + j + 1);
-      ++insertAt;
-    }
+  SmallVector<std::pair<SpellingOrEnumCase, MatchCaseEntry>, 8> orderedCases;
+  orderedCases.reserve(caseEntries.size());
+  for (const MatchCaseEntry &entry : caseEntries)
+    orderedCases.emplace_back(SpellingOrEnumCase::getLeadingTest(entry), entry);
+  llvm::stable_sort(orderedCases, [](const auto &a, const auto &b) {
+    return a.first < b.first;
+  });
 
-    // Don't reprocess the values we pulled in.
-    i = insertAt;
-    ++numClusters;
-  }
+  size_t numClusters = 1;
+  for (size_t i = 1, e = orderedCases.size(); i != e; ++i)
+    if (orderedCases[i].first != orderedCases[i - 1].first)
+      ++numClusters;
 
   // Emit an elif tree that tests each leading value once (`numClusters` arms).
 
@@ -1834,7 +1837,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
     return emissionState.emitTestForValue(builder, command, value);
   };
 
-  Value firstCond = emitEqCond(orderedCases.front().commandList.front());
+  Value firstCond = emitEqCond(orderedCases.front().second.commandList.front());
   if (!firstCond)
     return;
 
@@ -1849,18 +1852,20 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   for (size_t i = 0, e = orderedCases.size(); i != e; ++arm) {
     size_t groupEnd = i + 1;
     while (groupEnd != e &&
-           sameLeadingTestValue(orderedCases[i], orderedCases[groupEnd]))
+           orderedCases[groupEnd].first == orderedCases[i].first)
       ++groupEnd;
+
+    const MatchCaseEntry &groupFront = orderedCases[i].second;
 
     // Later arms emit their condition into an elif cond region.
     if (arm != 0) {
       builder.setInsertionPointToStart(
           &elifOp.getElifRegions()[(arm - 1) * 2].emplaceBlock());
-      SRValue cond = emitEqCond(orderedCases[i].commandList.front());
+      SRValue cond = emitEqCond(groupFront.commandList.front());
       if (!cond)
         return;
 
-      auto condLoc = translateLocation(orderedCases[i].patternExpr->getLoc());
+      auto condLoc = translateLocation(groupFront.patternExpr->getLoc());
       HLCF::ElifYieldOp::create(builder, condLoc, cond, ValueRange());
     }
 
@@ -1876,9 +1881,8 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
     // Emit the residual commands for every case that shares this leading
     // value (the leading test is already handled by this elif arm).
     SmallVector<MatchCaseEntry, 4> residuals;
-    for (const MatchCaseEntry &caseEntry :
-         ArrayRef(orderedCases).slice(i, groupEnd - i)) {
-      MatchCaseEntry subCaseEntry = caseEntry;
+    for (size_t j = i; j != groupEnd; ++j) {
+      MatchCaseEntry subCaseEntry = orderedCases[j].second;
       subCaseEntry.commandList = subCaseEntry.commandList.drop_front();
       residuals.push_back(subCaseEntry);
     }
