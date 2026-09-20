@@ -3388,6 +3388,8 @@ struct DeviceFunction[
         *args: *Ts,
         host0: Optional[OpaquePointer[MutAnyOrigin]] = None,
         host1: Optional[OpaquePointer[MutAnyOrigin]] = None,
+        host0_size: Int = 0,
+        host1_size: Int = 0,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -3488,19 +3490,21 @@ struct DeviceFunction[
             )
 
         comptime if _is_apple_gpu[Self.target]():
-            comptime assert (
-                extra_host_count == 0
-            ), "host-argument enqueue pack is not implemented for Metal"
-            # Offsets cover encoded args only. Metal does not take extra host
-            # slots, so this must stay `num_encoded` even though the CUDA path
-            # uses `num_encoded + extra_host_count`.
+            # `num_passed_args` sizes the offsets array, which covers encoded
+            # args only, so it stays `num_encoded`; `extra_host_count` sizes
+            # the extra per-slot entries the host arguments occupy.
             call_with_pack_checked_metal[
                 Self.func,
                 num_passed_args=num_encoded,
                 num_captures_static=num_captures_static,
+                extra_host_count=extra_host_count,
             ](
                 ctx,
                 *args,
+                host0=host0,
+                host1=host1,
+                host0_size=host0_size,
+                host1_size=host1_size,
                 func_handle=self._handle,
                 device_context=self._context,
                 capture_sizes=self._func_impl.capture_sizes,
@@ -3633,6 +3637,7 @@ struct DeviceFunction[
             ctx,
             *encoded_args,
             host0=host0^,
+            host0_size=size_of[Host, target=Self.target](),
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -3687,6 +3692,8 @@ struct DeviceFunction[
             *encoded_args,
             host0=host0^,
             host1=host1^,
+            host0_size=size_of[Host0, target=Self.target](),
+            host1_size=size_of[Host1, target=Self.target](),
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
