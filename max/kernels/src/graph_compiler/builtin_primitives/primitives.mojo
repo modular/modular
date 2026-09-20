@@ -2491,6 +2491,23 @@ def _mogg_slice_view_alignment[
                 * stride_types[i].static_value
                 * align_of[dtype](),
             )
+
+        # Iterating a non-innermost dim advances the pointer by
+        # `step[i] * strides[i]` elements per step, so that stride bounds the
+        # view's alignment too -- e.g. a slice that keeps the parent's row
+        # stride (not a multiple of the vector width) leaves each row start
+        # under-aligned. Mirrors `Slice.get_view_alignment`; omitting it made a
+        # strided view over-report its alignment and emit a misaligned
+        # (faulting) vector load on GPU.
+        comptime if i != rank - 1:
+            comptime if not stride_types[i].is_static_value:
+                return 1
+            alignment = gcd(
+                alignment,
+                step_types[i].static_value
+                * stride_types[i].static_value
+                * align_of[dtype](),
+            )
     return alignment
 
 
