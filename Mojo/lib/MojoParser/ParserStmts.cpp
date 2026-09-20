@@ -305,9 +305,17 @@ struct StmtParser : public ParserBase {
 
   /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
   /// entry's command list is tested in its own case region; the match else is
-  /// a no-op fallthrough.
+  /// a no-op fallthrough. `emissionState` is shared across the cases so path
+  /// projections are memoized for the whole match.
   void emitCases(ArrayRef<MatchCaseEntry> caseEntries,
-                 PatternEmitState &emissionState);
+                 PatternEmitState &emissionState, bool inMatchCase);
+
+  /// Emit a cluster of cases that share a leading pattern test. When
+  /// `inMatchCase` is true, emission is already inside an `hlcf.match` case
+  /// region; otherwise a fresh match (or equivalent CF) may be created.
+  /// `emissionState` is the match-wide path memo and emitter.
+  void emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
+                       PatternEmitState &emissionState, bool inMatchCase);
 
   // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
   // closure on success when in the scope of the loop, and the specified
@@ -1696,25 +1704,153 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
   PatternEmitState emissionState{*curDeclScope, subject, rootPath,
                                  matchLocation,
                                  DenseMap<const PatternPath *, CValue>()};
-  emitCases(caseEntries, emissionState);
+  emitCases(caseEntries, emissionState, /*inMatchCase=*/false);
 
   afterCaseCursor.restore(getLexer());
   return success();
 }
 
-/// Emit a non-empty list of match case entries as one `hlcf.match`. Each
-/// entry's command list is tested in its own case region; the match else is
-/// a no-op fallthrough.
+/// Determine if some number of the specified cases can be emitted as a cluster
+/// - this is possible when they share a common leading test, and that test can
+/// be expressed as a logical "switch" statement.  This includes tests against
+/// enum tags and literals. This returns 1 if no clusters are possible.
+static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
+  ArrayRef<const PatternCommand *> firstCaseCommands =
+      caseEntries.front().commandList;
+  if (firstCaseCommands.empty())
+    return 1;
+
+  // Only support literal equality and enum tag checks in clusters.
+  const PatternCommand *firstCommand = firstCaseCommands.front();
+  if (firstCommand->kind != PatternCommand::Kind::Equal &&
+      firstCommand->kind != PatternCommand::Kind::EnumTag)
+    return 1;
+
+  // Great, now we check to see how big of a cluster we can make.  Absorb as
+  // many cases as we can that share the same leading test.
+  size_t clusterSize = 1;
+  caseEntries = caseEntries.drop_front(clusterSize);
+
+  while (!caseEntries.empty()) {
+    // We can cluster if the next case checks the same value with the same
+    // comparison.
+    auto nextCaseCommands = caseEntries.front().commandList;
+    if (nextCaseCommands.empty()) {
+      break;
+    }
+    const PatternCommand *nextCommand = nextCaseCommands.front();
+    if (nextCommand->kind != firstCommand->kind ||
+        nextCommand->path != firstCommand->path)
+      break;
+    ++clusterSize;
+    caseEntries = caseEntries.drop_front();
+  }
+
+  return clusterSize;
+}
+
+/// Emit a cluster of cases that share a leading pattern test. When
+/// `inMatchCase` is true, emission is already inside an `hlcf.match` case
+/// region; otherwise a fresh match (or equivalent CF) may be created.
+/// `emissionState` is the match-wide path memo and emitter.
+///
+/// If "inMatchCase" is true, this designates success by invoking
+/// hlcf.match.complete, and failure with hlcf.match.next, and is guaranteed to
+/// produce a terminator. Otherwise, all scenarios fall through and no
+/// terminator is added.
+void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
+                                 PatternEmitState &emissionState,
+                                 bool inMatchCase) {
+  assert(caseEntries.size() > 1 &&
+         "emitCaseCluster requires at least two cases");
+
+  // This is either an enum tag test or a literal equality test.  Either way,
+  // materialize the subject expression, and if this is an enum test,
+  // materialize the tag value.
+  const PatternCommand *command = caseEntries.front().commandList.front();
+  auto value = emissionState.emitTestableValue(builder, command);
+  if (!value)
+    return;
+
+  // Emit an elif tree that tests each group with __eq__.
+  // TODO: Handle trailing _'s in an else region.
+
+  // `__eq__` of the shared subject or discriminant against this case's expected
+  // value, as an i1 for `hlcf.elif`.
+  auto emitEqCond = [&](const PatternCommand *command) -> Value {
+    return emissionState.emitTestForValue(builder, command, value);
+  };
+
+  Value firstCond = emitEqCond(caseEntries.front().commandList.front());
+  if (!firstCond)
+    return;
+
+  Location loc = emissionState.matchLocation;
+  HLCF::ElifOp elifOp = HLCF::ElifOp::create(
+      builder, loc, TypeRange(), firstCond, (caseEntries.size() - 1) * 2);
+
+  // One then-region per caseEntry. The first condition is the elif
+  // operand; each later value adds a cond region and a then region.
+  for (auto [caseIdx, caseEntry] : llvm::enumerate(caseEntries)) {
+    // The first condition is emitted above the hclf.elif.
+    if (caseIdx != 0) {
+      builder.setInsertionPointToStart(
+          &elifOp.getElifRegions()[(caseIdx - 1) * 2].emplaceBlock());
+      SRValue cond = emitEqCond(caseEntry.commandList.front());
+      if (!cond)
+        return;
+
+      auto condLoc = translateLocation(caseEntry.patternExpr->getLoc());
+      HLCF::ElifYieldOp::create(builder, condLoc, cond, ValueRange());
+    }
+
+    // The first body goes in the "then" region.
+    if (caseIdx == 0) {
+      builder.setInsertionPointToStart(&elifOp.getThenRegion().emplaceBlock());
+    } else {
+      builder.setInsertionPointToStart(
+          &elifOp.getElifRegions()[(caseIdx - 1) * 2 + 1].emplaceBlock());
+    }
+
+    // Okay, now emit the rest of the case entry tests.  We do this by forming
+    // a new MatchCaseEntry without this test.
+    MatchCaseEntry subCaseEntry = caseEntry;
+    subCaseEntry.commandList = subCaseEntry.commandList.drop_front();
+
+    auto caseEmissionState = emissionState;
+    emitCases(subCaseEntry, caseEmissionState, /*inMatchCase*/ inMatchCase);
+
+    // Emit cases will emit a terminator if inMatchCase is true.
+    if (!inMatchCase)
+      HLCF::YieldOp::create(builder, loc);
+  }
+
+  // Handle the else region.  It always falls through.
+  builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
+  HLCF::YieldOp::create(builder, loc);
+  builder.setInsertionPointAfter(elifOp);
+  if (inMatchCase)
+    HLCF::MatchNextOp::create(builder, loc);
+}
+
+/// Emit a non-empty list of match case entries as a nested tree of matches,
+/// e.g. using `hlcf.match`. Each entry's command list is tested in its own case
+/// region; the match else is a no-op fallthrough. `emissionState` is shared
+/// across the cases so path projections are memoized for the whole match.
+///
+/// If "inMatchCase" is true, this designates success by invoking
+/// hlcf.match.complete, and failure with hlcf.match.next, and is guaranteed to
+/// produce a terminator. Otherwise, all scenarios fall through and no
+/// terminator is added.
 void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
-                           PatternEmitState &emissionState) {
+                           PatternEmitState &emissionState, bool inMatchCase) {
   assert(!caseEntries.empty() && "emitCases requires a non-empty list");
 
   // This emits a case body at the current insertion point, handling the case
   // guard (if present).  Any bindings must be installed and any preconditions
   // checked.  If `inMatchCase` is true, we are emitting the body of a match
   // case, otherwise we are emitting at top level.
-  auto emitCaseBody = [&](const MatchCaseEntry &caseEntry, IREmitter &emitter,
-                          bool inMatchCase) {
+  auto emitCaseBody = [&](const MatchCaseEntry &caseEntry, bool inMatchCase) {
     auto emitBody = [&]() {
       // Change the parser cursor to the start of the case body so we can parse
       // the right text. Use parseSuite (not parseLocalScopeSuite) so the body
@@ -1727,32 +1863,32 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     // a failing guard advances to the next case and a passing one
     // continues into the case body below.
     if (caseEntry.guardExpr) {
+      IREmitter emitter = getEmitter();
       RValue guardRVal =
           emitter.emitExprScalarBool(caseEntry.guardExpr, EC_BoolCondition);
       Value guardVal = emitter.emitSRValue(
           {AnyValue(guardRVal), caseEntry.guardExpr}, EC_BoolCondition);
-      if (!guardVal)
-        return;
-      auto guardLoc = translateLocation(caseEntry.guardExpr->getLoc());
-      HLCF::ElifOp::create(
-          builder, guardLoc, TypeRange{}, guardVal,
-          [&]() -> LogicalResult {
-            // If at the top level, emit the body into the "then" block.
-            if (!inMatchCase)
-              emitBody();
-            HLCF::YieldOp::create(builder, guardLoc);
-            return success();
-          },
-          [&]() -> LogicalResult {
-            // Failure in a match case does a hlcf.match.next, but failure at
-            // top-level just falls through.
-            if (inMatchCase)
-              HLCF::MatchNextOp::create(builder, guardLoc);
-            else
+      if (guardVal) {
+        auto guardLoc = translateLocation(caseEntry.guardExpr->getLoc());
+        HLCF::ElifOp::create(
+            builder, guardLoc, TypeRange{}, guardVal,
+            [&]() -> LogicalResult {
+              // If at the top level, emit the body into the "then" block.
+              if (!inMatchCase)
+                emitBody();
               HLCF::YieldOp::create(builder, guardLoc);
-            return success();
-          });
-
+              return success();
+            },
+            [&]() -> LogicalResult {
+              // Failure in a match case does a hlcf.match.next, but failure at
+              // top-level just falls through.
+              if (inMatchCase)
+                HLCF::MatchNextOp::create(builder, guardLoc);
+              else
+                HLCF::YieldOp::create(builder, guardLoc);
+              return success();
+            });
+      }
       // If we're at top level, we emitted the body into the 'then' block,
       if (!inMatchCase)
         return;
@@ -1771,29 +1907,59 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
   // only, which is a trivial base case in recursive matching.  Emit it
   // efficiently.
   if (caseEntries.size() == 1 && caseEntries.front().commandList.empty()) {
-    IREmitter emitter = getEmitter();
-    emitCaseBody(caseEntries.front(), emitter, /*inMatchCase*/ false);
+    emitCaseBody(caseEntries.front(), inMatchCase);
     return;
   }
 
   // Given a non-empty block of cases, check to see if any of them cluster by
-  // the first command in the command list.
-  // TODO: Do this, but for now just handle the general case.
+  // the first command in the command list.  For example the first two
+  // cases in cluster here:  "case (4, _); case (5, _); case (_, 4):". Divide
+  // the cases up into clusters.
+  SmallVector<size_t, 4> clusterSizes;
+  {
+    auto tmpCaseEntries = caseEntries;
+    while (!tmpCaseEntries.empty()) {
+      size_t clusterSize = findClusterSize(tmpCaseEntries);
+      clusterSizes.push_back(clusterSize);
+      tmpCaseEntries = tmpCaseEntries.drop_front(clusterSize);
+    }
+  }
 
-  // Emit as one `hlcf.match`. Each source case becomes a case region that tests
-  // its pattern (and optional guard), runs the body on success via
-  // `hlcf.match.complete`, or advances with `hlcf.match.next` on failure.
+  // If all of the cases are a cluster, emit them together.
+  if (caseEntries.size() > 1 && clusterSizes.size() == 1) {
+    emitCaseCluster(caseEntries, emissionState, /*inMatchCase*/ false);
+    return;
+  }
+
+  // Emit as one `hlcf.match` where each match case is a cluster that needs to
+  // be tested. Each match case tests its patterns (and optional guard), runs
+  // the body on success via `hlcf.match.complete`, or advances with
+  // `hlcf.match.next` on failure.
   auto matchOp =
       HLCF::MatchOp::create(builder, emissionState.matchLocation, TypeRange(),
-                            /*caseRegionsCount=*/caseEntries.size());
+                            /*caseRegionsCount=*/clusterSizes.size());
   matchOp.getElseRegion().emplaceBlock();
 
-  for (auto [idx, caseEntry] : llvm::enumerate(caseEntries)) {
-    auto &region = matchOp.getCaseRegions()[idx];
+  for (auto [matchCaseIdx, clusterSize] : llvm::enumerate(clusterSizes)) {
+    auto &region = matchOp.getCaseRegions()[matchCaseIdx];
     builder.setInsertionPointToStart(&region.emplaceBlock());
+
     // Code in this case can reuse state within itself, but not across cases.
     PatternEmitState caseEmissionState = emissionState;
 
+    // We are going to handle some cluster of cases.
+    ArrayRef<MatchCaseEntry> thisCluster = caseEntries.take_front(clusterSize);
+    caseEntries = caseEntries.drop_front(clusterSize);
+
+    // If the cluster has more than one entry, emit the cluster together to
+    // share case guards and diagnose situations with overlapping or
+    // non-exhaustive clusters.
+    if (thisCluster.size() > 1) {
+      emitCaseCluster(thisCluster, caseEmissionState, /*inMatchCase*/ true);
+      continue;
+    }
+
+    auto &caseEntry = thisCluster.front();
     SmallVector<PatternBoundName> bindings;
     if (failed(caseEmissionState.emitCommands(builder, caseEntry.commandList,
                                               bindings)))
@@ -1811,18 +1977,18 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     // still parse (recovery), rather than aborting the whole match.
     bool hadFailure = false;
     for (const PatternBoundName &bn : bindings) {
-      auto *name = shared.allocPersistent<DeclRefNode>(bn.name);
+      DeclRefNode nameNode(bn.name);
       ExprDest declDest(LValueInitializerType{bn.value.getRValueType()},
                         EC_VarInit);
       declDest.setPatternDeclKind(bn.bindingKind);
-      LValue bindingLV = emitter.emitExprLValue(name, declDest);
+      LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
       if (!bindingLV) {
         hadFailure = true;
         break;
       }
 
       ExprDest storeDest(bindingLV, EC_VarInit);
-      if (!emitter.emitCResult(bn.value, name, storeDest)) {
+      if (!emitter.emitCResult(bn.value, &nameNode, storeDest)) {
         hadFailure = true;
         break;
       }
@@ -1831,7 +1997,7 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
       continue;
 
     // Emit the pattern guard and body of the case.
-    emitCaseBody(caseEntry, emitter, /*inMatchCase*/ true);
+    emitCaseBody(caseEntry, /*inMatchCase*/ true);
   }
 
   // The match else is a no-op fallthrough. TODO: Mark unreachable when there
@@ -1839,6 +2005,11 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
   builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
   HLCF::YieldOp::create(builder, emissionState.matchLocation);
   builder.setInsertionPointAfter(matchOp);
+
+  // If in a nested hlcf.match.case, failure to match is a failure of the case
+  // that encloses us.
+  if (inMatchCase)
+    HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
 }
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
