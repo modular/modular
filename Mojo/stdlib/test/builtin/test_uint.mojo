@@ -236,5 +236,19 @@ def test_comptime() raises:
     assert_equal(n, 5)
 
 
+def test_from_float_literal() raises:
+    # Explicit construction from a float literal truncates towards zero,
+    # matching `UInt(Float64(...))`.
+    # See https://github.com/modular/modular/issues/5290.
+    assert_equal(UInt(400.0), UInt(400))
+    assert_equal(UInt(400.7), UInt(400))
+    assert_equal(UInt(0.5), UInt(0))
+    # Values outside the range of the dtype wrap like the runtime cast.
+    assert_equal(UInt(-3.7), UInt(Float64(-3.7)))
+    # Float literals also fold in comptime contexts (e.g. array sizes).
+    comptime comptime_size = UInt(400.0 / 0.1) * 8
+    assert_equal(comptime_size, UInt(32000))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
