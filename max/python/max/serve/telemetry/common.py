@@ -191,6 +191,21 @@ HISTOGRAM_GIB_PER_S_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
     0.1, 800.0, 2.0
 )
 
+# Encoded media payload sizes. Log-spaced 1 KiB to 1 GiB at ratio 2 (22
+# boundaries): the per-request media budget defaults to 100 MiB and a single
+# item can use all of it, and the limit is disableable (Settings.max_media_bytes
+# is ``ge=0``), so the ladder clears the default with headroom.
+HISTOGRAM_BYTES_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1024.0, 1024.0**3, 2.0
+)
+
+# Image pixel counts (width * height), pre-resize. 19 boundaries, 1 K to 100 M:
+# 1 K covers a 32x32 thumbnail, 100 M a 10000x10000 image, above which the
+# decoded-size estimate rejects it against the default budget anyway.
+HISTOGRAM_PIXELS_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1024.0, 1.0e8, 2.0
+)
+
 # Per-metric histogram bucket boundaries, matched by exact instrument name.
 #
 # Each Histogram instrument is matched to exactly one View by its exact name, so
@@ -223,6 +238,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.structured_output.grammar_build_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.vision.image_admission_decode_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.media.resolve_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_read_latency_max": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
@@ -255,9 +271,16 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     # (see max_private/minimax_m3/vision_processor.py); this bucket set's
     # upper bound (512) matches exactly.
     "maxserve.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Media items of one kind on a single request; the same ladder as batch
+    # size, since both count per-request work items.
+    "maxserve.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Throughput (tokens/s)
     "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    # Encoded media payload bytes
+    "maxserve.media.item_size": HISTOGRAM_BYTES_BUCKETS,
+    # Image pixel counts
+    "maxserve.media.image_size": HISTOGRAM_PIXELS_BUCKETS,
     # Transfer throughput (GiB/s)
     "maxserve.dkv.nixl_read_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
     "maxserve.dkv.nixl_write_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,

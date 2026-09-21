@@ -23,7 +23,7 @@ import io
 import ipaddress
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -507,3 +507,67 @@ async def test_ssrf_redirect_to_malformed_location_is_client_error() -> None:
                 AnyUrl("https://host.example/x.png"),
                 settings=_resolver_settings(),
             )
+
+
+@pytest.mark.asyncio
+async def test_redirect_with_no_location_counts_a_rejection(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A redirect an operator cannot follow is a refusal like any other.
+
+    It raised bare, so ``maxserve.media.rejections`` said nothing -- on one
+    of the two failure modes (with the redirect loop below) an operator
+    reaches this counter to find.
+    """
+    metrics = Mock()
+    monkeypatch.setattr("max.serve.router._image_resolution.METRICS", metrics)
+    client = _RecordingStreamClient(
+        {"93.184.216.34": _FakeStreamResponse(status_code=302, headers={})}
+    )
+    with (
+        patch(
+            "max.serve.router._image_resolution._resolve_host",
+            new=AsyncMock(return_value=["93.184.216.34"]),
+        ),
+        _patch_stream_client(client),
+    ):
+        with pytest.raises(InputError, match="no location"):
+            await resolve_image_from_url(
+                AnyUrl("https://host.example/x.png"),
+                settings=_resolver_settings(),
+            )
+
+    metrics.media_rejections.assert_called_once_with("bad_redirect")
+    metrics.media_items.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_redirect_loop_counts_a_rejection(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """Exhausting the hop budget is the refusal, not a transport failure."""
+    metrics = Mock()
+    monkeypatch.setattr("max.serve.router._image_resolution.METRICS", metrics)
+    client = _RecordingStreamClient(
+        {
+            "93.184.216.34": _FakeStreamResponse(
+                status_code=302,
+                headers={"location": "https://host.example/x.png"},
+            )
+        }
+    )
+    with (
+        patch(
+            "max.serve.router._image_resolution._resolve_host",
+            new=AsyncMock(return_value=["93.184.216.34"]),
+        ),
+        _patch_stream_client(client),
+    ):
+        with pytest.raises(InputError, match="too many redirects"):
+            await resolve_image_from_url(
+                AnyUrl("https://host.example/x.png"),
+                settings=_resolver_settings(),
+            )
+
+    metrics.media_rejections.assert_called_once_with("too_many_redirects")
+    metrics.media_items.assert_not_called()

@@ -72,6 +72,7 @@ modular_py_test(
         requirement("opentelemetry-api"),
         requirement("opentelemetry-sdk"),
         requirement("numpy"),
+        requirement("prometheus-client"),
         requirement("pydantic"),
         requirement("pytest-asyncio"),
         requirement("pyzmq"),

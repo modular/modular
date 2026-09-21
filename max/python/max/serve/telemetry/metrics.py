@@ -680,12 +680,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.vision.preprocess_cache_hits": _meter.create_counter(
         "maxserve.vision.preprocess_cache_hits",
         unit="images",
-        description="Cumulative images already preprocessed at admission, whose decode and preprocessing are both skipped.",
+        description="Cumulative images found already preprocessed, whose decode and preprocessing are both skipped. Recorded either from the API server's admission peek or from the tokenizer's own cache lookup after tokenization, depending on the architecture; the two windows differ, so the rate is not comparable across architectures.",
     ),  # type: ignore
     "maxserve.vision.preprocess_cache_misses": _meter.create_counter(
         "maxserve.vision.preprocess_cache_misses",
         unit="images",
-        description="Cumulative images not yet preprocessed at admission, which the API server must decode and preprocess.",
+        description="Cumulative images not already preprocessed, which the API server must decode and preprocess. Recorded from the same vantage as 'maxserve.vision.preprocess_cache_hits'.",
     ),  # type: ignore
     "maxserve.vision.image_admission_decode_time": _meter.create_histogram(
         "maxserve.vision.image_admission_decode_time",
@@ -711,6 +711,122 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.video.frames_per_clip",
         unit="frames",
         description="Sampled frame count per newly-encoded video clip.",
+    ),  # type: ignore
+    "maxserve.media.items": _meter.create_counter(
+        "maxserve.media.items",
+        description=(
+            "Cumulative client-supplied media items the API server resolved "
+            "into bytes, split by 'media_kind' (image, video) and 'source' "
+            "(inline for a data: URI, url for http(s), file for file:). "
+            "Counted only once an item resolves; a rejected item is counted "
+            "by 'maxserve.media.rejections' instead."
+        ),
+    ),  # type: ignore
+    "maxserve.media.resolve_time": _meter.create_histogram(
+        "maxserve.media.resolve_time",
+        unit="ms",
+        description=(
+            "Per-item API-server wall-clock time to turn one media reference "
+            "into bytes: the http(s) download, the base64 decode of a data: "
+            "URI, or the local file read. Excludes the image decode, which is "
+            "'maxserve.media.image_decode_ms'. Items on one request are "
+            "resolved concurrently, so these windows overlap; the sum is not "
+            "the request's elapsed resolve time."
+        ),
+    ),  # type: ignore
+    "maxserve.media.item_size": _meter.create_histogram(
+        "maxserve.media.item_size",
+        unit="bytes",
+        description=(
+            "Encoded size of one resolved media item, as it arrived on the "
+            "wire or in the request body. Not the decoded pixel buffer."
+        ),
+    ),  # type: ignore
+    "maxserve.media.image_size": _meter.create_histogram(
+        "maxserve.media.image_size",
+        unit="pixels",
+        description=(
+            "Pixel count (width * height) of one client-supplied image as it "
+            "arrived, read from the header in the API server before any "
+            "resize, split by the 'format' PIL reports for it."
+        ),
+    ),  # type: ignore
+    "maxserve.media.image_decodes": _meter.create_counter(
+        "maxserve.media.image_decodes",
+        description=(
+            "Cumulative client-supplied images whose pixels the API server "
+            "actually decoded, split by 'format'. The denominator of the "
+            "per-format decode cost, whose numerator is "
+            "'maxserve.media.image_decode_ms'; an image the preprocess cache "
+            "let us skip is sized but not counted here."
+        ),
+    ),  # type: ignore
+    # Milliseconds are in the name rather than in a declared unit: with
+    # unit="ms" the exporter publishes
+    # "maxserve_media_image_decode_ms_milliseconds_total", which Datadog
+    # spells "..._milliseconds.count" -- indistinguishable from the ".count"
+    # it appends to "maxserve.media.image_decodes" beside it, while carrying
+    # milliseconds instead of a count.
+    "maxserve.media.image_decode_ms": _meter.create_counter(
+        "maxserve.media.image_decode_ms",
+        description=(
+            "Cumulative milliseconds of per-image codec decode in the API "
+            "server: header parse through the full pixel decode, split by "
+            "'format'. Excludes the per-architecture processor (resize, "
+            "patchify, normalize)."
+        ),
+    ),  # type: ignore
+    "maxserve.media.rejections": _meter.create_counter(
+        "maxserve.media.rejections",
+        description=(
+            "Cumulative media items the API server refused, split by "
+            "'reason'. Every value is a 400 to the client, so this counts "
+            "client-visible failures, not server faults."
+        ),
+    ),  # type: ignore
+    "maxserve.media.items_per_request": _meter.create_histogram(
+        "maxserve.media.items_per_request",
+        unit="items",
+        description=(
+            "Media items of one 'media_kind' carried by a single request, "
+            "counted in the API server before any media is downloaded and "
+            "before the per-request count caps, so a request refused for "
+            "carrying too many items is still sampled. Requests carrying "
+            "none of that kind are not sampled, so the distribution starts "
+            "at one."
+        ),
+    ),  # type: ignore
+    "maxserve.media.preprocess_cache_evictions": _meter.create_counter(
+        "maxserve.media.preprocess_cache_evictions",
+        description=(
+            "Cumulative preprocessed-media entries the API-server tokenizer "
+            "dropped to stay inside its byte budget, split by 'media_kind'. "
+            "Budget pressure only -- an idle-timeout reclaim is not counted. "
+            "Separates a low 'maxserve.vision.preprocess_cache_hits' rate "
+            "caused by a workload with no repeats from one caused by a "
+            "cache thrashing at its budget, which have opposite remedies."
+        ),
+    ),  # type: ignore
+    "maxserve.media.preprocess_cache_size": _meter.create_gauge(
+        "maxserve.media.preprocess_cache_size",
+        unit="bytes",
+        description=(
+            "Host bytes the API-server tokenizer's preprocessed-media cache "
+            "retains right now, split by 'media_kind'. Read after "
+            "tokenization, so it is sampled once per media request rather "
+            "than on a timer."
+        ),
+    ),  # type: ignore
+    "maxserve.media.preprocess_cache_capacity": _meter.create_gauge(
+        "maxserve.media.preprocess_cache_capacity",
+        unit="bytes",
+        description=(
+            "The byte budget 'maxserve.media.preprocess_cache_size' is "
+            "evicted down to, split by 'media_kind'. Zero means caching is "
+            "disabled for that kind. Constant for a process; published "
+            "beside the occupancy so the ratio is readable without knowing "
+            "the deployment's configuration."
+        ),
     ),  # type: ignore
     "maxserve.tool_call.conformance_errors": _meter.create_counter(
         "maxserve.tool_call.conformance_errors",
@@ -1512,6 +1628,115 @@ class _AsyncMetrics:
                 "maxserve.video.encoding_time_milliseconds",
                 time_ms,
                 self.extra_attributes,
+            ),
+        )
+
+    def media_items(self, media_kind: str, source: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.items",
+                1,
+                {
+                    **self.extra_attributes,
+                    "media_kind": media_kind,
+                    "source": source,
+                },
+            ),
+        )
+
+    def media_resolve_time(self, value: float, source: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.resolve_time",
+                value,
+                {**self.extra_attributes, "source": source},
+            ),
+        )
+
+    def media_item_size(self, num_bytes: int, media_kind: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.item_size",
+                num_bytes,
+                {**self.extra_attributes, "media_kind": media_kind},
+            ),
+        )
+
+    def media_image_size(self, pixels: int, image_format: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.image_size",
+                pixels,
+                {**self.extra_attributes, "format": image_format},
+            ),
+        )
+
+    def media_image_decodes(self, image_format: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.image_decodes",
+                1,
+                {**self.extra_attributes, "format": image_format},
+            ),
+        )
+
+    def media_image_decode_ms(self, value: float, image_format: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.image_decode_ms",
+                value,
+                {**self.extra_attributes, "format": image_format},
+            ),
+        )
+
+    def media_rejections(self, reason: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.rejections",
+                1,
+                {**self.extra_attributes, "reason": reason},
+            ),
+        )
+
+    def media_items_per_request(self, items: int, media_kind: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.items_per_request",
+                items,
+                {**self.extra_attributes, "media_kind": media_kind},
+            ),
+        )
+
+    def media_preprocess_cache_evictions(
+        self, evictions: int, media_kind: str
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.preprocess_cache_evictions",
+                evictions,
+                {**self.extra_attributes, "media_kind": media_kind},
+            ),
+        )
+
+    def media_preprocess_cache_size(
+        self, num_bytes: int, media_kind: str
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.preprocess_cache_size",
+                num_bytes,
+                {**self.extra_attributes, "media_kind": media_kind},
+            ),
+        )
+
+    def media_preprocess_cache_capacity(
+        self, num_bytes: int, media_kind: str
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.media.preprocess_cache_capacity",
+                num_bytes,
+                {**self.extra_attributes, "media_kind": media_kind},
             ),
         )
 

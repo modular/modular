@@ -19,7 +19,7 @@ import copy
 import io
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -64,6 +64,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    VisionPreprocessCacheStats,
 )
 from max.profiler import traced
 from max.support.image import find_contiguous_ranges, hash_image
@@ -562,6 +563,15 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         )
         assert isinstance(templated_message, str)
         return templated_message
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's :class:`PreprocessCacheStatsProbe` snapshot."""
+        return {
+            "image": self._preprocess_cache.stats(),
+            "video": self._video_preprocess_cache.stats(),
+        }
 
     def _preprocess_image(
         self, image_hash: int | None, image: Image.Image

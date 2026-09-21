@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
@@ -50,6 +51,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    VisionPreprocessCacheStats,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -430,6 +432,16 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )
 
         raise ValueError(f"{request} does not provide messages or prompt.")
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's :class:`PreprocessCacheStatsProbe` snapshot.
+
+        Image only: this architecture caches no preprocessed video, so the
+        ``video`` key is structurally absent rather than reported as zero.
+        """
+        return {"image": self._preprocess_cache.stats()}
 
     def _preprocess_image(
         self, image_hash: int | None, image: Image.Image

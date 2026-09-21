@@ -382,6 +382,84 @@ async def _recorded_ttft_ms(timestamp_ns: int) -> float:
     return ttft_value
 
 
+async def _recorded_preprocess_cache_media(
+    *, images: list[bytes], videos: list[bytes]
+) -> bool:
+    """The ``carried_media`` flag ``next_token_chunk`` passes the recorder."""
+    request_id = RequestID(value="test-request")
+
+    async def mock_stream(
+        streamed_id: str, context: Any
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=request_id,
+                        tokens=[101],
+                        final_status=GenerationStatus.END_OF_SEQUENCE,
+                    )
+                ],
+                None,
+            )
+
+        return _gen()
+
+    mock_tokens = Mock()
+    mock_tokens.prompt_length = 10
+    mock_context = Mock(request_id=request_id, tokens=mock_tokens)
+
+    mock_request = Mock(request_id=request_id, tools=None, timestamp_ns=0)
+    mock_request.sampling_params.stop = []
+    mock_request.images = images
+    mock_request.videos = videos
+
+    pipeline = Mock()
+    pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
+    pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
+    pipeline.model_worker.stream = mock_stream
+    pipeline.debug_logging = False
+    pipeline._min_chunk_tokens = 1
+    pipeline._reasoning_parser = AsyncMock(return_value=None)
+    pipeline._preprocess_cache_stats = Mock()
+
+    # The seam's load-bearing invariant: the snapshot has to be read *after*
+    # tokenization, which is what moved the cache's counters. Moving the
+    # call three lines up still satisfies every value assertion below while
+    # publishing the previous request's deltas on every request, and never
+    # publishing the last request of a burst at all.
+    order = Mock()
+    order.attach_mock(pipeline.tokenizer.new_context, "new_context")
+    order.attach_mock(pipeline._preprocess_cache_stats.record, "record")
+
+    with patch("max.serve.pipelines.llm.METRICS", MagicMock()):
+        bound = TokenGeneratorPipeline.next_token_chunk.__get__(
+            pipeline, type(pipeline)
+        )
+        [chunk async for chunk in await bound(mock_request)]
+
+    assert [call[0] for call in order.mock_calls] == ["new_context", "record"]
+    pipeline._preprocess_cache_stats.record.assert_called_once()
+    return pipeline._preprocess_cache_stats.record.call_args.kwargs[
+        "carried_media"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_preprocess_cache_stats_read_for_a_media_request() -> None:
+    """The cache seam is read after tokenization, which is what moved it."""
+    assert await _recorded_preprocess_cache_media(images=[b"png"], videos=[])
+    assert await _recorded_preprocess_cache_media(images=[], videos=[b"mp4"])
+
+
+@pytest.mark.asyncio
+async def test_preprocess_cache_stats_inert_for_a_text_only_request() -> None:
+    """``new_context`` runs for every request, so the gate is explicit."""
+    assert not await _recorded_preprocess_cache_media(images=[], videos=[])
+
+
 @pytest.mark.asyncio
 async def test_ttft_measured_from_request_arrival() -> None:
     """TTFT covers the pre-pipeline work the HTTP layer did (MXSERV-336).

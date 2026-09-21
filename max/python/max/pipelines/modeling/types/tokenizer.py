@@ -17,12 +17,15 @@ from __future__ import annotations
 
 __all__ = [
     "PipelineTokenizer",
+    "PreprocessCacheStatsProbe",
     "PreprocessedImageProbe",
     "TokenizerEncoded",
     "UnboundContextType",
+    "VisionPreprocessCacheStats",
 ]
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from max.pipelines.request import RequestType
@@ -74,6 +77,69 @@ class PreprocessedImageProbe(Protocol):
         Returns:
             One flag per entry in ``images``, in the same order. Returning a
             different length is a contract violation.
+        """
+        ...
+
+
+@dataclass(frozen=True)
+class VisionPreprocessCacheStats:
+    """One media preprocess cache's counters, as of now.
+
+    The three counts are cumulative for the lifetime of the process that
+    owns the cache, and the two byte figures are instantaneous. A reader that
+    wants rates owns the differencing, and has to survive the counts
+    restarting at zero: the cache is rebuilt empty in any process it is
+    unpickled into.
+    """
+
+    hits: int
+    """Lookups the cache answered without preprocessing."""
+
+    misses: int
+    """Lookups that had to preprocess."""
+
+    evictions: int
+    """Entries dropped to stay inside the byte budget."""
+
+    size_bytes: int
+    """Host bytes the cached payloads retain right now."""
+
+    capacity_bytes: int
+    """The byte budget, which ``size_bytes`` is evicted down to (``0``:
+    caching is disabled)."""
+
+
+@runtime_checkable
+class PreprocessCacheStatsProbe(Protocol):
+    """Optional tokenizer capability: report its media preprocess caches.
+
+    An architecture that caches preprocessed media implements this so the
+    server can publish the cache's occupancy and eviction pressure, which is
+    what separates "this workload has no repeats" from "the cache is
+    thrashing at its budget" -- readings a hit rate alone cannot tell apart.
+
+    A separate protocol rather than a defaulted method on
+    :class:`PipelineTokenizer`, for the same reason as
+    :class:`PreprocessedImageProbe`: ``PipelineTokenizer`` is
+    ``runtime_checkable`` and the API server gates request admission on
+    ``isinstance`` against it, so a new member there would reject every
+    tokenizer that does not define it. This also keeps the absence typed
+    rather than a ``getattr`` sniff at a private attribute name, which would
+    stop working silently the day an architecture renames its cache.
+    """
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's preprocess caches, keyed by media kind.
+
+        Must not preprocess, evict or otherwise disturb a cache: the server
+        calls it per request on the event loop.
+
+        Returns:
+            One entry per cache the tokenizer owns, keyed ``image`` or
+            ``video``. An architecture with no video cache simply omits that
+            key rather than reporting an empty one.
         """
         ...
 

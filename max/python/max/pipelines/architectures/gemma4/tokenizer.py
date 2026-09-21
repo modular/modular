@@ -19,7 +19,7 @@ import asyncio
 import heapq
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Any
 
@@ -47,6 +47,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    VisionPreprocessCacheStats,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -390,6 +391,15 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         # Decode with skip_special_tokens=False since we already filtered
         kwargs_no_skip = {**kwargs, "skip_special_tokens": False}
         return await super().decode(np.array(filtered_ids), **kwargs_no_skip)
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's :class:`PreprocessCacheStatsProbe` snapshot."""
+        return {
+            "image": self._preprocess_cache.stats(),
+            "video": self._video_preprocess_cache.stats(),
+        }
 
     def _preprocess_image(
         self, image_hash: int | None, image: bytes | Image.Image

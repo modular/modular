@@ -32,20 +32,28 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import collections
 import io
 import logging
 import threading
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest import mock
 
 import pytest
 from httpx import ConnectError, ReadTimeout
 from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
+from max.serve.pipelines.preprocess_cache_stats import (
+    preprocessed_image_probe,
+)
 from max.serve.router import _image_resolution
-from max.serve.router._image_resolution import resolve_image_from_url
+from max.serve.router._image_resolution import (
+    _METRIC_IMAGE_FORMATS,
+    make_media_ref,
+    resolve_image_from_url,
+)
 from max.serve.router.openai_routes import (
-    _preprocessed_image_probe,
     openai_parse_chat_completion_request,
 )
 from max.serve.schemas.openai import CreateChatCompletionRequest
@@ -690,8 +698,8 @@ def test_probe_resolution_requires_the_protocol() -> None:
         ) -> list[bool]:
             return [False] * len(images)
 
-    assert _preprocessed_image_probe(WithoutProbe()) is None
-    probe = _preprocessed_image_probe(WithProbe())
+    assert preprocessed_image_probe(WithoutProbe()) is None
+    probe = preprocessed_image_probe(WithProbe())
     assert probe is not None
     assert probe([b"a"], []) == [False]
 
@@ -711,7 +719,7 @@ def test_probe_resolution_rejects_a_non_callable_attribute(
         preprocessed_image_mask = [True, False]
 
     with caplog.at_level(logging.WARNING, logger="max.serve"):
-        assert _preprocessed_image_probe(BadProbe()) is None
+        assert preprocessed_image_probe(BadProbe()) is None
     assert "not callable" in caplog.text
 
 
@@ -753,3 +761,598 @@ async def test_parse_reports_preprocess_cache_hits_and_misses(
     assert recorded["misses"] == [1]
     assert len(recorded["decode_ms"]) == 1
     assert recorded["decode_ms"][0] >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# CLIN-1911: the ``maxserve.media.*`` family. The media fetch path was
+# entirely untimed, so a request that spent seconds downloading an image was
+# indistinguishable from one that spent them in prefill.
+# ---------------------------------------------------------------------------
+
+
+class _RawRef:
+    """A media reference that skips pydantic, so a malformed URL can be tested.
+
+    ``AnyUrl`` rejects the inputs the resolver's own URL validation exists to
+    reject. From a client URL those never reach ``_validate_and_pin`` -- they
+    are refused in ``make_media_ref``, which
+    ``test_a_client_url_that_is_not_url_shaped_is_counted`` drives end to
+    end. What this double reaches is the *other* way those checks run: a
+    redirect ``Location``, which is server-controlled and arrives as a raw
+    string.
+    """
+
+    def __init__(self, raw: str, scheme: str) -> None:
+        self._raw = raw
+        self.scheme = scheme
+
+    def unicode_string(self) -> str:
+        return self._raw
+
+    def __str__(self) -> str:
+        return self._raw
+
+
+def _media_metrics(monkeypatch) -> mock.MagicMock:  # noqa: ANN001
+    """Patch the media instruments at the resolver's call site."""
+    recorder = mock.MagicMock()
+    monkeypatch.setattr(_image_resolution, "METRICS", recorder)
+    return recorder
+
+
+def _route_metrics(monkeypatch) -> mock.MagicMock:  # noqa: ANN001
+    """Patch the media instruments at the route's own call site.
+
+    Per-image facts are not here: ``emit_media_facts`` is shared with the
+    responses router and records from ``_image_resolution``, so those tests
+    take ``_media_metrics`` instead.
+    """
+    recorder = mock.MagicMock()
+    monkeypatch.setattr("max.serve.router.openai_routes.METRICS", recorder)
+    return recorder
+
+
+async def test_resolve_counts_one_inline_and_one_fetched_item(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """The two schemes a real client uses are distinguished by ``source``.
+
+    Both arms share one measured window, so a fetch cannot be timed while an
+    inline base64 decode is not -- which is the state this family replaces.
+    """
+    png = _png_bytes((8, 8))
+    _install_fake_client(
+        monkeypatch,
+        headers={"content-length": str(len(png))},
+        chunks=[png],
+    )
+    recorder = _media_metrics(monkeypatch)
+    settings = _no_ssrf()
+
+    inline = await resolve_image_from_url(
+        AnyUrl(_data_uri(png)), settings=settings, media_kind="image"
+    )
+    fetched = await resolve_image_from_url(
+        AnyUrl("https://example.com/a.png"),
+        settings=settings,
+        media_kind="image",
+    )
+
+    assert inline == png
+    assert fetched == png
+    assert collections.Counter(
+        call.args for call in recorder.media_items.call_args_list
+    ) == {("image", "inline"): 1, ("image", "url"): 1}
+    assert [
+        call.args[1] for call in recorder.media_resolve_time.call_args_list
+    ] == ["inline", "url"]
+    assert all(
+        call.args[0] >= 0.0
+        for call in recorder.media_resolve_time.call_args_list
+    )
+    assert [call.args for call in recorder.media_item_size.call_args_list] == [
+        (len(png), "image"),
+        (len(png), "image"),
+    ]
+    recorder.media_rejections.assert_not_called()
+
+
+async def test_file_scheme_resolves_under_its_own_source(
+    monkeypatch,  # noqa: ANN001
+    tmp_path,  # noqa: ANN001
+) -> None:
+    """``file:`` is its own ``source``, not folded into inline or fetch."""
+    png = _png_bytes((8, 8))
+    path = tmp_path / "local.png"
+    path.write_bytes(png)
+    recorder = _media_metrics(monkeypatch)
+
+    out = await resolve_image_from_url(
+        AnyUrl(path.as_uri()),
+        settings=Settings(allowed_image_roots=[str(tmp_path)]),
+        media_kind="image",
+    )
+
+    assert out == png
+    recorder.media_items.assert_called_once_with("image", "file")
+    recorder.media_item_size.assert_called_once_with(len(png), "image")
+
+
+async def test_over_budget_item_counts_only_a_rejection(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A refused item is counted once, as a rejection, and nowhere else.
+
+    Counting it under ``items`` as well would make the rejection rate read as
+    a fraction of a denominator that already excludes the successes.
+    """
+    recorder = _media_metrics(monkeypatch)
+
+    with pytest.raises(InputError, match="exceeds the maximum media size"):
+        await resolve_image_from_url(
+            AnyUrl(_data_uri(b"\x00" * 4096)),
+            settings=Settings(max_media_bytes=1024),
+            media_kind="image",
+        )
+
+    recorder.media_rejections.assert_called_once_with("over_budget")
+    recorder.media_items.assert_not_called()
+    recorder.media_resolve_time.assert_not_called()
+    recorder.media_item_size.assert_not_called()
+
+
+async def test_url_failures_land_in_their_own_rejection_buckets(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """Each URL failure mode is its own ``reason``, not one 'bad media' bucket.
+
+    Operators act differently on a malformed URL (a client bug) than on a
+    host with no DNS record (an unreachable source).
+    """
+    for raw, scheme, reason in (
+        ("http://[::1", "http", "malformed_url"),
+        ("http:///no-host.png", "http", "no_host"),
+        ("ftp://example.com/a.png", "ftp", "bad_scheme"),
+    ):
+        recorder = _media_metrics(monkeypatch)
+        with pytest.raises(ValueError):
+            await resolve_image_from_url(
+                _RawRef(raw, scheme), settings=Settings(), media_kind="image"
+            )
+        recorder.media_rejections.assert_called_once_with(reason)
+        recorder.media_items.assert_not_called()
+
+
+async def test_a_client_url_that_is_not_url_shaped_is_counted(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A URL pydantic refuses is the most ordinary client bug of all.
+
+    It used to raise a bare ``ValidationError`` out of ``make_media_ref``,
+    which counts nothing -- so the refusal rate read low by exactly the
+    failures an operator is most likely to be looking for.
+    """
+    recorder = _media_metrics(monkeypatch)
+
+    with pytest.raises(InputError, match="malformed media URL"):
+        make_media_ref("http://[::1")
+
+    recorder.media_rejections.assert_called_once_with("malformed_url")
+
+
+async def test_a_malformed_client_url_is_counted_through_the_route(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """Driven from the request body, not from the resolver's own entry."""
+    recorder = _media_metrics(monkeypatch)
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "http://[::1"},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(InputError, match="malformed media URL"):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=True, settings=Settings()
+        )
+
+    recorder.media_rejections.assert_called_once_with("malformed_url")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "data:image/png;base64,",
+        "data:image/png;base64,!!!not base64!!!",
+        # Past the offload threshold, so the raise happens in a worker
+        # thread and the rejection has to be counted back on the event loop.
+        "data:image/png;base64" + "A" * (300 * 1024),
+    ],
+    ids=["empty", "not-base64", "offloaded"],
+)
+async def test_an_undecodable_inline_payload_counts_a_rejection(
+    monkeypatch,  # noqa: ANN001
+    payload: str,
+) -> None:
+    """A corrupt base64 body is one of the commonest real client bugs.
+
+    It used to escape as a bare ``ValueError``/``binascii.Error``, counted
+    nowhere, on the one media path that never touches the network.
+    """
+    recorder = _media_metrics(monkeypatch)
+
+    with pytest.raises(ValueError):
+        await resolve_image_from_url(
+            _RawRef(payload, "data"),
+            settings=Settings(),
+            media_kind="image",
+        )
+
+    recorder.media_rejections.assert_called_once_with("bad_data_uri")
+    recorder.media_items.assert_not_called()
+
+
+async def test_a_refused_file_uri_counts_a_rejection(
+    monkeypatch,  # noqa: ANN001
+    tmp_path,  # noqa: ANN001
+) -> None:
+    """``file:`` misconfiguration is exactly what this counter is reached for.
+
+    Every refusal in the block raised bare, so an operator whose
+    ``allowed_image_roots`` does not cover the path they configured saw a
+    flat zero.
+    """
+    recorder = _media_metrics(monkeypatch)
+
+    with pytest.raises(ValueError, match="outside allowed roots"):
+        await resolve_image_from_url(
+            _RawRef(f"file://{tmp_path}/outside.png", "file"),
+            settings=Settings(allowed_image_roots=["/nonexistent-root"]),
+            media_kind="image",
+        )
+
+    recorder.media_rejections.assert_called_once_with("bad_file_uri")
+    recorder.media_items.assert_not_called()
+
+
+async def test_fetch_timeout_counts_its_own_rejection(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A stalled download is attributable to the source, not to the server."""
+    monkeypatch.setattr(
+        _image_resolution,
+        "AsyncClient",
+        lambda **kw: _RaisingClient(ReadTimeout("simulated stall")),
+    )
+    recorder = _media_metrics(monkeypatch)
+
+    with pytest.raises(InputError, match="timed out fetching"):
+        await resolve_image_from_url(
+            AnyUrl("https://example.com/slow.png"),
+            settings=_no_ssrf(),
+            media_kind="image",
+        )
+
+    recorder.media_rejections.assert_called_once_with("fetch_timeout")
+    recorder.media_items.assert_not_called()
+
+
+async def test_parse_counts_media_items_per_admitted_request(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """Per-request counts are taken before the caps and the first byte."""
+    recorder = _route_metrics(monkeypatch)
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "hi"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": _data_uri(_png_bytes())},
+                        },
+                        {
+                            "type": "video_url",
+                            "video_url": {"url": _data_uri(b"\x20" * 64)},
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    await openai_parse_chat_completion_request(
+        request, wrap_content=True, settings=Settings()
+    )
+
+    assert collections.Counter(
+        call.args for call in recorder.media_items_per_request.call_args_list
+    ) == {(1, "image"): 1, (1, "video"): 1}
+    recorder.media_rejections.assert_not_called()
+
+
+async def test_parse_counts_an_over_count_request_as_a_rejection(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """Over the per-request image cap is a rejection, and still sampled.
+
+    The right tail is what sizes the cap, so counting past the cap hid the
+    one request class this distribution exists to show -- and put MAX and
+    Mach on opposite semantics under the same metric name.
+    """
+    recorder = _route_metrics(monkeypatch)
+
+    with pytest.raises(InputError, match="too many images"):
+        await openai_parse_chat_completion_request(
+            _image_request([_png_bytes(), _png_bytes((16, 16))]),
+            wrap_content=True,
+            settings=Settings(),
+            max_images_per_request=1,
+        )
+
+    recorder.media_rejections.assert_called_once_with("too_many_images")
+    recorder.media_items_per_request.assert_called_once_with(2, "image")
+
+
+async def test_a_text_only_request_emits_nothing_from_the_media_family(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """The family must be silent on the overwhelming majority of traffic."""
+    route = _route_metrics(monkeypatch)
+    resolver = _media_metrics(monkeypatch)
+
+    await openai_parse_chat_completion_request(
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "just text"}],
+            }
+        ),
+        wrap_content=True,
+        settings=Settings(),
+    )
+
+    route.media_items_per_request.assert_not_called()
+    route.media_rejections.assert_not_called()
+    resolver.media_items.assert_not_called()
+    resolver.media_resolve_time.assert_not_called()
+    resolver.media_item_size.assert_not_called()
+    resolver.media_rejections.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# CLIN-1911 child 5: per-image format, pixels and codec decode cost. The
+# window is the codec alone -- the per-architecture processor runs downstream
+# on an already-decoded buffer, and folding it in would rank codecs by the
+# pixel distribution of the images that happen to use them.
+# ---------------------------------------------------------------------------
+
+
+def _mpo_bytes() -> bytes:
+    """A multi-picture JPEG, which PIL reports as ``MPO``, not ``JPEG``."""
+    buf = io.BytesIO()
+    first = Image.new("RGB", (8, 8), color="red")
+    second = Image.new("RGB", (8, 8), color="green")
+    first.save(buf, format="MPO", save_all=True, append_images=[second])
+    return buf.getvalue()
+
+
+async def test_decode_reports_format_and_pixels_for_every_image(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """Per-image size and cost, both tagged with the codec that produced them."""
+    recorder = _media_metrics(monkeypatch)
+
+    await openai_parse_chat_completion_request(
+        _image_request([_png_bytes((8, 8)), _png_bytes((16, 16))]),
+        wrap_content=True,
+        settings=Settings(),
+    )
+
+    assert [call.args for call in recorder.media_image_size.call_args_list] == [
+        (64, "png"),
+        (256, "png"),
+    ]
+    assert [
+        call.args for call in recorder.media_image_decodes.call_args_list
+    ] == [("png",), ("png",)]
+    decode_ms = recorder.media_image_decode_ms.call_args_list
+    assert [call.args[1] for call in decode_ms] == ["png", "png"]
+    assert all(call.args[0] > 0.0 for call in decode_ms)
+    recorder.media_rejections.assert_not_called()
+
+
+async def test_a_multi_picture_jpeg_reports_the_mpo_format(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """PIL names a multi-picture JPEG ``MPO``, so the label set has to hold it.
+
+    Without it, every dual-camera phone photo would land in ``unknown`` and
+    the per-codec panel would show a large unattributable bucket.
+    """
+    recorder = _media_metrics(monkeypatch)
+
+    await openai_parse_chat_completion_request(
+        _image_request([_mpo_bytes()]),
+        wrap_content=True,
+        settings=Settings(),
+    )
+
+    recorder.media_image_size.assert_called_once_with(64, "mpo")
+    assert "mpo" in _METRIC_IMAGE_FORMATS
+
+
+async def test_every_reported_format_comes_from_the_bounded_set(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """The label is not attacker-controllable: it is an allow-list or unknown."""
+    recorder = _media_metrics(monkeypatch)
+
+    await openai_parse_chat_completion_request(
+        _image_request([_png_bytes(), _mpo_bytes()]),
+        wrap_content=True,
+        settings=Settings(),
+    )
+
+    reported = {
+        call.args[1] for call in recorder.media_image_size.call_args_list
+    }
+    assert reported
+    assert reported <= _METRIC_IMAGE_FORMATS | {"unknown"}
+
+
+async def test_a_cache_skipped_image_reports_size_but_no_decode_counts(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A skipped image is still sized; only its decode cost is absent.
+
+    The skip is decided after the header read, so dropping format and pixels
+    for it would bias the size distribution toward whatever the tokenizer
+    has not seen before.
+    """
+    recorder = _media_metrics(monkeypatch)
+    cached, fresh = _png_bytes((8, 8)), _png_bytes((16, 16))
+
+    def mask(images: list[bytes], messages: list[Any]) -> list[bool]:
+        return [image == cached for image in images]
+
+    await openai_parse_chat_completion_request(
+        _image_request([cached, fresh]),
+        wrap_content=True,
+        settings=Settings(),
+        preprocessed_image_mask=mask,
+    )
+
+    assert [call.args for call in recorder.media_image_size.call_args_list] == [
+        (64, "png"),
+        (256, "png"),
+    ]
+    # Only the image that actually ran load() is counted and timed.
+    assert [
+        call.args for call in recorder.media_image_decodes.call_args_list
+    ] == [("png",)]
+    (decode_ms,) = recorder.media_image_decode_ms.call_args_list
+    assert decode_ms.args[1] == "png"
+    assert decode_ms.args[0] > 0.0
+
+
+async def test_an_undecodable_image_still_reports_the_ones_before_it(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """The partial report is the point of the out parameter.
+
+    The decode raises out of ``asyncio.to_thread`` with no return value, so a
+    list owned by the decoding frame would be lost with it. This asserts
+    image 1's format, pixels and decode time survive image 2's rejection.
+    """
+    recorder = _media_metrics(monkeypatch)
+
+    with pytest.raises(InputError, match="invalid or unreadable"):
+        await openai_parse_chat_completion_request(
+            _image_request([_png_bytes((8, 8)), b"not an image at all"]),
+            wrap_content=True,
+            settings=Settings(),
+        )
+
+    recorder.media_image_size.assert_called_once_with(64, "png")
+    recorder.media_image_decodes.assert_called_once_with("png")
+    (decode_ms,) = recorder.media_image_decode_ms.call_args_list
+    assert decode_ms.args[1] == "png"
+    assert decode_ms.args[0] > 0.0
+    recorder.media_rejections.assert_called_once_with("undecodable")
+
+
+async def test_an_oversized_image_reports_its_own_rejection_reason(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A decompression bomb is refused from its header, before the allocation.
+
+    Its format and pixels are reported -- that is the evidence for tuning the
+    limit -- under a reason distinct from an unreadable payload.
+    """
+    recorder = _media_metrics(monkeypatch)
+
+    with pytest.raises(InputError, match="image decodes to"):
+        await openai_parse_chat_completion_request(
+            _image_request([_png_bytes((256, 256))]),
+            wrap_content=True,
+            settings=Settings(max_media_bytes=4096),
+        )
+
+    recorder.media_rejections.assert_called_once_with("decode_too_large")
+    recorder.media_image_size.assert_called_once_with(65536, "png")
+    recorder.media_image_decodes.assert_not_called()
+    recorder.media_image_decode_ms.assert_not_called()
+
+
+async def test_a_text_only_request_reports_no_per_image_facts(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    recorder = _media_metrics(monkeypatch)
+
+    await openai_parse_chat_completion_request(
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "just text"}],
+            }
+        ),
+        wrap_content=True,
+        settings=Settings(),
+    )
+
+    recorder.media_image_size.assert_not_called()
+    recorder.media_image_decodes.assert_not_called()
+    recorder.media_image_decode_ms.assert_not_called()
+
+
+async def test_a_non_input_error_still_reports_the_images_before_it(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """``image.load()`` can raise ``MemoryError``, which is not an InputError.
+
+    An 8-image request that OOMs on image 6 used to lose images 1-5's
+    format, pixels and decode time -- exactly the evidence that failure
+    calls for.
+    """
+    recorder = _media_metrics(monkeypatch)
+    real_decode = _image_resolution.decode_and_validate_images
+
+    def oom_on_the_second(
+        images: list[bytes],
+        max_decoded_bytes: int | None = None,
+        skip_decode: Any = None,
+        *,
+        facts: Any = None,
+    ) -> Any:
+        real_decode(images[:1], max_decoded_bytes, None, facts=facts)
+        raise MemoryError("simulated allocation failure")
+
+    monkeypatch.setattr(
+        "max.serve.router.openai_routes.decode_and_validate_images",
+        oom_on_the_second,
+    )
+
+    with pytest.raises(MemoryError):
+        await openai_parse_chat_completion_request(
+            _image_request([_png_bytes((8, 8)), _png_bytes((16, 16))]),
+            wrap_content=True,
+            settings=Settings(),
+        )
+
+    recorder.media_image_size.assert_called_once_with(64, "png")
+    recorder.media_image_decodes.assert_called_once_with("png")

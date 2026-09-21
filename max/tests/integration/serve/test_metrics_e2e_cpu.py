@@ -232,7 +232,10 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
-            absent_metrics=None,
+            # This model is text-only, so the media family must be entirely
+            # absent. ``absent_metrics`` matches a substring, so the family
+            # prefix covers every name in it, present and future.
+            absent_metrics=["maxserve_media_"],
         )
 
         # Once all requests land in the histogram, assert the counter matches
@@ -332,7 +335,10 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
                 "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
-            absent_metrics=None,
+            # This model is text-only, so the media family must be entirely
+            # absent. ``absent_metrics`` matches a substring, so the family
+            # prefix covers every name in it, present and future.
+            absent_metrics=["maxserve_media_"],
         )
 
 

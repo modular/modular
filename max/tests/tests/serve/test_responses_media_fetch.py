@@ -24,6 +24,7 @@ import base64
 import io
 import ipaddress
 from typing import Any, Protocol
+from unittest.mock import Mock
 
 import pytest
 from max.pipelines.context.exceptions import InputError
@@ -267,3 +268,67 @@ async def test_large_image_encoded_off_the_event_loop(
     # offload without needing a genuinely huge image.
     await fetch_media_data_uri("https://example.com/big.png", _settings())
     assert "_encode_data_uri" in offloaded
+
+
+async def test_a_decoded_image_records_its_media_facts(
+    serve_media: _ServeMedia,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/v1/responses`` decodes pixels too, so it feeds the same counters.
+
+    Leaving its decode unrecorded made ``media.image_decodes`` and
+    ``media.image_decode_ms`` read zero on a responses-only deployment while
+    ``media.items`` climbed -- a per-format decode cost whose denominator
+    silently excluded a whole public route.
+    """
+    metrics = Mock()
+    monkeypatch.setattr(_image_resolution, "METRICS", metrics)
+    png = _image_bytes("PNG")
+    serve_media(png)
+
+    await fetch_media_data_uri("https://example.com/cat.png", _settings())
+
+    metrics.media_image_decodes.assert_called_once_with("png")
+    metrics.media_image_size.assert_called_once_with(16, "png")
+    (decode_ms, image_format) = metrics.media_image_decode_ms.call_args.args
+    assert image_format == "png"
+    assert decode_ms >= 0.0
+    metrics.media_rejections.assert_not_called()
+
+
+async def test_an_undecodable_image_records_a_rejection(
+    serve_media: _ServeMedia,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 400 this route already returned produced no rejection sample."""
+    metrics = Mock()
+    monkeypatch.setattr(_image_resolution, "METRICS", metrics)
+    serve_media(b"not an image at all")
+
+    with pytest.raises(InputError):
+        await fetch_media_data_uri("https://example.com/cat.png", _settings())
+
+    metrics.media_rejections.assert_called_once_with("undecodable")
+    metrics.media_image_decodes.assert_not_called()
+
+
+async def test_an_oversized_image_records_its_size_before_refusing(
+    serve_media: _ServeMedia,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal past the header read still knows the format and pixels."""
+    metrics = Mock()
+    monkeypatch.setattr(_image_resolution, "METRICS", metrics)
+    buf = io.BytesIO()
+    Image.new("RGB", (256, 256), color="red").save(buf, format="PNG")
+    # Small on the wire, 192KiB once decoded: the budget admits the fetch and
+    # the header estimate refuses the pixel buffer.
+    serve_media(buf.getvalue())
+
+    with pytest.raises(InputError, match="exceeding the maximum media size"):
+        await fetch_media_data_uri(
+            "https://example.com/cat.png", _settings(max_media_bytes=50_000)
+        )
+
+    metrics.media_rejections.assert_called_once_with("decode_too_large")
+    metrics.media_image_size.assert_called_once_with(256 * 256, "png")

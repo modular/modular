@@ -27,6 +27,7 @@ import ipaddress
 import logging
 import socket
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, Protocol
 from urllib.parse import unquote, urlparse
@@ -44,11 +45,95 @@ from httpx import (
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.tokenizer import ALLOWED_IMAGE_FORMATS
 from max.serve.config import Settings
+from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.stopwatch import StopWatch
 from max.support.human_readable_formatter import to_human_readable_bytes
 from PIL import Image, UnidentifiedImageError
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 logger = logging.getLogger("max.serve")
+
+# Which ``maxserve.media.*`` ``source`` a reference's scheme resolves under.
+# ``url`` rather than ``fetch``: the orchestrator tier tags the same split
+# ``url``, and one dashboard has to read both.
+_MEDIA_SOURCE_BY_SCHEME = {
+    "http": "url",
+    "https": "url",
+    "data": "inline",
+    "file": "file",
+}
+
+# The bounded value set of the ``format`` label. ``Image.open`` is pinned to
+# ``ALLOWED_IMAGE_FORMATS``, and PIL reports ``MPO`` for a multi-picture JPEG
+# opened through the JPEG factory, so this list plus ``unknown`` is the whole
+# set -- nothing here is attacker-controllable. Lower-cased to match the
+# spelling the orchestrator and Mach use for the same label.
+_METRIC_IMAGE_FORMATS = frozenset(
+    fmt.lower() for fmt in (*ALLOWED_IMAGE_FORMATS, "MPO")
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _ImageFact:
+    """What one image cost at admission, for the ``maxserve.media.*`` family.
+
+    Collected rather than recorded in place because the decode runs in a
+    worker thread and the metric clients are not all thread-safe; the frame
+    that owns the list records them on the event loop. ``pixels`` is absent
+    only when the header itself would not parse, and ``decode_ms`` only when
+    the pixel decode was skipped or never reached.
+    """
+
+    image_format: str
+    pixels: int | None = None
+    decode_ms: float | None = None
+    rejection: str | None = None
+
+
+def _record_fact(facts: list[_ImageFact] | None, fact: _ImageFact) -> None:
+    """Append ``fact`` when a caller asked for facts, and nothing otherwise."""
+    if facts is not None:
+        facts.append(fact)
+
+
+def emit_media_facts(facts: list[_ImageFact]) -> None:
+    """Record one request's per-image media facts, on the event loop.
+
+    Shared by both routers: the chat path collects facts around its batch
+    decode, the responses path around the single image it inlines. A route
+    that decoded an image without recording its facts leaves the per-format
+    decode cost computed over a denominator that silently excludes it.
+    """
+    for fact in facts:
+        if fact.pixels is not None:
+            METRICS.media_image_size(fact.pixels, fact.image_format)
+        if fact.decode_ms is not None:
+            METRICS.media_image_decodes(fact.image_format)
+            METRICS.media_image_decode_ms(fact.decode_ms, fact.image_format)
+        if fact.rejection is not None:
+            METRICS.media_rejections(fact.rejection)
+
+
+def _metric_image_format(image: Image.Image) -> str:
+    """The ``format`` label for an opened image, held to the bounded set."""
+    name = (image.format or "").lower()
+    return name if name in _METRIC_IMAGE_FORMATS else "unknown"
+
+
+def _reject_media(
+    reason: str, message: str, *, error: type[ValueError] = InputError
+) -> NoReturn:
+    """Count a media rejection under ``reason``, then raise it as a 400.
+
+    Every bucket in the taxonomy is raised on the event loop, so the counter
+    is recorded at the raise rather than recovered from the message text by a
+    handler further up. ``error`` selects the exception the caller already
+    raised, since the route maps ``InputError`` and bare ``ValueError`` to
+    different response bodies.
+    """
+    METRICS.media_rejections(reason)
+    raise error(message) from None
+
 
 # SSRF protection for client-supplied media URLs: validate the host, reject
 # internal/reserved addresses, and pin to the resolved IP. See
@@ -208,22 +293,26 @@ async def _validate_and_pin(
         # A malformed URL (e.g. a dotted-octal host or unbalanced IPv6 bracket,
         # possibly arriving via a redirect Location) is a client error, not a
         # server fault -- surface a 400, never an opaque 500.
-        raise InputError("malformed media URL") from None
+        _reject_media("malformed_url", "malformed media URL")
     scheme = parsed.scheme
     if scheme not in _ALLOWED_SCHEMES:
-        raise InputError(f"unsupported media URL scheme '{scheme}'")
+        _reject_media("bad_scheme", f"unsupported media URL scheme '{scheme}'")
     host = parsed.host
     if not host:
-        raise InputError("media URL has no host")
+        _reject_media("no_host", "media URL has no host")
     default_port = 443 if scheme == "https" else 80
     port = parsed.port or default_port
 
     try:
         ip_strings = await _resolve_host(host, port)
     except socket.gaierror:
-        raise InputError(f"could not resolve media URL host '{host}'") from None
+        _reject_media(
+            "dns_failure", f"could not resolve media URL host '{host}'"
+        )
     if not ip_strings:
-        raise InputError(f"could not resolve media URL host '{host}'")
+        _reject_media(
+            "dns_failure", f"could not resolve media URL host '{host}'"
+        )
 
     ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for raw_ip in ip_strings:
@@ -232,15 +321,17 @@ async def _validate_and_pin(
         try:
             ips.append(ipaddress.ip_address(raw_ip.split("%", 1)[0]))
         except ValueError:
-            raise InputError(
-                f"media URL host '{host}' resolved to an unparseable address"
-            ) from None
+            _reject_media(
+                "dns_failure",
+                f"media URL host '{host}' resolved to an unparseable address",
+            )
 
     if not _host_allowlisted(host, ips, nets, names):
         if any(_ip_is_blocked(ip) for ip in ips):
-            raise InputError(
+            _reject_media(
+                "ssrf_blocked",
                 "media URL host resolves to a disallowed"
-                " (internal/reserved) address"
+                " (internal/reserved) address",
             )
 
     # Pin to a single validated (or allowlisted) IP, chosen deterministically.
@@ -302,6 +393,8 @@ def decode_and_validate_images(
     images: list[bytes],
     max_decoded_bytes: int | None = None,
     skip_decode: Sequence[bool] | None = None,
+    *,
+    facts: list[_ImageFact] | None = None,
 ) -> list[Image.Image | None]:
     # Fully decode each image so empty, non-image, or truncated/streamed
     # content (e.g. animated or content-negotiated WebP) fails here as a clean
@@ -326,6 +419,11 @@ def decode_and_validate_images(
     # ``TextGenerationRequest.images_for_processing`` falls back to the raw
     # bytes per index, and ``open_image`` applies the same allowlist and the
     # same 400 if they do have to be decoded after all.
+    #
+    # ``facts`` is an out parameter: one :class:`_ImageFact` is appended per
+    # image *before* any raise, so a caller whose third image is undecodable
+    # still sees images 1-2 and the rejection. The caller records them, on the
+    # event loop, because this function runs in a worker thread.
     if skip_decode is not None and len(skip_decode) != len(images):
         raise ValueError(
             f"skip_decode has {len(skip_decode)} entries but there are "
@@ -333,6 +431,13 @@ def decode_and_validate_images(
         )
     decoded: list[Image.Image | None] = []
     for index, image_bytes in enumerate(images):
+        # The codec window: the header parse through the full pixel decode,
+        # and nothing past it. The per-architecture processor runs downstream
+        # of this function on an already-decoded buffer, and its cost follows
+        # the pixel count rather than the container, so widening the window
+        # to include it would rank codecs by the sizes of the images that
+        # happen to use them.
+        decode = StopWatch()
         try:
             image = Image.open(
                 io.BytesIO(image_bytes), formats=ALLOWED_IMAGE_FORMATS
@@ -344,7 +449,10 @@ def decode_and_validate_images(
             SyntaxError,
             Image.DecompressionBombError,
         ) as e:
+            _record_fact(facts, _ImageFact("unknown", rejection="undecodable"))
             raise InputError("invalid or unreadable image content") from e
+        image_format = _metric_image_format(image)
+        pixels = image.width * image.height
         # Bound decoded memory with the same knob that bounds the fetch --
         # ``max_media_bytes``. An image's *encoded* size (already charged to the
         # request budget when it was fetched) says nothing about how much it
@@ -361,6 +469,12 @@ def decode_and_validate_images(
         if max_decoded_bytes is not None:
             estimated = _estimated_decoded_bytes(image)
             if estimated > max_decoded_bytes:
+                _record_fact(
+                    facts,
+                    _ImageFact(
+                        image_format, pixels, rejection="decode_too_large"
+                    ),
+                )
                 raise InputError(
                     "image decodes to "
                     f"{to_human_readable_bytes(estimated)}, exceeding the "
@@ -375,6 +489,9 @@ def decode_and_validate_images(
             # would just move the decode to whenever it first touches a pixel.
             image.close()
             decoded.append(None)
+            # Format and pixels are in hand either way -- the skip is decided
+            # after the header read -- so only the decode sample is missing.
+            _record_fact(facts, _ImageFact(image_format, pixels))
             continue
         try:
             image.load()
@@ -385,7 +502,14 @@ def decode_and_validate_images(
             SyntaxError,
             Image.DecompressionBombError,
         ) as e:
+            _record_fact(
+                facts, _ImageFact(image_format, pixels, rejection="undecodable")
+            )
             raise InputError("invalid or unreadable image content") from e
+        _record_fact(
+            facts,
+            _ImageFact(image_format, pixels, decode_ms=decode.elapsed_ms),
+        )
         decoded.append(image)
     return decoded
 
@@ -445,10 +569,11 @@ class _MediaByteBudget:
         """
         assert self.limit is not None and self.remaining is not None
         over = additional - self.remaining
-        raise InputError(
+        _reject_media(
+            "over_budget",
             f"{media_kind} media exceeds the maximum media size of "
             f"{to_human_readable_bytes(self.limit)} per request by "
-            f"{to_human_readable_bytes(over)}"
+            f"{to_human_readable_bytes(over)}",
         )
 
 
@@ -534,7 +659,14 @@ def make_media_ref(url: str) -> MediaRef:
     """
     if url[:5].lower() == "data:":
         return DataUrl(url)
-    return AnyUrl(url)
+    try:
+        return AnyUrl(url)
+    except ValidationError:
+        # The only place a client URL that is not URL-shaped is refused, and
+        # pydantic's own error counts nothing -- leaving the most ordinary
+        # client bug missing from the refusal rate. Truncated because the
+        # value is client-controlled and otherwise unbounded.
+        _reject_media("malformed_url", f"malformed media URL '{url[:200]}'")
 
 
 async def _read_streamed_response(
@@ -619,19 +751,21 @@ async def _fetch_validated(
                 if response.is_redirect:
                     location = response.headers.get("location")
                     if not location:
-                        raise InputError(
-                            f"media url '{image_ref}' returned a redirect with"
-                            " no location"
+                        _reject_media(
+                            "bad_redirect",
+                            f"media url '{image_ref}' returned a redirect"
+                            " with no location",
                         )
                     # Resolve a relative redirect against the original hostname
                     # URL (not the pinned-IP one), then loop to re-validate it.
                     try:
                         next_url = str(parsed.join(location))
                     except httpx.InvalidURL:
-                        raise InputError(
-                            f"media url '{image_ref}' redirected to a malformed"
-                            " location"
-                        ) from None
+                        _reject_media(
+                            "malformed_url",
+                            f"media url '{image_ref}' redirected to a"
+                            " malformed location",
+                        )
                     current = next_url
                     continue
                 return await _read_streamed_response(
@@ -641,12 +775,16 @@ async def _fetch_validated(
             # A malformed redirect Location that httpx rejects while opening the
             # stream is a client-visible 400, not a transient error.
             if "location" in str(e).lower():
-                raise InputError(
+                _reject_media(
+                    "malformed_url",
                     f"media url '{image_ref}' returned a malformed redirect"
-                    " location"
-                ) from None
+                    " location",
+                )
             raise
-    raise InputError(f"too many redirects fetching media url '{image_ref}'")
+    _reject_media(
+        "too_many_redirects",
+        f"too many redirects fetching media url '{image_ref}'",
+    )
 
 
 async def _fetch_url_bytes(
@@ -682,24 +820,28 @@ async def _fetch_url_bytes(
                     response, media_kind, budget
                 )
         except HTTPStatusError as e:
-            raise ValueError(
-                f"Failed to fetch {media_kind}: HTTP {e.response.status_code}"
-            ) from None
+            _reject_media(
+                "fetch_status",
+                f"Failed to fetch {media_kind}: HTTP {e.response.status_code}",
+                error=ValueError,
+            )
         except TimeoutException:
             # A slow/stalled download must not surface as an opaque 500
             # (which the client then retries). Turn it into a clean input
             # error attributable to the unreachable/slow media source.
-            raise InputError(
+            _reject_media(
+                "fetch_timeout",
                 f"timed out fetching {media_kind} from its URL; the source "
-                "may be too slow or the file too large"
-            ) from None
+                "may be too slow or the file too large",
+            )
         except TransportError as e:
             # Connection reset / DNS / network failure mid-fetch: same
             # treatment as a timeout, a clean input error rather than a 500.
-            raise InputError(
+            _reject_media(
+                "fetch_transport",
                 f"failed to fetch {media_kind} from its URL "
-                f"({type(e).__name__})"
-            ) from None
+                f"({type(e).__name__})",
+            )
 
 
 async def resolve_image_from_url(
@@ -731,6 +873,12 @@ async def resolve_image_from_url(
             settings_kind if isinstance(settings_kind, str) else "image"
         )
 
+    # One measured window around all three scheme arms, so ``source`` is the
+    # only thing that distinguishes them and a fetch cannot be timed while an
+    # inline decode is not. Only a resolved item is counted; a rejected one is
+    # already counted by ``maxserve.media.rejections``.
+    resolve = StopWatch()
+
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         images_bytes = await _fetch_url_bytes(
             image_ref, settings, media_kind, budget
@@ -738,7 +886,6 @@ async def resolve_image_from_url(
         logger.debug(
             "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)
         )
-        return images_bytes
     elif image_ref.scheme == "data":
         data_uri = image_ref.unicode_string()
         # Decode off the event loop for large payloads: base64 decoding is
@@ -746,19 +893,29 @@ async def resolve_image_from_url(
         # request (CENG-640). Small thumbnails decode inline to skip the
         # thread-pool hop. The budget is charged here on the event loop -- never
         # inside the worker thread -- once the decoded size is known.
-        if len(data_uri) > _DATA_URI_OFFLOAD_THRESHOLD:
-            images_bytes = await asyncio.to_thread(
-                _decode_data_uri_base64, data_uri
+        #
+        # Caught out here rather than at the raise: the large-payload arm
+        # runs in a worker thread, and the metric clients are not all
+        # thread-safe. ``binascii.Error`` is a ``ValueError``, so this covers
+        # both a missing payload and one that is not base64 at all.
+        try:
+            if len(data_uri) > _DATA_URI_OFFLOAD_THRESHOLD:
+                images_bytes = await asyncio.to_thread(
+                    _decode_data_uri_base64, data_uri
+                )
+            else:
+                images_bytes = _decode_data_uri_base64(data_uri)
+        except ValueError:
+            _reject_media(
+                "bad_data_uri",
+                "inline media is not a decodable base64 data URI",
             )
-        else:
-            images_bytes = _decode_data_uri_base64(data_uri)
         budget.charge(len(images_bytes), media_kind)
         logger.debug(
             "ResolvedImageB64: %s -> %d bytes",
             str(image_ref)[:16],
             len(images_bytes),
         )
-        return images_bytes
     elif image_ref.scheme == "file":
         if settings is None:
             raise ValueError("Settings required for file URI resolution")
@@ -768,8 +925,10 @@ async def resolve_image_from_url(
 
         # Check host - only allow empty or localhost.
         if parsed.netloc and parsed.netloc not in ("", "localhost"):
-            raise ValueError(
-                f"File URI with remote host '{parsed.netloc}' is not supported"
+            _reject_media(
+                "bad_file_uri",
+                f"File URI with remote host '{parsed.netloc}' is not supported",
+                error=ValueError,
             )
 
         # Extract and decode the path.
@@ -778,8 +937,10 @@ async def resolve_image_from_url(
         # Validate against allowed roots.
         allowed_roots = [Path(root) for root in settings.allowed_image_roots]
         if not allowed_roots:
-            raise ValueError(
-                "File URI access denied: no allowed roots configured"
+            _reject_media(
+                "bad_file_uri",
+                "File URI access denied: no allowed roots configured",
+                error=ValueError,
             )
 
         # Canonicalize the path (resolving symlinks and ``..``) so containment
@@ -791,8 +952,12 @@ async def resolve_image_from_url(
         # existence/type oracle.
         try:
             resolved_path = file_path.resolve()
-        except (OSError, RuntimeError) as e:
-            raise ValueError(f"Invalid file path: {file_path}") from e
+        except (OSError, RuntimeError):
+            _reject_media(
+                "bad_file_uri",
+                f"Invalid file path: {file_path}",
+                error=ValueError,
+            )
 
         # Check if path is within allowed roots before touching the filesystem.
         path_allowed = False
@@ -805,17 +970,27 @@ async def resolve_image_from_url(
                 continue
 
         if not path_allowed:
-            raise ValueError(
-                f"Path forbidden: {resolved_path} is outside allowed roots"
+            _reject_media(
+                "bad_file_uri",
+                f"Path forbidden: {resolved_path} is outside allowed roots",
+                error=ValueError,
             )
 
         # Only now that the path is contained within an allowed root do we
         # probe the filesystem for existence and type.
         if not resolved_path.exists():
-            raise ValueError(f"File not found: {file_path}")
+            _reject_media(
+                "bad_file_uri",
+                f"File not found: {file_path}",
+                error=ValueError,
+            )
 
         if resolved_path.is_dir():
-            raise ValueError(f"Path is a directory: {resolved_path}")
+            _reject_media(
+                "bad_file_uri",
+                f"Path is a directory: {resolved_path}",
+                error=ValueError,
+            )
 
         # Read the file with its own local-file size limit.
         max_local_bytes = settings.max_local_image_bytes
@@ -823,15 +998,25 @@ async def resolve_image_from_url(
         async with aiofiles.open(resolved_path, "rb") as f:
             images_bytes = await f.read(max_local_bytes + 1)
             if len(images_bytes) > max_local_bytes:
-                raise ValueError(
-                    f"File exceeds size limit of {max_local_bytes} bytes"
+                _reject_media(
+                    "bad_file_uri",
+                    f"File exceeds size limit of {max_local_bytes} bytes",
+                    error=ValueError,
                 )
         budget.charge(len(images_bytes), media_kind)
         logger.debug(
             "ResolvedFileUri: %s -> %d bytes", resolved_path, len(images_bytes)
         )
-        return images_bytes
-    raise ValueError(f"Invalid image ref '{image_ref}'")
+    else:
+        _reject_media(
+            "bad_scheme", f"Invalid image ref '{image_ref}'", error=ValueError
+        )
+
+    source = _MEDIA_SOURCE_BY_SCHEME[image_ref.scheme]
+    METRICS.media_items(media_kind, source)
+    METRICS.media_resolve_time(resolve.elapsed_ms, source)
+    METRICS.media_item_size(len(images_bytes), media_kind)
+    return images_bytes
 
 
 def _sniff_image_mime(image: Image.Image) -> str:
@@ -850,7 +1035,11 @@ def _sniff_image_mime(image: Image.Image) -> str:
     return f"image/{image_format.lower()}"
 
 
-def _encode_data_uri(image_bytes: bytes, max_decoded_bytes: int | None) -> str:
+def _encode_data_uri(
+    image_bytes: bytes,
+    max_decoded_bytes: int | None,
+    facts: list[_ImageFact] | None = None,
+) -> str:
     """Fully validate image bytes, then inline them as a base64 ``data:`` URI.
 
     Runs the same full-pixel decode as the chat path (see
@@ -861,11 +1050,19 @@ def _encode_data_uri(image_bytes: bytes, max_decoded_bytes: int | None) -> str:
     this decode -- the responses path re-decodes from the ``data:`` URI it is
     handed -- so the image is released as soon as its format is read.
     """
-    image = decode_and_validate_images([image_bytes], max_decoded_bytes)[0]
+    image = decode_and_validate_images(
+        [image_bytes], max_decoded_bytes, facts=facts
+    )[0]
     # No ``skip_decode`` here, so the one slot always holds a decoded image.
     assert image is not None
     try:
         mime = _sniff_image_mime(image)
+    except InputError:
+        # A decoded image PIL will not name. The decode itself already
+        # recorded its own fact, so this adds the refusal rather than
+        # replacing it.
+        _record_fact(facts, _ImageFact("unknown", rejection="undecodable"))
+        raise
     finally:
         image.close()
     b64 = base64.b64encode(image_bytes).decode("ascii")
@@ -904,8 +1101,22 @@ async def fetch_media_data_uri(url: str, settings: Settings) -> str:
     # Decoding for validation and base64-encoding are both CPU-bound, so a
     # multi-MB image goes to a worker thread for the same reason the ``data:``
     # decode does.
-    if len(image_bytes) > _DATA_URI_OFFLOAD_THRESHOLD:
-        return await asyncio.to_thread(
-            _encode_data_uri, image_bytes, max_decoded_bytes
-        )
-    return _encode_data_uri(image_bytes, max_decoded_bytes)
+    #
+    # The list is allocated here, in the frame that also catches, for the
+    # same reason the chat path allocates its own: the decode raises out of
+    # the worker thread with no return value, and the handler above cannot
+    # see a local of the function that raised. Recording happens back on the
+    # event loop because the metric clients are not all thread-safe.
+    facts: list[_ImageFact] = []
+    try:
+        if len(image_bytes) > _DATA_URI_OFFLOAD_THRESHOLD:
+            data_uri = await asyncio.to_thread(
+                _encode_data_uri, image_bytes, max_decoded_bytes, facts
+            )
+        else:
+            data_uri = _encode_data_uri(image_bytes, max_decoded_bytes, facts)
+    except Exception:
+        emit_media_facts(facts)
+        raise
+    emit_media_facts(facts)
+    return data_uri

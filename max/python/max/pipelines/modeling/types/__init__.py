@@ -65,9 +65,11 @@ from .reasoning import (
 from .task import InputModality, PipelineTask
 from .tokenizer import (
     PipelineTokenizer,
+    PreprocessCacheStatsProbe,
     PreprocessedImageProbe,
     TokenizerEncoded,
     UnboundContextType,
+    VisionPreprocessCacheStats,
 )
 from .tool_parsing import (
     ParsedToolCall,
@@ -117,6 +119,7 @@ __all__ = [
     "PipelineTokenizer",
     "PipelinesFactory",
     "PixelGenerationInputs",
+    "PreprocessCacheStatsProbe",
     "PreprocessedImageProbe",
     "ProcessorInputs",
     "ReasoningParser",
@@ -136,6 +139,7 @@ __all__ = [
     "ToolParser",
     "UnboundContextType",
     "VideoContentPart",
+    "VisionPreprocessCacheStats",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
     "msgpack_numpy_oob_decoder",

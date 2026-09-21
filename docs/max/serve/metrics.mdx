@@ -163,17 +163,79 @@ MAX records these metrics only when `data_parallel_degree > 1`.
 The following metrics track vision and video encoder activity and cache
 performance.
 
-| Metric                                          | Type      | Description                                                          |
-|-------------------------------------------------|-----------|----------------------------------------------------------------------|
-| `maxserve_vision_images_encoded_images_total`   | Counter   | Cumulative images run through the vision encoder (cache misses).     |
-| `maxserve_vision_images_cached_images_total`    | Counter   | Cumulative images served from the vision encoder cache (cache hits). |
-| `maxserve_vision_patches_encoded_patches_total` | Counter   | Cumulative image patches fed to the vision encoder.                  |
-| `maxserve_vision_tokens_encoded_tokens_total`   | Counter   | Cumulative merged vision tokens produced by the vision encoder.      |
-| `maxserve_vision_cache_hit_rate_percent`        | Histogram | Per-batch vision encoder cache hit rate (0-100%).                    |
-| `maxserve_video_clips_encoded_clips_total`      | Counter   | Cumulative video clips run through the video encoder (cache misses). |
-| `maxserve_video_tokens_encoded_tokens_total`    | Counter   | Cumulative merged video tokens produced by the video encoder.        |
-| `maxserve_video_encoding_time_milliseconds`     | Histogram | Per-batch video encoder wall-clock time, in milliseconds.            |
-| `maxserve_video_frames_per_clip_frames`         | Histogram | Sampled frame count per newly encoded video clip.                    |
+| Metric                                                 | Type      | Description                                                                                    |
+|--------------------------------------------------------|-----------|------------------------------------------------------------------------------------------------|
+| `maxserve_vision_images_encoded_images_total`          | Counter   | Cumulative images run through the vision encoder (cache misses).                               |
+| `maxserve_vision_images_cached_images_total`           | Counter   | Cumulative images served from the vision encoder cache (cache hits).                           |
+| `maxserve_vision_patches_encoded_patches_total`        | Counter   | Cumulative image patches fed to the vision encoder.                                            |
+| `maxserve_vision_tokens_encoded_tokens_total`          | Counter   | Cumulative merged vision tokens produced by the vision encoder.                                |
+| `maxserve_vision_cache_hit_rate_percent`               | Histogram | Per-batch vision encoder cache hit rate (0-100%).                                              |
+| `maxserve_vision_preprocess_cache_hits_images_total`   | Counter   | Cumulative images found already preprocessed, whose decode and preprocessing are both skipped. |
+| `maxserve_vision_preprocess_cache_misses_images_total` | Counter   | Cumulative images not already preprocessed, which the API server must decode and preprocess.   |
+| `maxserve_video_clips_encoded_clips_total`             | Counter   | Cumulative video clips run through the video encoder (cache misses).                           |
+| `maxserve_video_tokens_encoded_tokens_total`           | Counter   | Cumulative merged video tokens produced by the video encoder.                                  |
+| `maxserve_video_encoding_time_milliseconds`            | Histogram | Per-batch video encoder wall-clock time, in milliseconds.                                      |
+| `maxserve_video_frames_per_clip_frames`                | Histogram | Sampled frame count per newly encoded video clip.                                              |
+
+`maxserve_vision_preprocess_cache_hits_images_total` and its `_misses`
+counterpart are recorded from one of two vantages depending on the
+architecture, and the two are not the same measurement. Where the API server
+can ask the tokenizer at admission which images it has already preprocessed,
+the pair comes from that peek, before any media work runs. Every other
+architecture reports it from the tokenizer's own preprocess-cache lookup
+instead, published after tokenization. Both count images and neither carries
+a `media_kind` tag, so only the image cache feeds them. Because the windows
+differ, don't compare the rate across architectures.
+
+### Media ingestion
+
+The following metrics track the work the API server does on client-supplied
+media before a request reaches the model: resolving each item to bytes,
+decoding images, and caching the preprocessed result. This window is inside
+`maxserve_time_to_first_token_milliseconds`.
+
+| Metric                                            | Type      | Description                                                                                                                                                                                                                                                                                                                                                    |
+|---------------------------------------------------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_media_items_total`                      | Counter   | Cumulative media items the API server resolved into bytes, split by `media_kind` (`image`, `video`) and `source` (`inline` for a data URI, `url` for http(s), `file` for a local path). A rejected item is counted by `maxserve_media_rejections_total` instead.                                                                                               |
+| `maxserve_media_resolve_time_milliseconds`        | Histogram | Per-item time to turn one media reference into bytes, in milliseconds: the http(s) download, the base64 decode of a data URI, or the local file read. Excludes the image decode. Split by `source` (`inline`, `url`, `file`). Items on one request are resolved concurrently, so these windows overlap and their sum isn't the request's elapsed resolve time. |
+| `maxserve_media_item_size_bytes`                  | Histogram | Encoded size of one resolved media item as it arrived on the wire or in the request body, in bytes. Not the decoded pixel buffer. Split by `media_kind`.                                                                                                                                                                                                       |
+| `maxserve_media_image_size_pixels`                | Histogram | Pixel count (`width * height`) of one image as it arrived, read from the header before any resize, split by `format`.                                                                                                                                                                                                                                          |
+| `maxserve_media_image_decodes_total`              | Counter   | Cumulative images whose pixels the API server actually decoded, split by `format`. An image the preprocess cache let the server skip is sized but not counted here.                                                                                                                                                                                            |
+| `maxserve_media_image_decode_ms_total`            | Counter   | Cumulative milliseconds of per-image codec decode, split by `format`. Excludes the per-architecture processor (resize, patchify, normalize), whose cost follows the pixel count rather than the container.                                                                                                                                                     |
+| `maxserve_media_rejections_total`                 | Counter   | Cumulative media items the API server refused, split by `reason`. Every value is an HTTP 400 to the client, so this counts client-visible failures rather than server faults.                                                                                                                                                                                  |
+| `maxserve_media_items_per_request_items`          | Histogram | Media items of one `media_kind` carried by a single request, counted before any media is downloaded and before the per-request count caps, so a request refused for carrying too many items is still sampled. Requests carrying none of that kind aren't sampled, so the distribution starts at one.                                                           |
+| `maxserve_media_preprocess_cache_evictions_total` | Counter   | Cumulative preprocessed-media entries the tokenizer dropped to stay inside its byte budget, split by `media_kind`. Budget pressure only, so an idle-timeout reclaim isn't counted.                                                                                                                                                                             |
+| `maxserve_media_preprocess_cache_size_bytes`      | Gauge     | Host bytes the tokenizer's preprocessed-media cache retains, split by `media_kind`. Sampled after tokenization, once per media request rather than on a timer.                                                                                                                                                                                                 |
+| `maxserve_media_preprocess_cache_capacity_bytes`  | Gauge     | The byte budget `maxserve_media_preprocess_cache_size_bytes` is evicted down to, split by `media_kind`. Zero means caching is disabled for that kind.                                                                                                                                                                                                          |
+
+`maxserve_media_image_decodes_total` and
+`maxserve_media_image_decode_ms_total` are a counter pair rather than a
+histogram: their quotient is the mean decode cost for a format, and either
+reads on its own. Both carry the `_total` suffix Prometheus appends to a
+counter. The millisecond counter declares no unit, which is why its name ends
+in `_ms_total` rather than `_milliseconds_total`: with a declared unit, a
+backend that renders a counter as `.count` would spell it identically to the
+decode count beside it while it carried milliseconds.
+
+`maxserve_media_rejections_total` carries a closed `reason` vocabulary, and
+`reason` is what makes the counter actionable: an SSRF block and a corrupt
+JPEG call for opposite responses. The values, by what they tell you:
+
+- Unreachable or uncooperative source: `dns_failure`, `fetch_status`,
+  `fetch_timeout`, `fetch_transport`, `too_many_redirects`, `bad_redirect`.
+- Refused address or scheme: `ssrf_blocked`, `bad_scheme`, `malformed_url`,
+  `no_host`, `bad_file_uri`.
+- Over a configured limit: `over_budget`, `decode_too_large`,
+  `too_many_images`, `too_many_videos`.
+- Unusable payload: `undecodable`, `bad_data_uri`.
+
+The two cache gauges export in bytes. Read
+`maxserve_media_preprocess_cache_size_bytes` against
+`maxserve_media_preprocess_cache_capacity_bytes` for occupancy, then use
+`maxserve_media_preprocess_cache_evictions_total` to explain a low hit rate
+on the preprocess cache: little eviction means the workload has no repeats,
+while steady eviction means the cache is thrashing at its budget. The two
+have opposite remedies.
 
 ### Speculative decoding
 

@@ -25,6 +25,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 from max.pipelines.lib.vision_preprocess_cache import VisionPreprocessCache
+from max.pipelines.modeling.types import VisionPreprocessCacheStats
 
 
 class _FakeClock:
@@ -179,6 +180,128 @@ class TestVisionPreprocessCache:
         assert revived.idle_seconds == 60.0
         revived.put(1, "one", 10)
         assert revived.total_bytes == 10
+
+
+class TestStats:
+    """The snapshot the API server publishes as ``maxserve.media.*``."""
+
+    def test_budget_pressure_counts_evictions(self) -> None:
+        # Room for two entries, so the third forces one out.
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+        assert cache.evictions == 0
+
+        cache.put(3, "three", 10)
+
+        assert cache.evictions == 1
+        assert cache.total_bytes == 20
+        assert not cache.contains(1)
+
+    def test_idle_reclaim_is_not_an_eviction(self) -> None:
+        """Only the budget counts: the two have opposite remedies.
+
+        An idle reclaim says the cache stopped being used; an eviction says
+        the budget is too small for the working set.
+        """
+        clock = _FakeClock()
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(
+            1024, idle_seconds=60.0, clock=clock
+        )
+        cache.put(1, "one", 10)
+        clock.advance(61.0)
+
+        assert cache.collect() == 10
+        assert len(cache) == 0
+        assert cache.evictions == 0
+
+    def test_reinsert_of_the_same_key_is_not_an_eviction(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(100)
+        cache.put(1, "a", 40)
+        cache.put(1, "a2", 40)
+
+        assert cache.evictions == 0
+
+    def test_snapshot_reports_every_counter(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+        cache.put(3, "three", 10)
+        cache.get(3)
+        cache.get(1)
+
+        assert cache.stats() == VisionPreprocessCacheStats(
+            hits=1,
+            misses=1,
+            evictions=1,
+            size_bytes=20,
+            capacity_bytes=20,
+        )
+
+    def test_a_snapshot_does_not_wait_on_the_cache_mutex(self) -> None:
+        """Serve reads this from the event loop, once per media request.
+
+        Taken under the lock, N worker threads inside an eviction run would
+        stall every in-flight request on the server -- text-only ones
+        included -- for the sake of a metric. The counters are differenced
+        against a prior snapshot that already tolerates them moving
+        backwards, so a torn read costs one skewed sample and no more.
+        """
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(100)
+        cache.put(1, "one", 10)
+        held = threading.Event()
+        release = threading.Event()
+
+        def hold_the_lock() -> None:
+            with cache._lock:
+                held.set()
+                release.wait(10.0)
+
+        holder = threading.Thread(target=hold_the_lock)
+        holder.start()
+        try:
+            assert held.wait(10.0)
+            read: list[VisionPreprocessCacheStats] = []
+            reader = threading.Thread(target=lambda: read.append(cache.stats()))
+            reader.start()
+            reader.join(5.0)
+            assert not reader.is_alive()
+            assert read[0].size_bytes == 10
+            assert read[0].capacity_bytes == 100
+        finally:
+            release.set()
+            holder.join()
+
+    def test_capacity_is_readable_on_a_disabled_cache(self) -> None:
+        """``enabled`` is a bool, so the budget needs its own accessor."""
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(0)
+
+        assert cache.max_bytes == 0
+        assert cache.stats().capacity_bytes == 0
+
+    def test_unpickling_zeroes_the_counters(self) -> None:
+        """Which is why the reader must treat a decrease as a restart.
+
+        The cache is process-local and comes back empty, so a reader
+        differencing against a snapshot from before the boundary would see a
+        negative delta.
+        """
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+        cache.put(3, "three", 10)
+        cache.get(3)
+        assert cache.stats().evictions == 1
+
+        revived: VisionPreprocessCache[str] = pickle.loads(pickle.dumps(cache))
+
+        assert revived.stats() == VisionPreprocessCacheStats(
+            hits=0,
+            misses=0,
+            evictions=0,
+            size_bytes=0,
+            capacity_bytes=20,
+        )
 
 
 class TestContains:

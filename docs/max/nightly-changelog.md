@@ -187,6 +187,30 @@ This version is still a work in progress.
   a request declared. Tool schemas are rendered into the prompt, so this is
   the explanatory variable behind a client's prompt length and grammar
   compile cost.
+- Added the `maxserve.media.*` family, which accounts for the media work a
+  multimodal request pays for before it reaches the model. Volume and origin
+  come from `maxserve.media.items` (tagged `media_kind` and `source`),
+  `maxserve.media.items_per_request` and `maxserve.media.item_size`; the cost
+  of turning a reference into bytes from `maxserve.media.resolve_time`; the
+  codec cost from `maxserve.media.image_size` and the
+  `maxserve.media.image_decodes` / `maxserve.media.image_decode_ms` counter
+  pair, both tagged `format`, whose quotient is the mean decode cost for a
+  format; and refusals from `maxserve.media.rejections` (tagged `reason`).
+  Cache pressure comes from `maxserve.media.preprocess_cache_evictions`,
+  `maxserve.media.preprocess_cache_size` and
+  `maxserve.media.preprocess_cache_capacity` (all tagged `media_kind`), which
+  separate a low preprocess-cache hit rate caused by a workload with no
+  repeats from one caused by a cache thrashing at its byte budget. The
+  resolve and decode time is inside `maxserve.time_to_first_token`, where it
+  was previously unattributable.
+- `maxserve.vision.preprocess_cache_hits` and
+  `maxserve.vision.preprocess_cache_misses` are now recorded on every
+  architecture with a preprocess cache, not only on those the API server can
+  ask at admission whether an image is already preprocessed. Elsewhere the
+  pair sat at zero. On those other architectures it comes from the
+  tokenizer's own cache lookup after tokenization rather than from the
+  admission peek, so the two windows differ and the rate isn't comparable
+  across architectures.
 
 ### `max` CLI
 

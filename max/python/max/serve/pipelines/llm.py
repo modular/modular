@@ -41,6 +41,9 @@ from max.serve.pipelines.incremental_detokenizer import (
     BufferedDetokenizer,
     create_buffered_detokenizer,
 )
+from max.serve.pipelines.preprocess_cache_stats import (
+    PreprocessCacheStatsRecorder,
+)
 from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
@@ -242,6 +245,13 @@ class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
         self.tokenizer = tokenizer
         self.lora_queue = lora_queue
         self.model_worker = model_worker
+        # On the base, not on TokenGeneratorPipeline: the responses routes
+        # run through a separate GeneralPipelineHandler over the same
+        # tokenizer, so its lookups move the same cache counters and need
+        # the same recorder to publish them.
+        self._preprocess_cache_stats = PreprocessCacheStatsRecorder(
+            self.tokenizer
+        )
 
 
 class TokenGeneratorPipeline(
@@ -352,6 +362,11 @@ class TokenGeneratorPipeline(
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
+            # Read after tokenization, which is what moved the cache's
+            # counters. Nothing is published for a text-only request.
+            self._preprocess_cache_stats.record(
+                carried_media=bool(request.images or request.videos)
+            )
             _inject_trace_carrier(context)
 
             # Create buffered detokenizers for proper UTF-8 handling.
