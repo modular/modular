@@ -125,7 +125,7 @@ def _build_dual_layout_graph(gpu: DeviceRef) -> Graph:
             TensorType(DType.float32, [_DIM], device=gpu),
             *([pool_type] * len(_ARMS)),
             TensorType(DType.int32, [_BATCH + 1], device=gpu),
-            TensorType(DType.int32, [_BATCH], device=gpu),
+            TensorType(DType.uint32, [_BATCH], device=gpu),
             TensorType(DType.bool, [_BATCH], device=gpu),
         ],
     ) as graph:
@@ -181,7 +181,7 @@ def test_causal_conv1d_channels_last_matches_channels_first(
     pool_initial_np = rng.standard_normal(
         (_MAX_SLOTS, _DIM, _STATE_LEN)
     ).astype(np.float32)
-    slot_idx_np = np.asarray(_SLOTS, dtype=np.int32)
+    slot_idx_np = np.asarray(_SLOTS, dtype=np.uint32)
     untouched_slots = [s for s in range(_MAX_SLOTS) if s not in _SLOTS]
 
     # One pool per arm, in `_ARMS` order, so no two arms write the same slots.

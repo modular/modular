@@ -56,7 +56,7 @@ def causal_conv1d_varlen_fwd(
             conv-state pool.
         query_start_loc: The ``[batch + 1]`` int32 cumulative sequence
             lengths.
-        cache_indices: The ``[batch]`` int32 slot indices into
+        cache_indices: The ``[batch]`` uint32 slot indices into
             ``conv_states``.
         has_initial_state: The ``[batch]`` bool, whether to use the
             stored state.

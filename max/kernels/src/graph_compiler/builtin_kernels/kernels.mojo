@@ -4657,7 +4657,7 @@ struct CausalConv1DVarlenFwd[
         # The caller owns this pool and the kernel writes it in place.
         conv_states: MutableInputTensor[dtype=conv_states_dtype, rank=3, ...],
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=.uint32, rank=1, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -4960,8 +4960,8 @@ def causal_conv1d_varlen_fwd_shape(
         type_of(cache_indices).rank == 1
     ), "cache_indices must be rank 1"
     comptime assert (
-        type_of(cache_indices).dtype == .int32
-    ), "cache_indices dtype must be int32"
+        type_of(cache_indices).dtype == .uint32
+    ), "cache_indices dtype must be uint32"
     comptime assert (
         type_of(has_initial_state).rank == 1
     ), "has_initial_state must be rank 1"

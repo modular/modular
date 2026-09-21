@@ -140,7 +140,7 @@ class ShortConvolution(Module, Shardable):
             ),
             conv_state_pool,
             ops.cast(input_row_offsets, DType.int32),
-            ops.cast(conv_row, DType.int32),
+            conv_row,
             has_initial_state,
             activation="none",
             channels_last=True,

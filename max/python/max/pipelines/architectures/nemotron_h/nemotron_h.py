@@ -795,7 +795,7 @@ class NemotronHMamba2Mixer(Module):
             bias=conv_bias,
             conv_states=conv_pool,
             query_start_loc=query_start_loc,
-            cache_indices=ops.cast(slot_idx, DType.int32),
+            cache_indices=slot_idx,
             has_initial_state=has_initial_state,
             activation="silu",
             channels_last=True,
