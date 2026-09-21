@@ -612,9 +612,9 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 return full_attn_inputs
             # All linear layers share one compiled subgraph, whose body is
             # built from the first of them. Only the arguments vary per call,
-            # so this layer's column of ``live_row_ids`` has to be selected
+            # so this layer's row of ``live_row_ids`` has to be selected
             # here -- selecting it inside the block would bake layer 0's
-            # column into every layer's state access.
+            # row into every layer's state access.
             layer = self.linear_layer_indices.index(idx)
             return [
                 hs,

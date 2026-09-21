@@ -351,8 +351,10 @@ def _build() -> Step:
 
         # Request i holds block i, whose layers are rows i*L..i*L+L-1.
         rows = b(
-            np.arange(batch * NUM_LINEAR, dtype=np.uint32).reshape(
-                batch, NUM_LINEAR
+            np.ascontiguousarray(
+                np.arange(batch * NUM_LINEAR, dtype=np.uint32)
+                .reshape(batch, NUM_LINEAR)
+                .T
             )
         )
         args += [conv_pool(), rec_pool(), rows, rows, conv_pool(), rec_pool()]

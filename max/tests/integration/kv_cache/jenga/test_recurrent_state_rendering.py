@@ -70,21 +70,23 @@ def test_a_page_folds_to_the_rows_its_layers_occupy() -> None:
     # Page p of a 3-layer leaf is rows 3p..3p+2.
     folded = rows(plan({A: 1, B: 4}))
 
-    assert np.array_equal(folded[A], [[3, 4, 5]])
-    assert np.array_equal(folded[B], [[8, 9]])
+    assert np.array_equal(folded[A], [[3], [4], [5]])
+    assert np.array_equal(folded[B], [[8], [9]])
 
 
 def test_a_forward_sees_the_rows_it_was_given() -> None:
+    # Layer-major: a request is a column, so a layer's row holds every
+    # request's id for that layer.
     folded = rows(plan({A: 1, B: 4}), plan({A: 2, B: 5}))
 
-    assert np.array_equal(folded[A], [[3, 4, 5], [6, 7, 8]])
-    assert np.array_equal(folded[B], [[8, 9], [10, 11]])
+    assert np.array_equal(folded[A], [[3, 6], [4, 7], [5, 8]])
+    assert np.array_equal(folded[B], [[8, 10], [9, 11]])
 
 
 def test_a_leaf_keeps_its_own_layer_count() -> None:
     folded = rows(plan({A: 0, B: 0}), plan({A: 1, B: 1}))
 
-    assert [folded[leaf_id].shape for leaf_id in (A, B)] == [(2, 3), (2, 2)]
+    assert [folded[leaf_id].shape for leaf_id in (A, B)] == [(3, 2), (2, 2)]
 
 
 def test_a_state_leaf_reserves_two_blocks_whatever_the_block_count() -> None:

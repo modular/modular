@@ -1118,11 +1118,14 @@ class RecurrentKVLeafRegion(KVLeafRegion):
     def staged_input_shapes(
         self, batch_size: int, num_blocks: int
     ) -> Mapping[str, tuple[tuple[int, ...], DType]]:
-        """Returns the row tensor each layer indexes.
+        """Returns the row table each layer slices.
 
-        ``num_blocks`` is unused: a state is addressed by row, not by block.
+        The table is layer-major, one layer per row, so a layer's slice is a
+        contiguous row and the graph keeps it a view instead of materializing
+        a gather kernel. ``num_blocks`` is unused: a state is addressed by
+        row, not by block.
         """
-        rows = (batch_size, self.region.num_layers)
+        rows = (self.region.num_layers, batch_size)
         return {self.region.leaf_id: (rows, DType.uint32)}
 
     def write_staged_inputs(
@@ -1134,7 +1137,7 @@ class RecurrentKVLeafRegion(KVLeafRegion):
         live = into[self.region.leaf_id]
         for batch_idx, blocks in enumerate(plans):
             (block,) = blocks
-            live[batch_idx] = self.region.rows_of(block)
+            live[:, batch_idx] = self.region.rows_of(block)
 
     def bound_row_copies(
         self, src: int, dst: int
@@ -2904,7 +2907,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
         ) -> RecurrentLeafInputs[TensorType, BufferType]:
             pool_shape: list[str | int] = [region.rows_dim]
             pool_shape.extend(region.row_shape)
-            rows_shape: list[str | int] = [batch_dim, region.num_layers]
+            rows_shape: list[str | int] = [region.num_layers, batch_dim]
             return RecurrentLeafInputs(
                 pool=BufferType(region.dtype, shape=pool_shape, device=device),
                 live_row_ids=TensorType(

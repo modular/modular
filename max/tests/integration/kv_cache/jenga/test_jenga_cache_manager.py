@@ -430,7 +430,7 @@ def test_a_forward_is_handed_state_rows_cut_to_its_own_batch() -> None:
     assert isinstance(device, RecurrentStateInputsPerDevice)
     (leaf,) = device.leaves
 
-    assert leaf.live_row_ids.shape == (1, 3), "one request, every layer"
+    assert leaf.live_row_ids.shape == (3, 1), "every layer, one request"
     assert leaf.pool.shape[0] > 3, "the whole slab, in rows"
 
 

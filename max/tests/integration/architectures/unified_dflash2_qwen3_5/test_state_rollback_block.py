@@ -141,9 +141,10 @@ def _run(
         )
 
         batch_scalar = ops.shape_to_tensor([slots_v.shape[0]])[0]
-        # One linear layer here, so a block's rows are the block itself and
-        # the span the snapshot fills is just the batch.
-        live_rows = ops.unsqueeze(slots_v, -1)
+        # One linear layer here, so the row table is one layer deep: a
+        # block's rows are the block itself and the span the snapshot fills
+        # is just the batch.
+        live_rows = ops.unsqueeze(slots_v, 0)
         snapshot_state_pools(
             [live_conv], [shadow_conv], [live_rows], batch_scalar
         )

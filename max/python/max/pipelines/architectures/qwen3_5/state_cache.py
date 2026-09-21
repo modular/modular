@@ -82,7 +82,7 @@ def layer_state_access(
     Args:
         state: Per-device recurrent-state inputs, leaves in declaration order.
         layer: The layer's index among the linear-attention layers, which is
-            the column of ``live_row_ids`` it owns.
+            the row of ``live_row_ids`` it owns.
 
     Returns:
         One access per device, in the order ``state`` came in.

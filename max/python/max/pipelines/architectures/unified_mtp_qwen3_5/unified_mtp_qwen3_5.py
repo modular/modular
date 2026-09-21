@@ -136,7 +136,7 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
         """Canonical spec-decode signature plus the Qwen state-pool tail.
 
         The tail is, every block region-major and device-minor: the live
-        conv and recurrent pools, the ``[batch_size, num_layers]`` rows each
+        conv and recurrent pools, the ``[num_layers, batch_size]`` rows each
         layer of each request occupies in them, then the two shadow pools.
         One buffer per leaf rather than one per layer, so the caller picks
         the row layout. When the target runs M-RoPE a shared
@@ -163,7 +163,7 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
             tail.extend(
                 TensorType(
                     DType.uint32,
-                    shape=["batch_size", region.num_layers],
+                    shape=[region.num_layers, "batch_size"],
                     device=device,
                 )
                 for device in devices

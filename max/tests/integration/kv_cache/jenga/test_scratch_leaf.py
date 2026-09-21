@@ -365,4 +365,4 @@ def test_a_scratch_region_still_declares_its_pool_and_row_table() -> None:
     ring = per_device.leaves[1]
 
     assert list(ring.pool.shape)[1:] == [8, 4]
-    assert list(ring.live_row_ids.shape)[1] == 2
+    assert list(ring.live_row_ids.shape)[0] == 2

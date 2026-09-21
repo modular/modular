@@ -160,7 +160,7 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
             tail.extend(
                 TensorType(
                     DType.uint32,
-                    shape=["batch_size", region.num_layers],
+                    shape=[region.num_layers, "batch_size"],
                     device=device,
                 )
                 for device in devices

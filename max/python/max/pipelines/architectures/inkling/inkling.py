@@ -618,7 +618,7 @@ class Inkling(Module):
                 ops.constant(True, DType.bool, device=DeviceRef.CPU()).to(
                     device_state.leaves[0].live_row_ids.device
                 ),
-                [device_state.leaves[0].live_row_ids.shape[0]],
+                [device_state.leaves[0].live_row_ids.shape[1]],
             )
             for device_state in state
         ]

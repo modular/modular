@@ -34,7 +34,7 @@ unconditional: prefill takes the same path with an accepted length equal to
 the whole prompt, so no branch depends on the phase.
 
 Both pools are addressed as one buffer per leaf plus a
-``[batch_size, num_layers]`` tensor of the rows each layer occupies. The engine
+``[num_layers, batch_size]`` tensor of the rows each layer occupies. The engine
 supplies the live rows; the shadow is this graph's own scratch, so
 :func:`shadow_row_ids` picks that layout here.
 """
@@ -66,26 +66,16 @@ _SHADOW_SPAN = "shadow_span"
 
 
 def shadow_row_ids(num_layers: int, device: DeviceRef) -> TensorValue:
-    """Returns the ``[batch_size, num_layers]`` uint32 shadow-pool rows.
+    """Returns the ``[num_layers, batch_size]`` uint32 shadow-pool rows.
 
-    Request ``r``'s layer ``l`` sits at row ``r * num_layers + l``, which
-    makes the snapshot one contiguous store.
+    Request ``r``'s layer ``l`` sits at row ``l * batch_size + r``, matching
+    where the snapshot's layer-major flatten of the live rows lands it.
     """
-    requests = ops.range(
-        start=0,
-        stop=Dim("batch_size"),
-        out_dim=Dim("batch_size"),
-        device=device,
-        dtype=DType.uint32,
+    span = num_layers * Dim("batch_size")
+    rows = ops.range(
+        start=0, stop=span, out_dim=span, device=device, dtype=DType.uint32
     )
-    layers = ops.range(
-        start=0,
-        stop=num_layers,
-        out_dim=num_layers,
-        device=device,
-        dtype=DType.uint32,
-    )
-    return ops.unsqueeze(requests, -1) * num_layers + ops.unsqueeze(layers, 0)
+    return rows.reshape([num_layers, "batch_size"])
 
 
 def snapshot_state_pools(
@@ -100,7 +90,7 @@ def snapshot_state_pools(
         live_pools: One persistent pool per device, for a single leaf.
         shadow_pools: One scratch pool per device, at least
             ``max_batch_size * num_layers`` rows deep.
-        live_row_ids: Per-device ``[batch_size, num_layers]`` live rows.
+        live_row_ids: Per-device ``[num_layers, batch_size]`` live rows.
         shadow_span: Scalar ``batch_size * num_layers``, the slice filled.
     """
     for live, shadow, rows in zip(
@@ -227,8 +217,8 @@ def replay_state_pools(
         captures: Per-device, per-layer inputs captured by the verify pass.
         live_conv_pools: Per-device conv pool, still pre-verify.
         live_recurrent_pools: Per-device recurrent pool.
-        conv_row_ids: Per-device ``[batch_size, num_layers]`` conv rows.
-        recurrent_row_ids: Per-device ``[batch_size, num_layers]`` state rows.
+        conv_row_ids: Per-device ``[num_layers, batch_size]`` conv rows.
+        recurrent_row_ids: Per-device ``[num_layers, batch_size]`` state rows.
         row_indices: Rows of the verify tensors the replay consumes.
         replay_offsets: ``[batch + 1]`` ragged offsets over those rows.
         signal_buffers: Used only to place the plan on each device.
@@ -257,7 +247,7 @@ def replay_state_pools(
                 qkv_input_ragged=ops.gather(capture.qkv, rows, axis=0),
                 conv_weight=capture.conv_weight,
                 conv_state=conv_pool,
-                slot_idx=conv_row_id[:, layer_idx],
+                slot_idx=conv_row_id[layer_idx],
                 input_row_offsets=offsets,
             )
             gated_delta_recurrence_fwd(
@@ -265,6 +255,6 @@ def replay_state_pools(
                 decay_per_token=ops.gather(capture.decay, rows, axis=0),
                 beta_per_token=ops.gather(capture.beta, rows, axis=0),
                 recurrent_state=recurrent_pool,
-                slot_idx=recurrent_row_id[:, layer_idx],
+                slot_idx=recurrent_row_id[layer_idx],
                 input_row_offsets=offsets,
             )

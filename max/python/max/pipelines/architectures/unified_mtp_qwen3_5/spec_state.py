@@ -115,7 +115,7 @@ class Qwen3_5RecurrentState:
         shadow_recurrent = extra[SHADOW_RECURRENT_POOLS]
 
         num_layers = self.num_layers
-        batch_dim = conv_row_ids[0].shape[0]
+        batch_dim = conv_row_ids[0].shape[1]
         shadow_span = ops.shape_to_tensor([batch_dim])[0] * num_layers
         snapshot_state_pools(
             extra[LIVE_CONV_POOLS], shadow_conv, conv_row_ids, shadow_span

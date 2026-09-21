@@ -171,12 +171,12 @@ class RecurrentLeafInputs(Generic[_Tensor, _Buffer]):
 
 
 def _layer_row_ids(ids: Any, layer: int) -> TensorValue:
-    """Returns one layer's column of a ``[batch_size, num_layers]`` id tensor."""
+    """Returns one layer's row of a ``[num_layers, batch_size]`` id tensor."""
     assert isinstance(ids, TensorValue), (
         "per-layer row ids can only be taken from a graph value, not from "
         f"{type(ids).__name__}"
     )
-    return ids[:, layer]
+    return ids[layer]
 
 
 @tree.dataclass
