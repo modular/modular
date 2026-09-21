@@ -42,6 +42,7 @@ from std.collections import Span
 from . import pi, inf, isfinite, isinf, isnan, nan, nextafter
 
 from std.utils.numerics import FPUtils, isnan, nan
+from std.memory import bitcast
 from std.utils.static_tuple import StaticTuple
 
 from std._plugin import CurrentPlugin
@@ -829,7 +830,6 @@ def _frexp_mask2[
         return 0x3FE0000000000000
 
 
-@inline(.always)
 def frexp[
     dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> StaticTuple[
@@ -853,26 +853,41 @@ def frexp[
         A tuple of two SIMD vectors containing the fractional and exponent parts
         of the input floating point values.
     """
+
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
 
     comptime T = SIMD[dtype, width]
+    comptime TInt = SIMD[_integral_type_of[dtype](), width]
     comptime zero = T(0)
     # Add one to the resulting exponent up by subtracting 1 from the bias
     comptime exponent_bias = FPUtils[dtype].exponent_bias() - 1
     comptime mantissa_width = FPUtils[dtype].mantissa_width()
+
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
-    var x_int = x._to_bits_signed()
-    var selector = x.ne(zero)
-    var exp = selector.select(
-        (
-            ((mask1 & x_int) >> type_of(x_int)(mantissa_width))
-            - type_of(x_int)(exponent_bias)
-        ).cast[dtype](),
-        zero,
+
+    var subnorm_test = (x._to_bits_signed() & mask1).eq(0) & x.ne(0)
+    var t = subnorm_test.select(TInt(mantissa_width), TInt(0))
+    var x0 = subnorm_test.select(T(2.0**mantissa_width) * x, x)
+
+    var x_int = x0._to_bits_signed()
+    var selector = x0.ne(zero)
+    var r1 = mask1 & x_int
+    var mb = x_int & ~mask1
+    r1 = (r1 >> TInt(mantissa_width)) - TInt(exponent_bias)
+
+    var r0 = mb | mask2
+
+    var test1 = r1.gt(TInt(FPUtils[dtype].max_exponent()))
+    r1 = (~test1 & selector).select(r1, TInt(0))
+
+    r1 -= t
+    return StaticTuple[size=2](
+        selector.select(
+            bitcast[dtype, width](r0) + test1.select(x0, zero), zero
+        ),
+        T(r1),
     )
-    var frac = selector.select(T(from_bits=x_int & ~mask1 | mask2), zero)
-    return StaticTuple[size=2](frac, exp)
 
 
 # ===----------------------------------------------------------------------=== #

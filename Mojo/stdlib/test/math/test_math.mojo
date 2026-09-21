@@ -414,15 +414,21 @@ def _test_frexp_impl[
     assert_almost_equal(res2[0].cast[.float32](), -0.8, atol=atol, rtol=rtol)
     assert_almost_equal(res2[1].cast[.float32](), -3.0, atol=atol, rtol=rtol)
 
-    var res3 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
+    # not representable in bfloat16
+    comptime if dtype in (DType.float32, DType.float64):
+        var res3 = frexp(Scalar[dtype](7.346839692639297e-40))
+        assert_almost_equal(res3[0].cast[.float32](), 0.5)
+        assert_almost_equal(res3[1].cast[.float32](), -129)
+
+    var res4 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
     assert_almost_equal(
-        res3[0].cast[.float32](),
+        res4[0].cast[.float32](),
         SIMD[.float32, 4](0.0, 0.5, 0.5, 0.625),
         atol=atol,
         rtol=rtol,
     )
     assert_almost_equal(
-        res3[1].cast[.float32](),
+        res4[1].cast[.float32](),
         SIMD[.float32, 4](-0.0, 2.0, 3.0, 3.0),
         atol=atol,
         rtol=rtol,
@@ -506,10 +512,19 @@ def _test_log1p_impl[
 
 
 def test_frexp() raises:
+    _test_frexp_impl[.float64](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[.float32](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[.float16](atol=1e-2, rtol=1e-5)
 
     _test_frexp_impl[.bfloat16](atol=1e-1, rtol=1e-5)
+
+    var res1 = frexp(Float64(5e-324))
+    assert_equal(res1[0], 0.5)
+    assert_equal(res1[1], -1073)
+
+    var res2 = frexp(Float64(1.5e-310))
+    assert_almost_equal(res2[0], 0.8628927047339232)
+    assert_equal(res2[1], -1029)
 
 
 def test_log() raises:
@@ -518,12 +533,17 @@ def test_log() raises:
 
     _test_log_impl[.bfloat16](atol=1e-1, rtol=1e-5)
 
+    assert_almost_equal(log(5e-324), -744.4400719213812)
+
 
 def test_log2() raises:
+    _test_log2_impl[.float64](atol=1e-4, rtol=1e-5)
     _test_log2_impl[.float32](atol=1e-4, rtol=1e-5)
     _test_log2_impl[.float16](atol=1e-2, rtol=1e-5)
 
     _test_log2_impl[.bfloat16](atol=1e-1, rtol=1e-5)
+
+    assert_equal(log2(5e-324), -1074)
 
 
 def test_log1p() raises:

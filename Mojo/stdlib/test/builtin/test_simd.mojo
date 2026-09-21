@@ -1907,6 +1907,13 @@ def test_powf() raises:
         SIMD[.float64, 8](1, 1, 8, 16, 1024, 4096, 4, 3),
     )
 
+    assert_almost_equal(
+        Float64.__pow__(5e-324, 0.5),
+        2.2227587494850775e-162,
+        atol=1e-162,
+        rtol=1e-162,
+    )
+
 
 def test_rpow() raises:
     comptime F32x4 = SIMD[.float32, 4]
