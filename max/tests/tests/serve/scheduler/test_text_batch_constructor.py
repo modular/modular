@@ -35,6 +35,7 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
 )
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
+    PreemptionReason,
     TextBatchConstructor,
 )
 from max.serve.scheduler.batch_constructor.token_budget import RequestType
@@ -2117,6 +2118,8 @@ def create_dp_balance_constructor(
     threshold: float = 0.8,
     enable_dynamic_chunk_size: bool = True,
     hit_counts: list[PrefixCacheHits] | None = None,
+    max_batch_total_tokens: int | None = None,
+    prefill_schedule_interval: int = 1,
 ) -> TextBatchConstructor:
     """A DP constructor with the CE balancer on and a stubbed cache probe."""
     pipeline = Mock(spec=["release"])
@@ -2135,6 +2138,8 @@ def create_dp_balance_constructor(
         dp_ce_balance_timeout_ms=timeout_ms,
         dp_ce_balance_threshold=threshold,
         dp_ce_balance_enable_dynamic_chunk_size=enable_dynamic_chunk_size,
+        max_batch_total_tokens=max_batch_total_tokens,
+        prefill_schedule_interval=prefill_schedule_interval,
     )
     return TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -2343,6 +2348,366 @@ def test_dp_ce_balance__quota_never_below_floor() -> None:
     batch_constructor.construct_batch()
     assert batch_constructor._ce_step_quota == [96, 60]
     assert batch_constructor._ce_deferred_replicas == set()
+
+
+def _long_ce_context(seq_len: int) -> TextContext:
+    """A CE context whose prompt may exceed ``create_lora_context``'s cap."""
+    return TextContext(
+        request_id=RequestID(),
+        max_length=seq_len + 64,
+        tokens=TokenBuffer(np.ones(seq_len, dtype=np.int64)),
+    )
+
+
+def _mock_kv_cache_of(batch_constructor: TextBatchConstructor) -> Mock:
+    """The stubbed cache behind a ``create_dp_balance_constructor``."""
+    kv_cache = batch_constructor.kv_cache
+    assert isinstance(kv_cache, Mock)
+    return kv_cache
+
+
+def _stub_per_request_hits(
+    batch_constructor: TextBatchConstructor,
+    hits: dict[RequestID, list[PrefixCacheHits]],
+) -> None:
+    """Varies the cache probe per request, unlike the shared stub.
+
+    A request with no entry probes as uncached on every replica.
+    """
+    uncached = [PrefixCacheHits()] * batch_constructor.num_replicas
+    _mock_kv_cache_of(batch_constructor).get_prefix_cache_hit_counts = Mock(
+        side_effect=lambda ctx: hits.get(ctx.request_id, uncached)
+    )
+
+
+def test_dp_ce_balance__expired_bind_prices_the_whole_replica_queue() -> None:
+    """A replica taking an expired bind is priced with its queue, not the bind.
+
+    The expired request joins a replica that already holds a deferrable tail,
+    and the replica runs both: the bind makes it non-deferrable, and
+    ``_add_ce_requests`` pops the tail first. Pricing the replica at the
+    expired request alone leaves it looking like it still has room for
+    another chunk, so later pooled work is weighed against a step that does
+    not exist.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    # A tail that fills replica 0's whole 100-token chunk budget on its own.
+    tail_ctx = _long_ce_context(100)
+    batch_constructor.enqueue_new_request(tail_ctx, replica_idx=0)
+    batch_constructor._ce_arrival[tail_ctx.request_id] = time.monotonic()
+    batch_constructor.enqueue_new_request(
+        create_lora_context(is_tg=True), replica_idx=1
+    )
+
+    # Both pooled requests are almost entirely cached on replica 0 (192 of
+    # 200 tokens), so both price cheapest there.
+    expired_ctx = _long_ce_context(200)
+    rider_ctx = _long_ce_context(200)
+    _stub_per_request_hits(
+        batch_constructor,
+        {
+            ctx.request_id: [
+                PrefixCacheHits(device_blocks=12),
+                PrefixCacheHits(),
+            ]
+            for ctx in (expired_ctx, rider_ctx)
+        },
+    )
+    batch_constructor.enqueue_new_request(expired_ctx)
+    batch_constructor._ce_arrival[expired_ctx.request_id] = (
+        time.monotonic() - 60.0
+    )
+    batch_constructor.enqueue_new_request(rider_ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    # Replica 0 is full at its chunk budget, so the rider goes to the idle
+    # replica. Priced at the expired request's 8 tokens instead, replica 0
+    # still looks open, the rider is compared against that phantom step, and
+    # it is dropped for failing to improve an occupancy it never had.
+    assert has_request(inputs.batches[1], rider_ctx.request_id)
+    assert has_request(inputs.batches[0], tail_ctx.request_id)
+    assert batch_constructor._ce_deferred_replicas == set()
+
+
+def test_dp_ce_balance__expired_request_waits_when_nothing_can_seat_it() -> (
+    None
+):
+    """An expired request stays pooled when no replica can admit it.
+
+    Binding it to a replica that seats no prefill this step runs nothing and
+    costs the request its place in the pool: it can no longer be placed by
+    price next step, and it is stuck behind that replica's decode queue.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    for replica_idx in range(2):
+        _saturate_decode(batch_constructor, replica_idx=replica_idx)
+
+    ce_ctx = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(ce_ctx)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic() - 60.0
+
+    batch_constructor.construct_batch()
+
+    assert ce_ctx.request_id in batch_constructor._ce_pending
+    assert ce_ctx.request_id not in batch_constructor._bound_requests
+
+
+def test_dp_ce_balance__mid_prefill_work_is_priced_by_its_live_window() -> None:
+    """Once a chunk has run, the remaining window is exact and wins.
+
+    ``kv_cache.alloc`` advances the active window past the prefix-cache hit,
+    so from the first chunk onward ``active_length`` is already post-cache.
+    Holding on to the estimate taken at bind time would keep pricing the
+    request at its original prompt for the rest of its prefill.
+    """
+    batch_constructor = create_dp_balance_constructor(threshold=0.9)
+    for replica_idx, seq_len in ((0, 160), (1, 60)):
+        batch_constructor.enqueue_new_request(
+            create_lora_context(is_tg=True), replica_idx=replica_idx
+        )
+        ce_ctx = _long_ce_context(seq_len)
+        batch_constructor.enqueue_new_request(ce_ctx, replica_idx=replica_idx)
+        batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+        if replica_idx == 0:
+            # 100 tokens already processed: 60 of real work left, exactly
+            # matching replica 1.
+            ce_ctx.tokens.skip_processing(100)
+
+    batch_constructor.construct_batch()
+
+    # Priced live the step is 60/60: occupancy 1.0 clears the 0.9 threshold
+    # and no chunk-size reduction is needed. Priced at the bind-time 160 it
+    # reads as 100/60 and both replicas are cut to a 60-token chunk.
+    assert batch_constructor._ce_step_quota is None
+    assert batch_constructor._ce_deferred_replicas == set()
+
+
+def test_dp_ce_balance__binding_does_not_reprobe_the_prefix_cache() -> None:
+    """The planner already knows a pooled request's weight; binding reuses it.
+
+    The probe hashes the request's whole prompt, so re-running it at the bind
+    doubles that cost on the scheduler's hot path for no new information.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    ce_ctx = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(ce_ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ce_ctx.request_id)
+    probe = _mock_kv_cache_of(batch_constructor).get_prefix_cache_hit_counts
+    assert probe.call_count == 1
+
+
+def test_dp_ce_balance__off_cadence_step_plans_nothing() -> None:
+    """A step that cannot admit prefill anywhere must not plan any.
+
+    ``_add_ce_requests`` returns immediately while the prefill cadence is
+    closed, so every replica seats nothing. Planning against it would bind
+    pooled work and set quotas for a step that runs no CE at all.
+    """
+    batch_constructor = create_dp_balance_constructor(
+        prefill_schedule_interval=2
+    )
+    batch_constructor.enqueue_new_request(
+        create_lora_context(is_tg=True), replica_idx=0
+    )
+    # Opens on phase 0, closed on the next step.
+    batch_constructor.construct_batch()
+
+    ce_ctx = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(ce_ctx)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic() - 60.0
+    batch_constructor.construct_batch()
+
+    assert not batch_constructor._prefill_interval_open
+    assert ce_ctx.request_id in batch_constructor._ce_pending
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert batch_constructor._ce_step_quota is None
+
+
+def test_dp_ce_balance__bound_requests_are_priced_post_prefix_cache() -> None:
+    """Bound-but-unrun CE work is priced the way the pool is priced.
+
+    ``active_length`` stays at the full prompt until ``kv_cache.alloc``
+    advances the window past the prefix-cache hit, and the per-replica total
+    is clamped to the chunk target -- so a single long, almost-entirely-cached
+    request reads as a full chunk and hides a perfectly balanced step.
+    """
+    # 96 of replica 0's 156 prompt tokens are already cached: 60 tokens of
+    # real work, exactly matching replica 1.
+    batch_constructor = create_dp_balance_constructor(
+        threshold=0.9,
+        hit_counts=[PrefixCacheHits(device_blocks=6), PrefixCacheHits()],
+    )
+    for replica_idx, seq_len in ((0, 156), (1, 60)):
+        tg_ctx = create_lora_context(is_tg=True)
+        batch_constructor.enqueue_new_request(tg_ctx, replica_idx=replica_idx)
+        ce_ctx = _long_ce_context(seq_len)
+        batch_constructor.enqueue_new_request(ce_ctx, replica_idx=replica_idx)
+        batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+
+    batch_constructor.construct_batch()
+
+    # Priced post-cache the step is 60/60: occupancy 1.0 clears the 0.9
+    # threshold and no chunk-size reduction is needed. Priced pre-cache it
+    # reads as 100/60 and the chunk size is cut to 60 for no reason.
+    assert batch_constructor._ce_step_quota is None
+    assert batch_constructor._ce_deferred_replicas == set()
+
+
+def test_dp_ce_balance__preempted_request_returns_to_the_pool() -> None:
+    """A preempted pool-managed request must not poison its old replica.
+
+    ``_return_to_request_queue`` resets the request but keeps its original
+    arrival on record. Left bound, that stale arrival reads as expired, and
+    because a replica is deferrable only when none of its CE work has
+    expired, one preempted request makes the whole replica non-deferrable
+    for as long as it sits there.
+    """
+    batch_constructor = create_dp_balance_constructor(threshold=0.8)
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    fresh_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(fresh_ctx, replica_idx=0)
+    batch_constructor._ce_arrival[fresh_ctx.request_id] = time.monotonic()
+    preempted_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(preempted_ctx, replica_idx=0)
+    batch_constructor._ce_arrival[preempted_ctx.request_id] = (
+        time.monotonic() - 60.0
+    )
+
+    batch_constructor._preempt_request(
+        preempted_ctx, 0, reason=PreemptionReason.KV_CACHE_MEMORY
+    )
+
+    assert preempted_ctx.request_id in batch_constructor._ce_pending
+    assert preempted_ctx.request_id not in batch_constructor._bound_requests
+    assert preempted_ctx.request_id not in batch_constructor.replicas[0].ce_reqs
+    assert batch_constructor.contains(preempted_ctx.request_id)
+
+    # Unbound again, it rebinds where it now prices cheapest -- replica 1,
+    # which is idle -- instead of queueing behind replica 0's tail and
+    # dragging that tail into the floor with it.
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[1], preempted_ctx.request_id)
+    assert has_request(inputs.batches[0], fresh_ctx.request_id)
+
+    # The re-pool moved the request's bookkeeping rather than duplicating it,
+    # so a full admit/preempt/complete cycle leaves nothing behind.
+    batch_constructor.release_request(preempted_ctx.request_id)
+    assert not batch_constructor.contains(preempted_ctx.request_id)
+    for tracker in (
+        batch_constructor._bound_requests,
+        batch_constructor._ce_pending,
+        batch_constructor._ce_arrival,
+        batch_constructor._request_id_to_lora_name,
+    ):
+        assert preempted_ctx.request_id not in tracker
+
+
+def _saturate_decode(
+    batch_constructor: TextBatchConstructor, replica_idx: int
+) -> None:
+    """Fills a replica's decode queue to ``max_batch_size``.
+
+    ``_add_ce_requests`` reserves a batch slot for every queued generation,
+    so at this depth the replica can seat no prefill at all.
+    """
+    for _ in range(batch_constructor.scheduler_config.max_batch_size):
+        batch_constructor.enqueue_new_request(
+            create_lora_context(is_tg=True), replica_idx=replica_idx
+        )
+
+
+def test_dp_ce_balance__pool_skips_replica_with_no_admission_seat() -> None:
+    """A pooled request must bind where admission can actually seat it.
+
+    The planner prices a replica by its queued CE tokens, but admission also
+    reserves a batch slot for each of that replica's queued generations. A
+    replica whose decode queue already fills ``max_batch_size`` seats no
+    prefill, and ``_construct_replica_batch`` quietly runs decode instead --
+    so binding by price alone parks the request on a replica that cannot run
+    it, and the committed two-rank step executes as a one-rank step.
+    """
+    # Replica 0 holds part of the prompt, so it prices cheapest -- but its
+    # decode queue leaves no room to admit the request.
+    batch_constructor = create_dp_balance_constructor(
+        hit_counts=[PrefixCacheHits(device_blocks=2), PrefixCacheHits()]
+    )
+    _saturate_decode(batch_constructor, replica_idx=0)
+    batch_constructor.enqueue_new_request(
+        create_lora_context(is_tg=True), replica_idx=1
+    )
+
+    ce_ctx = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(ce_ctx)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic() - 60.0
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], ce_ctx.request_id)
+
+
+def test_dp_ce_balance__saturated_decode_replica_is_not_a_ce_partner() -> None:
+    """CE work admission cannot seat must not pass as a balancing partner.
+
+    Replica 0's queued CE request keeps its replica out of the deferrable
+    set and puts it in the step's floor, which reads as a partner for
+    replica 1's deferrable tail and commits a balanced-looking step. Only
+    replica 1 ever runs, so the step lands at half the occupancy planned;
+    with no real partner the tail should wait for one instead.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    _saturate_decode(batch_constructor, replica_idx=0)
+    batch_constructor.enqueue_new_request(
+        create_lora_context(seq_len=50), replica_idx=0
+    )
+    tail_ctx = _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=50)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert batch_constructor._ce_deferred_replicas == {1}
+    assert not has_request(inputs.batches[1], tail_ctx.request_id)
+
+
+def test_dp_ce_balance__budget_rejected_request_keeps_its_place() -> None:
+    """A request admission could not seat retries in place, not in the pool.
+
+    Pooling is for a replica giving a request up: the binding is what went
+    wrong, so the next step places it afresh. A request that merely did not
+    fit this step is already bound where it belongs, and pooling it costs it
+    the head of its replica's queue -- the next step rebinds it behind
+    whatever is queued there, turning a FIFO retry into a rotation.
+    """
+    # Both requests price cheapest on replica 0, so both bind there, and the
+    # 100-token total-context budget fits only the first of the two.
+    batch_constructor = create_dp_balance_constructor(
+        hit_counts=[PrefixCacheHits(device_blocks=5), PrefixCacheHits()],
+        max_batch_total_tokens=100,
+    )
+    contexts = []
+    for _ in range(2):
+        ctx = create_lora_context(seq_len=96)
+        # Mid-prefill: a small active window against a full 96-token context.
+        ctx.tokens.chunk(16)
+        batch_constructor.enqueue_new_request(ctx)
+        batch_constructor._ce_arrival[ctx.request_id] = time.monotonic() - 60.0
+        contexts.append(ctx)
+    admitted, rejected = contexts
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], admitted.request_id)
+    assert rejected.request_id not in batch_constructor._ce_pending
+    replica = batch_constructor.replicas[0]
+    assert next(iter(replica.ce_reqs)) == rejected.request_id
+    assert (
+        batch_constructor._bound_requests[rejected.request_id].replica_idx == 0
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -86,10 +86,16 @@ class _BoundRequest:
     out of every replica queue, yet that is exactly when the scheduler filters
     responses and drains cancellations -- both of which name the request by id
     alone and need its context to release it.
+
+    ``ce_weight`` is the request's estimated post-prefix-cache CE length on
+    ``replica_idx``, carried so the planner prices bound work the way it
+    prices the pool (see :meth:`TextBatchConstructor._ce_weight`). ``None``
+    for a request bound straight into the TG queue.
     """
 
     ctx: TextContext
     replica_idx: int
+    ce_weight: int | None = None
 
 
 @dataclass
@@ -698,21 +704,58 @@ class TextBatchConstructor:
             replica_idx = self.get_next_replica_idx()
         self._bind_request(ctx, replica_idx)
 
-    def _bind_request(self, ctx: TextContext, replica_idx: int) -> None:
-        """Binds a request to a replica and enqueues it in the right queue."""
+    def _bind_request(
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        *,
+        ce_weight: int | None = None,
+    ) -> None:
+        """Binds a request to a replica and enqueues it in the right queue.
+
+        Args:
+            ctx: The request to bind.
+            replica_idx: The replica to bind it to.
+            ce_weight: The request's post-prefix-cache CE length on
+                ``replica_idx``, when the caller already has it. Probed here
+                otherwise -- the probe hashes the whole prompt, so a caller
+                holding the answer should pass it.
+        """
         replica = self.replicas[replica_idx]
-        self._bound_requests[ctx.request_id] = _BoundRequest(ctx, replica_idx)
+
+        # Add the request to the appropriate dict based on whether it needs CE.
+        if ctx.tokens.generated_length == 0:
+            if self._dp_ce_balance_enabled and ce_weight is None:
+                ce_weight = self._post_cache_weights(ctx)[replica_idx]
+            replica.ce_reqs[ctx.request_id] = ctx
+        else:
+            ce_weight = None
+            replica.tg_reqs[ctx.request_id] = ctx
+
+        self._bound_requests[ctx.request_id] = _BoundRequest(
+            ctx, replica_idx, ce_weight
+        )
         self._request_id_to_lora_name[ctx.request_id] = (
             ctx.model_name
             if self._lora_manager and is_lora(ctx, self._lora_manager)
             else None
         )
 
-        # Add the request to the appropriate dict based on whether it needs CE.
-        if ctx.tokens.generated_length == 0:
-            replica.ce_reqs[ctx.request_id] = ctx
-        else:
-            replica.tg_reqs[ctx.request_id] = ctx
+    def _ce_weight(self, ctx: TextContext) -> int:
+        """Prices a bound CE request in post-prefix-cache tokens.
+
+        ``active_length`` is the whole prompt until ``kv_cache.alloc``
+        advances the window past the prefix-cache hit, so an unrun request is
+        priced by the estimate taken when it bound -- at a high hit rate the
+        raw prompt reads orders of magnitude above the work it will do. Once
+        a chunk has run the window is the remaining one and already exact.
+        """
+        if ctx.tokens.processed_length > 0:
+            return ctx.tokens.active_length
+        bound = self._bound_requests.get(ctx.request_id)
+        if bound is None or bound.ce_weight is None:
+            return ctx.tokens.active_length
+        return bound.ce_weight
 
     def _post_cache_weights(self, ctx: TextContext) -> list[int]:
         """Estimates per-replica post-prefix-cache CE length for a new request.
@@ -941,6 +984,7 @@ class TextBatchConstructor:
         for replica in self.replicas:
             for request_id in replica.tg_reqs:
                 del self._bound_requests[request_id]
+                self._ce_arrival.pop(request_id, None)
 
             replica.tg_reqs.clear()
 
@@ -982,9 +1026,22 @@ class TextBatchConstructor:
 
     @traced
     def _return_to_request_queue(
-        self, context: TextContext, replica_idx: int
+        self, context: TextContext, replica_idx: int, *, unbind: bool = False
     ) -> None:
-        """Resets a request and returns it to the request queue"""
+        """Resets a request and returns it to the request queue.
+
+        Args:
+            context: The request to reset and requeue.
+            replica_idx: The replica it is bound to.
+            unbind: Whether the replica is giving the request up rather than
+                merely failing to seat it this step. Only then is the binding
+                itself what went wrong, so only then does a pool-managed
+                request go back to the pool. A request that simply did not fit
+                is already where it belongs, and pooling it would cost it the
+                head of its replica's queue: the next step binds it behind
+                whatever is queued there, turning the FIFO retry into a
+                rotation.
+        """
 
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
         if self.kv_cache.contains(context):
@@ -1001,7 +1058,31 @@ class TextBatchConstructor:
         if context.request_id in replica_requests.tg_reqs:
             del replica_requests.tg_reqs[context.request_id]
 
-        replica_requests.ce_reqs[context.request_id] = context
+        # A reset request holds no KV and no replica affinity, so a
+        # pool-managed one goes back to the pool. Left bound it would keep its
+        # original arrival on record, which ``_plan_ce_step`` reads as expired
+        # -- making the whole replica non-deferrable for as long as it sits
+        # there. Pooled, that same arrival instead binds it first next step,
+        # wherever its prefix is warmest. ``_ce_arrival`` marks exactly the
+        # pool-managed requests: pinned ones never get an entry and must stay
+        # on the replica holding their transfer.
+        if (
+            unbind
+            and self._dp_ce_balance_enabled
+            and context.request_id in self._ce_arrival
+        ):
+            replica_requests.ce_reqs.pop(context.request_id, None)
+            del self._bound_requests[context.request_id]
+            self._request_id_to_lora_name.pop(context.request_id, None)
+            self._ce_pending[context.request_id] = _PendingCERequest(
+                ctx=context, weights=self._post_cache_weights(context)
+            )
+            self._ce_pending.move_to_end(context.request_id, last=False)
+            return
+
+        # Rebind rather than re-enqueue: ``reset()`` restored the request to
+        # its full prompt, so its carried CE weight has to be taken again.
+        self._bind_request(context, replica_idx)
         replica_requests.ce_reqs.move_to_end(context.request_id, last=False)
 
     @traced
@@ -1011,7 +1092,7 @@ class TextBatchConstructor:
         """Preempts the most recently received request from active batch"""
 
         # Return to the Request Queue
-        self._return_to_request_queue(context, replica_idx)
+        self._return_to_request_queue(context, replica_idx, unbind=True)
 
         # Log Preemption
         current_time = time.monotonic()
@@ -1120,6 +1201,25 @@ class TextBatchConstructor:
         retrying whenever anything at all is in flight.
         """
         return no_other_work and not self._is_anything_inflight(replica_idx)
+
+    def _ce_admission_seats(self, replica_idx: int) -> int:
+        """How many CE requests ``_add_ce_requests`` can seat here this step.
+
+        Its loop stops once the CE requests it has admitted plus the
+        replica's queued decode work reach ``max_batch_size``, reserving
+        batch slots for the generations those prefills turn into. A replica
+        whose decode queue is already that deep therefore seats no prefill at
+        all, and ``_construct_replica_batch`` falls back to decode -- so the
+        planner has to price a replica by what admission will take, not by
+        what is queued on it. An off-cadence step seats nothing anywhere.
+        """
+        if not self._prefill_interval_open:
+            return 0
+        return max(
+            0,
+            self.scheduler_config.max_batch_size
+            - len(self.replicas[replica_idx].tg_reqs),
+        )
 
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         # Deferred by the DP CE balancer this iteration (also covers paths
@@ -1483,20 +1583,26 @@ class TextBatchConstructor:
     def _plan_ce_step(self) -> None:
         """Plans this iteration's CE work across DP replicas.
 
-        Prices CE work in post-prefix-cache tokens and greedily assembles the
-        most balanced CE step it can, deferring the rest:
+        Prices CE work in post-prefix-cache tokens, against each replica's
+        admission seats (``_ce_admission_seats``) so a replica is only ever
+        planned work admission will take, and greedily assembles the most
+        balanced CE step it can, deferring the rest:
 
+        - Expired pooled requests bind first, in arrival order, so
+          out-of-order balancing can never starve an old request. They bind
+          only where admission has a seat, since binding elsewhere would cost
+          a request its place in the pool for nothing.
         - Work that must run — deferral deadline expired, no deadline on
           record, or its replica has no TG work to run instead — forms the
-          step's floor. Expired pooled requests bind immediately, in arrival
-          order, so out-of-order balancing can never starve an old request.
+          step's floor. A replica that just took an expired bind lands here
+          by that first rule, with its whole queue priced.
         - Deferrable mid-prefill tails (per replica, all-or-nothing) and then
           pooled unbound requests are added largest-first wherever they
           strictly improve the step's occupancy (mean/max of per-replica CE
           tokens, capped at the CE chunk budget).
-        - Pooled requests bind to ``argmin(total_load + weight)`` at the moment the
-          planner schedules them: binding is deferred until first run so it
-          uses fresh loads.
+        - Pooled requests bind to the replica with the lightest queue total
+          plus their own weight, at the moment the planner schedules them:
+          binding is deferred until first run so it uses fresh loads.
 
         The assembled step is committed when the floor is non-empty (those
         tokens run regardless, so riders only improve the step), when its
@@ -1529,22 +1635,49 @@ class TextBatchConstructor:
             arrival = self._ce_arrival.get(request_id)
             return arrival is None or now - arrival >= timeout_s
 
-        # The floor: per-replica step CE tokens that run no matter what. A
-        # replica's tails are deferrable only when all of them have deadline
-        # budget left AND the replica has TG work to run instead (deferring
-        # into idleness loses throughput for nothing).
-        #
-        # ``step_load`` is this step's projection (capped at the CE chunk
-        # budget), used for occupancy and quotas. ``total_load`` is the
-        # uncapped per-replica queue total, used for binding decisions.
+        # ``queues`` prices each replica's CE queue in post-prefix-cache
+        # tokens, in the FIFO order ``_add_ce_requests`` pops them, and
+        # ``seats`` is how many of those pops admission will take. Their sum
+        # is the uncapped queue total that drives binding decisions.
+        queues = [
+            [self._ce_weight(ctx) for ctx in replica.ce_reqs.values()]
+            for replica in self.replicas
+        ]
+        seats = [self._ce_admission_seats(i) for i in range(self.num_replicas)]
+
+        def _has_seat(replica_idx: int) -> bool:
+            return len(queues[replica_idx]) < seats[replica_idx]
+
+        # Expired pooled requests bind before the step is measured, so the
+        # replica they land on is priced with them queued on it -- and, being
+        # expired, is then not deferrable, which is what forces the commit.
+        for req_id in [r for r in self._ce_pending if _expired(r)]:
+            # A replica that cannot seat the request this step is no better
+            # than waiting: binding there would only cost the request its
+            # place in the pool, where it stays first in line.
+            seated = [i for i in range(self.num_replicas) if _has_seat(i)]
+            if not seated:
+                continue
+            weights = self._ce_pending[req_id].weights
+            replica_idx = min(seated, key=lambda i: sum(queues[i]) + weights[i])
+            queues[replica_idx].append(weights[replica_idx])
+            self._bind_request(
+                self._ce_pending.pop(req_id).ctx,
+                replica_idx,
+                ce_weight=weights[replica_idx],
+            )
+
+        # The floor: per-replica step CE tokens that run no matter what,
+        # capped at the CE chunk budget. A replica's tails are deferrable only
+        # when all of them have deadline budget left AND the replica has TG
+        # work to run instead (deferring into idleness loses throughput for
+        # nothing).
         floor = [0] * self.num_replicas
-        total_load = [0] * self.num_replicas
         deferrable_tails: list[tuple[int, int]] = []  # (step_tokens, replica)
         for replica_idx, replica in enumerate(self.replicas):
-            tokens = sum(
-                ctx.tokens.active_length for ctx in replica.ce_reqs.values()
-            )
-            total_load[replica_idx] = tokens
+            # Only the prefix of the queue admission has seats for runs this
+            # step; the rest waits however deep the queue is.
+            tokens = sum(queues[replica_idx][: seats[replica_idx]])
             if tokens == 0:
                 continue
             can_defer = bool(replica.tg_reqs) and not any(
@@ -1556,20 +1689,6 @@ class TextBatchConstructor:
                 floor[replica_idx] = min(tokens, target)
 
         step_load = list(floor)
-
-        # Expired pooled requests bind now and join the floor.
-        for req_id in [r for r in self._ce_pending if _expired(r)]:
-            pending = self._ce_pending.pop(req_id)
-            replica_idx = min(
-                range(self.num_replicas),
-                key=lambda i: total_load[i] + pending.weights[i],
-            )
-            total_load[replica_idx] += pending.weights[replica_idx]
-            step_load[replica_idx] = min(
-                step_load[replica_idx] + pending.weights[replica_idx], target
-            )
-            floor[replica_idx] = step_load[replica_idx]
-            self._bind_request(pending.ctx, replica_idx)
 
         def _occupancy(loads: list[int]) -> float:
             max_load = max(loads)
@@ -1598,12 +1717,12 @@ class TextBatchConstructor:
             eligible = [
                 i
                 for i in range(self.num_replicas)
-                if i not in deferred and step_load[i] < target
+                if i not in deferred and step_load[i] < target and _has_seat(i)
             ]
             if not eligible:
                 continue
             replica_idx = min(
-                eligible, key=lambda i: total_load[i] + pending.weights[i]
+                eligible, key=lambda i: sum(queues[i]) + pending.weights[i]
             )
             trial = list(step_load)
             trial[replica_idx] = min(
@@ -1611,7 +1730,7 @@ class TextBatchConstructor:
             )
             if max(step_load) == 0 or _occupancy(trial) > _occupancy(step_load):
                 step_load = trial
-                total_load[replica_idx] += pending.weights[replica_idx]
+                queues[replica_idx].append(pending.weights[replica_idx])
                 pool_binds.append((req_id, replica_idx))
 
         floor_exists = any(floor)
@@ -1646,7 +1765,11 @@ class TextBatchConstructor:
         ):
             for req_id, replica_idx in pool_binds:
                 pending = self._ce_pending.pop(req_id)
-                self._bind_request(pending.ctx, replica_idx)
+                self._bind_request(
+                    pending.ctx,
+                    replica_idx,
+                    ce_weight=pending.weights[replica_idx],
+                )
             self._ce_deferred_replicas = deferred
 
             if (
