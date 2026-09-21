@@ -16,8 +16,10 @@
 Two layers, no GPU required:
 
 - Real CPU ``Buffer`` objects: verify ``batch_inplace_copy`` produces the same
-  values as a per-buffer ``inplace_copy_from`` loop and that identity pairs
-  (``dst is src``) are no-ops.
+  values as a per-buffer ``inplace_copy_from`` loop, that identity pairs
+  (``dst is src``) are no-ops, and that two distinct buffers over the same
+  memory are too -- a caller that rebuilds an equal view every step should not
+  pay for a copy that would not move a byte.
 - Fake-device simulation: exercise ``ServeGraphCaptureRunner.replay``'s routing
   without a GPU -- host destinations copy inline, accelerator destinations go
   through the batched call, destinations spanning devices preserve output
@@ -83,7 +85,12 @@ class _FakeBuffer:
 def _fake_batch_inplace_copy(
     dsts: Sequence[_FakeBuffer], srcs: Sequence[_FakeBuffer]
 ) -> None:
-    """Mirrors the real driver call: skip identity pairs, copy the rest."""
+    """Mirrors the real driver call: skip identity pairs, copy the rest.
+
+    The driver also skips two distinct buffers over the same memory, which
+    these value-less fakes cannot express; the real-buffer tests above cover
+    that.
+    """
     for dst, src in zip(dsts, srcs, strict=True):
         if dst is not src:
             dst.inplace_copy_from(src)
@@ -189,6 +196,28 @@ def test_batch_inplace_copy_skips_identity() -> None:
     batch_inplace_copy([stable, other_dst], [stable, other_src])
 
     np.testing.assert_array_equal(stable.to_numpy(), [42.0])
+    np.testing.assert_array_equal(other_dst.to_numpy(), [99.0])
+
+
+def test_batch_inplace_copy_skips_an_aliased_pair() -> None:
+    """Distinct buffers over one allocation are as much a no-op as identity.
+
+    The values cannot show the difference -- both sides name the same bytes --
+    so this pins the correctness half: eliding must not corrupt the batch or
+    the real copies beside it.
+    """
+    backing = Buffer.from_numpy(np.array([42.0, 7.0], dtype=np.float32))
+    dst_view = backing[:1]
+    src_view = backing[:1]
+    other_src = Buffer.from_numpy(np.array([99.0], dtype=np.float32))
+    other_dst = Buffer.from_numpy(np.zeros(1, dtype=np.float32))
+
+    assert dst_view is not src_view
+    assert dst_view._data_ptr() == src_view._data_ptr()
+
+    batch_inplace_copy([dst_view, other_dst], [src_view, other_src])
+
+    np.testing.assert_array_equal(backing.to_numpy(), [42.0, 7.0])
     np.testing.assert_array_equal(other_dst.to_numpy(), [99.0])
 
 
