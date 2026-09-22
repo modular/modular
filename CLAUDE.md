@@ -1,6 +1,7 @@
 # Development Guidelines
 
-bazel >>> cmake
+bazel >>> cmake 
+Really?
 
 This file provides guidelines for AI coding assistants such as Claude Code when
 working with code in this repository.
