@@ -95,11 +95,11 @@ def test_serve_cascade_context_options_published() -> None:
     result = runner.invoke(pipelines.main, ["serve", "--help"])
     assert result.exit_code == 0
     for flag in (
-        "--transport",
-        "--local-cpu-workers",
-        "--local-gpu-workers",
-        "--remote-cpu-workers",
-        "--remote-gpu-workers",
+        "--cascade-transport",
+        "--cascade-local-cpu-workers",
+        "--cascade-local-gpu-workers",
+        "--cascade-remote-cpu-workers",
+        "--cascade-remote-gpu-workers",
     ):
         assert flag in result.output
 
@@ -107,11 +107,11 @@ def test_serve_cascade_context_options_published() -> None:
 @pytest.mark.parametrize(
     "flag",
     [
-        "--transport=http",
-        "--local-cpu-workers=1",
-        "--local-gpu-workers=1",
-        "--remote-cpu-workers=a:9001",
-        "--remote-gpu-workers=a:9001",
+        "--cascade-transport=http",
+        "--cascade-local-cpu-workers=1",
+        "--cascade-local-gpu-workers=1",
+        "--cascade-remote-cpu-workers=a:9001",
+        "--cascade-remote-gpu-workers=a:9001",
     ],
 )
 def test_serve_cascade_only_flags_require_cascade(flag: str) -> None:
@@ -138,15 +138,15 @@ def test_serve_cascade_only_flags_allowed_with_cascade() -> None:
         [
             "serve",
             "--cascade",
-            "--transport",
+            "--cascade-transport",
             "grpc",
-            "--local-cpu-workers",
+            "--cascade-local-cpu-workers",
             "1",
-            "--local-gpu-workers",
+            "--cascade-local-gpu-workers",
             "0",
-            "--remote-cpu-workers",
+            "--cascade-remote-cpu-workers",
             "a:1",
-            "--remote-gpu-workers",
+            "--cascade-remote-gpu-workers",
             "b:1",
         ],
     )

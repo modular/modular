@@ -380,22 +380,22 @@ def click_option_requires(
 # Cascade-only deployment knobs: these size the Cascade worker process
 # pools and select the worker transport.
 @click_option_requires("cascade")(
-    "transport",
+    "cascade-transport",
     type=click.Choice(["http", "grpc"], case_sensitive=False),
     default=None,
     help="[--cascade] Worker transport: ``http`` (default) or ``grpc``. "
-    "Sets the address format expected by ``--remote-cpu-workers`` / "
-    "``--remote-gpu-workers``.",
+    "Sets the address format expected by ``--cascade-remote-cpu-workers`` / "
+    "``--cascade-remote-gpu-workers``.",
 )
 @click_option_requires("cascade")(
-    "local-cpu-workers",
+    "cascade-local-cpu-workers",
     type=int,
     default=None,
     help="[--cascade] Number of local CPU worker subprocesses. "
     "Defaults to ``2``.",
 )
 @click_option_requires("cascade")(
-    "local-gpu-workers",
+    "cascade-local-gpu-workers",
     type=int,
     default=None,
     help=(
@@ -404,25 +404,25 @@ def click_option_requires(
     ),
 )
 @click_option_requires("cascade")(
-    "remote-cpu-workers",
+    "cascade-remote-cpu-workers",
     multiple=True,
     type=str,
     help=(
         "[--cascade] Addresses of already-running remote CPU workers "
         "to include in the pool (repeatable). Format depends on "
-        "``--transport``: an ``http://`` or ``unix://`` URL for ``http``, "
-        "``host:port`` (or ``grpc://host:port``) for ``grpc``."
+        "``--cascade-transport``: an ``http://`` or ``unix://`` URL for "
+        "``http``, ``host:port`` (or ``grpc://host:port``) for ``grpc``."
     ),
 )
 @click_option_requires("cascade")(
-    "remote-gpu-workers",
+    "cascade-remote-gpu-workers",
     multiple=True,
     type=str,
     help=(
         "[--cascade] Addresses of already-running remote GPU workers "
         "to include in the pool (repeatable). Format depends on "
-        "``--transport``: an ``http://`` or ``unix://`` URL for ``http``, "
-        "``host:port`` (or ``grpc://host:port``) for ``grpc``."
+        "``--cascade-transport``: an ``http://`` or ``unix://`` URL for "
+        "``http``, ``host:port`` (or ``grpc://host:port``) for ``grpc``."
     ),
 )
 def cli_serve(
@@ -436,11 +436,11 @@ def cli_serve(
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     allow_cold_interpreter_cache: bool,
-    transport: str | None,
-    local_cpu_workers: int | None,
-    local_gpu_workers: int | None,
-    remote_cpu_workers: tuple[str, ...],
-    remote_gpu_workers: tuple[str, ...],
+    cascade_transport: str | None,
+    cascade_local_cpu_workers: int | None,
+    cascade_local_gpu_workers: int | None,
+    cascade_remote_cpu_workers: tuple[str, ...],
+    cascade_remote_gpu_workers: tuple[str, ...],
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -508,30 +508,21 @@ def cli_serve(
         # inside the Cascade entrypoint.
         context_kwargs: dict[str, Any] = {}
         for attr, cli_value in (
-            ("transport", transport),
-            ("local_cpu_workers", local_cpu_workers),
-            ("local_gpu_workers", local_gpu_workers),
-            ("remote_cpu_workers", remote_cpu_workers),
-            ("remote_gpu_workers", remote_gpu_workers),
+            ("transport", cascade_transport),
+            ("local_cpu_workers", cascade_local_cpu_workers),
+            ("local_gpu_workers", cascade_local_gpu_workers),
+            ("remote_cpu_workers", cascade_remote_cpu_workers),
+            ("remote_gpu_workers", cascade_remote_gpu_workers),
         ):
             if cli_value is not None and cli_value != ():
                 context_kwargs[attr] = cli_value
 
-        # TODO(SERVSYS-1325): the cascade branch does not honor the
-        # ``MAX_SERVE_HOST`` env var / ``.env`` the way the standard path does
-        # (cascade_serve takes a plain ``host`` str and never reads Settings).
-        # A user setting ``MAX_SERVE_HOST=127.0.0.1`` gets it on ``max serve``
-        # but ``0.0.0.0`` here. Reconcile by reading ``Settings().host`` as the
-        # fallback (``host if host is not None else Settings().host``) once the
-        # cascade entrypoint adopts Settings, so both paths share oneprecedence
-        # chain. Ceiling: this only bites when ``--host`` is unset *and* the
-        # user relies on the env var for the cascade path.
         asyncio.run(
             cascade_serve(
                 pipeline_args=pipeline_args,
                 context_config=ContextConfig(**context_kwargs),
-                host=host if host is not None else "0.0.0.0",
-                port=port if port is not None else 8000,
+                host=host if host is not None else settings.host,
+                port=port if port is not None else settings.port,
             )
         )
         return

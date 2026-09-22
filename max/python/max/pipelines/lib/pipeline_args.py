@@ -577,39 +577,43 @@ class PipelineArgs(ConfigFileModel):
                 **{**draft_model_kwarg, **component_overrides.get("draft", {})}
             )
 
-        # TODO(SERVSYS-1325): skipped under ``--cascade`` because the
-        # Cascade entrypoint re-resolves the model via ``from_args`` and accepts
-        # Cascade-reserved paths (``echo:``, ``dummy_*``) the HF probe rejects.
-        # This drops multi-component manifest detection for cascade -- harmless
-        # today (no cascade diffusion factory), but fix by moving the probe out
-        # of ``from_flat_kwargs`` to a caller that knows the serving mode.
-        cascade = bool(kwargs.get("cascade"))
-        if manifest is None and model_kwarg is None and not cascade:
+        if manifest is None and model_kwarg is None:
             model_path = kwargs.get("model_path")
             if model_path:
-                # KV-cache CLI flags are excluded from the probe, matching
-                # the flat path's historical behavior: they are merged into
-                # the main model's kv_cache during from_args(), and diffusion
-                # manifests forbid extra kwargs.
-                probe_kwargs = _strip_default_model_kwargs(
-                    {
-                        field: value
-                        for field, value in kwargs.items()
-                        if field in MAXModelConfig.model_fields
-                        and field not in ("model_path", "kv_cache")
-                    }
-                )
-                if isinstance(kwargs.get("kv_cache"), KVCacheConfig):
-                    probe_kwargs["kv_cache"] = kwargs["kv_cache"]
-                    probe_kwargs = _strip_default_model_kwargs(probe_kwargs)
-                revision = probe_kwargs.pop("huggingface_model_revision", None)
-                probe = ModelManifest.from_model_path(
-                    model_path,
-                    revision=revision,
-                    **probe_kwargs,
-                )
-                if "main" not in probe:
-                    manifest = probe
+                # TODO(Cascade): unskip this probe when Cascade gets rid of dummy pipelines
+                if kwargs.get("cascade"):
+                    _logger.warning(
+                        "HuggingFace manifest probing is disabled under "
+                        "``--cascade``; multi-component model detection is skipped "
+                        "for %r.",
+                        kwargs["model_path"],
+                    )
+                else:
+                    # KV-cache CLI flags are excluded from the probe, matching
+                    # the flat path's historical behavior: they are merged into
+                    # the main model's kv_cache during from_args(), and diffusion
+                    # manifests forbid extra kwargs.
+                    probe_kwargs = _strip_default_model_kwargs(
+                        {
+                            field: value
+                            for field, value in kwargs.items()
+                            if field in MAXModelConfig.model_fields
+                            and field not in ("model_path", "kv_cache")
+                        }
+                    )
+                    if isinstance(kwargs.get("kv_cache"), KVCacheConfig):
+                        probe_kwargs["kv_cache"] = kwargs["kv_cache"]
+                        probe_kwargs = _strip_default_model_kwargs(probe_kwargs)
+                    revision = probe_kwargs.pop(
+                        "huggingface_model_revision", None
+                    )
+                    probe = ModelManifest.from_model_path(
+                        model_path,
+                        revision=revision,
+                        **probe_kwargs,
+                    )
+                    if "main" not in probe:
+                        manifest = probe
         elif manifest is not None and "main" in manifest:
             # An explicitly passed manifest is the canonical model source, so
             # flat model kwargs and kv-cache flags must be merged into it --
