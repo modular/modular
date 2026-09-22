@@ -379,6 +379,79 @@ its axis. Extents are the sliced subranges and strides are inherited from the
 surviving axes; the element offsets the slices start at live in the view's
 storage handle, not here."""
 
+comptime ImmTileTensor[
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: ImmOrigin,
+    *,
+    Engine: TensorEngine = DefaultEngine[element_width=1],
+    address_space: AddressSpace = .GENERIC,
+    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
+] = TileTensor[
+    dtype,
+    LayoutType,
+    origin,
+    Engine=Engine,
+    address_space=address_space,
+    linear_idx_type=linear_idx_type,
+]
+"""Names a `TileTensor` over immutable storage.
+
+`TileTensor` infers its `mut` parameter from `origin`, so a declaration that
+must accept only read-only views has to bind and constrain `mut` itself. This
+alias restricts `origin` to `ImmOrigin` instead, leaving the mutability spelled
+in the type. See `MutTileTensor` for the mutable counterpart.
+
+Parameters:
+    dtype: The data type of tensor elements (e.g., `DType.float32`).
+    LayoutType: A type implementing `TensorLayout` that defines the tensor's
+        shape and stride structure.
+    origin: The immutable origin of the underlying pointer.
+    Engine: A type implementing `TensorEngine` that supplies the storage handle
+        and the load/store/offset operations acting on it. Defaults to
+        `DefaultEngine[element_width=1]`.
+    address_space: Memory address space (GENERIC, SHARED, CONSTANT, etc.).
+        Defaults to GENERIC.
+    linear_idx_type: Integer type for memory indexing. Defaults to int32 for
+        shared/constant memory, int64 otherwise.
+"""
+
+comptime MutTileTensor[
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: MutOrigin,
+    *,
+    Engine: TensorEngine = DefaultEngine[element_width=1],
+    address_space: AddressSpace = .GENERIC,
+    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
+] = TileTensor[
+    dtype,
+    LayoutType,
+    origin,
+    Engine=Engine,
+    address_space=address_space,
+    linear_idx_type=linear_idx_type,
+]
+"""Names a `TileTensor` over mutable storage.
+
+The mutable counterpart of `ImmTileTensor`: `origin` is restricted to
+`MutOrigin`, so the view is writable without the declaration having to bind
+`TileTensor`'s inferred `mut` parameter.
+
+Parameters:
+    dtype: The data type of tensor elements (e.g., `DType.float32`).
+    LayoutType: A type implementing `TensorLayout` that defines the tensor's
+        shape and stride structure.
+    origin: The mutable origin of the underlying pointer.
+    Engine: A type implementing `TensorEngine` that supplies the storage handle
+        and the load/store/offset operations acting on it. Defaults to
+        `DefaultEngine[element_width=1]`.
+    address_space: Memory address space (GENERIC, SHARED, CONSTANT, etc.).
+        Defaults to GENERIC.
+    linear_idx_type: Integer type for memory indexing. Defaults to int32 for
+        shared/constant memory, int64 otherwise.
+"""
+
 
 struct TileTensor[
     mut: Bool,
