@@ -1162,11 +1162,20 @@ class PipelineConfig(ConfigFileModel):
         text, but no grammar is generated and the bitmask path is not needed
         on its account.
 
+        Always ``False`` on a ``prefill_only`` worker. Under disaggregated
+        inference the decode worker discards prefill's token for a
+        constrained request and re-samples it under its own matcher, so any grammar prefill
+        enforced would be discarded. Returning ``False`` here also keeps a
+        prefill worker launched without ``--enable-structured-output`` from
+        raising on a ``json_schema`` request the decode worker admitted.
+
         Drives whether model / sampler graphs are compiled with a bitmask
         input and whether the D2H pinned buffer is allocated. Distinct from
         ``sampling.enable_structured_output``, which is the user-facing
         flag and only gates honoring user-supplied JSON schemas.
         """
+        if self.runtime.pipeline_role == "prefill_only":
+            return False
         return self.sampling.enable_structured_output or (
             self.runtime.tool_parser is not None
             and self.sampling.enable_tool_call_constrained_decode

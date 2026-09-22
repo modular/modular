@@ -287,6 +287,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a prefill worker crash on `response_format` JSON schema requests under
+  disaggregated serving. The decode worker admits the request and forwards it
+  to prefill, but a prefill worker launched without `--enable-structured-output`
+  rejected the schema from inside its forward pass and exited, which then
+  stalled decode. Prefill never enforces a grammar now: the decode worker
+  discards prefill's token for a constrained request and samples the first
+  token under its own matcher, so the schema is still honored.
+
 - Fixed a crash serving Gemma 4, Gemma 3 multimodal, Pixtral, and Qwen 3
   embedding with a batch larger than one. Each of these architectures accepted
   `max_batch_size` and never handed it to `PipelineModel`, which left the base

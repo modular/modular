@@ -1902,7 +1902,7 @@ class TestInitializeBitmaskWithGrammar:
     """
 
     def _create_overlap_pipeline_with_structured_output(
-        self, enabled: bool = True
+        self, enabled: bool = True, needs_bitmask_constraints: bool = True
     ) -> OverlapTextGenerationPipeline[TextContext]:
         """Create a mock OverlapTextGenerationPipeline with structured output."""
         pipeline = OverlapTextGenerationPipeline.__new__(
@@ -1915,10 +1915,15 @@ class TestInitializeBitmaskWithGrammar:
             (1, 1000), dtype=np.int32
         )
         pipeline._structured_output = mock_structured_output
+        mock_pipeline_config = MagicMock()
+        mock_pipeline_config.needs_bitmask_constraints = (
+            needs_bitmask_constraints
+        )
+        pipeline._pipeline_config = mock_pipeline_config
         return pipeline
 
     def _create_text_pipeline_with_structured_output(
-        self, enabled: bool = True
+        self, enabled: bool = True, needs_bitmask_constraints: bool = True
     ) -> TextGenerationPipeline[TextContext]:
         """Create a mock TextGenerationPipeline with structured output."""
         pipeline = TextGenerationPipeline.__new__(TextGenerationPipeline)
@@ -1929,7 +1934,40 @@ class TestInitializeBitmaskWithGrammar:
             (1, 1000), dtype=np.int32
         )
         pipeline._structured_output = mock_structured_output
+        mock_pipeline_config = MagicMock()
+        mock_pipeline_config.needs_bitmask_constraints = (
+            needs_bitmask_constraints
+        )
+        pipeline._pipeline_config = mock_pipeline_config
         return pipeline
+
+    def test_returns_none_when_worker_compiled_no_bitmask_sampler(
+        self,
+    ) -> None:
+        """A prefill-only DI worker allocates no bitmask (MXSERV-562).
+
+        ``needs_bitmask_constraints`` is False there, yet its contexts still
+        carry the ``json_schema`` the decode worker admitted. Allocating a
+        bitmask would bind a graph input that was never compiled, and would
+        push the request into ``update_context``, which rejects a schema the
+        worker cannot honor.
+        """
+        ctx = TextContext(
+            request_id=RequestID("prefill_only_schema"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+            json_schema='{"type": "object"}',
+        )
+
+        overlap = self._create_overlap_pipeline_with_structured_output(
+            needs_bitmask_constraints=False
+        )
+        plain = self._create_text_pipeline_with_structured_output(
+            needs_bitmask_constraints=False
+        )
+
+        assert overlap.initialize_bitmask([ctx]) is None
+        assert plain.initialize_bitmask([ctx]) is None
 
     def test_allocates_bitmask_when_grammar_only_overlap_pipeline(self) -> None:
         """initialize_bitmask should allocate when grammar is set but json_schema is None.

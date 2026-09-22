@@ -2167,9 +2167,12 @@ class OverlapTextGenerationPipeline(
             batch: The generation contexts for the batch.
 
         Returns:
-            A bitmask array of shape [batch_size, vocab_size] if structured
-            output is enabled; otherwise ``None``.
+            A bitmask array of shape [batch_size, vocab_size] if constrained
+            decoding can execute for this worker; otherwise ``None``.
         """
+        if not self._pipeline_config.needs_bitmask_constraints:
+            return None
+
         if not self._structured_output.enabled:
             return None
 

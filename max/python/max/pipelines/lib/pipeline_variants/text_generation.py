@@ -371,9 +371,17 @@ class TextGenerationPipeline(
             batch: The generation contexts for the batch.
 
         Returns:
-            A bitmask array of shape [batch_size, vocab_size] if structured
-            output is enabled; otherwise ``None``.
+            A bitmask array of shape [batch_size, vocab_size] if constrained
+            decoding can fire for this worker; otherwise ``None``.
         """
+        # The helper is enabled whenever the tokenizer can build an FSM, but
+        # the bitmask-aware sampler is only compiled when constrained decoding
+        # can actually fire. Allocating a bitmask without it would bind an
+        # input the graph does not have, and would push a request the worker
+        # cannot honor into ``update_context``.
+        if not self._pipeline_config.needs_bitmask_constraints:
+            return None
+
         if not self._structured_output.enabled:
             return None
 
