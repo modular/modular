@@ -39,7 +39,6 @@ def _make_planner() -> DeepseekV3MemoryPlanner:
 
 
 NUM_RANKS = 8
-GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
 
 def mock_pipeline_config(
@@ -142,10 +141,16 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     assert mem == 4399759360
 
 
-def test_deepseekv3_memory_estimation_adds_graph_capture_headroom() -> None:
+def test_deepseekv3_memory_estimation_ignores_graph_capture() -> None:
+    """Capture allocates from the memory manager, so it needs no reservation.
+
+    The planner used to withhold 8 GiB per device here. It reserved nothing
+    for capture -- the figure was subtracted from the KV budget, leaving
+    allocator slack under a graph-capture name -- and a paired A/B measured
+    no throughput difference with it on or off.
+    """
     planner = _make_planner()
     huggingface_config = mock_huggingface_config()
-    assert huggingface_config is not None
 
     pipeline_config = mock_pipeline_config("decode_only")
     baseline = planner.estimate_activation_memory(
@@ -153,12 +158,11 @@ def test_deepseekv3_memory_estimation_adds_graph_capture_headroom() -> None:
     )
 
     pipeline_config.runtime.device_graph_capture = True
-    with_headroom = planner.estimate_activation_memory(
+    with_capture = planner.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
 
-    expected_headroom = GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * NUM_RANKS
-    assert with_headroom == baseline + expected_headroom
+    assert with_capture == baseline
 
 
 def mock_weights_pipeline_config(

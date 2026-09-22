@@ -48,6 +48,18 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/unified_mtp_glm5_2",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
@@ -61,6 +73,7 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
         exclude = [
+            "test_memory_planner.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
         ],

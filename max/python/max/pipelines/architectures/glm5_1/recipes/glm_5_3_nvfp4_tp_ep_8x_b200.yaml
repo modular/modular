@@ -22,7 +22,7 @@ model:
   data_parallel_degree: 1
   kv_cache:
     kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.78
+    device_memory_utilization: 0.75
 
 speculative:
   speculative_method: mtp
