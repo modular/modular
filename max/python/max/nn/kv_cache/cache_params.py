@@ -276,7 +276,8 @@ class KVConnectorType(str, Enum):
 
     Set on the connector config's ``type`` field to control whether evicted
     cache pages stay on device only, tier across host and disk, or route
-    through a distributed block store.
+    through a distributed block store. MAX currently supports only
+    :attr:`null`.
     """
 
     null = "null"
@@ -285,8 +286,9 @@ class KVConnectorType(str, Enum):
     tiered = "tiered"
     """Tiers evicted pages across host memory and disk.
 
-    Requires ``enable_prefix_caching``, ``host_offload_max_gb``,
-    and a ``disk_offload_dir`` on the connector config.
+    MAX currently doesn't support this connector type.
+
+    Requires ``enable_prefix_caching``.
 
     .. deprecated::
         A backward-compatible alias for :attr:`rust_tiered`; the Python
@@ -297,16 +299,19 @@ class KVConnectorType(str, Enum):
     """Tiers evicted pages across host memory and disk, backed by the Rust
     ``kv_tier_connector`` extension.
 
+    MAX currently doesn't support this connector type.
+
     The only host/disk tiered implementation, and what :attr:`tiered` now
     resolves to: it runs its copies and disk I/O on Rust threads (no GIL
     contention) and overlaps onloads with GPU compute via asynchronous
-    transfer handles. Requires ``enable_prefix_caching``,
-    ``host_offload_max_gb``, and a ``disk_offload_dir`` on the connector
-    config. Raises on non-CUDA/HIP devices.
+    transfer handles. Requires ``enable_prefix_caching``. Raises on
+    non-CUDA/HIP devices.
     """
 
     dkv = "dkv"
     """Routes pages through a distributed KV block store.
+
+    MAX currently doesn't support this connector type.
 
     Requires a ``block_store_endpoint`` on the connector config.
     """

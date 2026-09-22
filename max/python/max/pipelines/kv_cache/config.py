@@ -139,7 +139,7 @@ class KVConnectorConfig(ConfigFileModel):
         default=None,
         description=(
             "Directory for disk-based KV cache offloading. "
-            "Required when the connector type is 'tiered'."
+            "When unset, a temporary directory is created at startup."
         ),
     )
     """Directory for disk-based KV cache offloading."""

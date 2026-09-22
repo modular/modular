@@ -54,6 +54,7 @@
           "className": "tutorial-link"
         },
         "serve/prefix-caching",
+        "serve/prefill-decode-disaggregation",
         "serve/lora-adapters",
         "serve/speculative-decoding",
         "serve/parallelism",

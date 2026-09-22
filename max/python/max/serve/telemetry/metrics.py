@@ -577,7 +577,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.cache.used_host_kv_pct": _meter.create_histogram(
         "maxserve.cache.used_host_kv_pct",
         unit="percent",
-        description="Percentage of the host KV tier's bytes in use (0-100%), sampled once per scheduler batch when host paging is enabled.",
+        description="Percentage of the KV connector's host tier bytes in use (0-100%), sampled once per scheduler batch when a connector with a host tier is configured.",
     ),  # type: ignore
     "maxserve.cache.device_blocks_served": _meter.create_counter(
         "maxserve.cache.device_blocks_served",
@@ -593,7 +593,8 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="bytes",
         description=(
             "Cumulative KV bytes copied from the connector's host tier to "
-            "device. Rate this to see the PCIe bandwidth host paging consumes."
+            "device. Rate this to see the PCIe bandwidth the host tier "
+            "consumes."
         ),
     ),  # type: ignore
     "maxserve.cache.cross_replica_blocks_copied": _meter.create_counter(
@@ -650,7 +651,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.cache.used_disk_kv_pct": _meter.create_histogram(
         "maxserve.cache.used_disk_kv_pct",
         unit="percent",
-        description="Percentage of the disk KV tier's bytes in use (0-100%), sampled once per scheduler batch when disk paging is enabled.",
+        description="Percentage of the KV connector's disk tier bytes in use (0-100%), sampled once per scheduler batch when the connector has a disk tier.",
     ),  # type: ignore
     "maxserve.vision.images_encoded": _meter.create_counter(
         "maxserve.vision.images_encoded",
