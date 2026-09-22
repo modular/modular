@@ -32,8 +32,8 @@ kgen.func @loop(%arg0: i32, %arg1: i64) {
 
 // CHECK-LABEL: kgen.func @if
 kgen.func @if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
-  // CHECK-NEXT: hlcf.if %arg0 {
-  hlcf.if %arg0 {
+  // CHECK-NEXT: hlcf.elif %arg0 {
+  hlcf.elif %arg0 {
     // CHECK-NEXT: hlcf.yield
     hlcf.yield
   // CHECK-NEXT: } else {
@@ -43,8 +43,8 @@ kgen.func @if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
   // CHECK-NEXT: }
   }
 
-  // CHECK: %{{.*}} = hlcf.if %arg0 -> i32 {
-  %0 = hlcf.if %arg0 -> i32 {
+  // CHECK: %{{.*}} = hlcf.elif %arg0 -> i32 {
+  %0 = hlcf.elif %arg0 -> i32 {
     // CHECK-NEXT: hlcf.yield %arg1 : i32
     hlcf.yield %arg1 : i32
   // CHECK-NEXT: } else {
@@ -53,8 +53,8 @@ kgen.func @if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
     hlcf.yield %arg1 : i32
   }
 
-  // CHECK: %{{.*}} = hlcf.if %arg0 -> i32, i64
-  %1:2 = hlcf.if %arg0 -> i32, i64 {
+  // CHECK: %{{.*}} = hlcf.elif %arg0 -> i32, i64
+  %1:2 = hlcf.elif %arg0 -> i32, i64 {
     // CHECK-NEXT: hlcf.yield %arg1, %arg2 : i32, i64
     hlcf.yield %arg1, %arg2 : i32, i64
   } else {
@@ -68,16 +68,16 @@ kgen.func @if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
 kgen.func @func_loop_if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> i32 {
   // CHECK: %[[V0:.*]] = hlcf.loop (%[[A:.*]] = %arg2 : i64) -> i32
   %2 = hlcf.loop (%0 = %arg2 : i64) -> i32 {
-    // CHECK: %[[V1:.*]] = hlcf.if %arg0 -> i64
-    %1 = hlcf.if %arg0 -> i64 {
+    // CHECK: %[[V1:.*]] = hlcf.elif %arg0 -> i64
+    %1 = hlcf.elif %arg0 -> i64 {
       // CHECK: kgen.return %arg1 : i32
       kgen.return %arg1 : i32
     } else {
       // CHECK: hlcf.yield %[[A]] : i64
       hlcf.yield %0 : i64
     }
-    // CHECK: hlcf.if %arg0
-    hlcf.if %arg0 {
+    // CHECK: hlcf.elif %arg0
+    hlcf.elif %arg0 {
       // CHECK: hlcf.continue %[[A]] : i64
       hlcf.continue %0 : i64
     } else {
@@ -95,14 +95,14 @@ kgen.func @labelled_loops(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: i32) {
   %0 = hlcf.loop "foo" (%a0 = %arg0 : index) -> i32 {
     // CHECK-NEXT: hlcf.loop "bar" (%{{.*}} = %{{.*}} : i32) -> index
     %1 = hlcf.loop "bar" (%a1 = %arg1 : i32) -> index {
-      hlcf.if %cond {
+      hlcf.elif %cond {
         // CHECK: break %{{.*}} : index
         hlcf.break %a0 : index
       } else {
         // CHECK: break "bar" %{{.*}} : index
         hlcf.break "bar" %a0 : index
       }
-      hlcf.if %cond {
+      hlcf.elif %cond {
         // CHECK: break "foo" %{{.*}} : i32
         hlcf.break "foo" %a1 : i32
       } else {
@@ -322,8 +322,8 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
 kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
   // CHECK-NEXT: hlcf.match {
   hlcf.match {
-    // CHECK-NEXT: hlcf.if %arg0 {
-    hlcf.if %arg0 {
+    // CHECK-NEXT: hlcf.elif %arg0 {
+    hlcf.elif %arg0 {
       // CHECK-NEXT: "test.use"() : () -> ()
       "test.use"() : () -> ()
       // CHECK-NEXT: hlcf.match.complete

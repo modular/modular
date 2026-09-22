@@ -45,7 +45,7 @@ kgen.func @top1() -> index {
 }
 
 kgen.func @two_returns(%a: !kgen.scalar<bool>, %b: index, %c: index) -> index always_inline {
-  hlcf.if %a {
+  hlcf.elif %a {
     kgen.return %b : index
   } else {
     hlcf.yield
@@ -57,7 +57,7 @@ kgen.func @two_returns(%a: !kgen.scalar<bool>, %b: index, %c: index) -> index al
 kgen.func @top2() -> index {
   %0:3 = "produce"() : () -> (!kgen.scalar<bool>, index, index)
   // CHECK: %1 = hlcf.loop
-    // CHECK-NEXT: hlcf.if %0#0
+    // CHECK-NEXT: hlcf.elif %0#0
       // CHECK-NEXT: hlcf.break "{{.*}}" %0#1
   %1 = kgen.call @two_returns(%0#0, %0#1, %0#2) : (!kgen.scalar<bool>, index, index) -> index
     // CHECK: hlcf.break "{{.*}}" %0#2
@@ -69,7 +69,7 @@ kgen.func @top2() -> index {
 
 kgen.func @async_fn(%arg0: index) async -> index always_inline {
   %0 = pop.compiler.global_load "cond" : !kgen.scalar<bool>
-  hlcf.if %0 {
+  hlcf.elif %0 {
     %idx1 = index.constant 1
     kgen.return %idx1 : index
   } else {
@@ -85,7 +85,7 @@ kgen.func @call_it() -> !co.routine {
   pop.compiler.global_store "cond", %true : !kgen.scalar<bool>
   // CHECK: %0 = co.execute : index
   // CHECK:   %1 = pop.compiler.global_load
-  // CHECK:   hlcf.if %1
+  // CHECK:   hlcf.elif %1
   // CHECK:     kgen.return %idx1
   // CHECK:   kgen.return %idx2
   %coroHdl = co.invoke[(index) async -> index: @async_fn](%idx2)
@@ -142,7 +142,7 @@ kgen.func @top() {
 
 kgen.func @unreachable_and_early_ret() always_inline {
   %true = kgen.param.constant: scalar<bool> = <true>
-  hlcf.if %true {
+  hlcf.elif %true {
     kgen.return
   } else {
     hlcf.yield

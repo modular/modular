@@ -16,7 +16,7 @@ kgen.func @zero_starting_range() {
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
     %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
+    hlcf.elif %c0 {
       hlcf.yield
     } else {
       hlcf.break
@@ -43,7 +43,7 @@ kgen.func @sequential_range() {
   hlcf.loop (%arg0 = %idx1 : index) {
     %0 = index.cmp slt(%arg0, %idx4)
     %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
+    hlcf.elif %c0 {
       hlcf.yield
     } else {
       hlcf.break
@@ -70,7 +70,7 @@ kgen.func @strided_range() {
   hlcf.loop (%arg0 = %idx1 : index) {
     %0 = index.cmp slt(%arg0, %idx6)
     %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
+    hlcf.elif %c0 {
       hlcf.yield
     } else {
       hlcf.break
@@ -106,7 +106,7 @@ kgen.func @nested_unroll_loops() {
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
     %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
+    hlcf.elif %c0 {
       hlcf.yield
     } else {
       hlcf.break
@@ -117,7 +117,7 @@ kgen.func @nested_unroll_loops() {
     hlcf.loop (%arg1 = %idx4 : index) {
       %4 = index.cmp slt(%arg1, %idx8)
       %c4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
-      hlcf.if %c4 {
+      hlcf.elif %c4 {
         hlcf.yield
       } else {
         hlcf.break
@@ -146,7 +146,7 @@ kgen.func @zero_starting_range_not_decorated() {
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
     %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
+    hlcf.elif %c0 {
       hlcf.yield
     } else {
       hlcf.break
@@ -185,7 +185,7 @@ kgen.func @loop_carried_dependency() {
   %0:2 = hlcf.loop (%arg0 = %idx0 : index, %arg1 = %idx0 : index, %arg2 = %idx1 : index) -> (index, index) {
     %3 = index.cmp slt(%arg2, %idx9)
     %c3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
-    hlcf.if %c3 {
+    hlcf.elif %c3 {
       hlcf.yield
     } else {
       hlcf.break %arg0, %arg1 : index, index
@@ -196,7 +196,7 @@ kgen.func @loop_carried_dependency() {
     %7 = hlcf.loop (%arg3 = %arg1 : index, %arg4 = %idx4 : index) -> index {
       %8 = index.cmp slt(%arg4, %idx8)
       %c8 = pop.cast_from_builtin %8 : i1 to !kgen.scalar<bool>
-      hlcf.if %c8 {
+      hlcf.elif %c8 {
         hlcf.yield
       } else {
         hlcf.break %arg3 : index
@@ -235,7 +235,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
   %1 = hlcf.loop (%arg3 = %idx10 : index, %arg1 = %0 : !kgen.pointer<scalar<f32>>, %arg2 = %idx0 : index) -> index {
     %2 = index.cmp sgt(%arg3, %idx0)
     %c2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
-    hlcf.if %c2 {
+    hlcf.elif %c2 {
       hlcf.yield
     } else {
       hlcf.break %arg2 : index
@@ -261,7 +261,7 @@ kgen.func @complex_exit_logic_no_raise() {
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
     %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
+    hlcf.elif %c0 {
       hlcf.yield
     } else {
       kgen.call @bar(%arg0) : (index) -> ()
@@ -289,7 +289,7 @@ kgen.func @negative_step() {
   hlcf.loop (%arg0 = %idx5 : index) {
     %3 = index.cmp sgt(%arg0, %idx1)
     %c3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
-    hlcf.if %c3 {
+    hlcf.elif %c3 {
       hlcf.yield
     } else {
       hlcf.break
@@ -318,7 +318,7 @@ kgen.func @nested_loops_no_unroll_inner() {
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
     %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
+    hlcf.elif %c0 {
       hlcf.yield
     } else {
       hlcf.break
@@ -331,7 +331,7 @@ kgen.func @nested_loops_no_unroll_inner() {
     hlcf.loop (%arg1 = %idx1 : index) {
       %4 = index.cmp slt(%arg1, %arg0)
       %c4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
-      hlcf.if %c4 {
+      hlcf.elif %c4 {
         hlcf.yield
       } else {
         hlcf.break
@@ -357,7 +357,7 @@ kgen.func @nested_loops_no_unroll_inner() {
      // when for-loop is raise, this condition will be inverted to sle
      %1 = index.cmp sgt(%arg0, %idx10)
      %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
-     hlcf.if %c1 {
+     hlcf.elif %c1 {
        hlcf.break
      } else {
        hlcf.yield
@@ -382,7 +382,7 @@ kgen.func @return_value_same_as_iter_var()  {
     // loop return value is the same as iterVar: %arg0
     %2 = index.cmp slt(%arg0, %idx2)
     %c2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
-    hlcf.if %c2 {
+    hlcf.elif %c2 {
       hlcf.yield
     } else {
       hlcf.break %arg0 : index
@@ -402,7 +402,7 @@ kgen.func @stride_same_as_iter_var()  {
     // loop stride value is the same as iterVar: %arg0
     %2 = index.cmp slt(%arg0, %idx1)
     %c2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
-    hlcf.if %c2 {
+    hlcf.elif %c2 {
       hlcf.yield
     } else {
       hlcf.break %arg0 : index
@@ -422,7 +422,7 @@ kgen.func @non_const_loop_end()  {
     // loop end is not always constant
     %2 = index.cmp slt(%arg0, %arg1)
     %c2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
-    hlcf.if %c2 {
+    hlcf.elif %c2 {
       hlcf.yield
     } else {
       hlcf.break %arg0 : index
@@ -450,7 +450,7 @@ kgen.func @simple_call_in_break_branch() {
   hlcf.loop (%arg0 = %idx0 : index) {
     %1 = index.cmp sgt(%arg0, %idx10)
     %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
-    hlcf.if %c1 {
+    hlcf.elif %c1 {
       hlcf.yield
     } else {
       kgen.call @foo(%idx10) : (index) -> ()
@@ -476,7 +476,7 @@ kgen.func @intermediate_values_in_break_branch() {
   hlcf.loop (%arg0 = %idx0 : index) {
     %1 = index.cmp sgt(%arg0, %idx10)
     %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
-    hlcf.if %c1 {
+    hlcf.elif %c1 {
       hlcf.yield
     } else {
       %v0 = kgen.call @foo(%idx10) : (index) -> (index)
@@ -499,7 +499,7 @@ kgen.func @break_dependent_on_break_branch() {
   %loop = hlcf.loop (%arg0 = %idx0 : index) -> index {
     %1 = index.cmp sgt(%arg0, %idx10)
     %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
-    hlcf.if %c1 {
+    hlcf.elif %c1 {
       hlcf.yield
     } else {
       // Break is dependent on intermediate results from this branch. Abort.
@@ -522,7 +522,7 @@ kgen.func @dependent_ops_in_break_branch() {
   hlcf.loop (%arg0 = %idx0 : index) {
     %1 = index.cmp sgt(%arg0, %idx10)
     %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
-    hlcf.if %c1 {
+    hlcf.elif %c1 {
       hlcf.yield
     } else {
       // Op depends on internal value. Can no longer convert.
@@ -543,7 +543,7 @@ kgen.func @dynamic_bounds(%arg0: index) {
   hlcf.loop (%arg1 = %0 : index) {
     %2 = index.cmp slt(%arg1, %1)
     %c2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
-    hlcf.if %c2 {
+    hlcf.elif %c2 {
       hlcf.yield
     } else {
       hlcf.break
@@ -575,7 +575,7 @@ kgen.func @pop_cmp_si64_countdown() {
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<si64>) {
     %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, si64>
-    hlcf.if %cmp {
+    hlcf.elif %cmp {
       hlcf.yield
     } else {
       hlcf.break
@@ -607,7 +607,7 @@ kgen.func @pop_cmp_si8_countdown() {
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<si8>) {
     %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, si8>
-    hlcf.if %cmp {
+    hlcf.elif %cmp {
       hlcf.yield
     } else {
       hlcf.break
@@ -630,7 +630,7 @@ kgen.func @pop_cmp_f32_no_raise() {
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<f32>) {
     %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, f32>
-    hlcf.if %cmp {
+    hlcf.elif %cmp {
       hlcf.yield
     } else {
       hlcf.break
@@ -662,7 +662,7 @@ kgen.func @pop_cmp_index_countdown() {
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<index>) {
     %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, index>
-    hlcf.if %cmp {
+    hlcf.elif %cmp {
       hlcf.yield
     } else {
       hlcf.break
@@ -685,7 +685,7 @@ kgen.func @pop_cmp_uindex_countdown() {
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<uindex>) {
     %cmp  = pop.cmp gt(%arg0, %simd_0) : <1, uindex>
-    hlcf.if %cmp {
+    hlcf.elif %cmp {
       hlcf.yield
     } else {
       hlcf.break
@@ -704,7 +704,7 @@ kgen.func @donnot_crash_with_block_argument_cond() {
   %0 = kgen.param.constant: scalar<bool> = <false>
   %1 = kgen.param.constant: scalar<bool> = <true>
   hlcf.loop "_loop" (%arg2 = %1 : !kgen.scalar<bool>) {
-    hlcf.if %arg2 {
+    hlcf.elif %arg2 {
       hlcf.yield
     } else {
       hlcf.break "_loop"
@@ -725,7 +725,7 @@ kgen.func @loop_with_lit_try() {
   hlcf.loop (%arg0 = %idx0 : index) {
     %1 = index.cmp sgt(%arg0, %idx10)
     %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
-    hlcf.if %c1 {
+    hlcf.elif %c1 {
       hlcf.yield
     } else {
       lit.try "try0" {

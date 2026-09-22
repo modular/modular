@@ -901,8 +901,8 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       continue;
     }
 
-    // Process a HLCF::ElifOp / HLCF::IfOp / ParamIfOp with a known-constant
-    // condition: mark the unreachable arm(s) so we don't consider them live.
+    // Process a HLCF::ElifOp / ParamIfOp with a known-constant condition: mark
+    // the unreachable arm(s) so we don't consider them live.
     if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
       if (lowerElIfOp(elifOp, effects)) {
         // If the elif does not fall through, cut off the code after it.
@@ -925,19 +925,10 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       continue;
     }
 
-    // Otherwise we must have an if / comptime if.
-    assert((isa<HLCF::IfOp, ParamIfOp>(op)) &&
-           "Unknown operation with regions");
+    // Otherwise we must have a comptime if.
+    assert(isa<ParamIfOp>(op) && "Unknown operation with regions");
 
-    if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
-      SIMDAttr cond;
-      if (mlir::matchPattern(ifOp.getCond(), m_Constant(&cond))) {
-        Region *deadRegion =
-            &(cond.getAsBool() ? ifOp.getElseRegion() : ifOp.getThenRegion());
-        const char *message = cond.getAsBool() ? "'if True'" : "'if False'";
-        markRegionDeadDueToConstantCond(*deadRegion, message, op.getLoc());
-      }
-    } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+    if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
       if (auto cond = sugarDynCast<SIMDAttr>(ifOp.getCond())) {
         Region *deadRegion =
             &(cond.getAsBool() ? ifOp.getElseRegion() : ifOp.getThenRegion());
@@ -1029,8 +1020,7 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
-        isConditional ||
-        isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp, HLCF::MatchOp>(op);
+        isConditional || isa<ParamIfOp, HLCF::ElifOp, HLCF::MatchOp>(op);
     // Handle things like if statements, HLCF::Loop, try, etc.
     for (auto &region : op.getRegions()) {
       if (checkSelfRecursion(region.front(), isSubregionConditional))

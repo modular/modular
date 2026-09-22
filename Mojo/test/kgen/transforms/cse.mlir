@@ -22,10 +22,10 @@ kgen.func @cse_simple(%arg0: !kgen.scalar<bool>) -> index {
   // CHECK: [[INDEX:%.*]] = kgen.param.constant = <1>
   %index = kgen.param.constant: index = <1>
 
-  // CHECK-NEXT: hlcf.if
+  // CHECK-NEXT: hlcf.elif
   // CHECK: hlcf.yield [[INDEX]] : index
   // CHECK: hlcf.yield [[INDEX]] : index
-  %0 = hlcf.if %arg0 -> index{
+  %0 = hlcf.elif %arg0 -> index{
     %index_again = kgen.param.constant: index = <1>
     hlcf.yield %index_again : index
   } else {

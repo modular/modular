@@ -25,7 +25,7 @@
 kgen.generator @parent() -> index {
   // CHECK: %[[RES:.*]] = hlcf.loop "[[LABEL:.*]]" () -> index
     // CHECK-NEXT: index.constant 0 loc(#[[CONST_LOC:.*]])
-    // CHECK: hlcf.if
+    // CHECK: hlcf.elif
       // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index loc(#[[BREAK_LOC0:.*]])
     // CHECK: kgen.param.declare.region SomeClosure = () {
       // CHECK-NEXT: kgen.return loc(#[[CL_RET_LOC:.*]])
@@ -43,7 +43,7 @@ kgen.generator @callee() -> index always_inline {
   // CHECK: index.constant 0 loc(#[[CALLEE_LOC:.*]])
   %0 = index.constant 0 loc(#calleeMisc)
   %false = kgen.param.constant: scalar<bool> = <false> loc(#calleeMisc)
-  hlcf.if %false {
+  hlcf.elif %false {
     // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC0:.*]])
     kgen.return %0 : index loc(#ret0)
   } else {

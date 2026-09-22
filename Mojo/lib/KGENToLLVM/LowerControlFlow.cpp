@@ -128,20 +128,7 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
 
   b.setInsertionPointToEnd(before);
   // Replace the operation.
-  if (auto cond = dyn_cast<IfOp>(node.getOperation())) {
-    Type condType = typeConverter.convertType(cond.getCond().getType());
-    if (!condType)
-      return mlir::emitError(cond.getLoc(), "failed to convert condition type");
-    // We can not use cast_to_builtin here since mlir type converter insert
-    // `UnrealizedConversionCastOp` by default, and we need to do the same to
-    // cancel out type conversion.
-    auto condCast = mlir::UnrealizedConversionCastOp::create(
-        b, node->getLoc(), condType, cond.getCond());
-    LLVM::CondBrOp::create(b, node->getLoc(), condCast.getResult(0),
-                           entries.front(), ValueRange(), entries.back(),
-                           ValueRange());
-    b.eraseOp(node);
-  } else if (auto elif = dyn_cast<ElifOp>(node.getOperation())) {
+  if (auto elif = dyn_cast<ElifOp>(node.getOperation())) {
     // Multi-arm elif is expanded to nested 2-arm elifs before this pass.
     if (elif.getNumRegions() != 2)
       return elif.emitOpError("expected 2-region elif for LLVM lowering");

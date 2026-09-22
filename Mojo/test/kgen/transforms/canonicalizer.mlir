@@ -3,17 +3,6 @@
 // CHECK-LABEL: @if_to_select
 kgen.func @if_to_select(%arg0: !kgen.scalar<bool>, %arg1: f32, %arg2: f32) -> f32 {
   // CHECK-NEXT: pop.select %arg0, %arg1, %arg2 : f32
-  %0 = hlcf.if %arg0 -> f32 {
-    hlcf.yield %arg1 : f32
-  } else {
-    hlcf.yield %arg2 : f32
-  }
-  kgen.return %0 : f32
-}
-
-// CHECK-LABEL: @elif_to_select
-kgen.func @elif_to_select(%arg0: !kgen.scalar<bool>, %arg1: f32, %arg2: f32) -> f32 {
-  // CHECK-NEXT: pop.select %arg0, %arg1, %arg2 : f32
   %0 = hlcf.elif %arg0 -> f32 {
     hlcf.yield %arg1 : f32
   } else {
@@ -25,17 +14,6 @@ kgen.func @elif_to_select(%arg0: !kgen.scalar<bool>, %arg1: f32, %arg2: f32) -> 
 
 // CHECK-LABEL: @if_to_select
 kgen.func @if_to_select_dead_if(%arg0: !kgen.scalar<bool>) {
-  // CHECK-NEXT: return
-  hlcf.if %arg0 {
-    hlcf.yield
-  } else {
-    hlcf.yield
-  }
-  kgen.return
-}
-
-// CHECK-LABEL: @elif_to_select_dead
-kgen.func @elif_to_select_dead(%arg0: !kgen.scalar<bool>) {
   // CHECK-NEXT: return
   hlcf.elif %arg0 {
     hlcf.yield
@@ -50,7 +28,7 @@ kgen.func @if_to_select_multiple(%arg0: !kgen.scalar<bool>, %arg1: f32, %arg2: i
                                  %arg3: f32, %arg4: i32) -> (f32, i32) {
   // CHECK-NEXT: pop.select %arg0, %arg1, %arg3 : f32
   // CHECK-NEXT: pop.select %arg0, %arg2, %arg4 : i32
-  %0:2 = hlcf.if %arg0 -> f32, i32 {
+  %0:2 = hlcf.elif %arg0 -> f32, i32 {
     hlcf.yield %arg1, %arg2 : f32, i32
   } else {
     hlcf.yield %arg3, %arg4 : f32, i32
@@ -60,11 +38,11 @@ kgen.func @if_to_select_multiple(%arg0: !kgen.scalar<bool>, %arg1: f32, %arg2: i
 
 // CHECK-LABEL: @fold_if_single_add_then
 kgen.func @fold_if_single_add_then(%cond: !kgen.scalar<bool>, %arg0 : index, %arg1: index) -> index {
-  // CHECK-NOT: hlcf.if
+  // CHECK-NOT: hlcf.elif
   // CHECK:      %[[ADD:.*]] = index.add
   // CHECK-NEXT: %[[IF_RES:.*]] = pop.select {{.*}}, %[[ADD]], {{.*}}
   // CHECK-NEXT: kgen.return %[[IF_RES]]
-  %if_res = hlcf.if %cond -> index {
+  %if_res = hlcf.elif %cond -> index {
     %add = index.add %arg1, %arg0
     hlcf.yield %add: index
   } else {
@@ -75,13 +53,13 @@ kgen.func @fold_if_single_add_then(%cond: !kgen.scalar<bool>, %arg0 : index, %ar
 
 // CHECK-LABEL: @negative_fold_if_single_div_then
 kgen.func @negative_fold_if_single_div_then(%cond: !kgen.scalar<bool>, %arg0 : index, %arg1: index) -> index {
-  // CHECK: %0 = hlcf.if %arg0 -> index {
+  // CHECK: %0 = hlcf.elif %arg0 -> index {
   // CHECK:   %1 = index.divs %arg2, %arg1
   // CHECK:   hlcf.yield %1 : index
   // CHECK: } else {
   // CHECK:   hlcf.yield %arg2 : index
   // CHECK: }
-  %if_res = hlcf.if %cond -> index {
+  %if_res = hlcf.elif %cond -> index {
     %add = index.divs %arg1, %arg0
     hlcf.yield %add: index
   } else {
@@ -92,13 +70,13 @@ kgen.func @negative_fold_if_single_div_then(%cond: !kgen.scalar<bool>, %arg0 : i
 
 // CHECK-LABEL: @negative_fold_if_single_div_then_pop_type
 kgen.func @negative_fold_if_single_div_then_pop_type(%cond: !kgen.scalar<bool>, %arg0 : !kgen.scalar<index>, %arg1: !kgen.scalar<index>) -> !kgen.scalar<index> {
-  // CHECK: %0 = hlcf.if %arg0 -> !kgen.scalar<index> {
+  // CHECK: %0 = hlcf.elif %arg0 -> !kgen.scalar<index> {
   // CHECK:   %1 = pop.div %arg2, %arg1 : !kgen.scalar<index>
   // CHECK:   hlcf.yield %1 : !kgen.scalar<index>
   // CHECK: } else {
   // CHECK:   hlcf.yield %arg2 : !kgen.scalar<index>
   // CHECK: }
-  %if_res = hlcf.if %cond -> !kgen.scalar<index> {
+  %if_res = hlcf.elif %cond -> !kgen.scalar<index> {
     %add = pop.div %arg1, %arg0 : !kgen.scalar<index>
     hlcf.yield %add: !kgen.scalar<index>
   } else {
@@ -109,11 +87,11 @@ kgen.func @negative_fold_if_single_div_then_pop_type(%cond: !kgen.scalar<bool>, 
 
 // CHECK-LABEL: @fold_if_single_add_else
 kgen.func @fold_if_single_add_else(%cond: !kgen.scalar<bool>, %arg0 : index, %arg1: index) -> index {
-  // CHECK-NOT: hlcf.if
+  // CHECK-NOT: hlcf.elif
   // CHECK:      %[[ADD:.*]] = index.add
   // CHECK-NEXT: %[[IF_RES:.*]] = pop.select {{.*}}, {{.*}}, %[[ADD]]
   // CHECK-NEXT: kgen.return %[[IF_RES]]
-  %if_res = hlcf.if %cond -> index {
+  %if_res = hlcf.elif %cond -> index {
     hlcf.yield %arg0: index
   } else {
     %add = index.add %arg1, %arg0
@@ -124,12 +102,12 @@ kgen.func @fold_if_single_add_else(%cond: !kgen.scalar<bool>, %arg0 : index, %ar
 
 // CHECK-LABEL: @fold_if_single_add_then_sub_else
 kgen.func @fold_if_single_add_then_sub_else(%cond: !kgen.scalar<bool>, %arg0 : index, %arg1: index) -> index {
-  // CHECK-NOT: hlcf.if
+  // CHECK-NOT: hlcf.elif
   // CHECK:      %[[ADD:.*]] = index.add
   // CHECK-NEXT: %[[SUB:.*]] = index.sub
   // CHECK-NEXT: %[[IF_RES:.*]] = pop.select {{.*}}, %[[ADD]], %[[SUB]]
   // CHECK-NEXT: kgen.return %[[IF_RES]]
-  %if_res = hlcf.if %cond -> index {
+  %if_res = hlcf.elif %cond -> index {
     %add = index.add %arg1, %arg0
     hlcf.yield %add: index
   } else {
@@ -195,8 +173,8 @@ kgen.func @canonicalize_loop_range(%arg0: index, %arg1: index, %arg2: index) -> 
 kgen.func @condition_propagation(%cond: !kgen.scalar<bool>) {
   // CHECK: %[[FALSE:.*]] = kgen.param.constant: scalar<bool> = <false>
   // CHECK: %[[TRUE:.*]] = kgen.param.constant: scalar<bool> = <true>
-  // CHECK: hlcf.if
-  hlcf.if %cond {
+  // CHECK: hlcf.elif
+  hlcf.elif %cond {
     // CHECK-NEXT: "use"(%[[TRUE]])
     "use"(%cond) : (!kgen.scalar<bool>) -> ()
     hlcf.yield
@@ -248,15 +226,15 @@ kgen.func @select_variant_is_1(%arg0: index, %c: !kgen.scalar<bool>) -> (index, 
 // CHECK-LABEL: kgen.func @if_hoist_yield
 kgen.func @if_hoist_yield(%arg0: !kgen.scalar<bool>, %arg1: index) -> (index, index) {
   %idx0 = index.constant 0
-  // CHECK: hlcf.if %arg0 {
-  %0 = hlcf.if %arg0 -> index {
+  // CHECK: hlcf.elif %arg0 {
+  %0 = hlcf.elif %arg0 -> index {
     hlcf.yield %idx0 : index
   } else {
     kgen.unreachable
   }
   // CHECK: [[SELECT:%.*]] = pop.select %arg0, %idx0, %arg1
-  // CHECK: hlcf.if %arg0 {
-  %2:2 = hlcf.if %arg0 -> index, index {
+  // CHECK: hlcf.elif %arg0 {
+  %2:2 = hlcf.elif %arg0 -> index, index {
     %1 = "something"() : () -> index
     hlcf.yield %1, %idx0 : index, index
   } else {

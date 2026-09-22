@@ -21,13 +21,6 @@
 using namespace M;
 using namespace HLCF;
 
-/// True for `IfOp`, and for `ElifOp` only when there are no additional elif
-/// arms (i.e. it is a plain if/else).
-static bool isTwoArmIfLike(ElifOp op) { return op.getElifRegions().empty(); }
-static bool isTwoArmIfLike(IfOp op) {
-  return true; // no extra regions ever.
-}
-
 /// Erase all operations following the given OP in its parent region. The OP
 /// itself does not get deleted.
 static void eraseOpsAfter(PatternRewriter &rewriter, Operation *op) {
@@ -103,7 +96,7 @@ static LogicalResult hoistIdenticalYieldResults(Operation *op, Value cond,
 }
 
 //===----------------------------------------------------------------------===//
-// IfOp / ElifOp (2-arm) shared canonicalizations
+// ElifOp canonicalizations (2-arm if/else shape)
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -111,7 +104,7 @@ namespace {
 /// result with that value directly.
 ///
 ///   Before:
-///      %a, %b = hlcf.if %cond {
+///      %a, %b = hlcf.elif %cond {
 ///        hlcf.yield %c, %d
 ///      } else {
 ///        hlcf.yield %c, %d
@@ -120,13 +113,13 @@ namespace {
 ///
 ///   After:
 ///      return %c, %d
-template <typename OpTy>
-struct HoistYieldResults : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+struct HoistYieldResults : public OpRewritePattern<ElifOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(ElifOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
+    // TODO: Generalize to multi-arm elif (identical yields across all arms).
+    if (!op.getElifRegions().empty())
       return failure();
     if (!isa<YieldOp>(op.getThenTerminator()) ||
         !isa<YieldOp>(op.getElseTerminator()))
@@ -145,14 +138,15 @@ struct HoistYieldResults : public OpRewritePattern<OpTy> {
 /// If the condition is known at compile time, replace the op with the contents
 /// of the corresponding branch. If the block we're inserting doesn't end with
 /// YieldOp, operations following the original op will be discarded.
-template <typename OpTy>
-struct RemoveStaticCondition : public OpRewritePattern<OpTy> {
+struct RemoveStaticCondition : public OpRewritePattern<ElifOp> {
   RemoveStaticCondition(MLIRContext *ctx)
-      : OpRewritePattern<OpTy>(ctx, /*benefit=*/10) {}
+      : OpRewritePattern(ctx, /*benefit=*/10) {}
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(ElifOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
+    // TODO: Generalize to multi-arm elif (fold a constant first condition and
+    // leave remaining arms, or delete a dead then when the cond is false).
+    if (!op.getElifRegions().empty())
       return failure();
 
     KGEN::SIMDAttr condition;
@@ -168,13 +162,13 @@ struct RemoveStaticCondition : public OpRewritePattern<OpTy> {
 };
 
 /// If both branches end with return ops, replace the return ops with yield ops
-/// and insert a new return op right after the if/elif. All subsequent ops in
+/// and insert a new return op right after the elif. All subsequent ops in
 /// the basic block are erased.
 ///
 /// Before:                    After:
 /// {                          {
 ///   ...                        ...
-///   if %cond {                 %x = if %cond {
+///   elif %cond {               %x = elif %cond {
 ///      A                          A
 ///      return %a                  yield %a
 ///   } else {                   } else {
@@ -185,13 +179,15 @@ struct RemoveStaticCondition : public OpRewritePattern<OpTy> {
 /// }                          }
 ///
 /// This also works with 'break' and 'continue'.
-template <typename OpTy, typename TerminatorOpT>
-struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+template <typename TerminatorOpT>
+struct HoistUnconditionalReturn : public OpRewritePattern<ElifOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(ElifOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
+    // TODO: Generalize to multi-arm elif (all arms end in the same
+    // return/break/continue).
+    if (!op.getElifRegions().empty())
       return failure();
 
     auto thenTerm = dyn_cast<TerminatorOpT>(op.getThenTerminator());
@@ -212,8 +208,8 @@ struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
     // Create a new op and put a return right after it. We have to create a new
     // op because the number of results might differ from the original.
     auto newOp =
-        OpTy::create(rewriter, op.getLoc(),
-                     op.getThenTerminator()->getOperandTypes(), op.getCond());
+        ElifOp::create(rewriter, op.getLoc(),
+                       op.getThenTerminator()->getOperandTypes(), op.getCond());
     TerminatorOpT::create(rewriter, op.getLoc(), TypeRange(),
                           newOp->getResults(), thenTerm.getProperties(),
                           llvm::to_vector(thenTerm->getDiscardableAttrs()));
@@ -253,7 +249,7 @@ struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
 /// Before:                    After:
 /// {                          {
 ///   ...                        ...
-///   %x = if %cond {            %x = if %cond {
+///   %x = elif %cond {          %x = elif %cond {
 ///      %a = A                     %a = A
 ///      return %a                  yield %a
 ///   } else {                   } else {
@@ -264,13 +260,13 @@ struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
 ///   %t = C(%x)                 return %x
 ///   return %t
 /// }                          }
-template <typename OpTy>
-struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+struct HoistConditionalReturn : public OpRewritePattern<ElifOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(ElifOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
+    // TODO: Generalize to multi-arm elif (one arm exits, others yield).
+    if (!op.getElifRegions().empty())
       return failure();
 
     Block &parentBlock = op->getParentRegion()->front();
@@ -307,14 +303,14 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
 
     // If the parent block doesn't end with return, then we cannot return after
     // the op, which is how we want to hoist return op from its branch. Hence,
-    // bail out.  For a bit more generality, we handle nested IfOps/ElifOps too,
+    // bail out.  For a bit more generality, we handle nested ElifOps too,
     // e.g.:
-    //   %4 = hlcf.if %3 -> i1 {
+    //   %4 = hlcf.elif %3 -> i1 {
     //     pop.store %arg1, %arg3 : !kgen.pointer<index>
     //     hlcf.yield %1 : i1
     //   } else {
     //     ...
-    //     hlcf.if %6 {
+    //     hlcf.elif %6 {
     //       kgen.return %0 : i1
     //     } else {
     //       hlcf.yield
@@ -333,20 +329,19 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
         return;
       }
 
-      // Otherwise if we have a yield op from a 2-arm if/elif, then we can keep
+      // Otherwise if we have a yield op from a 2-arm elif, then we can keep
       // looking.
       auto yield = dyn_cast<YieldOp>(parentTerm);
-      Operation *parentIfLike = yield ? yield->getParentOp() : nullptr;
-      if (!yield || !(isa<IfOp>(parentIfLike) ||
-                      (isa<ElifOp>(parentIfLike) &&
-                       cast<ElifOp>(parentIfLike).getElifRegions().empty())))
+      auto parentElif =
+          yield ? dyn_cast<ElifOp>(yield->getParentOp()) : ElifOp();
+      if (!yield || !parentElif || !parentElif.getElifRegions().empty())
         return; // Give up.
-      // We're effectively going to hoist the return up the if tree.  We
+      // We're effectively going to hoist the return up the elif tree.  We
       // can't do this if it will skip over other operations, so make sure
-      // the return immediately follows the if.
-      Operation &termAfterIf = *std::next(Block::iterator(parentIfLike));
-      Operation *blockTerm = parentIfLike->getBlock()->getTerminator();
-      if (!isa<KGEN::ReturnOp, BreakOp, YieldOp>(termAfterIf) &&
+      // the return immediately follows the elif.
+      Operation &termAfterElif = *std::next(Block::iterator(parentElif));
+      Operation *blockTerm = parentElif->getBlock()->getTerminator();
+      if (!isa<KGEN::ReturnOp, BreakOp, YieldOp>(termAfterElif) &&
           // We can do this for the top level.
           parentTerm != yieldTerm)
         return; // Give up.
@@ -356,11 +351,11 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
         return; // If recursion failed, give up.
 
       // If we succeeded, we may need to remap the returned values, because
-      // they may be a consequence of the yield->if result values. For example
+      // they may be a consequence of the yield->elif result values. For example
       // we remap %4 in the example above to %1.
       for (auto &retVal : parentBlockTermOperands) {
         OpResult retRes = dyn_cast<OpResult>(retVal);
-        if (!retRes || retRes.getOwner() != parentIfLike)
+        if (!retRes || retRes.getOwner() != parentElif)
           continue;
         if (retRes.getResultNumber() >= yield->getNumOperands()) {
           actualParentTermOp = nullptr;
@@ -402,7 +397,7 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
               "operand types");
     if (yieldTerm->getNumOperands() != op.getNumResults())
       return rewriter.notifyMatchFailure(
-          op, "Yield operand count doesn't match if/elif results");
+          op, "Yield operand count doesn't match elif results");
     if (parentBlockTermOperands.size() != returnTerm->getNumOperands())
       return rewriter.notifyMatchFailure(
           op, "Remapped parent terminator operands don't match exiting "
@@ -411,8 +406,8 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
     // Now we know that we can transform this. Create a new op (we can't use
     // the original because we might need a different number of result values).
     auto newOp =
-        OpTy::create(rewriter, op.getLoc(),
-                     actualParentTermOp->getOperandTypes(), op.getCond());
+        ElifOp::create(rewriter, op.getLoc(),
+                       actualParentTermOp->getOperandTypes(), op.getCond());
 
     // Move the original 'then' and 'else' basic blocks into the new op.
     rewriter.inlineRegionBefore(op.getThenRegion(), newOp.getThenRegion(),
@@ -422,7 +417,7 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
 
     // Move the ops from the parent block following the original op to a
     // separate block and then move that block into the 'yield' block in the new
-    // if.
+    // elif.
     Block *remainderBlock =
         rewriter.splitBlock(op->getBlock(), op->getNextNode()->getIterator());
     rewriter.inlineBlockBefore(remainderBlock, yieldTerm->getBlock(),
@@ -447,7 +442,7 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
       KGEN::ReturnOp::create(rewriter, op.getLoc(), newOp->getResults());
     }
 
-    // The parent block terminator got sucked into the if, and is either a
+    // The parent block terminator got sucked into the elif, and is either a
     // return/break if it is one level, or a yield if it is deeper.  Replace it
     // with a yield of the operands we found.
     rewriter.setInsertionPoint(parentBlockTerm);
@@ -462,13 +457,13 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
   }
 };
 
-/// Remove unused results of the if/elif and any yields.
-template <typename OpTy>
-struct RemoveUnusedResults : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+/// Remove unused results of the elif and any yields.
+struct RemoveUnusedResults : public OpRewritePattern<ElifOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
-    if (!isTwoArmIfLike(op))
+  LogicalResult matchAndRewrite(ElifOp op, PatternRewriter &b) const override {
+    // TODO: Generalize to multi-arm elif (drop unused results from every arm).
+    if (!op.getElifRegions().empty())
       return failure();
 
     auto thenYield = dyn_cast<YieldOp>(op.getThenTerminator());
@@ -494,8 +489,8 @@ struct RemoveUnusedResults : public OpRewritePattern<OpTy> {
     if (elseYield)
       b.modifyOpInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
 
-    auto newOp = OpTy::create(b, op.getLoc(), TypeRange(ValueRange(toReplace)),
-                              op.getCond());
+    auto newOp = ElifOp::create(b, op.getLoc(),
+                                TypeRange(ValueRange(toReplace)), op.getCond());
     b.replaceAllUsesWith(toReplace, newOp.getResults());
     b.inlineRegionBefore(op.getThenRegion(), newOp.getThenRegion(),
                          newOp.getThenRegion().begin());
@@ -505,27 +500,15 @@ struct RemoveUnusedResults : public OpRewritePattern<OpTy> {
     return success();
   }
 };
-
-template <typename OpTy>
-static void addIfLikeCanonicalizationPatterns(RewritePatternSet &results,
-                                              MLIRContext *ctx) {
-  results.add<RemoveStaticCondition<OpTy>,
-              HoistUnconditionalReturn<OpTy, KGEN::ReturnOp>,
-              HoistUnconditionalReturn<OpTy, HLCF::BreakOp>,
-              HoistUnconditionalReturn<OpTy, HLCF::ContinueOp>,
-              HoistConditionalReturn<OpTy>, HoistYieldResults<OpTy>,
-              RemoveUnusedResults<OpTy>>(ctx);
-}
 } // namespace
-
-void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
-                                       MLIRContext *ctx) {
-  addIfLikeCanonicalizationPatterns<IfOp>(results, ctx);
-}
 
 void ElifOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                          MLIRContext *ctx) {
-  addIfLikeCanonicalizationPatterns<ElifOp>(results, ctx);
+  results.add<RemoveStaticCondition, HoistUnconditionalReturn<KGEN::ReturnOp>,
+              HoistUnconditionalReturn<HLCF::BreakOp>,
+              HoistUnconditionalReturn<HLCF::ContinueOp>,
+              HoistConditionalReturn, HoistYieldResults, RemoveUnusedResults>(
+      ctx);
 }
 
 //===----------------------------------------------------------------------===//

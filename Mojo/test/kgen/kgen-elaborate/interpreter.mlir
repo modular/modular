@@ -5,7 +5,7 @@ kgen.generator @recursive(%arg0: index) -> index {
   %idx1 = index.constant 1
   %0 = index.cmp sge(%arg0, %idx1)
   %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-  hlcf.if %c0 {
+  hlcf.elif %c0 {
     %1 = index.sub %arg0, %idx1
     %2 = kgen.call @recursive(%1) : (index) -> index
     kgen.return %2 : index
@@ -135,7 +135,7 @@ kgen.generator @sum(%from: index, %to: index) -> index {
   %result = hlcf.loop (%acc = %idx0 : index, %i = %from : index) -> index {
     %cond = index.cmp sle(%i, %to)
     %condb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
-    hlcf.if %condb {
+    hlcf.elif %condb {
       hlcf.yield
     } else {
       hlcf.break %acc : index
@@ -159,7 +159,7 @@ kgen.generator @call_it() {
 kgen.generator @early_return(%cond: i1) -> index {
   %idx0 = index.constant 0
   %condb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
-  %result = hlcf.if %condb -> index {
+  %result = hlcf.elif %condb -> index {
     hlcf.yield %idx0 : index
   } else {
     %idx1 = index.constant 1

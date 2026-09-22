@@ -787,7 +787,7 @@ def Mem2Reg : Pass<"mem-2-reg"> {
 
     ```mlir
     %0 = pop.stack_allocation 1 x index
-    hlcf.if %arg2 {
+    hlcf.elif %arg2 {
       pop.store %arg0, %0 : !kgen.pointer<index>
     } else {
       pop.store %arg1, %0 : !kgen.pointer<index>
@@ -824,7 +824,7 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants"> {
         %0 = kgen.struct.extract %s[0] : !kgen.pointer<struct<(index, index, index)>>
         hlcf.loop {
           %1 = kgen.struct.extract %s[1] : !kgen.pointer<struct<(index, index, index)>>
-          hlcf.if %arg2 {
+          hlcf.elif %arg2 {
             %2 = kgen.struct.extract %s[2] :
                         !kgen.pointer<struct<(index, index, index)>>
             // ...
@@ -845,7 +845,7 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants"> {
 
       hlcf.loop {
         hlcf.loop {
-          hlcf.if %arg2 {
+          hlcf.elif %arg2 {
             // ...
           } else {
             // ..

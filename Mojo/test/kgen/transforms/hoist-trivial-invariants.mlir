@@ -38,7 +38,7 @@ kgen.func @many_nests(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, stru
     %0 = kgen.struct.extract %struct[0] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
     hlcf.loop {
       %1 = kgen.struct.extract %struct[1] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
-      hlcf.if %cond {
+      hlcf.elif %cond {
         %2 = kgen.struct.extract %struct[2] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
         hlcf.yield
       } else {
@@ -74,8 +74,8 @@ kgen.func @hoist_loop_index(%arg0: index, %cond: !kgen.scalar<bool>) {
   // CHECK-NEXT: hlcf.loop
   hlcf.loop (%arg1 = %arg0 : index) {
     // CHECK-NEXT: index.add
-    // CHECK-NEXT: hlcf.if
-    hlcf.if %cond {
+    // CHECK-NEXT: hlcf.elif
+    hlcf.elif %cond {
       %0 = index.add %arg1, %arg0
       hlcf.yield
     } else {

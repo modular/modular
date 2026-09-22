@@ -249,19 +249,13 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
   Operation *parent = breakOp->getParentOp();
   Value ifCond;
   Region *thenRegion = nullptr;
-  if (auto ifOp = dyn_cast<IfOp>(parent)) {
-    ifCond = ifOp.getCond();
-    thenRegion = &ifOp.getThenRegion();
-  } else if (auto elifOp = dyn_cast<ElifOp>(parent)) {
-    // Multi-arm elif is expanded before this pass; only 2-region if/else shape
-    // is recognized as a loop exit test.
-    if (elifOp.getNumRegions() != 2)
-      return {};
-    ifCond = elifOp.getCond();
-    thenRegion = &elifOp.getThenRegion();
-  } else {
+  auto elifOp = dyn_cast<ElifOp>(parent);
+  // Multi-arm elif is expanded before this pass; only 2-region if/else shape
+  // is recognized as a loop exit test.
+  if (!elifOp || elifOp.getNumRegions() != 2)
     return {};
-  }
+  ifCond = elifOp.getCond();
+  thenRegion = &elifOp.getThenRegion();
 
   // `pop.cast_from_builtin`. Look through that cast to recognize  `index.cmp`
   // TODO: we won't need this after migrating scalar<int>, but the pattern
@@ -534,16 +528,13 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   }
 
   Operation *ifLikeParent = breakOp->getParentOp();
-  auto ifOp = dyn_cast<IfOp>(ifLikeParent);
   auto elifOp = dyn_cast<ElifOp>(ifLikeParent);
-  if (!ifOp && !(elifOp && elifOp.getNumRegions() == 2)) {
+  if (!elifOp || elifOp.getNumRegions() != 2) {
     return diag.attachNote(loop->getLoc())
            << "cannot infer loop bounds and steps";
   }
 
-  bool complexExit = ifOp ? hasComplexExitLogic(loop, ifOp)
-                          : hasComplexExitLogic(loop, elifOp);
-  if (complexExit) {
+  if (hasComplexExitLogic(loop, elifOp)) {
     // TODO: handle exit logic in loop unrolling and lower loops, which requires
     // raise ForOp to keep track of the exit block.
     return diag.attachNote(loop->getLoc()) << "loop has complex exit logic";
@@ -646,8 +637,8 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
   Operation *prevOp = nullptr;
   for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
-    if (&op == breakOp->getParentOp() && isa<IfOp, ElifOp>(op)) {
-      // Don't move the parent if/elif of the break to the ForOp body.
+    if (&op == breakOp->getParentOp() && isa<ElifOp>(op)) {
+      // Don't move the parent elif of the break to the ForOp body.
       continue;
     }
 

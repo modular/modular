@@ -343,62 +343,6 @@ HLCF::UnrollLevel LoopOp::getUnrollLevelValue() {
 }
 
 //===----------------------------------------------------------------------===//
-// IfOp
-//===----------------------------------------------------------------------===//
-
-void IfOp::getEntryTargets(ArrayRef<Attribute> operands,
-                           SmallVectorImpl<ControlFlowTarget> &targets) {
-  assert(operands.size() == 1);
-  if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands.front())) {
-    targets.emplace_back(cond.getAsBool() ? 0 : 1);
-  } else {
-    targets.emplace_back(0);
-    targets.emplace_back(1);
-  }
-}
-
-ValueRange IfOp::getEntryArguments(std::optional<unsigned> target) {
-  if (!target)
-    return getResults();
-  assert(*target == 0 || *target == 1);
-  return {};
-}
-
-ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
-                                   InterpreterState &state) {
-  auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0]);
-  if (!cond)
-    return ErrorTree(getLoc(), "non-constant condition");
-
-  return state.transferControlFlowTo(
-      cond.getAsBool() ? getThenRegion() : getElseRegion(), {});
-}
-
-ErrorTreeOrSuccess
-IfOp::parametric_interpret(ArrayRef<Attribute> operands,
-                           ParametricInterpreterState &state) {
-  return interpret(operands, state);
-}
-
-OpBuilder IfOp::getThenBodyBuilder() {
-  assert(!getThenRegion().empty() && "Need a then block");
-  return OpBuilder::atBlockEnd(&getThenRegion().front());
-}
-
-OpBuilder IfOp::getElseBodyBuilder() {
-  assert(!getElseRegion().empty() && "Need an else block");
-  return OpBuilder::atBlockEnd(&getElseRegion().front());
-}
-
-Block &IfOp::getThenBlock() { return getThenRegion().front(); }
-
-Block &IfOp::getElseBlock() { return getElseRegion().front(); }
-
-Operation *IfOp::getThenTerminator() { return getThenBlock().getTerminator(); }
-
-Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
-
-//===----------------------------------------------------------------------===//
 // SwitchOp
 //===----------------------------------------------------------------------===//
 
@@ -559,7 +503,7 @@ BreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool YieldOp::isParentNode(Operation *op) {
-  if (isa<IfOp, SwitchOp, ElifOp>(op))
+  if (isa<SwitchOp, ElifOp>(op))
     return true;
   // Yield in a match targets only the else region; case regions use
   // match.next / match.complete instead.

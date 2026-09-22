@@ -164,8 +164,8 @@ kgen.func @byref_throws(
   %0 = kgen.param.constant: i1 = <?>
   %cflag = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
 
-  // CHECK: hlcf.if %[[COND]]
-  hlcf.if %cflag {
+  // CHECK: hlcf.elif %[[COND]]
+  hlcf.elif %cflag {
     %1 = kgen.param.constant: scalar<bool> = <true>
     // CHECK: [[ERR:%.*]] = pop.load %[[ERROR]]
     // CHECK-NEXT: [[RESULT:%.*]] = kgen.variant.create [[ERR]], 0

@@ -294,7 +294,7 @@ lit.struct.decl @Int {}
 
 // CHECK-LABEL: @raises_error
 lit.fn @raises_error(%raise: !kgen.scalar<bool>, %err: !lit.struct<@Error>, %value: !lit.struct<@Int>) -> !kgen.variant<@Error, @Int> {
-  hlcf.if %raise {
+  hlcf.elif %raise {
     // CHECK: %[[ERR:.*]] = kgen.variant.create %err
     %result = kgen.variant.create %err, 0 : <@Error, @Int>
     // CHECK: kgen.return %[[ERR]]
@@ -334,7 +334,7 @@ lit.fn @try_op(%err: !lit.struct<@Error>, %int: !lit.struct<@Int>) -> !lit.struc
 lit.fn @try_in_loop(%cond: !kgen.scalar<bool>) {
   // CHECK-NEXT: lit.loop
   lit.loop {
-    hlcf.if %cond {
+    hlcf.elif %cond {
       hlcf.yield
     } else {
       lit.loop.break.else
@@ -342,8 +342,8 @@ lit.fn @try_in_loop(%cond: !kgen.scalar<bool>) {
 
     // CHECK: lit.try
     lit.try {
-      // CHECK-NEXT: hlcf.if
-      hlcf.if %cond {
+      // CHECK-NEXT: hlcf.elif
+      hlcf.elif %cond {
         // CHECK-NEXT: hlcf.break
         hlcf.break
       // CHECK-NEXT: else
@@ -407,8 +407,8 @@ lit.struct.decl @Error {}
 lit.fn @lexical_terminators(%cond: !kgen.scalar<bool>) throws -> !kgen.variant<i32, i64> {
   // CHECK: lit.loop
   lit.loop {
-    // CHECK: hlcf.if
-    hlcf.if %cond {
+    // CHECK: hlcf.elif
+    hlcf.elif %cond {
       // CHECK-NEXT: lit.break
       lit.break
       hlcf.yield
@@ -530,7 +530,7 @@ lit.struct.decl @StructHasTraits(trait<@Trait1, @Trait2, @Trait3>) {}
 lit.fn @lit_loop() {
   lit.loop {
     %0 = kgen.param.constant: scalar<bool> = <true>
-    hlcf.if %0 {
+    hlcf.elif %0 {
       hlcf.yield
     } else {
       lit.loop.break.else

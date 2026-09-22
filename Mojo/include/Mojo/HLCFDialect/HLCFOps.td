@@ -235,7 +235,7 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     %0:2 = hlcf.loop (%lc0 = %arg0 : index) -> (i32, i64) {
       %1 = index.add %lc0, %c1
       %2 = index.cmp le(%1, %c10)
-      hlcf.if %2 {
+      hlcf.elif %2 {
         hlcf.continue %1 : index
       } else {
         hlcf.yield
@@ -293,97 +293,6 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     HLCF::UnrollLevel getUnrollLevelValue();
   }];
 
-  let hasCanonicalizer = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// IfOp
-//===----------------------------------------------------------------------===//
-
-def HLCF_IfOp : HLCFParentOp<"if"> {
-  let summary = "if operation";
-  let description = [{
-    The `hlcf.if` operation defines two scoped control-flow regions.
-    Control-flow transfers from the operation to the beginning of one of the
-    regions based on the value of the condition operand. The if operation is the
-    target of the `hlcf.yield` terminator.
-
-    This operation forms a condition construct. The immediate regions of the
-    operation are condition scopes. There are no nested condition scopes; only
-    `hlcf.yield` operations nested immediately under the operation can be used
-    to branch to after the operation.
-
-    Example:
-
-    ```mlir
-    hlcf.if %arg0 {
-      call @do_something()
-      hlcf.yield
-    } else {
-      call @do_something_else()
-      hlcf.yield
-    }
-    ```
-
-    This also means the operation can be used to conditionally execute the
-    nearest surrounding loop.
-
-    Example:
-
-    ```mlir
-    hlcf.loop {
-      hlcf.if %arg0 {
-        hlcf.break
-      } else {
-        hlcf.yield
-      }
-      hlcf.continue
-    }
-    ```
-
-    The operation can have results. Each `hlcf.yield` operation nested under
-    an `hlcf.if` operation must have the same operand types as the latter's
-    result types.
-
-    Example:
-
-    ```mlir
-    %0 = hlcf.if %arg0 -> index {
-      hlcf.yield %arg1 : index
-    } else {
-      hlcf.yield %arg2 : index
-    }
-    ```
-  }];
-
-  let arguments = (ins HLCF_BoolScalar:$cond);
-  let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$thenRegion,
-                        SizedRegion<1>:$elseRegion);
-
-  let assemblyFormat = [{
-    $cond (`->` type($results)^)? $thenRegion `else` $elseRegion
-    attr-dict
-  }];
-
-  let builders = [OpBuilder<(ins "Value":$cond), [{
-    build($_builder, $_state, {}, cond);
-  }]>];
-
-  let extraClassDeclaration = [{
-    /// Return OpBuilder's pointing the end of the then/else block.
-    OpBuilder getThenBodyBuilder();
-    OpBuilder getElseBodyBuilder();
-
-    /// Get 'then' block.
-    Block& getThenBlock();
-    /// Get 'else' block.
-    Block& getElseBlock();
-    /// Get the terminator op from 'then' block.
-    Operation* getThenTerminator();
-    /// Get the terminator op from 'else' block.
-    Operation* getElseTerminator();
-  }];
   let hasCanonicalizer = 1;
 }
 
@@ -534,12 +443,12 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
 //===----------------------------------------------------------------------===//
 
 def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
-    ParentOneOf<["IfOp", "SwitchOp", "ElifOp", "MatchOp"]>,
+    ParentOneOf<["SwitchOp", "ElifOp", "MatchOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `hlcf.yield` operation is a control-flow terminator that transfers
-    control-flow to after the parent `hlcf.if`, `hlcf.switch`, `hlcf.elif`, or
+    control-flow to after the parent `hlcf.elif`, `hlcf.switch`, or
     `hlcf.match` operation. For `hlcf.match`, yield is only valid in the else
     region (case regions use `hlcf.match.next` / `hlcf.match.complete`). The
     operation expects its operand types to match the types of the results of
@@ -548,7 +457,7 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
     Example:
 
     ```mlir
-    %0 = hlcf.if %arg0 -> index {
+    %0 = hlcf.elif %arg0 -> index {
       hlcf.yield %arg1 : index
     } else {
       hlcf.yield %arg2 : index
@@ -754,7 +663,7 @@ def HLCF_MatchNextOp : HLCFTerminatorOp<"match.next", [
     region of that match.
 
     This terminator may appear nested under structured control flow such as
-    `hlcf.if`, and always targets the nearest enclosing `hlcf.match` for which
+    `hlcf.elif`, and always targets the nearest enclosing `hlcf.match` for which
     the terminator sits in a *case* region. The `else` region of a match is
     outside that match's scope: `hlcf.match.next` inside an `else` targets an
     enclosing match, not the current one.
@@ -823,7 +732,7 @@ def HLCF_MatchOp : HLCFParentOp<"match"> {
     `hlcf.match.next` to continue with the next case, or with
     `hlcf.match.complete` to finish the match without evaluating later cases.
     These terminators may occur within nested structured control-flow
-    operations (such as `hlcf.if`) and target the nearest enclosing
+    operations (such as `hlcf.elif`) and target the nearest enclosing
     `hlcf.match`. If `hlcf.match.next` is executed from the final case region,
     the match enters the else region.
 
@@ -837,7 +746,7 @@ def HLCF_MatchOp : HLCFParentOp<"match"> {
     ```mlir
     hlcf.match {
       %matches = ...
-      hlcf.if %matches {
+      hlcf.elif %matches {
         call @handle_zero()
         hlcf.match.complete
       } else {

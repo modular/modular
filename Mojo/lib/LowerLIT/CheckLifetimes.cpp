@@ -3067,7 +3067,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
       break;
     case OverallOpValueEffect::elifOp: {
       auto elifOp = cast<HLCF::ElifOp>(op);
-      // A single if/else shaped elif has the same region layout as IfOp.
+      // A single if/else shaped elif has the same region layout as ParamIfOp.
       if (elifOp.getElifRegions().empty())
         checkIfLikeOp(op);
       else
@@ -3209,11 +3209,11 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is HLCF::IfOp, ParamIfOp, or a simple (no extra arms) HLCF::ElifOp.
+/// This is ParamIfOp, or a simple (no extra arms) HLCF::ElifOp.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
-  assert((isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp>(op)));
+  assert((isa<ParamIfOp, HLCF::ElifOp>(op)));
   assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
          op.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
@@ -4431,8 +4431,8 @@ void DestructorInsertion::scanBlock(Block &block) {
       break;
     case OverallOpValueEffect::elifOp: {
       auto elifOp = cast<HLCF::ElifOp>(op);
-      // A single if/else shaped elif has the same region layout as IfOp; reuse
-      // the proven if-like destructor logic (important inside loops).
+      // A single if/else shaped elif has the same region layout as ParamIfOp;
+      // reuse the proven if-like destructor logic (important inside loops).
       if (elifOp.getElifRegions().empty())
         checkIfLikeOp(op, opEffects.results);
       else
@@ -4675,7 +4675,7 @@ void DestructorInsertion::checkIfLikeOp(
 
   // If there are any result effects, process them first before going into the
   // body.  This happens when the 'if' defines an owned register value, as in:
-  //   %x = hlcf.if %cond { } else { }
+  //   %x = hlcf.elif %cond { } else { }
   //   -> here.
   // If the register result isn't used, for example, we want the dtor inserted
   // below the 'if' and not propagated into the arms of the 'if'.

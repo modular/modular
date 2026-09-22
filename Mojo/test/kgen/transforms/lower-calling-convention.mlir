@@ -46,8 +46,8 @@ kgen.func @early_return_loop() -> !kgen.none {
 // CHECK-LABEL: kgen.func @if_none
 kgen.func @if_none(%arg0: !kgen.scalar<bool>, %arg1: i32) {
   %none = kgen.param.constant: none = <#kgen.none>
-  // CHECK: %0 = hlcf.if %arg0 -> i32
-  %0:2 = hlcf.if %arg0 -> !kgen.none, i32 {
+  // CHECK: %0 = hlcf.elif %arg0 -> i32
+  %0:2 = hlcf.elif %arg0 -> !kgen.none, i32 {
     // CHECK: hlcf.yield %arg1
     hlcf.yield %none, %arg1 : !kgen.none, i32
   } else {

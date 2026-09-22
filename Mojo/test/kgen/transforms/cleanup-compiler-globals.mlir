@@ -27,8 +27,8 @@ kgen.func @multiLoadNested(%pred : !kgen.scalar<bool>) -> index {
   %idx0 = index.constant 0
   pop.compiler.global_store "aGlobal", %idx0 : index
   %0 = pop.compiler.global_load "aGlobal" : index
-  // CHECK-NEXT: hlcf.if %arg0 {
-  hlcf.if %pred {
+  // CHECK-NEXT: hlcf.elif %arg0 {
+  hlcf.elif %pred {
     // CHECK-NOT: pop.compiler.global_load
     %1 = pop.compiler.global_load "aGlobal" : index
     // CHECK-NEXT: hlcf.yield

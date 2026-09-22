@@ -632,8 +632,8 @@ kgen.generator @nestedConstexprIf2() {
   } else {
     // CHECK-NEXT: param.constant: scalar<bool> = <true>
     %condition = kgen.param.constant : scalar<bool> = <gt(cond_var, 30)>
-    // CHECK-NEXT: hlcf.if
-    %3 = hlcf.if %condition -> index {
+    // CHECK-NEXT: hlcf.elif
+    %3 = hlcf.elif %condition -> index {
       // CHECK-NEXT: "should.appear"
       %4 = "should.appear"() : () -> index
       kgen.param.declare next_inner = <35>
@@ -1153,7 +1153,7 @@ kgen.generator @bat_binder(%arg0: index) {
 // -----
 
 kgen.generator @count_ops(%arg0: !kgen.scalar<bool>) -> index {
-  %0 = hlcf.if %arg0 -> index {
+  %0 = hlcf.elif %arg0 -> index {
     %idx0 = index.constant 0
     hlcf.yield %idx0 : index
   } else {

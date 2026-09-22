@@ -389,7 +389,7 @@ struct StmtParser : public ParserBase {
   /// location for an import statement. Imports are permitted at module scope
   /// (FileModuleOp) and at function scope (FnOp), including inside comptime
   /// control-flow (ParamIfOp, ParamForOp) which is transparent to this check.
-  /// Runtime control-flow bodies (HLCF::IfOp, LIT::LoopOp, etc.) are
+  /// Runtime control-flow bodies (HLCF::ElifOp, LIT::LoopOp, etc.) are
   /// rejected. \p kwLoc should be the location of the leading `from` or
   /// `import` keyword so the diagnostic caret lands on the keyword.
   ParseResult checkImportScope(SMLoc kwLoc);
@@ -3610,7 +3610,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
 /// directly at module scope (FileModuleOp) or at function scope (FnOp).
 /// Within a function, comptime control-flow ops (ParamIfOp, ParamForOp) are
 /// transparent — the check walks through them. Any other intervening op
-/// (e.g. HLCF::IfOp, LIT::LoopOp) indicates runtime control flow and is
+/// (e.g. HLCF::ElifOp, LIT::LoopOp) indicates runtime control flow and is
 /// rejected. Struct, trait, and extension bodies are also rejected.
 ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   Operation *parent = getParentDecl().getIfOperation();
@@ -3620,7 +3620,7 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   // Within a function, walk up the region chain from the current insertion
   // point to the FnOp. Comptime control-flow ops (ParamIfOp, ParamForOp) are
   // transparent — we continue walking through them. Any other op in between
-  // (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control flow and the import
+  // (HLCF::ElifOp, LIT::LoopOp, etc.) is runtime control flow and the import
   // is rejected.
   if (isa_and_nonnull<FnOp>(parent)) {
     Block *block = builder.getInsertionBlock();

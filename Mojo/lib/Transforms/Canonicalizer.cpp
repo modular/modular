@@ -55,22 +55,15 @@ static bool isEmpty(Region &region) {
 
 namespace {
 
-/// True for `IfOp`, and for `ElifOp` only when there are no additional elif
-/// arms (simple if/else). Multi-arm elif is lowered to nested 2-arm form
-/// before LLVM; these patterns only apply to that shape.
-static bool isTwoArmIfLike(HLCF::IfOp) { return true; }
-static bool isTwoArmIfLike(HLCF::ElifOp op) {
-  return op.getElifRegions().empty();
-}
+/// Canonicalize elifs with no bodies an N results to N selects. This also
+/// removes trivially dead elifs.
+struct EmptyIfToSelect : public OpRewritePattern<HLCF::ElifOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-/// Canonicalize ifs with no bodies an N results to N selects. This also removes
-/// trivially dead ifs.
-template <typename OpTy>
-struct EmptyIfToSelect : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
-    if (!isTwoArmIfLike(op))
+  LogicalResult matchAndRewrite(HLCF::ElifOp op,
+                                PatternRewriter &b) const override {
+    // TODO: Generalize to multi-arm elif (empty arms yielding values).
+    if (!op.getElifRegions().empty())
       return failure();
     auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
     auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
@@ -92,16 +85,16 @@ struct EmptyIfToSelect : public OpRewritePattern<OpTy> {
   }
 };
 
-/// Canonicalize ifs with a single operation in either then or else blocks into
-/// a select of the yields. The canonicalization hoists out the operation(s)
-/// therefore they're performed unconditionally.
-template <typename OpTy>
-struct IfToSelect : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+/// Canonicalize elifs with a single operation in either then or else blocks
+/// into a select of the yields. The canonicalization hoists out the
+/// operation(s) therefore they're performed unconditionally.
+struct IfToSelect : public OpRewritePattern<HLCF::ElifOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(HLCF::ElifOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
+    // TODO: Generalize to multi-arm elif (nested selects of single-op arms).
+    if (!op.getElifRegions().empty())
       return failure();
     if (op.getNumResults() != 1)
       return failure();
@@ -162,12 +155,13 @@ struct IfToSelect : public OpRewritePattern<OpTy> {
   }
 };
 
-template <typename OpTy>
-struct IfYieldSelect : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+struct IfYieldSelect : public OpRewritePattern<HLCF::ElifOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
-    if (!isTwoArmIfLike(op))
+  LogicalResult matchAndRewrite(HLCF::ElifOp op,
+                                PatternRewriter &b) const override {
+    // TODO: Generalize to multi-arm elif (nested selects of dominating yields).
+    if (!op.getElifRegions().empty())
       return failure();
     auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
     auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
@@ -175,7 +169,7 @@ struct IfYieldSelect : public OpRewritePattern<OpTy> {
     // regions.
     mlir::DominanceInfo domInfo;
     auto dominatesIf = [&](Value value) {
-      // Block arguments always dominate the IfOp, because it itself can never
+      // Block arguments always dominate the elif, because it itself can never
       // have block arguments. Otherwise, check dominance of the defining
       // operation.
       return isa<BlockArgument>(value) ||
@@ -198,7 +192,7 @@ struct IfYieldSelect : public OpRewritePattern<OpTy> {
       return success(anyChanged);
     }
 
-    // The end of the IfOp is unreachable.
+    // The end of the elif is unreachable.
     if (!thenYield)
       return failure();
 
@@ -433,16 +427,17 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
   }
 };
 
-/// Given an if, the condition argument is known to be true within the 'then'
+/// Given an elif, the condition argument is known to be true within the 'then'
 /// region and false in the 'else' region. Propagate this by replacing the
 /// condition with a constant in both regions.
-template <typename OpTy>
-struct ConditionPropagation : OpRewritePattern<OpTy> {
+struct ConditionPropagation : OpRewritePattern<HLCF::ElifOp> {
   ConditionPropagation(MLIRContext *ctx)
-      : OpRewritePattern<OpTy>(ctx, /*benefit=*/9) {}
+      : OpRewritePattern(ctx, /*benefit=*/9) {}
 
-  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
-    if (!isTwoArmIfLike(op))
+  LogicalResult matchAndRewrite(HLCF::ElifOp op,
+                                PatternRewriter &b) const override {
+    // TODO: Generalize to multi-arm elif (propagate true/false into each arm).
+    if (!op.getElifRegions().empty())
       return failure();
     // The pattern matches if the condition has uses in either region. Lazily
     // create the true and false constants.
@@ -516,17 +511,13 @@ void Canonicalizer::addNonCustomCanonicalizationPatterns(
 
   // clang-format off
   patterns.insert<
-    EmptyIfToSelect<HLCF::IfOp>,
-    EmptyIfToSelect<HLCF::ElifOp>,
-    IfToSelect<HLCF::IfOp>,
-    IfToSelect<HLCF::ElifOp>,
-    IfYieldSelect<HLCF::IfOp>,
-    IfYieldSelect<HLCF::ElifOp>,
+    EmptyIfToSelect,
+    IfToSelect,
+    IfYieldSelect,
     IndexifyComparison,
     InvertComparison,
     SimplifyCompareSelect,
-    ConditionPropagation<HLCF::IfOp>,
-    ConditionPropagation<HLCF::ElifOp>
+    ConditionPropagation
    >(context);
   // clang-format on
 }
