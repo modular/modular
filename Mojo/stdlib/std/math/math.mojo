@@ -862,13 +862,18 @@ def frexp[
     # Add one to the resulting exponent up by subtracting 1 from the bias
     comptime exponent_bias = FPUtils[dtype].exponent_bias() - 1
     comptime mantissa_width = FPUtils[dtype].mantissa_width()
+    comptime subnorm_scale = T(
+        from_bits=TInt(
+            (mantissa_width + FPUtils[dtype].exponent_bias()) << mantissa_width
+        )
+    )
 
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
 
     var subnorm_test = (x._to_bits_signed() & mask1).eq(0) & x.ne(0)
     var t = subnorm_test.select(TInt(mantissa_width), TInt(0))
-    var x0 = subnorm_test.select(T(2.0**mantissa_width) * x, x)
+    var x0 = subnorm_test.select(subnorm_scale * x, x)
 
     var x_int = x0._to_bits_signed()
     var selector = x0.ne(zero)
