@@ -316,8 +316,9 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
 
   // TODO: Add support for other ControlFlowNode, e.g. kgen.try, etc.
   // TODO: issue #23376, this function should work more generally for
-  // ControlFlowInterfaces.
-  if (isa<IfOp, SwitchOp>(node.getOperation())) {
+  // ControlFlowInterfaces. Include ElIfOp: after LowerLIT keeps 2-arm elif,
+  // Never/unreachable arms need the same early-exit handling as IfOp.
+  if (isa<IfOp, ElifOp, SwitchOp>(node.getOperation())) {
 
     // TODO: extend this logic to SwitchOp.
     SmallVector<Attribute> constantOperands;

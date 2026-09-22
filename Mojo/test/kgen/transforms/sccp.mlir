@@ -468,6 +468,36 @@ kgen.func @break_in_untaken_branch() -> index {
   kgen.return %0: index
 }
 
+// COM: Same as @break_in_untaken_branch but with hlcf.elif (kept past LowerLIT).
+// CHECK-LABEL: @break_in_untaken_elif_branch
+kgen.func @break_in_untaken_elif_branch() -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx3 = index.constant 3
+  %idx5 = index.constant 5
+  %false = kgen.param.constant: scalar<bool> = <false>
+
+  %0 = hlcf.loop(%arg0 = %idx0: index) -> index {
+    hlcf.elif %false {
+      hlcf.break %idx1: index
+    } else {
+      hlcf.yield
+    }
+    %1 = index.cmp eq(%arg0, %idx3)
+    %b1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.elif %b1 {
+      hlcf.break %idx5: index
+    } else {
+      hlcf.yield
+    }
+    %2 = index.add %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+
+  // CHECK: kgen.return %idx5
+  kgen.return %0: index
+}
+
 // COM: A break in a switch case the index does not select cannot execute.
 // CHECK-LABEL: @break_in_untaken_switch_case
 kgen.func @break_in_untaken_switch_case() -> index {

@@ -11,11 +11,33 @@ kgen.func @if_to_select(%arg0: !kgen.scalar<bool>, %arg1: f32, %arg2: f32) -> f3
   kgen.return %0 : f32
 }
 
+// CHECK-LABEL: @elif_to_select
+kgen.func @elif_to_select(%arg0: !kgen.scalar<bool>, %arg1: f32, %arg2: f32) -> f32 {
+  // CHECK-NEXT: pop.select %arg0, %arg1, %arg2 : f32
+  %0 = hlcf.elif %arg0 -> f32 {
+    hlcf.yield %arg1 : f32
+  } else {
+    hlcf.yield %arg2 : f32
+  }
+  kgen.return %0 : f32
+}
+
 
 // CHECK-LABEL: @if_to_select
 kgen.func @if_to_select_dead_if(%arg0: !kgen.scalar<bool>) {
   // CHECK-NEXT: return
   hlcf.if %arg0 {
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @elif_to_select_dead
+kgen.func @elif_to_select_dead(%arg0: !kgen.scalar<bool>) {
+  // CHECK-NEXT: return
+  hlcf.elif %arg0 {
     hlcf.yield
   } else {
     hlcf.yield

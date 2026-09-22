@@ -55,13 +55,23 @@ static bool isEmpty(Region &region) {
 
 namespace {
 
+/// True for `IfOp`, and for `ElifOp` only when there are no additional elif
+/// arms (simple if/else). Multi-arm elif is lowered to nested 2-arm form
+/// before LLVM; these patterns only apply to that shape.
+static bool isTwoArmIfLike(HLCF::IfOp) { return true; }
+static bool isTwoArmIfLike(HLCF::ElifOp op) {
+  return op.getElifRegions().empty();
+}
+
 /// Canonicalize ifs with no bodies an N results to N selects. This also removes
 /// trivially dead ifs.
-struct EmptyIfToSelect : public OpRewritePattern<HLCF::IfOp> {
-  using OpRewritePattern::OpRewritePattern;
+template <typename OpTy>
+struct EmptyIfToSelect : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HLCF::IfOp op,
-                                PatternRewriter &b) const override {
+  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
+    if (!isTwoArmIfLike(op))
+      return failure();
     auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
     auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
     if (!isEmpty(op.getThenRegion()) || !isEmpty(op.getElseRegion()) ||
@@ -85,11 +95,14 @@ struct EmptyIfToSelect : public OpRewritePattern<HLCF::IfOp> {
 /// Canonicalize ifs with a single operation in either then or else blocks into
 /// a select of the yields. The canonicalization hoists out the operation(s)
 /// therefore they're performed unconditionally.
-struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
-  using OpRewritePattern::OpRewritePattern;
+template <typename OpTy>
+struct IfToSelect : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HLCF::IfOp op,
+  LogicalResult matchAndRewrite(OpTy op,
                                 PatternRewriter &rewriter) const override {
+    if (!isTwoArmIfLike(op))
+      return failure();
     if (op.getNumResults() != 1)
       return failure();
 
@@ -149,11 +162,13 @@ struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
   }
 };
 
-struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
-  using OpRewritePattern::OpRewritePattern;
+template <typename OpTy>
+struct IfYieldSelect : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HLCF::IfOp op,
-                                PatternRewriter &b) const override {
+  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
+    if (!isTwoArmIfLike(op))
+      return failure();
     auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
     auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
     // Constructing dominance info is cheap because we have single-block
@@ -421,12 +436,14 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
 /// Given an if, the condition argument is known to be true within the 'then'
 /// region and false in the 'else' region. Propagate this by replacing the
 /// condition with a constant in both regions.
-struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
+template <typename OpTy>
+struct ConditionPropagation : OpRewritePattern<OpTy> {
   ConditionPropagation(MLIRContext *ctx)
-      : OpRewritePattern(ctx, /*benefit=*/9) {}
+      : OpRewritePattern<OpTy>(ctx, /*benefit=*/9) {}
 
-  LogicalResult matchAndRewrite(HLCF::IfOp op,
-                                PatternRewriter &b) const override {
+  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
+    if (!isTwoArmIfLike(op))
+      return failure();
     // The pattern matches if the condition has uses in either region. Lazily
     // create the true and false constants.
     Value trueCst, falseCst;
@@ -499,13 +516,17 @@ void Canonicalizer::addNonCustomCanonicalizationPatterns(
 
   // clang-format off
   patterns.insert<
-    EmptyIfToSelect,
-    IfToSelect,
-    IfYieldSelect,
+    EmptyIfToSelect<HLCF::IfOp>,
+    EmptyIfToSelect<HLCF::ElifOp>,
+    IfToSelect<HLCF::IfOp>,
+    IfToSelect<HLCF::ElifOp>,
+    IfYieldSelect<HLCF::IfOp>,
+    IfYieldSelect<HLCF::ElifOp>,
     IndexifyComparison,
     InvertComparison,
     SimplifyCompareSelect,
-    ConditionPropagation
+    ConditionPropagation<HLCF::IfOp>,
+    ConditionPropagation<HLCF::ElifOp>
    >(context);
   // clang-format on
 }
