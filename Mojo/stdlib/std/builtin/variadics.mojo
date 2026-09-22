@@ -1201,9 +1201,8 @@ struct VariadicList[
         deinit self,
         elt_handler: Some[def(idx: Int, var elt: Self.element_type)],
     ) where (
-        Self.is_owned,
-        "consume_elements may only be called on owned variadic lists",
-    ):
+        Self.is_owned
+    ) else "consume_elements may only be called on owned variadic lists":
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
@@ -1350,7 +1349,7 @@ struct VariadicPack[
     is_owned: Bool,
     *Ts: element_trait,
 ](
-    Copyable where (not is_owned, "Cannot copy an owned variadic pack."),
+    Copyable where not is_owned else "Cannot copy an owned variadic pack.",
     RegisterPassable,
     Sized,
 ):
@@ -1443,7 +1442,7 @@ struct VariadicPack[
     @inline(.nodebug)
     def __init__(
         out self, *, copy: Self
-    ) where (not Self.is_owned, "Cannot copy an owned variadic pack."):
+    ) where not Self.is_owned else "Cannot copy an owned variadic pack.":
         """Copy construct the variadic pack.
 
         Args:
@@ -1481,9 +1480,8 @@ struct VariadicPack[
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.Ts[idx]) capturing
     ](deinit self) where (
-        Self.is_owned,
-        "consume_elements may only be called on owned variadic packs",
-    ):
+        Self.is_owned
+    ) else "consume_elements may only be called on owned variadic packs":
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic packs.

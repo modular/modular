@@ -14,7 +14,7 @@ Mark types with a `Deinitable where False` conditional conformance:
 
 ```mojo
 @fieldwise_init
-struct Example(Deinitable where (False, "call 'cleanup()'")):
+struct Example(Deinitable where False else "call 'cleanup()'"):
     def cleanup(deinit self):
         # perform cleanup operations
         pass
@@ -50,7 +50,7 @@ Examples:
 # Multiple cleanup paths
 @fieldwise_init
 struct Transaction(
-    Deinitable where (False, "call 'commit()' or 'rollback()'")
+    Deinitable where False else "call 'commit()' or 'rollback()'"
 ):
     def commit(deinit self) raises:  # Offers error handling
         # ...
@@ -89,7 +89,7 @@ diagnostics:
 
 ```mojo
 struct CustomFileHandle(
-    Deinitable where (False, "call 'save_and_close()' or 'discard()'")
+    Deinitable where False else "call 'save_and_close()' or 'discard()'"
 ):
     def save_and_close(deinit self) raises:
         pass

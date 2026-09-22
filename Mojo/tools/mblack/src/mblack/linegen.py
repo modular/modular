@@ -903,6 +903,28 @@ def left_hand_split(
             yield result
 
 
+def _closes_where_condition_with_message(closing_bracket: Leaf) -> bool:
+    """Does `closing_bracket` close a `where ... else` clause's condition?
+
+    A `where` message trails its condition rather than sitting inside a bracket
+    with it, so omitting these parens leaves the last bracket *within* the
+    condition as the only split point, stranding the operands before it up on
+    the head line. Keeping them splits the whole condition out instead.
+    """
+    atom = closing_bracket.parent
+    if atom is None or atom.type != syms.atom:
+        return False
+    clause = atom.parent
+    if clause is None or clause.type != syms.where_clause:
+        return False
+    return any(
+        isinstance(child, Leaf)
+        and child.type == token.NAME
+        and child.value == "else"
+        for child in clause.children
+    )
+
+
 def right_hand_split(
     line: Line,
     line_length: int,
@@ -976,6 +998,7 @@ def right_hand_split(
         and not body.contains_standalone_comments(0)
         # and we can actually remove the parens
         and can_omit_invisible_parens(body, line_length)
+        and not _closes_where_condition_with_message(closing_bracket)
     ):
         omit = {id(closing_bracket), *omit}
         try:

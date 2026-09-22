@@ -134,6 +134,26 @@ def test_fn_where_clause_else_message_prewrapped_too_long():
     assert_mojo_format(source, expected)
 
 
+def test_fn_where_clause_else_message_splits_on_the_whole_condition():
+    """A condition too long to share the head line is split out whole. The
+    message trails it rather than sharing a bracket with it, so the last
+    bracket inside the condition -- `type_of(...)` here -- must not be
+    preferred as the split point: that would strand everything before it."""
+    source = (
+        "def gated[R: AnyType]() where R == Int or R == type_of(None) "
+        'else "the return type must be Int or None": pass'
+    )
+    expected = (
+        "def gated[\n"
+        "    R: AnyType\n"
+        "]() where (\n"
+        "    R == Int or R == type_of(None)\n"
+        ') else "the return type must be Int or None":\n'
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
 def test_fn_where_clause_else_message_ternary_condition():
     """A conditional expression owns the first `else`; the clause's message is
     introduced by the second."""
@@ -172,8 +192,8 @@ def test_struct_where_clause_else_message():
 def test_conditional_conformance_else_message():
     source = (
         "struct Wrapped[T: Movable](\n"
-        "    Copyable where conforms_to(\n"
-        "        T, Copyable\n"
+        "    Copyable where (\n"
+        "        conforms_to(T, Copyable)\n"
         '    ) else "wrapped type must be copyable",\n'
         "):\n"
         "    pass\n"
@@ -197,8 +217,8 @@ def test_conditional_conformance_else_message_sorts_with_trait():
     )
     expected = (
         "struct Ordered[T: Movable](\n"
-        "    Copyable where conforms_to(\n"
-        "        T, Copyable\n"
+        "    Copyable where (\n"
+        "        conforms_to(T, Copyable)\n"
         '    ) else "wrapped type must be copyable",\n'
         "    Movable,\n"
         "):\n"
@@ -218,8 +238,8 @@ def test_alias_where_clause_else_message():
         ' else "T must be copyable" = T'
     )
     expected = (
-        "comptime P[T: AnyType] where conforms_to(\n"
-        "    T, Copyable\n"
+        "comptime P[T: AnyType] where (\n"
+        "    conforms_to(T, Copyable)\n"
         ') else "T must be copyable" = T\n'
     )
     assert_mojo_format(source, expected)

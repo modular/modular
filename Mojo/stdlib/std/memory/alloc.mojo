@@ -367,10 +367,11 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     def into_managed(
         deinit self,
     ) -> ManagedAllocation[Self.T, alignment=Self.alignment] where (
-        IsTriviallyDeinitable[Self.T],
+        IsTriviallyDeinitable[Self.T]
+    ) else (
         "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
         " its storage without ever running T's `__deinit__`, which would"
-        " leak resources owned by any initialized elements",
+        " leak resources owned by any initialized elements"
     ):
         """Consumes the `Allocation` and wraps it in a `ManagedAllocation`.
 
@@ -489,11 +490,10 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         out self,
         var allocation: Allocation[Self.T, alignment=Self.alignment],
         /,
-    ) where (
-        IsTriviallyDeinitable[Self.T],
+    ) where IsTriviallyDeinitable[Self.T] else (
         "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
         " its storage without ever running T's `__deinit__`, which would"
-        " leak resources owned by any initialized elements",
+        " leak resources owned by any initialized elements"
     ):
         """Initializes a `ManagedAllocation` that owns `allocation`.
 

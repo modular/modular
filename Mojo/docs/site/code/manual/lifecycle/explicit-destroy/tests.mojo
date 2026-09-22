@@ -158,7 +158,7 @@ def test_transfer_defers_destruction() raises:
 
 
 struct Transaction(
-    Deinitable where (False, "call 'commit()' or 'rollback()'"), Movable
+    Deinitable where False else "call 'commit()' or 'rollback()'", Movable
 ):
     var events: Recorder
     var rows: Int
@@ -241,7 +241,7 @@ def test_raising_deinitializer_consumes() raises:
 
 
 struct Counters(
-    Deinitable where (False, "call 'flush()' or 'drop()'"), Movable
+    Deinitable where False else "call 'flush()' or 'drop()'", Movable
 ):
     var counts: Allocation[Int64]
     var events: Recorder
@@ -292,7 +292,9 @@ def test_dispose_before_raise_success_path() raises:
     assert_equal(events[1], "flushed 1")
 
 
-struct Draft(Deinitable where (False, "call 'save()' or 'discard()'"), Movable):
+struct Draft(
+    Deinitable where False else "call 'save()' or 'discard()'", Movable
+):
     var data: String  # implicitly destructible
 
     def __init__(out self, var data: String):
@@ -347,7 +349,7 @@ struct Basic(Movable):
 
 
 struct Tally(
-    Deinitable where (False, "call 'destroy()' to free the counters"), Movable
+    Deinitable where False else "call 'destroy()' to free the counters", Movable
 ):
     var counts: Allocation[Int64]
     var events: Recorder

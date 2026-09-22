@@ -1183,9 +1183,8 @@ struct Array[T: AnyType, length: Int](
         deinit self,
         out result: Array[Self.T, Self.length * n],
     ) where (
-        conforms_to(Self.T, Copyable) and (n > 0),
-        "`Array * n` requires n > 0",
-    ):
+        conforms_to(Self.T, Copyable) and (n > 0)
+    ) else "`Array * n` requires n > 0":
         """Repeats this array's elements the given number of times.
 
 

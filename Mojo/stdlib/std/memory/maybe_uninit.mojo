@@ -26,20 +26,19 @@ from std.traits import (
 
 struct MaybeUninit[T: AnyType](
     Defaultable,
-    Deinitable where (
-        IsTriviallyDeinitable[T],
+    Deinitable where IsTriviallyDeinitable[T] else (
         "T must be trivially deinitable, since MaybeUninit never runs T's"
-        " __deinit__",
+        " __deinit__"
     ),
     ImplicitlyCopyable where (
-        IsTriviallyCopyable[T] and IsTriviallyMovable[T],
+        IsTriviallyCopyable[T] and IsTriviallyMovable[T]
+    ) else (
         "T must be trivially copyable and movable, since copying"
-        " MaybeUninit only copies the underlying bits",
+        " MaybeUninit only copies the underlying bits"
     ),
-    Movable where (
-        IsTriviallyMovable[T],
+    Movable where IsTriviallyMovable[T] else (
         "T must be trivially movable, since moving MaybeUninit only moves"
-        " the underlying bits",
+        " the underlying bits"
     ),
     RegisterPassable where (
         conforms_to(T, RegisterPassable) and IsTriviallyMovable[T]
