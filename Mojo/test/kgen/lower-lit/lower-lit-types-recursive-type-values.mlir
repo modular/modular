@@ -12,7 +12,7 @@ lit.struct.decl @ListNode {
 kgen.generator @type_values() {
   // CHECK: kgen.param.declare listnode: type = <[typevalue<#kgen.genref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>
   kgen.param.declare listnode: meta<!lit.struct<@ListNode>> = <[@ListNode]>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -36,7 +36,7 @@ kgen.generator @type_values() {
   kgen.param.declare bar: meta<!lit.struct<@Bar>> = <[@Bar]>
   // CHECK: kgen.param.declare foo: type = <[typevalue<#kgen.genref<@Foo>>, pointer<none>]>
   kgen.param.declare foo: meta<!lit.struct<@Foo>> = <[@Foo]>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -58,7 +58,7 @@ lit.struct.decl @Pointer<ty: type> register_passable {
 kgen.generator @type_values() {
   // CHECK: kgen.param.declare listnode: type = <[typevalue<#kgen.genref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>
   kgen.param.declare listnode: meta<!lit.struct<@ListNode>> = <[@ListNode]>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -76,7 +76,7 @@ lit.struct.decl @Foo {
 kgen.generator @type_values() {
   // CHECK: kgen.param.declare foo: type = <[typevalue<#kgen.genref<@Foo>>, struct<((!kgen.pointer<struct<(pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>]>
   kgen.param.declare foo: meta<!lit.struct<@Foo>> = <[@Foo]>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -102,7 +102,7 @@ kgen.generator @type_values() {
   kgen.param.declare ping: meta<!lit.struct<@Ping>> = <[@Ping]>
   // CHECK: kgen.param.declare pong: type = <[typevalue<#kgen.genref<@Pong>>, {{.*}}]>
   kgen.param.declare pong: meta<!lit.struct<@Pong>> = <[@Pong]>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -125,5 +125,5 @@ kgen.generator @type_values() {
   kgen.param.declare ping: meta<!lit.struct<@Ping>> = <[@Ping]>
   // CHECK: kgen.param.declare pong: type = <[typevalue<#kgen.genref<@Pong>>, struct<((!kgen.pointer<struct<(struct<((!kgen.pointer<struct<(pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>]>
   kgen.param.declare pong: meta<!lit.struct<@Pong>> = <[@Pong]>
-  kgen.return
+  hlcf.return
 }

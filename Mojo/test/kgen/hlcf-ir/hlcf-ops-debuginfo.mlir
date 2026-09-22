@@ -6,5 +6,5 @@ kgen.func @loop(%arg0: i32) {
   hlcf.loop (%0 = %arg0 : i32) -> () {
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }

@@ -11,7 +11,7 @@
 // CHECK-LABEL: kgen.generator @trivial_generator
 // CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(si32) -> si32> : !kgen.type
 lit.fn @trivial_generator(%arg0: si32) -> si32 {
-  kgen.return %arg0 : si32
+  hlcf.return %arg0 : si32
 }
 
 // -----
@@ -22,7 +22,7 @@ lit.fn @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-LABEL: kgen.generator @param_gen
 // CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<<index>(!kgen.simd<*(0,0), f32>) -> !kgen.simd<*(0,0), f32>> : !kgen.type
 lit.fn @param_gen<w: index>(%arg0: !kgen.simd<w, f32>) -> !kgen.simd<w, f32> {
-  kgen.return %arg0 : !kgen.simd<w, f32>
+  hlcf.return %arg0 : !kgen.simd<w, f32>
 }
 
 // -----
@@ -32,7 +32,7 @@ lit.fn @param_gen<w: index>(%arg0: !kgen.simd<w, f32>) -> !kgen.simd<w, f32> {
 // CHECK-LABEL: kgen.generator @ref_arg
 // CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(!kgen.pointer<index>) -> ()> : !kgen.type
 lit.fn @ref_arg(%arg0: !lit.ref<index, mut #lit.any.origin>) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -48,5 +48,5 @@ lit.struct.decl @Int register_passable {
 // CHECK-LABEL: kgen.generator @takes_int
 // CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(!kgen.typevalue<#kgen.genref<@Int>>) -> (), (index) -> ()> : !kgen.type
 lit.fn @takes_int(%arg0: !lit.struct<@Int>) {
-  kgen.return
+  hlcf.return
 }

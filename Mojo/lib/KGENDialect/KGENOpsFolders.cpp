@@ -11,7 +11,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/InterpreterState.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -713,21 +712,6 @@ SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
   (void)sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
                           &state, results);
   return state.mapResults(results);
-}
-
-//===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
-                                       InterpreterState &state) {
-  return state.returnFromFunction(operands);
-}
-
-ErrorTreeOrSuccess
-ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
-                               ParametricInterpreterState &state) {
-  return state.returnFromFunction(operands);
 }
 
 //===----------------------------------------------------------------------===//

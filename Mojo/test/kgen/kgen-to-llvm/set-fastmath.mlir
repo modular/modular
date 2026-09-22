@@ -48,17 +48,17 @@ kgen.func @arith(%a: !kgen.scalar<f32>, %b: !kgen.scalar<f32>,
   %0 = pop.mul %a, %b : !kgen.scalar<f32>
   %1 = pop.add %0, %c : !kgen.scalar<f32>
   %2 = pop.sub %1, %c : !kgen.scalar<f32>
-  kgen.return %2 : !kgen.scalar<f32>
+  hlcf.return %2 : !kgen.scalar<f32>
 }
 
 kgen.func @explicit(%a: !kgen.scalar<f32>, %b: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
   %0 = pop.mul %a, %b {fastmathFlags = #pop.fmf<fast>} : !kgen.scalar<f32>
-  kgen.return %0 : !kgen.scalar<f32>
+  hlcf.return %0 : !kgen.scalar<f32>
 }
 
 kgen.func @other_ops(%a: !kgen.scalar<f32>, %b: !kgen.scalar<f32>,
                      %c: !kgen.scalar<f32>) -> !kgen.scalar<f16> {
   %0 = pop.fma %a, %b, %c {fastmathFlags = #pop.fmf<contract>} : !kgen.scalar<f32>
   %1 = pop.cast %0 {fastmathFlags = #pop.fmf<contract>} : !kgen.scalar<f32> to !kgen.scalar<f16>
-  kgen.return %1 : !kgen.scalar<f16>
+  hlcf.return %1 : !kgen.scalar<f16>
 }

@@ -5,7 +5,7 @@ kgen.generator @parameterIsolatedRegions<A>() {
   // CHECK: kgen.param.declare.region
   kgen.param.declare.region Fn = <B>() {
     kgen.param.constant = <B>
-    kgen.return
+    hlcf.return
   }
   // CHECK: {isolated}
 
@@ -16,7 +16,7 @@ kgen.generator @parameterIsolatedRegions<A>() {
     hlcf.comptime.yield
   }
   // CHECK: {elseIsolated, thenIsolated}
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -25,7 +25,7 @@ kgen.generator @parameterIsolatedRegions<A>() {
 // CHECK-SAME: -> !kgen.struct<(simd<size, type>)>
 kgen.generator @struct_of_simd<size, type: dtype>(%arg0: !kgen.simd<size, type>) -> !kgen.struct<(simd<size, type>)> {
   %1 = kgen.struct.create(%arg0) : !kgen.struct<(simd<size, type>)>
-  kgen.return %1 : !kgen.struct<(simd<size, type>)>
+  hlcf.return %1 : !kgen.struct<(simd<size, type>)>
 }
 
 // CHECK-LABEL: kgen.generator @call_it
@@ -35,7 +35,7 @@ kgen.generator @call_it<size, type: dtype, target: dtype>(%arg0: !kgen.struct<(s
   // CHECK: kgen.call @struct_of_simd<size, :dtype target>
   // CHECK-SAME: (!kgen.simd<size, target>) -> !kgen.struct<(simd<size, target>)>
   %4 = kgen.call @struct_of_simd<size, :dtype target>(%3) : (!kgen.simd<size, target>) -> !kgen.struct<(simd<size, target>)>
-  kgen.return %4 : !kgen.struct<(simd<size, target>)>
+  hlcf.return %4 : !kgen.struct<(simd<size, target>)>
 }
 
 // -----
@@ -44,7 +44,7 @@ lit.struct.decl @TakeArrayStruct<t, a: !pop.array<t, i1>> {}
 
 kgen.generator @pass_index<t>(%arg0: index) -> !pop.array<t, i1> {
   %0 = "foo.op"() : () -> !pop.array<t, i1>
-  kgen.return %0 : !pop.array<t, i1>
+  hlcf.return %0 : !pop.array<t, i1>
 }
 
 // CHECK-LABEL: kgen.generator @apply_result
@@ -55,7 +55,7 @@ kgen.generator @apply_result<t>(
     :array<t, i1> apply(:(index) -> !pop.array<t, i1> @pass_index<t>, t)
   >>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -63,13 +63,13 @@ kgen.generator @apply_result<t>(
 lit.struct.decl @Int {}
 
 kgen.generator @make(%arg0: index) -> !lit.struct<@Int> {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 lit.struct.decl @List<l: @Int> {}
 
 kgen.generator @create<l: @Int>() -> !lit.struct<@List<:@Int l>> {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 lit.struct.decl @Buf<r: @Int, s: @List<:@Int r>> {}
@@ -81,7 +81,7 @@ kgen.generator @buffer<rank>() ->
     :@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, rank)>
       apply(:() -> !lit.struct<@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, rank)>>
               @create<:@Int apply(:(index) -> !lit.struct<@Int> @make, rank)>)>> {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @ref_it
@@ -94,13 +94,13 @@ kgen.generator @ref_it() {
          apply(:() -> !lit.struct<@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(1,0))>>
                  @create<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0))>)>>
     = <@buffer>
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 kgen.generator @pass_type<T: type> () -> !kgen.param<T> {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 kgen.generator @use() {
@@ -115,7 +115,7 @@ kgen.generator @use() {
         :() -> !kgen.generator<() -> !kgen.simd<*(2,0), si8>>
           @pass_type<:type () -> !kgen.simd<*(1,0), si8>>))>
   >() -> () = <?>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -130,13 +130,13 @@ kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
 
   // CHECK-NEXT: relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>
   kgen.param.declare relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // -----
 
 kgen.generator @f<a, b, c: array<b, index>>() {
-  kgen.return
+  hlcf.return
 }
 
 
@@ -146,5 +146,5 @@ kgen.generator @f<a, b, c: array<b, index>>() {
 kgen.generator @partially_bind_dependent() {
   // CHECK-NEXT: partial: <index, array<*(0,0), index>>() -> () = <@f<1, ?, :array<?, index> ?>>
   kgen.param.declare partial: <index, array<*(0,0), index>>() -> () = <@f<1, ?, :array<?, index> ?>>
-  kgen.return
+  hlcf.return
 }

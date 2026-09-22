@@ -7,7 +7,7 @@ kgen.generator @no_constrains_deduplication() {
     kgen.param.declare B0 : !kgen.string = <"foo">
     // CHECK: kgen.param.assert <false>, "foo"
     kgen.param.assert <eq(2, 3)>, B0
-    kgen.return
+    hlcf.return
   } else {
     kgen.param.declare B1 : !kgen.string = <"bar">
     // CHECK: kgen.param.assert <false>, "bar"
@@ -17,7 +17,7 @@ kgen.generator @no_constrains_deduplication() {
   kgen.param.declare B2 : !kgen.string = <"baz">
   // CHECK: kgen.param.assert <false>, "baz"
   kgen.param.assert <eq(2, 3)>, B2
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -74,14 +74,14 @@ kgen.struct.generator @Wrapper<T: type> = struct_inst<"Wrapper"[T]<:type T>(data
 // CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<T, @Fooable, "MyType">>)
 kgen.generator @expect_associated_alias<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<T, @Fooable, "MyType">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @use_associated_alias
 kgen.generator @use_associated_alias(%arg: index) -> !kgen.none {
   // CHECK-NEXT: kgen.call @expect_associated_alias<:type [typevalue<#kgen.genref<@Wrapper<:type index>>>, struct<(index)>]>(%arg0)
   %none = kgen.call @expect_associated_alias<:!kgen.type #wrapper_index>(%arg) : !kgen.generator<(index) -> !kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // -----
@@ -94,7 +94,7 @@ kgen.struct.generator @MyFoo<T: type> = struct_inst<"MyFoo"[T]<:type T>(data: ty
 
 kgen.generator @myfoo_foo<T: !kgen.type>(%arg: !kgen.param<:type T>) -> index {
   %answer = kgen.param.constant: index = <42>
-  kgen.return %answer : index
+  hlcf.return %answer : index
 }
 
 #MyFooIndex = #kgen.type<typevalue<#kgen.genref<@MyFoo<:type index>>>, struct<(index)>> : !kgen.type
@@ -103,7 +103,7 @@ kgen.generator @myfoo_foo<T: !kgen.type>(%arg: !kgen.param<:type T>) -> index {
 kgen.generator @simplify_call_param(%arg: index) -> index {
   // CHECK-NEXT: kgen.call @myfoo_foo<:type index>(%arg0)
   %result = kgen.call_param[(index) -> index: #kgen.get_witness<#MyFooIndex, @Fooable, "foo">](%arg)
-  kgen.return %result : index
+  hlcf.return %result : index
 }
 
 // -----
@@ -190,28 +190,28 @@ kgen.struct.generator @VariadicWrapper<T: type, V: !kgen.param_list<T>> = struct
 // CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<[typevalue<#kgen.genref<@VariadicWrapper<:type type, :param_list<type> #kgen.struct_field_types<T>>>>, struct<()>], @HasType, "my_type">>
 kgen.generator @expect_field_types_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<#variadic_wrapper_types, @HasType, "my_type">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @expect_field_names_kgen
 // CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<[typevalue<#kgen.genref<@VariadicWrapper<:type string, :param_list<string> #kgen.struct_field_names<T>>>>, struct<()>], @HasType, "my_type">>
 kgen.generator @expect_field_names_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<#variadic_wrapper_names, @HasType, "my_type">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @expect_field_index_by_name_kgen
 // CHECK-SAME:    (%arg0: !kgen.simd<#kgen.struct_field_index_by_name<T, "second">, si32>)
 kgen.generator @expect_field_index_by_name_kgen<T: !kgen.type>(%arg: !kgen.simd<#kgen.struct_field_index_by_name<T, "second">, si32>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @expect_field_type_by_name_kgen
 // CHECK-SAME:    (%arg0: !kgen.param<#kgen.struct_field_type_by_name<T, "first">>)
 kgen.generator @expect_field_type_by_name_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.struct_field_type_by_name<T, "first">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 #mypair_index_i32 = #kgen.type<typevalue<#kgen.genref<@MyPair<:type index, :type i32>>>, struct<(index, i32)>> : !kgen.type
@@ -231,7 +231,7 @@ kgen.generator @use_struct_reflection_kgen(%arg0: !StructFieldTypesExpected, %ar
   %none2 = kgen.call @expect_field_index_by_name_kgen<:!kgen.type #mypair_index_i32>(%arg2) : !kgen.generator<(!StructFieldIndexByNameExpected) -> !kgen.none>
   // CHECK-NEXT: kgen.call @expect_field_type_by_name_kgen<:type [typevalue<#kgen.genref<@MyPair<:type index, :type i32>>>, struct<(index, i32)>]>(%arg3) : (index) -> !kgen.none
   %none3 = kgen.call @expect_field_type_by_name_kgen<:!kgen.type #mypair_index_i32>(%arg3) : !kgen.generator<(!StructFieldTypeByNameExpected) -> !kgen.none>
-  kgen.return %none3 : !kgen.none
+  hlcf.return %none3 : !kgen.none
 }
 
 // -----
@@ -240,7 +240,7 @@ kgen.generator @use_struct_reflection_kgen(%arg0: !StructFieldTypesExpected, %ar
 
 kgen.generator @call(%arg0: !kgen.struct<(index)>) -> index {
   %c = kgen.param.constant : index = <1>
-  kgen.return %c : index
+  hlcf.return %c : index
 }
 
 // Source struct carrying the `def() -> T` conformance the extension forwards to.
@@ -275,7 +275,7 @@ kgen.struct.generator @const_ext<A: type> = struct_inst<"const_ext"[A]<:type A>>
 kgen.generator @extension_concrete_anchor(%arg: !kgen.struct<(index)>) -> index {
   // CHECK: kgen.call @call
   %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<#make, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type #make>>>, struct<()>> : !kgen.type]>, @"def() -> V", "__call__">](%arg)
-  kgen.return %r : index
+  hlcf.return %r : index
 }
 
 // Parametric anchor, anchor-independent witness: the extension resolves it even
@@ -284,7 +284,7 @@ kgen.generator @extension_concrete_anchor(%arg: !kgen.struct<(index)>) -> index 
 kgen.generator @extension_param_anchor_independent<G: !kgen.type>(%arg: !kgen.struct<(index)>) -> index {
   // CHECK: kgen.call @call
   %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@const_ext<:type G>>>, struct<()>> : !kgen.type]>, @"def() -> V", "__call__">](%arg)
-  kgen.return %r : index
+  hlcf.return %r : index
 }
 
 // Parametric anchor, forwarding witness: resolution peels the extension down to
@@ -294,5 +294,5 @@ kgen.generator @extension_param_anchor_forwarding<G: !kgen.type>(%arg: !kgen.str
   // CHECK: kgen.call_param
   // CHECK-SAME: #kgen.get_witness<G, @"def() -> T", "__call__">
   %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type G>>>, struct<()>> : !kgen.type]>, @"def() -> V", "__call__">](%arg)
-  kgen.return %r : index
+  hlcf.return %r : index
 }

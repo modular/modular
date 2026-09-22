@@ -18,12 +18,12 @@
 # CHECK-SAME: <?, [[T:.*]]: !AnyType_Trait>
 trait Trait:
     # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!AnyType_Trait [[T]], imm {{.*}}> imm_mem) -> !kgen.none
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f0(self):
         ...
 
     # CHECK: lit.fn @"f1{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f1(mut self):
         ...
 
@@ -35,7 +35,7 @@ trait Trait:
         pass
 
     # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> imm_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> !kgen.scalar<bool>
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f3(self) raises:
         ...
 
@@ -49,7 +49,7 @@ trait Trait:
         pass
 
     # CHECK: lit.fn @"f5{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> !kgen.scalar<bool>
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f5(mut self) raises:
         ...
 
@@ -572,7 +572,7 @@ trait ParentTraitSameSig:
 # CHECK-LABEL: lit.trait.decl @ChildTraitSameSig
 trait ChildTraitSameSig(ParentTraitSameSig):
     # CHECK-NEXT: lit.fn @"foo
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def foo(self):
         ...
 

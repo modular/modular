@@ -56,6 +56,8 @@
 
 using namespace M;
 using namespace M::KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace M::KGEN::LIT;
 
 // File-local

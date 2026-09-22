@@ -43,7 +43,7 @@ lit.struct.decl @SomeType<v, b> {}
 
 // expected-error @below {{'kgen.generator' op funcTypeGenerator is not self-contained: it references parameter 'c' by name instead of by index}}
 kgen.generator @InvalidTypeParamValue<a>(%arg0: !lit.struct<@SomeType<a, c>>) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -53,7 +53,7 @@ lit.struct.decl @Bar {}
 kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
   %0 = lit.struct.insert %a, %container[a] : index into !lit.struct<@Bar>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -65,7 +65,7 @@ lit.struct.decl @Bar {
 kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
   // expected-error @below {{cannot insert value of type 'index' into struct field "a" which expected 'i32'}}
   %0 = lit.struct.insert %a, %container[a] : index into !lit.struct<@Bar>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -75,7 +75,7 @@ lit.struct.decl @Bar {}
 kgen.generator @invalid_field_name(%a: index, %container: !lit.struct<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
   %0 = lit.struct.extract %container[a] : index from !lit.struct<@Bar>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -87,14 +87,14 @@ lit.fn @no_names(index)
 
 // expected-error @below {{only one '|' allowed in signature}}
 lit.fn @twoSlash(%a: index, |, |, %b: index) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 // expected-error @below {{only one '*' allowed in signature}}
 lit.fn @twoStar(%a: index, *, *, %b: index) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -125,35 +125,35 @@ lit.struct.decl @Wrap<T: !HasOutput> {
 kgen.generator @access_wrong_type(%wrap: !lit.struct<@Wrap<:!HasOutput #inner_type>>) {
   // expected-error @below {{cannot extract value of type 'i32' from struct field "value" which has type 'index'}}
   %0 = lit.struct.extract %wrap[value] : i32 from !lit.struct<@Wrap<:!HasOutput #inner_type>>
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 // expected-error @below {{'*' cannot precede '|' in signature}}
 lit.fn @slashAfterStar(%a: index, *, |, %b: index) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 // expected-error @+1 {{expected variadic kind, got: stuff}}
 lit.fn @incorrect_arg_variadicness(%a: index imm|stuff) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 // expected-error @+1 {{expected convention|variadicness, got: stuff}}
 lit.fn @incorrect_arg_conv_and_variadicness(%a: index stuff) {
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 // expected-error @+1 {{expected variadic kind, got: stuff}}
 lit.fn @incorrect_param_variadicness<a: dtype stuff>() {
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -161,7 +161,7 @@ lit.fn @incorrect_param_variadicness<a: dtype stuff>() {
 kgen.generator @not_lit_func() {
   // expected-error @below {{'lit.return' op expected to be nested inside a `lit.fn` operation}}
   lit.return
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -196,7 +196,7 @@ lit.fn @unbound_region() {
   ^bb0(%arg0: index):
     hlcf.yield %arg0 : index
   }) : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -204,7 +204,7 @@ lit.fn @unbound_region() {
 // expected-error@below {{expected only `lit.file_module`, `lit.package`, `lit.unresolved_import`, or `lit.unresolved_wildcard_import` in its body}}
 lit.package @MyPackage {
   // expected-note @below {{see operation defined here}}
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // -----
@@ -212,7 +212,7 @@ lit.package @MyPackage {
 lit.fn @declareWrongType() {
   // expected-error @below {{op declares a parameter with type 'index' but parameter expression has type 'i32'}}
   "lit.alias.decl"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -275,7 +275,7 @@ lit.call @calls[mut a]() : !lit.generator<[1](!lit.ref<index, mut *[0,1]>) -> ()
 
 lit.fn @ref_immut<life: origin<false>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
   %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
-  kgen.return %ref2: !lit.ref<index, imm life>
+  hlcf.return %ref2: !lit.ref<index, imm life>
 }
 
 // -----

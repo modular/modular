@@ -35,7 +35,7 @@ kgen.generator @foo<a, b -> e>() {
   kgen.param.declare c = <add(a, b)>
   kgen.call @other<c -> d>() : () -> ()
   kgen.param.result_bind<sub(d, b)>
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -64,13 +64,13 @@ post-elaboration callgraph forms edges between concrete functions.
 ```mlir
 kgen.generator @parametric<a>() -> index {
   %0 = kgen.param.constant = <a>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @main() {
   %0 = kgen.call @parametric<1>() : () -> index
   %1 = kgen.call @parametric<2>() : () -> index
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -100,7 +100,7 @@ kgen.generator @pickInstantiation<c: i1>() {
     kgen.call @bar() : () -> ()
     hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -113,13 +113,13 @@ naturally recursive with parameter resolution:
 ```mlir
 kgen.generator @foo<() -> out>() {
   kgen.param.result_bind<1>
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @main() {
   kgen.call @foo<[] -> out>() : () -> ()
   %0 = kgen.param.constant = <out>
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -160,7 +160,7 @@ typically occurs due to user-written static asserts, such as:
 ```mlir
 kgen.generator @foobar<a>() {
   kgen.param.assert <gt(a, 1)>, "'a' must be bigger than 1!"
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -177,7 +177,7 @@ functions only of the input parameters:
 ```mlir
 kgen.generator @foobar<a>()
     constraints <[gt(a, 1), "'a' must be bigger than 1!"]> {
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -237,7 +237,7 @@ kgen.generator @foo<() -> x>() {
   kgen.call @foo<[] -> y>()
   %0 = kgen.param.constant = <y>
   kgen.param.result_bind<2>
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -310,7 +310,7 @@ kgen.generator @main() {
   kgen.call @foo<1>() : () -> ()
   kgen.call @foo<2>() : () -> ()
   kgen.call @bar() : () -> ()
-  kgen.return
+  hlcf.return
 }
 ```
 

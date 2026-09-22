@@ -38,7 +38,7 @@ kgen.func @simple_struct(%arg1: !kgen.struct<(index, index)>) -> !kgen.scalar<in
   %scalar1 = pop.cast_from_builtin %load1 : index to !kgen.scalar<index>
   %scalar2 = pop.cast_from_builtin %load2 : index to !kgen.scalar<index>
   %out = pop.add %scalar1, %scalar2 : !kgen.scalar<index>
-  kgen.return %out : !kgen.scalar<index>
+  hlcf.return %out : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: @simple_array
@@ -66,7 +66,7 @@ kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !kgen.scalar<index> {
   // MEM2REG-NEXT: %[[CONVERT1:.*]] = pop.cast_from_builtin %[[OP1]] : index to !kgen.scalar<index>
   // MEM2REG-NEXT: %[[CONVERT2:.*]] = pop.cast_from_builtin %[[OP2]] : index to !kgen.scalar<index>
   // MEM2REG-NEXT: %[[ADD:.*]] = pop.add %[[CONVERT1]], %[[CONVERT2]] : !kgen.scalar<index>
-  // MEM2REG-NEXT: kgen.return %[[ADD]] : !kgen.scalar<index>
+  // MEM2REG-NEXT: hlcf.return %[[ADD]] : !kgen.scalar<index>
 
    %array = pop.stack_allocation 1 x !pop.array<2, index>
    pop.store %arg1, %array : !kgen.pointer<array<2, index>>
@@ -79,7 +79,7 @@ kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !kgen.scalar<index> {
    %scalar1 = pop.cast_from_builtin %load1 : index to !kgen.scalar<index>
    %scalar2 = pop.cast_from_builtin %load2 : index to !kgen.scalar<index>
    %out = pop.add %scalar1, %scalar2 : !kgen.scalar<index>
-   kgen.return %out : !kgen.scalar<index>
+   hlcf.return %out : !kgen.scalar<index>
  }
 
 // CHECK-LABEL: @struct_of_structs
@@ -122,7 +122,7 @@ kgen.func @struct_of_structs(%arg1: !kgen.struct<(struct<(scalar<index>)>, struc
   // MEM2REG-DAG:    hlcf.loop "inlined_cf_scope" {
   // MEM2REG-DAG:       pop.div %[[OP1]], %[[OP5]] : !kgen.scalar<index>
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @stack_of_N
@@ -148,7 +148,7 @@ kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !kgen.
   // MEM2REG-NEXT: kgen.param.constant = <1>
   // MEM2REG-NEXT: kgen.param.constant = <2>
   // MEM2REG-NEXT: pop.store %[[ARG2]], %[[OUT_PTR]] : !kgen.pointer<index>
-  // MEM2REG-NEXT: kgen.return
+  // MEM2REG-NEXT: hlcf.return
 
   %offset1 = pop.offset %alloc[%0] : !kgen.pointer<index>
   pop.store %val1, %offset1 : !kgen.pointer<index>
@@ -162,7 +162,7 @@ kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !kgen.
   %annoying_offset = pop.offset %alloc[%2] : !kgen.pointer<index>
   %load = pop.load %annoying_offset align<8> : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 
@@ -179,7 +179,7 @@ kgen.func @bigger_stack(%val1: index, %output : !kgen.pointer<index>) {
   pop.store %val1, %offset : !kgen.pointer<index>
   %load = pop.load %offset align<8> : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // Handle storing directly to the stack as an implicit offset of 0.
@@ -203,9 +203,9 @@ kgen.func @n_stack_store(%val1: index, %output : !kgen.pointer<index>) {
 
   // Mem2Reg should eliminate everything
   // MEM2REG-NEXT: pop.store %[[ARG0]], %[[OUT_PTR]] : !kgen.pointer<index>
-  // MEM2REG-NEXT: kgen.return
+  // MEM2REG-NEXT: hlcf.return
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @n_stack_arrays
@@ -246,7 +246,7 @@ kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !kgen.pointer<in
   %load2 = pop.load %gep2 align<8> : !kgen.pointer<index>
   pop.store %load2, %output : !kgen.pointer<index>
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @n_stack_structs
@@ -283,7 +283,7 @@ kgen.func @n_stack_structs(%val: !kgen.struct<(index, index)>, %output : !kgen.p
   %load2 = pop.load %gep2 align<8> : !kgen.pointer<index>
   pop.store %load2, %output : !kgen.pointer<index>
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @store_arg
@@ -300,7 +300,7 @@ kgen.func @store_arg(
   // CHECK: stack_allocation 1 x array<2, index>
   %2 = pop.stack_allocation 1 x !pop.array<2, index>
   pop.store %2, %arg2 : !kgen.pointer<pointer<array<2, index>>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @negArrayGep
@@ -311,7 +311,7 @@ kgen.func @negArrayGep() {
   %0 = kgen.param.constant = <-1>
   %array = pop.stack_allocation 1 x !pop.array<2, index>
   %gep = pop.array.gep %array[%0] : <array<2, index>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @negOffsetGep
@@ -322,7 +322,7 @@ kgen.func @negOffsetGep() {
   %0 = kgen.param.constant = <-1>
   %alloc = pop.stack_allocation 2 x index
   %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @oobArrayGep
@@ -333,7 +333,7 @@ kgen.func @oobArrayGep() {
   %0 = kgen.param.constant = <2>
   %array = pop.stack_allocation 1 x !pop.array<2, index>
   %gep = pop.array.gep %array[%0] : <array<2, index>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @oobOffsetGep
@@ -344,7 +344,7 @@ kgen.func @oobOffsetGep() {
   %0 = kgen.param.constant = <2>
   %alloc = pop.stack_allocation 2 x index
   %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @load_of_array
@@ -369,7 +369,7 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
   %11 = pop.array.gep %4[%0] : <array<4, index>>
   pop.store %10, %11 : !kgen.pointer<index>
   %12 = pop.load %4 : !kgen.pointer<array<4, index>>
-  kgen.return %12 : !pop.array<4, index>
+  hlcf.return %12 : !pop.array<4, index>
 }
 
 // Check sroa has decomposed it.
@@ -385,14 +385,14 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 // MEM2REG: %[[THIRD:.*]] = pop.array.get %[[IN_ARRAY]][2] : !pop.array<4, index>
 // MEM2REG: %[[FOURTH:.*]] = pop.array.get %[[IN_ARRAY]][3] : !pop.array<4, index>
 // MEM2REG: %[[OUT:.*]] = pop.array.create [%[[FIRST]], %[[INDEX]], %[[THIRD]], %[[FOURTH]]] : !pop.array<4, index>
-// MEM2REG: kgen.return %[[OUT]] : !pop.array<4, index>
+// MEM2REG: hlcf.return %[[OUT]] : !pop.array<4, index>
 
 // CHECK-LABEL: @offset_of_offset
 kgen.func @offset_of_offset() -> !kgen.pointer<index> {
   %0 = pop.stack_allocation 2 x index
   %idx1 = index.constant 1
   %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
-  kgen.return %1 : !kgen.pointer<index>
+  hlcf.return %1 : !kgen.pointer<index>
 }
 
 
@@ -405,7 +405,7 @@ kgen.func @large_array(%arg1: !pop.array<512, index>) -> index {
   pop.store %arg1, %array : !kgen.pointer<array<512, index>>
   %gep = pop.array.gep %array[%0] : <array<512, index>>
   %load = pop.load %gep : !kgen.pointer<index>
-  kgen.return %load : index
+  hlcf.return %load : index
 }
 
 // CHECK-LABEL: kgen.func @destructure_load
@@ -418,7 +418,7 @@ kgen.func @destructure_load() -> !kgen.struct<(i1, i2)> {
   // CHECK-NEXT: [[S:%.*]] = kgen.struct.create([[I1V]], [[I2V]])
   %1 = pop.load %0 : !kgen.pointer<struct<(i1, i2)>>
   // CHECK-NEXT: return [[S]]
-  kgen.return %1 : !kgen.struct<(i1, i2)>
+  hlcf.return %1 : !kgen.struct<(i1, i2)>
 }
 
 // CHECK-LABEL: kgen.func @two_users
@@ -430,7 +430,7 @@ kgen.func @two_users() {
   kgen.call @use1(%1) : (!kgen.struct<(i1, i2)>) -> ()
   // CHECK-NEXT: call @use2([[S]])
   kgen.call @use2(%1) : (!kgen.struct<(i1, i2)>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @lifetime_markers
@@ -444,7 +444,7 @@ kgen.func @lifetime_markers() {
   pop.stack_alloc.lifetime.start(%1, %0) : !kgen.pointer<f32>, !kgen.pointer<struct<(index, index)>>
   // CHECK-NEXT: lifetime.end([[F]], [[S0]], [[S1]])
   pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<struct<(index, index)>>, !kgen.pointer<f32>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @non_integer_index_array
@@ -458,7 +458,7 @@ kgen.func @non_integer_index_array_get() {
   // CHECK: %[[ARRAY_CREATE:.*]] = pop.array.create [%[[LOAD_0]], %[[LOAD_1]]] : !pop.array<2, scalar<si64>>
   // CHECK: %[[ARRAY_GET:.*]] = pop.array.get %[[ARRAY_CREATE]][*"i`2x7"] : !pop.array<2, scalar<si64>>
   %2 = pop.array.get %1[*"i`2x7"] : !pop.array<2, scalar<si64>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @unresolved_index_struct_gep<I>
@@ -472,8 +472,8 @@ kgen.generator @unresolved_index_struct_gep<I: index>(%arg0: !kgen.struct<(index
   %gep = kgen.struct.gep %0[I] : <struct<(index, index)>> -> <index>
   // CHECK-NEXT: %[[LOAD:.*]] = pop.load %[[GEP]] align<8>
   %load = pop.load %gep align<8> : !kgen.pointer<index>
-  // CHECK-NEXT: kgen.return %[[LOAD]]
-  kgen.return %load : index
+  // CHECK-NEXT: hlcf.return %[[LOAD]]
+  hlcf.return %load : index
 }
 
 
@@ -488,7 +488,7 @@ kgen.func @array_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index {
   // This can access an arbitrary element.
   %offset = pop.offset %gep[%arg2] : !kgen.pointer<index>
   %load = pop.load %offset : !kgen.pointer<index>
-  kgen.return %load : index
+  hlcf.return %load : index
 }
 
 // A struct allocation reached through its leading (offset-zero, nested) element
@@ -499,19 +499,19 @@ kgen.func @array_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index {
 kgen.func @bitcast_to_leading_element(%arg0: !kgen.struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>) -> !kgen.pointer<none> {
   // CHECK-NOT: pop.pointer.bitcast
   // CHECK: pop.stack_allocation 1 x pointer<none>
-  // CHECK: kgen.return
+  // CHECK: hlcf.return
 
   // MEM2REG: %[[E0:.*]] = kgen.struct.extract %[[STRUCT]][0]
   // MEM2REG: %[[E1:.*]] = kgen.struct.extract %[[E0]][0]
   // MEM2REG: %[[E2:.*]] = kgen.struct.extract %[[E1]][0]
-  // MEM2REG: kgen.return %[[E2]]
+  // MEM2REG: hlcf.return %[[E2]]
   %0 = pop.stack_allocation 1 x !kgen.struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>
   pop.store %arg0, %0 : !kgen.pointer<struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>>
   %1 = kgen.struct.gep %0[0] : <struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>>
   %2 = kgen.struct.gep %1[0] : <struct<(struct<(pointer<none>) memoryOnly>)>>
   %3 = kgen.struct.gep %2[0] : <struct<(pointer<none>) memoryOnly>>
   %4 = pop.load %3 : !kgen.pointer<pointer<none>>
-  kgen.return %4 : !kgen.pointer<none>
+  hlcf.return %4 : !kgen.pointer<none>
 }
 
 // The canonical round-trip pun: view a scalar slot as a wrapper aggregate and
@@ -524,9 +524,9 @@ kgen.func @bitcast_wrapper_roundtrip(%arg0: !kgen.pointer<none>) -> !kgen.pointe
   // CHECK: %[[A:.*]] = pop.stack_allocation 1 x pointer<none>
   // CHECK: pop.store %{{.*}}, %[[A]] : !kgen.pointer<pointer<none>>
   // CHECK: %[[L:.*]] = pop.load %[[A]] : !kgen.pointer<pointer<none>>
-  // CHECK: kgen.return %[[L]]
+  // CHECK: hlcf.return %[[L]]
 
-  // MEM2REG: kgen.return %[[PTR]]
+  // MEM2REG: hlcf.return %[[PTR]]
   %index0 = kgen.param.constant = <0>
   %0 = pop.stack_allocation 1 x pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(array<1, pointer<none>>)>>
@@ -534,7 +534,7 @@ kgen.func @bitcast_wrapper_roundtrip(%arg0: !kgen.pointer<none>) -> !kgen.pointe
   %3 = pop.array.gep %2[%index0] : <array<1, pointer<none>>>
   pop.store %arg0, %3 : !kgen.pointer<pointer<none>>
   %4 = pop.load %0 : !kgen.pointer<pointer<none>>
-  kgen.return %4 : !kgen.pointer<none>
+  hlcf.return %4 : !kgen.pointer<none>
 }
 
 // A bitcast to a type that is not a leading element is a real reinterpretation
@@ -547,7 +547,7 @@ kgen.func @bitcast_not_leading(%arg0: !kgen.struct<(index, index)>) -> !kgen.sca
   pop.store %arg0, %0 : !kgen.pointer<struct<(index, index)>>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<struct<(index, index)>> to !kgen.pointer<scalar<si64>>
   %2 = pop.load %1 : !kgen.pointer<scalar<si64>>
-  kgen.return %2 : !kgen.scalar<si64>
+  hlcf.return %2 : !kgen.scalar<si64>
 }
 
 // An address-space cast of the allocation is not a type pun and must be left
@@ -561,7 +561,7 @@ kgen.func @bitcast_address_space_cast(%arg0: !kgen.struct<(index, index)>) -> !k
   pop.store %arg0, %0 : !kgen.pointer<struct<(index, index)>>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<struct<(index, index)>> to !kgen.pointer<struct<(index, index)>, 3>
   %2 = pop.load %1 : !kgen.pointer<struct<(index, index)>, 3>
-  kgen.return %2 : !kgen.struct<(index, index)>
+  hlcf.return %2 : !kgen.struct<(index, index)>
 }
 
 // A round-trip pun through struct.gep alone (no array) also folds in place.
@@ -573,15 +573,15 @@ kgen.func @bitcast_roundtrip_struct_only(%arg0: !kgen.pointer<none>) -> !kgen.po
   // CHECK: %[[A:.*]] = pop.stack_allocation 1 x pointer<none>
   // CHECK: pop.store %{{.*}}, %[[A]] : !kgen.pointer<pointer<none>>
   // CHECK: %[[L:.*]] = pop.load %[[A]] : !kgen.pointer<pointer<none>>
-  // CHECK: kgen.return %[[L]]
+  // CHECK: hlcf.return %[[L]]
 
-  // MEM2REG: kgen.return %[[PTR]]
+  // MEM2REG: hlcf.return %[[PTR]]
   %0 = pop.stack_allocation 1 x pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(pointer<none>)>>
   %2 = kgen.struct.gep %1[0] : <struct<(pointer<none>)>>
   pop.store %arg0, %2 : !kgen.pointer<pointer<none>>
   %3 = pop.load %0 : !kgen.pointer<pointer<none>>
-  kgen.return %3 : !kgen.pointer<none>
+  hlcf.return %3 : !kgen.pointer<none>
 }
 
 // A scalar slot bitcast to a *different* type is a real reinterpretation, not a
@@ -594,7 +594,7 @@ kgen.func @bitcast_scalar_not_roundtrip(%arg0: !kgen.scalar<f32>) -> !kgen.scala
   pop.store %arg0, %0 : !kgen.pointer<scalar<f32>>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<scalar<f32>> to !kgen.pointer<scalar<si32>>
   %2 = pop.load %1 : !kgen.pointer<scalar<si32>>
-  kgen.return %2 : !kgen.scalar<si32>
+  hlcf.return %2 : !kgen.scalar<si32>
 }
 
 // If the round-trip pointer escapes (is stored as a value), it is not a pure
@@ -607,7 +607,7 @@ kgen.func @bitcast_roundtrip_escapes(%out: !kgen.pointer<pointer<pointer<none>>>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(pointer<none>)>>
   %2 = kgen.struct.gep %1[0] : <struct<(pointer<none>)>>
   pop.store %2, %out : !kgen.pointer<pointer<pointer<none>>>
-  kgen.return
+  hlcf.return
 }
 
 // A round-trip pun through array.gep alone folds in place.
@@ -619,16 +619,16 @@ kgen.func @bitcast_roundtrip_array_only(%arg0: !kgen.pointer<none>) -> !kgen.poi
   // CHECK: %[[A:.*]] = pop.stack_allocation 1 x pointer<none>
   // CHECK: pop.store %{{.*}}, %[[A]] : !kgen.pointer<pointer<none>>
   // CHECK: %[[L:.*]] = pop.load %[[A]] : !kgen.pointer<pointer<none>>
-  // CHECK: kgen.return %[[L]]
+  // CHECK: hlcf.return %[[L]]
 
-  // MEM2REG: kgen.return %[[PTR]]
+  // MEM2REG: hlcf.return %[[PTR]]
   %index0 = kgen.param.constant = <0>
   %0 = pop.stack_allocation 1 x pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<array<1, pointer<none>>>
   %2 = pop.array.gep %1[%index0] : <array<1, pointer<none>>>
   pop.store %arg0, %2 : !kgen.pointer<pointer<none>>
   %3 = pop.load %0 : !kgen.pointer<pointer<none>>
-  kgen.return %3 : !kgen.pointer<none>
+  hlcf.return %3 : !kgen.pointer<none>
 }
 
 // A GEP with a non-zero index reaches a different offset, not the slot: the
@@ -642,5 +642,5 @@ kgen.func @bitcast_roundtrip_nonzero_index(%arg0: !kgen.pointer<none>) -> !kgen.
   %2 = pop.array.gep %1[%index1] : <array<2, pointer<none>>>
   pop.store %arg0, %2 : !kgen.pointer<pointer<none>>
   %3 = pop.load %0 : !kgen.pointer<pointer<none>>
-  kgen.return %3 : !kgen.pointer<none>
+  hlcf.return %3 : !kgen.pointer<none>
 }

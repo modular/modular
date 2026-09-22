@@ -3,17 +3,17 @@
 
 // CHECK-LABEL: kgen.generator @foo_NestedClosure() -> !pop.array<0, i32> attributes {sourceName = "NestedClosure"} {
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i32> = <[]> loc(#[[LOC_NESTED:loc[0-9]*]])
-// CHECK-NEXT:    kgen.return %array : !pop.array<0, i32> loc(#[[LOC_NESTED]])
+// CHECK-NEXT:    hlcf.return %array : !pop.array<0, i32> loc(#[[LOC_NESTED]])
 // CHECK-NEXT:  } loc(#[[LOC_NESTED]])
 
 // CHECK-LABEL: kgen.generator @foo_Closure() -> !pop.array<0, i8> attributes {sourceName = "Closure"} {
 // CHECK-NEXT:    kgen.param.declare NestedClosure: () -> !pop.array<0, i32> = <@foo_NestedClosure> loc(#[[LOC_NESTED_DEC:loc[0-9]*]])
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i8> = <[]> loc(#[[LOC_CLOSURE:loc[0-9]*]])
-// CHECK-NEXT:    kgen.return %array : !pop.array<0, i8> loc(#[[LOC_CLOSURE]])
+// CHECK-NEXT:    hlcf.return %array : !pop.array<0, i8> loc(#[[LOC_CLOSURE]])
 // CHECK-NEXT:  } loc(#[[LOC_CLOSURE]])
 
 // CHECK-LABEL: kgen.generator @foo_OtherClosure() always_inline_no_debug attributes {sourceName = "OtherClosure"} {
-// CHECK-NEXT:    kgen.return loc(#[[LOC1:.*]])
+// CHECK-NEXT:    hlcf.return loc(#[[LOC1:.*]])
 // CHECK-NEXT:  } loc(#[[LOC1]])
 
 // CHECK-LABEL: kgen.generator @foo_NestedCapturing()
@@ -30,33 +30,33 @@
 // CHECK-NEXT:    pop.compiler.global_store "foo_context_var_1", %[[ARG]] : index loc(#[[LOC_CAP:.*]])
 // CHECK-NEXT:    kgen.param.declare Capturing: () capturing -> () = <@foo_Capturing> loc(#[[LOC_CAP]])
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[LOC_FOO]])
-// CHECK-NEXT:    kgen.return %array : !pop.array<0, i1> loc(#[[LOC_FOO]])
+// CHECK-NEXT:    hlcf.return %array : !pop.array<0, i1> loc(#[[LOC_FOO]])
 // CHECK-NEXT:  } loc(#[[LOC_FOO]])
 
 kgen.generator @foo(%arg0: index) -> !pop.array<0, i1> {
   kgen.param.declare.region Closure = () -> !pop.array<0, i8> {
     kgen.param.declare.region NestedClosure = () -> !pop.array<0, i32> {
       %array_3 = kgen.param.constant: array<0, i32> = <[]> loc(#locNested)
-      kgen.return %array_3 : !pop.array<0, i32> loc(#locNested)
+      hlcf.return %array_3 : !pop.array<0, i32> loc(#locNested)
     } loc(#locNested)
 
     %array_2 = kgen.param.constant: array<0, i8> = <[]> loc(#locClosure)
-    kgen.return %array_2 : !pop.array<0, i8> loc(#locClosure)
+    hlcf.return %array_2 : !pop.array<0, i8> loc(#locClosure)
   } loc(#locClosure)
 
   kgen.param.declare.region OtherClosure = () -> () always_inline_no_debug {
-    kgen.return loc(#loc1)
+    hlcf.return loc(#loc1)
   } loc(#loc1)
 
   kgen.param.declare.region Capturing = () capturing {
     kgen.param.declare.region NestedCapturing = () capturing -> index {
-      kgen.return %arg0 : index loc(#locNestedCap)
+      hlcf.return %arg0 : index loc(#locNestedCap)
     } loc(#locNestedCap)
-    kgen.return loc(#locCap)
+    hlcf.return loc(#locCap)
   } loc(#locCap)
 
   %array = kgen.param.constant: array<0, i1> = <[]> loc(#locFoo)
-  kgen.return %array : !pop.array<0, i1> loc(#locFoo)
+  hlcf.return %array : !pop.array<0, i1> loc(#locFoo)
 } loc(#locFoo)
 
 // CHECK-DAG: #[[LOC1]] = loc("foo.mojo":170:1)
@@ -95,15 +95,15 @@ kgen.generator @foo(%arg0: index) -> !pop.array<0, i1> {
 // COM: Use of 'a' appears only in a location inside the closure.
 
 // CHECK-LABEL: @outline_closures_ref_closure<a>()
-// CHECK-NEXT: kgen.return loc([[LOC:#.*]])
+// CHECK-NEXT: hlcf.return loc([[LOC:#.*]])
 
 // CHECK-LABEL: @outline_closures_ref<a>
 kgen.generator @outline_closures_ref<a>() {
   // CHECK-NEXT: declare closure: () -> () = <@outline_closures_ref_closure<a>>
   kgen.param.declare.region closure = () {
-    kgen.return loc(fused<#kgen.param.decl.ref<"a"> : index>["a:0:0"])
+    hlcf.return loc(fused<#kgen.param.decl.ref<"a"> : index>["a:0:0"])
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK: [[LOC]] = loc(fused<#kgen.param.decl.ref<"a"> : index>[
@@ -123,9 +123,9 @@ kgen.generator @ignore_param_defined_in_nested_non_decl_region_scope() {
     } else {
       hlcf.comptime.yield
     }
-    kgen.return
+    hlcf.return
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK: #[[LOC_X:.*]] = loc("x:0")
@@ -142,11 +142,11 @@ module {
       // CHECK-NEXT: kgen.param.declare _float32_dispatch: () capturing -> !kgen.none = <@toplevel__float32_dispatch> loc([[LOC:#.*]])
       kgen.param.declare.region _float32_dispatch = () capturing -> !kgen.none always_inline_no_debug {
         %none = kgen.param.constant: none = <#kgen.none> loc(#loc4)
-        kgen.return %none : !kgen.none loc(#loc4)
+        hlcf.return %none : !kgen.none loc(#loc4)
       } {isolated} loc(#loc4)
-      kgen.unreachable loc(#loc8)
+      hlcf.unreachable loc(#loc8)
     } loc(#loc8)
-    kgen.unreachable loc(#loc7)
+    hlcf.unreachable loc(#loc7)
   } loc(#loc5)
 } loc(#loc)
 // CHECK-DAG: [[LOC1:#.*]] = loc("delete-me.mojo":28:8)

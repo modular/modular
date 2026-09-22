@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "Support/Compiler/VerifyUtils.h"
 #include "mlir/IR/Matchers.h"
 
 using namespace M;
@@ -1429,6 +1430,50 @@ ComptimeYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
   state.popEvalFrame();
   state.popParamValues(false, this->getOperation());
   return state.transferControlFlowTo((*this)->getParentOp(), operands);
+}
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+bool ReturnOp::isParentNode(Operation *op) {
+  return isa<KGEN::FunctionLike>(op);
+}
+
+void ReturnOp::getBranchTargets(ArrayRef<Attribute> operands,
+                                SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+LogicalResult ReturnOp::verify() {
+  auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
+  if (!func)
+    return emitOpError("expected to be nested inside a function");
+  return checkOperandTypes(*this, func.getResultTypes());
+}
+
+ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
+  return state.returnFromFunction(operands);
+}
+
+ErrorTreeOrSuccess
+ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
+  return state.returnFromFunction(operands);
+}
+
+//===----------------------------------------------------------------------===//
+// UnreachableOp
+//===----------------------------------------------------------------------===//
+
+/// Unreachable can terminate any control flow operation.
+bool UnreachableOp::isParentNode(Operation *op) { return true; }
+
+/// No branch targets.
+void UnreachableOp::getBranchTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
 }
 
 //===----------------------------------------------------------------------===//

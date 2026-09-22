@@ -2001,7 +2001,7 @@ def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [Pure]> {
       %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
       %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
-      kgen.return %2 : !kgen.scalar<f32>
+      hlcf.return %2 : !kgen.scalar<f32>
     }
     ```
   }];
@@ -2037,7 +2037,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
       %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
       %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
-      kgen.return %2 : !kgen.scalar<f32>
+      hlcf.return %2 : !kgen.scalar<f32>
     }
     ```
 
@@ -2052,7 +2052,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
       %N = kgen.param.constant: si32 = <N>
       %rhs = pop.cast_from_builtin %N : si32 to !kgen.scalar<si32>
       %result = pop.add %arg0, %rhs : !kgen.scalar<f32>
-      kgen.return %result : !kgen.scalar<f32>
+      hlcf.return %result : !kgen.scalar<f32>
     }
     ```
   }];

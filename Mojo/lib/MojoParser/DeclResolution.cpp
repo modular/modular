@@ -38,6 +38,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Filesystem/Paths.h"
 
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -52,6 +53,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace LIT;
 
 /// If the given ASTDecl represents an extension, return the ASTDecl for its

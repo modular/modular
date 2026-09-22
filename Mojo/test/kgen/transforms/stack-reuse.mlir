@@ -21,7 +21,7 @@ kgen.func @two_overlapping(%arg0: index, %arg1: index) -> (index, index) {
   // CHECK: %[[V1:.*]] = pop.load %[[S1]]
   %v1 = pop.load %s2 : !kgen.pointer<index>
   // CHECK: return %[[V0]], %[[V1]]
-  kgen.return %v0, %v1 : index, index
+  hlcf.return %v0, %v1 : index, index
 }
 
 // CHECK-LABEL: @control_flow_if
@@ -57,7 +57,7 @@ kgen.func @control_flow_if(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>
   // CHECK-NEXT: %[[V:.*]] = pop.load %[[S0]]
   %1 = pop.load %s1 : !kgen.pointer<index>
   // CHECK-NEXT: return %[[V]]
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @control_flow_if_lifetime
@@ -100,7 +100,7 @@ kgen.func @control_flow_if_lifetime(%arg0: index, %arg1: index, %arg2: !kgen.sca
   pop.stack_alloc.lifetime.end(%s0) : !kgen.pointer<index>
   pop.stack_alloc.lifetime.end(%s1) : !kgen.pointer<index>
   // CHECK-NEXT: return %[[V]]
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @loop_and_gep
@@ -129,7 +129,7 @@ kgen.func @loop_and_gep(%arg0: !pop.array<2, index>, %arg1: index) {
   %1 = pop.array.gep %s1[%arg1] : <array<2, index>>
   // CHECK-NEXT: pop.load %[[GEP]]
   %2 = pop.load %1 : !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @gep_reconstruct
@@ -158,7 +158,7 @@ kgen.func @gep_reconstruct(%arg0: !pop.array<2, index>, %arg1: !pop.array<2, ind
   %r1 = pop.load %gep : !kgen.pointer<index>
 
   // CHECK-NEXT: return %[[R0]], %[[R1]]
-  kgen.return %r0, %r1 : index, index
+  hlcf.return %r0, %r1 : index, index
 }
 
 // CHECK-LABEL: @gep_reconstruct_lifetime(
@@ -192,7 +192,7 @@ kgen.func @gep_reconstruct_lifetime(%arg0: !pop.array<2, index>, %arg1: !pop.arr
   %r1 = pop.load %gep : !kgen.pointer<index>
   pop.stack_alloc.lifetime.end(%s1) : !kgen.pointer<array<2, index>>
   pop.stack_alloc.lifetime.end(%s0) : !kgen.pointer<array<2, index>>
-  kgen.return %r0, %r1 : index, index
+  hlcf.return %r0, %r1 : index, index
 }
 
 // CHECK-LABEL: @gep_reconstruct_lifetime_fullymixed(
@@ -226,7 +226,7 @@ kgen.func @gep_reconstruct_lifetime_fullymixed(%arg0: !pop.array<2, index>, %arg
   %r1 = pop.load %gep : !kgen.pointer<index>
   pop.stack_alloc.lifetime.end(%s1) : !kgen.pointer<array<2, index>>
   pop.stack_alloc.lifetime.end(%s0) : !kgen.pointer<array<2, index>>
-  kgen.return %r0, %r1 : index, index
+  hlcf.return %r0, %r1 : index, index
 }
 
 // CHECK-LABEL: @no_alloc_users
@@ -234,7 +234,7 @@ kgen.func @no_alloc_users() {
   hlcf.loop {
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @use_in_region
@@ -255,7 +255,7 @@ kgen.func @use_in_region(%arg0 : index) {
     // CHECK-NEXT: hlcf.break
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @use_crosses_region
@@ -274,9 +274,9 @@ kgen.func @use_crosses_region(%arg0: index) {
     pop.load %1 : !kgen.pointer<index>
     // CHECK-NEXT: pop.store %arg0, %0
     pop.store %arg0, %0 : !kgen.pointer<index>
-    kgen.return
+    hlcf.return
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @copy_elision_alias
@@ -289,7 +289,7 @@ kgen.func @copy_elision_alias() {
   %3 = pop.stack_allocation 1 x struct<(index)>
   pop.store %2, %3 : !kgen.pointer<struct<(index)>>
   pop.load %3 : !kgen.pointer<struct<(index)>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @function_boundary
@@ -309,12 +309,12 @@ kgen.func @function_boundary(%arg0: index) -> index {
     // CHECK: [[R1:%.*]] = pop.load [[S1]]
     %5 = pop.load %4 : !kgen.pointer<index>
     // CHECK-NEXT: return [[R1]]
-    kgen.return %5 : index
+    hlcf.return %5 : index
   }
   // CHECK: [[R0:%.*]] = pop.load [[S0]]
   %2 = pop.load %1 : !kgen.pointer<index>
   // CHECK-NEXT: return [[R0]]
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 // -----
@@ -325,7 +325,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       // CHECK-NEXT: %0 = pop.global_constant: array<2, struct<(scalar<ui64>, scalar<ui64>)>> = <[{ 0, 1 }, { 2, 3 }]>
       // CHECK-NEXT: %1 = pop.array.gep %0[%arg0] : <array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
       // CHECK-NEXT: %2 = pop.load %1 : !kgen.pointer<struct<(scalar<ui64>, scalar<ui64>)>>
-      // CHECK-NEXT: kgen.return
+      // CHECK-NEXT: hlcf.return
       %array = kgen.param.constant: array<2, struct<(scalar<ui64>, scalar<ui64>)>> = <[{ 0, 1 }, { 2, 3 }]>
       %21 = pop.stack_allocation 1 x array<2, struct<(scalar<ui64>, scalar<ui64>)>> marked
       pop.stack_alloc.lifetime.start(%21) : !kgen.pointer<array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
@@ -333,7 +333,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       %23 = pop.array.gep %21[%arg0] : <array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
       %24 = pop.load %23 : !kgen.pointer<struct<(scalar<ui64>, scalar<ui64>)>>
       pop.stack_alloc.lifetime.end(%21) : !kgen.pointer<array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
-      kgen.return
+      hlcf.return
   }
 
   // Cannot convert the constant of strings into pop.global_constant
@@ -350,6 +350,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %6 = pop.string.address %5
     %7 = pop.pointer.bitcast %6 : !kgen.pointer<scalar<si8>> to !kgen.pointer<none>
     %8 = pop.string.size %5
-    kgen.return %8 : index
+    hlcf.return %8 : index
   }
 }

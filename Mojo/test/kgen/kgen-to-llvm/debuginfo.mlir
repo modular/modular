@@ -93,6 +93,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   ) memoryOnly>
 
   kgen.func @foo() {
-    kgen.return loc(fused<#subprogram>["foo.mlir":10:10])
+    hlcf.return loc(fused<#subprogram>["foo.mlir":10:10])
   } loc(fused<#subprogram>["foo.mlir":10:10])
 }

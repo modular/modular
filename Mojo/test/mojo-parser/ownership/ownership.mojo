@@ -30,7 +30,7 @@ struct MemExample(ImplicitlyCopyable, Copyable):
   # CHECK-NEXT:    lit.call {{.*}}noop{{.*}}([[IMMREF]])
   # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT:    lit.ownership.mark_destroyed %self
-  # CHECK-NEXT:    kgen.return %none : !kgen.none
+  # CHECK-NEXT:    hlcf.return %none : !kgen.none
   def __deinit__(deinit self):
     self.noop()
 
@@ -61,7 +61,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
   # CHECK-LABEL: lit.fn @"__deinit__
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
   def __deinit__(deinit self):
     pass
 
@@ -238,7 +238,7 @@ def testCondGetAsUninitializedObject(exit_early: __mlir_type.`!kgen.scalar<bool>
   # CHECK: [[REF:%.*]] = lit.ref.from_pointer %ptr start_uninit :
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
   # CHECK-NEXT: %none = kgen.param.constant: none
-  # CHECK-NEXT: kgen.return %none
+  # CHECK-NEXT: hlcf.return %none
   __get_address_as_uninit_lvalue(ptr) = MemExample()
 
 
@@ -256,7 +256,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%2)
     self.f2 = MemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT: kgen.return
+    # CHECK-NEXT: hlcf.return
 
   # CHECK: lit.fn @"__init__
   def __init__(out self, a: MemExample, b: MemExample):
@@ -423,12 +423,12 @@ def test_result_consume_reg(cond: __mlir_type.`!kgen.scalar<bool>`) -> RegExampl
     # CHECK-NEXT: lit.ownership.use %example2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume %example2
     # CHECK-NEXT: lifetime.end %example2
-    # CHECK-NEXT: kgen.return [[TMP2]]
+    # CHECK-NEXT: hlcf.return [[TMP2]]
     return example2^
   else: # CHECK-NEXT: } else {
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume %example2
     # CHECK-NEXT: lifetime.end %example2
-    # CHECK-NEXT: kgen.return [[TMP2]]
+    # CHECK-NEXT: hlcf.return [[TMP2]]
     return example2  # copy/deinit -> move optimization.
 
 # CHECK: lit.fn @"consumeMem
@@ -486,7 +486,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     # CHECK-NEXT: lit.ref.store [[TMP]], [[B]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
     # CHECK-NEXT: lit.var.lifetime.end %self
-    # CHECK-NEXT: kgen.return [[TMP]]
+    # CHECK-NEXT: hlcf.return [[TMP]]
     self.a = RegExample()
     self.b = RegExample()
 
@@ -503,7 +503,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SB]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
     # CHECK-NEXT: lit.var.lifetime.end %self
-    # CHECK-NEXT: kgen.return [[TMP]]
+    # CHECK-NEXT: hlcf.return [[TMP]]
     self.a = copy.a
     self.b = copy.b
 
@@ -514,7 +514,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
   # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[BPTR]])
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 
 def take_regexample_ref(ref r: RegExample): pass
@@ -599,7 +599,7 @@ struct ExoticDelExample(RegisterPassable):
 
     # CHECK-NEXT: = kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT:lit.ownership.mark_destroyed %self
-    # CHECK-NEXT:kgen.return
+    # CHECK-NEXT:hlcf.return
 
 
 # CHECK-LABEL: lit.fn @"def_borrowed
@@ -778,7 +778,7 @@ def variadic_field_sensitivity():
   # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%memPair)
   # CHECK-NEXT: lifetime.end %memPair
   # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 # CHECK-LABEL: lit.fn @"variadic_inout_mems
 # CHECK-SAME: [imm *"mems`2"]
@@ -793,7 +793,7 @@ def variadic_inout_mems(mut *mems: MemExample):
   mems[0].x += 1
 
   # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 # CHECK-LABEL: lit.fn @"call_variadic_inout_mems
 def call_variadic_inout_mems():
@@ -814,7 +814,7 @@ def call_variadic_inout_mems():
   # CHECK-NEXT: lifetime.end %a
 
   # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 # CHECK-LABEL: lit.fn @"variadic_owned_mems
 def variadic_owned_mems(var *mems: MemExample):
@@ -831,7 +831,7 @@ def call_variadic_owned_mems(var c: MemExample, var d: MemExample):
     # CHECK-NEXT: lit.var.lifetime.end %anonymous
     # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
     # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT: kgen.return %none : !kgen.none
+    # CHECK-NEXT: hlcf.return %none : !kgen.none
 
 
 # CHECK-LABEL: lit.fn @"test_partial_overwrite
@@ -863,7 +863,7 @@ def test_partial_overwrite(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: lifetime.end %pair
 
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT: kgen.return
+    # CHECK-NEXT: hlcf.return
     return
   # CHECK-NEXT: }
 
@@ -880,7 +880,7 @@ struct UninitField(Movable where False):
       # CHECK-NEXT: %0 = lit.ref.struct.ger %self[field]
       # CHECK-NEXT: lit.ownership.mark_initialized %0
       # CHECK-NEXT: %none = kgen.param.constant
-      # CHECK-NEXT: kgen.return %none
+      # CHECK-NEXT: hlcf.return %none
 
 def maybeMemExample() raises -> MemExample:
    return MemExample()
@@ -1008,7 +1008,7 @@ def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExamp
     # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%b)
     # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%a)
 
-    # CHECK-NEXT:  kgen.return [[RESULT]]
+    # CHECK-NEXT:  hlcf.return [[RESULT]]
     return a if x else b
 
 
@@ -1033,7 +1033,7 @@ struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & Deinitable](Movable whe
         # Full object bit is explicitly destroyed.
         # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: lit.ownership.mark_destroyed %self
-        # CHECK-NEXT: kgen.return
+        # CHECK-NEXT: hlcf.return
 
 
 # CHECK-LABEL: lit.fn @"field_sensitive_ref_last_use
@@ -1346,7 +1346,7 @@ def my_min1(cond: __mlir_type.`!kgen.scalar<bool>`, ref x: Int, ref y: Int) -> r
   # CHECK-NEXT: }
 
   # CHECK-NEXT: [[RET:%.*]] = kgen.rebind [[IF]]
-  # CHECK-NEXT: kgen.return [[RET]]
+  # CHECK-NEXT: hlcf.return [[RET]]
   return x if cond else y
 
 # CHECK-LABEL: lit.fn @"my_min2
@@ -1482,7 +1482,7 @@ struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack, Movable where 
 # CHECK: lit.fn @"method_with_pack{{.*}}(%self: !lit.ref<!InheritDefaultFromHasBarWVariadicPack, mut *"0_unnamed`"> mut,
 # CHECK-SAME: %args: !lit.ref<!lit.struct<#VariadicPack
 # CHECK-NEXT: lit.call {{.*}}@"method_with_pack{{.*}}(%self, %args)
-# CHECK-NEXT: kgen.return %0
+# CHECK-NEXT: hlcf.return %0
 
 # https://github.com/modular/modular/issues/5722
 # `__deinit__` incorrectly runs when `__init__` raises before all fields are initialized.

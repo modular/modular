@@ -9,5 +9,5 @@
 // CHECK: simd_bit_width = 256
 
 kgen.generator export @main() {
-  kgen.return
+  hlcf.return
 }

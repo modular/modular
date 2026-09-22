@@ -27,7 +27,7 @@ kgen.func @loop(%arg0: i32, %arg1: i64) {
     hlcf.continue
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @if
@@ -61,7 +61,7 @@ kgen.func @if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
     hlcf.yield %arg1, %arg2 : i32, i64
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @func_loop_if
@@ -70,8 +70,8 @@ kgen.func @func_loop_if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> i3
   %2 = hlcf.loop (%0 = %arg2 : i64) -> i32 {
     // CHECK: %[[V1:.*]] = hlcf.if %arg0 -> i64
     %1 = hlcf.if %arg0 -> i64 {
-      // CHECK: kgen.return %arg1 : i32
-      kgen.return %arg1 : i32
+      // CHECK: hlcf.return %arg1 : i32
+      hlcf.return %arg1 : i32
     } else {
       // CHECK: hlcf.yield %[[A]] : i64
       hlcf.yield %0 : i64
@@ -86,7 +86,7 @@ kgen.func @func_loop_if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> i3
     // CHECK: hlcf.break %arg1 : i32
     hlcf.break %arg1 : i32
   }
-  kgen.return %2 : i32
+  hlcf.return %2 : i32
 }
 
 // CHECK-LABEL: @labelled_loops
@@ -115,7 +115,7 @@ kgen.func @labelled_loops(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: i32) {
     // CHECK: break %{{.*}} : i32
     hlcf.break %arg1 : i32
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @switch
@@ -125,7 +125,7 @@ kgen.func @switch(%arg0: index, %arg1: i32, %arg2: i64) {
   // CHECK-NEXT: default {
   default {
     // CHECK-NEXT: return
-    kgen.return
+    hlcf.return
   }
   // CHECK: case 2 {
   case 2 {
@@ -137,7 +137,7 @@ kgen.func @switch(%arg0: index, %arg1: i32, %arg2: i64) {
   default {
     hlcf.yield %arg1, %arg2 : i32, i64
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @elif
@@ -187,7 +187,7 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
   } else {
     hlcf.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @for_index_bounds
@@ -197,7 +197,7 @@ kgen.func @for_index_bounds(%lb: index, %ub: index, %step: index) {
   hlcf.for [%lb to %ub step %step slt add] (%arg0 = %lb : index) {
     hlcf.for.yield [induction_var (%arg0 : index)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @for_si8_bounds
@@ -207,7 +207,7 @@ kgen.func @for_si8_bounds(%lb: !kgen.scalar<si8>, %ub: !kgen.scalar<si8>, %step:
   hlcf.for [%lb to %ub step %step : !kgen.scalar<si8> slt add] (%arg0 = %lb : !kgen.scalar<si8>) {
     hlcf.for.yield [induction_var (%arg0 : !kgen.scalar<si8>)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @for_si32_bounds
@@ -217,7 +217,7 @@ kgen.func @for_si32_bounds(%lb: !kgen.scalar<si32>, %ub: !kgen.scalar<si32>, %st
   hlcf.for [%lb to %ub step %step : !kgen.scalar<si32> slt add] (%arg0 = %lb : !kgen.scalar<si32>) {
     hlcf.for.yield [induction_var (%arg0 : !kgen.scalar<si32>)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @for_si64_bounds
@@ -227,7 +227,7 @@ kgen.func @for_si64_bounds(%lb: !kgen.scalar<si64>, %ub: !kgen.scalar<si64>, %st
   hlcf.for [%lb to %ub step %step : !kgen.scalar<si64> sgt sub] (%arg0 = %lb : !kgen.scalar<si64>) {
     hlcf.for.yield [induction_var (%arg0 : !kgen.scalar<si64>)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @for_pop_index_bounds
@@ -237,7 +237,7 @@ kgen.func @for_pop_index_bounds(%lb: !kgen.scalar<index>, %ub: !kgen.scalar<inde
   hlcf.for [%lb to %ub step %step : !kgen.scalar<index> slt add] (%arg0 = %lb : !kgen.scalar<index>) {
     hlcf.for.yield [induction_var (%arg0 : !kgen.scalar<index>)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 // Loop with a return value.
@@ -250,7 +250,7 @@ kgen.func @for_with_retval(%lb: index, %ub: index, %step: index, %init: index) -
                 (%arg0 = %lb : index, %arg1 = %init : index) -> index {
     hlcf.for.yield [induction_var (%arg0 : index)] [retvals (%arg1 : index)] [iterargs ()]
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // Loop with an additional iter arg.
@@ -263,7 +263,7 @@ kgen.func @for_with_iterarg(%lb: index, %ub: index, %step: index, %init: i32) {
            (%arg0 = %lb : index, %arg1 = %init : i32) {
     hlcf.for.yield [induction_var (%arg0 : index)] [retvals ()] [iterargs (%arg1 : i32)]
   }
-  kgen.return
+  hlcf.return
 }
 
 // Pop scalar loop with a return value.
@@ -277,7 +277,7 @@ kgen.func @for_si64_with_retval(%lb: !kgen.scalar<si64>, %ub: !kgen.scalar<si64>
                 (%arg0 = %lb : !kgen.scalar<si64>, %arg1 = %init : index) -> index {
     hlcf.for.yield [induction_var (%arg0 : !kgen.scalar<si64>)] [retvals (%arg1 : index)] [iterargs ()]
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL:  kgen.func @elifWithArgs
@@ -315,7 +315,7 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
      hlcf.yield %idx0, %arg3 : index, index
   }
   %1 = index.add %0#1, %0#0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @match
@@ -334,8 +334,8 @@ kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
       hlcf.match.next
     // CHECK-NEXT: }
     }
-    // CHECK-NEXT: kgen.unreachable
-    kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
+    hlcf.unreachable
   // CHECK-NEXT: }
   // CHECK-NEXT: case {
   }
@@ -374,7 +374,7 @@ kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
     hlcf.yield %arg1, %arg2 : i32, i64
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // Nested match: next/complete in an inner else target the enclosing match.
@@ -393,8 +393,8 @@ kgen.func @nested_match(%arg0: !kgen.scalar<bool>) {
       // CHECK: hlcf.match.next
       hlcf.match.next
     }
-    // CHECK: kgen.unreachable
-    kgen.unreachable
+    // CHECK: hlcf.unreachable
+    hlcf.unreachable
   }
   case {
     hlcf.match.complete
@@ -402,7 +402,7 @@ kgen.func @nested_match(%arg0: !kgen.scalar<bool>) {
   else {
     hlcf.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @comptime_match
@@ -421,8 +421,8 @@ kgen.func @comptime_match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
       hlcf.match.next
     // CHECK-NEXT: }
     }
-    // CHECK-NEXT: kgen.unreachable
-    kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
+    hlcf.unreachable
   // CHECK-NEXT: }
   // CHECK-NEXT: case {
   }
@@ -461,7 +461,7 @@ kgen.func @comptime_match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
     hlcf.yield %arg1, %arg2 : i32, i64
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // Nested comptime match: next/complete in an inner else target the enclosing
@@ -481,8 +481,8 @@ kgen.func @nested_comptime_match(%arg0: !kgen.scalar<bool>) {
       // CHECK: hlcf.match.next
       hlcf.match.next
     }
-    // CHECK: kgen.unreachable
-    kgen.unreachable
+    // CHECK: hlcf.unreachable
+    hlcf.unreachable
   }
   case {
     hlcf.match.complete
@@ -490,5 +490,5 @@ kgen.func @nested_comptime_match(%arg0: !kgen.scalar<bool>) {
   else {
     hlcf.yield
   }
-  kgen.return
+  hlcf.return
 }

@@ -523,7 +523,7 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
         return name.getStringRef().str();
       });
 
-  // TODO: Add support for other ControlFlowTerminators, e.g. kgen.return, etc.
+  // TODO: Add support for other ControlFlowTerminators, e.g. hlcf.return, etc.
   if (auto breakOp = dyn_cast<BreakOp>(term.getOperation())) {
     Operation *parentLoop = getParentNode(term);
     resolveBreak(breakOp);
@@ -626,7 +626,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
       // Tell parent region that there is early exit (so that the parent region
       // can decide whether to continue traverse the rest of the operation or
       // not).
-      hasEarlyExits = isa<ContinueOp, BreakOp, KGEN::UnreachableOp>(op);
+      hasEarlyExits = isa<ContinueOp, BreakOp, HLCF::UnreachableOp>(op);
       break;
     }
 

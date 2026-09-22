@@ -108,6 +108,8 @@ static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
       if (isa<SuspendEndOp>(currentOp)) {
         auto savePoint = buildContext.builder.saveInsertionPoint();
         buildContext.builder.setInsertionPoint(currentOp);
+        // Suspension points are lowered inside llvm.func after KGEN→LLVM, so
+        // emit llvm.return (not hlcf.return).
         ReturnOp::create(buildContext.builder, ValueRange({}));
         currentOp->erase();
         buildContext.builder.restoreInsertionPoint(savePoint);

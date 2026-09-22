@@ -251,7 +251,7 @@ struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
         }))
       return failure();
 
-    if constexpr (!std::is_same_v<TerminatorOpT, KGEN::ReturnOp>) {
+    if constexpr (!std::is_same_v<TerminatorOpT, HLCF::ReturnOp>) {
       // Ensure all terminators branch to the same labeled loop.
       auto label = terms.front().getLabelAttr();
       if (llvm::any_of(terms, [&](TerminatorOpT term) {
@@ -315,7 +315,7 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
       Operation *term = body->front().getTerminator();
       if (isa<YieldOp>(term))
         yieldTerms.push_back(term);
-      else if (isa<KGEN::ReturnOp, BreakOp>(term))
+      else if (isa<HLCF::ReturnOp, BreakOp>(term))
         exitTerms.push_back(term);
       else
         return rewriter.notifyMatchFailure(
@@ -352,7 +352,7 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     Operation *actualParentTermOp = nullptr;
     std::function<void(Operation *)> findParentTermOp;
     findParentTermOp = [&](Operation *parentTerm) {
-      if (isa<KGEN::ReturnOp, BreakOp>(parentTerm)) {
+      if (isa<HLCF::ReturnOp, BreakOp>(parentTerm)) {
         actualParentTermOp = parentTerm;
         parentBlockTermOperands = parentTerm->getOperands();
         return;
@@ -365,7 +365,7 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
         return;
       Operation &termAfterIf = *std::next(Block::iterator(parentIf));
       Operation *blockTerm = parentIf->getBlock()->getTerminator();
-      if (!isa<KGEN::ReturnOp, BreakOp, YieldOp>(termAfterIf) &&
+      if (!isa<HLCF::ReturnOp, BreakOp, YieldOp>(termAfterIf) &&
           parentTerm != yieldTerms.front())
         return;
       findParentTermOp(blockTerm);
@@ -396,8 +396,8 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
       return rewriter.notifyMatchFailure(
           op, "nested multi-arm conditional hoist is unsupported");
 
-    if (isa<KGEN::ReturnOp>(actualParentTermOp)) {
-      if (!isa<KGEN::ReturnOp>(sampleExit))
+    if (isa<HLCF::ReturnOp>(actualParentTermOp)) {
+      if (!isa<HLCF::ReturnOp>(sampleExit))
         return rewriter.notifyMatchFailure(
             op, "Parent block is Return, but exiting terminator is Break");
     } else {
@@ -482,7 +482,7 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
       BreakOp::create(rewriter, op.getLoc(), newOp->getResults(),
                       br.getLabelAttr());
     } else {
-      KGEN::ReturnOp::create(rewriter, op.getLoc(), newOp->getResults());
+      HLCF::ReturnOp::create(rewriter, op.getLoc(), newOp->getResults());
     }
 
     for (Operation *exitTerm : newExitTerms) {
@@ -540,7 +540,7 @@ struct RemoveUnusedResults : public OpRewritePattern<IfOp> {
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *ctx) {
-  results.add<RemoveStaticCondition, HoistUnconditionalReturn<KGEN::ReturnOp>,
+  results.add<RemoveStaticCondition, HoistUnconditionalReturn<HLCF::ReturnOp>,
               HoistUnconditionalReturn<HLCF::BreakOp>,
               HoistUnconditionalReturn<HLCF::ContinueOp>,
               HoistConditionalReturn, HoistYieldResults, RemoveUnusedResults>(
@@ -766,7 +766,7 @@ LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
 
   // We can't fold away the op entirely, because it defines a parameter scope
   // and this could create param decl conflicts. Instead, purge the dead region
-  // and insert a `kgen.unreachable`.
+  // and insert a `hlcf.unreachable`.
   Block &deadBlock = op->getRegion(condValue).front();
 
   // Don't match again if the dead block is already purged.
@@ -800,7 +800,7 @@ LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
 
   // If we are ending control flow we can hoist it out but we have to delete
   // all following ops to retain legality.
-  if (isa<KGEN::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(liveFront)) {
+  if (isa<HLCF::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(liveFront)) {
     Block *block = op->getBlock();
     // Delete things bottom-up so we delete uses before defs.
     while (&block->back() != op)

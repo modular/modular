@@ -4,12 +4,12 @@
 // COM: https://github.com/modularml/modular/issues/19175
 
 kgen.generator @use(%a: index) no_inline {
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: index) always_inline {
   kgen.param.declare.region thing = () capturing -> index always_inline {
-    kgen.return %a : index
+    hlcf.return %a : index
   }
 
   hlcf.comptime.if <recurse> {
@@ -18,7 +18,7 @@ kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: in
 
     kgen.param.declare.region noop = () capturing -> index {
       %idx42 = index.constant 42
-      kgen.return %idx42 : index
+      hlcf.return %idx42 : index
     }
     %idx77 = index.constant 77
     kgen.call @test<:scalar<bool> false, :() capturing -> index noop>(%idx77) : (index) -> ()
@@ -30,14 +30,14 @@ kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: in
     hlcf.comptime.yield
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   kgen.param.declare.region noop = () capturing -> index {
     %idx22 = index.constant 22
-    kgen.return %idx22 : index
+    hlcf.return %idx22 : index
   }
   // CHECK-NEXT: index.constant 11
   %idx11 = index.constant 11
@@ -45,5 +45,5 @@ kgen.generator export @top() {
   // CHECK-NEXT: call @use(%idx11)
   kgen.call @test<:scalar<bool> true, :() capturing -> index noop>(%idx11) : (index) -> ()
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }

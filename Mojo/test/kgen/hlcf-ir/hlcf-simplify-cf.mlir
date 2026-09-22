@@ -11,7 +11,7 @@ kgen.func @remove_trivial_loop_0() -> () {
   // CHECK-NEXT: foo.op
   // CHECK-NEXT: bar.op
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @remove_trivial_loop_1
@@ -21,7 +21,7 @@ kgen.func @remove_trivial_loop_1(%arg0: index) -> index {
     hlcf.break %arg0: index
   }
   // CHECK-NEXT: return %arg0
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @remove_trivial_loop_2
@@ -36,7 +36,7 @@ kgen.func @remove_trivial_loop_2(%cond: !kgen.scalar<bool>, %arg0: index) -> ind
     }
     hlcf.break %arg0: index
   }
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @remove_trivial_loop_3
@@ -51,7 +51,7 @@ kgen.func @remove_trivial_loop_3(%cond: !kgen.scalar<bool>, %arg0: index, %arg1:
     }
     hlcf.break %arg0: index
   }
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @remove_trivial_loop_4
@@ -62,7 +62,7 @@ kgen.func @remove_trivial_loop_4(%cond: !kgen.scalar<bool>, %arg0: index, %arg1:
     // CHECK-NEXT: hlcf.if
     hlcf.if %cond {
       // CHECK-NEXT: return %arg2
-      kgen.return %arg1: index
+      hlcf.return %arg1: index
     } else {
       hlcf.yield
     }
@@ -70,7 +70,7 @@ kgen.func @remove_trivial_loop_4(%cond: !kgen.scalar<bool>, %arg0: index, %arg1:
     hlcf.break %arg0: index
   }
   // CHECK: return %arg1
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @remove_trivial_loop_5
@@ -94,7 +94,7 @@ kgen.func @remove_trivial_loop_5(%cond: !kgen.scalar<bool>, %arg0: index, %arg1:
     hlcf.break %t: index
   }
   // CHECK: return %0
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @remove_trivial_loop_6
@@ -116,7 +116,7 @@ kgen.func @remove_trivial_loop_6(%cond: !kgen.scalar<bool>, %arg0: index, %arg1:
     "foo.op"() : () -> ()
     hlcf.break
   }
-  kgen.return %arg0: index
+  hlcf.return %arg0: index
 }
 
 // CHECK-LABEL: @remove_trivial_loop_7
@@ -134,7 +134,7 @@ kgen.func @remove_trivial_loop_7() {
     "foo.op"() : () -> ()
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @remove_trivial_loop_8
@@ -154,7 +154,7 @@ kgen.func @remove_trivial_loop_8(%cond: !kgen.scalar<bool>) {
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @remove_trivial_loop_9
@@ -167,7 +167,7 @@ kgen.func @remove_trivial_loop_9(%cond: !kgen.scalar<bool>) {
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @remove_trivial_loop_10
@@ -177,13 +177,13 @@ kgen.func @remove_trivial_loop_10(%cond: !kgen.scalar<bool>) {
   hlcf.loop {
     hlcf.loop {
       // CHECK-NEXT: return
-      kgen.return
+      hlcf.return
     }
     // CHECK-NOT: foo.op
     "foo.op"() : () -> ()
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @remove_trivial_loop_11
@@ -196,13 +196,13 @@ kgen.func @remove_trivial_loop_11(%cond: !kgen.scalar<bool>) {
       hlcf.if %cond {
         hlcf.continue
       } else {
-        kgen.return
+        hlcf.return
       }
       hlcf.break
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @remove_trivial_loop_12
@@ -217,11 +217,11 @@ kgen.func @remove_trivial_loop_12(%cond: !kgen.scalar<bool>) {
       } else {
         hlcf.break
       }
-      kgen.return
+      hlcf.return
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @two_loop_erase
@@ -229,12 +229,12 @@ kgen.func @remove_trivial_loop_12(%cond: !kgen.scalar<bool>) {
 kgen.func @two_loop_erase() {
   // CHECK-NEXT: return
   hlcf.loop {
-    kgen.return
+    hlcf.return
   }
   hlcf.loop {
-    kgen.return
+    hlcf.return
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @erase_trivial_try
@@ -244,14 +244,14 @@ kgen.func @erase_trivial_try() {
     "foo.op"() : () -> ()
     lit.try.yield
   } except (%e: index) {
-    kgen.unreachable
+    hlcf.unreachable
   } else {
     // CHECK-NEXT: bar.op
     "bar.op"() : () -> ()
     lit.try.yield
   }
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @raise_in_try
@@ -262,9 +262,9 @@ kgen.func @raise_in_try(%arg0: index) {
   } except (%e: index) {
     lit.try.yield
   } else {
-    kgen.unreachable
+    hlcf.unreachable
   }
-  kgen.return
+  hlcf.return
 }
 
 
@@ -281,7 +281,7 @@ kgen.func @nested_raise(%arg0: index) {
   } else {
     lit.try.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @raise_in_else
@@ -296,7 +296,7 @@ kgen.func @raise_in_else(%arg0: index) {
       "bar.op"() : () -> ()
       lit.try.yield
     } except (%arg1: index) {
-      kgen.unreachable
+      hlcf.unreachable
     } else {
       // CHECK-NEXT: baz.op
       "baz.op"() : () -> ()
@@ -311,22 +311,22 @@ kgen.func @raise_in_else(%arg0: index) {
   } else {
     lit.try.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @return_in_try
 kgen.func @return_in_try() {
   lit.try {
     // CHECK-NEXT: return
-    kgen.return
+    hlcf.return
   } except (%e: index) {
-    kgen.unreachable
+    hlcf.unreachable
   } else {
     lit.try.yield
   }
   // CHECK-NOT: foo.op
   "foo.op"() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @return_in_else
@@ -334,14 +334,14 @@ kgen.func @return_in_else() {
   lit.try {
     lit.try.yield
   } except (%e: index) {
-    kgen.unreachable
+    hlcf.unreachable
   } else {
     // CHECK-NEXT: return
-    kgen.return
+    hlcf.return
   }
   // CHECK-NOT: foo.op
   "foo.op"() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @try_arg_passing
@@ -349,13 +349,13 @@ kgen.func @try_arg_passing(%arg0: index, %arg1: si32) -> (index, si32) {
   lit.try {
     lit.try.yield %arg0, %arg1 : index, si32
   } except (%e: index) {
-    kgen.unreachable
+    hlcf.unreachable
   } else {
   ^bb0(%arg2: index, %arg3: si32):
     // CHECK-NEXT: return %arg0, %arg1
-    kgen.return %arg2, %arg3 : index, si32
+    hlcf.return %arg2, %arg3 : index, si32
   }
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: @try_result_passing
@@ -363,13 +363,13 @@ kgen.func @try_result_passing(%arg0: index, %arg1: si32) -> (index, si32) {
   %0:2 = lit.try -> index, si32 {
     lit.try.yield %arg0, %arg1 : index, si32
   } except (%e: index) {
-    kgen.unreachable
+    hlcf.unreachable
   } else {
   ^bb0(%arg2: index, %arg3: si32):
     lit.try.yield %arg2, %arg3 : index, si32
   }
   // CHECK-NEXT: return %arg0, %arg1
-  kgen.return %0#0, %0#1 : index, si32
+  hlcf.return %0#0, %0#1 : index, si32
 }
 
 // CHECK-LABEL: @loop_break
@@ -378,5 +378,5 @@ kgen.func @loop_break(%arg0: index) -> index {
   %0 = hlcf.loop (%arg1 = %arg0 : index) -> index {
     hlcf.break %arg1 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }

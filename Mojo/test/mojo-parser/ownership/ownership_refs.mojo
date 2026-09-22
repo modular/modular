@@ -241,7 +241,7 @@ def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
 def testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_lit_ref:
 
-  # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
+  # CHECK: hlcf.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return __get_mvalue_as_litref(a)
 
 # CHECK-LABEL: lit.fn @"callByRefResultLifetime
@@ -302,7 +302,7 @@ def test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}Pointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[PTRVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Pointer::@"__init__{{.*}}([[REF]])
-  # CHECK-NEXT: kgen.return [[RES]]
+  # CHECK-NEXT: hlcf.return [[RES]]
   return Pointer[Int, arg.origin](to=Pointer(to=arg[])[])
 
 

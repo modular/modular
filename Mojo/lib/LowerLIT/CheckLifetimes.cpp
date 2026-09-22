@@ -40,6 +40,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace LIT;
 using llvm::BitVector;
 
@@ -2438,7 +2440,7 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
 
   // Specialize diagnostics for returns because it can be confusing why they are
   // "using" argument values otherwise.
-  if (isa<KGEN::ReturnOp>(op)) {
+  if (isa<HLCF::ReturnOp>(op)) {
     addBadValueNameToDiag(valueRef, liveness.tracked, valueSet, diag);
     diag << " is uninitialized at ";
 
@@ -2652,7 +2654,7 @@ void UninitializedValueScan::checkInteriorOriginUsage(
     // If this is being defined by a lit.ref.from_pointer, then this is the
     // internal implementation of _get_ref_with_unsafe_interior_origin. Allow
     // use of the interior origin.
-    if (isa<KGEN::ReturnOp>(op) &&
+    if (isa<HLCF::ReturnOp>(op) &&
         RefImmutOp::stripRebinds(operand).getDefiningOp<RefFromPointerOp>())
       return;
 
@@ -2705,7 +2707,7 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   // If this is checking liveness of a result slot for a return, use the
   // location of the return itself. "operand" may be null when checking capture
   // set origins.
-  if (operand && !isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
+  if (operand && !isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op))
     operandPt = getProgramPointThatDefinedInteriorOrigin(operand);
 
   assert(operandPt && "operand wasn't defined by a program point?");
@@ -3099,17 +3101,17 @@ static bool isUninitializedAtExit(const ValueInfo &valueInfo, Operation &exit) {
     return isa<ErrorReturnOp>(exit);
 
   if (valueInfo.endInitState == OriginTrackable::InitOnError)
-    return isa<KGEN::ReturnOp>(exit);
+    return isa<HLCF::ReturnOp>(exit);
   return false;
 }
 
 /// This is called when the op is a return, lit.error_return or unreachable op.
 void UninitializedValueScan::checkTerminatorOp(Operation &op) {
-  // If this is a kgen.return then we have an exit from the function
+  // If this is a hlcf.return then we have an exit from the function
   // (including early returns and exception raises that leave the function).
   // Check that *all* of the values are live-out of the function are
   // initialized.
-  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op)) {
+  if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op)) {
     for (const ValueInfo &valueInfo :
          llvm::drop_begin(valueSet.getValueInfos())) {
       // If the value doesn't need to be live at end of function, ignore it.
@@ -3141,7 +3143,7 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
       checkUse(valueInfo.value, op, /*isDeref=*/valueInfo.isIndirect);
     }
   } else {
-    auto unreachable = cast<KGEN::UnreachableOp>(op);
+    auto unreachable = cast<HLCF::UnreachableOp>(op);
 
     // Calls to no-return functions (like abort(), exit()) are treated
     // specially: after the call, we allow any live values to be outstanding,
@@ -4613,7 +4615,7 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
     return;
   }
 
-  assert((isa<KGEN::ReturnOp, ErrorReturnOp>(op)) && "unknown terminator");
+  assert((isa<HLCF::ReturnOp, ErrorReturnOp>(op)) && "unknown terminator");
   consumedValues.set(0); // Slot 0 indicates that this block is reachable.
 
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {

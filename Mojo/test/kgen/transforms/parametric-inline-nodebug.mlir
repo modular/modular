@@ -4,13 +4,13 @@
 kgen.generator @wrap_source_loc_0() -> !kgen.none always_inline_no_debug {
   %line, %col, %fileName = kgen.source_loc[0]
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @wrap_source_loc_1() -> !kgen.none always_inline_no_debug {
   %line, %col, %fileName = kgen.source_loc[1]
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @test_wrap_source_loc_0
@@ -19,7 +19,7 @@ kgen.generator @test_wrap_source_loc_0() -> !kgen.none always_inline_no_debug {
   // CHECK-NOT: kgen.call
   %0 = kgen.call @wrap_source_loc_0() : () -> !kgen.none loc("some_file.mojo":4:6)
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @call_wrapped_source_loc_1
@@ -28,7 +28,7 @@ kgen.generator @call_wrapped_source_loc_1() -> !kgen.none always_inline_no_debug
   // CHECK-NOT: kgen.call
   %0 = kgen.call @wrap_source_loc_1() : () -> !kgen.none
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @test_wrapped_source_loc_1
@@ -37,7 +37,7 @@ kgen.generator @test_wrapped_source_loc_1() -> !kgen.none {
   // CHECK-NOT: kgen.call
   %0 = kgen.call @call_wrapped_source_loc_1() : () -> !kgen.none loc("other_file.mojo":10:12)
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @test_wrapped_source_loc_1_inlined
@@ -46,14 +46,14 @@ kgen.generator @test_wrapped_source_loc_1_inlined() -> !kgen.none always_inline_
   // CHECK-NOT: kgen.call
   %0 = kgen.call @call_wrapped_source_loc_1() : () -> !kgen.none loc("another_file.mojo":42:13)
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // SourceLoc parametric
 kgen.generator @wrap_source_loc_param<depth: index>() -> !kgen.none always_inline_no_debug {
   %line, %col, %fileName = kgen.source_loc[depth]
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @call_wrapped_source_loc_param
@@ -62,7 +62,7 @@ kgen.generator @call_wrapped_source_loc_param() -> !kgen.none always_inline_no_d
   // CHECK: kgen.source_loc[to_builtin(:scalar<index> add(from_builtin(depth), -1))]
   // CHECK-NOT: kgen.call
   %0 = kgen.call @wrap_source_loc_param<1>() : () -> !kgen.none
-  kgen.return %0 : !kgen.none
+  hlcf.return %0 : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @test_wrap_source_loc_param
@@ -75,15 +75,15 @@ kgen.generator @test_wrap_source_loc_param() -> !kgen.none always_inline_no_debu
   // CHECK: kgen.source_loc[to_builtin(:scalar<index> add(from_builtin(depth0), -3))]
   // CHECK-NOT: kgen.call
   %1 = kgen.call @call_wrapped_source_loc_param() : () -> !kgen.none loc(callsite("some_file.mojo":4:6 at "some_other_file.mojo":5:7))
-  kgen.return %0 : !kgen.none
+  hlcf.return %0 : !kgen.none
 }
 
 kgen.generator @nodebug_inline_me() always_inline_no_debug {
   kgen.param.constant = <1>
   kgen.param.declare.region A = () -> () {
-    kgen.return loc(#loc1)
+    hlcf.return loc(#loc1)
   } loc(#loc1)
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @always_inline() always_inline {
@@ -92,7 +92,7 @@ kgen.generator @always_inline() always_inline {
   kgen.param.declare value2 = <1>
   kgen.param.declare value3 = <1>
   kgen.param.declare value4 = <1>
-  kgen.return
+  hlcf.return
 }
 
 #loc1 = loc("foo.mlir":10:5)
@@ -103,12 +103,12 @@ kgen.generator @always_inline() always_inline {
 kgen.generator @main() {
   // CHECK-NEXT: kgen.param.constant = <1> loc(#[[LOC_INLINED:.*]])
   // CHECK-NEXT: kgen.param.declare.region A = () {
-  // CHECK-NEXT:   kgen.return loc(#[[LOC_CALLEE:.*]])
+  // CHECK-NEXT:   hlcf.return loc(#[[LOC_CALLEE:.*]])
   // CHECK-NEXT: } {isolated} loc(#[[LOC_CALLEE]])
   kgen.call @nodebug_inline_me() : () -> () loc(#locInlined)
   // CHECK-NEXT: call @always_inline
   kgen.call @always_inline() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-DAG: #[[LOC_CALLEE]] = loc("foo.mlir":10:5)
@@ -128,12 +128,12 @@ kgen.generator @inline_heuristic<A>(%arg: index) {
   // CHECK: debuginfo.value
   // CHECK-NOT: kgen.call @fake_larger_callee
   %2 = kgen.call @fake_larger_callee<:type index>(%arg) : (index) -> index
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<T: type>(%arg: !kgen.param<T>) -> !kgen.param<T> always_inline {
-  kgen.return %arg : !kgen.param<T>
+  hlcf.return %arg : !kgen.param<T>
 }
 
 // CHECK-LABEL: kgen.generator @larger_callee
@@ -142,7 +142,7 @@ kgen.generator @larger_callee<T: type>(%arg: !kgen.param<T>) -> !kgen.param<T> a
   kgen.param.declare value2 = <1>
   kgen.param.declare value3 = <1>
   kgen.param.declare value4 = <1>
-  kgen.return %arg : !kgen.param<T>
+  hlcf.return %arg : !kgen.param<T>
 }
 
 // CHECK-LABEL: kgen.generator @fake_larger_callee
@@ -152,5 +152,5 @@ kgen.generator @fake_larger_callee<T: type>(%arg: !kgen.param<T>) -> !kgen.param
   debuginfo.value #local_variable = %arg : !kgen.param<T>
   debuginfo.value #local_variable = %arg : !kgen.param<T>
   debuginfo.kill #local_variable
-  kgen.return %arg : !kgen.param<T>
+  hlcf.return %arg : !kgen.param<T>
 }

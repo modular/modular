@@ -14,6 +14,7 @@
 #include "CABICallHelpers.h"
 #include "LLVMLoweringUtils.h"
 #include "LowerKGENToLLVMRewriteCABIFns.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
@@ -868,12 +869,12 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
 // ConvertKGENReturn
 //===----------------------------------------------------------------------===//
 
-/// Convert `kgen.return` to `llvm.return`, packing the results if necessary.
-struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<ReturnOp> {
+/// Convert `hlcf.return` to `llvm.return`, packing the results if necessary.
+struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<HLCF::ReturnOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(ReturnOp op, ReturnOpAdaptor adaptor,
+  matchAndRewrite(HLCF::ReturnOp op, HLCF::ReturnOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto operands = adaptor.getOperands();
 
@@ -903,12 +904,13 @@ struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<ReturnOp> {
 // ConvertKGENUnreachable
 //===----------------------------------------------------------------------===//
 
-/// Convert `kgen.unreachable` to `llvm.unreachable`.
-struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
+/// Convert `hlcf.unreachable` to `llvm.unreachable`.
+struct ConvertKGENUnreachable
+    : public ConvertPOPToLLVMPattern<HLCF::UnreachableOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(UnreachableOp op, UnreachableOpAdaptor adaptor,
+  matchAndRewrite(HLCF::UnreachableOp op, HLCF::UnreachableOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Create the llvm.trap + llvm.unreachable ops.
     auto voidTy = LLVM::LLVMVoidType::get(rewriter.getContext());
@@ -1241,6 +1243,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<KGENDialect>();
+  // Return/Unreachable moved to HLCF; still need to be rewritten to LLVM here.
+  target.addIllegalOp<HLCF::ReturnOp, HLCF::UnreachableOp>();
   target.addLegalDialect<LLVM::LLVMDialect>();
   target.addLegalDialect<POP::POPDialect>();
   target.addLegalDialect<mlir::index::IndexDialect>();

@@ -7,13 +7,13 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   kgen.generator @cast_index_to_si64_large() -> !kgen.scalar<si64> {
     %0 = kgen.param.constant: scalar<index> = <-8664705627211539068>
     %1 = pop.cast %0 : !kgen.scalar<index> to !kgen.scalar<si64>
-    kgen.return %1 : !kgen.scalar<si64>
+    hlcf.return %1 : !kgen.scalar<si64>
   }
 
   kgen.generator @cast_index_to_si32_large() -> !kgen.scalar<si32> {
     %0 = kgen.param.constant: simd<1, index> = <-8664705627211539068>
     %1 = pop.cast %0 : !kgen.scalar<index> to !kgen.scalar<si32>
-    kgen.return %1 : !kgen.scalar<si32>
+    hlcf.return %1 : !kgen.scalar<si32>
   }
 
   // CHECK-LABEL: @main
@@ -61,6 +61,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK-NEXT: kgen.param.constant: scalar<si128> = <-2147483648>
     %17 = kgen.param.constant : !kgen.scalar<si128> = <#pop.cast<#kgen<simd -2147483648> : !kgen.scalar<index>> : !kgen.scalar<si128>>
 
-    kgen.return
+    hlcf.return
   }
 }

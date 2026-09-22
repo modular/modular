@@ -18,6 +18,7 @@
 #include "Mojo/Compiler/ObjectCompiler.h"
 #include "Mojo/Compiler/SaveAsmOutput.h"
 #include "Mojo/ExecutionEngine/JIT/StaticArchiveLayer.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/Support/BuildInfo.h"
@@ -59,6 +60,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 //===----------------------------------------------------------------------===//
 // compileElaboratorAsm

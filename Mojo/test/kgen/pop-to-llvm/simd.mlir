@@ -19,7 +19,7 @@ kgen.func @trivial_conversions(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>, %
   %5 = pop.fma %a, %b, %c {fastmathFlags = #pop.fmf<nsz>} : !kgen.simd<4, f32>
   // CHECK: llvm.select
   %6 = pop.simd.select %d, %a, %b : !kgen.simd<4, f32>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @int_neg_simd
@@ -27,14 +27,14 @@ kgen.func @int_neg_simd(%arg0: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(dense<0> : vector<4xi32>)
   %0 = pop.neg %arg0 : !kgen.simd<4, si32>
   // CHECK: llvm.sub %[[ZERO]], %{{.*}}
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @neg_simd
 kgen.func @neg_simd(%arg0: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   %0 = pop.neg %arg0 : !kgen.simd<4, f32>
   // CHECK: llvm.fneg %{{.*}}
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @floor_simd
@@ -44,12 +44,12 @@ kgen.func @floor_simd(
   !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
 ) {
   // CHECK: llvm.floor
-  // CHECK: kgen.return {{.*}}, %arg1, %arg2, %arg3
+  // CHECK: hlcf.return {{.*}}, %arg1, %arg2, %arg3
   %0 = pop.floor %arg0 : !kgen.simd<4, f32>
   %1 = pop.floor %arg1 : !kgen.simd<4, si32>
   %2 = pop.floor %arg2 : !kgen.scalar<index>
   %3 = pop.floor %arg3 : !kgen.scalar<uindex>
-  kgen.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
+  hlcf.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
 }
 
 // CHECK-LABEL: @ceil_simd
@@ -59,12 +59,12 @@ kgen.func @ceil_simd(
   !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
 ) {
   // CHECK: llvm.ceil
-  // CHECK: kgen.return {{.*}}, %arg1, %arg2, %arg3
+  // CHECK: hlcf.return {{.*}}, %arg1, %arg2, %arg3
   %0 = pop.ceil %arg0 : !kgen.simd<4, f32>
   %1 = pop.ceil %arg1 : !kgen.simd<4, si32>
   %2 = pop.ceil %arg2 : !kgen.scalar<index>
   %3 = pop.ceil %arg3 : !kgen.scalar<uindex>
-  kgen.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
+  hlcf.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
 }
 
 // CHECK-LABEL: @trunc_simd
@@ -74,61 +74,61 @@ kgen.func @trunc_simd(
   !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
 ) {
   // CHECK: llvm.trunc
-  // CHECK: kgen.return {{.*}}, %arg1, %arg2, %arg3
+  // CHECK: hlcf.return {{.*}}, %arg1, %arg2, %arg3
   %0 = pop.trunc %arg0 : !kgen.simd<4, f32>
   %1 = pop.trunc %arg1 : !kgen.simd<4, si32>
   %2 = pop.trunc %arg2 : !kgen.scalar<index>
   %3 = pop.trunc %arg3 : !kgen.scalar<uindex>
-  kgen.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
+  hlcf.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.simd<4, si32>, !kgen.scalar<index>, !kgen.scalar<uindex>
 }
 
 // CHECK-LABEL: @add_simd_si32
 kgen.func @add_simd_si32(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.add
   %0 = pop.add %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @add_simd_index
 kgen.func @add_simd_index(%arg0: !kgen.simd<4, index>, %arg1: !kgen.simd<4, index>) -> !kgen.simd<4, index> {
   // CHECK: llvm.add
   %0 = pop.add %arg0, %arg1: !kgen.simd<4, index>
-  kgen.return %0 : !kgen.simd<4, index>
+  hlcf.return %0 : !kgen.simd<4, index>
 }
 
 // CHECK-LABEL: @fadd_simd
 kgen.func @fadd_simd(%arg0: !kgen.simd<4, f32>, %arg1: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.fadd
   %0 = pop.add %arg0, %arg1: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @sub_simd
 kgen.func @sub_simd(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.sub
   %0 = pop.sub %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @fsub_simd
 kgen.func @fsub_simd(%arg0: !kgen.simd<4, f32>, %arg1: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.fsub
   %0 = pop.sub %arg0, %arg1: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @mul_simd
 kgen.func @mul_simd(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.mul
   %0 = pop.mul %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @fmul_simd
 kgen.func @fmul_simd(%arg0: !kgen.simd<4, f32>, %arg1: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.fmul
   %0 = pop.mul %arg0, %arg1: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @fmul_simd_default_contract
@@ -136,14 +136,14 @@ kgen.func @fmul_simd_default_contract(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, 
   // Default behavior should attach contract fastmath flags.
   // CHECK: llvm.fmul {{.*}} fastmath<contract> : vector<4xf32>
   %0 = pop.mul %a, %b : !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @fmul_simd_with_reassoc
 kgen.func @fmul_simd_with_reassoc(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.fmul {{.*}} fastmath<reassoc> : vector<4xf32>
   %0 = pop.mul %a, %b {fastmathFlags = #pop.fmf<reassoc>} : !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @div_simd
@@ -152,84 +152,84 @@ kgen.func @div_simd(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !
   // unconditionally-forwarded flag would fail here.
   // CHECK: llvm.sdiv {{%.*}}
   %0 = pop.div %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @div_simd_exact
 kgen.func @div_simd_exact(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.sdiv exact
   %0 = pop.div %arg0, %arg1 {isExact} : !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @udiv_exact
 kgen.func @udiv_exact(%arg0: !kgen.scalar<uindex>, %arg1: !kgen.scalar<uindex>) -> !kgen.scalar<uindex> {
   // CHECK: llvm.udiv exact
   %0 = pop.div %arg0, %arg1 {isExact} : !kgen.scalar<uindex>
-  kgen.return %0 : !kgen.scalar<uindex>
+  hlcf.return %0 : !kgen.scalar<uindex>
 }
 
 // CHECK-LABEL: @fdiv_simd
 kgen.func @fdiv_simd(%arg0: !kgen.simd<4, f32>, %arg1: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.fdiv
   %0 = pop.div %arg0, %arg1: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @max_simd
 kgen.func @max_simd(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.intr.smax
   %0 = pop.max %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @fmax_simd
 kgen.func @fmax_simd(%arg0: !kgen.simd<4, f32>, %arg1: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.intr.maxnum
   %0 = pop.max %arg0, %arg1: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @min_simd
 kgen.func @min_simd(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.intr.smin
   %0 = pop.min %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @fmin_simd
 kgen.func @fmin_simd(%arg0: !kgen.simd<4, f32>, %arg1: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.intr.minnum
   %0 = pop.min %arg0, %arg1: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @shl_simd_si32
 kgen.func @shl_simd_si32(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.shl
   %0 = pop.shl %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @shl_simd_ui32
 kgen.func @shl_simd_ui32(%arg0: !kgen.simd<4, ui32>, %arg1: !kgen.simd<4, ui32>) -> !kgen.simd<4, ui32> {
   // CHECK: llvm.shl
   %0 = pop.shl %arg0, %arg1: !kgen.simd<4, ui32>
-  kgen.return %0 : !kgen.simd<4, ui32>
+  hlcf.return %0 : !kgen.simd<4, ui32>
 }
 
 // CHECK-LABEL: @shr_simd
 kgen.func @shr_simd_si32(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.ashr
   %0 = pop.shr %arg0, %arg1: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @shr_simd
 kgen.func @shr_simd_ui32(%arg0: !kgen.simd<4, ui32>, %arg1: !kgen.simd<4, ui32>) -> !kgen.simd<4, ui32> {
   // CHECK: llvm.lshr
   %0 = pop.shr %arg0, %arg1: !kgen.simd<4, ui32>
-  kgen.return %0 : !kgen.simd<4, ui32>
+  hlcf.return %0 : !kgen.simd<4, ui32>
 }
 
 // CHECK-LABEL: @cmp_uint
@@ -246,7 +246,7 @@ kgen.func @cmp_uint(%lhs: !kgen.simd<4, ui32>, %rhs: !kgen.simd<4, ui32>) {
   %4 = pop.cmp le(%lhs, %rhs) : !kgen.simd<4, ui32>
   // CHECK: llvm.icmp "uge"
   %5 = pop.cmp ge(%lhs, %rhs) : !kgen.simd<4, ui32>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @cmp_sint
@@ -263,7 +263,7 @@ kgen.func @cmp_sint(%lhs: !kgen.simd<4, si32>, %rhs: !kgen.simd<4, si32>) {
   %4 = pop.cmp le(%lhs, %rhs) : !kgen.simd<4, si32>
   // CHECK: llvm.icmp "sge"
   %5 = pop.cmp ge(%lhs, %rhs) : !kgen.simd<4, si32>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @cmp_fp
@@ -280,7 +280,7 @@ kgen.func @cmp_fp(%lhs: !kgen.simd<4, f32>, %rhs: !kgen.simd<4, f32>) {
   %4 = pop.cmp le(%lhs, %rhs) : !kgen.simd<4, f32>
   // CHECK: llvm.fcmp "oge"
   %5 = pop.cmp ge(%lhs, %rhs) : !kgen.simd<4, f32>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @fma_simd_si32
@@ -290,7 +290,7 @@ kgen.func @fma_simd_si32(%arg0: !kgen.simd<4, si32>,
   // CHECK: llvm.mul
   // CHECK: llvm.add
   %0 = pop.fma %arg0, %arg1, %arg2: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 
@@ -300,7 +300,7 @@ kgen.func @fma_simd_f32(%arg0: !kgen.simd<4, f32>,
                     %arg2: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.intr.fma
   %0 = pop.fma %arg0, %arg1, %arg2: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @select_simd_si32
@@ -309,7 +309,7 @@ kgen.func @select_simd_si32(%arg0: !kgen.simd<4, bool>,
                     %arg2: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.select
   %0 = pop.simd.select %arg0, %arg1, %arg2: !kgen.simd<4, si32>
-  kgen.return %0 : !kgen.simd<4, si32>
+  hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 
@@ -319,7 +319,7 @@ kgen.func @select_simd_f32(%arg0: !kgen.simd<4, bool>,
                     %arg2: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.select
   %0 = pop.simd.select %arg0, %arg1, %arg2: !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @bitcast
@@ -353,7 +353,7 @@ kgen.func @bitcast(%a: !kgen.scalar<si32>,
   // CHECK: llvm.bitcast %[[B0]] : vector<64xi1> to f64
   %6 = pop.bitcast %5: !kgen.simd<64, bool> to !kgen.simd<1, f64>
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @simd_splat_scalar_to_2xf32
@@ -364,7 +364,7 @@ kgen.func @simd_splat_scalar_to_2xf32(%a: !kgen.scalar<f32>) -> !kgen.simd<2, f3
   // CHECK: %[[RESULT:.*]] = llvm.shufflevector %[[VECTOR]], %[[UNDEF]] [0, 0] : vector<2xf32>
   // CHECK: unrealized_conversion_cast %[[RESULT]]
   %0 = pop.simd.splat %a : !kgen.simd<2, f32>
-  kgen.return %0 : !kgen.simd<2, f32>
+  hlcf.return %0 : !kgen.simd<2, f32>
 }
 
 // CHECK-LABEL: @simd_extractelement
@@ -374,7 +374,7 @@ kgen.func @simd_extractelement(%vec: !kgen.simd<4, f32>, %idx: index) -> !kgen.s
   // CHECK: %[[SCALAR:.*]] = llvm.extractelement %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
   // CHECK: unrealized_conversion_cast %[[SCALAR]]
   %0 = pop.simd.extractelement %vec[%idx] : !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.scalar<f32>
+  hlcf.return %0 : !kgen.scalar<f32>
 }
 
 // CHECK-LABEL: @simd_insertelement
@@ -385,22 +385,22 @@ kgen.func @simd_insertelement(%val: !kgen.scalar<f32>, %vec: !kgen.simd<4, f32>,
   // CHECK: %[[RES:.*]] = llvm.insertelement %[[VAL]], %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
   // CHECK: unrealized_conversion_cast %[[RES]]
   %0 = pop.simd.insertelement %val, %vec[%idx] : !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @simd_insertelement_1xf32
 // CHECK-SAME: (%[[ARG0:[[:alnum:]]+]]:
 kgen.func @simd_insertelement_1xf32(%val: !kgen.scalar<f32>, %vec: !kgen.scalar<f32>, %idx: index) -> !kgen.scalar<f32> {
-  // CHECK-NEXT: kgen.return %[[ARG0]]
+  // CHECK-NEXT: hlcf.return %[[ARG0]]
   %0 = pop.simd.insertelement %val, %vec[%idx] : !kgen.scalar<f32>
-  kgen.return %0 : !kgen.scalar<f32>
+  hlcf.return %0 : !kgen.scalar<f32>
 }
 
 // CHECK-LABEL: @simd_shuffle
 kgen.func @simd_shuffle(%a: !kgen.simd<2, f32>, %b: !kgen.simd<2, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.shufflevector %{{.*}}, %{{.*}} [2, 3, 1, 0]
   %0 = pop.simd.shuffle <2, f32> %a, %b -> <4, f32> :array<4,index> [2, 3, 1, 0]
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @simd_shuffle_1xf32
@@ -421,7 +421,7 @@ kgen.func @simd_shuffle_1xf32(%a: !kgen.scalar<f32>, %b: !kgen.scalar<f32>) -> (
   // CHECK: builtin.unrealized_conversion_cast %[[VECVAL1_1]] : vector<1xf32> to !kgen.scalar<f32>
   %1 = pop.simd.shuffle <1, f32> %a, %b -> <1, f32> :array<1,index> [1]
 
-  kgen.return %0, %1 : !kgen.simd<2, f32>, !kgen.scalar<f32>
+  hlcf.return %0, %1 : !kgen.simd<2, f32>, !kgen.scalar<f32>
 }
 
 // CHECK-LABEL: @simd_load_store
@@ -432,7 +432,7 @@ kgen.func @simd_load_store(%i: index, %p0: !kgen.pointer<simd<4, f32>>) {
   %1 = pop.load %0 : !kgen.pointer<simd<4, f32>>
   // CHECK: llvm.store
   pop.store %1, %p0 : !kgen.pointer<simd<4, f32>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @abs_simd
@@ -460,8 +460,8 @@ kgen.func @abs_simd(
   // Deleted; replaced with %arg3 itself
   %3 = pop.abs %arg3 : !kgen.scalar<bool>
 
-  // CHECK: kgen.return [[FABS_RET]], %arg1, [[IABS_RET]], %arg3
-  kgen.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.scalar<uindex>, !kgen.scalar<index>, !kgen.scalar<bool>
+  // CHECK: hlcf.return [[FABS_RET]], %arg1, [[IABS_RET]], %arg3
+  hlcf.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.scalar<uindex>, !kgen.scalar<index>, !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @round_simd
@@ -486,8 +486,8 @@ kgen.func @round_simd(
   // Deleted; replaced with %arg3 itself
   %3 = pop.round %arg3 : !kgen.scalar<bool>
 
-  // CHECK: kgen.return [[FROUND_RET]], %arg1, %arg2, %arg3
-  kgen.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.scalar<uindex>, !kgen.scalar<index>, !kgen.scalar<bool>
+  // CHECK: hlcf.return [[FROUND_RET]], %arg1, %arg2, %arg3
+  hlcf.return %0, %1, %2, %3 : !kgen.simd<4, f32>, !kgen.scalar<uindex>, !kgen.scalar<index>, !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @floordiv_simd
@@ -523,7 +523,7 @@ kgen.func @floordiv_simd(
   // CHECK-NEXT: llvm.add [[SDIV]], [[SEL]] : vector<2xi64>
   %2 = pop.floordiv %arg4, %arg5 : !kgen.simd<2, index>
 
-  kgen.return %0, %1, %2 : !kgen.simd<4, f32>, !kgen.scalar<uindex>, !kgen.simd<2, index>
+  hlcf.return %0, %1, %2 : !kgen.simd<4, f32>, !kgen.scalar<uindex>, !kgen.simd<2, index>
 }
 
 }

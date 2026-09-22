@@ -27,12 +27,12 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
  // CHECK-NEXT:   [[V15:%.*]] = kgen.param.constant: i32 = <1>
  // CHECK-NEXT:   [[V16:%.*]] = kgen.struct.gep [[CORO]][0]
  // CHECK-NEXT:   pop.store [[V15]], [[V16]] : !kgen.pointer<i32>
- // CHECK-NEXT:   kgen.return [[V11]]
+ // CHECK-NEXT:   hlcf.return [[V11]]
  // CHECK-NEXT: }
  // CHECK-NEXT: kgen.call @print
  // CHECK-NEXT: hlcf.continue
  // CHECK-NEXT: }
- // CHECK-NEXT: kgen.unreachable
+ // CHECK-NEXT: hlcf.unreachable
  hlcf.loop "_loop_0" (%arg3 = %arg1 : index) {
    hlcf.loop "_loop_1" (%arg2 = %arg1 : index) {
      %arg0_sb = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
@@ -54,7 +54,7 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
    co.suspend.end
  }
  %final = index.add %arg1, %arg1
- kgen.return %final : index
+ hlcf.return %final : index
 }
 
 // Check that the operands of parents that are state 0 are replaced with constants. All other ops in state 0 will be erased.
@@ -63,7 +63,7 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
 // CHECK-NEXT:   hlcf.loop "_loop_0" (%arg1 = [[UNDEF]] : index) {
 kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async {
    %coro = co.hot_invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1, %__result__)
-   kgen.return
+   hlcf.return
 }
 
 }
@@ -139,13 +139,13 @@ kgen.func @coroutine1(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) async
   // CHECK-NEXT: [[V14:%.*]] = kgen.struct.gep %arg0[[[#PROMISE_IDX:]]]
   // CHECK-NEXT: [[PTR:%.*]] = kgen.struct.gep [[V14]][0]
   // CHECK-NEXT: pop.store [[V10]], [[PTR]] : !kgen.pointer<index>
-  // CHECK-NEXT: kgen.return
-  kgen.return %result : index
+  // CHECK-NEXT: hlcf.return
+  hlcf.return %result : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) {
   %coro = co.invoke[(i1, index, index, index) async -> index:@coroutine1](%arg0, %arg1, %arg2, %arg3)
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -189,13 +189,13 @@ kgen.func @coroutine5(%arg0: i1, %arg1: index, %arg3: index) async -> index {
   // CHECK-NEXT: [[V10:%.*]] = kgen.struct.gep %arg0[[[#PROMISE_IDX:]]]
   // CHECK-NEXT: [[PTR:%.*]] = kgen.struct.gep [[V10]][0]
   // CHECK-NEXT: pop.store [[V9]], [[PTR]]
-  // CHECK-NEXT: kgen.return
-  kgen.return %result : index
+  // CHECK-NEXT: hlcf.return
+  hlcf.return %result : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index) {
   %coro = co.invoke[(i1, index, index) async -> index:@coroutine5](%arg0, %arg1, %arg3)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -259,12 +259,12 @@ kgen.func @coroutine3(%arg0: i1, %arg1: index, %arg3: index) async -> index {
      }
      hlcf.continue
   }
-  kgen.return %result : index
+  hlcf.return %result : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index) {
   %coro = co.invoke[(i1, index, index) async -> index:@coroutine3](%arg0, %arg1, %arg3)
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -330,12 +330,12 @@ kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index) async -> inde
      }
      hlcf.continue
   }
-  kgen.return %result : index
+  hlcf.return %result : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index) {
   %coro = co.invoke[(i1, index, index) async -> index:@coroutine_nested](%arg0, %arg1, %arg3)
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -368,12 +368,12 @@ kgen.func @coroutine2(%arg0: i1, %arg1: index, %arg3: index) async -> index {
     %result2 = kgen.call @bar(%result, %arg3): (index,index) -> index
     co.suspend.end
   }
-  kgen.return %result : index
+  hlcf.return %result : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index) {
   %coro = co.invoke[(i1, index, index) async -> index:@coroutine2](%arg0, %arg1, %arg3)
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -425,12 +425,12 @@ kgen.func @coroutine_block_args3(%arg0: index) async -> index {
     hlcf.continue %arg1 : index
   }
   %idx1 = index.constant 1
-  kgen.return %idx1 : index
+  hlcf.return %idx1 : index
 }
 
 kgen.func @triggerCold(%arg1: index) {
   %coro = co.invoke[(index) async -> index:@coroutine_block_args3](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -468,12 +468,12 @@ kgen.func @coroutine_block_args1(%arg0: index) async -> index {
     hlcf.continue %arg5 : index
   }
   %idx1 = index.constant 1
-  kgen.return %idx1 : index
+  hlcf.return %idx1 : index
 }
 
 kgen.func @triggerCold(%arg1: index) {
   %coro = co.invoke[(index) async -> index:@coroutine_block_args1](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -512,12 +512,12 @@ kgen.func @coroutine_block_args2(%arg0: index) async -> index {
     co.suspend.end
   }
   %idx1 = index.constant 1
-  kgen.return %idx1 : index
+  hlcf.return %idx1 : index
 }
 
 kgen.func @triggerCold(%arg1: index) {
   %coro = co.invoke[(index) async -> index:@coroutine_block_args2](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -535,12 +535,12 @@ kgen.func @unused_args(%arg0: index, %arg1: index) async -> index {
     co.suspend.end
   }
   %result = kgen.call @foo(%arg0) : (index) -> index
-  kgen.return %result : index
+  hlcf.return %result : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2:index) {
   %coro = co.invoke[(index, index) async -> index:@unused_args](%arg1, %arg2)
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -595,24 +595,24 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
     // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep %arg0[[[#FRAME10 - 2]]]
     // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]]
     // CHECK:      pop.store [[V12]], {{.*}} : !kgen.pointer<index>
-    // CHECK-NEXT: kgen.return
+    // CHECK-NEXT: hlcf.return
     co.suspend (%hdl) {
       co.suspend.end
     }
-    kgen.return %e : index
+    hlcf.return %e : index
   } else {
     // CHECK: } else {
     // CHECK:      pop.store [[NIF]], {{.*}}
-    // CHECK-NEXT: kgen.return
-    kgen.return %result3 : index
+    // CHECK-NEXT: hlcf.return
+    hlcf.return %result3 : index
   }
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2:index) {
   %coro = co.invoke[(index, index) async -> index:@tryraise](%arg1, %arg2)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -642,7 +642,7 @@ kgen.func @throwing_coroutine(%__error__: !kgen.pointer<index> byref_error,
     // CHECK-NEXT: [[TYPEDERR:%.*]] = pop.pointer.bitcast [[ERR]] : !kgen.pointer<none> to !kgen.pointer<index>
     // CHECK-NEXT: kgen.call @populate([[TYPEDERR]]) : (!kgen.pointer<index> byref_result) -> i1
     %1 = kgen.call @populate(%__error__) : (!kgen.pointer<index> byref_result) -> i1
-    kgen.return %1 : i1
+    hlcf.return %1 : i1
   } else {
     hlcf.yield
   }
@@ -650,7 +650,7 @@ kgen.func @throwing_coroutine(%__error__: !kgen.pointer<index> byref_error,
     co.suspend.end
   }
   %1 = kgen.call @populate(%__result__) : (!kgen.pointer<index> byref_result) -> i1
-  kgen.return %1 : i1
+  hlcf.return %1 : i1
 }
 
 // CHECK-LABEL: kgen.func @call_throwing_coro
@@ -666,18 +666,18 @@ kgen.func @call_throwing_coro() {
   // CHECK-NEXT: [[RESSLOT:%.*]] = kgen.struct.gep [[CONT]][[[#RESULT]]]
   // CHECK-NEXT: [[TYPED_RESSLOT:%.*]] = pop.pointer.bitcast [[RESSLOT]] : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.store [[RES]], [[TYPED_RESSLOT]] : !kgen.pointer<pointer<index>>
-  // CHECK-NEXT: kgen.return
+  // CHECK-NEXT: hlcf.return
   %coro = co.invoke[(!kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine]()
   %0 = pop.aligned_alloc %align, %size : <index>
   %1 = pop.aligned_alloc %align, %size : <index>
   co.set_byref_error_result %coro(%1, %0) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @use2
 kgen.func @use2(%a: !co.routine) -> i1 {
   %true = index.bool.constant true
-  kgen.return %true : i1
+  hlcf.return %true : i1
 }
 
 // CHECK-LABEL: kgen.func @opaque_coro
@@ -692,7 +692,7 @@ kgen.func @opaque_coro(%coro: !co.routine, %arg1: !kgen.pointer<index>, %arg2: !
   // CHECK-NEXT: [[v6:%.*]] = pop.pointer.bitcast [[v5]] : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.store %arg2, [[v6]] : !kgen.pointer<pointer<index>>
   co.set_byref_error_result %coro(%arg2, %arg1) : !co.routine, !kgen.pointer<index>, !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @no_error_slot
@@ -701,7 +701,7 @@ kgen.func @no_error_slot(%arg0: !co.routine, %arg1: !kgen.pointer<index>) {
   // CHECK-NEXT: [[v6:%.*]] = pop.pointer.bitcast [[v5]] : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.store %arg1, [[v6]] : !kgen.pointer<pointer<index>>
   co.set_byref_error_result %arg0(%arg1) : !co.routine, !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @set_byref_none
@@ -709,7 +709,7 @@ kgen.func @set_byref_none(%arg0: !co.routine, %arg1: !kgen.pointer<none>) {
   // CHECK-NOT: kgen.struct.gep %arg0[[[#RESULT]]]
   co.set_byref_error_result %arg0(%arg1) : !co.routine, !kgen.pointer<none>
   co.set_byref_error_result %arg0(%arg1, %arg1) : !co.routine, !kgen.pointer<none>, !kgen.pointer<none>
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -755,12 +755,12 @@ kgen.func @coroutine(%arg1: index, %arg2: index) async -> index {
     co.suspend.end
   }
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2:index) {
   %coro = co.invoke[(index, index) async -> index:@coroutine](%arg1, %arg2)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -791,12 +791,12 @@ kgen.func @coroutine(%arg1: index) async -> index {
   pop.store %arg1, %0 : !kgen.pointer<index>
   %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
   pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 kgen.func @triggerCold(%arg1: index) {
   %coro = co.invoke[(index) async -> index:@coroutine](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -835,12 +835,12 @@ kgen.func @coroutine(%arg1: index, %arg2: index) async -> index {
   // CHECK-NOT:  pop.stack_alloc.lifetime
   %2 = kgen.call @use(%1) : (!kgen.pointer<index>) -> index
   pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2: index) {
   %coro = co.invoke[(index, index) async -> index:@coroutine](%arg1, %arg2)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -869,12 +869,12 @@ kgen.func @coroutine(%arg1: index) async -> index {
   // CHECK-NEXT:  kgen.call @use([[STACK_ALLOC2]])
   %2 = kgen.call @use(%0) : (!kgen.pointer<struct<(index, index)>>) -> index
   pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<struct<(index, index)>>
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 kgen.func @triggerCold(%arg1: index) {
   %coro = co.invoke[(index) async -> index:@coroutine](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -898,12 +898,12 @@ kgen.func @coroutine(%arg1: index) async -> index {
   %2 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
   // CHECK: pop.stack_alloc.lifetime.end
   pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 kgen.func @triggerCold(%arg1: index) {
   %coro = co.invoke[(index) async -> index:@coroutine](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -973,12 +973,12 @@ kgen.func @in_frame(%arg1: index, %arg2: index) async -> index {
   %4 = kgen.call @use(%0) : (!kgen.pointer<index>) -> index
   pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2: index) {
   %coro = co.invoke[(index, index) async -> index:@in_frame](%arg1, %arg2)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1046,12 +1046,12 @@ kgen.func @in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index {
     pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
     hlcf.yield
   }
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2: index, %arg3: i1) {
   %coro = co.invoke[(index, index, i1) async -> index: @in_frame_cf](%arg1, %arg2, %arg3)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1123,12 +1123,12 @@ kgen.func @not_in_frame_cf(%arg1: index, %arg2: index, %arg3: i1) async -> index
     hlcf.yield
   }
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2: index, %arg3: i1) {
   %coro = co.invoke[(index, index, i1) async -> index:@not_in_frame_cf](%arg1, %arg2, %arg3)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1153,7 +1153,7 @@ kgen.func @in_frame(%arg1: index) async -> index {
   }
   %2 = kgen.call @use(%0, %1) : (!kgen.pointer<index>, !kgen.pointer<index>) -> index
   pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 // CHECK-LABEL: kgen.func @not_in_frame_resume
@@ -1174,7 +1174,7 @@ kgen.func @not_in_frame(%arg1: index) async -> index {
   pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<index>, !kgen.pointer<index>
 
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 // CHECK-LABEL: kgen.func @multiple_lifetimes_frame_resume
@@ -1217,14 +1217,14 @@ kgen.func @multiple_lifetimes_frame(%arg1: index, %arg2: i1) async -> index {
     co.suspend.end
   }
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg1: index, %arg2: i1) {
   %coro = co.invoke[(index, i1) async -> index:@multiple_lifetimes_frame](%arg1, %arg2)
   %coro2 = co.invoke[(index) async -> index:@not_in_frame](%arg1)
   %coro3 = co.invoke[(index) async -> index:@in_frame](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1238,12 +1238,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 kgen.func @coroutine1(%arg0: i1) async -> index {
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @callback(%arg0: !kgen.pointer<none>) -> !kgen.none {
   %none = kgen.param.constant: !kgen.none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.func @coroutine_resume
@@ -1251,7 +1251,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   %arg0_sb = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
   hlcf.if %arg0_sb {
     %idx1 = index.constant 1
-    kgen.return %idx1 : index
+    hlcf.return %idx1 : index
   } else {
     hlcf.yield
   }
@@ -1275,12 +1275,12 @@ kgen.func @coroutine(%arg0: i1) async -> index {
     co.suspend.end
   }
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg0:i1) {
   %coro = co.invoke[(i1) async -> index:@coroutine](%arg0)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1293,7 +1293,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 kgen.func @coroutine1(%arg0: i1) async -> index {
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 // CHECK-LABEL: kgen.func @coroutine_resume
@@ -1301,7 +1301,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   %arg0_sb = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
   hlcf.if %arg0_sb {
     %idx1 = index.constant 1
-    kgen.return %idx1 : index
+    hlcf.return %idx1 : index
   } else {
     hlcf.yield
   }
@@ -1324,12 +1324,12 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK-NEXT: pop.aligned_free [[CORO2]]
   co.destroy %coro
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg0:i1) {
   %coro = co.invoke[(i1) async -> index:@coroutine](%arg0)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1348,12 +1348,12 @@ kgen.func @coroutine(%arg0: index, %__result__: !kgen.pointer<index> byref_resul
     co.suspend.end
   }
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg0:index) {
   %coro = co.invoke[(index, !kgen.pointer<index> byref_result) async -> index:@coroutine](%arg0)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1393,12 +1393,12 @@ kgen.func @missing_markers(%arg1: index, %arg2: i1) async -> index {
     co.suspend.end
   }
   %2 = kgen.call @use(%0) : (!kgen.pointer<struct<(index, index)>>) -> index
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 kgen.func @triggerCold(%arg0:index, %arg1:i1) {
   %coro = co.invoke[(index, i1) async -> index:@missing_markers](%arg0, %arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -1413,7 +1413,7 @@ kgen.func @coroutine(%arg0: index) async -> index {
   co.suspend (%hdl) {
     co.suspend.end
   }
-  kgen.return %arg0 : index
+  hlcf.return %arg0 : index
 }
 
 // CHECK-LABEL: kgen.func @call_coroutine
@@ -1427,7 +1427,7 @@ kgen.func @call_coroutine(%arg0: index) -> index {
   %fn = co.resume %coro : <(!co.routine) -> ()>
   kgen.call_indirect %fn(%coro) : (!co.routine) -> ()
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 // CHECK-LABEL: kgen.func @get_results
@@ -1437,7 +1437,7 @@ kgen.func @get_results(%arg0: !co.routine) {
   // CHECK-NEXT: [[VALUE_PTR:%.*]] = kgen.struct.gep [[PROMISE_PTR]][0]
   // CHECK-NEXT: pop.load [[VALUE_PTR]]
   %0 = co.get_results %arg0 : index
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @multiple_results_resume
@@ -1453,13 +1453,13 @@ kgen.func @multiple_results(%arg0: !co.routine) async -> (i32, i64) {
   // CHECK-NEXT: store [[R0]], [[R0_PTR]]
   // CHECK-NEXT: [[R1_PTR:%.*]] = kgen.struct.gep [[PROMISE_PTR]][1]
   // CHECK-NEXT: store [[R1]], [[R1_PTR]]
-  kgen.return %0, %1 : i32, i64
+  hlcf.return %0, %1 : i32, i64
 }
 
 // CHECK-LABEL: kgen.func @no_results_ramp
 // CHECK: aligned_alloc %idx8, %idx48
 kgen.func @no_results() async {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @use_of_suspend_resume
@@ -1472,14 +1472,14 @@ kgen.func @use_of_suspend() async -> i32 {
     pop.store %hdl, %0 : !kgen.pointer<!co.routine>
     co.suspend.end
   }
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 kgen.func @triggerCold(%arg0:index) {
   %coro1 = co.invoke[() async -> i32:@use_of_suspend]()
   %coro3 = co.invoke[(!co.routine) async -> (i32, i64):@multiple_results](%coro1)
   %coro4 = co.invoke[() async -> ():@no_results]()
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -1525,12 +1525,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       // CHECK-NEXT: hlcf.continue [[V7]] : index
       hlcf.continue %arg1 : index
     }
-    kgen.return
+    hlcf.return
   }
 
   kgen.func @triggerCold(%arg0: index) {
    %coro = co.invoke[(index) async -> (): @f](%arg0)
-   kgen.return
+   hlcf.return
   }
 }
 
@@ -1573,12 +1573,12 @@ kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index, %arg4: i1) as
      hlcf.continue
   }
 
-  kgen.return %arg1 : index
+  hlcf.return %arg1 : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index, %arg4: i1) {
  %coro = co.invoke[(i1, index, index, i1) async -> index:@coroutine_nested](%arg0, %arg1, %arg3, %arg4)
- kgen.return
+ hlcf.return
 }
 }
 
@@ -1601,12 +1601,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     }
     // CHECK: [[V1:%.*]] = kgen.struct.gep %arg0[[[#FRAME7]]]
     %11 = index.add %0, %0
-    kgen.return
+    hlcf.return
   }
 
   kgen.func @triggerCold(%arg0: index) {
    %coro = co.invoke[(index imm, !kgen.pointer<none> byref_result) async -> ():@foo](%arg0)
-   kgen.return
+   hlcf.return
   }
 }
 
@@ -1618,7 +1618,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 kgen.func @coroutine1(%arg0: i1) async -> index {
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 // CHECK-LABEL: kgen.func @coroutine_resume
@@ -1626,7 +1626,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   %arg0_sb = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
   hlcf.if %arg0_sb {
     %idx1 = index.constant 1
-    kgen.return %idx1 : index
+    hlcf.return %idx1 : index
   } else {
     hlcf.yield
   }
@@ -1649,12 +1649,12 @@ kgen.func @coroutine(%arg0: i1) async -> index {
     co.suspend.end
   }
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.func @triggerCold(%arg0: i1) {
  %coro = co.invoke[(i1) async -> index:@coroutine](%arg0)
- kgen.return
+ hlcf.return
 }
 
 }
@@ -1688,12 +1688,12 @@ kgen.func @coroutine_nested(%arg0: i1, %arg1: index, %arg3: index, %arg4: i1) as
     }
     hlcf.continue
   }
-  kgen.return %arg1 : index
+  hlcf.return %arg1 : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index, %arg4: i1) {
  %coro = co.invoke[(i1, index, index, i1) async -> index:@coroutine_nested](%arg0, %arg1, %arg3, %arg4)
- kgen.return
+ hlcf.return
 }
 }
 
@@ -1731,12 +1731,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
         %2 = kgen.call @batch_size(%0) : (!kgen.pointer<struct<(pointer<none>, pointer<none>) memoryOnly>> imm_mem) -> index
         hlcf.continue
       }
-      kgen.return
+      hlcf.return
     }
 
   kgen.func @triggerCold(%arg0: !kgen.pointer<pointer<none>>, %arg1: i1, %arg2: index) {
      %coro = co.invoke[(!kgen.pointer<pointer<none>>, i1, index) async -> ():@foo](%arg0, %arg1, %arg2)
-     kgen.return
+     hlcf.return
   }
 }
 
@@ -1766,7 +1766,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
             } else {
               hlcf.break "_loop_1" %arg11 : index
             }
-            kgen.unreachable
+            hlcf.unreachable
           }
           %arg3_sb1 = pop.cast_from_builtin %arg3 : i1 to !kgen.scalar<bool>
           hlcf.if %arg3_sb1 {
@@ -1785,14 +1785,14 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
         } else {
           hlcf.continue %arg1, %arg6, %arg7, %arg8 : index, index, index, index
         }
-        kgen.unreachable
+        hlcf.unreachable
       }
-      kgen.return
+      hlcf.return
     }
 
   kgen.func @triggerCold(%arg0: index, %arg1: index, %arg2: index, %arg3: i1, %arg4: i1) {
      %coro = co.invoke[(index, index, index, i1, i1) async -> ():@foo](%arg0, %arg1, %arg2, %arg3, %arg4)
-     kgen.return
+     hlcf.return
   }
 }
 
@@ -1810,7 +1810,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: %idx1_0 = index.constant 1
     // CHECK-NEXT: index.mul %idx1_0, %idx1_0
     %14 = index.mul %idx1, %idx1
-    kgen.return
+    hlcf.return
   }
   // CHECK-LABEL: kgen.func @needsLift_resume
   kgen.func @needsLift(%arg0: i1 imm, %arg1: !kgen.pointer<none> byref_result) async no_inline {
@@ -1842,13 +1842,13 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     } else {
       hlcf.yield
     }
-    kgen.return
+    hlcf.return
   }
 
   kgen.func @triggerCold(%arg0: i1) {
      %coro = co.invoke[(i1 imm, !kgen.pointer<none> byref_result) async -> ():@foo](%arg0)
      %coro2 = co.invoke[(i1 imm, !kgen.pointer<none> byref_result) async -> ():@needsLift](%arg0)
-     kgen.return
+     hlcf.return
   }
 }
 
@@ -1876,7 +1876,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %4 = pop.load %2 : !kgen.pointer<index>
     %3 = kgen.call @doSomething(%4) : (index) -> index
     pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<struct<(index, index)>>
-    kgen.return
+    hlcf.return
   }
   kgen.func @offset(%arg0: i1 imm, %arg1: !kgen.pointer<none> byref_result) async no_inline {
     // CHECK:      [[V1:%.*]] = index.constant 1
@@ -1916,13 +1916,13 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %5 = pop.load %1 : !kgen.pointer<index>
     %6 = kgen.call @doSomething(%5) : (index) -> index
     pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
-    kgen.return
+    hlcf.return
   }
 
   kgen.func @triggerCold(%arg0: i1) {
      %coro = co.invoke[(i1 imm, !kgen.pointer<none> byref_result) async -> (): @offset](%arg0)
      %coro2 = co.invoke[(i1 imm, !kgen.pointer<none> byref_result) async -> (): @gep](%arg0)
-     kgen.return
+     hlcf.return
   }
 
 }
@@ -1988,7 +1988,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:   [[V19:%.*]] = kgen.struct.gep [[CONT]][0]
 // CHECK-NEXT:   pop.store [[V18]], [[V19]] : !kgen.pointer<i32>
 
-// CHECK-NEXT:   kgen.return [[V13]]
+// CHECK-NEXT:   hlcf.return [[V13]]
 // CHECK-NEXT: }
 // CHECK-NEXT: [[V9:%.*]] = pop.load %arg5 : !kgen.pointer<index>
 // CHECK-NEXT: [[V10:%.*]] = index.add [[V9]], %arg3
@@ -2003,7 +2003,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT: pop.store [[V10]], [[V12]] : !kgen.pointer<index>
 
 // Return Coroutine
-// CHECK-NEXT: kgen.return [[V13]]
+// CHECK-NEXT: hlcf.return [[V13]]
 
 // Verify that the hot resume has been stripped of the first state.
 // CHECK-LABEL:  kgen.func @conditional_suspoint_resume
@@ -2034,7 +2034,7 @@ kgen.func @conditional_suspoint(%arg0: i1,
  }
  %result = pop.load %__result__ : !kgen.pointer<index>
  %final = index.add %result, %arg1
- kgen.return %final : index
+ hlcf.return %final : index
 }
 
 // CHECK-LABEL: kgen.func @trigger_creation_resume
@@ -2051,12 +2051,12 @@ kgen.func @trigger_creation(%arg0: i1, %arg1: index, %arg2: index, %__result__: 
    // CHECK-NEXT: co.suspend.end
    // CHECK-NEXT: }
    %coro = co.hot_invoke[(i1, index, index, !kgen.pointer<index> byref_result) async -> index: @conditional_suspoint](%arg0, %arg1, %arg2, %__result__)
-   kgen.return
+   hlcf.return
 }
 
 kgen.func @trigger_trigger_creation(%arg0: i1, %arg1: index, %arg2: index, %__result__: !kgen.pointer<index> byref_result) {
   %coro = co.invoke[(i1, index, index, !kgen.pointer<index> byref_result) async -> ():@trigger_creation](%arg0, %arg1, %arg2)
-  kgen.return
+  hlcf.return
 }
 
 
@@ -2094,12 +2094,12 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
  // CHECK-NEXT:   kgen.struct.gep [[CORO]][0]
  // CHECK-NEXT:   pop.store
 
- // CHECK-NEXT:   kgen.return [[V11]]
+ // CHECK-NEXT:   hlcf.return [[V11]]
  // CHECK-NEXT: }
  // CHECK-NEXT: kgen.call @print
  // CHECK-NEXT: hlcf.continue
  // CHECK-NEXT: }
- // CHECK-NEXT: kgen.unreachable
+ // CHECK-NEXT: hlcf.unreachable
  hlcf.loop "_loop_0" (%arg3 = %arg1 : index) {
    hlcf.loop "_loop_1" (%arg2 = %arg1 : index) {
      %arg0_sb = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
@@ -2121,7 +2121,7 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
    co.suspend.end
  }
  %final = index.add %arg1, %arg1
- kgen.return %final : index
+ hlcf.return %final : index
 }
 
 // Check that the operands of parents that are state 0 are replaced with constants. All other ops in state 0 will be erased.
@@ -2130,7 +2130,7 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
 // CHECK-NEXT:   hlcf.loop "_loop_0" (%arg1 = [[UNDEF]] : index) {
 kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async {
    %coro = co.hot_invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1, %__result__)
-   kgen.return
+   hlcf.return
 }
 
 }
@@ -2161,12 +2161,12 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
     co.suspend.end
   }
   %final = index.add %arg1, %arg1
-  kgen.return %final : index
+  hlcf.return %final : index
 }
 
 kgen.func @triggerCold(%arg0: i1, %arg1: index) {
    %coro = co.invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1)
-   kgen.return
+   hlcf.return
 }
 
 }
@@ -2206,19 +2206,19 @@ kgen.func @conditional_suspoint(%arg0: !kgen.scalar<bool>,
  }
  %result = pop.load %__result__ : !kgen.pointer<index>
  %final = index.add %result, %arg1
- kgen.return %final : index
+ hlcf.return %final : index
 }
 
 // CHECK-LABEL: kgen.func @trigger_creation_resume
 kgen.func @trigger_creation(%arg0: !kgen.scalar<bool>, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async {
    %coro = co.hot_invoke[(!kgen.scalar<bool>, index, !kgen.pointer<index> byref_result) async -> index: @conditional_suspoint](%arg0, %arg1, %__result__)
-   kgen.return
+   hlcf.return
 }
 
 kgen.func @trigger_trigger_creation(%arg0: !kgen.scalar<bool>, %arg1: index) {
   %coro = co.invoke[(!kgen.scalar<bool>, index, !kgen.pointer<index> byref_result) async -> (): @trigger_creation](%arg0, %arg1)
   %coro2 = co.invoke[(!kgen.scalar<bool>, index, !kgen.pointer<index> byref_result) async -> index: @conditional_suspoint](%arg0, %arg1)
-  kgen.return
+  hlcf.return
 }
 }
 
@@ -2269,7 +2269,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT: [[V13:%.*]] = kgen.struct.gep [[CONT1]][0]
 // CHECK-NEXT: pop.store [[V12]], [[V13]] : !kgen.pointer<i32>
 
-// CHECK-NEXT: kgen.return [[HEADER]]
+// CHECK-NEXT: hlcf.return [[HEADER]]
 // CHECK-NEXT: }
 
 // COLD RAMP
@@ -2295,7 +2295,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Cast continuation to head and return.
 // CHECK-NEXT:  [[V6:%.*]] = pop.pointer.bitcast [[CONT]]
-// CHECK-NEXT:  kgen.return [[V6]]
+// CHECK-NEXT:  hlcf.return [[V6]]
 // CHECK-NEXT:  }
 
 // SHARED RESUME.
@@ -2327,7 +2327,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:  [[V8:%.*]] = kgen.struct.gep %arg0[6]
 // CHECK-NEXT:  [[V9:%.*]] = kgen.struct.gep [[V8]][0] : <struct<(index)>>
 // CHECK-NEXT:  pop.store [[V7]], [[V9]] : !kgen.pointer<index>
-// CHECK-NEXT:  kgen.return
+// CHECK-NEXT:  hlcf.return
 // CHECK-NEXT:  }
 kgen.func @needsBoth(%arg0: index) async -> index {
   %x = index.add %arg0, %arg0
@@ -2335,21 +2335,21 @@ kgen.func @needsBoth(%arg0: index) async -> index {
   co.suspend (%hdl) {
     co.suspend.end
   }
-  kgen.return %y : index
+  hlcf.return %y : index
 }
 
 // An async function with not callers will be erased by this pass.
 // CHECK-NOT: kgen.func @triggerHot
 kgen.func @triggerHot(%arg0: index, %arg1: index) async {
    %coro = co.hot_invoke[(index) async -> index: @needsBoth](%arg0)
-   kgen.return
+   hlcf.return
 }
 
 // A non async function can cold start a coro. It will not be erased by this pass.
 // CHECK-LABEL: kgen.func @triggerCold
 kgen.func @triggerCold(%arg0: index, %arg1: index) {
    %coro = co.invoke[(index) async -> index: @needsBoth](%arg0)
-   kgen.return
+   hlcf.return
 }
 
 }
@@ -2374,7 +2374,7 @@ kgen.func @hot_stack_alloc(%arg1: index) async -> index {
     co.suspend.end
  }
  %2 = pop.load %0 : !kgen.pointer<index>
- kgen.return %2 : index
+ hlcf.return %2 : index
 }
 
 // CHECK-LABEL: kgen.func @hot_stack_alloc_no_sus_hot_ramp
@@ -2392,19 +2392,19 @@ kgen.func @hot_stack_alloc_no_sus(%arg1: index) async -> index {
  co.suspend (%hdl) {
     co.suspend.end
  }
- kgen.return %2 : index
+ hlcf.return %2 : index
 }
 
 // CHECK-LABEL: kgen.func @trigger_creation_resume
 kgen.func @trigger_creation(%arg1: index) async {
    %coro = co.hot_invoke[(index) async -> index: @hot_stack_alloc](%arg1)
    %coro2 = co.hot_invoke[(index) async -> index: @hot_stack_alloc_no_sus](%arg1)
-   kgen.return
+   hlcf.return
 }
 
 kgen.func @trigger_trigger_creation(%arg1: index) {
   %coro = co.invoke[(index) async -> ():@trigger_creation](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -2418,7 +2418,7 @@ kgen.func @foo(%arg1: index) async -> index {
  co.suspend (%hdl) {
     co.suspend.end
  }
- kgen.return %arg1 : index
+ hlcf.return %arg1 : index
 }
 
 // CHECK-LABEL: kgen.func @trigger_creation_resume
@@ -2444,13 +2444,13 @@ kgen.func @trigger_creation(%arg1: index) async -> index {
    // CHECK-NEXT: [[MY_RESULT_SLOT:%.*]] = kgen.struct.gep %arg0[[[#PROMISE_IDX]]]
    // CHECK-NEXT: [[MY_PROMISE_SLOT:%.*]] = kgen.struct.gep [[MY_RESULT_SLOT]][0] : <struct<(index)>>
    // CHECK-NEXT: pop.store [[PROMISE]], [[MY_PROMISE_SLOT]] : !kgen.pointer<index>
-   // CHECK-NEXT: kgen.return
-   kgen.return %result : index
+   // CHECK-NEXT: hlcf.return
+   hlcf.return %result : index
 }
 
 kgen.func @trigger_trigger_creation(%arg1: index) {
   %coro = co.invoke[(index) async -> index:@trigger_creation](%arg1)
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -2484,18 +2484,18 @@ kgen.func @hot_stack_alloc(%arg0: i1, %arg1: index) async -> index {
     co.suspend.end
  }
  %2 = pop.load %1 : !kgen.pointer<index>
- kgen.return %2 : index
+ hlcf.return %2 : index
 }
 
 // CHECK-LABEL: kgen.func @trigger_creation_resume
 kgen.func @trigger_creation(%arg0: i1, %arg1: index) async {
    %coro = co.hot_invoke[(i1, index) async -> index: @hot_stack_alloc](%arg0, %arg1)
-   kgen.return
+   hlcf.return
 }
 
 kgen.func @trigger_trigger_creation(%arg0: i1, %arg1: index) {
   %coro = co.invoke[(i1, index) async -> ():@trigger_creation](%arg0, %arg1)
-  kgen.return
+  hlcf.return
 }
 
 }

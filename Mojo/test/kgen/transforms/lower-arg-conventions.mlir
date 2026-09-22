@@ -4,7 +4,7 @@
 kgen.func @reg_passable(%arg0: si32 owned, %arg1: si32) -> si32 {
   // CHECK: kgen.call @reg_passable(%arg0, %arg1) : (si32 owned, si32)
   %1 = kgen.call @reg_passable(%arg0, %arg1) : (si32 owned, si32) -> si32
-  kgen.return %1 : si32
+  hlcf.return %1 : si32
 }
 
 // CHECK-LABEL: kgen.func @lower_args(
@@ -24,7 +24,7 @@ kgen.func @lower_args(
   // CHECK: pop.store %arg0, %[[P0]] : !kgen.pointer<index>
   // CHECK: "some.use"(%[[P0]], %[[P1]])
   "some.use"(%arg0, %arg1) : (!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // COM: Ensure that for non GPU targets a register passable struct that exceeds the inline size
@@ -34,14 +34,14 @@ module attributes {M.target_info = #M.target<triple = "x86_64-unknown-linux-gnu"
   // CHECK: "some.use"(%arg0) : (!kgen.pointer<simd<300, ui8>>) -> ()
   kgen.func @size_gated_large_targeted(%arg0: !kgen.pointer<simd<300, ui8>> imm_mem) {
     "some.use"(%arg0) : (!kgen.pointer<simd<300, ui8>>) -> ()
-    kgen.return
+    hlcf.return
   }
 
   // CHECK-LABEL: kgen.func @byref_res_large_targeted(%arg0: index owned, %arg1: !kgen.pointer<simd<300, ui8>> byref_result) -> !kgen.none
   kgen.func @byref_res_large_targeted(%arg0: index owned, %__result__: !kgen.pointer<simd<300, ui8>> byref_result) -> !kgen.none {
     "somehow.populate"(%__result__) : (!kgen.pointer<simd<300, ui8>>) -> ()
     %none = kgen.param.constant: !kgen.none = <#kgen.none>
-    kgen.return %none : !kgen.none
+    hlcf.return %none : !kgen.none
   }
 }
 
@@ -78,7 +78,7 @@ kgen.func @test_lower_args(%arg0: !lower_args_sig) {
   // CHECK-SAME: !kgen.pointer<struct<(index, index) memoryOnly>> imm_mem,
   // CHECK-SAME: !kgen.pointer<index> owned) -> ()
   kgen.call_indirect %arg0(%0, %1, %2, %0) : !lower_args_sig
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @byref_res(%arg0: index owned) -> index {
@@ -88,8 +88,8 @@ kgen.func @byref_res(%arg0: index owned, %__result__: !kgen.pointer<index> byref
   "somehow.populate"(%__result__) : (!kgen.pointer<index>) -> ()
   %none = kgen.param.constant: !kgen.none = <#kgen.none>
   // CHECK: %[[RES:.*]] = pop.load %[[P0]] : !kgen.pointer<index>
-  // CHECK-NEXT: kgen.return %[[RES]] : index
-  kgen.return %none : !kgen.none
+  // CHECK-NEXT: hlcf.return %[[RES]] : index
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.func @byref_res_reg_passable(%arg0: index owned) -> !kgen.struct<(index, index)> {
@@ -99,8 +99,8 @@ kgen.func @byref_res_reg_passable(%arg0: index owned, %__result__: !kgen.pointer
   "somehow.populate"(%__result__) : (!kgen.pointer<struct<(index, index)>>) -> ()
   %none = kgen.param.constant: !kgen.none = <#kgen.none>
   // CHECK: %[[RES:.*]] = pop.load %[[P0]] : !kgen.pointer<struct<(index, index)>>
-  // CHECK-NEXT: kgen.return %[[RES]] : !kgen.struct<(index, index)>
-  kgen.return %none : !kgen.none
+  // CHECK-NEXT: hlcf.return %[[RES]] : !kgen.struct<(index, index)>
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.func @byref_res_mem_only
@@ -109,8 +109,8 @@ kgen.func @byref_res_mem_only(%arg0: index owned, %__result__: !kgen.pointer<str
   // CHECK-NEXT: "somehow.populate"
   "somehow.populate"(%__result__) : (!kgen.pointer<struct<(index, index) memoryOnly>>) -> ()
   %none = kgen.param.constant: !kgen.none = <#kgen.none>
-  // CHECK: kgen.return %{{.*}} : !kgen.none
-  kgen.return %none : !kgen.none
+  // CHECK: hlcf.return %{{.*}} : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 !byref_res_sig = !kgen.generator<(index owned, !kgen.pointer<index> byref_result) -> !kgen.none>
@@ -146,7 +146,7 @@ kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_
   // CHECK-NOT: pop.store
   kgen.call_indirect %arg2(%arg3, %2) : !byref_res_mem_only_sig
 
-  kgen.return
+  hlcf.return
 }
 
 !Error = !kgen.struct<(f32)>
@@ -170,13 +170,13 @@ kgen.func @byref_throws(
     // CHECK: [[ERR:%.*]] = pop.load %[[ERROR]]
     // CHECK-NEXT: [[RESULT:%.*]] = kgen.variant.create [[ERR]], 0
     // CHECK-NEXT: return [[RESULT]]
-    kgen.return %1 : !kgen.scalar<bool>
+    hlcf.return %1 : !kgen.scalar<bool>
   } else {
     %2 = kgen.param.constant: scalar<bool> = <false>
     // CHECK: [[VAL:%.*]] = pop.load %[[VALUE]]
     // CHECK-NEXT: [[RESULT:%.*]] = kgen.variant.create [[VAL]], 1
     // CHECK-NEXT: return [[RESULT]]
-    kgen.return %2 : !kgen.scalar<bool>
+    hlcf.return %2 : !kgen.scalar<bool>
   }
 
   // CHECK:      %[[RES:.*]] = hlcf.if %[[COND]] -> !kgen.variant
@@ -188,8 +188,8 @@ kgen.func @byref_throws(
   // CHECK-NEXT:   [[RESULT:%.*]] = kgen.variant.create [[VAL]], 1
   // CHECK-NEXT:   hlcf.yield [[RESULT]]
 
-  // CHECK: kgen.return %[[RES]]
-  kgen.return %cflag : !kgen.scalar<bool>
+  // CHECK: hlcf.return %[[RES]]
+  hlcf.return %cflag : !kgen.scalar<bool>
 }
 
 !byref_throws_sig = !kgen.generator<(
@@ -241,7 +241,7 @@ kgen.func @self_result_and_arg(%arg1: !kgen.pointer<struct<()>> imm_mem,
                                %arg2: i8,
                                %arg0: !kgen.pointer<struct<()>> byref_result) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: @call_it_self_result_and_arg
@@ -253,7 +253,7 @@ kgen.func @call_it_self_result_and_arg(%arg0: !kgen.pointer<struct<()>> imm_mem)
   // CHECK: call @self_result_and_arg(%{{.*}}, %[[CST]]) : (!kgen.struct<()>, i8) -> !kgen.struct<()>
   %2 = kgen.call @self_result_and_arg(%arg0, %1, %0) : (!kgen.pointer<struct<()>> imm_mem, i8, !kgen.pointer<struct<()>> byref_result) -> !kgen.none
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.func @unreachable_byref_result() -> index
@@ -263,11 +263,11 @@ kgen.func @unreachable_byref_result(%arg0: !kgen.pointer<index> byref_result) ->
     %none = kgen.param.constant: none = <#kgen.none>
     // CHECK: [[R:%.*]] = pop.load
     // CHECK-NEXT: return [[R]]
-    kgen.return %none : !kgen.none
+    hlcf.return %none : !kgen.none
     // CHECK-NEXT: }
   }
   // CHECK-NEXT: unreachable
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: kgen.func @byref_error
@@ -296,12 +296,12 @@ kgen.func @byref_error(
 
   // CHECK-NEXT: [[ERR_RES:%.*]] = pop.load [[F_ERR]]
   // CHECK-NEXT: return [[R]]#0, [[ERR_RES]]
-  kgen.return %2 : !kgen.scalar<bool>
+  hlcf.return %2 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @dont_alter_async_results(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async
 kgen.func @dont_alter_async_results(%arg0: !kgen.pointer<index> imm_mem, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @two_call_indirect
@@ -312,7 +312,7 @@ kgen.func @two_call_indirect(%arg0: !kgen.generator<(!kgen.pointer<index> byref_
   kgen.call_indirect %arg0(%0) : (!kgen.pointer<index> byref_result) -> !kgen.none
   // CHECK: kgen.call_indirect %arg0() : () -> index
   kgen.call_indirect %arg0(%1) : (!kgen.pointer<index> byref_result) -> !kgen.none
-  kgen.return
+  hlcf.return
 }
 
 #type_value = #kgen.type<typevalue<#kgen.instref<@"IntPackable">>, index> : !kgen.type
@@ -337,8 +337,8 @@ kgen.func @lower_args1(
     // CHECK-NEXT: [[V4:%.*]] = kgen.struct.create([[V3]], [[V2]], [[V1]], [[V0]]) : !kgen.struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
     // CHECK-NEXT: [[V5:%.*]] = pop.stack_allocation 1 x struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
     // CHECK-NEXT: pop.store [[V4]], [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
-    // CHECK-NEXT: kgen.return [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
- kgen.return %arg0 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
+    // CHECK-NEXT: hlcf.return [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
+ hlcf.return %arg0 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
 }
 // CHECK-LABEL: kgen.func @main
 kgen.func @main() {
@@ -355,7 +355,7 @@ kgen.func @main() {
     // CHECK-NEXT: [[V10:%.*]] = kgen.call @lower_args1([[V6]], [[V7]], [[V8]], [[V9]]) : (index, i1, index, i1) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
     %0 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>
     %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> imm_mem) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
-    kgen.return
+    hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @lower_empty
@@ -363,21 +363,21 @@ kgen.func @main() {
 kgen.func @lower_empty(
  %arg0: !kgen.pointer<struct<() isParamPack>> imm_mem
 ) -> !kgen.pointer<struct<() isParamPack>> {
- kgen.return %arg0 : !kgen.pointer<struct<() isParamPack>>
+ hlcf.return %arg0 : !kgen.pointer<struct<() isParamPack>>
 }
 // CHECK-LABEL: kgen.func @main_empty
 kgen.func @main_empty() {
     %0 = pop.stack_allocation 1 x !kgen.struct<() isParamPack>
     // CHECK: kgen.call @lower_empty(%none) : (!kgen.none) -> !kgen.pointer<struct<() isParamPack>>
     %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<struct<() isParamPack>> imm_mem) -> !kgen.pointer<struct<() isParamPack>>
-    kgen.return
+    hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @none_with_res
 // CHECK-SAME: (%arg0: !kgen.none, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
 kgen.func @none_with_res(%arg0: !kgen.pointer<struct<() isParamPack>> owned_in_mem, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
-    kgen.return %none : !kgen.none
+    hlcf.return %none : !kgen.none
 }
 // CHECK-LABEL: kgen.func @call_none_with_res
 kgen.func @call_none_with_res(%arg0: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> imm_mem, %arg1: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> byref_result) -> !kgen.none {
@@ -386,19 +386,19 @@ kgen.func @call_none_with_res(%arg0: !kgen.pointer<struct<(variant<struct<() mem
     // CHECK: kgen.call @none_with_res(%none, %{{.*}}) : (!kgen.none, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
     %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<struct<() isParamPack>> owned_in_mem, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
-    kgen.return %none : !kgen.none
+    hlcf.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.func @recursive_ptr
 // CHECK-SAME: (%arg0: !kgen.pointer<none>)
 kgen.func @recursive_ptr(%arg0: !kgen.pointer<pointer<none>> imm_mem){
-    kgen.return
+    hlcf.return
 }
 // CHECK-LABEL: kgen.func @call_recursive_ptr
 // CHECK: kgen.call @recursive_ptr(%{{.*}}) : (!kgen.pointer<none>) -> ()
 kgen.func @call_recursive_ptr(%arg0: !kgen.pointer<pointer<none>> imm_mem){
     kgen.call @recursive_ptr(%arg0) : (!kgen.pointer<pointer<none>> imm_mem) -> ()
-    kgen.return
+    hlcf.return
 }
 
 // COM: Do not promote types inside a pack not known to be read only.
@@ -411,7 +411,7 @@ kgen.func @lower_args_no_ptr(
     %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<index>) isParamPack>
     %1 = kgen.param.constant:index = <9>
     pop.store %1, %0 : !kgen.pointer<index>
- kgen.return %arg0 : !kgen.struct<(pointer<index>) isParamPack>
+ hlcf.return %arg0 : !kgen.struct<(pointer<index>) isParamPack>
 }
 
 // CHECK-LABEL: kgen.func @callIt
@@ -422,7 +422,7 @@ kgen.func @callIt() -> index {
     %2 = kgen.call @lower_args_no_ptr(%1) : (!kgen.struct<(pointer<index>) isParamPack>) -> !kgen.struct<(pointer<index>) isParamPack>
     %3 = kgen.struct.extract %2[0] : !kgen.struct<(pointer<index>) isParamPack>
     %4 = pop.load %3 : !kgen.pointer<index>
-    kgen.return %4 : index
+    hlcf.return %4 : index
 }
 
 //===----------------------------------------------------------------------===//
@@ -438,7 +438,7 @@ kgen.func @external_call_pack_expand(%a: !kgen.scalar<si32>, %b: !kgen.scalar<f3
   // CHECK: pop.external_call @my_extern([[V0]], [[V1]]) : (!kgen.scalar<si32>, !kgen.scalar<f32>) -> ()
   pop.external_call @my_extern(%pack)
     : (!kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // Nested packs are recursively flattened. This occurs in practice when Mojo
@@ -459,7 +459,7 @@ kgen.func @external_call_nested_pack(
   // CHECK-SAME: (!kgen.scalar<si32>, !kgen.scalar<f32>, !kgen.scalar<f64>) -> ()
   pop.external_call @my_extern(%outer)
     : (!kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 //===----------------------------------------------------------------------===//
@@ -471,8 +471,8 @@ kgen.func @external_call_nested_pack(
 kgen.func @remove_never_error_slot(%err: !kgen.pointer<!kgen.never> byref_error,
                                    %arg0: !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> !kgen.scalar<bool> {
   %1 = kgen.param.constant: scalar<bool> = <false>
-  // CHECK: kgen.return{{$}}
-  kgen.return %1 : !kgen.scalar<bool>
+  // CHECK: hlcf.return{{$}}
+  hlcf.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK: @call_remove_never_error_slot
@@ -481,6 +481,6 @@ kgen.func @call_remove_never_error_slot(%err: !kgen.pointer<!kgen.never>,
   // CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
   // CHECK-NEXT: kgen.call @remove_never_error_slot(%arg1)
   %0 = kgen.call @remove_never_error_slot(%err, %arg0) : (!kgen.pointer<!kgen.never> byref_error, !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> !kgen.scalar<bool>
-  // CHECK-NEXT: kgen.return [[FALSE]] : !kgen.scalar<bool>
-  kgen.return %0 : !kgen.scalar<bool>
+  // CHECK-NEXT: hlcf.return [[FALSE]] : !kgen.scalar<bool>
+  hlcf.return %0 : !kgen.scalar<bool>
 }

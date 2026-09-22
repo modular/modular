@@ -28,14 +28,14 @@ kgen.generator @parent() -> index {
     // CHECK: hlcf.if
       // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index loc(#[[BREAK_LOC0:.*]])
     // CHECK: kgen.param.declare.region SomeClosure = () {
-      // CHECK-NEXT: kgen.return loc(#[[CL_RET_LOC:.*]])
+      // CHECK-NEXT: hlcf.return loc(#[[CL_RET_LOC:.*]])
     // CHECK-NEXT: } {{.*}} loc(#[[CL_LOC:.*]])
     // CHECK: hlcf.break "[[LABEL]]" %idx0 : index loc(#[[BREAK_LOC1:.*]])
   // CHECK-NEXT: } loc(#[[CALL_LOC:.*]])
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee() : () -> index loc(#callOpLoc)
   // CHECK: return %[[RES]]
-  kgen.return %0 : index loc(#parentRetLoc)
+  hlcf.return %0 : index loc(#parentRetLoc)
 } loc(#parentLoc)
 
 // CHECK: kgen.generator @callee
@@ -44,19 +44,19 @@ kgen.generator @callee() -> index always_inline {
   %0 = index.constant 0 loc(#calleeMisc)
   %false = kgen.param.constant: scalar<bool> = <false> loc(#calleeMisc)
   hlcf.if %false {
-    // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC0:.*]])
-    kgen.return %0 : index loc(#ret0)
+    // CHECK: hlcf.return %idx0 : index loc(#[[RET_LOC0:.*]])
+    hlcf.return %0 : index loc(#ret0)
   } else {
     hlcf.yield loc(#calleeMisc)
   } loc(#calleeMisc)
   // CHECK: kgen.param.declare.region SomeClosure = () {
-    // CHECK-NEXT: kgen.return loc(#[[CL_RET_LOC]])
+    // CHECK-NEXT: hlcf.return loc(#[[CL_RET_LOC]])
   // CHECK-NEXT: } {{.*}} loc(#[[CL_LOC]])
   kgen.param.declare.region SomeClosure = () -> () {
-    kgen.return loc(#closureRet)
+    hlcf.return loc(#closureRet)
   } loc(#closure)
-  // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC1:.*]])
-  kgen.return %0 : index loc(#ret1)
+  // CHECK: hlcf.return %idx0 : index loc(#[[RET_LOC1:.*]])
+  hlcf.return %0 : index loc(#ret1)
 } loc(#calleeLoc)
 
 // CHECK: #[[CONST_LOC]] = loc("foo.mlir":80:80)
@@ -75,14 +75,14 @@ kgen.generator @callee() -> index always_inline {
 kgen.generator @parent<T: type>(%arg0: index) {
   // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
   // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.param<T0> loc(#[[CALL_LOC]])
-  // CHECK-NEXT: kgen.return
+  // CHECK-NEXT: hlcf.return
   kgen.call @nodebug_inline_me<:type index>(%arg0) : (index) -> () loc(#loc)
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // CHECK-LABEL: kgen.generator @nodebug_inline_me
 kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.param<T>) always_inline_no_debug {
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // -----
@@ -91,20 +91,20 @@ kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.param<T>) always_inline_
 kgen.generator @foo() {
   // CHECK: kgen.param.declare.region SomeClosure = <DT: dtype, N>(%[[ARG:.*]]: !kgen.simd<N, DT>
   // CHECK-NEXT: kgen.param.declare A = <1> loc(#[[LOC:.*]])
-  // CHECK-NEXT: kgen.return %[[ARG]]
+  // CHECK-NEXT: hlcf.return %[[ARG]]
   kgen.call @bar() : () -> ()
   // CHECK: kgen.param.declare.region SomeClosure0[SomeClosure] = <DT0: dtype, N0>(%[[ARG0:.*]]: !kgen.simd<N0, DT0>
   // CHECK-NEXT: kgen.param.declare A0 = <1> loc(#[[LOC0:.*]])
-  // CHECK-NEXT: kgen.return %[[ARG0]] : !kgen.simd<N0, DT0> loc(#[[LOC0]])
+  // CHECK-NEXT: hlcf.return %[[ARG0]] : !kgen.simd<N0, DT0> loc(#[[LOC0]])
   kgen.call @bar() : () -> ()
-  kgen.return
+  hlcf.return
 }
 kgen.generator @bar() always_inline {
   kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !kgen.simd<N, DT>) capturing -> !kgen.simd<N, DT> {
     kgen.param.declare A = <1> loc(#loc)
-    kgen.return %arg0 : !kgen.simd<N, DT> loc(#loc)
+    hlcf.return %arg0 : !kgen.simd<N, DT> loc(#loc)
   } loc(#loc)
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !kgen.simd<N, DT>>
@@ -136,14 +136,14 @@ kgen.generator @bar() always_inline {
 
 kgen.generator @no_debuginfo() -> index always_inline {
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 // CHECK-LABEL: kgen.generator @has_debuginfo
 kgen.generator @has_debuginfo() {
   // CHECK: index.constant 0 loc([[LOC:#.*]])
   kgen.call @no_debuginfo() : () -> index loc(#loc)
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // CHECK: [[LOC]] = loc("{{.*}}":
@@ -179,7 +179,7 @@ kgen.generator @foo<DT>() {
   // CHECK-SAME:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !kgen.simd<N, DT0>) -> !kgen.simd<N, DT0>
   // CHECK:        } else (%arg1: !kgen.simd<N, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
   kgen.call @bar() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @bar() always_inline {
@@ -198,7 +198,7 @@ kgen.generator @bar() always_inline {
       hlcf.comptime.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
     } loc(#loc)
 
-    kgen.return %0 : !kgen.simd<N, DT> loc(#loc)
+    hlcf.return %0 : !kgen.simd<N, DT> loc(#loc)
   } loc(#loc)
-  kgen.return
+  hlcf.return
 }

@@ -55,6 +55,8 @@
 
 using namespace M::KGEN::LIT;
 using namespace M::KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace M;
 
 //===----------------------------------------------------------------------===//

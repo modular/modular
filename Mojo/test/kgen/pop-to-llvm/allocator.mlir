@@ -18,6 +18,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %align = index.constant 8
     %0 = pop.aligned_alloc %align, %size : <index>
     pop.aligned_free %0 : <index>
-    kgen.return
+    hlcf.return
   }
 }

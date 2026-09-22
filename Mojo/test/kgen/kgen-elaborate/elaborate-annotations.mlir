@@ -45,7 +45,7 @@ kgen.generator @read_struct_annotations() {
   kgen.param.constant: !kgen.param<#kgen.param_list.get<:param_list<type>
       #kgen.struct_annotation_types<#annotated, -1> : !kgen.param_list<!kgen.type>, 1>>
       = <#kgen.struct_annotation<#annotated, -1, 1, !kgen.param_list<!kgen.type>>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @read_field_annotations
@@ -67,7 +67,7 @@ kgen.generator @read_field_annotations() {
   kgen.param.constant: index =
       <#kgen.param_list.size<:!kgen.param_list<!kgen.type>
         #kgen.struct_annotation_types<#annotated, 1> : !kgen.param_list<!kgen.type>>>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -86,7 +86,7 @@ kgen.generator @read_unannotated() {
   kgen.param.constant: index =
       <#kgen.param_list.size<:!kgen.param_list<!kgen.type>
         #kgen.struct_annotation_types<#plain, -1> : !kgen.param_list<!kgen.type>>>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -115,5 +115,5 @@ kgen.generator @read_per_instantiation() {
   kgen.param.constant: !kgen.param<#kgen.param_list.get<:param_list<type>
       #kgen.struct_annotation_types<#param5, -1> : !kgen.param_list<!kgen.type>, 0>>
       = <#kgen.struct_annotation<#param5, -1, 0, !kgen.param_list<!kgen.type>>>
-  kgen.return
+  hlcf.return
 }

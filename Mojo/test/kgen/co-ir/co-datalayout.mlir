@@ -9,5 +9,5 @@ kgen.generator @co_sizeof_alignof() {
   // CHECK-NEXT: <8>
   kgen.param.constant: index = <get_alignof(!co.routine, #target)>
 
-  kgen.return
+  hlcf.return
 }

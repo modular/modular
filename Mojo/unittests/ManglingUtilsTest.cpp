@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/TransformUtils/ManglingUtils.h"
+#include "Mojo/HLCFDialect/HLCFDialect.h"
 #include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
@@ -29,12 +30,14 @@ class MangleParameterValuesTest : public ::testing::Test {
 protected:
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
 
-  MangleParameterValuesTest() { ctx.loadDialect<KGENDialect>(); }
+  MangleParameterValuesTest() {
+    ctx.loadDialect<KGENDialect, HLCF::HLCFDialect>();
+  }
 
   /// Parses a module holding one single-parameter generator named `name`.
   GeneratorOpInterface getGenerator(StringRef name = "gen") {
     std::string source =
-        ("kgen.generator @\"" + name + "\"<p: string>() { kgen.return }").str();
+        ("kgen.generator @\"" + name + "\"<p: string>() { hlcf.return }").str();
     return getGeneratorFromSource(source);
   }
 
@@ -144,12 +147,12 @@ TEST_F(MangleParameterValuesTest, QuoteInEscapedGeneratorNameIsSanitized) {
   // `\22` is MLIR's hex escape for `"`, so the generator sym_name is `gen"`.
   EXPECT_EQ(show(mangleParameterValues(
                 getGeneratorFromSource(
-                    R"(kgen.generator @"gen\22"<p: string>() { kgen.return })"),
+                    R"(kgen.generator @"gen\22"<p: string>() { hlcf.return })"),
                 {param})),
             "gen~Q,p=~Q42~Q");
   EXPECT_EQ(show(mangleParameterValues(
                 getGeneratorFromSource(
-                    R"(kgen.generator @"a\22b"<p: string>() { kgen.return })"),
+                    R"(kgen.generator @"a\22b"<p: string>() { hlcf.return })"),
                 {param})),
             "a~Qb,p=~Q42~Q");
 }

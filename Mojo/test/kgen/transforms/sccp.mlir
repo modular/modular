@@ -45,8 +45,8 @@ kgen.func @loop_generates_constant() -> (index, index) {
     hlcf.yield %1: index
   }
 
-  // CHECK: kgen.return [[IDX11]], [[IDX9]]
-  kgen.return %2, %7 : index, index
+  // CHECK: hlcf.return [[IDX11]], [[IDX9]]
+  hlcf.return %2, %7 : index, index
 }
 
 // CHECK-LABEL: @not_much_can_be_known
@@ -86,8 +86,8 @@ kgen.func @not_much_can_be_known(%cond: !kgen.scalar<bool>) -> (index, index) {
     hlcf.continue %6, %b7 : index, !kgen.scalar<bool>
   }
 
-  // CHECK: kgen.return [[IDX9]], [[V0:%.*]]
-  kgen.return %1, %2 : index, index
+  // CHECK: hlcf.return [[IDX9]], [[V0:%.*]]
+  hlcf.return %1, %2 : index, index
 }
 
 // CHECK-LABEL: @should_not_crash
@@ -98,11 +98,11 @@ kgen.func @should_not_crash() -> (i1) {
     hlcf.loop "_loop_0" {
         hlcf.continue "_loop_0"
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
 
   %6 = index.cmp slt(%2, %idx0)
-  kgen.return %6 : i1
+  hlcf.return %6 : i1
 }
 
 
@@ -150,7 +150,7 @@ kgen.func @nested_if_constant_result(%cond: !kgen.scalar<bool>) -> index {
     hlcf.yield %0: index
   }
 
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 // CHECK-LABEL: @test_switches
@@ -214,8 +214,8 @@ kgen.func @test_switches(%arg0: index) -> (index, index, index) {
     hlcf.yield %idx2: index
   }
 
-  // CHECK: kgen.return [[IDX9]], [[V4]], [[INDEX2]]
-  kgen.return %2, %4, %5: index, index, index
+  // CHECK: hlcf.return [[IDX9]], [[V4]], [[INDEX2]]
+  hlcf.return %2, %4, %5: index, index, index
 }
 
 kgen.func @test_for_loop(%arg0: index) -> (index) {
@@ -235,8 +235,8 @@ kgen.func @test_for_loop(%arg0: index) -> (index) {
     hlcf.for.yield [induction_var (%1 : index)] [retvals (%2: index)] [iterargs ()]
   }
 
-  // CHECK: kgen.return [[IDX3]]
-  kgen.return %0: index
+  // CHECK: hlcf.return [[IDX3]]
+  hlcf.return %0: index
 }
 
 // CHECK-LABEL: @nested_loops
@@ -283,8 +283,8 @@ kgen.func @nested_loops() -> index {
     hlcf.continue %3 : index
   }
 
-  // CHECK: kgen.return [[IDX10]]
-  kgen.return %2: index
+  // CHECK: hlcf.return [[IDX10]]
+  hlcf.return %2: index
 }
 
 // CHECK-LABEL: @loop_generates_constant_but_hits_limit
@@ -333,8 +333,8 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
     hlcf.yield %1: index
   }
 
-  // CHECK: kgen.return [[V2]], [[V7]]
-  kgen.return %2, %7 : index, index
+  // CHECK: hlcf.return [[V2]], [[V7]]
+  hlcf.return %2, %7 : index, index
 }
 
 
@@ -392,8 +392,8 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
      %b10 = pop.cast_from_builtin %10 : i1 to !kgen.scalar<bool>
      hlcf.continue %b10 : !kgen.scalar<bool>
    }
-   // CHECK: kgen.return %idx6, %idx1
-   kgen.return %2, %6 : index, index
+   // CHECK: hlcf.return %idx6, %idx1
+   hlcf.return %2, %6 : index, index
  }
 
 // COM: A break under an unknown condition is only one of the loop's exits, so
@@ -433,8 +433,8 @@ kgen.func @partial_early_exit(%cond: !kgen.scalar<bool>) -> index {
   }
 
   // COM: the result stays the loop's, not the guarded break's value.
-  // CHECK: kgen.return [[R]] : index
-  kgen.return %0: index
+  // CHECK: hlcf.return [[R]] : index
+  hlcf.return %0: index
 }
 
 // COM: A break under a condition that folds to false cannot execute, so it does
@@ -464,8 +464,8 @@ kgen.func @break_in_untaken_branch() -> index {
     hlcf.continue %2 : index
   }
 
-  // CHECK: kgen.return %idx5
-  kgen.return %0: index
+  // CHECK: hlcf.return %idx5
+  hlcf.return %0: index
 }
 
 // COM: A break in a switch case the index does not select cannot execute.
@@ -495,8 +495,8 @@ kgen.func @break_in_untaken_switch_case() -> index {
     hlcf.continue %2 : index
   }
 
-  // CHECK: kgen.return %idx5
-  kgen.return %0: index
+  // CHECK: hlcf.return %idx5
+  hlcf.return %0: index
 }
 
 // COM: A break leaving the outer loop from inside an inner one that stops at
@@ -523,8 +523,8 @@ kgen.func @outer_break_from_unconverged_inner() -> index {
     hlcf.break "outer" %arg0 : index
   }
 
-  // CHECK: kgen.return [[R]] : index
-  kgen.return %0: index
+  // CHECK: hlcf.return [[R]] : index
+  hlcf.return %0: index
 }
 
 // COM: A continue that re-enters an outer loop is one of its entry edges.
@@ -561,8 +561,8 @@ kgen.func @outer_continue_from_unconverged_inner() -> index {
     hlcf.break "outer" %arg0 : index
   }
 
-  // CHECK: kgen.return [[R]] : index
-  kgen.return %0: index
+  // CHECK: hlcf.return [[R]] : index
+  hlcf.return %0: index
 }
 
 // COM: The second break cannot execute: the first one always leaves the loop.
@@ -589,8 +589,8 @@ kgen.func @break_dominated_by_break(%cond: !kgen.scalar<bool>) -> index {
     hlcf.continue %1 : index
   }
 
-  // CHECK: kgen.return %idx5
-  kgen.return %0: index
+  // CHECK: hlcf.return %idx5
+  hlcf.return %0: index
 }
 
 // CHECK-LABEL: @none_hlcf_controlflownode_donot_crash
@@ -605,8 +605,8 @@ kgen.generator @none_hlcf_controlflownode_donot_crash() -> index {
     hlcf.comptime.yield %i1: index
   }
 
-  // CHECK: kgen.return [[V0:%.*]]
-  kgen.return %0: index
+  // CHECK: hlcf.return [[V0:%.*]]
+  hlcf.return %0: index
 }
 
 // COM: This test should not fail with lattice value assertion due to early exits in the loop.
@@ -636,7 +636,7 @@ kgen.func @should_continue() -> index {
   }
   // CHECK: kgen.call @f([[IDX0]]) : (index) -> index
   %1 = kgen.call @f(%0) : (index) -> index
-  kgen.return %1: index
+  hlcf.return %1: index
 }
 
 
@@ -679,7 +679,7 @@ kgen.func @indirect_loop_break(%cond: index) -> index {
   }
   // CHECK: kgen.call @f([[V0]])
   %1 = kgen.call @f(%0) : (index) -> index
-  kgen.return %1: index
+  hlcf.return %1: index
 }
 
 
@@ -708,10 +708,10 @@ kgen.func @single_unreachable_indirect_loop_break(%cond: index) -> index {
       %19 = index.sub %arg2, %idx1
       hlcf.continue %19, %arg3 : index, index
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
 
   // CHECK: kgen.call @f([[V0]])
   %1 = kgen.call @f(%0) : (index) -> index
-  kgen.return %1: index
+  hlcf.return %1: index
 }

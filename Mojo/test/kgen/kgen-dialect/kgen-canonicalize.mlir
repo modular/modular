@@ -36,7 +36,7 @@ kgen.generator @rebind_folds<dtype: dtype, type: type>(
   %1 = kgen.rebind %b : !kgen.scalar<f32> to !kgen.scalar<f32>
   %2 = kgen.rebind %c : !kgen.scalar<dtype> to !kgen.scalar<dtype>
   %3 = kgen.rebind %d : !kgen.param<type> to !kgen.param<type>
-  kgen.return %0, %1, %2, %3 : i32, !kgen.scalar<f32>, !kgen.scalar<dtype>, !kgen.param<type>
+  hlcf.return %0, %1, %2, %3 : i32, !kgen.scalar<f32>, !kgen.scalar<dtype>, !kgen.param<type>
 }
 
 // CHECK-LABEL: @rebind_canonicalize
@@ -46,7 +46,7 @@ kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !
   %1 = kgen.rebind %0 : !kgen.scalar<dt2> to !kgen.scalar<dt3>
   %2 = kgen.rebind %1 : !kgen.scalar<dt3> to !kgen.scalar<si32>
   // CHECK-NEXT: return %0
-  kgen.return %2 : !kgen.scalar<si32>
+  hlcf.return %2 : !kgen.scalar<si32>
 }
 
 // CHECK-LABEL: @rebind_across_scopes
@@ -57,9 +57,9 @@ kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !kgen.scalar<dt>) {
   kgen.param.declare.region F = <dt2: dtype>() -> !kgen.scalar<dt2> {
     // CHECK: rebind %arg0 : !kgen.scalar<dt> to !kgen.scalar<dt2>
     %1 = kgen.rebind %0 : !kgen.scalar<dt1> to !kgen.scalar<dt2>
-    kgen.return %1 : !kgen.scalar<dt2>
+    hlcf.return %1 : !kgen.scalar<dt2>
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @param_materialize
@@ -70,7 +70,7 @@ kgen.generator @param_materialize() -> (i32, !kgen.pointer<i32>) {
   %1 = kgen.param.materialize: pointer<i32> = <#interp.memref<{[(#undef, heap, [], [])], []}, 0, 0>>
   // CHECK-NOT: kgen.param.materialize
   %2 = kgen.param.materialize: pointer<i32> = <#interp.memref<{[(#undef, heap, [], [])], []}, 0, 0>>
-  kgen.return %0, %1 : i32, !kgen.pointer<i32>
+  hlcf.return %0, %1 : i32, !kgen.pointer<i32>
 }
 
 // CHECK-LABEL: kgen.func @cast_from_folds
@@ -81,8 +81,8 @@ kgen.func @cast_from_folds(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
   %1 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
   %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
 
-  // CHECK: kgen.return %[[ARG0]]
-  kgen.return %2 : !kgen.scalar<f32>
+  // CHECK: hlcf.return %[[ARG0]]
+  hlcf.return %2 : !kgen.scalar<f32>
 }
 
 // CHECK-LABEL: kgen.func @cast_to_folds
@@ -93,8 +93,8 @@ kgen.func @cast_to_folds(%arg0: f32) -> f32 {
   %1 = pop.cast_from_builtin %arg0 : f32 to !kgen.scalar<f32>
   %2 = pop.cast_to_builtin %1 : !kgen.scalar<f32> to f32
 
-  // CHECK: kgen.return %[[ARG0]]
-  kgen.return %2 : f32
+  // CHECK: hlcf.return %[[ARG0]]
+  hlcf.return %2 : f32
 }
 
 // CHECK-LABEL: kgen.generator @param_assert_simplify<p1: i1, p2>()
@@ -103,15 +103,15 @@ kgen.generator @param_assert_simplify<p1 : i1, p2>() {
   kgen.param.assert <true>, "this is pointless"
   // CHECK-NEXT: kgen.param.assert <false>, "failing asserts must be kept"
   kgen.param.assert <eq(42, 41)>, "failing asserts must be kept"
-  kgen.return
+  hlcf.return
 }
 
 kgen.func @trivial(%arg0: si32) -> si32 {
-  kgen.return %arg0 : si32
+  hlcf.return %arg0 : si32
 }
 
 kgen.generator @trivial_param<A>(%arg0: si32) -> si32 {
-  kgen.return %arg0 : si32
+  hlcf.return %arg0 : si32
 }
 
 // CHECK-LABEL: kgen.generator @call_param_canonicalize
@@ -120,7 +120,7 @@ kgen.generator @call_param_canonicalize(%arg0: si32) -> si32 {
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
   // CHECK: %1 = kgen.call @trivial_param<1>(%arg0)
   %1 = kgen.call_param[(si32) -> si32: @trivial_param<1>](%arg0)
-  kgen.return %0: si32
+  hlcf.return %0: si32
 }
 
 // CHECK-LABEL: kgen.generator @param_declare
@@ -129,7 +129,7 @@ kgen.generator @param_declare<simd_width, unroll_factor>() -> index {
   // CHECK: kgen.param.declare unroll_simd_size
   kgen.param.declare unroll_simd_size = <mul(simd_width, unroll_factor)>
   %result = kgen.param.constant = <unroll_simd_size>
-  kgen.return %result : index
+  hlcf.return %result : index
 }
 
 
@@ -137,7 +137,7 @@ kgen.generator @param_declare<simd_width, unroll_factor>() -> index {
 // https://github.com/modularml/modular/issues/4518
 
 kgen.generator @callee<fn: <index>()->index>() {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @hoist_constant
@@ -146,30 +146,30 @@ kgen.generator @hoist_constant() {
   kgen.param.declare.region fn = <N>() -> index {
     // CHECK-NEXT: kgen.param.constant = <N>
     %0 = kgen.param.constant = <N>
-    kgen.return %0 : index
+    hlcf.return %0 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @call_me() {
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @call_with_bound<A>() {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @call_param_bound_symbol
 kgen.generator @call_param_bound_symbol() {
   // CHECK-NEXT: kgen.call @call_with_bound<1>() : () -> ()
   kgen.call_param[() -> (): @call_with_bound<1>]()
-  kgen.return
+  hlcf.return
 }
 
 
 lit.struct.decl @Struct {
   lit.fn @Nested() {
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -177,7 +177,7 @@ lit.struct.decl @Struct {
 kgen.generator @callNested() {
   // CHECK-NEXT: kgen.call @Struct::@Nested
   kgen.call_param[!lit.generator<() -> ()>: @Struct::@Nested]()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @no_hoist
@@ -188,10 +188,10 @@ kgen.func @no_hoist() {
     %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
-    kgen.return loc(#loc5)
+    hlcf.return loc(#loc5)
   } loc(#loc8)
   kgen.call_indirect %0() : () -> () loc(#loc4)
-  kgen.return loc(#loc4)
+  hlcf.return loc(#loc4)
 } loc(#loc4)
 
 // COM: Callee does not have debug info, but the caller does.
@@ -203,10 +203,10 @@ kgen.func @no_hoist_nodebug_callee() {
     %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
-    kgen.return loc(#loc5)
+    hlcf.return loc(#loc5)
   } loc(#loc9)
   kgen.call_indirect %0() : () -> () loc(#loc4)
-  kgen.return loc(#loc4)
+  hlcf.return loc(#loc4)
 } loc(#loc4)
 
 // CHECK-LABEL: kgen.func @hoist
@@ -218,10 +218,10 @@ kgen.func @hoist() {
     %array = kgen.param.constant: array<1, index> = <[0]>
     %1 = pop.stack_allocation 1 x !pop.array<1, index>
     pop.store %array, %1 : !kgen.pointer<array<1, index>>
-    kgen.return
+    hlcf.return
   }
   kgen.call_indirect %0() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @struct_create
@@ -230,7 +230,7 @@ kgen.func @struct_create() -> !kgen.struct<(si4, ui4)> {
   %0 = kgen.param.constant: si4 = <-3>
   %1 = kgen.param.constant: ui4 = <7>
   %2 = kgen.struct.create(%0, %1) : !kgen.struct<(si4, ui4)>
-  kgen.return %2 : !kgen.struct<(si4, ui4)>
+  hlcf.return %2 : !kgen.struct<(si4, ui4)>
 }
 
 // CHECK-LABEL: @struct_get
@@ -242,7 +242,7 @@ kgen.generator @struct_get<x: index>() -> (si4, !kgen.param<#kgen.param_list.get
   // CHECK-NEXT: kgen.struct.extract %struct[x] : <(si4, ui4)>
   %2 = kgen.param.constant: struct<(si4, ui4)> = <{ -3, 7 }>
   %3 = kgen.struct.extract %2[x] : !kgen.struct<(si4, ui4)>
-  kgen.return %1, %3 : si4, !kgen.param<#kgen.param_list.get<:!kgen.param_list<type> [si4, ui4], x>>
+  hlcf.return %1, %3 : si4, !kgen.param<#kgen.param_list.get<:!kgen.param_list<type> [si4, ui4], x>>
 }
 
 // CHECK-LABEL: @struct_replace
@@ -251,7 +251,7 @@ kgen.func @struct_replace() -> !kgen.struct<(si4, ui4)> {
   %0 = kgen.param.constant: si4 = <-5>
   %1 = kgen.param.constant: struct<(si4, ui4)> = <{ -3, 7 }>
   %2 = kgen.struct.replace %0, %1[0] : !kgen.struct<(si4, ui4)>
-  kgen.return %2 : !kgen.struct<(si4, ui4)>
+  hlcf.return %2 : !kgen.struct<(si4, ui4)>
 }
 
 // CHECK-LABEL: @variant_create
@@ -259,7 +259,7 @@ kgen.func @variant_create() -> !kgen.variant<si4, ui4> {
   // CHECK-NEXT: constant: variant<si4, ui4> = <{:ui4 7, 1}>
   %0 = kgen.param.constant: ui4 = <7>
   %1 = kgen.variant.create %0, 1 : <si4, ui4>
-  kgen.return %1 : !kgen.variant<si4, ui4>
+  hlcf.return %1 : !kgen.variant<si4, ui4>
 }
 
 // CHECK-LABEL: @variant_is
@@ -267,7 +267,7 @@ kgen.func @variant_is() -> !kgen.scalar<bool> {
   // CHECK-NEXT: constant: scalar<bool> = <true>
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
   %1 = kgen.variant.is %0, 1 : <si4, ui4>
-  kgen.return %1 : !kgen.scalar<bool>
+  hlcf.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @variant_create_is_true
@@ -275,7 +275,7 @@ kgen.func @variant_create_is_true(%a: i32) -> !kgen.scalar<bool> {
   // CHECK-NEXT: constant: scalar<bool> = <true>
   %0 = kgen.variant.create %a, 0 : <i32, f32>
   %1 = kgen.variant.is %0, 0 : <i32, f32>
-  kgen.return %1 : !kgen.scalar<bool>
+  hlcf.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @variant_create_is_false
@@ -283,7 +283,7 @@ kgen.func @variant_create_is_false(%a: i32) -> !kgen.scalar<bool> {
   // CHECK-NEXT: constant: scalar<bool> = <false>
   %0 = kgen.variant.create %a, 0 : <i32, f32>
   %1 = kgen.variant.is %0, 1 : <i32, f32>
-  kgen.return %1 : !kgen.scalar<bool>
+  hlcf.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @variant_get
@@ -291,7 +291,7 @@ kgen.func @variant_get() -> ui4 {
   // CHECK-NEXT: constant: ui4 = <7>
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
   %1 = kgen.variant.get %0, 1 : <si4, ui4>
-  kgen.return %1 : ui4
+  hlcf.return %1 : ui4
 }
 
 // CHECK-LABEL: @variant_get_ub
@@ -299,7 +299,7 @@ kgen.func @variant_get_ub() -> si4 {
   // CHECK: kgen.variant.get
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
   %1 = kgen.variant.get %0, 0 : <si4, ui4>
-  kgen.return %1 : si4
+  hlcf.return %1 : si4
 }
 
 // CHECK-LABEL: @variant_create_get
@@ -307,11 +307,11 @@ kgen.func @variant_create_get(%a: i32) -> i32 {
   %0 = kgen.variant.create %a, 0 : <i32, f32>
   %1 = kgen.variant.get %0, 0 : <i32, f32>
   // CHECK: return %arg0
-  kgen.return %1 : i32
+  hlcf.return %1 : i32
 }
 
 kgen.func @closure_callee(%arg0: index, %arg1: i32) -> i64 {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: @call_create_closure
@@ -320,7 +320,7 @@ kgen.func @call_create_closure(%arg0: index, %arg1: i32) -> i64 {
   %0 = kgen.create_closure[(index, i32) -> i64: @closure_callee](%arg0)
   %1 = kgen.call_indirect %0(%arg1) : (i32) capturing -> i64
   // CHECK-NEXT: return %0
-  kgen.return %1 : i64
+  hlcf.return %1 : i64
 }
 
 // CHECK-LABEL: kgen.func @variant_take_then_create
@@ -333,7 +333,7 @@ kgen.func @variant_take_then_create(
   %res = kgen.variant.create %f32, 0 : !kgen.variant<f32, i32>
 
   // CHECK-NEXT: return %arg0
-  kgen.return %res : !kgen.variant<f32, i32>
+  hlcf.return %res : !kgen.variant<f32, i32>
 }
 
 // CHECK-LABEL: kgen.func @variant_create_then_take
@@ -344,7 +344,7 @@ kgen.func @variant_create_then_take(%f32: f32) -> f32 {
   %res = kgen.variant.get %variant, 0 : !kgen.variant<f32, i32>
 
   // CHECK-NEXT: return %arg0
-  kgen.return %res : f32
+  hlcf.return %res : f32
 }
 
 // CHECK-LABEL: kgen.func @variant_take_then_create_mismatch_index
@@ -358,7 +358,7 @@ kgen.func @variant_take_then_create_mismatch_index(
   %res = kgen.variant.create %i32, 1 : !kgen.variant<i32, i32>
 
   // CHECK-NEXT: return %1
-  kgen.return %res : !kgen.variant<i32, i32>
+  hlcf.return %res : !kgen.variant<i32, i32>
 }
 
 // CHECK-LABEL: kgen.func @variant_create_then_take_mismatch_index
@@ -370,7 +370,7 @@ kgen.func @variant_create_then_take_mismatch_index(%f32: f32) -> f32 {
   %res = kgen.variant.get %variant, 0 : !kgen.variant<f32, f32>
 
   // CHECK-NEXT: return %1
-  kgen.return %res : f32
+  hlcf.return %res : f32
 }
 
 // CHECK-LABEL: kgen.func @variant_take_then_create_mismatch_types
@@ -384,14 +384,14 @@ kgen.func @variant_take_then_create_mismatch_types(
   %res = kgen.variant.create %i32, 0 : !kgen.variant<i32, f32>
 
   // CHECK-NEXT: return %1
-  kgen.return %res : !kgen.variant<i32, f32>
+  hlcf.return %res : !kgen.variant<i32, f32>
 }
 
 // CHECK-LABEL: @source_loc_pure
 kgen.func @source_loc_pure() {
   %line, %col, %fileName = kgen.source_loc[1]
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @source_loc_fold
@@ -410,8 +410,8 @@ kgen.func @source_loc_fold() -> (!kgen.string, !kgen.string, !kgen.string, !kgen
   // CHECK-DAG: %[[S4:.+]] = kgen.param.constant: string = <"<unknown inlined location>">
   %l5, %c5, %f5 = kgen.source_loc[-4] loc(#loc_lvl1)
 
-  // CHECK: kgen.return {{.*}} %[[S1]], %[[S2]], %[[S3]], %[[S4]] :
-  kgen.return %f0, %f1, %f2, %f3, %f4, %f5 : !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string
+  // CHECK: hlcf.return {{.*}} %[[S1]], %[[S2]], %[[S3]], %[[S4]] :
+  hlcf.return %f0, %f1, %f2, %f3, %f4, %f5 : !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string
 }
 
 // CHECK-LABEL: @param_if_known_trivial
@@ -423,7 +423,7 @@ kgen.generator @param_if_known_trivial(%arg0: index) -> index {
     %1 = kgen.param.constant = <0>
     hlcf.comptime.yield %1 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: @param_if_known_dead
@@ -435,7 +435,7 @@ kgen.generator @param_if_known_dead(%arg0: !kgen.pointer<index>, %arg1: index) {
     pop.store %arg1, %arg0 : !kgen.pointer<index>
     hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // Isn't allowed to fold fully due to the param decl within.
@@ -451,7 +451,7 @@ kgen.generator @param_if_known_dead_with_param<dt: dtype>(%arg0: !kgen.pointer<i
     pop.store %arg1, %arg0 : !kgen.pointer<index>
     hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @param_if_break
@@ -466,9 +466,9 @@ kgen.generator @param_if_break(%arg0: !kgen.pointer<index>, %arg1: index) {
       pop.store %arg1, %arg0 : !kgen.pointer<index>
       hlcf.break
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @param_if_break2
@@ -488,11 +488,11 @@ kgen.generator @param_if_break2(%arg0: !kgen.pointer<index>, %arg1: index) -> in
     // These operations get killed, but need to be removed bottom-up.
     %tmp = kgen.param.constant: index = <4>
     %abc = index.add %tmp, %arg1
-    kgen.return %abc : index
+    hlcf.return %abc : index
   }
 
   %tmp2 = kgen.param.constant: index = <0>
-  kgen.return %tmp2 : index
+  hlcf.return %tmp2 : index
 }
 
 // CHECK-LABEL: @param_if_unreachable
@@ -501,14 +501,14 @@ kgen.generator @param_if_unreachable(%arg0: !kgen.pointer<index>, %arg1: index) 
   hlcf.comptime.if <false> {
     hlcf.comptime.yield
   } else {
-    kgen.unreachable
+    hlcf.unreachable
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @param_if_empty_before_break
 kgen.generator @param_if_empty_before_break<cond: scalar<bool>>(%arg0: !kgen.pointer<index>, %arg1: index) {
-  // CHECK-NEXT: kgen.return
+  // CHECK-NEXT: hlcf.return
   hlcf.loop {
     hlcf.comptime.if <cond> {
       hlcf.comptime.yield
@@ -517,18 +517,18 @@ kgen.generator @param_if_empty_before_break<cond: scalar<bool>>(%arg0: !kgen.poi
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @param_if_empty_yield
 kgen.generator @param_if_empty_yield<cond: scalar<bool>>(%arg0: !kgen.pointer<index>, %arg1: index) {
-  // CHECK-NEXT: kgen.return
+  // CHECK-NEXT: hlcf.return
   hlcf.comptime.if <cond> {
     hlcf.comptime.yield
   } else {
     hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @trivial_struct_copy
@@ -547,14 +547,14 @@ kgen.func @trivial_struct_copy(%arg0: !kgen.struct<(i1)>, %arg1: !kgen.struct<(i
   %6 = kgen.struct.create (%3, %4) : !kgen.struct<(i1, i1)>
 
   // CHECK: return %struct, %arg0, %arg1, [[CREATE:%.*]]
-  kgen.return %0, %2, %5, %6 : !kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>
+  hlcf.return %0, %2, %5, %6 : !kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>
 }
 
 // CHECK-LABEL: @codegen_reachable
 kgen.func @codegen_reachable() {
   // CHECK-NOT: kgen.codegen.reachable
   kgen.codegen.reachable <1>, "no op"
-  kgen.return
+  hlcf.return
 }
 
 }

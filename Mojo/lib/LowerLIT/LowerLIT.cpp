@@ -17,6 +17,7 @@
 #include "ConcreteBindings.h"
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/HLCFDialect/HLCFDialect.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -229,7 +230,7 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
       b.replaceOpWithNewOp<CO::InvokeOp>(call, call.getCallee(),
                                          call.getOperands());
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
-      b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getResult());
+      b.replaceOpWithNewOp<HLCF::ReturnOp>(returnOp, returnOp.getResult());
     } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
     }
@@ -613,10 +614,10 @@ LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
            traitDecl.getFields().front().getOperations())) {
     if (auto func = dyn_cast<FnOp>(member)) {
       // Check if the function has a non-empty body (more than just
-      // kgen.unreachable).
+      // hlcf.unreachable).
       Block *funcBody = func.getBody();
       bool hasEmptyBody = funcBody->getOperations().size() == 1 &&
-                          isa<KGEN::UnreachableOp>(funcBody->front());
+                          isa<HLCF::UnreachableOp>(funcBody->front());
 
       if (!hasEmptyBody) {
         // Calculate new name, mangled if not top level. Must be before

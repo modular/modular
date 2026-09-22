@@ -128,7 +128,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
         d.noop()
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: }
 
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
@@ -165,7 +165,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
         # CHECK-NEXT: lit.var.lifetime.end %caught_error
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: }
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
@@ -194,7 +194,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     except e:
         use(e)
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: }
 
     # CHECK-NEXT: lifetime.start %_b
@@ -224,7 +224,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     except e:
         use(e)
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: }
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
@@ -320,7 +320,7 @@ def loop_example(cond1: __mlir_type.`!kgen.scalar<bool>`, cond2: __mlir_type.`!k
     # CHECK-NEXT:      hlcf.if
     # CHECK-NEXT:        hlcf.yield
     # CHECK-NEXT:      } else {
-    # CHECK-NEXT:        kgen.unreachable
+    # CHECK-NEXT:        hlcf.unreachable
     # CHECK-NEXT:      }
     while True:
         # CHECK-NEXT: lifetime.start %c
@@ -396,7 +396,7 @@ struct TestLoopWithWholeObjectBit(Movable where False):
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
         # CHECK-NEXT: lifetime.end %buf
         # CHECK-NEXT: %none = kgen.param.constant
-        # CHECK-NEXT: kgen.return
+        # CHECK-NEXT: hlcf.return
         self.field = buf^
 
 
@@ -407,7 +407,7 @@ def testInfiniteloop():
     # CHECK-NEXT:    hlcf.if [[T]] {
     # CHECK-NEXT:      hlcf.yield
     # CHECK-NEXT:    } else {
-    # CHECK-NEXT:      kgen.unreachable
+    # CHECK-NEXT:      hlcf.unreachable
     # CHECK-NEXT:    }
     while True:
         # CHECK-NEXT:  %localThing = lit.var.decl
@@ -538,9 +538,9 @@ def test_param_for1(cond: Bool, cond2: Bool):
         # CHECK-NEXT: hlcf.comptime.for.break
     # Finish out the comptime.if and the comptime.for
     # CHECK-NEXT:   } {elseIsolated, thenIsolated}
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } {bodyIsolated, elseIsolated}
 
 

@@ -16,7 +16,7 @@ kgen.generator @simple_add(%arg0: index, %arg1: index) -> index {
 
   %5 = pop.load %1 : !kgen.pointer<index>
   // CHECK-NEXT: return %0
-  kgen.return %5 : index
+  hlcf.return %5 : index
 }
 
 // CHECK-LABEL: @use_in_region
@@ -26,9 +26,9 @@ kgen.generator @use_in_region(%arg0: index, %arg1: !kgen.scalar<bool>) -> index 
 
   // CHECK-NEXT: hlcf.if
   hlcf.if %arg1 {
-    // CHECK-NEXT: kgen.return %arg0
+    // CHECK-NEXT: hlcf.return %arg0
     %1 = pop.load %0 : !kgen.pointer<index>
-    kgen.return %1 : index
+    hlcf.return %1 : index
   } else {
     hlcf.yield
   }
@@ -36,7 +36,7 @@ kgen.generator @use_in_region(%arg0: index, %arg1: !kgen.scalar<bool>) -> index 
   // CHECK-NOT: pop.load
   %1 = pop.load %0 : !kgen.pointer<index>
   // CHECK: return %arg0 : index
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @store_in_region
@@ -48,7 +48,7 @@ kgen.generator @store_in_region(%arg0: index, %arg1: index, %arg2: !kgen.scalar<
   hlcf.if %arg2 {
     %1 = pop.load %0 : !kgen.pointer<index>
     // CHECK-NEXT: return %arg0
-    kgen.return %1 : index
+    hlcf.return %1 : index
   } else {
     // CHECK: hlcf.yield %arg1 : index
     pop.store %arg1, %0 : !kgen.pointer<index>
@@ -57,7 +57,7 @@ kgen.generator @store_in_region(%arg0: index, %arg1: index, %arg2: !kgen.scalar<
 
   %1 = pop.load %0 : !kgen.pointer<index>
   // CHECK: return %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // Repeated stores to one allocation within a single region must contribute one
@@ -83,7 +83,7 @@ kgen.generator @repeated_store_in_region(%arg0: index, %arg1: index, %arg2: !kge
 
   %1 = pop.load %0 : !kgen.pointer<index>
   // CHECK: return %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // Stores to one allocation in sibling regions of the same operation must also
@@ -106,7 +106,7 @@ kgen.generator @store_in_both_regions(%arg0: index, %arg1: index, %arg2: !kgen.s
 
   %1 = pop.load %0 : !kgen.pointer<index>
   // CHECK: return %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @unknown_use
@@ -116,7 +116,7 @@ kgen.generator @unknown_use(%arg0: index) -> index {
   pop.store %arg0, %0 : !kgen.pointer<index>
   "unknown.use"(%0) : (!kgen.pointer<index>) -> ()
   %1 = pop.load %0 : !kgen.pointer<index>
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @nested_alloc
@@ -135,7 +135,7 @@ kgen.generator @nested_alloc(%arg0: index) -> index {
     hlcf.break %2 : index
   }
   // CHECK: return %0
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: @read_uninitialized
@@ -143,8 +143,8 @@ kgen.generator @read_uninitialized() -> index {
   // CHECK-NEXT: %index = kgen.param.constant = <#interp.uninitmem>
   %0 = pop.stack_allocation 1 x index
   %1 = pop.load %0 : !kgen.pointer<index>
-  // CHECK-NEXT: kgen.return %index
-  kgen.return %1 : index
+  // CHECK-NEXT: hlcf.return %index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @if_empty_block
@@ -165,7 +165,7 @@ kgen.generator @if_empty_block(%arg0: !kgen.scalar<bool>, %arg1: index) -> index
   }
   %2 = pop.load %1 : !kgen.pointer<index>
   // CHECK: return %0
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 // CHECK-LABEL: @store_alloca
@@ -177,7 +177,7 @@ kgen.func @store_alloca() -> i32 {
   pop.store %1, %0 : !kgen.pointer<pointer<i32>>
   %2 = pop.load %0 : !kgen.pointer<pointer<i32>>
   %3 = pop.load %2 : !kgen.pointer<i32>
-  kgen.return %3 : i32
+  hlcf.return %3 : i32
 }
 
 // CHECK-LABEL: @loop_variant
@@ -237,7 +237,7 @@ kgen.func @loop_variant(%arg0: index, %arg1: index, %lb: index, %ub: index, %ste
   // COM: return var0, var1
   %r0 = pop.load %var0 : !kgen.pointer<index>
   %r1 = pop.load %var1 : !kgen.pointer<index>
-  kgen.return %r0, %r1 : index, index
+  hlcf.return %r0, %r1 : index, index
 }
 
 // CHECK-LABEL: @try_region
@@ -276,7 +276,7 @@ kgen.func @try_region() {
   pop.store %idx3, %0 : !kgen.pointer<index>
   %2 = pop.load %0 : !kgen.pointer<index>
   "use"(%2) : (index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @try_raise
@@ -297,7 +297,7 @@ kgen.func @try_raise(%err: index) -> index {
   }
   %1 = pop.load %0 : !kgen.pointer<index>
   // CHECK: return %[[R]]
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @pass_new_result
@@ -310,7 +310,7 @@ kgen.func @pass_new_result(%arg0: index) {
     // CHECK: break %arg0, %idx0
     hlcf.break %arg0 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @unknown_region_op
@@ -330,10 +330,10 @@ kgen.generator @unknown_region_op() {
     pop.store %arg0, %alloc1 : !kgen.pointer<index>
     %0 = pop.load %alloc1 : !kgen.pointer<index>
     %1 = pop.load %alloc0 : !kgen.pointer<index>
-    kgen.return %0, %1 : index, index
+    hlcf.return %0, %1 : index, index
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @for_variant
@@ -415,8 +415,8 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !kgen.sc
   %r2 = pop.load %var2 : !kgen.pointer<index>
   %r3 = pop.load %var3 : !kgen.pointer<!kgen.scalar<f32>>
 
-  // CHECK-DAG: kgen.return %[[V0]]#0, %[[V0]]#1, %[[V0]]#2, %[[V0]]#3 : index, index, index, !kgen.scalar<f32>
-  kgen.return %r0, %r1, %r2, %r3 : index, index, index, !kgen.scalar<f32>
+  // CHECK-DAG: hlcf.return %[[V0]]#0, %[[V0]]#1, %[[V0]]#2, %[[V0]]#3 : index, index, index, !kgen.scalar<f32>
+  hlcf.return %r0, %r1, %r2, %r3 : index, index, index, !kgen.scalar<f32>
 }
 
 
@@ -480,8 +480,8 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
   } {unrollLevel = #hlcf<unroll_level full>}
 
   %v1 = pop.load %v0 : !kgen.pointer<index>
-  // CHECK-DAG: kgen.return %[[V0]]
-  kgen.return %v1 : index
+  // CHECK-DAG: hlcf.return %[[V0]]
+  hlcf.return %v1 : index
 }
 
 // CHECK-LABEL: kgen.func @elif
@@ -558,10 +558,10 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
 
   // CHECK-NEXT: [[R1:%.*]] = index.add [[V0]]#1, [[V0]]#2
   // CHECK-NEXT: [[R2:%.*]] = index.add [[R1]], [[V0]]#3
-  // CHECK-NEXT: kgen.return [[R2]] : index
+  // CHECK-NEXT: hlcf.return [[R2]] : index
   %res1 = index.add %3, %6
   %res2 = index.add %res1, %7
-  kgen.return %res2 : index
+  hlcf.return %res2 : index
 }
 
 // CHECK-LABEL: kgen.func @lifetime_markers
@@ -574,7 +574,7 @@ kgen.func @lifetime_markers(%arg0: index) -> index {
   // CHECK-NEXT: lifetime.end()
   pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<index>
   // CHECK-NEXT: return %arg0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: kgen.func @lifetime_multiple_args
@@ -587,7 +587,7 @@ kgen.func @lifetime_multiple_args() {
   pop.store %0, %1 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: lifetime.end(%0)
   pop.stack_alloc.lifetime.end(%1, %0) : !kgen.pointer<pointer<index>>, !kgen.pointer<index>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @param_for
@@ -618,16 +618,16 @@ kgen.generator @param_for() -> index {
       // CHECK: hlcf.comptime.for.break %arg0 : index
       hlcf.comptime.for.break
     }
-    kgen.unreachable
+    hlcf.unreachable
 
   // CHECK: } else {
   } else {
     // This block is removed by LowerSemanticCF.
-    kgen.unreachable
+    hlcf.unreachable
   }
   %1 = pop.load %mem : !kgen.pointer<index>
   // CHECK: return %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // Promote a stack allocation across `hlcf.match` cases: `match.next` must
@@ -659,6 +659,6 @@ kgen.func @match_promote(%arg0: index, %arg1: index) -> index {
   }
 
   %2 = pop.load %0 : !kgen.pointer<index>
-  // CHECK: kgen.return [[V]]
-  kgen.return %2 : index
+  // CHECK: hlcf.return [[V]]
+  hlcf.return %2 : index
 }

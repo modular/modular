@@ -23,7 +23,6 @@ include "Mojo/KGENDialect/KGENDialect.td"
 include "Mojo/KGENDialect/KGENEnums.td"
 include "Mojo/KGENDialect/KGENInterfaces.td"
 include "Mojo/KGENDialect/KGENTypes.td"
-include "Mojo/HLCFDialect/HLCFInterfaces.td"
 include "Mojo/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MAttrs.td"
 include "mlir/IR/BuiltinAttributes.td"
@@ -56,14 +55,14 @@ def KGEN_FuncOp : KGENOp<"func", [
     be lowered and compiled to an executable.
 
     The body of a `kgen.func` is a single block region terminated by a
-    `kgen.return` whose operands represent the return values of the function.
+    `hlcf.return` whose operands represent the return values of the function.
 
     Example:
 
     ```mlir
     kgen.func @kernel(%arg0: index, %arg1: index) -> index {
       %0 = index.add %arg0, %arg1
-      kgen.return %0 : index
+      hlcf.return %0 : index
     }
     ```
 
@@ -180,7 +179,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     kgen.generator @add<rhs>(%lhs: index) -> index {
       %0 = kgen.param.constant = <rhs>
       %1 = index.add %lhs, %0
-      kgen.return %1 : index
+      hlcf.return %1 : index
     }
     ```
   }];
@@ -592,7 +591,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
     ```mlir
     kgen.func @foo(%arg0: index) {
-      kgen.return %arg0 : index
+      hlcf.return %arg0 : index
     }
 
     %0 = kgen.call @foo(%arg0) : (index) -> index
@@ -607,7 +606,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
     ```mlir
     kgen.generator @add2<N -> index>() {
       kgem.param.result_bind<add(N, 2)>
-      kgen.return
+      hlcf.return
     }
 
     kgen.call @add2<N = 2 -> NPlus2>() : () -> ()
@@ -880,13 +879,13 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     kgen.param.declare.region AddIt[my_add] = <N>(%arg0: index) -> index {
       %0 = kgen.param.constant = <N>
       %1 = index.add %0, %arg0
-      kgen.return %1 : index
+      hlcf.return %1 : index
     }
 
     kgen.param.declare.region SubtractIt = <N>(%arg0: index) -> index {
       %0 = kgen.param.constant = <N>
       %1 = index.sub %0, %arg0
-      kgen.return %1 : index
+      hlcf.return %1 : index
     }
     ```
 
@@ -1020,69 +1019,6 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
 }
 
 //===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let summary = "return operation for kgen declarations";
-  let description = [{
-    The `kgen.return` operation specifies the returned values for a `kgen.func`
-    or `kgen.generator`.
-
-    The operation takes variable number of operands and produces no results.
-    The operand number and types must match the signature of the
-    `kgen.generator` (or enclosing region) that contains the operation. For
-    example:
-
-    ```mlir
-      kgen.generator @foo() : i32, f8 {
-        ...
-        kgen.return %0, %1 : i32, f8
-      }
-    ```
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
-
-  let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
-  ];
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// UnreachableOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_UnreachableOp : KGENOp<"unreachable", [Terminator,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let summary = "Unreachable operation";
-  let description = [{
-    The `kgen.unreachable` operation is a block terminator that indicates that
-    the previous operations cannot continue control flow.  This is used after
-    infinite loops and no-return functions to simplify dataflow analysis.
-
-    Example:
-
-    ```mlir
-    hlcf.loop () {
-      kgen.call @printHello()
-      hlcf.continue
-    }
-    kgen.unreachable
-    ```
-  }];
-
-  let arguments =
-   (ins DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall);
-
-  let assemblyFormat = "attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -1205,7 +1141,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 
     ```mlir
     %0 = kgen.stage_closure = () capturing -> index {
-      kgen.return %arg0 : index
+      hlcf.return %arg0 : index
     }
     ```
   }];
@@ -1442,7 +1378,7 @@ def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
     // Extract an element at a parametric index.
     kgen.generator @example<I: index>(%struct: !kgen.struct<(i32, f32)>) {
       %0 = kgen.struct.extract %struct[I] : !kgen.struct<(i32, f32)>
-      kgen.return
+      hlcf.return
     }
     ```
   }];

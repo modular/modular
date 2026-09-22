@@ -544,7 +544,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return {};
   }
   // A return consumes all the live-out values from the function.
-  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp, KGEN::UnreachableOp,
+  if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp, HLCF::UnreachableOp,
           HLCF::YieldOp>(op)) {
     // We always consume the result register - even if it is often trivial.
     for (auto o : op.getOperands())

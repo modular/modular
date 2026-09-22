@@ -10,7 +10,7 @@ kgen.generator @simple() {
   kgen.param.declare q = <3>
   kgen.param.declare w = <5>
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nestedRegions()
@@ -32,7 +32,7 @@ kgen.generator @nestedRegions() {
   }
 
   kgen.param.declare cond_var = <32>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @reorder_asserts
@@ -73,7 +73,7 @@ kgen.generator @reorder_asserts() {
     kgen.param.declare next_gt = <add(w, 20)>
     hlcf.comptime.yield %3 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @reorder_asserts_def_in_parent
@@ -125,5 +125,5 @@ kgen.generator @reorder_asserts_def_in_parent<q, w>() {
         hlcf.comptime.for.break
       }
 
-  kgen.return
+  hlcf.return
 }

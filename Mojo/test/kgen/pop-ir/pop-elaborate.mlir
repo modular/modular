@@ -24,14 +24,14 @@ kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   pop.store %0, %1 : !kgen.pointer<pointer<i32>>
   %2 = pop.load %1 : !kgen.pointer<pointer<i32>>
   %3 = pop.load %2 : !kgen.pointer<i32>
-  kgen.return %3 : i32
+  hlcf.return %3 : i32
 }
 
 kgen.generator @store_load<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
   %0 = pop.stack_allocation 1 x T
   pop.store %arg0, %0 : !kgen.pointer<T>
   %1 = pop.load %0 : !kgen.pointer<T>
-  kgen.return %1 : !kgen.param<T>
+  hlcf.return %1 : !kgen.param<T>
 }
 
 kgen.generator @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
@@ -40,7 +40,7 @@ kgen.generator @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
   pop.store %arg0, %1 : !kgen.pointer<array<2, i24>>
   %2 = pop.pointer.bitcast %0 : !kgen.pointer<i24> to !kgen.pointer<i64>
   %3 = pop.load %2 : !kgen.pointer<i64>
-  kgen.return %3 : i64
+  hlcf.return %3 : i64
 }
 
 kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.param<I>) -> !kgen.param<O> {
@@ -48,7 +48,7 @@ kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.param<I>) -> !kgen.param<
   pop.store %arg0, %0 : !kgen.pointer<I>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<I> to !kgen.pointer<O>
   %2 = pop.load %1 : !kgen.pointer<O>
-  kgen.return %2 : !kgen.param<O>
+  hlcf.return %2 : !kgen.param<O>
 }
 
 // COM: Store the variant and sneakily read its discriminator's raw value.
@@ -58,7 +58,7 @@ kgen.generator @variant_bitcast_discr(%arg0: !kgen.variant<i32, i64>) -> i8 {
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<variant<i32, i64>> to !kgen.pointer<struct<(i64, i8)>>
   %2 = kgen.struct.gep %1[1] : <struct<(i64, i8)>>
   %3 = pop.load %2 : !kgen.pointer<i8>
-  kgen.return %3 : i8
+  hlcf.return %3 : i8
 }
 
 kgen.generator @array_gep_load<I>(%arg0: !pop.array<3, i24>) -> i24 {
@@ -67,7 +67,7 @@ kgen.generator @array_gep_load<I>(%arg0: !pop.array<3, i24>) -> i24 {
   pop.store %arg0, %1 : !kgen.pointer<array<3, i24>>
   %2 = pop.array.gep %1[%0] : <array<3, i24>>
   %3 = pop.load %2 : !kgen.pointer<i24>
-  kgen.return %3 : i24
+  hlcf.return %3 : i24
 }
 
 kgen.generator @struct_gep_load(%arg0: !kgen.struct<(i8, i16, i32)>) -> i32 {
@@ -75,7 +75,7 @@ kgen.generator @struct_gep_load(%arg0: !kgen.struct<(i8, i16, i32)>) -> i32 {
   pop.store %arg0, %1 : !kgen.pointer<struct<(i8, i16, i32)>>
   %2 = kgen.struct.gep %1[2] : <struct<(i8, i16, i32)>>
   %3 = pop.load %2 : !kgen.pointer<i32>
-  kgen.return %3 : i32
+  hlcf.return %3 : i32
 }
 
 kgen.generator @bitcast_offset() -> !kgen.struct<(scalar<ui8>, scalar<ui8>)>{
@@ -88,7 +88,7 @@ kgen.generator @bitcast_offset() -> !kgen.struct<(scalar<ui8>, scalar<ui8>)>{
   %3 = pop.offset %1[%idx1] : !kgen.pointer<scalar<ui8>>
   %4 = pop.load %3 : !kgen.pointer<scalar<ui8>>
   %5 = kgen.struct.create(%2, %4) : !kgen.struct<(scalar<ui8>, scalar<ui8>)>
-  kgen.return %5 : !kgen.struct<(scalar<ui8>, scalar<ui8>)>
+  hlcf.return %5 : !kgen.struct<(scalar<ui8>, scalar<ui8>)>
 }
 
 kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<(pointer<i16>, pointer<i16>)> {
@@ -100,7 +100,7 @@ kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<(pointer<i16
   %1 = pop.offset %0[%idx1] : !kgen.pointer<i16>
   pop.store %arg1, %1 : !kgen.pointer<i16>
   %2 = kgen.struct.create(%0, %1) : !kgen.struct<(pointer<i16>, pointer<i16>)>
-  kgen.return %2 : !kgen.struct<(pointer<i16>, pointer<i16>)>
+  hlcf.return %2 : !kgen.struct<(pointer<i16>, pointer<i16>)>
 }
 
 // COM: Check that the pointers alias.
@@ -110,13 +110,13 @@ kgen.generator @copy_load(%arg0: !kgen.pointer<i16>, %arg1: !kgen.pointer<i16>) 
   %1 = pop.offset %arg1[%idx1] : !kgen.pointer<i16>
   pop.store %0, %1 : !kgen.pointer<i16>
   %2 = pop.load %arg0 : !kgen.pointer<i16>
-  kgen.return %2 : i16
+  hlcf.return %2 : i16
 }
 
 kgen.generator @modify_stack_mem(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<i16> {
   %zero = kgen.param.constant: i16 = <0>
   pop.store %zero, %arg0 : !kgen.pointer<i16>
-  kgen.return %arg0 : !kgen.pointer<i16>
+  hlcf.return %arg0 : !kgen.pointer<i16>
 }
 
 kgen.generator @return_pointer_to_pointer(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<pointer<i16>> {
@@ -126,7 +126,7 @@ kgen.generator @return_pointer_to_pointer(%arg0: !kgen.pointer<i16>) -> !kgen.po
   %idx1 = index.constant 1
   %1 = pop.offset %0[%idx1] : !kgen.pointer<pointer<i16>>
   pop.store %arg0, %1 : !kgen.pointer<pointer<i16>>
-  kgen.return %1 : !kgen.pointer<pointer<i16>>
+  hlcf.return %1 : !kgen.pointer<pointer<i16>>
 }
 
 kgen.generator @load_pointer_to_pointer(%arg0: !kgen.pointer<pointer<i16>>) -> i16 {
@@ -134,13 +134,13 @@ kgen.generator @load_pointer_to_pointer(%arg0: !kgen.pointer<pointer<i16>>) -> i
   %0 = pop.offset %arg0[%idx1] : !kgen.pointer<pointer<i16>>
   %1 = pop.load %0 : !kgen.pointer<pointer<i16>>
   %2 = pop.load %1 : !kgen.pointer<i16>
-  kgen.return %2 : i16
+  hlcf.return %2 : i16
 }
 
 kgen.generator @free_null(%arg0: !kgen.pointer<i16>) -> index {
   %idx0 = index.constant 0
   pop.aligned_free %arg0 : <i16>
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.generator @freed_memory() -> !kgen.pointer<i16> {
@@ -149,7 +149,7 @@ kgen.generator @freed_memory() -> !kgen.pointer<i16> {
   %0 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   %1 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   pop.aligned_free %0 : <i16>
-  kgen.return %1 : !kgen.pointer<i16>
+  hlcf.return %1 : !kgen.pointer<i16>
 }
 
 kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !kgen.struct<(i8, pointer<i8>)> {
@@ -157,18 +157,18 @@ kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !kgen.struct<(i8, poin
   %idx2 = index.constant 2
   %1 = pop.offset %arg0[%idx2] : !kgen.pointer<i8>
   %2 = kgen.struct.create(%0, %1) : !kgen.struct<(i8, pointer<i8>)>
-  kgen.return %2 : !kgen.struct<(i8, pointer<i8>)>
+  hlcf.return %2 : !kgen.struct<(i8, pointer<i8>)>
 }
 
 kgen.generator @parameter_closure() -> index {
   %0 = pop.compiler.global_load "named_global" : index
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @region_parameter(%arg0: index) -> index {
   pop.compiler.global_store "named_global", %arg0 : index
   %0 = kgen.call @parameter_closure() : () -> index
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @store_undef() -> index {
@@ -176,7 +176,7 @@ kgen.generator @store_undef() -> index {
   %1 = kgen.param.constant = <#interp.uninitmem>
   pop.store %1, %0 : !kgen.pointer<index>
   %2 = pop.load %0 : !kgen.pointer<index>
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 kgen.generator @malloc_and_free(%arg0: i16) -> i16 {
@@ -185,12 +185,12 @@ kgen.generator @malloc_and_free(%arg0: i16) -> i16 {
   pop.store %arg0, %0 : !kgen.pointer<i16>
   %2 = pop.load %0 : !kgen.pointer<i16>
   pop.external_call @free(%0) : (!kgen.pointer<i16>) -> ()
-  kgen.return %2 : i16
+  hlcf.return %2 : i16
 }
 
 kgen.generator @variant_discr_gep<Ts: param_list<type>>(%arg0: !kgen.pointer<variant<[Ts]>>) -> !kgen.pointer<scalar<ui8>> {
   %0 = pop.variant.discr_gep %arg0 : <variant<[Ts]>> as <scalar<ui8>>
-  kgen.return %0 : !kgen.pointer<scalar<ui8>>
+  hlcf.return %0 : !kgen.pointer<scalar<ui8>>
 }
 
 kgen.generator @store_union(%arg0: !pop.union<i32>) -> i32 {
@@ -198,12 +198,12 @@ kgen.generator @store_union(%arg0: !pop.union<i32>) -> i32 {
   pop.store %arg0, %0 : !kgen.pointer<union<i32>>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<union<i32>> to !kgen.pointer<i32>
   %2 = pop.load %1 : !kgen.pointer<i32>
-  kgen.return %2 : i32
+  hlcf.return %2 : i32
 }
 
 kgen.generator @global_alloc() -> !kgen.pointer<i8, 2> {
   %0 = pop.global_alloc "alloc" 4 x i8 address_space 2 align 16
-  kgen.return %0 : !kgen.pointer<i8, 2>
+  hlcf.return %0 : !kgen.pointer<i8, 2>
 }
 
 kgen.generator @simd_xor_fold_0() -> !kgen.scalar<uindex> {
@@ -211,7 +211,7 @@ kgen.generator @simd_xor_fold_0() -> !kgen.scalar<uindex> {
   %2 = kgen.param.constant: scalar<index> = <-1>
   %3 = pop.cast %2 : !kgen.scalar<index> to !kgen.scalar<uindex>
   %4 = pop.simd.xor %3, %0 : !kgen.scalar<uindex>
-  kgen.return %4: !kgen.scalar<uindex>
+  hlcf.return %4: !kgen.scalar<uindex>
 }
 
 kgen.generator @simd_xor_fold_1() -> !kgen.scalar<bool> {
@@ -220,50 +220,50 @@ kgen.generator @simd_xor_fold_1() -> !kgen.scalar<bool> {
   %x = pop.cast %1 : !kgen.scalar<index> to !kgen.scalar<bool>
   %2 = pop.simd.xor %x, %0 : !kgen.scalar<bool>
   %3 = pop.simd.xor %2, %0 : !kgen.scalar<bool>
-  kgen.return %3: !kgen.scalar<bool>
+  hlcf.return %3: !kgen.scalar<bool>
 }
 
 kgen.generator @simd_reduce_or_fold_0() -> !kgen.scalar<si32> {
   %0 = kgen.param.constant: simd<4, si32> = <<0, 1, 2, 16>>
   %1 = pop.simd.reduce_or %0 : !kgen.simd<4, si32>
-  kgen.return %1 : !kgen.scalar<si32>
+  hlcf.return %1 : !kgen.scalar<si32>
 }
 
 kgen.generator @simd_reduce_or_fold_1() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: simd<4, bool> = <<true, false, false, true>>
   %1 = pop.simd.reduce_or %0 : !kgen.simd<4, bool>
-  kgen.return %1 : !kgen.scalar<bool>
+  hlcf.return %1 : !kgen.scalar<bool>
 }
 
 kgen.generator @simd_reduce_or_fold_2() -> !kgen.scalar<index> {
   %0 = kgen.param.constant: simd<4, index> = <<64, 8, 2, 1>>
   %1 = pop.simd.reduce_or %0 : !kgen.simd<4, index>
-  kgen.return %1 : !kgen.scalar<index>
+  hlcf.return %1 : !kgen.scalar<index>
 }
 
 kgen.generator @simd_reduce_and_fold_0() -> !kgen.scalar<si32> {
   %0 = kgen.param.constant: simd<4, si32> = <<1, 3, 5, 19>>
   %1 = pop.simd.reduce_and %0 : !kgen.simd<4, si32>
-  kgen.return %1 : !kgen.scalar<si32>
+  hlcf.return %1 : !kgen.scalar<si32>
 }
 
 kgen.generator @simd_reduce_and_fold_1() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: simd<4, bool> = <<true, false, false, true>>
   %1 = pop.simd.reduce_and %0 : !kgen.simd<4, bool>
-  kgen.return %1 : !kgen.scalar<bool>
+  hlcf.return %1 : !kgen.scalar<bool>
 }
 
 kgen.generator @simd_reduce_and_fold_2() -> !kgen.scalar<index> {
   %0 = kgen.param.constant: simd<4, index> = <<1, 3, 5, 19>>
   %1 = pop.simd.reduce_and %0 : !kgen.simd<4, index>
-  kgen.return %1 : !kgen.scalar<index>
+  hlcf.return %1 : !kgen.scalar<index>
 }
 
 kgen.generator @pop_cmp() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: !kgen.scalar<index> = <3000000000>
   %1 = kgen.param.constant: !kgen.scalar<index> = <0>
   %2 = pop.cmp lt(%0 , %1) : !kgen.scalar<index>
-  kgen.return %2 : !kgen.scalar<bool>
+  hlcf.return %2 : !kgen.scalar<bool>
 }
 
 // COM: Adjacent non-power-of-two SIMD elements stride by the alloc size
@@ -278,7 +278,7 @@ kgen.generator @npot_simd_stride(%arg0: !kgen.simd<3, f32>, %arg1: !kgen.simd<3,
   %idx4 = index.constant 4
   %lane = pop.offset %f32s[%idx4] : !kgen.pointer<f32>
   %0 = pop.load %lane : !kgen.pointer<f32>
-  kgen.return %0 : f32
+  hlcf.return %0 : f32
 }
 
 // CHECK-LABEL: kgen.func export @do_it
@@ -474,5 +474,5 @@ kgen.generator export @do_it() {
     :(!kgen.simd<3, f32>, !kgen.simd<3, f32>) -> f32 @npot_simd_stride,
     <"0.5", "1.5", "2.5">, <"5.5", "6.5", "7.5">)>
 
-  kgen.return
+  hlcf.return
 }

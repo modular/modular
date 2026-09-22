@@ -759,7 +759,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     ```mlir
     lit.trait.decl @Trait<T: !Trait> {
       lit.fn @f() -> !kgen.none {
-        kgen.unreachable
+        hlcf.unreachable
       }
     }
     ```

@@ -7,19 +7,19 @@
 
 kgen.generator @callee_inner() -> index always_inline {
   %idx0 = index.constant 0 loc(#locCalleeInner)
-  kgen.return %idx0 : index loc(#locCalleeInner)
+  hlcf.return %idx0 : index loc(#locCalleeInner)
 } loc(#locCalleeInner)
 
 kgen.generator @callee_nodebug() -> index always_inline_no_debug {
   %idx0 = index.constant 1
   kgen.call @callee_inner() : () -> index
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 kgen.generator @callee_debug() -> index always_inline {
   %idx0 = index.constant 2 loc(#locCallee)
   kgen.call @callee_inner() : () -> index loc(#locCallee)
-  kgen.return %idx0 : index loc(#locCallee)
+  hlcf.return %idx0 : index loc(#locCallee)
 } loc(#locCallee)
 
 // CHECK-LABEL: kgen.generator @caller
@@ -34,7 +34,7 @@ kgen.generator @caller() {
   // CHECK-NEXT: debuginfo.line_table_loc loc(#[[LOC_CALLEE_AT_CALLER:.+]])
   // CHECK-NEXT: index.constant 0
   kgen.call @callee_debug() : () -> index loc(#locCaller)
-  kgen.return loc(#locCaller)
+  hlcf.return loc(#locCaller)
 } loc(#locCaller)
 
 // CHECK-DAG: #[[LOC_CALLER_RAW:.+]] = loc("foo.mlir":2:0)

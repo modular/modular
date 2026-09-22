@@ -30,5 +30,5 @@ lit.struct.decl @truly_dead {
 
 // CHECK: @exported
 kgen.func export @exported(%arg0: index) {
-  kgen.return loc(#loc1)
+  hlcf.return loc(#loc1)
 } loc(#loc1)

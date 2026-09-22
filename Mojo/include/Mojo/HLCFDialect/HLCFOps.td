@@ -25,6 +25,7 @@ include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 
@@ -311,7 +312,7 @@ def HLCF_SwitchOp : HLCFParentOp<"switch",
       hlcf.break
     }
     case 42 {
-      kgen.return
+      hlcf.return
     }
     ```
 
@@ -691,7 +692,7 @@ def HLCF_MatchCompleteOp : HLCFTerminatorOp<"match.complete", [
     enclosing match, if any.
 
     Case bodies that leave through another nonlocal control-flow operation
-    (such as `kgen.return`) do not need an additional `hlcf.match.complete`.
+    (such as `hlcf.return`) do not need an additional `hlcf.match.complete`.
 
     Like `hlcf.match.next`, this targets the nearest enclosing match for which
     the terminator sits in a *case* region; an occurrence in an `else` region
@@ -747,14 +748,14 @@ def HLCF_MatchOp : HLCFParentOp<"match"> {
       }
       // Case regions are ordinary blocks and need a terminator even when
       // every nested path already exits via match.next / match.complete.
-      kgen.unreachable
+      hlcf.unreachable
     }
     case {
       call @handle_other()
       hlcf.match.complete
     }
     else {
-      kgen.unreachable
+      hlcf.unreachable
     }
     ```
   }];
@@ -1041,14 +1042,14 @@ def HLCF_ComptimeMatchOp : HLCFParentOp<"comptime.match"> {
       } else {
         hlcf.match.next
       }
-      kgen.unreachable
+      hlcf.unreachable
     }
     case {
       call @handle_other()
       hlcf.match.complete
     }
     else {
-      kgen.unreachable
+      hlcf.unreachable
     }
     ```
   }];
@@ -1087,4 +1088,65 @@ def HLCF_ComptimeMatchOp : HLCFParentOp<"comptime.match"> {
 
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ReturnOp : HLCFTerminatorOp<"return", [ReturnLike,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "return operation for kgen declarations";
+  let description = [{
+    The `hlcf.return` operation specifies the returned values for a `kgen.func`
+    or `kgen.generator`.
+
+    The operation takes variable number of operands and produces no results.
+    The operand number and types must match the signature of the
+    `kgen.generator` (or enclosing region) that contains the operation. For
+    example:
+
+    ```mlir
+      kgen.generator @foo() : i32, f8 {
+        ...
+        hlcf.return %0, %1 : i32, f8
+      }
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
+  ];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// UnreachableOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_UnreachableOp : HLCFTerminatorOp<"unreachable"> {
+  let summary = "Unreachable operation";
+  let description = [{
+    The `hlcf.unreachable` operation is a block terminator that indicates that
+    the previous operations cannot continue control flow.  This is used after
+    infinite loops and no-return functions to simplify dataflow analysis.
+
+    Example:
+
+    ```mlir
+    hlcf.loop () {
+      kgen.call @printHello()
+      hlcf.continue
+    }
+    hlcf.unreachable
+    ```
+  }];
+
+  let arguments =
+   (ins DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall);
+
+  let assemblyFormat = "attr-dict";
+}
+
 #endif // HLCFOPS_TD

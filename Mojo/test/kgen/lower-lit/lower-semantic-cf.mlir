@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -verify-diagnostics -allow-unregistered-dialect | FileCheck %s
 
 lit.fn @my_abort() -> !kgen.never {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: lit.struct.decl @SomeStruct
@@ -10,7 +10,7 @@ lit.struct.decl @SomeStruct {
   lit.fn @dead_returns(%c: !kgen.scalar<bool>, %a: i32, %b: i32) -> i32 {
     // CHECK: hlcf.if %c
     hlcf.if %c {
-      // CHECK-NEXT: kgen.return %b : i32
+      // CHECK-NEXT: hlcf.return %b : i32
       lit.return %b: i32
       lit.return %a: i32 // expected-warning {{unreachable code after return statement}}
       hlcf.yield
@@ -18,7 +18,7 @@ lit.struct.decl @SomeStruct {
     } else {
       hlcf.yield
     }
-    // CHECK: kgen.return %a : i32
+    // CHECK: hlcf.return %a : i32
     lit.return %a : i32
     lit.return %b : i32 // expected-warning {{unreachable code after return statement}}
     lit.end_fn
@@ -29,7 +29,7 @@ lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.fn @calls_unreachable_in_deinit
   lit.fn @calls_unreachable_in_deinit[mut *"self"](%self: !lit.ref<!lit.struct<@SomeStruct>, mut *"self"> deinit_mem) -> !kgen.none {
     // CHECK: lit.call tail @my_abort()
-    // CHECK: kgen.unreachable {isAfterUnreachableCall = true}
+    // CHECK: hlcf.unreachable {isAfterUnreachableCall = true}
     %0 = lit.call tail @my_abort() : !lit.generator<() -> !kgen.never>
     lit.end_fn
   }
@@ -48,12 +48,12 @@ lit.file_module @FileModule {
         lit.try.yield
       // CHECK-NEXT: except
       } except {
-        // CHECK-NEXT: kgen.return
+        // CHECK-NEXT: hlcf.return
         lit.return
         lit.try.yield
       // CHECK-NEXT: else
       } else {
-        // CHECK-NEXT: kgen.unreachable
+        // CHECK-NEXT: hlcf.unreachable
 
         // expected-warning @+1 {{'else' logic in 'try' is unreachable}}
         lit.return
@@ -63,7 +63,7 @@ lit.file_module @FileModule {
         lit.try.yield
       }
 
-      // CHECK-NEXT: kgen.unreachable
+      // CHECK-NEXT: hlcf.unreachable
       // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
       lit.return
       lit.end_fn
@@ -99,7 +99,7 @@ lit.file_module @FileModule {
         hlcf.yield
       // CHECK-NEXT: }
       }
-      // CHECK-NEXT: kgen.unreachable
+      // CHECK-NEXT: hlcf.unreachable
       // CHECK-NEXT: }
       lit.return  // expected-warning {{unreachable code after if statement with then/else that do not fall through}}
       lit.loop.continue
@@ -107,7 +107,7 @@ lit.file_module @FileModule {
       lit.loop.yield
     }
 
-    // CHECK-NEXT: kgen.return
+    // CHECK-NEXT: hlcf.return
     lit.return
     lit.end_fn
   }
@@ -115,7 +115,7 @@ lit.file_module @FileModule {
 
 // CHECK-LABEL: lit.fn @no_return
 lit.fn @no_return() -> !kgen.none {
-  // CHECK: kgen.return
+  // CHECK: hlcf.return
   %0 = kgen.param.constant: none = <#kgen.none>
   lit.return %0 :  !kgen.none
   lit.end_fn
@@ -203,7 +203,7 @@ lit.fn @raise_raise() throws {
     lit.try.yield
   // CHECK-NEXT: except
   } except {
-    // CHECK-NEXT: kgen.return
+    // CHECK-NEXT: hlcf.return
     lit.return
     lit.try.yield
   // CHECK-NEXT: else
@@ -268,7 +268,7 @@ lit.fn @throwing_calls(
   } finally {
     lit.try.yield
   }
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: lit.fn @unreachable_try
@@ -285,7 +285,7 @@ lit.fn @unreachable_try() {
   } finally {
     lit.try.yield
   }
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   index.constant 0
   lit.end_fn
@@ -297,7 +297,7 @@ lit.fn @suppressed_try() {
     lit.try.yield
   } except {
     // CHECK: except
-    // CHECK-NEXT: kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
     index.constant 0
     lit.try.yield
   } else {
@@ -307,7 +307,7 @@ lit.fn @suppressed_try() {
   } finally {
     lit.try.yield
   } {"suppressWarnings" = true}
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   index.constant 0
   lit.end_fn
@@ -335,7 +335,7 @@ lit.fn @call_coroutine<coro: () async -> !kgen.none>() async -> !kgen.none {
 // CHECK-LABEL: lit.fn @return_after_return
 lit.fn @return_after_return() -> !kgen.none {
   %0 = kgen.param.constant: none = <#kgen.none>
-  // CHECK: kgen.return %none : !kgen.none
+  // CHECK: hlcf.return %none : !kgen.none
   lit.return %0 : !kgen.none
   %1 = kgen.param.constant: scalar<bool> = <true>  // expected-warning {{unreachable code after return statement}}
   hlcf.if %1 {
@@ -358,7 +358,7 @@ lit.fn @if_else_return(%cond: !kgen.scalar<bool>) -> index {
     lit.return %0 : index
     hlcf.yield
   }
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   lit.end_fn
 }
 
@@ -376,7 +376,7 @@ lit.fn @if_else_raise[mut elt, mut lt](%cond: !kgen.scalar<bool>,
     lit.raise
     hlcf.yield
   }
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   lit.end_fn
 }
 
@@ -399,7 +399,7 @@ lit.fn @coroutine2() async -> index {
     lit.loop.yield
   }
 
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   lit.end_fn
 }
 
@@ -454,7 +454,7 @@ lit.fn @reraise_in_try() {
   } finally {
     lit.try.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.fn @nested_try_inner_catch
@@ -479,17 +479,17 @@ lit.fn @nested_try_inner_catch() {
       lit.try.yield
     // CHECK-NEXT: except
     } except {
-      // CHECK-NEXT: kgen.return
+      // CHECK-NEXT: hlcf.return
       lit.return
       lit.try.yield
     // CHECK-NEXT: else
     } else {
-      // CHECK-NEXT: kgen.unreachable
+      // CHECK-NEXT: hlcf.unreachable
       lit.try.yield
     } finally {
       lit.try.yield
     }
-    // CHECK: kgen.unreachable
+    // CHECK: hlcf.unreachable
     lit.try.yield
   // CHECK-NEXT: except
   } except {
@@ -497,13 +497,13 @@ lit.fn @nested_try_inner_catch() {
     lit.try.yield
   // CHECK-NEXT: else
   } else {
-    // CHECK-NEXT: kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
     lit.try.yield
   } finally {
     lit.try.yield
   }
-  // CHECK: kgen.return
-  kgen.return
+  // CHECK: hlcf.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.fn @finally_breaks
@@ -518,7 +518,7 @@ lit.fn @finally_breaks() -> index {
     lit.try.yield
   // CHECK-NEXT: else
   } else {
-    // CHECK: kgen.return %idx0
+    // CHECK: hlcf.return %idx0
     lit.try.yield
   // CHECK-NOT: finally
   } finally {
@@ -526,7 +526,7 @@ lit.fn @finally_breaks() -> index {
     lit.return %idx0 : index
     lit.try.yield
   }
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   lit.end_fn
 }
 
@@ -538,7 +538,7 @@ lit.fn @try_finally(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> (i32, 
   // CHECK-NEXT: hlcf.if %simd {
   // CHECK-NEXT:         hlcf.yield
   // CHECK-NEXT:       } else {
-  // CHECK-NEXT:         kgen.unreachable
+  // CHECK-NEXT:         hlcf.unreachable
   // CHECK-NEXT:       }
   lit.loop {
     hlcf.if %true {
@@ -561,7 +561,7 @@ lit.fn @try_finally(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> (i32, 
       }
       // CHECK: clean.up
       // CHECK-NEXT: return %arg1, %arg2
-      kgen.return %arg1, %arg2 : i32, i64
+      hlcf.return %arg1, %arg2 : i32, i64
     // CHECK-NEXT: except
     } except (%err: index) {
       // CHECK-NEXT: unreachable
@@ -582,7 +582,7 @@ lit.fn @try_finally(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> (i32, 
     lit.loop.yield
   }
   // CHECK: return %arg1, %arg2
-  kgen.return %arg1, %arg2 : i32, i64
+  hlcf.return %arg1, %arg2 : i32, i64
 }
 
 // CHECK-LABEL: lit.fn @try_finally_return
@@ -593,7 +593,7 @@ lit.fn @try_finally_return(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>
   // CHECK-NEXT: hlcf.if %simd {
   // CHECK-NEXT:         hlcf.yield
   // CHECK-NEXT:       } else {
-  // CHECK-NEXT:         kgen.unreachable
+  // CHECK-NEXT:         hlcf.unreachable
   // CHECK-NEXT:       }
 
   lit.loop {
@@ -615,13 +615,13 @@ lit.fn @try_finally_return(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>
         hlcf.continue
       }
       // CHECK: unreachable
-      kgen.return %arg0 : index
+      hlcf.return %arg0 : index
     } except (%err: index) {
       lit.try.yield
     } else {
       lit.try.yield
     } finally {
-      kgen.return %arg1 : index
+      hlcf.return %arg1 : index
     }
     lit.break // expected-warning {{unreachable code after try statement that doesn't fall through}}
     lit.loop.continue
@@ -629,7 +629,7 @@ lit.fn @try_finally_return(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>
     lit.loop.yield
   }
 
-  kgen.return %arg1 : index
+  hlcf.return %arg1 : index
 }
 
 // CHECK-LABEL: lit.fn @nested_try_finally
@@ -641,7 +641,7 @@ lit.fn @nested_try_finally() {
       // CHECK-NEXT: clean.up0
       // CHECK-NEXT: clean.up1
       // CHECK-NEXT: return
-      kgen.return
+      hlcf.return
     } except (%err: index) {
       lit.try.yield
     // CHECK: else
@@ -663,7 +663,7 @@ lit.fn @nested_try_finally() {
     lit.try.yield
   }
   // CHECK: unreachable
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.fn @try_in_loop
@@ -679,7 +679,7 @@ lit.fn @try_in_loop(%arg0: !kgen.scalar<bool>) {
       lit.try.yield
     // CHECK: except
     } except (%e: index) {
-      // CHECK-NEXT: kgen.unreachable
+      // CHECK-NEXT: hlcf.unreachable
       lit.try.yield
     } else {
       lit.try.yield
@@ -693,13 +693,13 @@ lit.fn @try_in_loop(%arg0: !kgen.scalar<bool>) {
   }
   // CHECK: after.loop
   "after.loop"() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.fn @recurse
 // CHECK-SAME (%x: !kgen.scalar<index>) -> !kgen.scalar<index> {
 // CHECK-NEXT: %0 = kgen.call @recurse(%x) : !lit.generator<("x": !kgen.scalar<index>) -> !kgen.scalar<index>>
-// CHECK-NEXT: kgen.return %0 : !kgen.scalar<index>
+// CHECK-NEXT: hlcf.return %0 : !kgen.scalar<index>
 // CHECK-NEXT:}
 lit.fn @recurse(%x: !kgen.scalar<index>) -> !kgen.scalar<index> {
   %0 = kgen.call @recurse(%x) : !lit.generator<("x": !kgen.scalar<index>) -> !kgen.scalar<index>>
@@ -712,7 +712,7 @@ lit.fn @coroutine_await(%arg0: !kgen.scalar<bool>) {
   // CHECK-NEXT: co.suspend
   co.suspend (%hdl0) {
     hlcf.if %arg0 {
-      // CHECK: kgen.return
+      // CHECK: hlcf.return
       lit.return
       hlcf.yield
     } else {
@@ -755,7 +755,7 @@ lit.fn @loop_with_else(%arg0: !kgen.scalar<bool>) {
       // CHECK-NEXT:   }
       // CHECK-NEXT:   hlcf.continue
       // CHECK-NEXT: }
-      // CHECK-NEXT: kgen.unreachable
+      // CHECK-NEXT: hlcf.unreachable
       lit.loop.continue
     } else {
       lit.continue
@@ -774,7 +774,7 @@ lit.fn @loop_with_else(%arg0: !kgen.scalar<bool>) {
 // CHECK-LABEL: lit.trait.decl @Trait
 lit.trait.decl @Trait {
   lit.fn @trait_fn() {
-    kgen.unreachable
+    hlcf.unreachable
   }
 }
 
@@ -810,9 +810,9 @@ lit.fn @loop_with_cond_raise(%cond: !kgen.scalar<bool>) {
     lit.try.yield
   // CHECK: } except {
   } except {
-    // CHECK-NEXT: kgen.return
+    // CHECK-NEXT: hlcf.return
     lit.return
-    kgen.unreachable
+    hlcf.unreachable
   } else {
     lit.try.yield
   } finally {
@@ -889,11 +889,11 @@ lit.fn @self_recursive_arg_diff(%a: index) -> !kgen.none {
 // CHECK-NEXT: [[V2SB:%.*]] = pop.cast_from_builtin [[V2]] : i1 to !kgen.scalar<bool>
 // CHECK-NEXT: hlcf.if.elifcond.yield [[V2SB]]
 // CHECK-NEXT: } then {
-// CHECK-NEXT:   kgen.return %arg1 : index
+// CHECK-NEXT:   hlcf.return %arg1 : index
 // CHECK-NEXT: } else {
-// CHECK-NEXT: kgen.return %arg1 : index
+// CHECK-NEXT: hlcf.return %arg1 : index
 // CHECK-NEXT: }
-// CHECK-NEXT: kgen.return %2 : index
+// CHECK-NEXT: hlcf.return %2 : index
 // CHECK-NEXT: }
 lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx0 = index.constant 0
@@ -914,7 +914,7 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
     lit.return %arg1 : index
     hlcf.yield %arg2 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 
@@ -930,11 +930,11 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
 // CHECK-NEXT:   %simd = kgen.param.constant: scalar<bool> = <true>
 // CHECK-NEXT:   hlcf.if.elifcond.yield %simd
 // CHECK-NEXT: } then {
-// CHECK-NEXT:   kgen.return %arg1 : index
+// CHECK-NEXT:   hlcf.return %arg1 : index
 // CHECK-NEXT: } else {
-// CHECK-NEXT:   kgen.unreachable
+// CHECK-NEXT:   hlcf.unreachable
 // CHECK-NEXT: }
-// CHECK-NEXT: kgen.return %2 : index
+// CHECK-NEXT: hlcf.return %2 : index
 // CHECK-NEXT: }
 lit.fn @elif_2(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx0 = index.constant 0
@@ -955,7 +955,7 @@ lit.fn @elif_2(%arg0: index, %arg1: index, %arg2: index) -> index {
     lit.return %arg1 : index
     hlcf.yield %arg2 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // COM: https://github.com/modularml/modular/issues/33570
@@ -968,7 +968,7 @@ lit.fn @mangle_params_finally_1<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
     hlcf.if %c {
       %none_0 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
-      // CHECK-NEXT: kgen.return
+      // CHECK-NEXT: hlcf.return
       lit.return %none_0 : !kgen.none
       hlcf.yield
     // CHECK-NEXT: } else {
@@ -979,7 +979,7 @@ lit.fn @mangle_params_finally_1<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
     lit.try.yield
   // CHECK: } except
   } except {
-    // CHECK-NEXT: kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
     lit.try.yield
   // CHECK-NEXT: } else {
   } else {
@@ -1003,7 +1003,7 @@ lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
     hlcf.if %c {
       %none_1 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
-      // CHECK-NEXT: kgen.return
+      // CHECK-NEXT: hlcf.return
       lit.return %none_1 : !kgen.none
       hlcf.yield
     } else {
@@ -1014,7 +1014,7 @@ lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
     hlcf.if %c {
       %none_1 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`f0"
-      // CHECK-NEXT: kgen.return
+      // CHECK-NEXT: hlcf.return
       lit.return %none_1 : !kgen.none
       hlcf.yield
     } else {
@@ -1023,22 +1023,22 @@ lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
 
     %none_0 = kgen.param.constant: none = <#kgen.none>
     // CHECK: lit.alias.decl *"y`f1"
-    // CHECK: kgen.return
+    // CHECK: hlcf.return
     lit.return %none_0 : !kgen.none
     lit.try.yield
   // CHECK: } except
   } except {
-    // CHECK-NEXT: kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
     lit.try.yield
   // CHECK-NEXT: } else {
   } else {
-    // CHECK-NEXT: kgen.unreachable
+    // CHECK-NEXT: hlcf.unreachable
     lit.try.yield
   } finally {
     lit.alias.decl *"y`" = <x>
     lit.try.yield
   }
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
 
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   %none = kgen.param.constant: none = <#kgen.none>
@@ -1054,7 +1054,7 @@ lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
     lit.fn nested() -> !kgen.none {
       // CHECK-NEXT: %[[NONE:.*]] = kgen.param.constant: none
       %none_0 = kgen.param.constant: none = <#kgen.none>
-      // CHECK-NEXT: kgen.return %[[NONE:.*]]
+      // CHECK-NEXT: hlcf.return %[[NONE:.*]]
       lit.return %none_0 : !kgen.none
       lit.end_fn
     }
@@ -1062,7 +1062,7 @@ lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
     hlcf.if %c {
       %none_0 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
-      // CHECK: kgen.return
+      // CHECK: hlcf.return
       lit.return %none_0 : !kgen.none
       hlcf.yield
     // CHECK: } else {
@@ -1091,12 +1091,12 @@ lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
 lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
   // CHECK: hlcf.if %arg {
   // CHECK:     %none = kgen.param.constant: none = <#kgen.none>
-  // CHECK:     kgen.return %none : !kgen.none
+  // CHECK:     hlcf.return %none : !kgen.none
   // CHECK:   } else {
   // CHECK:     %none = kgen.param.constant: none = <#kgen.none>
-  // CHECK:     kgen.return %none : !kgen.none
+  // CHECK:     hlcf.return %none : !kgen.none
   // CHECK:   }
-  // CHECK:   kgen.unreachable
+  // CHECK:   hlcf.unreachable
   hlcf.if %arg {
     %none_0 = kgen.param.constant: none = <#kgen.none>
     lit.return %none_0 : !kgen.none
@@ -1112,10 +1112,10 @@ lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
 // CHECK-LABEL: lit.fn @fallthrough
 lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs: index, %cond2 : !kgen.scalar<bool>) -> index {
 // CHECK: hlcf.comptime.if <cond0> {
-// CHECK-NEXT:   kgen.return %lhs : index
+// CHECK-NEXT:   hlcf.return %lhs : index
 // CHECK-NEXT: } else {
 // CHECK-NEXT: hlcf.comptime.if <cond1> {
-// CHECK-NEXT:   kgen.return %rhs : index
+// CHECK-NEXT:   hlcf.return %rhs : index
 // CHECK-NEXT:  } else {
 // CHECK-NEXT:  hlcf.if %cond2 {
 // CHECK-NEXT:    hlcf.yield
@@ -1123,11 +1123,11 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
 // CHECK-NEXT:    hlcf.yield
 // CHECK-NEXT:  }
 // CHECK-NEXT:  %index0 = kgen.param.constant = <0>
-// CHECK-NEXT:  kgen.return %index0 : index
+// CHECK-NEXT:  hlcf.return %index0 : index
 // CHECK-NEXT:  }
-// CHECK-NEXT:  kgen.unreachable
+// CHECK-NEXT:  hlcf.unreachable
 // CHECK-NEXT: }
-// CHECK-NEXT: kgen.unreachable
+// CHECK-NEXT: hlcf.unreachable
  hlcf.comptime.if <cond0> {
    lit.return %lhs : index
    hlcf.comptime.yield
@@ -1169,9 +1169,9 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   // CHECK:  index.cmp eq(%arg0, %idx1)
   // CHECK-NEXT:   pop.cast_from_builtin
   // CHECK-NEXT: hlcf.if {{%.*}} {
-  // CHECK-NEXT:   kgen.return %arg0 : index
+  // CHECK-NEXT:   hlcf.return %arg0 : index
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   kgen.return %arg1 : index
+  // CHECK-NEXT:   hlcf.return %arg1 : index
   // CHECK-NEXT: }
   %c1 = index.cmp eq(%arg0, %idx1)
   %c1_sb = pop.cast_from_builtin %c1 : i1 to !kgen.scalar<bool>
@@ -1182,7 +1182,7 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
     lit.return %arg1 : index
     hlcf.yield
   }
-  // CHECK-NEXT: kgen.unreachable
+  // CHECK-NEXT: hlcf.unreachable
   // CHECK-NEXT: }
   lit.end_fn
 }
@@ -1201,27 +1201,27 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
     lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
     hlcf.comptime.if <paramb> {
       // CHECK: %[[THEN_RETURN:.*]] = kgen.param.constant: scalar<bool> = <false>
-      // CHECK: kgen.return %[[THEN_RETURN]]
+      // CHECK: hlcf.return %[[THEN_RETURN]]
       %then_return = kgen.param.constant: scalar<bool> = <false>
       lit.return %then_return : !kgen.scalar<bool>
       hlcf.comptime.yield
     } else {
       // CHECK: %[[ELSE_RETURN:.*]] = kgen.param.constant: scalar<bool> = <true>
-      // CHECK: kgen.return %[[ELSE_RETURN]]
+      // CHECK: hlcf.return %[[ELSE_RETURN]]
       %else_return = kgen.param.constant: scalar<bool> = <true>
       lit.return %else_return : !kgen.scalar<bool>
       hlcf.comptime.yield
     }
-    // CHECK: kgen.unreachable
+    // CHECK: hlcf.unreachable
     hlcf.comptime.yield
   } else {
     %else_return = kgen.param.constant: scalar<bool> = <true>
     lit.return %else_return : !kgen.scalar<bool>
     // CHECK: %[[ELSE_RETURN:.*]] = kgen.param.constant: scalar<bool> = <true>
-    // CHECK: kgen.return %[[ELSE_RETURN]]
+    // CHECK: hlcf.return %[[ELSE_RETURN]]
     hlcf.comptime.yield
   }
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   lit.end_fn
 }
 
@@ -1254,7 +1254,7 @@ lit.fn @crashing_try_warning(%cond: !kgen.scalar<bool>) -> !kgen.none {
 // Derived from MOCO-2119.
 // We had some weirdness where the outer hlcf.comptime.if was incorrectly using
 // the hlcf.if's doesFallThrough as its own doesFallThrough, and then that was
-// causing it to not replace the lit.end_fn with a kgen.unreachable.
+// causing it to not replace the lit.end_fn with a hlcf.unreachable.
 lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
   hlcf.comptime.if <parambool> {
     lit.return %runbool : i1
@@ -1289,7 +1289,7 @@ lit.fn @dead_code_after_param_assert_false<cond: i1>() -> !kgen.none {
 
   // A false assert causes everything after it to be dead.
   // CHECK-NEXT: kgen.param.assert <false>
-  // CHECK-NEXT: kgen.unreachable
+  // CHECK-NEXT: hlcf.unreachable
   kgen.param.assert <false>, "this always fails"
 
   // expected-warning @+1 {{unreachable code after compile-time assertion failure}}
@@ -1310,7 +1310,7 @@ lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
       // CHECK: hlcf.match.next
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   case {
     // Second case can match.next, so the else remains reachable.
@@ -1322,13 +1322,13 @@ lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
       // CHECK: hlcf.match.next
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   else {
     // CHECK: hlcf.yield
     hlcf.yield
   }
-  // CHECK: kgen.return %a : i32
+  // CHECK: hlcf.return %a : i32
   lit.return %a : i32
   lit.end_fn
 }
@@ -1341,11 +1341,11 @@ lit.fn @match_no_fallthrough(%a: i32) -> i32 {
     hlcf.match.next
   }
   else {
-    // CHECK: kgen.return %a : i32
+    // CHECK: hlcf.return %a : i32
     lit.return %a : i32
     hlcf.yield
   }
-  // CHECK: kgen.unreachable
+  // CHECK: hlcf.unreachable
   // expected-warning @+1 {{unreachable code after match statement that does not fall through}}
   lit.return %a : i32
   lit.end_fn

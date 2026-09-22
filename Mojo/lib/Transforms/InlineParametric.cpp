@@ -41,6 +41,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 /// Insert a new parameter declaration into all nested declaration scopes.
 static void propagateNewDecls(ArrayRef<ParamDeclAttr> newDecls,

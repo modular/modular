@@ -7,7 +7,7 @@ kgen.func @external_call(%a: !kgen.simd<1, ui32>) {
   // expected-error @below {{existing function with conflicting signature}}
   // expected-error @below {{failed to legalize}}
   %0 = pop.external_call @foo(%a) : (!kgen.simd<1, ui32>) -> !kgen.simd<4, f64>
-  kgen.return
+  hlcf.return
 }
 
 // The negative-count case is rejected by the op verifier; see
@@ -17,7 +17,7 @@ kgen.func @variadic_too_many_fixed_args(%a: !kgen.simd<1, ui32>) {
   // expected-error @below {{failed to legalize}}
   pop.external_call @bar(%a) attributes {numFixedArgs = 2 : index}
     : (!kgen.simd<1, ui32>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 }

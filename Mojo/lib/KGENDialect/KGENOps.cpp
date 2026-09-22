@@ -23,7 +23,6 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "Support/STLExtras.h"
@@ -39,9 +38,6 @@
 
 using namespace M;
 using namespace KGEN;
-
-using HLCF::parseLoop;
-using HLCF::printLoop;
 
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
@@ -357,38 +353,6 @@ void ParamApplyOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
   assert(decls.size() == 1);
   setParamDeclAttr(decls.front());
 }
-
-//===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-bool ReturnOp::isParentNode(Operation *op) { return isa<FunctionLike>(op); }
-
-void ReturnOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
-LogicalResult ReturnOp::verify() {
-  auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
-  if (!func)
-    return emitOpError("expected to be nested inside a function");
-  return checkOperandTypes(*this, func.getResultTypes());
-}
-
-//===----------------------------------------------------------------------===//
-// UnreachableOp
-//===----------------------------------------------------------------------===//
-
-/// Unreachable can terminate any control flow operation.
-bool UnreachableOp::isParentNode(Operation *op) { return true; }
-
-/// No branch targets.
-void UnreachableOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {}
 
 //===----------------------------------------------------------------------===//
 // ParamAssertOp

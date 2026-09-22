@@ -38,7 +38,7 @@ void ControlFlowTree::buildTree(ControlFlowNode node, unsigned &nodeId,
       // Returns and unreachable have no CFG branch targets; LowerControlFlow
       // handles them specially and must not consume a tree.targets slot.
       if (!terminator || terminator->hasTrait<mlir::OpTrait::ReturnLike>() ||
-          isa<KGEN::UnreachableOp>(terminator.getOperation()))
+          isa<HLCF::UnreachableOp>(terminator.getOperation()))
         continue;
 
       std::optional<unsigned> nodeId;

@@ -18,6 +18,7 @@
 #include "MojoUtils.h"
 
 #include "IREmitter.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
 #include "Mojo/LITDialect/LITAttrs.h"
@@ -34,6 +35,8 @@
 
 using namespace M;
 using namespace M::KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace M::KGEN::LIT;
 
 TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,

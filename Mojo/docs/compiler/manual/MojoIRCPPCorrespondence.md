@@ -345,7 +345,7 @@ lit.fn @"bork()"() -> !Int attributes {sourceName = "bork", specialFnKind = 0 : 
     lit.return %0 : !Int
     hlcf.yield
   } else {
-    kgen.unreachable
+    hlcf.unreachable
   }
   lit.end_fn
 }

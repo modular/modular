@@ -28,7 +28,7 @@ kgen.generator @simd_constants<N, value: !kgen.simd<N, si32>>() {
   "simd.const"() {a = #kgen<simd 1> : !kgen.simd<2, si32>} : () -> ()
   // CHECK: simd<N, si32> = <value>
   kgen.param.constant: simd<N, si32> = <value>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @array_constants
@@ -39,7 +39,7 @@ kgen.generator @array_constants<T: type, A: !kgen.param<T>>() {
   kgen.param.constant: array<2, dtype> = <[ui4, si4]>
   // CHECK: array<2, T> = <[A, A]>
   kgen.param.constant: array<2, T> = <[A, A]>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @variadic_constants
@@ -48,14 +48,14 @@ kgen.generator @variadic_constants<T: type, value: si32>() {
   kgen.param.constant: param_list<si32> = <[1, value]>
   // CHECK: param_list<T> = <[]>
   kgen.param.constant: param_list<T> = <[]>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @union_constants
 kgen.func @union_constants() {
   // CHECK: constant: union<i32, i64> = <{:i32 42}>
   kgen.param.constant: union<i32, i64> = <{:i32 42}>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK: f0 = #pop.union<:i32 42> : !pop.union<i32, i64>

@@ -1,37 +1,37 @@
 // RUN: kgen-opt -verify-parameters -apply-inliner -split-input-file %s | FileCheck %s
 
 kgen.generator @trivial<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
-  kgen.return %arg0 : !kgen.param<T>
+  hlcf.return %arg0 : !kgen.param<T>
 }
 
 // CHECK-LABEL: kgen.generator @trivial_exprs
 kgen.generator @trivial_exprs() {
   // CHECK-NEXT: constant = <2>
   kgen.param.constant = <apply(:(index) -> index @trivial<:type index>, 2)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 kgen.generator @fwd_reg<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
-  kgen.return %arg0 : !kgen.param<T>
+  hlcf.return %arg0 : !kgen.param<T>
 }
 
 kgen.generator @fwd_reg_byref_result_store_first<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
   pop.store %arg0, %arg1 : !kgen.pointer<T>
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @fwd_reg_byref_result_store_second<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   pop.store %arg0, %arg1 : !kgen.pointer<T>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @reg_constant<T: type, value: !kgen.param<T>>() -> !kgen.param<T> {
   %0 = kgen.param.constant: !kgen.param<T> = <value>
-  kgen.return %0 : !kgen.param<T>
+  hlcf.return %0 : !kgen.param<T>
 }
 
 // CHECK-LABEL: @test_param_inline
@@ -46,7 +46,7 @@ kgen.generator @test_param_inline<param>() {
   kgen.param.constant = <apply(:() -> index @reg_constant<:type index, 5>)>
   // CHECK-NEXT: <param>
   kgen.param.constant = <apply(:() -> index @reg_constant<:type index, param>)>
-  kgen.return
+  hlcf.return
 }
 
 // debug versions
@@ -57,7 +57,7 @@ kgen.generator @test_param_inline<param>() {
 
 kgen.generator @fwd_reg_debug<T: type>(%arg0: !kgen.param<T>) -> !kgen.param<T> {
   debuginfo.value #var_paramref = %arg0 : !kgen.param<T>
-  kgen.return %arg0 : !kgen.param<T>
+  hlcf.return %arg0 : !kgen.param<T>
 }
 
 kgen.generator @fwd_reg_byref_result_store_first_debug<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
@@ -66,7 +66,7 @@ kgen.generator @fwd_reg_byref_result_store_first_debug<T: type>(%arg0: !kgen.par
   pop.store %arg0, %arg1 : !kgen.pointer<T>
   %none = kgen.param.constant: none = <#kgen.none>
   debuginfo.value #var_none = %none : !kgen.none
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @fwd_reg_byref_result_store_second_debug<T: type>(%arg0: !kgen.param<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
@@ -75,13 +75,13 @@ kgen.generator @fwd_reg_byref_result_store_second_debug<T: type>(%arg0: !kgen.pa
   %none = kgen.param.constant: none = <#kgen.none>
   debuginfo.value #var_none = %none : !kgen.none
   pop.store %arg0, %arg1 : !kgen.pointer<T>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 
 kgen.generator @reg_constant_debug<T: type, value: !kgen.param<T>>() -> !kgen.param<T> {
   %0 = kgen.param.constant: !kgen.param<T> = <value>
   debuginfo.value #var_paramref = %0 : !kgen.param<T>
-  kgen.return %0 : !kgen.param<T>
+  hlcf.return %0 : !kgen.param<T>
 }
 
 // CHECK-LABEL: @test_param_inline_debug
@@ -96,7 +96,7 @@ kgen.generator @test_param_inline_debug<param>() {
   kgen.param.constant = <apply(:() -> index @reg_constant_debug<:type index, 5>)>
   // CHECK-NEXT: <param>
   kgen.param.constant = <apply(:() -> index @reg_constant_debug<:type index, param>)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -107,7 +107,7 @@ kgen.generator @test_param_inline_debug<param>() {
 kgen.generator @self_applying() -> index {
   // CHECK: kgen.param.constant = <apply(:() -> index @self_applying)>
   %0 = kgen.param.constant = <apply(:() -> index @self_applying)>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // -----
@@ -121,14 +121,14 @@ kgen.generator @self_applying() -> index {
 kgen.generator @mutual_a() -> index {
   // CHECK: kgen.param.constant = <apply(:() -> index @mutual_b)>
   %0 = kgen.param.constant = <apply(:() -> index @mutual_b)>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.generator @mutual_b
 kgen.generator @mutual_b() -> index {
   // CHECK: kgen.param.constant = <apply(:() -> index @mutual_a)>
   %0 = kgen.param.constant = <apply(:() -> index @mutual_a)>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // -----
@@ -143,7 +143,7 @@ kgen.generator @grow<n>() -> index {
   // hand the next a deeper expression to expand.
   // CHECK: kgen.param.constant = <apply(:() -> index @grow<to_builtin(:scalar<index> add(from_builtin(n), 1))>)>
   %0 = kgen.param.constant = <apply(:() -> index @grow<add(n, 1)>)>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.generator @grow_user
@@ -152,7 +152,7 @@ kgen.generator @grow_user() {
   // expand, and only the depth bound stops it.
   // CHECK: kgen.param.constant = <apply(:() -> index @grow<33>)>
   kgen.param.constant = <apply(:() -> index @grow<0>)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -167,14 +167,14 @@ kgen.generator @grow_user() {
 kgen.generator @countdown<n>() -> index {
   // CHECK: kgen.param.constant = <cond({{.*}}apply(:() -> index @countdown<to_builtin(:scalar<index> add(from_builtin(n), -1))>))>
   %0 = kgen.param.constant = <cond(eq(n, 0), 0, apply(:() -> index @countdown<add(n, -1)>))>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.generator @countdown_user
 kgen.generator @countdown_user() {
   // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <apply(:() -> index @countdown<4>)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -185,21 +185,21 @@ kgen.generator @countdown_user() {
 kgen.generator @ping<n>() -> index {
   // CHECK: kgen.param.constant = <cond({{.*}}apply(:() -> index @pong<to_builtin(:scalar<index> add(from_builtin(n), -1))>))>
   %0 = kgen.param.constant = <cond(eq(n, 0), 0, apply(:() -> index @pong<add(n, -1)>))>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.generator @pong
 kgen.generator @pong<n>() -> index {
   // CHECK: kgen.param.constant = <cond({{.*}}apply(:() -> index @ping<to_builtin(:scalar<index> add(from_builtin(n), -1))>))>
   %0 = kgen.param.constant = <cond(eq(n, 0), 1, apply(:() -> index @ping<add(n, -1)>))>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.generator @mutual_user
 kgen.generator @mutual_user() {
   // CHECK: kgen.param.constant = <1>
   kgen.param.constant = <apply(:() -> index @ping<5>)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -212,30 +212,30 @@ kgen.generator @mutual_user() {
 kgen.generator @r<n>() -> index {
   // CHECK: kgen.param.constant = <cond({{.*}}@a{{.*}}@b{{.*}})>
   %0 = kgen.param.constant = <cond(eq(n, 0), 0, add(apply(:() -> index @a<add(n, -1)>), apply(:() -> index @b<add(n, -1)>)))>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @a<n>() -> index {
   // CHECK: kgen.param.constant = <cond({{.*}}@r{{.*}})>
   %0 = kgen.param.constant = <cond(eq(n, 0), 1, apply(:() -> index @r<add(n, -1)>))>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @b<n>() -> index {
   // CHECK: kgen.param.constant = <cond({{.*}}@b2{{.*}})>
   %0 = kgen.param.constant = <cond(eq(n, 0), 2, apply(:() -> index @b2<add(n, -1)>))>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @b2<n>() -> index {
   // CHECK: kgen.param.constant = <cond({{.*}}@a{{.*}})>
   %0 = kgen.param.constant = <cond(eq(n, 0), 3, apply(:() -> index @a<add(n, -1)>))>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.generator @scc_user
 kgen.generator @scc_user() {
   // CHECK: kgen.param.constant = <4>
   kgen.param.constant = <apply(:() -> index @r<3>)>
-  kgen.return
+  hlcf.return
 }

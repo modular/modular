@@ -505,7 +505,7 @@ def FunctionLike : OpInterface<"FunctionLike", [DebugInfo_SubprogramScoped]> {
     - region results are returned via the stack.
 
     This interface specifies the required result types of the region, allowing
-    it to be terminated by a `kgen.return` or `kgen.unreachable`, if the
+    it to be terminated by a `hlcf.return` or `hlcf.unreachable`, if the
     function never returns.
   }];
 

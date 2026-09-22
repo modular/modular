@@ -44,7 +44,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __deinit__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-        # CHECK-NEXT: kgen.return [[FALSE]]
+        # CHECK-NEXT: hlcf.return [[FALSE]]
         return
 
     def noop(self):
@@ -116,7 +116,7 @@ def thing_that_raises(c: __mlir_type.`!kgen.scalar<bool>`) raises -> MemExample:
     # CHECK-NEXT:   hlcf.if %c {
     # CHECK-NEXT:      = lit.call {{.*}}__init__
     # CHECK-NOT:       __deinit__
-    # CHECK: kgen.return
+    # CHECK: hlcf.return
     if c:
         return MemExample()
     # CHECK-NEXT:  } else {
@@ -242,7 +242,7 @@ def propagate_reg_error() raises:
     # CHECK-NEXT: %none = kgen.param.constant: none
     # CHECK-NEXT: lit.ref.store %none, %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-    # CHECK-NEXT: kgen.return [[FALSE]]
+    # CHECK-NEXT: hlcf.return [[FALSE]]
 
 
 # CHECK-LABEL: lit.struct.decl @BigRegExample
@@ -262,7 +262,7 @@ struct BigRegExample(RegisterPassable):
         # CHECK-NEXT: lit.ref.store [[B]], [[B_REF]]
         self.b = RegExample()
         # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-        # CHECK-NEXT: kgen.return [[FALSE]]
+        # CHECK-NEXT: hlcf.return [[FALSE]]
 
 
 struct MyStringReturningCtx(Movable):

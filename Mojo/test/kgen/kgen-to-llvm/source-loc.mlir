@@ -12,7 +12,7 @@
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @with_callsite() capturing -> !kgen.string {
     %line, %col, %fileName = kgen.source_loc[0] loc(callsite("inner.mojo":1:1 at "caller.mojo":42:7))
-    kgen.return %fileName : !kgen.string
+    hlcf.return %fileName : !kgen.string
   }
 }
 
@@ -26,7 +26,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @plain_loc() capturing -> !kgen.string {
     %line, %col, %fileName = kgen.source_loc[0] loc("bare.mojo":9:3)
-    kgen.return %fileName : !kgen.string
+    hlcf.return %fileName : !kgen.string
   }
 }
 
@@ -38,6 +38,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @unknown_loc() capturing -> !kgen.string {
     %line, %col, %fileName = kgen.source_loc[0] loc(unknown)
-    kgen.return %fileName : !kgen.string
+    hlcf.return %fileName : !kgen.string
   }
 }

@@ -72,7 +72,7 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   // CHECK-NEXT: <16>
   kgen.param.constant: index = <get_alignof(union<simd<4, f32>, i64>, #target)>
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @simd_normal()
@@ -93,7 +93,7 @@ kgen.generator @simd_normal() {
 
   // CHECK-NEXT: <0>
   kgen.param.constant: index = <get_sizeof(scalar<invalid>, #target)>
-  kgen.return
+  hlcf.return
 }
 
 // `get_sizeof` returns the alloc size: the store size rounded up to the
@@ -126,7 +126,7 @@ kgen.generator @sizeof_rounds_up_to_alignment() {
   // A non-power-of-two SIMD field occupies its full padded stride.
   // CHECK-NEXT: <32>
   kgen.param.constant: index = <get_sizeof(struct<(simd<3, f32>, f32)>, #target)>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @simd_bitpacked()
@@ -139,5 +139,5 @@ kgen.generator @simd_bitpacked() {
   kgen.param.constant: index = <get_sizeof(scalar<index>, #kgen.target<triple="", arch="", features="", data_layout="p:32:32", simd_bit_width=128>)>
   // CHECK-NEXT: <8>
   kgen.param.constant: index = <get_sizeof(simd<2, address>, #kgen.target<triple="", arch="", features="", data_layout="p:32:32", simd_bit_width=128>)>
-  kgen.return
+  hlcf.return
 }

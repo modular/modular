@@ -23,7 +23,7 @@ kgen.func @scalar_bitcast(
   %2 = pop.bitcast %f64 : !kgen.simd<1, f64> to !kgen.simd<1, ui64>
   // CHECK: llvm.bitcast %[[UI32]]
   %3 = pop.bitcast %ui32 : !kgen.simd<1, ui32> to !kgen.simd<32, bool>
-  kgen.return %0, %1, %2, %3 :
+  hlcf.return %0, %1, %2, %3 :
       !kgen.simd<1, f32>,
       !kgen.simd<1, si32>,
       !kgen.simd<1, ui64>,
@@ -48,7 +48,7 @@ kgen.func @simd_bitcast(
   %1 = pop.bitcast %f32 :!kgen.simd<4, f32> to !kgen.simd<4, si32>
   // CHECK: llvm.bitcast %[[F64]]
   %2 = pop.bitcast %f64 :!kgen.simd<2, f64> to !kgen.simd<4, ui32>
-  kgen.return %0, %1, %2 :
+  hlcf.return %0, %1, %2 :
      !kgen.simd<4, f32>,
      !kgen.simd<4, si32>,
      !kgen.simd<4, ui32>
@@ -111,7 +111,7 @@ kgen.func @scalar_cast(
   // CHECK: insertvalue %[[V9]]
   // CHECK: insertvalue %[[F32]]
   // CHECK: insertvalue %[[V11]]
-  kgen.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10, %11 :
+  hlcf.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10, %11 :
     !kgen.simd<1, ui64>,
     !kgen.simd<1, si64>,
     !kgen.simd<1, ui16>,
@@ -179,7 +179,7 @@ kgen.func @simd_cast(
   // CHECK: insertvalue %[[V8]]
   // CHECK: insertvalue %[[V9]]
   // CHECK: insertvalue %[[F32]]
-  kgen.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10 :
+  hlcf.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10 :
     !kgen.simd<2, ui64>,
     !kgen.simd<2, si64>,
     !kgen.simd<2, ui16>,

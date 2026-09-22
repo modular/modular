@@ -159,7 +159,7 @@ def constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:   lit.return [[XT]] : !alias_Int1
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     if True:
         return x
     return y
@@ -176,7 +176,7 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:   [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT:   hlcf.if.elifcond.yield [[FALSE]]
     # CHECK-NEXT: } then {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   [[XT1:%.*]] = kgen.rebind %x : !Int to !alias_Int1
     # CHECK-NEXT:   lit.return [[XT1]] : !alias_Int1

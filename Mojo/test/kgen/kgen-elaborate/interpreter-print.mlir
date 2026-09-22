@@ -16,11 +16,11 @@ kgen.generator @print(%arg0: index, %arg1: index) -> index {
   %1 = pop.external_call @write(%index1, %4, %index1) : (index, !kgen.pointer<index>, index) -> (index)
 
   %5 = index.add %0, %1
-  kgen.return %5 : index
+  hlcf.return %5 : index
 }
 
 kgen.generator export @main() {
   kgen.param.apply x = [(index, index) -> index: @print](65, 10)
   %0 = kgen.param.constant: index = <x>
-  kgen.return
+  hlcf.return
 }

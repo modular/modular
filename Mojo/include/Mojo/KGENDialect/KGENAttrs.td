@@ -2059,7 +2059,7 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
             t0),
           "Must support the target!"
         ]> {
-      kgen.return
+      hlcf.return
     }
     ```
   }];
@@ -2092,7 +2092,7 @@ def KGEN_GetTargetPluginAttr : KGEN_ExprAttr<"GetTargetPlugin",
     kgen.generator @plugin_for<t0: target>() {
       kgen.param.constant: !kgen.param_list<!kgen.type> =
         <#kgen.get_target_plugin<t0> : !kgen.param_list<!kgen.type>>
-      kgen.return
+      hlcf.return
     }
     ```
   }];

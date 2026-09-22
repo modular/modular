@@ -55,7 +55,7 @@ using InlineResult = std::pair<Operation *, std::function<void(Operation *)>>;
 /// ```mlir
 /// kgen.param.declare.region Fn = <A>() -> index {
 ///   %0 = kgen.param.constant = <add(A, B)>
-///   kgen.return %0 : index
+///   hlcf.return %0 : index
 /// }
 /// ```
 ///

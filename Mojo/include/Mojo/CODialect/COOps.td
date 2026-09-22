@@ -148,7 +148,7 @@ def CO_ExecuteOp : COOp<"execute", [SingleBlock,
     %0 = kgen.param.constant: i32 = <3>
     %coro = co.execute : i32, i64 {
       %1 = kgen.param.constant: i64 = <5>
-      kgen.return %0, %1 : i32, i64
+      hlcf.return %0, %1 : i32, i64
     }
     ```
   }];

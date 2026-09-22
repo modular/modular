@@ -48,7 +48,7 @@ struct ControlFlowConverter {
 
   /// Lower the terminator.
   LogicalResult lowerTerminator(ControlFlowTerminator term, unsigned &termId);
-  LogicalResult lowerReturn(KGEN::ReturnOp op, ValueRange operands);
+  LogicalResult lowerReturn(HLCF::ReturnOp op, ValueRange operands);
 
   /// The rewriter to use.
   IRRewriter b;
@@ -184,7 +184,7 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
   return success();
 }
 
-LogicalResult ControlFlowConverter::lowerReturn(KGEN::ReturnOp op,
+LogicalResult ControlFlowConverter::lowerReturn(HLCF::ReturnOp op,
                                                 ValueRange operands) {
   // If the results don't need to be packed, create the LLVM return.
   if (op->getNumOperands() <= 1) {
@@ -209,8 +209,8 @@ LogicalResult ControlFlowConverter::lowerReturn(KGEN::ReturnOp op,
 
 LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
                                                     unsigned &termId) {
-  // kgen.unreachable -> llvm.unreachable.
-  if (auto unreachableOp = dyn_cast<KGEN::UnreachableOp>(term.getOperation())) {
+  // hlcf.unreachable -> llvm.unreachable.
+  if (auto unreachableOp = dyn_cast<HLCF::UnreachableOp>(term.getOperation())) {
     b.replaceOpWithNewOp<LLVM::UnreachableOp>(unreachableOp);
     return success();
   }
@@ -230,7 +230,7 @@ LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
   }
 
   // Rewrite the terminator.
-  if (auto returnOp = dyn_cast<KGEN::ReturnOp>(term.getOperation()))
+  if (auto returnOp = dyn_cast<HLCF::ReturnOp>(term.getOperation()))
     return lowerReturn(returnOp, results);
 
   assert(termId < tree.targets.size() && "malformed tree");

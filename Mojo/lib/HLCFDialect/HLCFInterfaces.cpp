@@ -166,9 +166,9 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
   if (isa<ControlFlowNode>(parent))
     return success();
 
-  // Special case `kgen.return` and `kgen.unreachable`. These are the only
+  // Special case `hlcf.return` and `hlcf.unreachable`. These are the only
   // terminators allowed for a function-like.
-  if ((op->hasTrait<OpTrait::ReturnLike>() || isa<KGEN::UnreachableOp>(op)) &&
+  if ((op->hasTrait<OpTrait::ReturnLike>() || isa<UnreachableOp>(op)) &&
       isa<KGEN::FunctionLike>(parent))
     return success();
 

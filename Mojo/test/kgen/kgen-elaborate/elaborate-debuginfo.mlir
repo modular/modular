@@ -19,7 +19,7 @@ kgen.generator @loc_ref() {
     kgen.param.constant = <2> loc(fused<#kgen.param.decl.ref<"A">:index>["a":0:0])
     hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-DAG: [[LOC1]] = loc(fused<1 : index>

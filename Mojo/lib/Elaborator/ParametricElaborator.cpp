@@ -974,7 +974,7 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
       terminator->erase();
     } else if (auto hlcfTerm =
                    dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
-      // If it's an kgen.return op, we have to split the block after the return.
+      // If it's an hlcf.return op, we have to split the block after the return.
       hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
       // Drop all uses of the if op because any of its uses will be null and
       // void at this point.
@@ -1258,7 +1258,7 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
   }
 
   // The else body should be unreachable after LowerSemanticCF.
-  assert(isa<UnreachableOp>(op.getElseRegion().front().front()) &&
+  assert(isa<HLCF::UnreachableOp>(op.getElseRegion().front().front()) &&
          "LowerSemanticCF didn't lower the else block of comptime.for?");
 
   // Lower the `hlcf.comptime.for` into an outer loop and wrapper loops for each
@@ -1676,7 +1676,7 @@ ElaborationState ParametricElaborator::specializeGenerator(PImplNode *inode,
     //   kgen.call @foo<() -> y>()
     //   %0 = kgen.param.constant = <y>
     //   kgen.param.result_bind<2>
-    //   kgen.return
+    //   hlcf.return
     // }
     // ```
     //

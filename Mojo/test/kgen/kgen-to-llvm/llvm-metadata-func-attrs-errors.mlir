@@ -5,7 +5,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @disallowed_target_cpu() attributes {
     LLVMMetadata = {llvm.target_cpu = "znver4"}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -15,7 +15,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @disallowed_tune_cpu() attributes {
     LLVMMetadata = {llvm.tune_cpu = "znver4"}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -25,7 +25,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @disallowed_target_features() attributes {
     LLVMMetadata = {llvm.target_features = "+avx2,+fma"}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -36,7 +36,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @disallowed_dso_local() attributes {
     LLVMMetadata = {llvm.dso_local = unit}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -48,7 +48,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @unsupported_patchable_function() attributes {
     LLVMMetadata = {llvm.patchable_function = "prologue-short-redirect"}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -60,7 +60,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @unsupported_no_jump_tables() attributes {
     LLVMMetadata = {llvm.no_jump_tables = unit}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -70,7 +70,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @bad_frame_pointer() attributes {
     LLVMMetadata = {llvm.frame_pointer = "bogus"}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -80,7 +80,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @bad_unit_value() attributes {
     LLVMMetadata = {llvm.always_inline = "should-be-unit"}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -90,7 +90,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @bad_string_value() attributes {
     LLVMMetadata = {llvm.section = 42 : i32}
-  } { kgen.return }
+  } { hlcf.return }
 }
 
 // -----
@@ -100,5 +100,5 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @bad_vscale_arity() attributes {
     LLVMMetadata = {llvm.vscale_range = #pop.array<1, 2, 3> : !pop.array<3, i32>}
-  } { kgen.return }
+  } { hlcf.return }
 }

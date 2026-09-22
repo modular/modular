@@ -26,7 +26,7 @@ struct MyAffine(Movable where False):
 def testAffineThing():
     _ = MyAffine()
     # CHECK: lit.call {{.*}}MyAffine::@"__deinit__
-    # CHECK: kgen.return
+    # CHECK: hlcf.return
 
 
 # CHECK-LABEL: lit.struct.decl @EmptyExplicit

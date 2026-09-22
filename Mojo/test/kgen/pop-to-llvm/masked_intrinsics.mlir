@@ -12,7 +12,7 @@ kgen.func @masked_load_with_alignment(
   %align = pop.cast_from_builtin %align_builtin : i32 to !kgen.scalar<si32>
   %0 = pop.call_llvm_intrinsic "llvm.masked.load", (%ptr, %align, %mask, %passthrough) :
     (!kgen.pointer<scalar<f32>>, !kgen.scalar<si32>, !kgen.simd<4, bool>, !kgen.simd<4, f32>) -> !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @masked_store_with_alignment
@@ -25,7 +25,7 @@ kgen.func @masked_store_with_alignment(
   %align = pop.cast_from_builtin %align_builtin : i32 to !kgen.scalar<si32>
   pop.call_llvm_intrinsic "llvm.masked.store", (%value, %ptr, %align, %mask) :
     (!kgen.simd<4, f32>, !kgen.pointer<scalar<f32>>, !kgen.scalar<si32>, !kgen.simd<4, bool>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @masked_gather_with_alignment
@@ -38,7 +38,7 @@ kgen.func @masked_gather_with_alignment(
   %align = pop.cast_from_builtin %align_builtin : i32 to !kgen.scalar<si32>
   %0 = pop.call_llvm_intrinsic "llvm.masked.gather", (%ptrs, %align, %mask, %passthrough) :
     (!kgen.simd<4, index>, !kgen.scalar<si32>, !kgen.simd<4, bool>, !kgen.simd<4, f32>) -> !kgen.simd<4, f32>
-  kgen.return %0 : !kgen.simd<4, f32>
+  hlcf.return %0 : !kgen.simd<4, f32>
 }
 
 // CHECK-LABEL: @masked_scatter_with_alignment
@@ -51,7 +51,7 @@ kgen.func @masked_scatter_with_alignment(
   %align = pop.cast_from_builtin %align_builtin : i32 to !kgen.scalar<si32>
   pop.call_llvm_intrinsic "llvm.masked.scatter", (%value, %ptrs, %align, %mask) :
     (!kgen.simd<4, f32>, !kgen.simd<4, index>, !kgen.scalar<si32>, !kgen.simd<4, bool>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 }

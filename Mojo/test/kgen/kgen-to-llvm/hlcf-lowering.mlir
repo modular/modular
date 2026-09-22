@@ -13,7 +13,7 @@ kgen.func @nested_continue(%arg0: !kgen.scalar<bool>) {
     hlcf.if %arg0 {
       // CHECK-NEXT: ^bb2:
       // CHECK-NEXT: llvm.return
-      kgen.return
+      hlcf.return
     } else {
       // CHECK-NEXT: ^bb3:
       // CHECK-NEXT: llvm.br ^bb1
@@ -22,7 +22,7 @@ kgen.func @nested_continue(%arg0: !kgen.scalar<bool>) {
     // CHECK-NOT: ^bb4:
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nested_break
@@ -48,7 +48,7 @@ kgen.func @nested_break(%arg0: !kgen.scalar<bool>) {
   }
   // CHECK-NEXT: ^bb5:
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @deeply_nested
@@ -92,14 +92,14 @@ kgen.func @deeply_nested(%arg0: !kgen.scalar<bool>, %arg1: !kgen.scalar<bool>, %
     }
     // CHECK-NEXT: ^bb9:
     // CHECK-NEXT: llvm.return
-    kgen.return
+    hlcf.return
   } else {
     // CHECK-NEXT: ^bb10:
     // CHECK-NEXT: llvm.br ^bb11
     hlcf.yield
   }
   // CHECK-NEXT: ^bb11:
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @operands_and_results
@@ -153,7 +153,7 @@ kgen.func @operands_and_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i6
   // CHECK-NEXT: %[[R0:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-NEXT: %[[R1:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: return %{{.*}}
-  kgen.return %0#0, %0#1 : i32, i64
+  hlcf.return %0#0, %0#1 : i32, i64
 }
 
 // CHECK-LABEL: @multiple_return
@@ -167,11 +167,11 @@ kgen.func @multiple_return(%arg0: !kgen.scalar<bool>) -> (i1, i1) {
     // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %[[B]], %[[S0]][0]
     // CHECK-NEXT: %[[S2:.*]] = llvm.insertvalue %[[B]], %[[S1]][1]
     // CHECK-NEXT: llvm.return %[[S2]]
-    kgen.return %b, %b : i1, i1
+    hlcf.return %b, %b : i1, i1
   } else {
     hlcf.yield
   }
-  kgen.return %b, %b : i1, i1
+  hlcf.return %b, %b : i1, i1
 }
 
 // Multi-arm if: entry CondBr to then vs first elif cond; elifcond.yield CondBr
@@ -198,7 +198,7 @@ kgen.func @multiarm_if(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %a: i32
   }
   // CHECK: ^bb5(%{{.*}}: i32):
   // CHECK: return
-  kgen.return %0 : i32
+  hlcf.return %0 : i32
 }
 
 // CHECK-LABEL: @switch
@@ -209,14 +209,14 @@ kgen.func @switch(%arg0: index) {
   // CHECK: ^bb1:
   default {
     // CHECK-NEXT: return
-    kgen.return
+    hlcf.return
   }
   // CHECK: ^bb2:
   case 2 {
     // CHECK-NEXT: br
     hlcf.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 // COM: Ensure raising inside anything other than the try region of a `lit.try`
@@ -233,7 +233,7 @@ kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
     } else {
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   case {
     hlcf.if %arg0 {
@@ -241,7 +241,7 @@ kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
     } else {
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   else {
     // CHECK-NEXT: ^bb1:
@@ -262,7 +262,7 @@ kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
   // CHECK-NEXT: llvm.br ^bb1
   // CHECK: ^bb8(%{{.*}}: i32):
   // CHECK: return
-  kgen.return %0 : i32
+  hlcf.return %0 : i32
 }
 
 // CHECK-LABEL: @match_next_to_else
@@ -279,7 +279,7 @@ kgen.func @match_next_to_else(%arg0: i32, %arg1: i32) -> i32 {
   // CHECK: ^bb2:
   // CHECK-NEXT: llvm.br ^bb1
   // CHECK: ^bb3(%{{.*}}: i32):
-  kgen.return %0 : i32
+  hlcf.return %0 : i32
 }
 
 // Nested match: next in an inner else targets the enclosing match.
@@ -298,7 +298,7 @@ kgen.func @nested_match(%arg0: i32, %arg1: i32) -> i32 {
       // CHECK-NEXT: llvm.br ^bb4
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   case {
     // CHECK: ^bb3:
@@ -311,7 +311,7 @@ kgen.func @nested_match(%arg0: i32, %arg1: i32) -> i32 {
     hlcf.yield %arg1 : i32
   }
   // CHECK: ^bb5(%{{.*}}: i32):
-  kgen.return %0 : i32
+  hlcf.return %0 : i32
 }
 
 // CHECK-LABEL: @comptime_match
@@ -325,7 +325,7 @@ kgen.func @comptime_match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> 
     } else {
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   case {
     hlcf.if %arg0 {
@@ -333,7 +333,7 @@ kgen.func @comptime_match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> 
     } else {
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   else {
     // CHECK-NEXT: ^bb1:
@@ -354,7 +354,7 @@ kgen.func @comptime_match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> 
   // CHECK-NEXT: llvm.br ^bb1
   // CHECK: ^bb8(%{{.*}}: i32):
   // CHECK: return
-  kgen.return %0 : i32
+  hlcf.return %0 : i32
 }
 
 // CHECK-LABEL: @comptime_match_next_to_else
@@ -371,7 +371,7 @@ kgen.func @comptime_match_next_to_else(%arg0: i32, %arg1: i32) -> i32 {
   // CHECK: ^bb2:
   // CHECK-NEXT: llvm.br ^bb1
   // CHECK: ^bb3(%{{.*}}: i32):
-  kgen.return %0 : i32
+  hlcf.return %0 : i32
 }
 
 // Nested comptime match: next in an inner else targets the enclosing match.
@@ -390,7 +390,7 @@ kgen.func @nested_comptime_match(%arg0: i32, %arg1: i32) -> i32 {
       // CHECK-NEXT: llvm.br ^bb4
       hlcf.match.next
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
   case {
     // CHECK: ^bb3:
@@ -403,7 +403,7 @@ kgen.func @nested_comptime_match(%arg0: i32, %arg1: i32) -> i32 {
     hlcf.yield %arg1 : i32
   }
   // CHECK: ^bb5(%{{.*}}: i32):
-  kgen.return %0 : i32
+  hlcf.return %0 : i32
 }
 
 // CHECK-LABEL: @reraise_in_try
@@ -421,9 +421,9 @@ kgen.func @reraise_in_try(%err: i32) {
       // CHECK: br ^bb4(%{{.*}} : i32)
       lit.try.raise "try0" %arg0 :i32
     } else {
-      kgen.unreachable
+      hlcf.unreachable
     }
-    kgen.unreachable
+    hlcf.unreachable
   } except (%arg0: i32) {
     // CHECK-NEXT: ^bb4(%{{.*}}: i32):
     // CHECK: outer.except
@@ -431,11 +431,11 @@ kgen.func @reraise_in_try(%err: i32) {
     // CHECK: br ^bb5
     lit.try.yield
   } else {
-    kgen.unreachable
+    hlcf.unreachable
   }
   // CHECK-NEXT: ^bb5:
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 }

@@ -247,7 +247,8 @@ td_library(
     srcs = glob(["include/Mojo/KGENDialect/*.td"]),
     includes = ["include"],
     deps = [
-        # ControlFlowNode / ControlFlowTerminator only — not HLCF ops.
+        # FunctionLike verify calls HLCF::verifyControlFlow — interfaces only,
+        # not HLCF ops.
         ":HLCFInterfacesTdFiles",
         ":InterpreterTdFiles",
         "//Support:DebugInfoTdFiles",

@@ -774,13 +774,13 @@ def Mem2Reg : Pass<"mem-2-reg"> {
     %0 = pop.stack_allocation 1 x index
     pop.store %arg0, %0 : !kgen.pointer<index>
     %1 = pop.load %0 : !kgen.pointer<index>
-    kgen.return %1 : index
+    hlcf.return %1 : index
     ```
 
     Will become:
 
     ```mlir
-    kgen.return %arg0 : index
+    hlcf.return %arg0 : index
     ```
 
     However, stores within a nested region will not be elided (yet).
@@ -793,7 +793,7 @@ def Mem2Reg : Pass<"mem-2-reg"> {
       pop.store %arg1, %0 : !kgen.pointer<index>
     }
     %1 = pop.load %0 : !kgen.pointer<index>
-    kgen.return %1 : index
+    hlcf.return %1 : index
     ```
   }];
 

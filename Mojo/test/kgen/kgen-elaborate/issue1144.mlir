@@ -3,28 +3,28 @@
 
 kgen.generator @"__mlir_i1__"(%arg0: !kgen.scalar<bool> imm) -> i1 always_inline_no_debug {
   %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<bool> to i1
-  kgen.return %0 : i1
+  hlcf.return %0 : i1
 }
 
 kgen.generator @err() {
   kgen.call @call() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @"_mlirtype_is_eq"<t1: type, t2: type>() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:type t1, t2))>
   %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-  kgen.return %1 : !kgen.scalar<bool>
+  hlcf.return %1 : !kgen.scalar<bool>
 }
 
 kgen.generator @getattr() {
   kgen.call @err() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @call() {
   kgen.call @err() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // expected-error @+1 {{function instantiation failed}}
@@ -44,7 +44,7 @@ kgen.generator export @main() {
         kgen.param.assert <*"(lifted)apply_2">, "expected Int or NoneType"
         hlcf.break "inlined_cf_scope"
       } {thenIsolated}
-      kgen.unreachable
+      hlcf.unreachable
   }
-  kgen.return
+  hlcf.return
 }

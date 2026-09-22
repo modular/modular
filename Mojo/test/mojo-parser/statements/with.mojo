@@ -271,7 +271,7 @@ def testCMWithoutExit():
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } except {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } finally {
@@ -291,7 +291,7 @@ def testCMWithoutExit():
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } except {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } finally {
@@ -367,7 +367,7 @@ def testCMWithoutExitEarlyReturn():
     # CHECK-NEXT:   lit.return
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } except {
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: } finally {
@@ -406,7 +406,7 @@ def unconditional_exit() raises:
     # CHECK-NEXT:   lit.try %__finally_error__
     # CHECK:          call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
     # CHECK:        } except {
-    # CHECK-NEXT:     kgen.unreachable
+    # CHECK-NEXT:     hlcf.unreachable
 
 
 struct ExampleCMTuple(ImplicitlyCopyable):

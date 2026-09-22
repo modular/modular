@@ -48,7 +48,7 @@ kgen.func @extern_c_struct() {
   // CHECK: llvm.call @c_func(%{{.*}}) : (!llvm.struct<(i8, i8, i8, i8)>) -> ()
   pop.external_call @c_func(%s)
     : (!kgen.struct<(scalar<si8>, scalar<si8>, scalar<si8>, scalar<si8>)>) -> ()
-  kgen.return
+  hlcf.return
 }
 // CHECK: llvm.func @c_func(!llvm.struct<(i8, i8, i8, i8)>)
 }
@@ -69,7 +69,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 kgen.func @ret_struct_identity() {
   // CHECK: llvm.call @c_ret() : () -> !llvm.struct<(i32, i32)>
   %0 = pop.external_call @c_ret() : () -> !kgen.struct<(scalar<si32>, scalar<si32>)>
-  kgen.return
+  hlcf.return
 }
 // CHECK: llvm.func @c_ret() -> !llvm.struct<(i32, i32)>
 }

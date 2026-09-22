@@ -344,14 +344,14 @@ generators**.
 kgen.generator @add<rhs>(%lhs: index) -> index {
   %0 = kgen.param.constant = <rhs>
   %1 = index.add %lhs, %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 # After elaboration: concrete function
 kgen.func @"add<42>"(%lhs: index) -> index {
   %0 = index.constant 42
   %1 = index.add %lhs, %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 ```
 
@@ -481,7 +481,7 @@ For compile-time code evaluation, KGEN includes an **interpreter**:
 # The `apply` operator triggers interpretation
 kgen.func @call_it() {
   %result = kgen.param.constant = <apply(:() -> index @call_me)>
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -876,7 +876,7 @@ mechanism. A `DIScopeAttr` (such as `DISubprogramAttr` or
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 kgen.func @foo() {
-  kgen.return loc(fused<#subprogram>["foo.mojo":12:5])
+  hlcf.return loc(fused<#subprogram>["foo.mojo":12:5])
 } loc(fused<#subprogram>["foo.mojo":10:1])
 ```
 
@@ -1200,7 +1200,7 @@ The IR with full debug info looks like:
 kgen.func @"add(::Int,::Int)"(%a: !Int, %b: !Int) -> !Int {
   %sum = ...  // a + b computation
   debuginfo.value #result_var = %sum : !Int loc(fused<#subprogram>["example.mojo":2:5])
-  kgen.return %sum : !Int loc(fused<#subprogram>["example.mojo":3:5])
+  hlcf.return %sum : !Int loc(fused<#subprogram>["example.mojo":3:5])
 } loc(fused<#subprogram>["example.mojo":1:1])
 ```
 

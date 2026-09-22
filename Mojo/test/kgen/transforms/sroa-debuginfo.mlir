@@ -32,8 +32,8 @@ kgen.func @sroa_valueop() {
   // CHECK-NEXT: debuginfo.value #[[VAR]] #[[REF0]] = %0 : !kgen.pointer<index>
   // CHECK-NEXT: debuginfo.value #[[VAR]] #[[REF1]] = %1 : !kgen.pointer<index>
   debuginfo.value #local_variable = %0 : !kgen.pointer<struct<(index, index)>> loc(#loc)
-  // CHECK-NEXT: kgen.return
-  kgen.return loc(#loc)
+  // CHECK-NEXT: hlcf.return
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // -----
@@ -65,7 +65,7 @@ kgen.func @load_debug_var(%arg0: !kgen.struct<(index, index)>) {
   // CHECK: [[VALUE1:%.*]] = pop.load
   // CHECK-NEXT: debuginfo.value #[[VAR]] #[[AGG1]] = [[VALUE1]]
   debuginfo.value #local_variable = %1 : !kgen.struct<(index, index)> loc(#loc)
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // -----
@@ -102,8 +102,8 @@ kgen.func @sroa_array_valueop() {
   // CHECK-NEXT: debuginfo.value #[[VAR]] #[[REF0]] = %0 : !kgen.pointer<index>
   // CHECK-NEXT: debuginfo.value #[[VAR]] #[[REF1]] = %1 : !kgen.pointer<index>
   debuginfo.value #local_variable = %0 : !kgen.pointer<array<2, index>> loc(#loc)
-  // CHECK-NEXT: kgen.return
-  kgen.return loc(#loc)
+  // CHECK-NEXT: hlcf.return
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // -----
@@ -138,8 +138,8 @@ kgen.func @sroa_array_of_struct_valueop() {
   // CHECK-COUNT-4: debuginfo.value
   debuginfo.value #local_variable = %0
       : !kgen.pointer<array<2, struct<(index, index)>>> loc(#loc)
-  // CHECK: kgen.return
-  kgen.return loc(#loc)
+  // CHECK: hlcf.return
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // -----
@@ -163,8 +163,8 @@ kgen.func @sroa_array_load_debug_var(%arg0: !pop.array<2, index>) {
   // CHECK: [[ARR:%.*]] = pop.array.create
   // CHECK-NEXT: debuginfo.value #{{.*}} = [[ARR]] : !pop.array<2, index>
   debuginfo.value #local_variable = %1 : !pop.array<2, index> loc(#loc)
-  // CHECK: kgen.return
-  kgen.return loc(#loc)
+  // CHECK: hlcf.return
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // -----
@@ -192,8 +192,8 @@ kgen.func @sroa_array_di_and_use(%arg0: !pop.array<2, index>) -> index {
   %1 = pop.array.gep %0[%c1] : <array<2, index>> loc(#loc)
   // CHECK: [[V:%.*]] = pop.load {{.*}} : !kgen.pointer<index>
   %2 = pop.load %1 : !kgen.pointer<index> loc(#loc)
-  // CHECK: kgen.return [[V]]
-  kgen.return %2 : index loc(#loc)
+  // CHECK: hlcf.return [[V]]
+  hlcf.return %2 : index loc(#loc)
 } loc(#loc)
 
 // -----
@@ -222,6 +222,6 @@ kgen.func @sroa_array_element_debug_var(%arg0: index) -> index {
   %2 = pop.load %1 : !kgen.pointer<index> loc(#loc)
   // CHECK: debuginfo.value #{{.*}} = [[V]] : index
   debuginfo.value #local_variable = %2 : index loc(#loc)
-  // CHECK: kgen.return [[V]]
-  kgen.return %2 : index loc(#loc)
+  // CHECK: hlcf.return [[V]]
+  hlcf.return %2 : index loc(#loc)
 } loc(#loc)

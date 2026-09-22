@@ -35,6 +35,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace POP;
 using namespace CO;
 
@@ -463,7 +465,7 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
           // keep suspension points around for now.
           for (auto &op : suspendOp.getBody().front().getOperations())
             reachable.insert(&op);
-          end = KGEN::ReturnOp::create(builder);
+          end = HLCF::ReturnOp::create(builder);
           reachable.insert(end);
           if (end->getNextNode())
             paths.push_back({end->getNextNode(), true});
@@ -648,7 +650,7 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
 
       /// Traverse.
       if (auto suspendOp = dyn_cast<SuspendOp>(operation)) {
-        KGEN::ReturnOp::create(builder);
+        HLCF::ReturnOp::create(builder);
         Block &block = clone->getRegion(0).emplaceBlock();
         for (Value arg : suspendOp.getBody().front().getArguments())
           mapping.map(arg, block.addArgument(arg.getType(), arg.getLoc()));

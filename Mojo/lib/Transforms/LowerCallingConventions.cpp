@@ -22,6 +22,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERCALLINGCONVENTIONS
@@ -160,7 +162,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
        llvm::zip(callOp->getResults(), outsPointers))
     POP::StoreOp::create(b, loc, resultVal, resultPtr);
 
-  // Add the terminator (KGEN::ReturnOp).
+  // Add the terminator (HLCF::ReturnOp).
   ReturnOp::create(b, loc);
 
   b.replaceOp(op, closureWrapper);

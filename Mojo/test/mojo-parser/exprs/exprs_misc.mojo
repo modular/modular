@@ -400,7 +400,7 @@ def test_mergewith(
     # https://github.com/modular/modular/issues/5380
     # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: [[COND:%.*]] = hlcf.if [[FALSE]]
-    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   = kgen.param.constant: !Bool = <{:scalar<bool> false}>
     # CHECK-NEXT:   hlcf.yield

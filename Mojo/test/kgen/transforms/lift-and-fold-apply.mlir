@@ -1,14 +1,14 @@
 // RUN: kgen-opt -verify-parameters -lift-and-fold-apply %s | FileCheck %s
 
 kgen.generator @pass(%arg0: index) -> index {
-  kgen.return %arg0 : index
+  hlcf.return %arg0 : index
 }
 
 // CHECK-LABEL: kgen.generator @take_and_pass
 // CHECK-SAME: !pop.array<*[[L0:.*]], index>
 kgen.generator @take_and_pass<N>() -> !pop.array<apply(:(index) -> index @pass, N), index> {
   // CHECK-NEXT: apply *[[L0]] = [(index) -> index: @pass](N)
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @lift_apply
@@ -34,14 +34,14 @@ kgen.generator @lift_apply() {
     // CHECK: apply *[[L4:.*]] = [(index) -> index: @pass](p2)
     // CHECK: constant = <*[[L4]]>
     kgen.param.constant = <apply(:(index) -> index @pass, p2)>
-    kgen.return
+    hlcf.return
   }
 
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @consume<N>(%arg0: !pop.array<N, index>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @apply_value_crosses
@@ -55,11 +55,11 @@ kgen.generator @apply_value_crosses(%arg0: !pop.array<apply(:(index) -> index @p
     // CHECK-NEXT: call @consume<*[[L0]]>(%arg0) : (!pop.array<*[[L0]], index>)
     kgen.call @consume<apply(:(index) -> index @pass, 1)>(%arg0)
       : (!pop.array<apply(:(index) -> index @pass, 1), index>) -> ()
-    kgen.return
+    hlcf.return
   } else {
     hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 
@@ -71,7 +71,7 @@ kgen.generator @lift_from_bind_params<
   kgen.param.declare fn: () -> () = <bind_params(
     :<() -> !pop.array<apply(:(index) -> index @pass, 1), index>>() -> () dispatch,
     :() -> !pop.array<apply(:(index) -> index @pass, 1), index> @take_and_pass<1>)>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @preserve_gen_attr
@@ -81,11 +81,11 @@ kgen.generator @preserve_gen_attr() {
   kgen.param.constant: !kgen.generator<<index>index> = <
      #kgen.gen<apply(:(index) -> index @pass, *(0,0))>
   >
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @bad() -> index {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @nohoist_cond
@@ -93,7 +93,7 @@ kgen.generator @nohoist_cond() {
   kgen.param.declare cond: !kgen.scalar<bool> = <false>
   // CHECK-NOT: kgen.param.apply
   kgen.param.declare value = <cond(cond, apply(:() -> index @bad), 1)>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @hlcf_if_apply
@@ -117,7 +117,7 @@ kgen.generator @hlcf_if_apply(%cond: !kgen.scalar<bool>) {
     hlcf.yield
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @hlcf_if_in_param_if_apply
@@ -160,5 +160,5 @@ kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !k
   } else {
     hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }

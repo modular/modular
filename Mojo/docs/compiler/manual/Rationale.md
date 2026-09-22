@@ -305,7 +305,7 @@ For example, a region might look like the following:
 ```mlir
     fn(%arg0: !kgen.simd<4, si32>) {
       ...
-      kgen.return %res : !kgen.simd<4, si32>
+      hlcf.return %res : !kgen.simd<4, si32>
     }
 ```
 
@@ -319,7 +319,7 @@ kgen.generator @foo
     <size, dt: dtype, fn: <size, dt: dtype>(!kgen.simd<size, dt>) -> !kgen.simd<size, dt>>
     (%arg: !kgen.simd<size, dt>) -> !kgen.simd<size, dt> {
   %x = kgen.call_param[<size, dt: dtype>(!kgen.simd<size, dt>) -> !kgen.simd<size, dt>: fn]<size = size, dt: dtype = dt>(%arg)
-  kgen.return %x : !kgen.simd<size, dt>
+  hlcf.return %x : !kgen.simd<size, dt>
 }
 
 kgen.generator @bar() {
@@ -336,7 +336,7 @@ kgen.generator @bar() {
     // Regions:
     fn<size, dt: dtype>(%arg: !kgen.simd<size, dt>) {
       %res = pop.mul %arg, %arg : !kgen.simd<size, dt>
-      kgen.return %res : !kgen.simd<size, dt>
+      hlcf.return %res : !kgen.simd<size, dt>
     }
 
   %b = kgen.param.constant: simd<8, si32> = <<3, 3, ...>>
@@ -352,9 +352,9 @@ kgen.generator @bar() {
     // Regions:
     fn<size, dt: dtype>(%arg: !kgen.simd<size, dt>) {
       %res = pop.add %arg, %arg : !kgen.simd<size, dt>
-      kgen.return %res : !kgen.simd<size, dt>
+      hlcf.return %res : !kgen.simd<size, dt>
     }
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -368,18 +368,18 @@ kgen-opt test.mlir -elaborate-generators="search-path=/Path/to/kgen-elaborate"
 module {
   kgen.func @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%arg0: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
     %0 = pop.mul %arg0, %arg0 : !kgen.simd<4, f32>
-    kgen.return %0 : !kgen.simd<4, f32>
+    hlcf.return %0 : !kgen.simd<4, f32>
   }
   kgen.func @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%arg0: !kgen.simd<8, si32>) -> !kgen.simd<8, si32> {
     %0 = pop.add %arg0, %arg0 : !kgen.simd<8, si32>
-    kgen.return %0 : !kgen.simd<8, si32>
+    hlcf.return %0 : !kgen.simd<8, si32>
   }
   kgen.func @bar() {
     %cst = kgen.param.constant: simd<4, f32> = <<"2.0", "2.0", ...>>
     %0 = kgen.call @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%cst) : (!kgen.simd<4, f32>) -> !kgen.simd<4, f32>
     %cst_0 = kgen.param.constant: simd<8, si32> = <<3, 3, ...>>
     %1 = kgen.call @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%cst_0) : (!kgen.simd<8, si32>) -> !kgen.simd<8, si32>
-    kgen.return
+    hlcf.return
   }
 }
 ```

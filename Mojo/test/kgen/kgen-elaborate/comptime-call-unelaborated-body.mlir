@@ -15,7 +15,7 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
   // expected-note @below {{recursively instantiated through here}}
   kgen.param.apply r = [() -> index: @"bad,x=1"]()
   %0 = kgen.param.constant: !kgen.scalar<bool> = <true>
-  kgen.return %0 : !kgen.scalar<bool>
+  hlcf.return %0 : !kgen.scalar<bool>
 }
 
 // expected-note @below {{function instantiation failed}}
@@ -31,7 +31,7 @@ kgen.generator @bad<x: index>() -> index {
     %2 = kgen.param.constant = <0>
     hlcf.comptime.yield %2 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -40,7 +40,7 @@ kgen.generator export @root() -> index {
   // moves on, leaving it unfinished when `@dep` reaches it above.
   // expected-note @below {{call expansion failed with parameter value(s): ("x": 1)}}
   %a = kgen.call @bad<:index 1>() : () -> index
-  kgen.return %a : index
+  hlcf.return %a : index
 }
 
 // -----
@@ -51,7 +51,7 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
   // expected-note @below {{recursively instantiated through here}}
   %r = kgen.param.constant = <apply(:() -> index @"bad,x=1")>
   %0 = kgen.param.constant: !kgen.scalar<bool> = <true>
-  kgen.return %0 : !kgen.scalar<bool>
+  hlcf.return %0 : !kgen.scalar<bool>
 }
 
 // expected-note @below {{function instantiation failed}}
@@ -66,14 +66,14 @@ kgen.generator @bad<x: index>() -> index {
     %2 = kgen.param.constant = <0>
     hlcf.comptime.yield %2 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @root() -> index {
   // expected-note @below {{call expansion failed with parameter value(s): ("x": 1)}}
   %a = kgen.call @bad<:index 1>() : () -> index
-  kgen.return %a : index
+  hlcf.return %a : index
 }
 
 // -----
@@ -85,14 +85,14 @@ kgen.generator export @root() -> index {
 kgen.generator @helper() -> index {
   // expected-note @below {{recursively instantiated through here}}
   %c = kgen.call @"bad,x=1"() : () -> index
-  kgen.return %c : index
+  hlcf.return %c : index
 }
 
 kgen.generator @dep() -> !kgen.scalar<bool> {
   // expected-note @below {{recursively instantiated through here}}
   kgen.param.apply h = [() -> index: @helper]()
   %0 = kgen.param.constant: !kgen.scalar<bool> = <true>
-  kgen.return %0 : !kgen.scalar<bool>
+  hlcf.return %0 : !kgen.scalar<bool>
 }
 
 // expected-note @below {{function instantiation failed}}
@@ -107,14 +107,14 @@ kgen.generator @bad<x: index>() -> index {
     %2 = kgen.param.constant = <0>
     hlcf.comptime.yield %2 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @root() -> index {
   // expected-note @below {{call expansion failed with parameter value(s): ("x": 1)}}
   %a = kgen.call @bad<:index 1>() : () -> index
-  kgen.return %a : index
+  hlcf.return %a : index
 }
 
 // -----
@@ -129,7 +129,7 @@ kgen.generator @dep() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
   %0 = kgen.param.constant = <apply(:() -> index @"earlyExit,x=5")>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // expected-note @below {{function instantiation failed}}
@@ -139,24 +139,24 @@ kgen.generator @earlyExit<x: index>() -> index {
     // expected-note @below {{recursively instantiated through here}}
     %d = kgen.call @dep() : () -> index
     %1 = kgen.param.constant = <x>
-    kgen.return %1 : index
+    hlcf.return %1 : index
   } else {
     %2 = kgen.param.constant = <0>
     hlcf.comptime.yield %2 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @root() -> index {
   // expected-note @below {{call expansion failed with parameter value(s): ("x": 5)}}
   %a = kgen.call @earlyExit<:index 5>() : () -> index
-  kgen.return %a : index
+  hlcf.return %a : index
 }
 
 // -----
 
-// A comptime `if` whose taken branch ends in a `kgen.return` leaves the ops
+// A comptime `if` whose taken branch ends in a `hlcf.return` leaves the ops
 // after it in a split-off block, which survives until the instance is
 // finalized. Here the taken branch depends on nothing that depends back, so
 // that unreachable block is all that is outstanding - and it must not by
@@ -164,24 +164,24 @@ kgen.generator export @root() -> index {
 
 kgen.generator @dep() -> index {
   %0 = kgen.param.constant = <apply(:() -> index @"earlyExit,x=5")>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @earlyExit<x: index>() -> index {
   %0 = hlcf.comptime.if <true> -> index {
     %1 = kgen.param.constant = <x>
-    kgen.return %1 : index
+    hlcf.return %1 : index
   } else {
     %2 = kgen.param.constant = <0>
     hlcf.comptime.yield %2 : index
   }
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func export @root
-// CHECK: kgen.return
+// CHECK: hlcf.return
 kgen.generator export @root() -> index {
   %a = kgen.call @earlyExit<:index 5>() : () -> index
   %b = kgen.call @dep() : () -> index
-  kgen.return %a : index
+  hlcf.return %a : index
 }

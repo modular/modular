@@ -38,6 +38,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 //===----------------------------------------------------------------------===//
 // Semantic control flow lowering.
@@ -552,7 +554,7 @@ void LowerSemanticCF::lowerParamFor(HLCF::ComptimeForOp paramFor,
   //       }
   //       body_that_uses_i
   //    } else {
-  //       kgen.unreachable
+  //       hlcf.unreachable
   //    }
   [[maybe_unused]] bool sawGotoElse = false;
   paramFor.getBody().front().walk<mlir::WalkOrder::PreOrder>(
@@ -652,7 +654,7 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
     // Look for semantic terminators and turn them into real terminators.
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
       auto b = handleSemanticTerminatorOp(op, "return statement");
-      KGEN::ReturnOp::create(b, returnOp.getOperands());
+      HLCF::ReturnOp::create(b, returnOp.getOperands());
       op.erase();
       effects.doesFallThrough = false;
       return;
@@ -976,8 +978,8 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
   }
 
   // These are not fallthroughs.
-  if (isa<KGEN::ReturnOp, HLCF::ContinueOp, HLCF::ComptimeForContinueOp,
-          KGEN::UnreachableOp, LIT::ErrorReturnOp>(terminator))
+  if (isa<HLCF::ReturnOp, HLCF::ContinueOp, HLCF::ComptimeForContinueOp,
+          HLCF::UnreachableOp, LIT::ErrorReturnOp>(terminator))
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
@@ -1011,7 +1013,7 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If this is a return out of the function, notice this and we're done.
     // LIT::TryRaiseOp/break/continue/etc are used for transfers to an enclosing
     // try, which doesn't completely exit the function.
-    if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
+    if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op))
       return true;
 
     // Most ops don't have regions and are just fallthrough.

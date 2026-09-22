@@ -4,7 +4,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+2 {{failed to convert func signature}}
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func @unsupported(%arg0: tensor<4xf32>) -> tensor<4xf32> {
-    kgen.return %arg0 : tensor<4xf32>
+    hlcf.return %arg0 : tensor<4xf32>
   }
 }
 
@@ -13,7 +13,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // expected-error @below {{could not find an enclosing target specification}}
 module {
   kgen.func @no_target() {
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -22,7 +22,7 @@ module {
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @capturing_parameter_closure(%arg0: !kgen.pointer<string>) capturing -> !kgen.string {
     %0 = pop.load %arg0 : !kgen.pointer<string>
-    kgen.return %0 : !kgen.string
+    hlcf.return %0 : !kgen.string
   }
 
   kgen.func @materializing_user() -> !kgen.generator<(!kgen.pointer<string>) capturing -> !kgen.string> {
@@ -32,7 +32,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %struct = kgen.param.constant: struct<((!kgen.pointer<string>) capturing -> !kgen.string, index)> = <{@capturing_parameter_closure, 8}>
     // expected-error @below {{capturing closures cannot be materialized as runtime values}}
     %0 = kgen.struct.extract %struct[0] : !kgen.struct<((!kgen.pointer<string>) capturing -> !kgen.string, index)>
-    kgen.return %0 : !kgen.generator<(!kgen.pointer<string>) capturing -> !kgen.string>
+    hlcf.return %0 : !kgen.generator<(!kgen.pointer<string>) capturing -> !kgen.string>
   }
 }
 
@@ -46,6 +46,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       unknown_attribute = #pop.array<256, 1, 4> : !pop.array<3, i32>
     }
   } {
-    kgen.return
+    hlcf.return
   }
 }

@@ -26,7 +26,7 @@ kgen.func @zero_starting_range() {
     kgen.call @foo(%2) : (index) -> ()
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @sequential_range
@@ -52,7 +52,7 @@ kgen.func @sequential_range() {
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @strided_range
@@ -79,7 +79,7 @@ kgen.func @strided_range() {
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nested_unroll_loops
@@ -129,7 +129,7 @@ kgen.func @nested_unroll_loops() {
     } {unrollLevel = #hlcf<unroll_level full>}
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @zero_starting_range_not_decorated
@@ -156,7 +156,7 @@ kgen.func @zero_starting_range_not_decorated() {
     kgen.call @foo(%2) : (index) -> ()
     hlcf.continue %1 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @loop_carried_dependency
@@ -211,7 +211,7 @@ kgen.func @loop_carried_dependency() {
   } {unrollLevel = #hlcf<unroll_level full>}
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @reorder_args
@@ -248,7 +248,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
     %8 = pop.offset %arg1[%idx1] : !kgen.pointer<scalar<f32>>
     hlcf.continue %3, %8, %7 : index, !kgen.pointer<scalar<f32>>, index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @complex_exit_logic_no_raise
@@ -271,7 +271,7 @@ kgen.func @complex_exit_logic_no_raise() {
     kgen.call @foo(%1) : (index) -> ()
     hlcf.continue %1 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @negative_step
@@ -298,7 +298,7 @@ kgen.func @negative_step() {
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %4 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nested_loops_no_unroll_inner
@@ -343,7 +343,7 @@ kgen.func @nested_loops_no_unroll_inner() {
     }
     hlcf.continue %1 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @break_in_then
@@ -365,7 +365,7 @@ kgen.func @nested_loops_no_unroll_inner() {
      %2 = index.add %arg0, %idx1
      hlcf.continue %2 : index
    }
-   kgen.return
+   hlcf.return
  }
 
 // CHECK-LABEL: @return_value_same_as_iter_var
@@ -390,7 +390,7 @@ kgen.func @return_value_same_as_iter_var()  {
     %3 = index.add %arg0, %idx1
     hlcf.continue %3 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @stride_same_as_iter_var
@@ -410,7 +410,7 @@ kgen.func @stride_same_as_iter_var()  {
     %3 = index.add %arg0, %arg0
     hlcf.continue %3 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @non_const_loop_end
@@ -430,7 +430,7 @@ kgen.func @non_const_loop_end()  {
     %3 = index.add %arg0, %idx1
     hlcf.continue %3, %3 : index, index
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -459,7 +459,7 @@ kgen.func @simple_call_in_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @intermediate_values_in_break_branch
@@ -486,7 +486,7 @@ kgen.func @intermediate_values_in_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @break_dependent_on_break_branch
@@ -509,7 +509,7 @@ kgen.func @break_dependent_on_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @dependent_ops_in_break_branch
@@ -532,7 +532,7 @@ kgen.func @dependent_ops_in_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @dynamic_bounds
@@ -551,7 +551,7 @@ kgen.func @dynamic_bounds(%arg0: index) {
     %3 = index.add %arg1, %arg0
     hlcf.continue %3 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -583,7 +583,7 @@ kgen.func @pop_cmp_si64_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<si64>
     hlcf.continue %next : !kgen.scalar<si64>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -615,7 +615,7 @@ kgen.func @pop_cmp_si8_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<si8>
     hlcf.continue %next : !kgen.scalar<si8>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -638,7 +638,7 @@ kgen.func @pop_cmp_f32_no_raise() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<f32>
     hlcf.continue %next : !kgen.scalar<f32>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -670,7 +670,7 @@ kgen.func @pop_cmp_index_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<index>
     hlcf.continue %next : !kgen.scalar<index>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -693,7 +693,7 @@ kgen.func @pop_cmp_uindex_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<uindex>
     hlcf.continue %next : !kgen.scalar<uindex>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -711,7 +711,7 @@ kgen.func @donnot_crash_with_block_argument_cond() {
     }
     hlcf.continue %0 : !kgen.scalar<bool>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -741,5 +741,5 @@ kgen.func @loop_with_lit_try() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
