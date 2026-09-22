@@ -298,9 +298,11 @@ docker run modular/max-nvidia-full:latest \
     ...
 ```
 
-To send telemetry to your own OTLP endpoint, set the
-[`MAX_SERVE_OTLP_METRICS_ENDPOINT`](/environment-variables) environment
-variable.
+To send traces and metrics to your own collector, set the standard
+[`OTEL_EXPORTER_OTLP_ENDPOINT`](/environment-variables) environment variable.
+[`MAX_SERVE_OTLP_METRICS_ENDPOINT`](/environment-variables) is a separate
+opt-in that additionally pushes an exponential-histogram shadow of every
+histogram; leave it unset unless you want that comparison.
 
 To help the MAX team understand your deployment performance, you can add
 identity information with these environment variables:

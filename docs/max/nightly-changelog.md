@@ -165,6 +165,10 @@ This version is still a work in progress.
   token for the interactivity of the short ones it no longer blocks. It
   requires chunked prefill and is inert without it, and
   `--chunked-prefill-min-chunk-size` must not exceed it.
+- MAX now honors `OTEL_SDK_DISABLED` and, for metrics,
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` and `OTEL_EXPORTER_OTLP_ENDPOINT`, so
+  a deployment that set the latter for traces now sends metrics there too,
+  and loses them if that endpoint is gRPC.
 
 - Added `--prefill-schedule-interval` (default 1, every step): admit prefill
   work only on every Nth scheduler step, leaving the steps in between entirely

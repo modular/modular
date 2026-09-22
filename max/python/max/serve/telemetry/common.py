@@ -21,7 +21,8 @@ import math
 import os
 import platform
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from contextvars import ContextVar
 from time import time
 
@@ -85,6 +86,18 @@ def _operator_set_endpoint(signal_var: str) -> bool:
         os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
         or os.environ.get(signal_var)
     )
+
+
+def _telemetry_disabled(settings: Settings) -> bool:
+    """Whether egress is off, by MAX setting or by ``OTEL_SDK_DISABLED``.
+
+    The SDK reads that variable too but only no-ops instruments, leaving the
+    providers, their exporter threads and ``send_telemetry_log``'s raw POST
+    running; reading it here stops those. Parsed as the SDK parses it.
+    """
+    if os.environ.get("OTEL_SDK_DISABLED", "").lower().strip() == "true":
+        return True
+    return settings.disable_telemetry
 
 
 request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
@@ -309,7 +322,7 @@ def get_log_level(settings: Settings) -> int | str | None:
         else None
     )
 
-    if settings.disable_telemetry:
+    if _telemetry_disabled(settings):
         otlp_level = None
 
     return otlp_level
@@ -371,7 +384,7 @@ def configure_logging(
     settings: Settings, color: str | None = None, silent: bool = True
 ) -> None:
     otlp_level = get_log_level(settings)
-    egress_enabled = not settings.disable_telemetry
+    egress_enabled = not _telemetry_disabled(settings)
 
     logging_handlers: list[logging.Handler] = []
 
@@ -588,7 +601,9 @@ class _ExponentialShadowOnlyReader(PeriodicExportingMetricReader):
     shadow histograms (plus counters/gauges) to that endpoint, keeping the
     two histogram representations on separate destinations for MXSERV-258
     side-by-side comparison rather than duplicating the explicit-bucket one
-    there too.
+    there too. That separation assumes this endpoint differs from the one the
+    primary reader resolves: aimed at the same collector, counters and gauges
+    arrive twice, cumulative from that reader and delta from this one.
     """
 
     def _receive_metrics(
@@ -644,19 +659,38 @@ def _histogram_views(settings: Settings) -> list[View]:
     return views
 
 
+@contextmanager
+def _sdk_disable_masked() -> Iterator[None]:
+    """Hides ``OTEL_SDK_DISABLED`` from an SDK provider constructor.
+
+    ``MeterProvider`` would otherwise return no-op instruments, emptying the
+    local Prometheus surface and making every measurement log an error.
+    Egress is decided by ``_telemetry_disabled`` and the readers below.
+    """
+    saved = os.environ.pop("OTEL_SDK_DISABLED", None)
+    try:
+        yield
+    finally:
+        if saved is not None:
+            os.environ["OTEL_SDK_DISABLED"] = saved
+
+
+def _metric_exporter() -> OTLPMetricExporter:
+    """Builds the metric exporter, falling back to Modular's collector."""
+    if _operator_set_endpoint("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"):
+        return OTLPMetricExporter()
+    return OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+
+
 def configure_metrics(settings: Settings) -> None:
-    egress_enabled = not settings.disable_telemetry
+    egress_enabled = not _telemetry_disabled(settings)
     configure_histogram_shadow_emission(bool(settings.otlp_metrics_endpoint))
 
     meter_readers: list[MetricReader] = [
         _SkipExponentialHistogramsPrometheusReader(True)
     ]
     if egress_enabled:
-        meter_readers.append(
-            PeriodicExportingMetricReader(
-                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
-            )
-        )
+        meter_readers.append(PeriodicExportingMetricReader(_metric_exporter()))
     if settings.otlp_metrics_endpoint:
         meter_readers.append(
             _ExponentialShadowOnlyReader(
@@ -670,17 +704,17 @@ def configure_metrics(settings: Settings) -> None:
             )
         )
 
-    set_meter_provider(
-        MeterProvider(
+    with _sdk_disable_masked():
+        provider = MeterProvider(
             metric_readers=meter_readers,
             resource=metrics_resource,
             views=_histogram_views(settings),
         )
-    )
+    set_meter_provider(provider)
 
     logger = logging.getLogger()
-    if settings.disable_telemetry:
-        logger.info("Metrics disabled.")
+    if not egress_enabled:
+        logger.info("OTLP metrics export disabled.")
     else:
         logger.info("Metrics initialized.")
 
@@ -693,14 +727,15 @@ def _span_exporter() -> OTLPSpanExporter:
 
 
 def configure_tracing(settings: Settings) -> None:
-    if not settings.disable_telemetry:
+    egress_enabled = not _telemetry_disabled(settings)
+    if egress_enabled:
         provider = TracerProvider(resource=logs_resource)
         exporter = _span_exporter()
         provider.add_span_processor(BatchSpanProcessor(exporter))
         set_tracer_provider(provider)
 
     logger = logging.getLogger()
-    if settings.disable_telemetry:
+    if not egress_enabled:
         logger.info("Tracing disabled.")
     else:
         logger.info("Tracing initialized.")

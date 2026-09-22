@@ -27,8 +27,16 @@ from collections.abc import Callable, Iterator
 import pytest
 from max.serve.config import Settings
 from max.serve.telemetry import common
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+    OTLPMetricExporter,
+)
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     OTLPSpanExporter,
+)
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    InMemoryMetricReader,
+    PeriodicExportingMetricReader,
 )
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -36,6 +44,7 @@ from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
 
 GENERIC = "OTEL_EXPORTER_OTLP_ENDPOINT"
 TRACES = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+METRICS = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
 
 
 @pytest.fixture(autouse=True)
@@ -54,11 +63,16 @@ def clear_otel_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @pytest.mark.parametrize(
     ("build", "signal_var", "path"),
-    [pytest.param(common._span_exporter, TRACES, "/v1/traces", id="traces")],
+    [
+        pytest.param(common._span_exporter, TRACES, "/v1/traces", id="traces"),
+        pytest.param(
+            common._metric_exporter, METRICS, "/v1/metrics", id="metrics"
+        ),
+    ],
 )
 def test_exporter_endpoint_precedence(
     monkeypatch: pytest.MonkeyPatch,
-    build: Callable[[], OTLPSpanExporter],
+    build: Callable[[], OTLPSpanExporter | OTLPMetricExporter],
     signal_var: str,
     path: str,
 ) -> None:
@@ -109,3 +123,68 @@ def test_configure_tracing_passes_no_sampler(
     monkeypatch.setenv("OTEL_TRACES_SAMPLER_ARG", "0.25")
     common.configure_tracing(Settings(disable_telemetry=False))
     assert isinstance(captured[0].sampler, TraceIdRatioBased)
+
+
+@pytest.mark.parametrize(
+    ("value", "disabled"),
+    [
+        ("true", True),
+        ("TRUE", True),
+        (" true ", True),
+        ("false", False),
+        ("1", False),
+        ("", False),
+    ],
+)
+def test_otel_sdk_disabled(
+    monkeypatch: pytest.MonkeyPatch, value: str, disabled: bool
+) -> None:
+    """Only the literal ``true`` disables, per the spec, and surrounding
+    whitespace is stripped — matching the SDK's own parse so that the two
+    cannot disagree about a value and leave telemetry half-off."""
+    monkeypatch.setenv("OTEL_SDK_DISABLED", value)
+    settings = Settings(disable_telemetry=False)
+    assert common._telemetry_disabled(settings) is disabled
+
+
+def test_sdk_disable_is_masked_from_the_meter_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A MeterProvider that reads OTEL_SDK_DISABLED itself hands back no-op
+    instruments, which empties the local Prometheus endpoint and makes every
+    measurement log an error. Masking the variable keeps that surface live
+    while MAX still drops the OTLP reader."""
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    assert MeterProvider()._disabled is True
+    with common._sdk_disable_masked():
+        assert "OTEL_SDK_DISABLED" not in os.environ
+        assert MeterProvider()._disabled is False
+    assert os.environ["OTEL_SDK_DISABLED"] == "true"
+
+
+def test_configure_metrics_keeps_prometheus_live_when_sdk_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pairing that motivates the mask: OTLP export stops, the local
+    Prometheus surface keeps real instruments. Stubbing the Prometheus reader
+    because a second real one would clash on the process-global registry."""
+    captured: list[MeterProvider] = []
+    monkeypatch.setattr(common, "set_meter_provider", captured.append)
+    monkeypatch.setattr(
+        common,
+        "_SkipExponentialHistogramsPrometheusReader",
+        lambda *a, **k: InMemoryMetricReader(),
+    )
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    common.configure_metrics(Settings(disable_telemetry=False))
+    provider = captured[0]
+    assert provider._disabled is False
+    assert not any(
+        isinstance(r, PeriodicExportingMetricReader)
+        for r in provider._sdk_config.metric_readers
+    )
+
+
+def test_max_setting_disables_independently() -> None:
+    """OTEL_SDK_DISABLED is additive: it must not become the only way off."""
+    assert common._telemetry_disabled(Settings(disable_telemetry=True)) is True

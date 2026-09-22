@@ -58,7 +58,10 @@ from max.serve.router import (
     sagemaker_routes,
 )
 from max.serve.router._image_resolution import fetch_media_data_uri
-from max.serve.telemetry.common import send_telemetry_log
+from max.serve.telemetry.common import (
+    _telemetry_disabled,
+    send_telemetry_log,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
@@ -112,7 +115,7 @@ async def lifespan(
     zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
     try:
-        if not settings.disable_telemetry:
+        if not _telemetry_disabled(settings):
             send_telemetry_log(
                 serving_settings.pipeline_config.models.model_name
             )
@@ -360,6 +363,8 @@ def fastapi_app(
             include_responses=settings.transaction_recording_include_responses,
         )
 
+    # Deliberately the raw setting, not _telemetry_disabled: /metrics is a
+    # local pull surface, not egress, so OTEL_SDK_DISABLED must not remove it.
     if (
         not settings.disable_telemetry
         and settings.metric_recording == MetricRecordingMethod.ASYNCIO

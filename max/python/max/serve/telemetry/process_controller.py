@@ -182,6 +182,8 @@ def init_and_process(
     configure_metrics(settings)
     configure_tracing(settings)
 
+    # Deliberately the raw setting, not _telemetry_disabled: /metrics is a
+    # local pull surface, not egress, so OTEL_SDK_DISABLED must not remove it.
     if (
         not settings.disable_telemetry
         and settings.metric_recording == MetricRecordingMethod.PROCESS

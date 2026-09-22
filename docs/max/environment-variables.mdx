@@ -101,6 +101,65 @@ For more information, read about
 | `MAX_SERVE_OTLP_METRICS_ENDPOINT` | Push a self-calibrating exponential-histogram shadow (`<metric>.exponential`) of every histogram metric to an OTLP endpoint, alongside the Prometheus `/metrics` histograms | Endpoint URL | None    |
 | `MAX_SERVE_EPLB_PROFILE`          | Enable expert-parallel load balancing (EPLB) statistics profiling in `max serve`                                                                                            | `0`, `1`     | `0`     |
 
+### Standard OpenTelemetry variables
+
+MAX reads the standard OpenTelemetry SDK variables, so you can point it
+at your own collector without MAX-specific configuration.
+
+| Variable                              | Description                          | Values          | Default                 |
+|---------------------------------------|--------------------------------------|-----------------|-------------------------|
+| `OTEL_SERVICE_NAME`                   | Reported as `service.name`           | String          | `unknown_service`       |
+| `OTEL_RESOURCE_ATTRIBUTES`            | Extra resource attributes, see below | `key=value,...` | None                    |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`         | Base endpoint, signal path appended  | URL             | Modular's               |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | Trace endpoint, used as given        | URL             | Modular's               |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Metrics endpoint, used as given      | URL             | Modular's               |
+| `OTEL_TRACES_SAMPLER`                 | Trace sampling strategy              | Sampler name    | `parentbased_always_on` |
+| `OTEL_TRACES_SAMPLER_ARG`             | Argument to the sampler              | String          | None                    |
+| `OTEL_SDK_DISABLED`                   | Disable OTLP export                  | `true`, `false` | `false`                 |
+
+Leave `MAX_SERVE_OTLP_METRICS_ENDPOINT` unset when you use these variables.
+It is a separate opt-in reader, so aiming both at one collector sends every
+metric twice, with counters and histograms arriving in two temporalities.
+
+A signal-specific endpoint takes precedence over the base endpoint. Setting
+`OTEL_EXPORTER_OTLP_ENDPOINT` to `http://collector:4318` sends traces to
+`http://collector:4318/v1/traces`, while `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
+is used exactly as given.
+
+MAX exports over OTLP HTTP only, so the endpoint must be an HTTP
+receiver, conventionally port 4318. Pointing it at a gRPC receiver on port
+4317 drops every span and every metric.
+
+The published container images set `OTEL_SERVICE_NAME` to `max-serve`, so
+override it explicitly rather than leaving it unset:
+
+```bash
+docker run --env "OTEL_SERVICE_NAME=my-service" modular/max-nvidia-full:latest ...
+```
+
+`OTEL_SDK_DISABLED` is enabled only by the value `true`, ignoring case and
+surrounding space, per the OpenTelemetry specification. Any other value, `1`
+included, leaves telemetry on. `OTEL_SDK_DISABLED` stops OTLP export only: the
+local Prometheus `/metrics` endpoint keeps serving, and so does an explicitly
+set `MAX_SERVE_OTLP_METRICS_ENDPOINT`.
+
+`OTEL_RESOURCE_ATTRIBUTES` reaches the resource, but MAX sets `deployment.id`
+and `enduser.id` itself and an attribute set here loses to that. Use
+`MAX_SERVE_DEPLOYMENT_ID` and `MODULAR_USER_ID` for those two.
+
+Continuous OTLP log export is off unless `MAX_SERVE_LOGS_OTLP_LEVEL` is set,
+but MAX still sends one record to Modular's collector at startup unless
+telemetry is disabled. Either way logs go to Modular:
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` has no effect, and
+`OTEL_EXPORTER_OTLP_PROTOCOL` is not read.
+
+The generic `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_CERTIFICATE`,
+`OTEL_EXPORTER_OTLP_TIMEOUT` and `OTEL_EXPORTER_OTLP_COMPRESSION` settings are
+read by every exporter that gets built, and any signal still pointed at
+Modular's collector carries them. If you set headers to authenticate against
+your own collector but redirect only traces, your metrics reach Modular with
+those headers attached.
+
 ## Debugging
 
 The `MODULAR_DEBUG` environment variable enables one or more MAX debugging
