@@ -488,7 +488,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem)
     var mem = MemExample()
 
-    # CHECK: kgen.param.for [[ITER:[*].*]]: !TrivialRange in
+    # CHECK: kgen.comptime.for [[ITER:[*].*]]: !TrivialRange in
     # CHECK-NEXT: has_next
     # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
@@ -506,7 +506,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
             # CHECK-NEXT: lifetime.end %mem
             # CHECK-NEXT: lit.call {{.*}}marker()
             marker()
-            # CHECK-NEXT: kgen.param.for.break
+            # CHECK-NEXT: kgen.comptime.for.break
             break
 
         # CHECK: hlcf.if %{{.*}} {
@@ -515,16 +515,16 @@ def test_param_for1(cond: Bool, cond2: Bool):
             # CHECK-NEXT: lifetime.end %mem
             # CHECK-NEXT: lit.call {{.*}}marker()
             marker()
-            # CHECK-NEXT: kgen.param.for.break
+            # CHECK-NEXT: kgen.comptime.for.break
             break
         # CHECK-NEXT: } else {
         # CHECK-NEXT:   hlcf.yield
         # CHECK-NEXT: }
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
-        # CHECK-NEXT: kgen.param.for.continue
+        # CHECK-NEXT: kgen.comptime.for.continue
 
-    # This is the else from the comptime.if inside the param.for.
+    # This is the else from the comptime.if inside the comptime.for.
     # CHECK-NEXT: } else {
     else:
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %mem
@@ -535,8 +535,8 @@ def test_param_for1(cond: Bool, cond2: Bool):
 
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
-        # CHECK-NEXT: kgen.param.for.break
-    # Finish out the comptime.if and the param.for
+        # CHECK-NEXT: kgen.comptime.for.break
+    # Finish out the comptime.if and the comptime.for
     # CHECK-NEXT:   } {elseIsolated, thenIsolated}
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {
@@ -550,7 +550,7 @@ def test_param_for2():
     # CHECK: lit.call {{.*}}__init__{{.*}}(%mem)
     var mem = MemExample()
 
-    # CHECK: kgen.param.for [[ITER:[*].*]]: !TrivialRange in
+    # CHECK: kgen.comptime.for [[ITER:[*].*]]: !TrivialRange in
     # CHECK-NEXT: has_next
     # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
@@ -563,7 +563,7 @@ def test_param_for2():
 
         # CHECK-NEXT: lit.call {{.*}}use_mut{{.*}}(%mem)
         use_mut(mem)
-        # CHECK-NEXT: kgen.param.for.continue
+        # CHECK-NEXT: kgen.comptime.for.continue
 
     # CHECK-NEXT: } else {
     else:
@@ -572,7 +572,7 @@ def test_param_for2():
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
 
-        # CHECK-NEXT: kgen.param.for.break
+        # CHECK-NEXT: kgen.comptime.for.break
 
 
 # CHECK-LABEL: lit.fn @"test_elif

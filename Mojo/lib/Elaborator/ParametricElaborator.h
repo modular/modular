@@ -258,9 +258,9 @@ private:
   /// elaborating the rest of the function.
   ElaborationState processComptimeIfOp(PImplNode *parent, ComptimeIfOp op);
 
-  /// Process a param.for op by evaluating the sequence of induction variables
-  /// and then instantiating the body for each value of the sequence.
-  ElaborationState processParamForOp(PImplNode *parent, ParamForOp op);
+  /// Process a comptime.for op by evaluating the sequence of induction
+  /// variables and then instantiating the body for each value of the sequence.
+  ElaborationState processComptimeForOp(PImplNode *parent, ComptimeForOp op);
 
   ElaborationState processCodeGenReachableOp(PImplNode *inode,
                                              CodeGenReachableOp op);

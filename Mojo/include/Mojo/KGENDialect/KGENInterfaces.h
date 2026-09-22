@@ -68,9 +68,9 @@ using InlineResult = std::pair<Operation *, std::function<void(Operation *)>>;
 ///
 /// ```mlir
 /// kgen.comptime.if <lt(C, 1) -> output> {
-///   kgen.param.yield<A>
+///   kgen.comptime.yield<A>
 /// } else {
-///   kgen.param.yield<B>
+///   kgen.comptime.yield<B>
 /// }
 ///
 /// The definition of the result parameter `output` depends on the parameter

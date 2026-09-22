@@ -39,10 +39,10 @@ def test_memory_only[cond: Bool]() -> String:
 # CHECK-NOT:   hlcf.if
 # CHECK:       kgen.comptime.if
 # CHECK:         lit.call {{.*}}@"f()"
-# CHECK:         kgen.param.yield
+# CHECK:         kgen.comptime.yield
 # CHECK:       } else {
 # CHECK:         lit.call {{.*}}@"g()"
-# CHECK:         kgen.param.yield
+# CHECK:         kgen.comptime.yield
 # CHECK:       }
 
 # Each branch must carry the source location of its own expression.

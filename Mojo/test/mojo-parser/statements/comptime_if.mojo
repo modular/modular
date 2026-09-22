@@ -23,7 +23,7 @@ def comptime_if_basic[a: __mlir_type.`!kgen.scalar<bool>`]():
     comptime if a:
         # CHECK: lit.var.decl "inside" var
         var inside: Int
-    # CHECK: kgen.param.yield
+    # CHECK: kgen.comptime.yield
     # CHECK: }
 
 
@@ -38,9 +38,9 @@ def comptime_if_elif[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
     elif b:
         # CHECK:     lit.var.decl "inside_2" var
         var inside_2: Int
-    # CHECK:     kgen.param.yield
+    # CHECK:     kgen.comptime.yield
     # CHECK:   }
-    # CHECK:   kgen.param.yield
+    # CHECK:   kgen.comptime.yield
     # CHECK: }
 
 
@@ -73,9 +73,9 @@ def param_if[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
     elif b:
         # CHECK:     lit.var.decl "inside_2" var
         var inside_2: Int
-    # CHECK:     kgen.param.yield
+    # CHECK:     kgen.comptime.yield
     # CHECK:   }
-    # CHECK:   kgen.param.yield
+    # CHECK:   kgen.comptime.yield
     # CHECK: }
 
 
@@ -85,7 +85,7 @@ def param_if_andor_i1[a: __mlir_type.`!kgen.scalar<bool>`, b: __mlir_type.`!kgen
     comptime if a and b:
         # CHECK:   lit.var.decl "v" var
         var v: Int
-    # CHECK:   kgen.param.yield
+    # CHECK:   kgen.comptime.yield
     # CHECK: } else {
     # CHECK: kgen.comptime.if <cond(a, a, b)>
     elif a or b:
@@ -99,5 +99,5 @@ def param_if_and[a: Bool, b: Bool]():
     comptime if a and b:
         # CHECK:   lit.var.decl "v" var
         var v: Int
-    # CHECK:   kgen.param.yield
+    # CHECK:   kgen.comptime.yield
     # CHECK: }

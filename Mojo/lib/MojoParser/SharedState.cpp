@@ -2849,7 +2849,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // Substitute concrete parameter bindings, as ParamConstantOp does.
     TypedAttr condVal = evaluator.getReboundAttribute(comptimeIfOp.getCond());
     auto isParamYield = [](Operation &op) {
-      return isa<KGEN::ParamYieldOp>(op);
+      return isa<KGEN::ComptimeYieldOp>(op);
     };
     auto trueVal =
         foldBlock(comptimeIfOp.getThenRegion().front(), isParamYield);

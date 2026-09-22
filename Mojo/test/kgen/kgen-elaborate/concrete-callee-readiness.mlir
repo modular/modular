@@ -15,10 +15,10 @@ kgen.generator @bad<x: index>() -> index {
     // expected-note @below {{constraint failed: bad instantiation}}
     kgen.param.assert <false>, "bad instantiation"
     %1 = kgen.param.constant = <x>
-    kgen.param.yield %1 : index
+    kgen.comptime.yield %1 : index
   } else {
     %2 = kgen.param.constant = <0>
-    kgen.param.yield %2 : index
+    kgen.comptime.yield %2 : index
   }
   kgen.return %0 : index
 }
@@ -48,10 +48,10 @@ kgen.generator @good<x: index>() -> index {
   %0 = kgen.comptime.if <true> -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
-    kgen.param.yield %1 : index
+    kgen.comptime.yield %1 : index
   } else {
     %2 = kgen.param.constant = <0>
-    kgen.param.yield %2 : index
+    kgen.comptime.yield %2 : index
   }
   kgen.return %0 : index
 }

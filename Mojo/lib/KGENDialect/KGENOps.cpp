@@ -896,10 +896,10 @@ LogicalResult CallParamOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForOp
+// ComptimeForOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult ParamForOp::verify() {
+LogicalResult ComptimeForOp::verify() {
   if (getNumOperands() != getNumResults()) {
     return emitOpError("has ")
            << getNumOperands() << " operands but " << getNumResults()
@@ -916,14 +916,14 @@ LogicalResult ParamForOp::verify() {
   return success();
 }
 
-void ParamForOp::getEntryTargets(
+void ComptimeForOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
   targets.emplace_back(0, getOperands());
 }
 
-ValueRange ParamForOp::getEntryArguments(std::optional<unsigned> target) {
+ValueRange ComptimeForOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return getResults();
   if (*target == 0)
@@ -932,7 +932,7 @@ ValueRange ParamForOp::getEntryArguments(std::optional<unsigned> target) {
   return getElseRegion().getArguments();
 }
 
-ArrayRef<ParamDeclAttr> ParamForOp::getInputParams() {
+ArrayRef<ParamDeclAttr> ComptimeForOp::getInputParams() {
   // HACK: The interface requires an ArrayRef, but we only have a single
   // element. Returning `getParamDecl` will cause a reference to a temporary to
   // be formed. Grab the reference directly from the DictionaryAttr. We know
@@ -951,34 +951,34 @@ ArrayRef<ParamDeclAttr> ParamForOp::getInputParams() {
           1};
 }
 
-void ParamForOp::walkDefinitions(
+void ComptimeForOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
 
-bool ParamForOp::isImplicitlyParametric() { return true; }
+bool ComptimeForOp::isImplicitlyParametric() { return true; }
 
-void ParamForOp::collectParameterUsesBelow(
+void ComptimeForOp::collectParameterUsesBelow(
     function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
 }
 
-bool ParamForOp::isIsolatedFromAbove(unsigned regionNum) {
+bool ComptimeForOp::isIsolatedFromAbove(unsigned regionNum) {
   if (regionNum == 0)
     return getBodyIsolated();
   assert(regionNum == 1);
   return getElseIsolated();
 }
 
-void ParamForOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+void ComptimeForOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
   if (regionNum == 0)
     return setBodyIsolated(true);
   assert(regionNum == 1);
   return setElseIsolated(true);
 }
 
-bool ParamForBreakOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
+bool ComptimeForBreakOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
 }
 
-void ParamForBreakOp::getBranchTargets(
+void ComptimeForBreakOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
@@ -986,11 +986,11 @@ void ParamForBreakOp::getBranchTargets(
   targets.emplace_back(std::nullopt, getOperands());
 }
 
-bool ParamForContinueOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
+bool ComptimeForContinueOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
 }
 
-void ParamForContinueOp::getBranchTargets(
+void ComptimeForContinueOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
@@ -998,11 +998,11 @@ void ParamForContinueOp::getBranchTargets(
   targets.emplace_back(0, getOperands());
 }
 
-bool ParamForGotoElseOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
+bool ComptimeForGotoElseOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
 }
 
-void ParamForGotoElseOp::getBranchTargets(
+void ComptimeForGotoElseOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty() && "Shouldn't exist by mem2reg time");
@@ -1064,14 +1064,14 @@ void ComptimeIfOp::collectParameterUsesBelow(
 }
 
 //===----------------------------------------------------------------------===//
-// ParamYieldOp
+// ComptimeYieldOp
 //===----------------------------------------------------------------------===//
 
-bool ParamYieldOp::isParentNode(Operation *op) {
-  return isa<ParamForOp, ComptimeIfOp>(op);
+bool ComptimeYieldOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp, ComptimeIfOp>(op);
 }
 
-void ParamYieldOp::getBranchTargets(
+void ComptimeYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());

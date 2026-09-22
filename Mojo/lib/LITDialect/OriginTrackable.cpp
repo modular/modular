@@ -588,8 +588,8 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   // Local control flow ops.
-  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, ParamForBreakOp,
-          ParamForContinueOp, HLCF::MatchNextOp>(op))
+  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, ComptimeForBreakOp,
+          ComptimeForContinueOp, HLCF::MatchNextOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
 
   // Match complete exits the enclosing match (like yield) and may produce
@@ -634,7 +634,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   /// This is HLCF::LoopOp.
-  if (isa<HLCF::LoopOp, ParamForOp>(op))
+  if (isa<HLCF::LoopOp, ComptimeForOp>(op))
     return OverallOpValueEffect::loopOp;
 
   if (isa<LIT::TryOp>(op))

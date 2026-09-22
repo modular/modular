@@ -307,17 +307,17 @@ ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForOp
+// ComptimeForOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess ParamForOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
-  llvm_unreachable("kgen.param.for interpret undefined");
+ErrorTreeOrSuccess ComptimeForOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  llvm_unreachable("kgen.comptime.for interpret undefined");
 }
 
 ErrorTreeOrSuccess
-ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                 ParametricInterpreterState &state) {
+ComptimeForOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
   SmallVector<Type> resultTypes;
   Attribute hasNext = state.getReboundAttribute(getHasNext());
   Attribute getNext = state.getReboundAttribute(getGetNextIter());
@@ -346,8 +346,8 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
       cast<FuncTypeGeneratorType>(*hasNextTypeResult).getBody();
 
   // Push an empty slot to paramValues count to mark this is the boundary
-  // of a ParamFor so that we know how much to pop once hitting
-  // kgen.param.for.break or kgen.param.for.continue
+  // of a ComptimeFor so that we know how much to pop once hitting
+  // kgen.comptime.for.break or kgen.comptime.for.continue
   // state.pushParamValues({}, false, this->getOperation());
   Attribute initial = state.getReboundAttribute(getInitial());
   TypedAttr iterator =
@@ -391,11 +391,11 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
       state.currOpSideEffectState()[this->getOperation()] = {
           {}, {}, *getNextResult};
     } else {
-      // Clear up iterator in case function returns in the body of the ParamFor
-      // so that the iterator value doesn't carry over to another round of
-      // interpreting this ParamFor by mistake.
+      // Clear up iterator in case function returns in the body of the
+      // ComptimeFor so that the iterator value doesn't carry over to another
+      // round of interpreting this ComptimeFor by mistake.
       iter->second.iterator = {};
-      // Set nextIterator value so that kgen.param.for.continue can set the
+      // Set nextIterator value so that kgen.comptime.for.continue can set the
       // iterator value correctly for the next iteration.
       iter->second.nextIterator = *getNextResult;
     }
@@ -412,47 +412,50 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForBreakOp
+// ComptimeForBreakOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess ParamForBreakOp::interpret(ArrayRef<Attribute> operands,
-                                              InterpreterState &state) {
-  llvm_unreachable("kgen.param.for.break interpret undefined");
+ErrorTreeOrSuccess ComptimeForBreakOp::interpret(ArrayRef<Attribute> operands,
+                                                 InterpreterState &state) {
+  llvm_unreachable("kgen.comptime.for.break interpret undefined");
 }
 
 ErrorTreeOrSuccess
-ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      ParametricInterpreterState &state) {
-  auto parent = this->getOperation()->getParentOfType<ParamForOp>();
+ComptimeForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                         ParametricInterpreterState &state) {
+  auto parent = this->getOperation()->getParentOfType<ComptimeForOp>();
   state.popEvalFrame();
   state.popParamValues(false, this->getOperation(), parent);
   return state.transferControlFlowTo(parent, operands);
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForContinueOp
+// ComptimeForContinueOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess ParamForContinueOp::interpret(ArrayRef<Attribute> operands,
-                                                 InterpreterState &state) {
-  llvm_unreachable("kgen.param.for.continue interpret undefined");
+ErrorTreeOrSuccess
+ComptimeForContinueOp::interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  llvm_unreachable("kgen.comptime.for.continue interpret undefined");
 }
 
 ErrorTreeOrSuccess
-ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                         ParametricInterpreterState &state) {
-  if (auto parent = this->getOperation()->getParentOfType<KGEN::ParamForOp>()) {
+ComptimeForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                            ParametricInterpreterState &state) {
+  if (auto parent =
+          this->getOperation()->getParentOfType<KGEN::ComptimeForOp>()) {
     state.popEvalFrame();
     state.popParamValues(false, this->getOperation(), parent);
     (void)state.transferControlFlowToParent(parent, operands);
     auto iter = state.currOpSideEffectState().find(parent.getOperation());
     assert(iter != state.currOpSideEffectState().end() &&
-           "kgen.param.for.continue has broken state");
+           "kgen.comptime.for.continue has broken state");
     iter->second.operands = SmallVector<Attribute>(operands);
     iter->second.iterator = iter->second.nextIterator;
     return success();
   }
-  return ErrorTree(getLoc(), "INTERNAL ERROR: cannot find parent ParamForOp");
+  return ErrorTree(getLoc(),
+                   "INTERNAL ERROR: cannot find parent ComptimeForOp");
 }
 
 //===----------------------------------------------------------------------===//
@@ -470,7 +473,7 @@ LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
   if (ifTerm == &ifBranch.front() && elseTerm == &elseBranch.front() &&
       op->getNumResults() == 0) {
     // If both sides are yielding, we can delete the op.
-    if (isa<ParamYieldOp>(ifTerm) && isa<ParamYieldOp>(elseTerm)) {
+    if (isa<ComptimeYieldOp>(ifTerm) && isa<ComptimeYieldOp>(elseTerm)) {
       b.eraseOp(op);
       return success();
     }
@@ -479,8 +482,8 @@ LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
     // immediately preceding another break. The terminators can't have any
     // returns.
     if (ifTerm->getNumOperands() == 0 && elseTerm->getNumOperands() == 0 &&
-        isa<ParamYieldOp, HLCF::BreakOp>(ifTerm) &&
-        isa<ParamYieldOp, HLCF::BreakOp>(elseTerm) &&
+        isa<ComptimeYieldOp, HLCF::BreakOp>(ifTerm) &&
+        isa<ComptimeYieldOp, HLCF::BreakOp>(elseTerm) &&
         isa<HLCF::BreakOp>(op->getNextNode())) {
       b.eraseOp(op);
       return success();
@@ -521,7 +524,7 @@ LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
   Operation &liveFront = liveBlock.front();
   // If the live block is now trivial, we can remove the whole
   // operation. Replace the results with the operands to the yield.
-  if (auto yield = dyn_cast<ParamYieldOp>(liveFront)) {
+  if (auto yield = dyn_cast<ComptimeYieldOp>(liveFront)) {
     b.replaceOp(op, yield.getOperands());
     return success();
   }
@@ -573,17 +576,17 @@ ComptimeIfOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamYieldOp
+// ComptimeYieldOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess ParamYieldOp::interpret(ArrayRef<Attribute> operands,
-                                           InterpreterState &state) {
-  llvm_unreachable("kgen.param.yield interpret undefined");
+ErrorTreeOrSuccess ComptimeYieldOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  llvm_unreachable("kgen.comptime.yield interpret undefined");
 }
 
 ErrorTreeOrSuccess
-ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                   ParametricInterpreterState &state) {
+ComptimeYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
   state.popEvalFrame();
   state.popParamValues(false, this->getOperation());
   return state.transferControlFlowTo((*this)->getParentOp(), operands);

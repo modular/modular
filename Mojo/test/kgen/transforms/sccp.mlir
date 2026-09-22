@@ -599,10 +599,10 @@ kgen.generator @none_hlcf_controlflownode_donot_crash() -> index {
   kgen.param.declare condition: scalar<bool> = <false>
   %0 = kgen.comptime.if <condition> -> index {
     %i0 = index.constant 0
-    kgen.param.yield %i0: index
+    kgen.comptime.yield %i0: index
   } else {
     %i1 = index.constant 1
-    kgen.param.yield %i1: index
+    kgen.comptime.yield %i1: index
   }
 
   // CHECK: kgen.return [[V0:%.*]]

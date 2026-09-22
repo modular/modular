@@ -596,11 +596,11 @@ kgen.generator @param_for() -> index {
   // CHECK-NEXT: %idx0 = index.constant 0
   %idx0 = index.constant 0
   pop.store %idx0, %mem : !kgen.pointer<index>
-  // CHECK-NEXT: %0 = kgen.param.for
+  // CHECK-NEXT: %0 = kgen.comptime.for
   // CHECK-NEXT: has_next
   // CHECK-NEXT: get_next_iter
   // CHECK-SAME: (%arg0 = %idx0 : index) -> index
-  kgen.param.for decl: index in :index 2
+  kgen.comptime.for decl: index in :index 2
     has_next :(index) -> i1 @has_next_wrapper
     get_next_iter :(!kgen.pointer<index> imm_mem, !kgen.pointer<index> byref_result) -> !kgen.none @wrapper {
 
@@ -612,11 +612,11 @@ kgen.generator @param_for() -> index {
       %2 = index.add %1, %0
       pop.store %2, %mem : !kgen.pointer<index>
 
-      // CHECK-NEXT: kgen.param.for.continue [[PLUS1]]
-      kgen.param.for.continue
+      // CHECK-NEXT: kgen.comptime.for.continue [[PLUS1]]
+      kgen.comptime.for.continue
     } else { // CHECK-NEXT: } else {
-      // CHECK: kgen.param.for.break %arg0 : index
-      kgen.param.for.break
+      // CHECK: kgen.comptime.for.break %arg0 : index
+      kgen.comptime.for.break
     }
     kgen.unreachable
 

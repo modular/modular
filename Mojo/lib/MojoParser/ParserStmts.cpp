@@ -351,8 +351,8 @@ struct StmtParser : public ParserBase {
                          std::function<void()> errorFn = {});
 
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
-  ParseResult parseParamFor(size_t curIndent, SMLoc forLoc,
-                            ExprNode *targetExpr, ExprNode *seqExpr);
+  ParseResult parseComptimeFor(size_t curIndent, SMLoc forLoc,
+                               ExprNode *targetExpr, ExprNode *seqExpr);
   ParseResult parseTryStmt(size_t curIndent);
   ParseResult parseWithStmt(size_t curIndent);
   ParseResult parseSingleWithStmt(size_t curIndent, SMLoc smLoc, Location loc);
@@ -388,7 +388,7 @@ struct StmtParser : public ParserBase {
   /// Emit an error and return failure if the current scope is not a valid
   /// location for an import statement. Imports are permitted at module scope
   /// (FileModuleOp) and at function scope (FnOp), including inside comptime
-  /// control-flow (ComptimeIfOp, ParamForOp) which is transparent to this
+  /// control-flow (ComptimeIfOp, ComptimeForOp) which is transparent to this
   /// check. Runtime control-flow bodies (HLCF::IfOp, LIT::LoopOp, etc.) are
   /// rejected. \p kwLoc should be the location of the leading `from` or
   /// `import` keyword so the diagnostic caret lands on the keyword.
@@ -1048,7 +1048,7 @@ ParseResult StmtParser::parseForTargetAndSequence(size_t curIndent,
 }
 
 /// Parses 'comptime for <target> in <seq>:' after 'comptime' has been consumed.
-/// Delegates to parseParamFor for the actual IR generation.
+/// Delegates to parseComptimeFor for the actual IR generation.
 ParseResult StmtParser::parseComptimeForStmt(LexerCursor startCursor,
                                              size_t curIndent) {
   SMLoc forLoc;
@@ -1058,7 +1058,7 @@ ParseResult StmtParser::parseComptimeForStmt(LexerCursor startCursor,
     return failure();
 
   llvm::SaveAndRestore builderSaver(builder);
-  return parseParamFor(curIndent, forLoc, targetExpr, seqExpr);
+  return parseComptimeFor(curIndent, forLoc, targetExpr, seqExpr);
 }
 
 /// Parses a comptime assert statement after the keywords have been consumed.
@@ -2409,8 +2409,9 @@ static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
   return StringAttr::get(shared.getContext(), name);
 }
 
-ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
-                                      ExprNode *targetExpr, ExprNode *seqExpr) {
+ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
+                                         ExprNode *targetExpr,
+                                         ExprNode *seqExpr) {
   Location forLocation = translateLocation(forLoc);
   ASTDecl &scope = getParentDecl();
 
@@ -2437,14 +2438,14 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // paramfor_next_iter, and paramfor_next_value functions to 'functional'ize.
   //
   // Parameter for loops are desugared into:
-  //   kgen.param.for 'it', initial=iterable.__iter__(),
+  //   kgen.comptime.for 'it', initial=iterable.__iter__(),
   //      has_next=..., get_next=... {
   //       comptime if it.has_next():
   //         # Logically: alias e = it.__next__()
   //         alias e = paramfor_next_value(it)
   //         <BODY>
   //       else:
-  //          param.for.else
+  //          comptime.for.else
   //
   // The elaborator instantiates the body of the loop N times with different
   // versions of the iterator.
@@ -2503,8 +2504,8 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   auto iterDecl = ParamDeclAttr::get(scope.mangleParamName("iter"), iterType);
 
   // Create the loop and parse the body into it.
-  auto paramFor = ParamForOp::create(builder, forLocation, initialIterVal,
-                                     hasNext, getNextIter, iterDecl);
+  auto paramFor = ComptimeForOp::create(builder, forLocation, initialIterVal,
+                                        hasNext, getNextIter, iterDecl);
 
   builder.createBlock(&paramFor.getBody());
 
@@ -2528,7 +2529,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   // If not, go to the else block.
   builder.createBlock(&comptimeIf.getElseRegion());
-  ParamForGotoElseOp::create(builder, forLocation);
+  ComptimeForGotoElseOp::create(builder, forLocation);
   // Keep inserting after this operation.
   builder.setInsertionPointAfter(comptimeIf);
   // We always continue or goto-else from the arms of the comptime.if.
@@ -2562,7 +2563,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     // Parse the body.
     if (parseSuite(curIndent))
       return failure();
-    ParamForContinueOp::create(builder, forLocation);
+    ComptimeForContinueOp::create(builder, forLocation);
   }
 
   // Parse the else region if present.
@@ -2574,7 +2575,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
         parseLocalScopeSuite(curIndent))
       return failure();
   }
-  ParamYieldOp::create(builder, forLocation);
+  ComptimeYieldOp::create(builder, forLocation);
 
   // Advance the insertion point.
   builder.setInsertionPointAfter(paramFor);
@@ -3386,7 +3387,7 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
       buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false);
   if (failed(parseComptimeIfRegion({currentTrueAssumption})))
     return failure();
-  ParamYieldOp::create(builder, ifLoc);
+  ComptimeYieldOp::create(builder, ifLoc);
 
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
@@ -3404,14 +3405,14 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
       return failure();
     currentConditionLoc = elifLoc;
 
-    ParamYieldOp::create(builder, elifLoc);
+    ComptimeYieldOp::create(builder, elifLoc);
     builder.createBlock(&comptimeIfOp.getThenRegion());
     SmallVector<ConstraintAttr> thenAssumptions(accumulatedFalseAssumptions);
     thenAssumptions.push_back(
         buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false));
     if (failed(parseComptimeIfRegion(thenAssumptions)))
       return failure();
-    ParamYieldOp::create(builder, elifLoc);
+    ComptimeYieldOp::create(builder, elifLoc);
   }
 
   builder.createBlock(&cast<ComptimeIfOp>(comptimeIfOp).getElseRegion());
@@ -3424,7 +3425,7 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
     if (failed(parseComptimeIfRegion(accumulatedFalseAssumptions)))
       return failure();
   }
-  ParamYieldOp::create(builder, ifLoc);
+  ComptimeYieldOp::create(builder, ifLoc);
   return success();
 }
 
@@ -3607,8 +3608,8 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
 
 /// Validates that an import statement appears at a permitted scope: either
 /// directly at module scope (FileModuleOp) or at function scope (FnOp).
-/// Within a function, comptime control-flow ops (ComptimeIfOp, ParamForOp) are
-/// transparent — the check walks through them. Any other intervening op
+/// Within a function, comptime control-flow ops (ComptimeIfOp, ComptimeForOp)
+/// are transparent — the check walks through them. Any other intervening op
 /// (e.g. HLCF::IfOp, LIT::LoopOp) indicates runtime control flow and is
 /// rejected. Struct, trait, and extension bodies are also rejected.
 ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
@@ -3617,8 +3618,8 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   if (isa_and_nonnull<FileModuleOp>(parent))
     return success();
   // Within a function, walk up the region chain from the current insertion
-  // point to the FnOp. Comptime control-flow ops (ComptimeIfOp, ParamForOp) are
-  // transparent — we continue walking through them. Any other op in between
+  // point to the FnOp. Comptime control-flow ops (ComptimeIfOp, ComptimeForOp)
+  // are transparent — we continue walking through them. Any other op in between
   // (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control flow and the import
   // is rejected.
   if (isa_and_nonnull<FnOp>(parent)) {
@@ -3629,7 +3630,7 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
         break;
       if (isa<FnOp>(op))
         return success();
-      if (isa<ComptimeIfOp, ParamForOp>(op)) {
+      if (isa<ComptimeIfOp, ComptimeForOp>(op)) {
         block = op->getBlock();
         continue;
       }

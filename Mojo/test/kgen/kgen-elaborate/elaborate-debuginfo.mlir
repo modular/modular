@@ -4,20 +4,20 @@
 // CHECK-LABEL: kgen.func @loc_ref
 kgen.generator @loc_ref() {
   kgen.comptime.if <false> {
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
     kgen.param.declare A = <1>
     // CHECK: constant = <1> loc([[LOC1:#.*]])
     kgen.param.constant = <1> loc(fused<#kgen.param.decl.ref<"A">:index>["a":0:0])
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.comptime.if <false> {
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
     kgen.param.declare A = <2>
     // CHECK: constant = <2> loc([[LOC2:#.*]])
     kgen.param.constant = <2> loc(fused<#kgen.param.decl.ref<"A">:index>["a":0:0])
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.return
 }

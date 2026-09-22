@@ -1520,7 +1520,7 @@ static bool isAcceptableMValueSource(Value origin, Operation *anchorOp) {
 ///   3. otherwise storing both sides into a scratch buffer and recreating
 ///      the op without a result.
 ///
-/// Branch terminators are chosen from the op kind (`ParamYieldOp` vs
+/// Branch terminators are chosen from the op kind (`ComptimeYieldOp` vs
 /// `HLCF::YieldOp`). Regions are assumed to be unterminated when this is
 /// called.
 AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
@@ -1537,13 +1537,13 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
 
   auto yieldValue = [&](Value v) {
     if (isComptimeIf)
-      ParamYieldOp::create(*builder, loc, ValueRange{v});
+      ComptimeYieldOp::create(*builder, loc, ValueRange{v});
     else
       HLCF::YieldOp::create(*builder, loc, v);
   };
   auto yieldEmpty = [&]() {
     if (isComptimeIf)
-      ParamYieldOp::create(*builder, loc);
+      ComptimeYieldOp::create(*builder, loc);
     else
       HLCF::YieldOp::create(*builder, loc);
   };

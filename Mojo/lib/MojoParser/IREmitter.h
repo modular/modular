@@ -258,7 +258,7 @@ public:
   ///   3. otherwise storing both sides into a scratch buffer and recreating
   ///      the op without a result.
   ///
-  /// Branch terminators are chosen from the op kind (`ParamYieldOp` vs
+  /// Branch terminators are chosen from the op kind (`ComptimeYieldOp` vs
   /// `HLCF::YieldOp`). Regions are assumed to be unterminated when this is
   /// called.
   AnyValue mergeCValuesAcrossIfLikeOp(Operation *ifLikeOp, Location loc,

@@ -418,10 +418,10 @@ kgen.func @source_loc_fold() -> (!kgen.string, !kgen.string, !kgen.string, !kgen
 kgen.generator @param_if_known_trivial(%arg0: index) -> index {
   // CHECK-NEXT: return %arg0
   %0 = kgen.comptime.if <true> -> index {
-    kgen.param.yield %arg0 : index
+    kgen.comptime.yield %arg0 : index
   } else {
     %1 = kgen.param.constant = <0>
-    kgen.param.yield %1 : index
+    kgen.comptime.yield %1 : index
   }
   kgen.return %0 : index
 }
@@ -430,10 +430,10 @@ kgen.generator @param_if_known_trivial(%arg0: index) -> index {
 kgen.generator @param_if_known_dead(%arg0: !kgen.pointer<index>, %arg1: index) {
   // CHECK-NEXT: pop.store
   kgen.comptime.if <false> {
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
     pop.store %arg1, %arg0 : !kgen.pointer<index>
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.return
 }
@@ -445,11 +445,11 @@ kgen.generator @param_if_known_dead_with_param<dt: dtype>(%arg0: !kgen.pointer<i
   kgen.comptime.if <false> {
     // CHECK-NEXT: unreachable
     pop.store %arg1, %arg0 : !kgen.pointer<index>
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
     kgen.param.declare dt1: dtype = <dt>
     pop.store %arg1, %arg0 : !kgen.pointer<index>
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.return
 }
@@ -461,7 +461,7 @@ kgen.generator @param_if_break(%arg0: !kgen.pointer<index>, %arg1: index) {
   // CHECK-NEXT: hlcf.break
   hlcf.loop {
     kgen.comptime.if <false> {
-      kgen.param.yield
+      kgen.comptime.yield
     } else {
       pop.store %arg1, %arg0 : !kgen.pointer<index>
       hlcf.break
@@ -480,7 +480,7 @@ kgen.generator @param_if_break2(%arg0: !kgen.pointer<index>, %arg1: index) -> in
   hlcf.loop {
     pop.store %arg1, %arg0 : !kgen.pointer<index>
     kgen.comptime.if <false> {
-      kgen.param.yield
+      kgen.comptime.yield
     } else {
       hlcf.break
     }
@@ -499,7 +499,7 @@ kgen.generator @param_if_break2(%arg0: !kgen.pointer<index>, %arg1: index) -> in
 kgen.generator @param_if_unreachable(%arg0: !kgen.pointer<index>, %arg1: index) {
   // CHECK-NEXT: unreachable
   kgen.comptime.if <false> {
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
     kgen.unreachable
   }
@@ -511,7 +511,7 @@ kgen.generator @param_if_empty_before_break<cond: scalar<bool>>(%arg0: !kgen.poi
   // CHECK-NEXT: kgen.return
   hlcf.loop {
     kgen.comptime.if <cond> {
-      kgen.param.yield
+      kgen.comptime.yield
     } else {
       hlcf.break
     }
@@ -524,9 +524,9 @@ kgen.generator @param_if_empty_before_break<cond: scalar<bool>>(%arg0: !kgen.poi
 kgen.generator @param_if_empty_yield<cond: scalar<bool>>(%arg0: !kgen.pointer<index>, %arg1: index) {
   // CHECK-NEXT: kgen.return
   kgen.comptime.if <cond> {
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.return
 }

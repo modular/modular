@@ -492,7 +492,7 @@ kgen.generator @test_excessive_struct_alignment(%arg0: !kgen.pointer<!kgen.struc
 kgen.generator @sum_from_zero<upper>() -> index {
   %idx0 = index.constant 0
   // expected-warning @below {{comptime for unrolling loop more than 27 times may cause long compilation time and large code size. (use '--loop-unrolling-warn-threshold' to increase the threshold or set to `0` to disable this warning}}
-  %0 = kgen.param.for i in upper
+  %0 = kgen.comptime.for i in upper
     has_next :(index) -> i1 @count_to_zero_has_next
     get_next_iter :(!kgen.pointer<index> imm_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %idx0 : index) -> index {

@@ -26,10 +26,10 @@ kgen.generator @bad<x: index>() -> index {
     // A parameter declaration keeps this `comptime.if` from folding away.
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
-    kgen.param.yield %1 : index
+    kgen.comptime.yield %1 : index
   } else {
     %2 = kgen.param.constant = <0>
-    kgen.param.yield %2 : index
+    kgen.comptime.yield %2 : index
   }
   kgen.return %0 : index
 }
@@ -61,10 +61,10 @@ kgen.generator @bad<x: index>() -> index {
   %0 = kgen.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
-    kgen.param.yield %1 : index
+    kgen.comptime.yield %1 : index
   } else {
     %2 = kgen.param.constant = <0>
-    kgen.param.yield %2 : index
+    kgen.comptime.yield %2 : index
   }
   kgen.return %0 : index
 }
@@ -102,10 +102,10 @@ kgen.generator @bad<x: index>() -> index {
   %0 = kgen.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
-    kgen.param.yield %1 : index
+    kgen.comptime.yield %1 : index
   } else {
     %2 = kgen.param.constant = <0>
-    kgen.param.yield %2 : index
+    kgen.comptime.yield %2 : index
   }
   kgen.return %0 : index
 }
@@ -142,7 +142,7 @@ kgen.generator @earlyExit<x: index>() -> index {
     kgen.return %1 : index
   } else {
     %2 = kgen.param.constant = <0>
-    kgen.param.yield %2 : index
+    kgen.comptime.yield %2 : index
   }
   kgen.return %0 : index
 }
@@ -173,7 +173,7 @@ kgen.generator @earlyExit<x: index>() -> index {
     kgen.return %1 : index
   } else {
     %2 = kgen.param.constant = <0>
-    kgen.param.yield %2 : index
+    kgen.comptime.yield %2 : index
   }
   kgen.return %0 : index
 }

@@ -57,7 +57,7 @@ kgen.generator @apply_value_crosses(%arg0: !pop.array<apply(:(index) -> index @p
       : (!pop.array<apply(:(index) -> index @pass, 1), index>) -> ()
     kgen.return
   } else {
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.return
 }
@@ -156,9 +156,9 @@ kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !k
       hlcf.yield
     }
 
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.return
 }

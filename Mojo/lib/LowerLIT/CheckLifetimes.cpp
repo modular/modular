@@ -3176,10 +3176,10 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
 /// HLCF::MatchNextOp, HLCF::MatchCompleteOp, which all perform local control
 /// flow.
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
+  if (isa<HLCF::BreakOp, ComptimeForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     breakSet->mergeWith(liveness, valueSet.domInfo);
-  } else if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
+  } else if (isa<HLCF::ContinueOp, ComptimeForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     continueSet->mergeWith(liveness, valueSet.domInfo);
   } else if (isa<HLCF::MatchNextOp, HLCF::MatchCompleteOp>(op)) {
@@ -3339,7 +3339,7 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // If the loop has an 'else' region, scan it and then intersect with the loop
   // region.  ParamForLoopOp's will have an 'unreachable' in the else region
   // because LowerSemanticCF already processed them.
-  if (loopOp.getNumRegions() == 2 && !isa<ParamForOp>(loopOp)) {
+  if (loopOp.getNumRegions() == 2 && !isa<ComptimeForOp>(loopOp)) {
     scanBlock(loopOp.getRegion(1).front());
     liveness.mergeWith(breakSet, valueSet.domInfo);
   } else {
@@ -4634,12 +4634,12 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
 }
 
 void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
+  if (isa<HLCF::BreakOp, ComptimeForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     consumedValues = *breakSet;
     return;
   }
-  if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
+  if (isa<HLCF::ContinueOp, ComptimeForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     consumedValues = *continueSet;
     return;
@@ -4960,7 +4960,7 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
 /// 'else' block removed (merged into their body).
 void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // True if this is a parameter for, false if this is an infinite HLCF::LoopOp.
-  [[maybe_unused]] bool isParamFor = isa<ParamForOp>(loopOp);
+  [[maybe_unused]] bool isParamFor = isa<ComptimeForOp>(loopOp);
   assert((!isParamFor ||
           isa<UnreachableOp>(loopOp.getRegion(1).front().front())) &&
          "LowerSemanticCF should have handled this");

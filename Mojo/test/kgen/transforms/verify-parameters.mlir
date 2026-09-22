@@ -12,7 +12,7 @@ kgen.generator @no_constrains_deduplication() {
     kgen.param.declare B1 : !kgen.string = <"bar">
     // CHECK: kgen.param.assert <false>, "bar"
     kgen.param.assert <eq(2, 3)>, B1
-    kgen.param.yield
+    kgen.comptime.yield
   }
   kgen.param.declare B2 : !kgen.string = <"baz">
   // CHECK: kgen.param.assert <false>, "baz"

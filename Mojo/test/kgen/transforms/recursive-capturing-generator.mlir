@@ -25,9 +25,9 @@ kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: in
 
     %second = kgen.call_param[() capturing -> index: thing]()
     kgen.call @use(%second) : (index) -> ()
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
-    kgen.param.yield
+    kgen.comptime.yield
   }
 
   kgen.return

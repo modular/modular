@@ -51,7 +51,7 @@ struct LowerSemanticCF {
 
   // This is the current loop that a break or continue should exit from. This is
   // either an HLCF::LoopOp (for a LIT::LoopOp getting rewritten) or a
-  // ParamForOp being lowering in place.
+  // ComptimeForOp being lowering in place.
   Operation *currentLoop = nullptr;
 
   // This is the current loop that a lit.loop.break.else should exit from. This
@@ -106,7 +106,7 @@ private:
 
   void lowerBlock(Block &block, CodeEffects &effects);
   bool lowerLITLoop(LIT::LoopOp loopOp, CodeEffects &effects);
-  void lowerParamFor(ParamForOp paramFor, CodeEffects &effects);
+  void lowerParamFor(ComptimeForOp paramFor, CodeEffects &effects);
   /// Lower an `HLCF::IfOp`, including constant-condition dead-arm cleanup.
   /// Returns true when the elif does not fall through (caller should stop).
   bool lowerIfOp(HLCF::IfOp ifOp, CodeEffects &effects);
@@ -513,7 +513,8 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp, CodeEffects &effects) {
   return !bodyBreaks;
 }
 
-void LowerSemanticCF::lowerParamFor(ParamForOp paramFor, CodeEffects &effects) {
+void LowerSemanticCF::lowerParamFor(ComptimeForOp paramFor,
+                                    CodeEffects &effects) {
   // The 'else' region is not inside the loop. It is transparent to raises
   // and breaks.
   CodeEffects elseEffects;
@@ -534,19 +535,19 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor, CodeEffects &effects) {
   // or continues, we can re-parent the 'else' block into the body of the loop.
   // We do this transformation to make CheckLifetimes and the Elaborator's job
   // easier by not having to understand the 'else' logic.  We lower:
-  //    kgen.param.for iter in stuff {
+  //    kgen.comptime.for iter in stuff {
   //       kgen.comptime.if should_stop() {
-  //          kgen.param.for.goto.else
+  //          kgen.comptime.for.goto.else
   //       }
   //       body_that_uses_iter
   //    } else {
   //       cleanup_that_doesnt_happen_on_break_or_return
   //    }
   // Into:
-  //    kgen.param.for i in stuff {
+  //    kgen.comptime.for i in stuff {
   //       kgen.comptime.if should_stop() {
   //          cleanup_that_doesnt_happen_on_break_or_return
-  //          kgen.param.for.break
+  //          kgen.comptime.for.break
   //       }
   //       body_that_uses_i
   //    } else {
@@ -559,7 +560,7 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor, CodeEffects &effects) {
         if (isa<LIT::FnOp>(op))
           return WalkResult::skip();
 
-        auto gotoElse = dyn_cast<ParamForGotoElseOp>(op);
+        auto gotoElse = dyn_cast<ComptimeForGotoElseOp>(op);
         if (!gotoElse)
           return WalkResult::advance();
         assert(!sawGotoElse && "saw multiple goto else's");
@@ -568,14 +569,15 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor, CodeEffects &effects) {
 
         // If the else block ended in a yield, then it should become a 'break',
         // otherwise it is a return or something else that we leave alone.
-        if (auto elseTerm = dyn_cast<ParamYieldOp>(elseBlock.getTerminator())) {
+        if (auto elseTerm =
+                dyn_cast<ComptimeYieldOp>(elseBlock.getTerminator())) {
           auto builder = OpBuilder(elseTerm);
-          ParamForBreakOp::create(builder, elseTerm.getLoc());
+          ComptimeForBreakOp::create(builder, elseTerm.getLoc());
           elseTerm.erase();
         }
 
         // Move the pre-lowered body of the 'else' block here, replacing the
-        // kgen.param.for.goto.else.
+        // kgen.comptime.for.goto.else.
         gotoElseBlock.getOperations().splice(Block::iterator(op),
                                              elseBlock.getOperations());
 
@@ -677,7 +679,7 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       if (auto hlcfLoop = dyn_cast<HLCF::LoopOp>(currentLoop))
         HLCF::BreakOp::create(b, ValueRange{}, hlcfLoop.getLabelAttr());
       else
-        ParamForBreakOp::create(b);
+        ComptimeForBreakOp::create(b);
       op.erase();
       return;
     }
@@ -694,7 +696,7 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       if (auto hlcfLoop = dyn_cast<HLCF::LoopOp>(currentLoop))
         HLCF::ContinueOp::create(b, ValueRange{}, hlcfLoop.getLabelAttr());
       else
-        ParamForContinueOp::create(b);
+        ComptimeForContinueOp::create(b);
       op.erase();
       return;
     }
@@ -731,10 +733,11 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       return;
     }
 
-    // A kgen.param.for.goto.else is a terminator that jumps to the 'else' block
-    // of a kgen.param.for.  It is generated syntactically by the parser so it
-    // is always valid and does not fall through (though the else block can).
-    if (isa<ParamForGotoElseOp>(op)) {
+    // A kgen.comptime.for.goto.else is a terminator that jumps to the 'else'
+    // block of a kgen.comptime.for.  It is generated syntactically by the
+    // parser so it is always valid and does not fall through (though the else
+    // block can).
+    if (isa<ComptimeForGotoElseOp>(op)) {
       effects.doesBreak = true;
       return;
     }
@@ -895,8 +898,8 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       continue;
     }
 
-    // Process a ParamForOp
-    if (auto paramFor = dyn_cast<ParamForOp>(op)) {
+    // Process a ComptimeForOp
+    if (auto paramFor = dyn_cast<ComptimeForOp>(op)) {
       lowerParamFor(paramFor, effects);
       continue;
     }
@@ -956,7 +959,7 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
   }
 
   auto *terminator = &block.back();
-  if (isa<HLCF::BreakOp, ParamForBreakOp>(terminator)) {
+  if (isa<HLCF::BreakOp, ComptimeForBreakOp>(terminator)) {
     effects.doesBreak = true;
     return;
   }
@@ -972,14 +975,15 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
   }
 
   // These are not fallthroughs.
-  if (isa<KGEN::ReturnOp, HLCF::ContinueOp, ParamForContinueOp,
+  if (isa<KGEN::ReturnOp, HLCF::ContinueOp, ComptimeForContinueOp,
           KGEN::UnreachableOp, LIT::ErrorReturnOp>(terminator))
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
-  assert((
-      isa<HLCF::YieldOp, HLCF::IfElifCondYieldOp, LIT::TryYieldOp, ParamYieldOp,
-          LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopYieldOp>(block.back())));
+  assert(
+      (isa<HLCF::YieldOp, HLCF::IfElifCondYieldOp, LIT::TryYieldOp,
+           ComptimeYieldOp, LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopYieldOp>(
+          block.back())));
   effects.doesFallThrough = true;
 }
 

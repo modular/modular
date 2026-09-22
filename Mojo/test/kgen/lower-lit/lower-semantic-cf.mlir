@@ -855,9 +855,9 @@ lit.fn @self_recursive_param<a: index, cond: scalar<bool>>() -> !kgen.none attri
   kgen.comptime.if <cond> {
     // No warning.
     %1 = lit.call @self_recursive_param<a, :scalar<bool> cond>() : !lit.generator<() -> !kgen.none>
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
-    kgen.param.yield
+    kgen.comptime.yield
   }
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
@@ -1130,11 +1130,11 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
 // CHECK-NEXT: kgen.unreachable
  kgen.comptime.if <cond0> {
    lit.return %lhs : index
-   kgen.param.yield
+   kgen.comptime.yield
  } else {
    kgen.comptime.if <cond1> {
      lit.return %rhs : index
-     kgen.param.yield
+     kgen.comptime.yield
    } else {
      hlcf.if %cond2 {
        hlcf.yield
@@ -1143,9 +1143,9 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
      }
      %0 = kgen.param.constant: index = <0>
      lit.return %0 : index
-     kgen.param.yield
+     kgen.comptime.yield
    }
-   kgen.param.yield
+   kgen.comptime.yield
  }
  lit.end_fn
 }
@@ -1204,22 +1204,22 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
       // CHECK: kgen.return %[[THEN_RETURN]]
       %then_return = kgen.param.constant: scalar<bool> = <false>
       lit.return %then_return : !kgen.scalar<bool>
-      kgen.param.yield
+      kgen.comptime.yield
     } else {
       // CHECK: %[[ELSE_RETURN:.*]] = kgen.param.constant: scalar<bool> = <true>
       // CHECK: kgen.return %[[ELSE_RETURN]]
       %else_return = kgen.param.constant: scalar<bool> = <true>
       lit.return %else_return : !kgen.scalar<bool>
-      kgen.param.yield
+      kgen.comptime.yield
     }
     // CHECK: kgen.unreachable
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
     %else_return = kgen.param.constant: scalar<bool> = <true>
     lit.return %else_return : !kgen.scalar<bool>
     // CHECK: %[[ELSE_RETURN:.*]] = kgen.param.constant: scalar<bool> = <true>
     // CHECK: kgen.return %[[ELSE_RETURN]]
-    kgen.param.yield
+    kgen.comptime.yield
   }
   // CHECK: kgen.unreachable
   lit.end_fn
@@ -1258,7 +1258,7 @@ lit.fn @crashing_try_warning(%cond: !kgen.scalar<bool>) -> !kgen.none {
 lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
   kgen.comptime.if <parambool> {
     lit.return %runbool : i1
-    kgen.param.yield
+    kgen.comptime.yield
   } else {
     %runbool_sb = pop.cast_from_builtin %runbool : i1 to !kgen.scalar<bool>
     hlcf.if %runbool_sb {
@@ -1268,12 +1268,12 @@ lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
     }
     kgen.comptime.if <parambool> {
       lit.return %runbool : i1
-      kgen.param.yield
+      kgen.comptime.yield
     } else {
       lit.return %runbool : i1
-      kgen.param.yield
+      kgen.comptime.yield
     }
-    kgen.param.yield
+    kgen.comptime.yield
   }
   lit.end_fn
 }

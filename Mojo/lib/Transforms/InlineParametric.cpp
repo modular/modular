@@ -234,7 +234,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
 
     // At this point, the only nested ops that declares parameters in their
-    // scope are ParamDeclareRegionOp and ParamForOp, whose declarations need
+    // scope are ParamDeclareRegionOp and ComptimeForOp, whose declarations need
     // special treatment.
     if (needsMangling) {
       if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(cloned)) {
@@ -243,7 +243,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           newInputDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
         regionDecl.setInputParams(newInputDecls);
         newDecls.append(newInputDecls);
-      } else if (auto paramFor = dyn_cast<ParamForOp>(cloned)) {
+      } else if (auto paramFor = dyn_cast<ComptimeForOp>(cloned)) {
         ParamDeclAttr newDecl =
             mangler.mangleDecl(paramFor.getParamDecl(), needsMangling);
         paramFor.setParamDeclAttr(newDecl);
@@ -602,7 +602,7 @@ uint64_t ParametricInliningGraph::getInlineThreshold(InlineLevel level,
 
 uint64_t ParametricInliningGraph::getNumOperations(
     ParametricInliningGraphNode *node) const {
-  // Estimated trip count of the `param.for` loop.
+  // Estimated trip count of the `comptime.for` loop.
   const uint64_t avgLoopIters =
       *KGENPassCLOptions::parametricInlineEstimatedLoopTripCount();
 
@@ -612,7 +612,7 @@ uint64_t ParametricInliningGraph::getNumOperations(
       return 0;
     uint64_t count = 0;
     operation->walk([&](Operation *op) {
-      if (auto loop = dyn_cast<ParamForOp>(op)) {
+      if (auto loop = dyn_cast<ComptimeForOp>(op)) {
         // At this point trip count is not known, therefore use some heuristic
         // to estimate number of iterations.
         uint64_t loopSize = 0;

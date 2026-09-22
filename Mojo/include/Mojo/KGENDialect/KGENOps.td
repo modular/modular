@@ -1107,17 +1107,17 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert",
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForOp
+// ComptimeForOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
+def KGEN_ComptimeForOp : KGENOp<"comptime.for", [DeclInterface,
     DeclareOpInterfaceMethods<ControlFlowNode>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
       "collectParameterUsesBelow"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]>, NoParamDecls {
   let summary = "compile-time for loop";
   let description = [{
-    The `kgen.param.for` operation instantiates its body with values according
+    The `kgen.comptime.for` operation instantiates its body with values according
     to its iterator. It takes an initial iterator value, a 'hasNext' function
     that take an iterator and indicates whether more elements exist, and a
     'getNextIter' function that takes an iterator instance and returns the next
@@ -1165,16 +1165,16 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForBreakOp
+// ComptimeForBreakOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamForBreakOp : KGENOp<"param.for.break", [Terminator,
+def KGEN_ComptimeForBreakOp : KGENOp<"comptime.for.break", [Terminator,
     DeclareOpInterfaceMethods<ControlFlowTerminator>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "param loop exit operation";
   let description = [{
-    The `kgen.param.for.break` operation represents an exit from a
-    `kgen.param.for`, branching to the end of all generated iterations.
+    The `kgen.comptime.for.break` operation represents an exit from a
+    `kgen.comptime.for`, branching to the end of all generated iterations.
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
@@ -1187,15 +1187,15 @@ def KGEN_ParamForBreakOp : KGENOp<"param.for.break", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForContinueOp
+// ComptimeForContinueOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamForContinueOp : KGENOp<"param.for.continue", [Terminator,
+def KGEN_ComptimeForContinueOp : KGENOp<"comptime.for.continue", [Terminator,
     DeclareOpInterfaceMethods<ControlFlowTerminator>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "param loop continue operation";
   let description = [{
-    The `kgen.param.for.continue` operation branches to the next generated
+    The `kgen.comptime.for.continue` operation branches to the next generated
     iteration of the loop.
   }];
 
@@ -1209,15 +1209,15 @@ def KGEN_ParamForContinueOp : KGENOp<"param.for.continue", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForGotoElseOp
+// ComptimeForGotoElseOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamForGotoElseOp : KGENOp<"param.for.goto.else", [Terminator,
+def KGEN_ComptimeForGotoElseOp : KGENOp<"comptime.for.goto.else", [Terminator,
     DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "param loop 'goto else' operation";
   let description = [{
-    The `kgen.param.for.goto.else` operation jumps to the 'else' block of a
-    `kgen.param.for`.  It only exists to help the interface between the Mojo
+    The `kgen.comptime.for.goto.else` operation jumps to the 'else' block of a
+    `kgen.comptime.for`.  It only exists to help the interface between the Mojo
     parser and the LowerSemanticCF pass work more easily.
   }];
 
@@ -1244,21 +1244,21 @@ def KGEN_ComptimeIfOp : KGENOp<"comptime.if", [DeclInterface,
     during elaboration.
 
     The result parameter will be resolved by the parameter on the
-    `param.yield` in the branch that is actually elaborated.
+    `comptime.yield` in the branch that is actually elaborated.
 
     ```mlir
     %0 = kgen.comptime.if <condition> -> index {
       %i0 = index.constant 0
-      kgen.param.yield %i0
+      kgen.comptime.yield %i0
     } else {
       %i1 = index.constant 1
-      kgen.param.yield %i1
+      kgen.comptime.yield %i1
     }
 
     kgen.comptime.if <condition -> result> {
-      kgen.param.yield<1>
+      kgen.comptime.yield<1>
     } else {
-      kgen.param.yield<0>
+      kgen.comptime.yield<0>
     }
     %0 = kgen.param.constant = <result> // == <condition ? 1 : 0>
     ```
@@ -1300,16 +1300,16 @@ def KGEN_ComptimeIfOp : KGENOp<"comptime.if", [DeclInterface,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamYieldOp
+// ComptimeYieldOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, Terminator,
-    ParentOneOf<["ComptimeIfOp", "ParamForOp"]>,
+def KGEN_ComptimeYieldOp : KGENOp<"comptime.yield", [Pure, Terminator,
+    ParentOneOf<["ComptimeIfOp", "ComptimeForOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "conditional yield operation";
   let description = [{
-    The `kgen.param.yield` operation is used to denote the terminator of a
+    The `kgen.comptime.yield` operation is used to denote the terminator of a
     block in the `kgen.comptime.if` op. Conceptually, it branches to the next
     op after a `kgen.comptime.if`, but in reality it's to make sure the IR
     stays in a reasonable state and is possible to inline directly.
@@ -1321,9 +1321,9 @@ def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, Terminator,
 
     ```mlir
     %0 = kgen.comptime.if <condition> -> index {
-      kgen.param.yield %arg1 : index
+      kgen.comptime.yield %arg1 : index
     } else {
-      kgen.param.yield %arg2 : index
+      kgen.comptime.yield %arg2 : index
     }
     ```
 
