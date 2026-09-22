@@ -229,7 +229,7 @@ def main() raises:
 
     @inline(.always)
     def in_tile(rank: Int, numel: Int) {imm} -> InTileType:
-        return TileTensor(in_ptrs[rank], row_major(numel)).as_immut()
+        return TileTensor(in_ptrs[rank], row_major(numel)).as_imm()
 
     @inline(.always)
     def out_tile(rank: Int, numel: Int) {imm} -> OutTileType:

@@ -101,13 +101,13 @@ def _bench_fp4_shape(
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_imm()
     var packed_tt = TileTensor(
         packed_dev.unsafe_ptr(), row_major(n, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(n, scale_k)
-    ).as_immut()
+    ).as_imm()
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(n, k))
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(m, n))
 
@@ -168,14 +168,14 @@ def _bench_fp4_shape(
         enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-        ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](out_tt, act_tt, wdense_tt.as_imm(), ctx)
         ctx.synchronize()
     var t3 = perf_counter()
     for _ in range(hot):
         enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-        ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](out_tt, act_tt, wdense_tt.as_imm(), ctx)
         ctx.synchronize()
     var matprealloc_sec = (perf_counter() - t3) / Float64(hot)
 

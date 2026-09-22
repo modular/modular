@@ -158,7 +158,7 @@ def bench_scatter[
     var tt_in_bufs = Array[InputTileType, dp_size](
         fill_with=lambda (dp_idx: Int) -> InputTileType: TileTensor(
             cb_inputs[dp_idx].device_buffer(), row_major(num_elems)
-        ).as_immut()
+        ).as_imm()
     )
 
     comptime OutputTileType = TileTensor[
@@ -184,7 +184,7 @@ def bench_scatter[
                 tt_in_bufs[dp_idx] = TileTensor(
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
                     row_major(num_elems),
-                ).as_immut()
+                ).as_imm()
 
             scatter[ngpus=ngpus, dp_size=dp_size](
                 tt_in_bufs,

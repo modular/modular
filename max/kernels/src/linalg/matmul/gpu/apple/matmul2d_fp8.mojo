@@ -495,8 +495,8 @@ def enqueue_matmul2d_fp8[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        weight.as_immut(),
+        a.as_imm(),
+        weight.as_imm(),
         log2_m,
         log2_n,
         grid_dim=(side_m * side_n),
@@ -579,8 +579,8 @@ def enqueue_grouped_matmul2d_fp8[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        b.as_immut(),
+        a.as_imm(),
+        b.as_imm(),
         a_offsets,
         expert_ids,
         Int32(n),

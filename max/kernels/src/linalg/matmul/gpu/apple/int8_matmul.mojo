@@ -984,11 +984,11 @@ def enqueue_apple_int8_matmul[
     if use_i32:
         ctx.enqueue_function[kernel_i32](
             c,
-            a.as_immut(),
-            b.as_immut(),
-            a_scale.as_immut(),
-            b_scale.as_immut(),
-            bias.as_immut(),
+            a.as_imm(),
+            b.as_imm(),
+            a_scale.as_imm(),
+            b_scale.as_imm(),
+            bias.as_imm(),
             log2_m,
             log2_n,
             grid_dim=(side_m * side_n),
@@ -997,11 +997,11 @@ def enqueue_apple_int8_matmul[
     else:
         ctx.enqueue_function[kernel_i64](
             c,
-            a.as_immut(),
-            b.as_immut(),
-            a_scale.as_immut(),
-            b_scale.as_immut(),
-            bias.as_immut(),
+            a.as_imm(),
+            b.as_imm(),
+            a_scale.as_imm(),
+            b_scale.as_imm(),
+            bias.as_imm(),
             log2_m,
             log2_n,
             grid_dim=(side_m * side_n),
@@ -1139,7 +1139,7 @@ def enqueue_apple_int8_quantize_activation[
     ]
     ctx.enqueue_function[kernel](
         q,
-        a.as_immut(),
+        a.as_imm(),
         a_scale,
         Int32(k),
         grid_dim=(m),

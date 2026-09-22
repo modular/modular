@@ -720,7 +720,7 @@ struct Struct_msa_attention_ragged_paged:
             var d_indices_tt = TileTensor(
                 d_indices.to_layout_tensor().ptr,
                 row_major(Coord(d_indices.to_layout_tensor().size())),
-            ).as_immut()
+            ).as_imm()
 
             # `np` is owned by the decode entry (computed from batch_size,
             # topk_tokens, topk via the dense-MHA heuristic).
@@ -813,7 +813,7 @@ struct Struct_msa_attention_ragged_paged:
             var d_indices_tt = TileTensor(
                 d_indices.to_layout_tensor().ptr,
                 row_major(Coord(d_indices.to_layout_tensor().size())),
-            ).as_immut()
+            ).as_imm()
             var topk_tokens = topk * page_size
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
@@ -1127,7 +1127,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
                     row_major(Coord(d_indices.to_layout_tensor().size())),
-                ).as_immut()
+                ).as_imm()
 
                 msa_amd_decode_dispatch[
                     config=config,
@@ -1171,7 +1171,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
                     row_major(Coord(d_indices.to_layout_tensor().size())),
-                ).as_immut()
+                ).as_imm()
                 var topk_tokens = topk * page_size
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
@@ -1446,7 +1446,7 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
                     row_major(Coord(d_indices.to_layout_tensor().size())),
-                ).as_immut()
+                ).as_imm()
 
                 msa_amd_decode_dispatch[
                     config=config,
@@ -1487,7 +1487,7 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
                     row_major(Coord(d_indices.to_layout_tensor().size())),
-                ).as_immut()
+                ).as_imm()
                 var topk_tokens = topk * page_size
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
@@ -1598,7 +1598,7 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                     TileTensor(
                         bf16_scratch.unsafe_ptr(),
                         row_major(num_rows, row_width),
-                    ).as_immut(),
+                    ).as_imm(),
                 )
 
                 _ = lse_buf^

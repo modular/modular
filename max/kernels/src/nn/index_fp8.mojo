@@ -459,7 +459,7 @@ def fp8_index[
         ](
             output,
             q,
-            q_s.as_immut(),
+            q_s.as_imm(),
             k_operand,
             ks_operand,
             valid_length,
@@ -503,11 +503,11 @@ def fp8_index[
 
         ctx.enqueue_function[kernel](
             output,
-            q.as_immut(),
+            q.as_imm(),
             q_s,
             k_operand,
             ks_operand,
-            valid_length.as_immut(),
+            valid_length.as_imm(),
             grid_dim=(
                 batch_size,
                 max_seq_len,

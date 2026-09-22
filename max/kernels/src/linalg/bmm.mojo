@@ -865,8 +865,8 @@ def _batched_matmul_gpu[
 
         ctx.enqueue_function[batched_matmul_type](
             c_tensor_reshaped,
-            a_tensor_reshaped.as_immut(),
-            b_tensor_reshaped.as_immut(),
+            a_tensor_reshaped.as_imm(),
+            b_tensor_reshaped.as_imm(),
             c_shape,
             grid_dim=(grid_dim[0], grid_dim[1], batch_size),
             block_dim=kernels.ampere_128x128_4.block_dim(),
@@ -904,8 +904,8 @@ def _batched_matmul_gpu[
 
             ctx.enqueue_function[batched_matmul_type](
                 c_tensor_reshaped,
-                a_tensor_reshaped.as_immut(),
-                b_tensor_reshaped.as_immut(),
+                a_tensor_reshaped.as_imm(),
+                b_tensor_reshaped.as_imm(),
                 c_shape,
                 grid_dim=(
                     ceildiv(n, block_n),
@@ -939,8 +939,8 @@ def _batched_matmul_gpu[
         ]
         ctx.enqueue_function[bmm](
             c_tensor_reshaped,
-            a_tensor_reshaped.as_immut(),
-            b_tensor_reshaped.as_immut(),
+            a_tensor_reshaped.as_imm(),
+            b_tensor_reshaped.as_imm(),
             c_shape,
             grid_dim=(
                 ceildiv(n, BLOCK_DIM),

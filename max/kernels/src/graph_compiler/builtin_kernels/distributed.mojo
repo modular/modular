@@ -204,12 +204,12 @@ struct DistributedAllReduceSum:
         # (shared by every per-device launch below) since it does not depend
         # on which group a device belongs to.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         comptime if get_defined_bool["MODULAR_USE_VENDOR_CCL", False]():
@@ -344,7 +344,7 @@ struct DistributedReduceScatterSum:
         # World-view input tensors and signals, indexed by GLOBAL device rank;
         # `reducescatter` does its own group-local slicing internally.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -354,7 +354,7 @@ struct DistributedReduceScatterSum:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         # World-view output tensors, indexed by GLOBAL device rank; built once
@@ -684,7 +684,7 @@ struct DistributedScatter:
         # Inputs can have different static shapes, so use make_dynamic to
         # produce a homogeneous fully-dynamic TileTensor type for Array.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, ngpus](uninitialized=True)
         var rank_sigs = Array[_, ngpus](
@@ -698,7 +698,7 @@ struct DistributedScatter:
                 inputs[i]
                 .to_tile_tensor[.int64]()
                 .make_dynamic[.int64]()
-                .as_immut()
+                .as_imm()
             )
 
         @inline(.always)
@@ -794,7 +794,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         # Marshal input tensors into TileTensors.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, inputs.size](uninitialized=True)
 
@@ -807,7 +807,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         comptime for i in range(inputs.size):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         @inline(.always)
@@ -835,7 +835,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
                 DType.int64
             ]()
             var residual_buf = (
-                residuals[index].to_tile_tensor[.int64]().as_immut()
+                residuals[index].to_tile_tensor[.int64]().as_imm()
             )
             var gamma_tensor = gammas[index].to_tile_tensor[.int64]()
 
@@ -965,7 +965,7 @@ struct DistributedReduceScatterRMSNorm:
         # `reducescatter`/`_dispatch_rs_norm` do their own group-local slicing
         # internally.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -975,7 +975,7 @@ struct DistributedReduceScatterRMSNorm:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         # `reducescatter`'s output and residual are world views too (every
@@ -999,7 +999,7 @@ struct DistributedReduceScatterRMSNorm:
             # The op's variadic groups match in size whether or not the
             # residual is read, so this is always a real tensor.
             world_res_ptrs[i] = rebind[ResPtrType](
-                residuals[i].to_tile_tensor[.int64]().as_immut().ptr
+                residuals[i].to_tile_tensor[.int64]().as_imm().ptr
             )
 
         @inline(.always)
@@ -1030,7 +1030,7 @@ struct DistributedReduceScatterRMSNorm:
             var epsilon = epsilons[index].unsafe_ptr()[]
             var weight_offset = weight_offsets[index].unsafe_ptr()[]
             var residual_buf = rebind[InputTensorType](
-                residuals[index].to_tile_tensor[.int64]().as_immut()
+                residuals[index].to_tile_tensor[.int64]().as_imm()
             )
 
             @inline(.always)
@@ -1232,7 +1232,7 @@ struct DistributedAllGatherRMSNorm:
         # `rebind` below rejects differing STATIC extents -- hence the
         # builder's same-shape-outside-the-gathered-axis rule.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -1242,7 +1242,7 @@ struct DistributedAllGatherRMSNorm:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         # `allgather`'s world-view output array holds every device's own
@@ -1470,7 +1470,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         # World-view input tensors and signals, indexed by GLOBAL device
         # rank; see `DistributedAllGatherRMSNorm`.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -1480,7 +1480,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         # `allgather`'s world-view output array holds every device's own
@@ -1799,7 +1799,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         # World-view input tensors and signals, indexed by GLOBAL device
         # rank; see `DistributedAllGatherRMSNorm`.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -1809,7 +1809,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         # `allgather`'s world-view output array holds every device's own
@@ -2031,7 +2031,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 )
 
                 quantize_mxfp6_amd[fp6_fmt](
-                    dev_ctxs[index], quant_buf, scale_buf, normed_buf.as_immut()
+                    dev_ctxs[index], quant_buf, scale_buf, normed_buf.as_imm()
                 )
 
             _dispatch_ag_norm_quant[

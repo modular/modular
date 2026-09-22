@@ -421,7 +421,7 @@ struct FusedMatmulAdd:
             epi_n = Int64(residual.dim_size(1))
         var epilogue = TileTensor(
             residual.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
-        ).as_immut()
+        ).as_imm()
 
         fused_bias_residual_matmul_dispatch_sm100[
             transpose_b=transpose_b,
@@ -1467,14 +1467,14 @@ def _apple_int8_w8a8_dispatch[
     var asc_tt = TileTensor(asc_buf.unsafe_ptr(), row_major(Coord(Int64(M))))
 
     enqueue_apple_int8_quantize_activation[.bfloat16](
-        aq_tt, a_tt.as_immut(), asc_tt, context
+        aq_tt, a_tt.as_imm(), asc_tt, context
     )
 
     enqueue_apple_int8_matmul[c_type=c_type, has_bias=has_bias](
         c_tt,
-        aq_tt.as_immut(),
+        aq_tt.as_imm(),
         b_tt,
-        asc_tt.as_immut(),
+        asc_tt.as_imm(),
         bs_tt,
         bias_tt,
         context,
@@ -1517,7 +1517,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # not required -- it is never read -- but a valid 1-elem view is).
         var dummy_bias = TileTensor(
             c_tt._storage, row_major(Coord(Int64(1)))
-        ).as_immut()
+        ).as_imm()
         _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
             c_tt,
             a.to_tile_tensor[.int64](),
@@ -1680,7 +1680,7 @@ def pack_matmul_b_shape_func_shape[
         a_type,
         c_type,
         transpose_in_0,
-    ](b_input.to_tile_tensor().as_immut(), kernel_type_m)
+    ](b_input.to_tile_tensor().as_imm(), kernel_type_m)
 
 
 @extensibility.register("mo.matmul_dynamic_scaled_fp8")
@@ -2126,8 +2126,8 @@ struct Struct_router_gate_mixed_gemv:
             var a_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
             router_gate_mixed_gemv[N](
                 c_tt,
-                a_tt.as_immut(),
-                b_tt.as_immut(),
+                a_tt.as_imm(),
+                b_tt.as_imm(),
                 M,
                 N,
                 K,
@@ -2159,7 +2159,7 @@ struct Struct_router_gate_mixed_gemv:
         ](Coord(M, Idx[K]), context)
 
         matmul[transpose_b=True, target=target](
-            c_tt, a_f32_tt.as_immut(), b_tt.as_immut(), context
+            c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
         )
         _ = a_f32^
 

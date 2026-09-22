@@ -183,8 +183,8 @@ def small_MN_gemms[
 
         ctx.enqueue_function[kernel](
             c,
-            a.as_immut(),
-            b.as_immut(),
+            a.as_imm(),
+            b.as_imm(),
             Int32(m),
             Int32(n),
             Int32(k),

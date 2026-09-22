@@ -2638,7 +2638,7 @@ def gumbel_sampling_fused_gpu[
                     OutIdxEngine=out_idxs.Engine,
                 ]
                 ctx.enqueue_function[split_kernel](
-                    input.as_immut(),
+                    input.as_imm(),
                     out_idxs,
                     temperature_ptr,
                     seed_ptr,
@@ -2664,7 +2664,7 @@ def gumbel_sampling_fused_gpu[
             OutIdxEngine=out_idxs.Engine,
         ]
         ctx.enqueue_function[kernel](
-            input.as_immut(),
+            input.as_imm(),
             out_idxs,
             temperature_ptr,
             seed_ptr,
@@ -2757,7 +2757,7 @@ def gumbel_sampling_gpu[
 
         ctx.enqueue_function[gumbel_kernel](
             noised_input,
-            input.as_immut(),
+            input.as_imm(),
             temperature_ptr,
             seed_ptr,
             grid_dim=hw_info.sm_count,

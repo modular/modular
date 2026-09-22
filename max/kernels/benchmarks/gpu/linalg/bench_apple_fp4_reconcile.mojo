@@ -89,18 +89,18 @@ def _bench_shape(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
             hs[i] = Float32(0.5).cast[.float8_e4m3fn]()
 
     var c_tt = TileTensor(c.unsafe_ptr(), row_major(m, n))
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
     var packed_tt = TileTensor(
         packed.unsafe_ptr(), row_major(n, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scales.unsafe_ptr(), row_major(n, scale_k)
-    ).as_immut()
+    ).as_imm()
     var wdense_tt = TileTensor(wdense.unsafe_ptr(), row_major(n, k))
 
     # Pre-materialize the dense bf16 weight once (roofline ceiling only).
     enqueue_fp4_materialize[a_type](wdense_tt, packed_tt, scale_tt, ctx)
-    var wdense_immut = wdense_tt.as_immut()
+    var wdense_immut = wdense_tt.as_imm()
     ctx.synchronize()
 
     # ---- FUSED (committed simdgroup_matrix, BM=128/BK=64) ----
@@ -127,7 +127,7 @@ def _bench_shape(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
         var wd_tt = TileTensor(wd.unsafe_ptr(), row_major(n, k))
         enqueue_fp4_materialize[a_type](wd_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[in_type=a_type, c_type=c_type, transpose_b=True](
-            c_tt, a_tt, wd_tt.as_immut(), ctx
+            c_tt, a_tt, wd_tt.as_imm(), ctx
         )
         _ = wd^
     ctx.synchronize()
@@ -140,7 +140,7 @@ def _bench_shape(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
             enqueue_fp4_materialize[a_type](wd_tt, packed_tt, scale_tt, ctx)
             enqueue_apple_matmul[
                 in_type=a_type, c_type=c_type, transpose_b=True
-            ](c_tt, a_tt, wd_tt.as_immut(), ctx)
+            ](c_tt, a_tt, wd_tt.as_imm(), ctx)
             _ = wd^
         ctx.synchronize()
         var s = (perf_counter() - t0) / Float64(HOT)
@@ -274,16 +274,16 @@ def _bench_crossover(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
             hs[i] = Float32(0.5).cast[.float8_e4m3fn]()
 
     var c_tt = TileTensor(c.unsafe_ptr(), row_major(m, n))
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
     var packed_tt = TileTensor(
         packed.unsafe_ptr(), row_major(n, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scales.unsafe_ptr(), row_major(n, scale_k)
-    ).as_immut()
+    ).as_imm()
     var wdense_tt = TileTensor(wdense.unsafe_ptr(), row_major(n, k))
     enqueue_fp4_materialize[a_type](wdense_tt, packed_tt, scale_tt, ctx)
-    var wdense_immut = wdense_tt.as_immut()
+    var wdense_immut = wdense_tt.as_imm()
     ctx.synchronize()
 
     # FUSED (mid-M incumbent).
@@ -308,7 +308,7 @@ def _bench_crossover(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
         var wd_tt = TileTensor(wd.unsafe_ptr(), row_major(n, k))
         enqueue_fp4_materialize[a_type](wd_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[in_type=a_type, c_type=c_type, transpose_b=True](
-            c_tt, a_tt, wd_tt.as_immut(), ctx
+            c_tt, a_tt, wd_tt.as_imm(), ctx
         )
         _ = wd^
     ctx.synchronize()
@@ -321,7 +321,7 @@ def _bench_crossover(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
             enqueue_fp4_materialize[a_type](wd_tt, packed_tt, scale_tt, ctx)
             enqueue_apple_matmul[
                 in_type=a_type, c_type=c_type, transpose_b=True
-            ](c_tt, a_tt, wd_tt.as_immut(), ctx)
+            ](c_tt, a_tt, wd_tt.as_imm(), ctx)
             _ = wd^
         ctx.synchronize()
         best_mat = min(best_mat, (perf_counter() - t0) / Float64(HOT))

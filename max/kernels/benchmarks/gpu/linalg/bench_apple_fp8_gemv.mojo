@@ -100,13 +100,11 @@ def _bench_fp8_shape(
     ctx.enqueue_copy(w_fp8_dev, w_fp8_host)
     ctx.enqueue_copy(w_bf16_dev, w_bf16_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_immut()
-    var w_fp8_tt = TileTensor(
-        w_fp8_dev.unsafe_ptr(), row_major(n, k)
-    ).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_imm()
+    var w_fp8_tt = TileTensor(w_fp8_dev.unsafe_ptr(), row_major(n, k)).as_imm()
     var w_bf16_tt = TileTensor(
         w_bf16_dev.unsafe_ptr(), row_major(n, k)
-    ).as_immut()
+    ).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(m, n))
 
     # --- bf16 decode matmul (2 bytes/weight): the baseline the model runs. ---

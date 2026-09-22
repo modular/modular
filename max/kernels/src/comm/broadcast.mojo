@@ -556,7 +556,7 @@ def broadcast[
 
         ctx.enqueue_function[bcast_kernel](
             output_tensor,
-            input_tensor.as_immut(),
+            input_tensor.as_imm(),
             rank_sigs,
             Int32(my_rank),
             Int32(root),
@@ -588,7 +588,7 @@ def broadcast[
 
             ctx.enqueue_function[bcast_kernel](
                 output_tensor,
-                input_tensor.as_immut(),
+                input_tensor.as_imm(),
                 rank_sigs,
                 Int32(my_rank),
                 grid_dim=grid_size,

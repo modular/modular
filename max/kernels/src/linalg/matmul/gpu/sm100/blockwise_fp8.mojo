@@ -728,7 +728,7 @@ def matmul_sm100_blockwise_scaled_fp8[
     comptime block_dim = 128
 
     var c_kernel = c.as_unsafe_any_origin()
-    var b_scales_kernel = b_scales.as_immut().as_unsafe_any_origin()
+    var b_scales_kernel = b_scales.as_imm().as_unsafe_any_origin()
 
     comptime kernel = matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         a_type,

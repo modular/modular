@@ -134,8 +134,8 @@ def test_matmul_sm90_swapAB_comparison[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
-    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_imm()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_imm()
     var c_normal_tensor = TileTensor(
         c_normal_dev_buffer, row_major(Coord(m, n))
     )
@@ -548,8 +548,8 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
-    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_imm()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_imm()
     var c_normal_tensor = TileTensor(
         c_normal_dev_buffer, row_major(Coord(m, n))
     )

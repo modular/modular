@@ -201,12 +201,12 @@ def _pad_constant_impl[
         OutputLayoutType=output_tensor.LayoutType,
         dtype=dtype,
         simd_width=simd_width,
-        InputEngine=type_of(input_tensor.as_immut()).Engine,
+        InputEngine=type_of(input_tensor.as_imm()).Engine,
         OutputEngine=output_tensor.Engine,
     ]
 
     ctx.enqueue_function[kernel](
-        input_tensor.as_immut(),
+        input_tensor.as_imm(),
         output_tensor,
         Int32(rows_per_block),
         Int32(total_rows),

@@ -3642,7 +3642,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                         True
                     ]().as_unsafe_any_origin(),
                     position_ids.layout,
-                ).as_immut(),
+                ).as_imm(),
                 layer_idx,
                 output,
                 context,

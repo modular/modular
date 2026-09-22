@@ -746,7 +746,7 @@ struct ConvTransposedPacked[
 
         # Move the pointer to the current group's start.
         filter_ptr = _get_group_filter_base(
-            self.filter.as_immut(), g, self.conv_shape.f_per_group()
+            self.filter.as_imm(), g, self.conv_shape.f_per_group()
         ).unsafe_origin_cast[ImmUntrackedOrigin]()
         # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
         # current group.

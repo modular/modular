@@ -44,7 +44,7 @@ def bench_softmax_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](total)
     var out_d = ctx.enqueue_create_buffer[dtype](total)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(shape))).as_immut()
+    var data_buf = TileTensor(data_d, row_major(Coord(shape))).as_imm()
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
 
     ctx.enqueue_copy(data_d, data_h)
@@ -134,7 +134,7 @@ def bench_softmax_with_temperature_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](total)
     var out_d = ctx.enqueue_create_buffer[dtype](total)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(shape))).as_immut()
+    var data_buf = TileTensor(data_d, row_major(Coord(shape))).as_imm()
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
 
     ctx.enqueue_copy(data_d, data_h)

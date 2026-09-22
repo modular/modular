@@ -397,12 +397,12 @@ def dispatch_im2col_matmul_conv2d[
                 elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                     _gemm_epilogue
                 ),
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
         else:
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
 
         m_offset += m_count
 

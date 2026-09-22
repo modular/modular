@@ -175,8 +175,8 @@ def enqueue_fp4_materialize[
     ]
     ctx.enqueue_function[kernel](
         out_w,
-        packed.as_immut(),
-        scales.as_immut(),
+        packed.as_imm(),
+        scales.as_imm(),
         grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
         block_dim=(BLK, BLK),
     )

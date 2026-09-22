@@ -390,8 +390,8 @@ struct Struct_ep_dispatch_async:
                 target,
             ](
                 atomic_counters.to_tile_tensor[.int64](),
-                input_tokens.to_tile_tensor[.int64]().as_immut(),
-                topk_ids.to_tile_tensor[.int64]().as_immut(),
+                input_tokens.to_tile_tensor[.int64]().as_imm(),
+                topk_ids.to_tile_tensor[.int64]().as_imm(),
                 send_ptrs.to_tile_tensor[.int64](),
                 recv_ptrs.to_tile_tensor[.int64](),
                 recv_count_ptrs.to_tile_tensor[.int64](),
@@ -412,8 +412,8 @@ struct Struct_ep_dispatch_async:
                 target,
             ](
                 atomic_counters.to_tile_tensor[.int64](),
-                input_tokens.to_tile_tensor[.int64]().as_immut(),
-                topk_ids.to_tile_tensor[.int64]().as_immut(),
+                input_tokens.to_tile_tensor[.int64]().as_imm(),
+                topk_ids.to_tile_tensor[.int64]().as_imm(),
                 send_ptrs.to_tile_tensor[.int64](),
                 recv_ptrs.to_tile_tensor[.int64](),
                 recv_count_ptrs.to_tile_tensor[.int64](),
@@ -519,8 +519,8 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
             input_scales_wrapper=input_scales_fn,
         ](
             atomic_counters.to_tile_tensor[.int64](),
-            input_tokens.to_tile_tensor[.int64]().as_immut(),
-            topk_ids.to_tile_tensor[.int64]().as_immut(),
+            input_tokens.to_tile_tensor[.int64]().as_imm(),
+            topk_ids.to_tile_tensor[.int64]().as_imm(),
             send_ptrs.to_tile_tensor[.int64](),
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
@@ -623,8 +623,8 @@ struct Struct_ep_dispatch_async_mxfp4:
             target,
         ](
             atomic_counters.to_tile_tensor[.int64](),
-            input_tokens.to_tile_tensor[.int64]().as_immut(),
-            topk_ids.to_tile_tensor[.int64]().as_immut(),
+            input_tokens.to_tile_tensor[.int64]().as_imm(),
+            topk_ids.to_tile_tensor[.int64]().as_imm(),
             send_ptrs.to_tile_tensor[.int64](),
             recv_ptrs.to_tile_tensor[.int64](),
             recv_count_ptrs.to_tile_tensor[.int64](),
@@ -2584,10 +2584,10 @@ struct Struct_ep_fused_silu:
         comptime assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tensor = output.to_tile_tensor[.int64]()
-        var input_tensor = input.to_tile_tensor[.int64]().as_immut()
+        var input_tensor = input.to_tile_tensor[.int64]().as_imm()
         var row_offsets_tensor = row_offsets.to_tile_tensor[
             DType.int64
-        ]().as_immut()
+        ]().as_imm()
 
         var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
@@ -2663,10 +2663,10 @@ struct Struct_ep_fused_silu_fp8:
 
         var output_tensor = output.to_tile_tensor[.int64]()
         var scales_tensor = scales.to_tile_tensor[.int64]()
-        var input_tensor = input.to_tile_tensor[.int64]().as_immut()
+        var input_tensor = input.to_tile_tensor[.int64]().as_imm()
         var row_offsets_tensor = row_offsets.to_tile_tensor[
             DType.int64
-        ]().as_immut()
+        ]().as_imm()
 
         var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
@@ -2768,10 +2768,10 @@ struct Struct_ep_fused_silu_mxfp4:
 
         var output_tensor = output.to_tile_tensor[.int64]()
         var scales_tensor = scales.to_tile_tensor[.int64]()
-        var input_tensor = input.to_tile_tensor[.int64]().as_immut()
+        var input_tensor = input.to_tile_tensor[.int64]().as_imm()
         var row_offsets_tensor = row_offsets.to_tile_tensor[
             DType.int64
-        ]().as_immut()
+        ]().as_imm()
 
         var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
@@ -2910,10 +2910,10 @@ struct Struct_ep_fused_silu_mxfp6:
 
         var output_tensor = output.to_tile_tensor[.int64]()
         var scales_tensor = scales.to_tile_tensor[.int64]()
-        var input_tensor = input.to_tile_tensor[.int64]().as_immut()
+        var input_tensor = input.to_tile_tensor[.int64]().as_imm()
         var row_offsets_tensor = row_offsets.to_tile_tensor[
             DType.int64
-        ]().as_immut()
+        ]().as_imm()
 
         var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
@@ -3000,16 +3000,16 @@ struct Struct_ep_fused_silu_nvfp4:
 
         var output_tensor = output.to_tile_tensor[.int64]()
         var scales_tensor = scales.to_tile_tensor[.int64]()
-        var input_tensor = input.to_tile_tensor[.int64]().as_immut()
+        var input_tensor = input.to_tile_tensor[.int64]().as_imm()
         var row_offsets_tensor = row_offsets.to_tile_tensor[
             DType.int64
-        ]().as_immut()
+        ]().as_imm()
         var scales_offsets_tensor = scales_offsets.to_tile_tensor[
             DType.int64
-        ]().as_immut()
+        ]().as_imm()
         var input_scales_tensor = input_scales.to_tile_tensor[
             DType.int64
-        ]().as_immut()
+        ]().as_imm()
 
         var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info

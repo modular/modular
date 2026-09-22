@@ -48,11 +48,11 @@ def _bench_gemm(
     var bsc = ctx.enqueue_create_buffer[.float32](n)
     var bias = ctx.enqueue_create_buffer[.bfloat16](1)
     var c = ctx.enqueue_create_buffer[.bfloat16](m * n)
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
-    var b_tt = TileTensor(b.unsafe_ptr(), row_major(n, k)).as_immut()
-    var as_tt = TileTensor(asc.unsafe_ptr(), row_major(m)).as_immut()
-    var bs_tt = TileTensor(bsc.unsafe_ptr(), row_major(n)).as_immut()
-    var bias_tt = TileTensor(bias.unsafe_ptr(), row_major(1)).as_immut()
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
+    var b_tt = TileTensor(b.unsafe_ptr(), row_major(n, k)).as_imm()
+    var as_tt = TileTensor(asc.unsafe_ptr(), row_major(m)).as_imm()
+    var bs_tt = TileTensor(bsc.unsafe_ptr(), row_major(n)).as_imm()
+    var bias_tt = TileTensor(bias.unsafe_ptr(), row_major(1)).as_imm()
     var c_tt = TileTensor(c.unsafe_ptr(), row_major(m, n))
 
     for _ in range(30):
@@ -98,7 +98,7 @@ def _bench_quant(m: Int, k: Int, label: String, ctx: DeviceContext) raises:
     var a = ctx.enqueue_create_buffer[.bfloat16](m * k)
     var q = ctx.enqueue_create_buffer[.int8](m * k)
     var s = ctx.enqueue_create_buffer[.float32](m)
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
     var q_tt = TileTensor(q.unsafe_ptr(), row_major(m, k))
     var s_tt = TileTensor(s.unsafe_ptr(), row_major(m))
 

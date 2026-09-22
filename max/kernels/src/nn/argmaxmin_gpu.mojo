@@ -415,7 +415,7 @@ def argmaxmin_gpu[
             type_of(input).Engine,
         ]
         ctx.enqueue_function[scan_kernel](
-            input.as_immut(),
+            input.as_imm(),
             part_vals,
             part_idxs,
             Int32(num_elements),

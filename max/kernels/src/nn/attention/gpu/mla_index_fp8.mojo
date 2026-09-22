@@ -527,14 +527,14 @@ def mla_indexer_ragged_float8_paged[
             input_row_offsets.LayoutType,
             ImmOrigin(input_row_offsets.origin),
             type_of(cache_lengths).LayoutType,
-            type_of(input_row_offsets.as_immut()).Engine,
+            type_of(input_row_offsets.as_imm()).Engine,
             type_of(cache_lengths).Engine,
             use_causal_mask,
             kpool,
         ]
         ctx.enqueue_function[bounds_kernel](
             row_bounds_ptr,
-            input_row_offsets.as_immut(),
+            input_row_offsets.as_imm(),
             cache_lengths,
             Int32(total_seq_len),
             Int32(max_num_keys),
@@ -604,7 +604,7 @@ def mla_indexer_ragged_float8_paged[
             ](
                 scores_tile,
                 q,
-                q_s.as_immut(),
+                q_s.as_imm(),
                 k_operand,
                 ks_operand,
                 input_row_offsets,
@@ -637,22 +637,22 @@ def mla_indexer_ragged_float8_paged[
                 type_of(k_operand),
                 type_of(ks_operand),
                 block_tile_shape,
-                type_of(input_row_offsets.as_immut()).LayoutType,
+                type_of(input_row_offsets.as_imm()).LayoutType,
                 num_heads,
                 depth,
                 OutputEngine=type_of(scores_tile).Engine,
                 QEngine=type_of(q).Engine,
                 QSEngine=type_of(q_s).Engine,
-                VLEngine=type_of(input_row_offsets.as_immut()).Engine,
+                VLEngine=type_of(input_row_offsets.as_imm()).Engine,
             ]
 
             ctx.enqueue_function[kernel](
                 scores_tile,
-                q.as_immut(),
+                q.as_imm(),
                 q_s,
                 k_operand,
                 ks_operand,
-                input_row_offsets.as_immut(),
+                input_row_offsets.as_imm(),
                 grid_dim=(
                     batch_size,
                     max_new_tokens,
@@ -684,13 +684,13 @@ def mla_indexer_ragged_float8_paged[
                         ImmOrigin(input_row_offsets.origin),
                         type_of(cache_lengths).LayoutType,
                         scores_tile.Engine,
-                        type_of(input_row_offsets.as_immut()).Engine,
+                        type_of(input_row_offsets.as_imm()).Engine,
                         type_of(cache_lengths).Engine,
                     ]
 
                     ctx.enqueue_function[mask_kernel](
                         scores_tile,
-                        input_row_offsets.as_immut(),
+                        input_row_offsets.as_imm(),
                         cache_lengths,
                         mask,
                         Int32(max_num_keys),
@@ -738,7 +738,7 @@ def mla_indexer_ragged_float8_paged[
         input_row_offsets.LayoutType,
         ImmOrigin(input_row_offsets.origin),
         type_of(cache_lengths).LayoutType,
-        type_of(input_row_offsets.as_immut()).Engine,
+        type_of(input_row_offsets.as_imm()).Engine,
         type_of(cache_lengths).Engine,
         use_causal_mask,
         kpool,
@@ -750,7 +750,7 @@ def mla_indexer_ragged_float8_paged[
     ctx.enqueue_function[fill_kernel](
         rebind[UnsafePointer[Int32, MutAnyOrigin]](output_indices.ptr),
         rebind[UnsafePointer[Int32, MutAnyOrigin]](topk_idxs_tile.ptr),
-        input_row_offsets.as_immut(),
+        input_row_offsets.as_imm(),
         cache_lengths,
         Int32(total_seq_len),
         Int32(top_k),

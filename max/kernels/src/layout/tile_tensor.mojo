@@ -2686,7 +2686,7 @@ struct TileTensor[
     ](self) -> Self.StaticSplitType[count, axis] where not Self.mut:
         """Splits the tensor into equal-sized views along an axis.
 
-        Split views are immutable. Call `as_immut().split[count]()` on a
+        Split views are immutable. Call `as_imm().split[count]()` on a
         mutable tensor before splitting.
 
         Parameters:
@@ -2777,7 +2777,7 @@ struct TileTensor[
         """Returns one partition of the tensor after splitting along an axis.
 
         The returned partition is immutable. Call
-        `as_immut().split(count, idx)` on a mutable tensor before splitting.
+        `as_imm().split(count, idx)` on a mutable tensor before splitting.
 
         The base partition size is `align_up(ceildiv(axis_dim, count),
         split_alignment)`. This can make the first `count - 1` partitions

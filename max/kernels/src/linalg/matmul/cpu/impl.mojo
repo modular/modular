@@ -395,7 +395,7 @@ struct TiledMatmul[
                     GemmShape(
                         tile_kernel_rows, sub_tile_n_k[0], sub_tile_n_k[1]
                     ),
-                    self.c.as_immut(),
+                    self.c.as_imm(),
                 )
 
         comptime if Self.kernel_id == InnerKernelID.I8MM:

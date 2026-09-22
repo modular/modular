@@ -248,8 +248,8 @@ def spatial_merge[
 
     ctx.enqueue_function[kernel](
         output,
-        input.as_immut(),
-        grid_thw.as_immut(),
+        input.as_imm(),
+        grid_thw.as_imm(),
         Int32(batch_size),
         Int32(hidden_size),
         Int32(merge_size),

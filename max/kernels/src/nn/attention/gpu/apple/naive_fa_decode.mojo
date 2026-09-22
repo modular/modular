@@ -720,9 +720,9 @@ def naive_fa_decode_apple[
     var o_partial_t = TileTensor(o_partial_dev, row_major(Coord(o_partial_n)))
     var m_partial_t = TileTensor(m_partial_dev, row_major(Coord(ml_partial_n)))
     var l_partial_t = TileTensor(l_partial_dev, row_major(Coord(ml_partial_n)))
-    var o_partial_imm = o_partial_t.as_immut()
-    var m_partial_imm = m_partial_t.as_immut()
-    var l_partial_imm = l_partial_t.as_immut()
+    var o_partial_imm = o_partial_t.as_imm()
+    var m_partial_imm = m_partial_t.as_imm()
+    var l_partial_imm = l_partial_t.as_imm()
 
     # Sink weights: a nullable `OptionalReg[TileTensor]` passed by value (NOT a
     # dangling `UnsafePointer` -- KB `unsafepointer-is-non-nullable`). When

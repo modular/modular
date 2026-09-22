@@ -303,7 +303,7 @@ def bench_matmul_tma_epilogue[
             var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_gpu = TileTensor(
                 tensor_epilogue.ptr, row_major(Coord(epi_m, epi_n))
-            ).as_immut()
+            ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 tensor_c,
                 tensor_a,
@@ -420,7 +420,7 @@ def bench_matmul_tma_epilogue[
             var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_ver = TileTensor(
                 epilogue_ver_dev.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
-            ).as_immut()
+            ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 c_kernel_nd,
                 a_ver_nd,

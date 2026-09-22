@@ -207,10 +207,10 @@ def run_mha_prefill_v2[
                     ),
                 )
                 var k_op = LayoutTensorMHAOperand(
-                    k_tt.as_immut().as_unsafe_any_origin()
+                    k_tt.as_imm().as_unsafe_any_origin()
                 )
                 var v_op = LayoutTensorMHAOperand(
-                    v_tt.as_immut().as_unsafe_any_origin()
+                    v_tt.as_imm().as_unsafe_any_origin()
                 )
                 comptime if sink:
                     # Launcher infers `sink_weights_ptr`'s dtype from

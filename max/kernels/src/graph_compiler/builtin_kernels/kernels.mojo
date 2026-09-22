@@ -1832,7 +1832,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             freqs_cis_tensor,
             ctx,
             output_fn,
-            position_ids=position_ids_tensor.as_unsafe_any_origin().as_immut(),
+            position_ids=position_ids_tensor.as_unsafe_any_origin().as_imm(),
         )
 
 
@@ -2108,8 +2108,8 @@ struct Struct_moe_router_group_limited:
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
-            expert_scores.to_tile_tensor[.int64]().as_immut(),
-            expert_bias.to_tile_tensor[.int64]().as_immut(),
+            expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
         )
@@ -2201,11 +2201,11 @@ struct Struct_moe_single_group_router_eplb:
             expert_indices.to_tile_tensor[.int64](),
             expert_indices_log.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
-            expert_scores.to_tile_tensor[.int64]().as_immut(),
-            expert_bias.to_tile_tensor[.int64]().as_immut(),
-            logcnt.to_tile_tensor[.int64]().as_immut(),
-            log2phy.to_tile_tensor[.int64]().as_immut(),
-            layer_idx.to_tile_tensor[.int64]().as_immut(),
+            expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            logcnt.to_tile_tensor[.int64]().as_imm(),
+            log2phy.to_tile_tensor[.int64]().as_imm(),
+            layer_idx.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
         )
@@ -2255,8 +2255,8 @@ struct Struct_moe_single_group_router:
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
-            expert_scores.to_tile_tensor[.int64]().as_immut(),
-            expert_bias.to_tile_tensor[.int64]().as_immut(),
+            expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
         )
@@ -2297,9 +2297,9 @@ struct Struct_moe_sink_gate_router:
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
             sink_weights.to_tile_tensor[.int64](),
-            logits.to_tile_tensor[.int64]().as_immut(),
-            expert_bias.to_tile_tensor[.int64]().as_immut(),
-            global_scale.to_tile_tensor[.int64]().as_immut(),
+            logits.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            global_scale.to_tile_tensor[.int64]().as_imm(),
             route_scale,
             context,
         )
@@ -2334,10 +2334,10 @@ struct Struct_moe_eplb_remap:
             target=target,
         ](
             phy_idx.to_tile_tensor[.int64](),
-            router_idx.to_tile_tensor[.int64]().as_immut(),
-            logcnt.to_tile_tensor[.int64]().as_immut(),
-            log2phy.to_tile_tensor[.int64]().as_immut(),
-            layer_idx.to_tile_tensor[.int64]().as_immut(),
+            router_idx.to_tile_tensor[.int64]().as_imm(),
+            logcnt.to_tile_tensor[.int64]().as_imm(),
+            log2phy.to_tile_tensor[.int64]().as_imm(),
+            layer_idx.to_tile_tensor[.int64]().as_imm(),
             context,
         )
 
@@ -2608,16 +2608,16 @@ struct Struct_fused_token_sampling:
                 Int(max_k),
                 input.to_tile_tensor[.int64](),
                 out_idxs.to_tile_tensor[.int64](),
-                k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_immut(),
+                k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
                 temperature=temperature.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 top_p=top_p.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 seed=seed.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
             )
         else:
             _fused_token_sampling_gpu(
@@ -2626,19 +2626,19 @@ struct Struct_fused_token_sampling:
                 min_top_p,
                 input.to_tile_tensor[.int64](),
                 out_idxs.to_tile_tensor[.int64](),
-                k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_immut(),
+                k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
                 temperature=temperature.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 top_p=top_p.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 min_p=min_p.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 seed=seed.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
             )
 
 
@@ -2684,16 +2684,16 @@ struct Struct_fused_token_sampling_with_dist:
             Int(max_k),
             top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_p_arr=top_p.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             temperature=temperature.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             rng_seed=seed.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             out_dist=out_dist.to_tile_tensor[
                 DType.int64
             ]().as_unsafe_any_origin(),
@@ -2734,13 +2734,13 @@ struct Struct_topk_topp_masked_probs:
             top_k_val=-1,
             top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_p_arr=top_p.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             temperature=temperature.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
         )
 
 
@@ -2773,9 +2773,7 @@ struct Struct_gumbel_argmax_from_probs:
             ctx,
             probs.to_tile_tensor[.int64](),
             out_tokens.to_tile_tensor[.int64](),
-            seed=seed.to_tile_tensor[.int64]()
-            .as_unsafe_any_origin()
-            .as_immut(),
+            seed=seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
         )
 
 
@@ -2803,7 +2801,7 @@ struct Struct_keyed_uniform:
     ) raises:
         keyed_uniform[target=target](
             out_values.to_tile_tensor[.int64]().as_unsafe_any_origin(),
-            seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_immut(),
+            seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
             ctx,
         )
 
@@ -3004,7 +3002,7 @@ struct BundledAllReduceSum:
         )
 
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var out_buf = output.to_tile_tensor[.int64]()
@@ -3016,7 +3014,7 @@ struct BundledAllReduceSum:
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         @inline(.always)
@@ -3134,7 +3132,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         )
 
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -3145,12 +3143,12 @@ struct BundledAllReduceAddRMSNormQuantFP8:
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_imm()
             )
 
         allreduce_residual_rmsnorm(
             in_tensors,
-            residual.to_tile_tensor[.int64]().as_immut(),
+            residual.to_tile_tensor[.int64]().as_imm(),
             output.to_tile_tensor[.int64](),
             out_residual.to_tile_tensor[.int64](),
             gamma.to_tile_tensor[.int64](),

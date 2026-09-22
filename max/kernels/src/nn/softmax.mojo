@@ -1808,7 +1808,7 @@ def softmax_with_temperature[
     comptime sm_overprovision_factor = 32
     var num_blocks = min(batch_size, sm_overprovision_factor * sm_count)
 
-    var input_immut = input.as_immut()
+    var input_immut = input.as_imm()
 
     @inline(.always)
     @__parameter

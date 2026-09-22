@@ -280,10 +280,10 @@ def run_mla_prefill_v2[
             ),
         )
         var _knope0 = LayoutTensorMHAOperand(
-            _k0.as_immut().as_unsafe_any_origin()
+            _k0.as_imm().as_unsafe_any_origin()
         )
         var _krope0 = LayoutTensorMHAOperand(
-            _k0.as_immut().as_unsafe_any_origin()
+            _k0.as_imm().as_unsafe_any_origin()
         )
         var _v0 = TileTensor(
             cb_v.offset_ptr(0).bitcast[Scalar[qkv_type]](),
@@ -296,9 +296,7 @@ def run_mla_prefill_v2[
                 )
             ),
         )
-        var _vop0 = LayoutTensorMHAOperand(
-            _v0.as_immut().as_unsafe_any_origin()
-        )
+        var _vop0 = LayoutTensorMHAOperand(_v0.as_imm().as_unsafe_any_origin())
         comptime _kernel_run = _kernel.run[
             type_of(_knope0),
             type_of(_krope0),
@@ -426,10 +424,10 @@ def run_mla_prefill_v2[
                     ),
                 )
                 var k_nope_op = LayoutTensorMHAOperand(
-                    k_tt.as_immut().as_unsafe_any_origin()
+                    k_tt.as_imm().as_unsafe_any_origin()
                 )
                 var k_rope_op = LayoutTensorMHAOperand(
-                    k_tt.as_immut().as_unsafe_any_origin()
+                    k_tt.as_imm().as_unsafe_any_origin()
                 )
 
                 var v_tt = TileTensor(
@@ -444,7 +442,7 @@ def run_mla_prefill_v2[
                     ),
                 )
                 var v_op = LayoutTensorMHAOperand(
-                    v_tt.as_immut().as_unsafe_any_origin()
+                    v_tt.as_imm().as_unsafe_any_origin()
                 )
 
                 # Enqueue ONLY — the kernel was compiled once above and the

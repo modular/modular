@@ -576,10 +576,10 @@ def mla_fused_rope_rmsnorm_quantization[
 
     ctx.enqueue_function[kernel](
         q_rope_output,
-        q_rope.as_immut(),
-        input_row_offsets.as_immut(),
-        freqs_cis.as_immut(),
-        gamma.as_immut(),
+        q_rope.as_imm(),
+        input_row_offsets.as_imm(),
+        freqs_cis.as_imm(),
+        gamma.as_imm(),
         k_cache,
         epsilon,
         grid_dim=(n_rope_blocks + n_rms_blocks, num_workers, 1),

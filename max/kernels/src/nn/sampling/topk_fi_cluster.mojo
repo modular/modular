@@ -643,7 +643,7 @@ def topk_topp_masked_probs_cluster[
             ]
             var smem_bytes = _stage_smem_bytes(d, vec_size, cluster_size)
             ctx.enqueue_function[kernel](
-                logits.as_immut(),
+                logits.as_imm(),
                 probs.ptr,
                 top_k_ptr,
                 Int32(top_k_val),
@@ -671,7 +671,7 @@ def topk_topp_masked_probs_cluster[
                 ImmOrigin(logits.origin),
             ]
             ctx.enqueue_function[kernel](
-                logits.as_immut(),
+                logits.as_imm(),
                 probs.ptr,
                 top_k_ptr,
                 Int32(top_k_val),
@@ -1517,7 +1517,7 @@ def topk_topp_sampling_from_prob_cluster[
                 ]
                 var smem_bytes = _stage_smem_bytes(d, vec_size, cluster_size)
                 ctx.enqueue_function[kernel](
-                    probs.as_immut(),
+                    probs.as_imm(),
                     output,
                     dist_ptr.unsafe_value(),
                     indices_ptr,
@@ -1559,7 +1559,7 @@ def topk_topp_sampling_from_prob_cluster[
                 OutputEngine=output.Engine,
             ]
             ctx.enqueue_function[kernel](
-                probs.as_immut(),
+                probs.as_imm(),
                 output,
                 dist_ptr,
                 indices_ptr,

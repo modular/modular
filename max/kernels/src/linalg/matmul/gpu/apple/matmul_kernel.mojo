@@ -2091,8 +2091,8 @@ def enqueue_apple_conv2d[
         ]
         ctx.enqueue_function[kernel](
             c,
-            input.as_immut(),
-            filter_nk.as_immut(),
+            input.as_imm(),
+            filter_nk.as_imm(),
             conv,
             log2_m,
             log2_n,

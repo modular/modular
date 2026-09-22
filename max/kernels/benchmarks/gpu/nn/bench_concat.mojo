@@ -104,8 +104,8 @@ def bench_concat[
         ],
         num_inputs,
     ](
-        input0_device.as_unsafe_any_origin().as_immut(),
-        input1_device.as_unsafe_any_origin().as_immut(),
+        input0_device.as_unsafe_any_origin().as_imm(),
+        input1_device.as_unsafe_any_origin().as_imm(),
     )
 
     # Create host TileTensors for verification
@@ -227,7 +227,7 @@ def bench_concat_inner_most_single_dim[
                 comptime InTile = type_of(
                     TileTensor(in_dev[0], input_layout)
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
                 var inputs = StaticTuple[InTile, num_inputs]()
 
@@ -235,7 +235,7 @@ def bench_concat_inner_most_single_dim[
                     inputs[n] = (
                         TileTensor(in_dev[n], input_layout)
                         .as_unsafe_any_origin()
-                        .as_immut()
+                        .as_imm()
                     )
 
                 comptime kernel = _concat_inner_most_single_dim[
@@ -267,7 +267,7 @@ def bench_concat_inner_most_single_dim[
                 comptime InTile = type_of(
                     TileTensor(in_dev[0], row_major(Coord(in_shape)))
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
                 var inputs = StaticTuple[InTile, num_inputs]()
 
@@ -275,7 +275,7 @@ def bench_concat_inner_most_single_dim[
                     inputs[n] = (
                         TileTensor(in_dev[n], row_major(Coord(in_shape)))
                         .as_unsafe_any_origin()
-                        .as_immut()
+                        .as_imm()
                     )
 
                 comptime kernel = _concat_inner_most_single_dim[

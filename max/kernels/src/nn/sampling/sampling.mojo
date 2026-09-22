@@ -325,8 +325,8 @@ def update_frequency_data[
         ]
         dev_ctx.enqueue_function[kernel](
             compressed_frequency_data,
-            frequency_offsets.as_immut(),
-            new_tokens.as_immut(),
+            frequency_offsets.as_imm(),
+            new_tokens.as_imm(),
             grid_dim=new_tokens.dim[0](),
             block_dim=block_size,
         )

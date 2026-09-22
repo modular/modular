@@ -153,10 +153,10 @@ def _bench_shape[
 
     var b_rows = n if transpose_b else k
     var b_cols = k if transpose_b else n
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(m, k)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(m, k)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(m, n))
 
     if verify:

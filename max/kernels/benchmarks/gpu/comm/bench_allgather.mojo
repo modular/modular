@@ -228,7 +228,7 @@ def bench_allgather[
                 tt_in[i] = TileTensor(
                     cb_inputs[i].offset_ptr(cache_iter),
                     row_major(lengths[i]),
-                ).as_immut()
+                ).as_imm()
 
             # `tt_out` is already the world-view output array `allgather`
             # expects (`ngpus * ngpus` for this full-world, ungrouped bench).

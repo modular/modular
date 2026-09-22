@@ -1398,8 +1398,8 @@ def naive_grouped_matmul[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        b.as_immut(),
+        a.as_imm(),
+        b.as_imm(),
         a_offsets,
         expert_ids,
         grid_dim=(
@@ -1713,10 +1713,10 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     ):
         ctx.enqueue_function[kernel](
             c,
-            a.as_immut(),
-            b.as_immut(),
-            a_scales.as_immut(),
-            b_scales.as_immut(),
+            a.as_imm(),
+            b.as_imm(),
+            a_scales.as_imm(),
+            b_scales.as_imm(),
             a_offsets,
             expert_ids,
             grid_dim=(

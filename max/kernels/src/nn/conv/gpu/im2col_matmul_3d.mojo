@@ -371,7 +371,7 @@ def dispatch_im2col_matmul_conv3d[
                 filter_type, filter.LayoutType, filter.Engine
             ]
         ](
-            filter.as_immut(),
+            filter.as_imm(),
             filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
@@ -382,7 +382,7 @@ def dispatch_im2col_matmul_conv3d[
                 filter_type, filter.LayoutType, filter.Engine
             ]
         ](
-            filter.as_immut(),
+            filter.as_imm(),
             filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
@@ -431,9 +431,9 @@ def dispatch_im2col_matmul_conv3d[
         ]
         ctx.enqueue_function[im2col_kernel](
             im2col_buf,
-            input.as_immut(),
-            filter.as_immut(),
-            output.as_immut(),
+            input.as_imm(),
+            filter.as_imm(),
+            output.as_imm(),
             Int32(symmetric_padding[0]),
             Int32(symmetric_padding[1]),
             Int32(symmetric_padding[2]),
@@ -484,12 +484,12 @@ def dispatch_im2col_matmul_conv3d[
                 elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                     _gemm_epilogue
                 ),
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
         else:
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
 
         _m_offset += _m_count
 

@@ -245,9 +245,9 @@ def tpool_patch_merger[
             num_threads,
         ]
         ctx.enqueue_function[kernel](
-            x.as_immut(),
+            x.as_imm(),
             output,
-            bounds.as_immut(),
+            bounds.as_imm(),
             Int32(kH),
             Int32(kW),
             Int32(D),
@@ -272,9 +272,9 @@ def tpool_patch_merger[
             num_threads,
         ]
         ctx.enqueue_function[kernel](
-            x.as_immut(),
+            x.as_imm(),
             output,
-            bounds.as_immut(),
+            bounds.as_imm(),
             Int32(kH),
             Int32(kW),
             Int32(D),

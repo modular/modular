@@ -177,8 +177,8 @@ def bench_cublas_per_group[
                     c_tensor,
                     a_tensor,
                     b_tensor,
-                    a_scales=sfa_tensor.as_immut(),
-                    b_scales=sfb_tensor.as_immut(),
+                    a_scales=sfa_tensor.as_imm(),
+                    b_scales=sfb_tensor.as_imm(),
                     transpose_b=transpose_b,
                     c_row_major=True,
                 )

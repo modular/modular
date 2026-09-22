@@ -1054,9 +1054,9 @@ def enqueue_matmul2d_fp4[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        packed.as_immut(),
-        scales.as_immut(),
+        a.as_imm(),
+        packed.as_imm(),
+        scales.as_imm(),
         Int32(m),
         Int32(n),
         Int32(k),
@@ -1179,9 +1179,9 @@ def enqueue_matmul2d_fp4_smem[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        packed.as_immut(),
-        scales.as_immut(),
+        a.as_imm(),
+        packed.as_imm(),
+        scales.as_imm(),
         Int32(m),
         Int32(n),
         Int32(k),

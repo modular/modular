@@ -185,7 +185,7 @@ def dispatch_1x1x1_matmul_conv3d[
                 elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                     _gemm_epilogue
                 ),
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
         else:
             # QRSCF [1, 1, 1, C, F] -> [C, F] view. _matmul_gpu wants
             # B as [K, N] row-major when transpose_b=False.
@@ -196,19 +196,19 @@ def dispatch_1x1x1_matmul_conv3d[
                 elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                     _gemm_epilogue
                 ),
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
     else:
         comptime if filter_is_fcrs:
             var b_tt = TileTensor(filter.ptr, row_major(Coord(N, K)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
         else:
             var b_tt = TileTensor(filter.ptr, row_major(Coord(K, N)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=False,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
 
     return True

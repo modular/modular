@@ -136,7 +136,7 @@ def test_matmul_sm90[
     var c_dev_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
     # Construct TileTensors for device buffers
-    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_imm()
     var b_tensor = TileTensor(
         b_dev_buffer,
         row_major(
@@ -145,7 +145,7 @@ def test_matmul_sm90[
                 Idx[KType.static_value if transpose_b else NType.static_value],
             ),
         ),
-    ).as_immut()
+    ).as_imm()
     var c_tensor = TileTensor(c_dev_buffer, row_major(Coord(m, n)))
     var c_ref_tensor = TileTensor(c_dev_ref_buffer, row_major(Coord(m, n)))
 

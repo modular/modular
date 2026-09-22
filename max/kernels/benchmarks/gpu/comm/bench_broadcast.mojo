@@ -219,7 +219,7 @@ def bench_broadcast[
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
                 cb_in.offset_ptr(cache_iter), row_major(length)
-            ).as_immut()
+            ).as_imm()
 
             # Run broadcast - root's input goes to all outputs
             comptime if use_vendor_ccl:
@@ -285,7 +285,7 @@ def bench_broadcast[
     # Create input tile for verification (no cache offset)
     var in_tile_verify = TileTensor(
         cb_in.device_buffer(), row_major(length)
-    ).as_immut()
+    ).as_imm()
 
     # Run one broadcast for verification
     comptime for i in range(ngpus):

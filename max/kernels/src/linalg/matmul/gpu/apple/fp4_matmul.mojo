@@ -799,7 +799,7 @@ def _enqueue_apple_fp4_materialize_dense[
             c_type=c_type,
             transpose_b=True,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, wdense_tt.as_immut(), ctx)
+        ](c, a, wdense_tt.as_imm(), ctx)
     else:
         comptime apple_kernel = gemm_kernel_apple_8x8[
             c_type,
@@ -821,7 +821,7 @@ def _enqueue_apple_fp4_materialize_dense[
         ctx.enqueue_function[apple_kernel](
             c,
             a,
-            wdense_tt.as_immut(),
+            wdense_tt.as_imm(),
             Int32(m),
             Int32(n),
             Int32(k),
@@ -895,9 +895,9 @@ def _launch_apple_fp4_matmul[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        packed.as_immut(),
-        scales.as_immut(),
+        a.as_imm(),
+        packed.as_imm(),
+        scales.as_imm(),
         log2_m,
         log2_n,
         grid_dim=(grid_dim),

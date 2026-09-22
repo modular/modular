@@ -388,11 +388,11 @@ def bench_fused_qkv_index_rms_norm_rope[
             var q_main_src = TileTensor(
                 cb_q_main.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[main_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
             var q_index_src = TileTensor(
                 cb_q_index.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[index_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
 
             @inline(.always)
             def q_main_fn[
@@ -421,13 +421,13 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](
                 main_kv,
                 q_main_fn,
-                gamma_q_main_tile.as_immut(),
-                gamma_k_main_tile.as_immut(),
-                freqs_tile.as_immut(),
+                gamma_q_main_tile.as_imm(),
+                gamma_k_main_tile.as_imm(),
+                freqs_tile.as_imm(),
                 Float32(1e-6),
                 Scalar[dtype](weight_offset),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
                 q_main_out_unfused_tile,
                 ctx,
             )
@@ -438,13 +438,13 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](
                 index_kv,
                 q_index_fn,
-                gamma_q_index_tile.as_immut(),
-                gamma_k_index_tile.as_immut(),
-                freqs_tile.as_immut(),
+                gamma_q_index_tile.as_imm(),
+                gamma_k_index_tile.as_imm(),
+                freqs_tile.as_imm(),
                 Float32(1e-6),
                 Scalar[dtype](weight_offset),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
                 q_index_out_unfused_tile,
                 ctx,
             )
@@ -513,11 +513,11 @@ def bench_fused_qkv_index_rms_norm_rope[
             var q_main_src = TileTensor(
                 cb_q_main.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[main_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
             var q_index_src = TileTensor(
                 cb_q_index.offset_ptr(iteration),
                 row_major((total_seq_len, Idx[index_q_heads], Idx[head_dim])),
-            ).as_immut()
+            ).as_imm()
 
             @inline(.always)
             def q_main_fn[
@@ -550,16 +550,16 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](
                 main_kv,
                 index_kv,
-                gamma_q_main_tile.as_immut(),
-                gamma_k_main_tile.as_immut(),
-                gamma_q_index_tile.as_immut(),
-                gamma_k_index_tile.as_immut(),
-                freqs_tile.as_immut(),
+                gamma_q_main_tile.as_imm(),
+                gamma_k_main_tile.as_imm(),
+                gamma_q_index_tile.as_imm(),
+                gamma_k_index_tile.as_imm(),
+                freqs_tile.as_imm(),
                 Float32(1e-6),
                 Float32(1e-6),
                 Scalar[dtype](weight_offset),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
                 q_main_fn,
                 q_index_fn,
                 q_main_out_fused_tile,

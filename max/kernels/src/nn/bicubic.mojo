@@ -337,7 +337,7 @@ def resize_bicubic[
         ]
         ctx.enqueue_function[kernel](
             output,
-            input.as_immut(),
+            input.as_imm(),
             grid_dim=(N, C),
             block_dim=(block_size,),
         )

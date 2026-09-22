@@ -346,8 +346,8 @@ def bench_dispatch[
 
             ctx.enqueue_function(
                 func_combine_async,
-                output_tensor.as_immut(),
-                src_token_info_tensor.as_immut(),
+                output_tensor.as_imm(),
+                src_token_info_tensor.as_imm(),
                 recv_buf,
                 combine_recv_buf_ptrs,
                 combine_recv_count_ptrs,

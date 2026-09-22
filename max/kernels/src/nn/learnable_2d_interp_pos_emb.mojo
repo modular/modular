@@ -261,10 +261,10 @@ def learnable_2d_interp_pos_emb[
     ]
     ctx.enqueue_function[kernel](
         output,
-        x.as_immut(),
-        weight.as_immut(),
-        grid_thws.as_immut(),
-        time_weight.as_immut(),
+        x.as_imm(),
+        weight.as_imm(),
+        grid_thws.as_imm(),
+        time_weight.as_imm(),
         Int32(N),
         Int32(dim),
         Int32(H),

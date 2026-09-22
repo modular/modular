@@ -171,10 +171,10 @@ def bench_topk_batched[
                 device_out_idxs,
                 k=TileTensor(k.ptr, row_major(Int64(batch_size)))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
-                top_p=top_p_tt.as_unsafe_any_origin().as_immut(),
+                top_p=top_p_tt.as_unsafe_any_origin().as_imm(),
             )
 
         bencher_iter_custom(b, kernel_launch, ctx)
@@ -216,7 +216,7 @@ def bench_topk_batched[
             topk_idxs_cpu,
             1,
             True,
-            k=K_host_buffer.as_unsafe_any_origin().as_immut(),
+            k=K_host_buffer.as_unsafe_any_origin().as_imm(),
         )
 
         for i in range(topk_vals.num_elements()):
@@ -345,7 +345,7 @@ def bench_topk_multi_rank[
                 device_out_idxs,
                 k=TileTensor(k.ptr, row_major(Int64(batch_size)))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -386,7 +386,7 @@ def bench_topk_multi_rank[
             topk_idxs_cpu,
             1,
             True,
-            k=K_host_buffer.as_unsafe_any_origin().as_immut(),
+            k=K_host_buffer.as_unsafe_any_origin().as_imm(),
         )
 
         for i in range(topk_vals.num_elements()):
@@ -477,8 +477,8 @@ def bench_topk_fi[
                 top_p,
                 device_in,
                 device_out_idxs,
-                temperature=temp_tt.as_unsafe_any_origin().as_immut(),
-                rng_seed=seed_tt.as_unsafe_any_origin().as_immut(),
+                temperature=temp_tt.as_unsafe_any_origin().as_imm(),
+                rng_seed=seed_tt.as_unsafe_any_origin().as_imm(),
             )
 
         bencher_iter_custom(b, kernel_launch, ctx)
@@ -588,16 +588,16 @@ def bench_topk_topp_dist[
                 d,
                 rng_seed=TileTensor(seed_dev, row_major(batch_size))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 top_k_arr=TileTensor(top_k_dev, row_major(batch_size))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 top_p_arr=TileTensor(top_p_dev, row_major(batch_size))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 temperature=TileTensor(temp_dev, row_major(batch_size))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 out_dist=TileTensor(
                     dist_dev,
                     row_major(batch_size, d) if emit_dist else row_major(1, 1),
@@ -699,13 +699,13 @@ def bench_topk_topp_masked[
                 d,
                 top_k_arr=TileTensor(top_k_dev, row_major(batch_size))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 top_p_arr=TileTensor(top_p_dev, row_major(batch_size))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
                 temperature=TileTensor(temp_dev, row_major(batch_size))
                 .as_unsafe_any_origin()
-                .as_immut(),
+                .as_imm(),
             )
 
         bencher_iter_custom(b, kernel_launch, ctx)
@@ -959,7 +959,7 @@ def bench_dispatch[
 
     var out_tt = TileTensor(out_buf, row_major(batch_size, out_k))
     var seed_tt = TileTensor(seed_buf, row_major(batch_size))
-    var seed_imm = seed_tt.as_unsafe_any_origin().as_immut()
+    var seed_imm = seed_tt.as_unsafe_any_origin().as_imm()
 
     # Regime labels mirror the dispatch threshold in fused_token_sampling_gpu
     # (two-stage kernel below max_k = 10, FI rejection sampling at or above).
@@ -1001,7 +1001,7 @@ def bench_dispatch[
                     row_major(batch_size, N),
                 )
                 .as_unsafe_any_origin()
-                .as_immut()
+                .as_imm()
             )
             fused_token_sampling_gpu(
                 dctx,
@@ -1078,13 +1078,13 @@ def bench_gumbel_from_probs() raises:
                 var probs = (
                     TileTensor(probs_buf, row_major(rows, vocab))
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
                 var out = TileTensor(out_buf, row_major(rows))
                 var seeds = (
                     TileTensor(seed_buf, row_major(rows))
                     .as_unsafe_any_origin()
-                    .as_immut()
+                    .as_imm()
                 )
 
                 @inline(.always)

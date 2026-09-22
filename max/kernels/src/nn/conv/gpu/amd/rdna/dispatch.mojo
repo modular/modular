@@ -386,8 +386,8 @@ def dispatch_rdna_conv2d[
                 elementwise_lambda_fn=_epilogue,
             ](
                 c_tt,
-                a_tt.as_immut(),
-                b_tt.as_immut(),
+                a_tt.as_imm(),
+                b_tt.as_imm(),
                 ctx,
             )
             _ = im2col_buf^

@@ -216,8 +216,8 @@ def verify_matmul[
         c_device_ref_nd,
         a_device_nd,
         b_device_nd,
-        a_scales=a_scales.as_immut(),
-        b_scales=b_scales.as_immut(),
+        a_scales=a_scales.as_imm(),
+        b_scales=b_scales.as_imm(),
         transpose_b=True,
         c_row_major=True,
     )
@@ -477,8 +477,8 @@ def bench_matmul[
             c,
             a,
             b,
-            a_scales=a_scales.as_immut(),
-            b_scales=b_scales.as_immut(),
+            a_scales=a_scales.as_imm(),
+            b_scales=b_scales.as_imm(),
             transpose_b=True,
             c_row_major=True,
         )
@@ -729,8 +729,8 @@ def bench_mxfp4_amd[
                 c,
                 a,
                 b,
-                a_scales=sfa.as_immut(),
-                b_scales=sfb.as_immut(),
+                a_scales=sfa.as_imm(),
+                b_scales=sfb.as_imm(),
                 transpose_b=True,
                 c_row_major=True,
             )

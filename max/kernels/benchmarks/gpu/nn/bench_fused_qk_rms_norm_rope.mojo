@@ -280,14 +280,14 @@ def bench_fused_qk_rms_norm_rope[
             fused_qk_rms_norm_ragged_paged[
                 target="gpu", multiply_before_cast=True
             ](
-                q_tile.as_immut(),
+                q_tile.as_imm(),
                 kv_ref,
-                gamma_q_tile.as_immut(),
-                gamma_k_tile.as_immut(),
+                gamma_q_tile.as_imm(),
+                gamma_k_tile.as_imm(),
                 Float32(1e-6),
                 Scalar[dtype](1.0),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
                 q_out_ref_tile,
                 ctx,
             )
@@ -296,10 +296,10 @@ def bench_fused_qk_rms_norm_rope[
             fused_qk_rope_ragged[
                 kv_ref.CacheType, interleaved=False, target="gpu"
             ](
-                q_proj=q_out_ref_tile.as_immut(),
-                input_row_offsets=row_offsets_tile.as_immut(),
+                q_proj=q_out_ref_tile.as_imm(),
+                input_row_offsets=row_offsets_tile.as_imm(),
                 kv_collection=kv_ref,
-                freqs_cis=freqs_tile.as_immut(),
+                freqs_cis=freqs_tile.as_imm(),
                 position_ids=None,
                 layer_idx=UInt32(layer_idx),
                 output=q_tile,
@@ -343,7 +343,7 @@ def bench_fused_qk_rms_norm_rope[
                 max_prompt_len,
                 max_cache_len,
             )
-            var q_src = q_fused_tile.as_immut()
+            var q_src = q_fused_tile.as_imm()
 
             @inline(.always)
             def q_input_fn[
@@ -360,13 +360,13 @@ def bench_fused_qk_rms_norm_rope[
             ](
                 kv_fused,
                 q_input_fn,
-                gamma_q_tile.as_immut(),
-                gamma_k_tile.as_immut(),
-                freqs_tile.as_immut(),
+                gamma_q_tile.as_imm(),
+                gamma_k_tile.as_imm(),
+                freqs_tile.as_imm(),
                 Float32(1e-6),
                 Scalar[dtype](1.0),
                 UInt32(layer_idx),
-                row_offsets_tile.as_immut(),
+                row_offsets_tile.as_imm(),
                 q_out_fused_tile,
                 ctx,
             )
