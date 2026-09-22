@@ -27,6 +27,7 @@ model:
 speculative:
   speculative_method: mtp
   num_speculative_tokens: 5
+  draft_proposal: sampled
 
 runtime:
   ep_size: 8
