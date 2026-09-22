@@ -18,6 +18,7 @@ include "Mojo/HLCFDialect/HLCFAttrs.td"
 include "Mojo/HLCFDialect/HLCFDialect.td"
 include "Mojo/HLCFDialect/HLCFInterfaces.td"
 include "Mojo/Interpreter/InterpreterInterface.td"
+include "Mojo/KGENDialect/KGENTypes.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpBase.td"
@@ -45,17 +46,6 @@ class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
            [Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
-
-/// The `!kgen.scalar<bool>` type, used for boolean control-flow conditions.
-/// Mirrored to avoid cyclic dependency between HLCF and KGEN dialects.
-///
-/// TODO: maybe we should move `simd`-related entities into a different dialect
-/// that both HLCF and KGEN can depend on.
-def HLCF_BoolScalar :
-    Type<CPred<"::M::KGEN::isScalarOf<::M::KGEN::KGENDType::kBool>($_self)">,
-         "!kgen.scalar<bool>", "::M::KGEN::SIMDType">,
-    BuildableType<"::M::KGEN::SIMDType::get(1, ::M::KGEN::DTypeConstantAttr::get("
-                  "$_builder.getContext(), ::M::KGEN::KGENDType::kBool))">;
 
 //===----------------------------------------------------------------------===//
 // ForOp / ForControlVariableType constraint
@@ -556,7 +546,7 @@ def HLCF_IfElifCondYieldOp : HLCFTerminatorOp<"if.elifcond.yield", [
     }
     ```
   }];
-  let arguments = (ins HLCF_BoolScalar:$cond, Variadic<AnyType>:$values);
+  let arguments = (ins BoolScalar:$cond, Variadic<AnyType>:$values);
 
   let assemblyFormat = "$cond (`,` $values `:` type($values)^)? attr-dict";
 }
@@ -601,7 +591,7 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
     }
     ```
   }];
-  let arguments = (ins HLCF_BoolScalar:$cond);
+  let arguments = (ins BoolScalar:$cond);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion,
                         SizedRegion<1>:$elseRegion,

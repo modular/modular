@@ -126,10 +126,26 @@ modular_cc_library(
 )
 
 td_library(
-    name = "HLCFDialectTdFiles",
-    srcs = glob(["include/Mojo/HLCFDialect/*.td"]),
+    name = "HLCFInterfacesTdFiles",
+    srcs = ["include/Mojo/HLCFDialect/HLCFInterfaces.td"],
     includes = ["include"],
     deps = [
+        "@llvm-project//mlir:OpBaseTdFiles",
+    ],
+)
+
+td_library(
+    name = "HLCFDialectTdFiles",
+    srcs = glob(
+        ["include/Mojo/HLCFDialect/*.td"],
+        exclude = ["include/Mojo/HLCFDialect/HLCFInterfaces.td"],
+    ),
+    includes = ["include"],
+    deps = [
+        ":HLCFInterfacesTdFiles",
+        # HLCF ops use KGEN types (e.g. BoolScalar). KGEN depends only on
+        # HLCFInterfacesTdFiles, not this target, so there is no TD cycle.
+        ":KGENDialectTdFiles",
         ":InterpreterTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
@@ -204,8 +220,7 @@ gentbl_cc_library(
     tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "include/Mojo/HLCFDialect/HLCFInterfaces.td",
     deps = [
-        ":HLCFDialectIncGen",
-        ":HLCFDialectTdFiles",
+        ":HLCFInterfacesTdFiles",
     ],
 )
 
@@ -232,11 +247,13 @@ td_library(
     srcs = glob(["include/Mojo/KGENDialect/*.td"]),
     includes = ["include"],
     deps = [
-        ":HLCFDialectTdFiles",
+        # ControlFlowNode / ControlFlowTerminator only — not HLCF ops.
+        ":HLCFInterfacesTdFiles",
         ":InterpreterTdFiles",
         "//Support:DebugInfoTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
         "@llvm-project//mlir:FunctionInterfacesTdFiles",
         "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
     ],
@@ -257,7 +274,7 @@ gentbl_mlir_dialect(
     dialect = "kgen",
     td_file = "include/Mojo/KGENDialect/KGEN.td",
     deps = [
-        ":HLCFDialectTdFiles",
+        ":HLCFInterfacesTdFiles",
         ":InterpreterTdFiles",
         ":KGENDialectTdFiles",
         ":KGENEnumsIncGen",
@@ -1625,6 +1642,7 @@ dialect_checksum(
     srcs = [
         ":CODialectTdFiles",
         ":HLCFDialectTdFiles",
+        ":HLCFInterfacesTdFiles",
         ":InterpreterTdFiles",
         ":KGENDialectTdFiles",
         ":LITDialectTdFiles",
