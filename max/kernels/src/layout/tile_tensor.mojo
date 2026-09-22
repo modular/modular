@@ -476,9 +476,9 @@ struct TileTensor[
 
     - Use `TileTensor` when you need trait-based layout composition, nested
       layouts, or when working with the newer `Coord`-based layout system.
-    - Use `LayoutTensor` when you need established operations like `copy_dma`,
-      `collective_load`, or compatibility with existing code using
-      `IntTuple`-based layouts.
+    - Use `LayoutTensor` when you need established operations like
+      `tiled_iterator()` or `simd_tile()`, or compatibility with existing code
+      using `IntTuple`-based layouts.
     - Both types can interoperate via `to_layout_tensor()`.
 
     Parameters:
