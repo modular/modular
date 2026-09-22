@@ -349,12 +349,12 @@ kgen.func @remove_unused_if_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2
   kgen.return %0#1 : i32
 }
 
-// Multi-arm elif must not use the 2-arm static-false fold (would drop elif arms).
-// CHECK-LABEL: @dont_fold_multiarms_elif_false
-kgen.func @dont_fold_multiarms_elif_false(%arg0: index, %arg1: index, %arg2: index) -> index {
-  // CHECK: hlcf.if
-  // CHECK: hlcf.if.elifcond.yield
-  // CHECK: kgen.return
+// Multi-arm if with a statically-false first condition promotes the first
+// elif arm; the constant-true elif then folds away the else.
+// CHECK-LABEL: @fold_multiarms_elif_false
+kgen.func @fold_multiarms_elif_false(%arg0: index, %arg1: index, %arg2: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK-NEXT: kgen.return %arg1
   %false = kgen.param.constant: scalar<bool> = <false>
   %true = kgen.param.constant: scalar<bool> = <true>
   %0 = hlcf.if %false -> index {
@@ -367,6 +367,64 @@ kgen.func @dont_fold_multiarms_elif_false(%arg0: index, %arg1: index, %arg2: ind
     hlcf.yield %arg2: index
   }
   kgen.return %0: index
+}
+
+// CHECK-LABEL: @hoist_multiarms_identical_yields
+kgen.func @hoist_multiarms_identical_yields(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %arg0: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK: kgen.return %{{.*}}
+  %0 = hlcf.if %c0 -> index {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.if.elifcond.yield %c1
+  } then {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.yield %arg0: index
+  }
+  kgen.return %0: index
+}
+
+// CHECK-LABEL: @remove_unused_multiarms_if_results
+kgen.func @remove_unused_multiarms_if_results(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
+  // CHECK-NEXT: %0 = hlcf.if %{{.*}} -> i32 {
+  %0:2 = hlcf.if %c0 -> i32, i32 {
+    "some.op"() : () -> ()
+    // CHECK: hlcf.yield %{{.*}} : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  } else {
+    hlcf.if.elifcond.yield %c1
+  } then {
+    // CHECK: hlcf.yield %{{.*}} : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  } else {
+    // CHECK: hlcf.yield %{{.*}} : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  }
+  kgen.return %0#1 : i32
+}
+
+// CHECK-LABEL: @hoist_unconditional_return_multiarms
+kgen.func @hoist_unconditional_return_multiarms(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[IF_RES:.*]] = hlcf.if
+  // CHECK:        hlcf.yield
+  // CHECK:        hlcf.if.elifcond.yield
+  // CHECK:        hlcf.yield
+  // CHECK:        hlcf.yield
+  // CHECK:      kgen.return %[[IF_RES]]
+  // CHECK-NOT:  index.add
+  %x = index.constant 1
+  hlcf.if %c0 {
+    kgen.return %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %c1
+  } then {
+    kgen.return %arg2: index
+  } else {
+    kgen.return %arg3: index
+  }
+  %r = index.add %x, %x
+  kgen.return %r: index
 }
 
 // CHECK-LABEL: @dead_loop
