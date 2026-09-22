@@ -2843,18 +2843,20 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
-  // Handle kgen.param.if: the condition is already a TypedAttr, so we just
+  // Handle kgen.comptime.if: the condition is already a TypedAttr, so we just
   // need to fold both branches and produce a POC::Cond param expression.
-  if (auto paramIfOp = dyn_cast<KGEN::ParamIfOp>(op)) {
+  if (auto comptimeIfOp = dyn_cast<KGEN::ComptimeIfOp>(op)) {
     // Substitute concrete parameter bindings, as ParamConstantOp does.
-    TypedAttr condVal = evaluator.getReboundAttribute(paramIfOp.getCond());
+    TypedAttr condVal = evaluator.getReboundAttribute(comptimeIfOp.getCond());
     auto isParamYield = [](Operation &op) {
       return isa<KGEN::ParamYieldOp>(op);
     };
-    auto trueVal = foldBlock(paramIfOp.getThenRegion().front(), isParamYield);
+    auto trueVal =
+        foldBlock(comptimeIfOp.getThenRegion().front(), isParamYield);
     if (failed(trueVal))
       return trueVal;
-    auto falseVal = foldBlock(paramIfOp.getElseRegion().front(), isParamYield);
+    auto falseVal =
+        foldBlock(comptimeIfOp.getElseRegion().front(), isParamYield);
     if (failed(falseVal))
       return falseVal;
 

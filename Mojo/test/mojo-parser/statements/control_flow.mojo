@@ -25,13 +25,13 @@
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:      [[B_EQ:%.*]] = lit.call {{.*}}::@"__eq__{{.*}}"{{.*}}(%b, %d) : !lit.generator<("self": !Int, "rhs": !Int) -> !Bool>
 # CHECK-NEXT:      [[TEST_B_SB:%.*]] = lit.call {{.*}}::@"__mlir_bool__{{.*}}"([[B_EQ]]) : !lit.generator<("self": !Bool) -> !kgen.scalar<bool>>
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_B_SB]]
+# CHECK-NEXT:      hlcf.if.elifcond.yield [[TEST_B_SB]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_b = lit.var.decl "inside_b"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:      [[TEST_C_SB:%.*]] = lit.call {{.*}}::@"__mlir_bool__{{.*}}"(%c)
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_C_SB]]
+# CHECK-NEXT:      hlcf.if.elifcond.yield [[TEST_C_SB]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_c = lit.var.decl "inside_c"
 # CHECK-NEXT:      hlcf.yield
@@ -174,7 +174,7 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-    # CHECK-NEXT:   hlcf.elif.yield [[FALSE]]
+    # CHECK-NEXT:   hlcf.if.elifcond.yield [[FALSE]]
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {

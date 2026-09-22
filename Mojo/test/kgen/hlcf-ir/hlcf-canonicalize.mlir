@@ -353,14 +353,14 @@ kgen.func @remove_unused_if_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2
 // CHECK-LABEL: @dont_fold_multiarms_elif_false
 kgen.func @dont_fold_multiarms_elif_false(%arg0: index, %arg1: index, %arg2: index) -> index {
   // CHECK: hlcf.if
-  // CHECK: hlcf.elif.yield
+  // CHECK: hlcf.if.elifcond.yield
   // CHECK: kgen.return
   %false = kgen.param.constant: scalar<bool> = <false>
   %true = kgen.param.constant: scalar<bool> = <true>
   %0 = hlcf.if %false -> index {
     hlcf.yield %arg0: index
   } else {
-    hlcf.elif.yield %true
+    hlcf.if.elifcond.yield %true
   } then {
     hlcf.yield %arg1: index
   } else {

@@ -523,15 +523,15 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
 }
 
 //===----------------------------------------------------------------------===//
-// ElifYieldOp
+// IfElifCondYieldOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
+def HLCF_IfElifCondYieldOp : HLCFTerminatorOp<"if.elifcond.yield", [
     ParentOneOf<["IfOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "yield operation for additional conditions of if operations";
   let description = [{
-    The `hlcf.elif.yield` operation is a control-flow terminator used only in
+    The `hlcf.if.elifcond.yield` operation is a control-flow terminator used only in
     the *additional* condition regions of a parent `hlcf.if` (the regions in
     `$elifRegions`). It transfers control either to the paired `then` region
     when the condition is true, or to the next condition region / the `else`
@@ -548,7 +548,7 @@ def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
     %0 = hlcf.if %cond0 -> index {
       hlcf.yield %arg0 : index
     } else {
-      hlcf.elif.yield %cond1, %x : i32
+      hlcf.if.elifcond.yield %cond1, %x : i32
     } then (%xThen: i32) {
       hlcf.yield %arg0 : index
     } else (%xElse: i32) {
@@ -571,7 +571,7 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
     The `hlcf.if` operation is a multi-arm conditional. The first condition
     is an SSA operand; its matching `then` is `$thenRegion`. Additional arms
     are written as `else { cond } then { then }` pairs in `$elifRegions`, where
-    each condition region is terminated by `hlcf.elif.yield`. The final
+    each condition region is terminated by `hlcf.if.elifcond.yield`. The final
     `$elseRegion` runs when every condition is false.
 
     All `then` / `else` regions are terminated by `hlcf.yield`, whose operand
@@ -593,7 +593,7 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
     %0 = hlcf.if %cond0 -> index {
       hlcf.yield %arg0 : index
     } else {
-      hlcf.elif.yield %cond1
+      hlcf.if.elifcond.yield %cond1
     } then {
       hlcf.yield %arg1 : index
     } else {

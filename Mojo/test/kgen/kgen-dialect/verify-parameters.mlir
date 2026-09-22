@@ -9,8 +9,8 @@ kgen.generator @parameterIsolatedRegions<A>() {
   }
   // CHECK: {isolated}
 
-  // CHECK: kgen.param.if
-  kgen.param.if <lt(A, 1)> {
+  // CHECK: kgen.comptime.if
+  kgen.comptime.if <lt(A, 1)> {
     kgen.param.yield
   } else {
     kgen.param.yield

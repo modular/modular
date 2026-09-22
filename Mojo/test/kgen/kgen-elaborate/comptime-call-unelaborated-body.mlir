@@ -9,7 +9,7 @@
 // cycle is genuine and must be reported, never interpreted.
 
 // A `kgen.param.apply` on a concrete name. `@bad,x=1` can only elaborate its
-// `kgen.param.if` once `@dep` produces the condition, and `@dep` needs
+// `kgen.comptime.if` once `@dep` produces the condition, and `@dep` needs
 // `@bad,x=1`.
 kgen.generator @dep() -> !kgen.scalar<bool> {
   // expected-note @below {{recursively instantiated through here}}
@@ -22,8 +22,8 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
 kgen.generator @bad<x: index>() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
-  %0 = kgen.param.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
-    // A parameter declaration keeps this `param.if` from folding away.
+  %0 = kgen.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
+    // A parameter declaration keeps this `comptime.if` from folding away.
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
     kgen.param.yield %1 : index
@@ -58,7 +58,7 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
 kgen.generator @bad<x: index>() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
-  %0 = kgen.param.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
+  %0 = kgen.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
     kgen.param.yield %1 : index
@@ -99,7 +99,7 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
 kgen.generator @bad<x: index>() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
-  %0 = kgen.param.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
+  %0 = kgen.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
     kgen.param.yield %1 : index
@@ -134,7 +134,7 @@ kgen.generator @dep() -> index {
 
 // expected-note @below {{function instantiation failed}}
 kgen.generator @earlyExit<x: index>() -> index {
-  %0 = kgen.param.if <true> -> index {
+  %0 = kgen.comptime.if <true> -> index {
     // expected-note @below {{call expansion failed}}
     // expected-note @below {{recursively instantiated through here}}
     %d = kgen.call @dep() : () -> index
@@ -168,7 +168,7 @@ kgen.generator @dep() -> index {
 }
 
 kgen.generator @earlyExit<x: index>() -> index {
-  %0 = kgen.param.if <true> -> index {
+  %0 = kgen.comptime.if <true> -> index {
     %1 = kgen.param.constant = <x>
     kgen.return %1 : index
   } else {

@@ -8,8 +8,8 @@
 
 // expected-note @below {{function instantiation failed}}
 kgen.generator @bad<x: index>() -> index {
-  %0 = kgen.param.if <true> -> index {
-    // A parameter declaration in the live branch keeps this `param.if` from
+  %0 = kgen.comptime.if <true> -> index {
+    // A parameter declaration in the live branch keeps this `comptime.if` from
     // folding away, so an abandoned body still contains it.
     kgen.param.declare d: dtype = <si32>
     // expected-note @below {{constraint failed: bad instantiation}}
@@ -45,7 +45,7 @@ kgen.generator export @root() -> index {
 // reached by its concrete name after it completed stays comptime-callable.
 
 kgen.generator @good<x: index>() -> index {
-  %0 = kgen.param.if <true> -> index {
+  %0 = kgen.comptime.if <true> -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
     kgen.param.yield %1 : index

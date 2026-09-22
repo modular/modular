@@ -4467,8 +4467,8 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     return emitter.emitResult(value, this, dest);
   }
 
-  // If the condition is a comptime PValue, emit kgen.param.if instead of
-  // hlcf.if. During elaboration, processParamIfOp selects and inlines only
+  // If the condition is a comptime PValue, emit kgen.comptime.if instead of
+  // hlcf.if. During elaboration, processComptimeIfOp selects and inlines only
   // the live branch, preventing dead-branch ops (e.g. `comptime assert False`)
   // from ever being elaborated.
   if (PValue condPVal = condRVal.getIfPValue()) {
@@ -4485,32 +4485,33 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     // result type is fixed after emitting both branches. For the memory-only
     // path the op is recreated without a result at the end (same pattern as
     // the hlcf.if memory-only path below).
-    auto paramIfOp =
-        ParamIfOp::create(*emitter.builder, ifLoc,
-                          TypeRange{condPVal.get().getType()}, condPVal.get());
+    auto comptimeIfOp = ComptimeIfOp::create(
+        *emitter.builder, ifLoc, TypeRange{condPVal.get().getType()},
+        condPVal.get());
 
-    emitter.builder->createBlock(&paramIfOp.getThenRegion());
+    emitter.builder->createBlock(&comptimeIfOp.getThenRegion());
     AnyValue trueRawVal = emitBranchUnderAssumption(
         trueExpr, buildBranchAssumption(condPVal.get(),
                                         /*invertCondition=*/false, ifLoc));
 
-    emitter.builder->createBlock(&paramIfOp.getElseRegion());
+    emitter.builder->createBlock(&comptimeIfOp.getElseRegion());
     AnyValue falseRawVal = emitBranchUnderAssumption(
         falseExpr,
         buildBranchAssumption(condPVal.get(), /*invertCondition=*/true, ifLoc));
 
     CValue falseVal =
         emitToCValueInferringType({falseRawVal, falseExpr}, trueRawVal);
-    emitter.builder->setInsertionPointToEnd(&paramIfOp.getThenRegion().front());
+    emitter.builder->setInsertionPointToEnd(
+        &comptimeIfOp.getThenRegion().front());
     CValue trueVal =
         emitToCValueInferringType({trueRawVal, trueExpr}, falseRawVal);
 
     if (!trueVal || !falseVal) {
-      emitter.builder->setInsertionPointAfter(paramIfOp);
+      emitter.builder->setInsertionPointAfter(comptimeIfOp);
       return {};
     }
 
-    return emitter.mergeCValuesAcrossIfLikeOp(paramIfOp, ifLoc, getLoc(),
+    return emitter.mergeCValuesAcrossIfLikeOp(comptimeIfOp, ifLoc, getLoc(),
                                               trueVal, trueExpr, falseVal,
                                               falseExpr, this, dest);
   }

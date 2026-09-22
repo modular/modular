@@ -852,7 +852,7 @@ lit.fn @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
 lit.fn @self_recursive_param<a: index, cond: scalar<bool>>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
   %0 = lit.call @self_recursive_param<a, :scalar<bool> cond>() : !lit.generator<() -> !kgen.none>
-  kgen.param.if <cond> {
+  kgen.comptime.if <cond> {
     // No warning.
     %1 = lit.call @self_recursive_param<a, :scalar<bool> cond>() : !lit.generator<() -> !kgen.none>
     kgen.param.yield
@@ -887,7 +887,7 @@ lit.fn @self_recursive_arg_diff(%a: index) -> !kgen.none {
 // CHECK-NEXT: } else {
 // CHECK-NEXT: [[V2:%*.]] = index.cmp eq(%arg0, %idx1)
 // CHECK-NEXT: [[V2SB:%.*]] = pop.cast_from_builtin [[V2]] : i1 to !kgen.scalar<bool>
-// CHECK-NEXT: hlcf.elif.yield [[V2SB]]
+// CHECK-NEXT: hlcf.if.elifcond.yield [[V2SB]]
 // CHECK-NEXT: } then {
 // CHECK-NEXT:   kgen.return %arg1 : index
 // CHECK-NEXT: } else {
@@ -906,7 +906,7 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   } else {
     %c = index.cmp eq(%arg0, %idx1)
     %c_sb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
-    hlcf.elif.yield %c_sb
+    hlcf.if.elifcond.yield %c_sb
   } then {
     lit.return %arg1 : index
     hlcf.yield %arg1 : index
@@ -928,7 +928,7 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
 // CHECK-NEXT:   hlcf.yield %arg0 : index
 // CHECK-NEXT: } else {
 // CHECK-NEXT:   %simd = kgen.param.constant: scalar<bool> = <true>
-// CHECK-NEXT:   hlcf.elif.yield %simd
+// CHECK-NEXT:   hlcf.if.elifcond.yield %simd
 // CHECK-NEXT: } then {
 // CHECK-NEXT:   kgen.return %arg1 : index
 // CHECK-NEXT: } else {
@@ -946,7 +946,7 @@ lit.fn @elif_2(%arg0: index, %arg1: index, %arg2: index) -> index {
     hlcf.yield %arg0 : index
   } else {
     %simd = kgen.param.constant: scalar<bool> = <true>
-    hlcf.elif.yield %simd
+    hlcf.if.elifcond.yield %simd
   } then {
     lit.return %arg1 : index
     hlcf.yield %arg1 : index
@@ -1111,10 +1111,10 @@ lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
 
 // CHECK-LABEL: lit.fn @fallthrough
 lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs: index, %cond2 : !kgen.scalar<bool>) -> index {
-// CHECK: kgen.param.if <cond0> {
+// CHECK: kgen.comptime.if <cond0> {
 // CHECK-NEXT:   kgen.return %lhs : index
 // CHECK-NEXT: } else {
-// CHECK-NEXT: kgen.param.if <cond1> {
+// CHECK-NEXT: kgen.comptime.if <cond1> {
 // CHECK-NEXT:   kgen.return %rhs : index
 // CHECK-NEXT:  } else {
 // CHECK-NEXT:  hlcf.if %cond2 {
@@ -1128,11 +1128,11 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
 // CHECK-NEXT:  kgen.unreachable
 // CHECK-NEXT: }
 // CHECK-NEXT: kgen.unreachable
- kgen.param.if <cond0> {
+ kgen.comptime.if <cond0> {
    lit.return %lhs : index
    kgen.param.yield
  } else {
-   kgen.param.if <cond1> {
+   kgen.comptime.if <cond1> {
      lit.return %rhs : index
      kgen.param.yield
    } else {
@@ -1189,8 +1189,8 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
 
 // CHECK-LABEL: lit.fn @param_if_call_throws
 lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool> {
-  // CHECK: kgen.param.if <paramb> {
-  kgen.param.if <paramb> {
+  // CHECK: kgen.comptime.if <paramb> {
+  kgen.comptime.if <paramb> {
     %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
     %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
     // CHECK: lit.call @throwing_func
@@ -1199,7 +1199,7 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
     // CHECK: else
     // CHECK:   hlcf.yield
     lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
-    kgen.param.if <paramb> {
+    kgen.comptime.if <paramb> {
       // CHECK: %[[THEN_RETURN:.*]] = kgen.param.constant: scalar<bool> = <false>
       // CHECK: kgen.return %[[THEN_RETURN]]
       %then_return = kgen.param.constant: scalar<bool> = <false>
@@ -1252,11 +1252,11 @@ lit.fn @crashing_try_warning(%cond: !kgen.scalar<bool>) -> !kgen.none {
 }
 
 // Derived from MOCO-2119.
-// We had some weirdness where the outer kgen.param.if was incorrectly using
+// We had some weirdness where the outer kgen.comptime.if was incorrectly using
 // the hlcf.if's doesFallThrough as its own doesFallThrough, and then that was
 // causing it to not replace the lit.end_fn with a kgen.unreachable.
 lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
-  kgen.param.if <parambool> {
+  kgen.comptime.if <parambool> {
     lit.return %runbool : i1
     kgen.param.yield
   } else {
@@ -1266,7 +1266,7 @@ lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
     } else {
       hlcf.yield
     }
-    kgen.param.if <parambool> {
+    kgen.comptime.if <parambool> {
       lit.return %runbool : i1
       kgen.param.yield
     } else {

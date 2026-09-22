@@ -252,11 +252,11 @@ private:
                                         SymbolConstantAttr calleeSymbol,
                                         PImplNode *parent);
 
-  /// Process a param.if op by evaluating the condition and elaborating and
+  /// Process a comptime.if op by evaluating the condition and elaborating and
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
-  ElaborationState processParamIfOp(PImplNode *parent, ParamIfOp op);
+  ElaborationState processComptimeIfOp(PImplNode *parent, ComptimeIfOp op);
 
   /// Process a param.for op by evaluating the sequence of induction variables
   /// and then instantiating the body for each value of the sequence.

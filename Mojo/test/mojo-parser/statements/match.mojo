@@ -97,7 +97,7 @@ def match_bindings(i: Int, var s: String):
 # CHECK-NEXT:      [[L1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
 # CHECK-NEXT:      [[EQ1:%.*]] = lit.call {{.*}}@"__eq__({{.*}}(%x, [[L1]])
 # CHECK-NEXT:      [[B1:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[EQ1]])
-# CHECK-NEXT:      hlcf.elif.yield [[B1]]
+# CHECK-NEXT:      hlcf.if.elifcond.yield [[B1]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK-NEXT:      hlcf.yield
@@ -292,7 +292,7 @@ def match_string(x: String):
 # CHECK:       } else {
 # CHECK:         lit.call {{.*}}@"__eq__(
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:         hlcf.elif.yield
+# CHECK:         hlcf.if.elifcond.yield
 # CHECK:       } then {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.yield
@@ -347,7 +347,7 @@ struct Color(ImplicitlyCopyable, EnumLike):
 # CHECK:         [[TAG1:%.*]] = kgen.rebind [[DISC]]
 # CHECK:         lit.call {{.*}}@"__eq__({{.*}}([[TAG1]],
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:         hlcf.elif.yield
+# CHECK:         hlcf.if.elifcond.yield
 # CHECK:       } then {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:         hlcf.yield
@@ -355,7 +355,7 @@ struct Color(ImplicitlyCopyable, EnumLike):
 # CHECK:         [[TAG2:%.*]] = kgen.rebind [[DISC]]
 # CHECK:         lit.call {{.*}}@"__eq__({{.*}}([[TAG2]],
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:         hlcf.elif.yield
+# CHECK:         hlcf.if.elifcond.yield
 # CHECK:       } then {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
 # CHECK:         hlcf.yield
@@ -390,7 +390,7 @@ def match_color(c: Color):
 # CHECK:           hlcf.yield
 # CHECK:         } else {
 # CHECK:           lit.call {{.*}}@"__eq__(
-# CHECK:           hlcf.elif.yield
+# CHECK:           hlcf.if.elifcond.yield
 # CHECK:         } then {
 # CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 2
 # CHECK:           hlcf.yield
@@ -401,7 +401,7 @@ def match_color(c: Color):
 # CHECK:       } else {
 # CHECK:         [[TAG1:%.*]] = kgen.rebind [[DISC]]
 # CHECK:         lit.call {{.*}}@"__eq__({{.*}}([[TAG1]],
-# CHECK:         hlcf.elif.yield
+# CHECK:         hlcf.if.elifcond.yield
 # CHECK:       } then {
 # CHECK:         hlcf.match {
 # CHECK:           lit.call {{.*}}@"__getitem_param__{{.*}}(%tc)
@@ -418,7 +418,7 @@ def match_color(c: Color):
 # CHECK:       } else {
 # CHECK:         [[TAG2:%.*]] = kgen.rebind [[DISC]]
 # CHECK:         lit.call {{.*}}@"__eq__({{.*}}([[TAG2]],
-# CHECK:         hlcf.elif.yield
+# CHECK:         hlcf.if.elifcond.yield
 # CHECK:       } then {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 3
 # CHECK:         hlcf.yield
@@ -722,7 +722,7 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
     # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:       } else {
-    # CHECK:         hlcf.elif.yield
+    # CHECK:         hlcf.if.elifcond.yield
     # CHECK:       } then {
     # CHECK:         lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%opt)
     # CHECK:         [[ELT:%.*]] = lit.var.decl "elt" ref
@@ -743,7 +743,7 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
     # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 3
     # CHECK:       } else {
-    # CHECK:         hlcf.elif.yield
+    # CHECK:         hlcf.if.elifcond.yield
     # CHECK:       } then {
     # CHECK:         lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%mut_opt)
     # CHECK:         [[MELT:%.*]] = lit.var.decl "elt" ref
@@ -798,7 +798,7 @@ def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
     # CHECK:         hlcf.yield
     # CHECK:       } else {
     # CHECK:         lit.call {{.*}}@"__eq__(::Bool,::Bool)"(%x,
-    # CHECK:         hlcf.elif.yield
+    # CHECK:         hlcf.if.elifcond.yield
     # CHECK:       } then {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:         hlcf.yield

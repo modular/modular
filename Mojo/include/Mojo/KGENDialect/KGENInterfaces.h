@@ -67,16 +67,16 @@ using InlineResult = std::pair<Operation *, std::function<void(Operation *)>>;
 /// Example:
 ///
 /// ```mlir
-/// kgen.param.if <lt(C, 1) -> output> {
+/// kgen.comptime.if <lt(C, 1) -> output> {
 ///   kgen.param.yield<A>
 /// } else {
 ///   kgen.param.yield<B>
 /// }
 ///
 /// The definition of the result parameter `output` depends on the parameter
-/// expression `lt(C, 1)` and both regions of the `kgen.param.if`. The parameter
-/// use-def graph will determine that the definition of `output` depends
-/// directly on the parameters `A`, `B`, and `C`.
+/// expression `lt(C, 1)` and both regions of the `kgen.comptime.if`. The
+/// parameter use-def graph will determine that the definition of `output`
+/// depends directly on the parameters `A`, `B`, and `C`.
 struct ParamDefValue {
   ParamDefValue() {}
   ParamDefValue(Attribute expr) : exprs(1, expr) {}

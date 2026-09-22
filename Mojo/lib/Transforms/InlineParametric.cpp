@@ -218,7 +218,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   }
 
   /// Since the callee might contain nested parameter scopes (e.g.
-  /// `kgen.param.if`), we recursively walk them and mangle parameter
+  /// `kgen.comptime.if`), we recursively walk them and mangle parameter
   /// definitions.
   auto mangleDef = [&mangler, &needsMangling, &topLevelGraph](
                        const ParamDefinition &def, Region *scopeRegion,

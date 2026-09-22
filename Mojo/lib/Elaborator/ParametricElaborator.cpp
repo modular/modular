@@ -868,7 +868,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, PImplNode *inode) {
         }
       }
       // When elaboration is complete, only the first block in any region is
-      // valid (any other block may be illegal, e.g. due to how kgen.param.if
+      // valid (any other block may be illegal, e.g. due to how kgen.comptime.if
       // is handled). So we only need to go through the region arguments.
       for (Region &r : op->getRegions()) {
         for (BlockArgument arg : r.getArguments())
@@ -894,7 +894,7 @@ static LogicalResult concretizeLocsInScope(Block &scope, PImplNode *inode) {
 }
 
 //===----------------------------------------------------------------------===//
-// ParametricElaborator::processParamIfOp
+// ParametricElaborator::processComptimeIfOp
 //===----------------------------------------------------------------------===//
 
 /// We always erase this op and its nested scopes from the parameter graph -
@@ -922,8 +922,8 @@ static void recursivelyEraseFromNestedScopes(PImplNode *node, Operation *op) {
     eraseScopes(graph);
 }
 
-ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
-                                                        ParamIfOp op) {
+ElaborationState ParametricElaborator::processComptimeIfOp(PImplNode *parent,
+                                                           ComptimeIfOp op) {
   // Check the condition expression.
   Attribute value;
   HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
@@ -947,7 +947,7 @@ ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
     PImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
-    auto op = cast<ParamIfOp>(parentFrame.ops.back());
+    auto op = cast<ComptimeIfOp>(parentFrame.ops.back());
 
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
@@ -1563,7 +1563,7 @@ ElaborationState ParametricElaborator::processOp(PImplNode *node,
   // ParamMaterializeOp same as ParamConstantOp, cpuDevice constant? value
   // RebindOp  check during elab, no-op
   // ParamAssertOp: similar to RebindOp, just do checks
-  // ParamIfOp:
+  // ComptimeIfOp:
   // ParamForOp: nested regions. unwrap things, no interpreting the body
   // GeneratorUserOpInterface:
   //  ParamApply
@@ -1583,8 +1583,8 @@ ElaborationState ParametricElaborator::processOp(PImplNode *node,
     return processRebindOp(node, rebindOp);
   if (auto assertOp = dyn_cast<ParamAssertOp>(op))
     return processParamAssertOp(node, assertOp);
-  if (auto ifOp = dyn_cast<ParamIfOp>(op))
-    return processParamIfOp(node, ifOp);
+  if (auto ifOp = dyn_cast<ComptimeIfOp>(op))
+    return processComptimeIfOp(node, ifOp);
   if (auto forOp = dyn_cast<ParamForOp>(op))
     return processParamForOp(node, forOp);
   if (auto apply = dyn_cast<ParamApplyOp>(op))

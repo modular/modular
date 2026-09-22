@@ -1011,10 +1011,10 @@ void ParamForGotoElseOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// ParamIfOp
+// ComptimeIfOp
 //===----------------------------------------------------------------------===//
 
-bool ParamIfOp::isIsolatedFromAbove(unsigned regionNum) {
+bool ComptimeIfOp::isIsolatedFromAbove(unsigned regionNum) {
   switch (regionNum) {
   case 0:
     return getThenIsolated();
@@ -1025,7 +1025,7 @@ bool ParamIfOp::isIsolatedFromAbove(unsigned regionNum) {
   }
 }
 
-void ParamIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+void ComptimeIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
   switch (regionNum) {
   case 0:
     setThenIsolated(true);
@@ -1038,7 +1038,7 @@ void ParamIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
   }
 }
 
-void ParamIfOp::getEntryTargets(
+void ComptimeIfOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());
@@ -1046,20 +1046,20 @@ void ParamIfOp::getEntryTargets(
   targets.emplace_back(1);
 }
 
-ValueRange ParamIfOp::getEntryArguments(std::optional<unsigned> target) {
+ValueRange ComptimeIfOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return getResults();
   assert(*target == 0 || *target == 1);
   return {};
 }
 
-void ParamIfOp::walkDefinitions(
+void ComptimeIfOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
 
-bool ParamIfOp::isImplicitlyParametric() { return true; }
+bool ComptimeIfOp::isImplicitlyParametric() { return true; }
 
 /// This operation has no uses to collect in the scopes it defines.
-void ParamIfOp::collectParameterUsesBelow(
+void ComptimeIfOp::collectParameterUsesBelow(
     function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
 }
 
@@ -1068,7 +1068,7 @@ void ParamIfOp::collectParameterUsesBelow(
 //===----------------------------------------------------------------------===//
 
 bool ParamYieldOp::isParentNode(Operation *op) {
-  return isa<ParamForOp, ParamIfOp>(op);
+  return isa<ParamForOp, ComptimeIfOp>(op);
 }
 
 void ParamYieldOp::getBranchTargets(

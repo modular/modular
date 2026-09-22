@@ -339,7 +339,7 @@ def bork() -> Int:
 lit.fn @"bork()"() -> !Int attributes {sourceName = "bork", specialFnKind = 0 : i8} {
   hlcf.if {
     %0 = kgen.param.constant: i1 = <1>
-    hlcf.elif.yield %0
+    hlcf.if.elifcond.yield %0
   } then {
     %0 = kgen.param.constant: !Int = <{5}>
     lit.return %0 : !Int

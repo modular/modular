@@ -770,12 +770,12 @@ Operation *IfOp::getThenTerminator() { return getThenBlock().getTerminator(); }
 Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
 
 //===----------------------------------------------------------------------===//
-// ElifYieldOp
+// IfElifCondYieldOp
 //===----------------------------------------------------------------------===//
 
-bool ElifYieldOp::isParentNode(Operation *op) { return isa<IfOp>(op); }
+bool IfElifCondYieldOp::isParentNode(Operation *op) { return isa<IfOp>(op); }
 
-void ElifYieldOp::getBranchTargets(
+void IfElifCondYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   // The first operand is the condition and the subsequent operands are likely
@@ -784,7 +784,8 @@ void ElifYieldOp::getBranchTargets(
   assert(!operands.empty());
   // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
   unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber();
-  assert(myIndex >= 2 && "elif.yield only belongs in additional cond regions");
+  assert(myIndex >= 2 &&
+         "if.elifcond.yield only belongs in additional cond regions");
   unsigned nextValueRegion = myIndex + 1;
   unsigned nextConditionRegion = myIndex + 2;
   unsigned numRegions =
@@ -805,8 +806,8 @@ void ElifYieldOp::getBranchTargets(
   targets.emplace_back(nextConditionRegionOrElse, carryOver);
 }
 
-ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
-                                          InterpreterState &state) {
+ErrorTreeOrSuccess IfElifCondYieldOp::interpret(ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
   auto parent = cast<IfOp>(getOperation()->getParentOp());
   // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
   unsigned myRegionNumber =
@@ -830,8 +831,8 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
 }
 
 ErrorTreeOrSuccess
-ElifYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                  ParametricInterpreterState &state) {
+IfElifCondYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                        ParametricInterpreterState &state) {
   return interpret(operands, state);
 }
 

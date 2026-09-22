@@ -214,12 +214,12 @@ static HLCF::IfOp eliminateExtraIfArms(HLCF::IfOp ifOp) {
     currentRegion->takeBody(region);
     builder.setInsertionPointToEnd(&currentRegion->front());
     Operation *terminator = currentRegion->front().getTerminator();
-    if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(terminator)) {
+    if (auto elifCondYieldOp = dyn_cast<HLCF::IfElifCondYieldOp>(terminator)) {
       auto newIfOp = HLCF::IfOp::create(builder, ifOp.getResultTypes(),
-                                        elifYieldOp->getOperand(0));
-      // Insert yield of the nested elif results, then erase elif.yield.
+                                        elifCondYieldOp->getOperand(0));
+      // Insert yield of the nested elif results, then erase if.elifcond.yield.
       HLCF::YieldOp::create(builder, newIfOp.getResults());
-      elifYieldOp->erase();
+      elifCondYieldOp->erase();
       currentRegion = &newIfOp.getThenRegion();
       continue;
     }

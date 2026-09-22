@@ -130,7 +130,7 @@ struct BaseMiniPack[
 
 
 # CHECK-LABEL: lit.fn @"refine_type_base_static_member
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType T, :meta<!{{.*}}StaticExtra> !{{.*}}StaticExtra){{.*}}> {
+# CHECK: kgen.comptime.if <{{.*}}conforms_to(:!AnyType T, :meta<!{{.*}}StaticExtra> !{{.*}}StaticExtra){{.*}}> {
 # CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType T, @type_refinement_ir::@StaticExtra, "static_value{{.*}}">
 def refine_type_base_static_member[T: AnyType]():
     comptime if conforms_to(T, StaticExtra):
@@ -244,7 +244,7 @@ def refine_from_where[T: Base](imm x: T) where conforms_to(T, Extra):
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
+# CHECK: kgen.comptime.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
 # CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
@@ -268,7 +268,7 @@ def refine_after_comptime_assert[T: Base](imm x: T):
 
 # CHECK-LABEL: lit.fn @"refinement_does_not_leak_after_comptime_if
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
+# CHECK: kgen.comptime.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
 # CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
 # CHECK-NOT: kgen.rebind [[ARG]]
@@ -294,7 +294,7 @@ def no_refinement_before_comptime_assert[T: Base](imm x: T):
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if_no_call
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_SomeTrait T, mut *"x`"> owned_in_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_SomeTrait T, :meta<!{{.*}}Deinitable> !{{.*}}Deinitable){{.*}}> {
+# CHECK: kgen.comptime.if <{{.*}}conforms_to(:!AnyType_SomeTrait T, :meta<!{{.*}}Deinitable> !{{.*}}Deinitable){{.*}}> {
 # CHECK: [[IF_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Deinitable{{.*}}downcast(:!AnyType_SomeTrait T){{.*}}
 # CHECK: lit.ownership.use [[IF_REBIND]]
 def refine_in_comptime_if_no_call[T: SomeTrait](var x: T):

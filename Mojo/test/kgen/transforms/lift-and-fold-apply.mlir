@@ -47,8 +47,8 @@ kgen.generator @consume<N>(%arg0: !pop.array<N, index>) {
 // CHECK-LABEL: kgen.generator @apply_value_crosses
 kgen.generator @apply_value_crosses(%arg0: !pop.array<apply(:(index) -> index @pass, 1), index>) {
   // CHECK-NEXT: apply *[[L0:.*]] = [(index) -> index: @pass](1)
-  // CHECK: kgen.param.if
-  kgen.param.if <false> {
+  // CHECK: kgen.comptime.if
+  kgen.comptime.if <false> {
     // CHECK-NEXT: apply *[[L1:.*]] = [(index) -> index: @pass](2)
     // CHECK: constant = <*[[L1]]>
     kgen.param.constant = <apply(:(index) -> index @pass, 2)>
@@ -127,8 +127,8 @@ kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !k
   // COME: new parameter decl scopes.
 
   kgen.param.declare p0 = <1>
-  // CHECK: kgen.param.if
-  kgen.param.if <false> {
+  // CHECK: kgen.comptime.if
+  kgen.comptime.if <false> {
     // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
     // CHECK: apply *[[L1:.*]] = [(index) -> index: @pass](*[[L0]])
     // CHECK: hlcf.if

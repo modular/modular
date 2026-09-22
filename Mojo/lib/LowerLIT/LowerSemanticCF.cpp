@@ -262,7 +262,7 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
   Operation *nextOp = op.getNextNode();
   // We do not report an error on `parameter if` since `parameter if` serves as
   // a "preprocessor" in Mojo.
-  if (!isa<ParamIfOp>(op) && !nextOp->hasTrait<OpTrait::IsTerminator>()) {
+  if (!isa<ComptimeIfOp>(op) && !nextOp->hasTrait<OpTrait::IsTerminator>()) {
     // Don't complain if the location is the same as the enclosing function,
     // it is automatically synthesized.
     auto funcOp = nextOp->getParentOfType<LIT::FnOp>();
@@ -352,8 +352,8 @@ bool LowerSemanticCF::lowerIfOp(HLCF::IfOp ifOp, CodeEffects &effects) {
     effects.mergeControlEffects(condEffects);
 
     // Check to see if the cond ended in a true/false constant.
-    auto yieldOp =
-        dyn_cast<HLCF::ElifYieldOp>(ifOp.getElifRegions()[i].front().back());
+    auto yieldOp = dyn_cast<HLCF::IfElifCondYieldOp>(
+        ifOp.getElifRegions()[i].front().back());
     if (yieldOp &&
         mlir::matchPattern(yieldOp.getCond(), m_Constant(&elifCond))) {
       // A false condition would mean the corresponding 'then' block isn't
@@ -535,7 +535,7 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor, CodeEffects &effects) {
   // We do this transformation to make CheckLifetimes and the Elaborator's job
   // easier by not having to understand the 'else' logic.  We lower:
   //    kgen.param.for iter in stuff {
-  //       kgen.param.if should_stop() {
+  //       kgen.comptime.if should_stop() {
   //          kgen.param.for.goto.else
   //       }
   //       body_that_uses_iter
@@ -544,7 +544,7 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor, CodeEffects &effects) {
   //    }
   // Into:
   //    kgen.param.for i in stuff {
-  //       kgen.param.if should_stop() {
+  //       kgen.comptime.if should_stop() {
   //          cleanup_that_doesnt_happen_on_break_or_return
   //          kgen.param.for.break
   //       }
@@ -901,7 +901,7 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       continue;
     }
 
-    // Process a HLCF::IfOp / ParamIfOp with a known-constant condition: mark
+    // Process a HLCF::IfOp / ComptimeIfOp with a known-constant condition: mark
     // the unreachable arm(s) so we don't consider them live.
     if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
       if (lowerIfOp(ifOp, effects)) {
@@ -926,9 +926,9 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
     }
 
     // Otherwise we must have a comptime if.
-    assert(isa<ParamIfOp>(op) && "Unknown operation with regions");
+    assert(isa<ComptimeIfOp>(op) && "Unknown operation with regions");
 
-    if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+    if (auto ifOp = dyn_cast<ComptimeIfOp>(op)) {
       if (auto cond = sugarDynCast<SIMDAttr>(ifOp.getCond())) {
         Region *deadRegion =
             &(cond.getAsBool() ? ifOp.getElseRegion() : ifOp.getThenRegion());
@@ -977,8 +977,9 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
-  assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
-              LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopYieldOp>(block.back())));
+  assert((
+      isa<HLCF::YieldOp, HLCF::IfElifCondYieldOp, LIT::TryYieldOp, ParamYieldOp,
+          LIT::EndFnOp, CO::SuspendEndOp, LIT::LoopYieldOp>(block.back())));
   effects.doesFallThrough = true;
 }
 
@@ -1020,7 +1021,7 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
-        isConditional || isa<ParamIfOp, HLCF::IfOp, HLCF::MatchOp>(op);
+        isConditional || isa<ComptimeIfOp, HLCF::IfOp, HLCF::MatchOp>(op);
     // Handle things like if statements, HLCF::Loop, try, etc.
     for (auto &region : op.getRegions()) {
       if (checkSelfRecursion(region.front(), isSubregionConditional))

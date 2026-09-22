@@ -151,7 +151,7 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
   // CHECK-NEXT:       %idx1 = index.constant 1
   // CHECK-NEXT:       [[VAR2:%.*]] = index.cmp eq(%arg0, %idx1)
   // CHECK-NEXT:       [[VAR2B:%.*]] = pop.cast_from_builtin [[VAR2]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:       hlcf.elif.yield [[VAR2B]]
+  // CHECK-NEXT:       hlcf.if.elifcond.yield [[VAR2B]]
   // CHECK-NEXT:      } then {
   // CHECK-NEXT:       hlcf.yield %arg0 : index
   // CHECK-NEXT:     } else {
@@ -165,7 +165,7 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
     %idx1 = index.constant 1
     %c1 = index.cmp eq(%arg0, %idx1)
     %cb1 = pop.cast_from_builtin %c1 : i1 to !kgen.scalar<bool>
-    hlcf.elif.yield %cb1
+    hlcf.if.elifcond.yield %cb1
   } then {
     hlcf.yield %arg0 : index
   } else {
@@ -287,7 +287,7 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   %idx2 = index.constant 2
   // The first condition is an operand, so its `then` reads the dominating
   // values directly. Only the additional arm forwards extra values through
-  // `hlcf.elif.yield` into its `then` and the `else`.
+  // `hlcf.if.elifcond.yield` into its `then` and the `else`.
   // CHECK:      [[V1:%.*]] = index.cmp eq(%arg0, %idx0)
   // CHECK-NEXT: [[V1B:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
   // CHECK-NEXT: [[V0:%.*]]:2 = hlcf.if [[V1B]] -> index, index {
@@ -295,7 +295,7 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   // CHECK-NEXT: } else {
   // CHECK-NEXT:   [[V2:%.*]] = index.cmp eq(%arg0, %idx1)
   // CHECK-NEXT:   [[V2B:%.*]] = pop.cast_from_builtin [[V2]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:   hlcf.elif.yield [[V2B]], %arg0, %idx2 : index, index
+  // CHECK-NEXT:   hlcf.if.elifcond.yield [[V2B]], %arg0, %idx2 : index, index
   // CHECK-NEXT: } then (%arg1: index, %arg2: index){
   // CHECK-NEXT:   hlcf.yield %arg1, %arg2 : index, index
   // CHECK-NEXT: } else (%arg1: index, %arg2: index){
@@ -308,7 +308,7 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   } else {
      %4 = index.cmp eq(%arg0, %idx1)
      %c4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
-     hlcf.elif.yield %c4, %arg0, %idx2 : index, index
+     hlcf.if.elifcond.yield %c4, %arg0, %idx2 : index, index
   } then (%arg1: index, %arg2: index) {
      hlcf.yield %arg1, %arg2 : index, index
   } else (%arg3: index, %arg4: index) {

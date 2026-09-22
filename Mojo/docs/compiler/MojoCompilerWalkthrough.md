@@ -320,7 +320,7 @@ elaborator caching).
 | `kgen.struct.instance`  | Concrete struct type (post-elaboration) |
 | `kgen.call`             | Function call                           |
 | `kgen.param.constant`   | Parameter value materialization         |
-| `kgen.param.if`         | Compile-time conditional                |
+| `kgen.comptime.if`      | Compile-time conditional                |
 
 #### Generators: Function and Struct
 

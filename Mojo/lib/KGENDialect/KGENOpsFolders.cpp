@@ -456,10 +456,10 @@ ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamIfOp
+// ComptimeIfOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
+LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
   Block &ifBranch = op->getRegion(0).front();
   Block &elseBranch = op->getRegion(1).front();
   Operation *ifTerm = ifBranch.getTerminator();
@@ -548,14 +548,14 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
   return success();
 }
 
-ErrorTreeOrSuccess ParamIfOp::interpret(ArrayRef<Attribute> operands,
-                                        InterpreterState &state) {
-  llvm_unreachable("kgen.param.if interpret undefined");
+ErrorTreeOrSuccess ComptimeIfOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  llvm_unreachable("kgen.comptime.if interpret undefined");
 }
 
 ErrorTreeOrSuccess
-ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                ParametricInterpreterState &state) {
+ComptimeIfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   ParametricInterpreterState &state) {
   Attribute cond = state.getReboundAttribute(getCond());
   unsigned regionId = 2;
   if (auto result = sugarDynCast<SIMDAttr>(cond)) {

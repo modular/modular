@@ -503,7 +503,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
   // The first condition is an SSA operand, so its side-effecting computation
   // is promoted in the enclosing block and the `then` reads the dominating
   // value. Only the additional arm still forwards a promoted value through
-  // `hlcf.elif.yield` into its `then` and the `else`.
+  // `hlcf.if.elifcond.yield` into its `then` and the `else`.
   // CHECK-NEXT: [[C0:%.*]] = index.add %arg0, %idx1
   // CHECK-NEXT: [[C1:%.*]] = index.cmp eq([[C0]], %idx0)
   // CHECK-NEXT: [[C1B:%.*]] = pop.cast_from_builtin [[C1]] : i1 to !kgen.scalar<bool>
@@ -514,7 +514,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
   // CHECK-NEXT:   [[X3:%.*]] = index.add [[C0]], %idx1
   // CHECK-NEXT:   [[X4:%.*]] = index.cmp eq([[X3]], %idx1)
   // CHECK-NEXT:   [[X4B:%.*]] = pop.cast_from_builtin [[X4]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:   hlcf.elif.yield [[X4B]], [[X3]], %arg1, %arg2 : index, index, index
+  // CHECK-NEXT:   hlcf.if.elifcond.yield [[X4B]], [[X3]], %arg1, %arg2 : index, index, index
   // CHECK-NEXT: } then (%arg3: index, %arg4: index, %arg5: index){
   // CHECK-NEXT:   [[Y3:%.*]] = index.add %arg4, %idx1
   // CHECK-NEXT:   hlcf.yield [[Y3]], %arg3, [[Y3]], %arg5 : index, index, index, index
@@ -539,7 +539,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
     pop.store %var9, %varCondition : !kgen.pointer<index>
     %c2 = index.cmp eq(%var9, %idx1)
     %cb2 = pop.cast_from_builtin %c2 : i1 to !kgen.scalar<bool>
-    hlcf.elif.yield %cb2
+    hlcf.if.elifcond.yield %cb2
   } then {
     %10 = pop.load %varThen : !kgen.pointer<index>
     %var11 = index.add %10, %idx1
@@ -604,7 +604,7 @@ kgen.generator @param_for() -> index {
     has_next :(index) -> i1 @has_next_wrapper
     get_next_iter :(!kgen.pointer<index> imm_mem, !kgen.pointer<index> byref_result) -> !kgen.none @wrapper {
 
-    kgen.param.if <apply(:!lit.generator<(index) -> !kgen.scalar<bool>> @has_next_wrapper, decl)> {
+    kgen.comptime.if <apply(:!lit.generator<(index) -> !kgen.scalar<bool>> @has_next_wrapper, decl)> {
       // CHECK: %index = kgen.param.constant
       %0 = kgen.param.constant = <decl>
       %1 = pop.load %mem : !kgen.pointer<index>

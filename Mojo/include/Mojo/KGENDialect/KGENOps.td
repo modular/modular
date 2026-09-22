@@ -1227,17 +1227,17 @@ def KGEN_ParamForGotoElseOp : KGENOp<"param.for.goto.else", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamIfOp
+// ComptimeIfOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
+def KGEN_ComptimeIfOp : KGENOp<"comptime.if", [DeclInterface,
     DeclareOpInterfaceMethods<ControlFlowNode>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
       "collectParameterUsesBelow"]>]>, NoParamDecls {
   let summary = "compile-time constant if";
   let description = [{
-    The `kgen.param.if` op provides a compile-time guarantee that if `cond`
+    The `kgen.comptime.if` op provides a compile-time guarantee that if `cond`
     is false, only the `else` block will be elaborated, and if `cond` is true,
     only the `then` block will be elaborated. Whichever block is elaborated
     will be directly inlined into the scope. This op is fully removed
@@ -1247,7 +1247,7 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     `param.yield` in the branch that is actually elaborated.
 
     ```mlir
-    %0 = kgen.param.if <condition> -> index {
+    %0 = kgen.comptime.if <condition> -> index {
       %i0 = index.constant 0
       kgen.param.yield %i0
     } else {
@@ -1255,7 +1255,7 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
       kgen.param.yield %i1
     }
 
-    kgen.param.if <condition -> result> {
+    kgen.comptime.if <condition -> result> {
       kgen.param.yield<1>
     } else {
       kgen.param.yield<0>
@@ -1304,23 +1304,23 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, Terminator,
-    ParentOneOf<["ParamIfOp", "ParamForOp"]>,
+    ParentOneOf<["ComptimeIfOp", "ParamForOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `kgen.param.yield` operation is used to denote the terminator of a
-    block in the `kgen.param.if` op. Conceptually, it branches to the next
-    op after a `kgen.param.if`, but in reality it's to make sure the IR
+    block in the `kgen.comptime.if` op. Conceptually, it branches to the next
+    op after a `kgen.comptime.if`, but in reality it's to make sure the IR
     stays in a reasonable state and is possible to inline directly.
 
     This op defines the parameter that is used as the result parameter on the
-    enclosing `kgen.param.if`.
+    enclosing `kgen.comptime.if`.
 
     Example:
 
     ```mlir
-    %0 = kgen.param.if <condition> -> index {
+    %0 = kgen.comptime.if <condition> -> index {
       kgen.param.yield %arg1 : index
     } else {
       kgen.param.yield %arg2 : index

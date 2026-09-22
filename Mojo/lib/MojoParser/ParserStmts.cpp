@@ -321,8 +321,8 @@ struct StmtParser : public ParserBase {
   ParseResult parseIfStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseElif(Location ifLoc, LexerCursor startCursor,
                         size_t curIndent);
-  ParseResult parseParamIf(Location ifLoc, LexerCursor startCursor,
-                           size_t curIndent);
+  ParseResult parseComptimeIf(Location ifLoc, LexerCursor startCursor,
+                              size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseMatchStmt(size_t curIndent);
 
@@ -388,8 +388,8 @@ struct StmtParser : public ParserBase {
   /// Emit an error and return failure if the current scope is not a valid
   /// location for an import statement. Imports are permitted at module scope
   /// (FileModuleOp) and at function scope (FnOp), including inside comptime
-  /// control-flow (ParamIfOp, ParamForOp) which is transparent to this check.
-  /// Runtime control-flow bodies (HLCF::IfOp, LIT::LoopOp, etc.) are
+  /// control-flow (ComptimeIfOp, ParamForOp) which is transparent to this
+  /// check. Runtime control-flow bodies (HLCF::IfOp, LIT::LoopOp, etc.) are
   /// rejected. \p kwLoc should be the location of the leading `from` or
   /// `import` keyword so the diagnostic caret lands on the keyword.
   ParseResult checkImportScope(SMLoc kwLoc);
@@ -1017,12 +1017,12 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
 }
 
 /// Parses 'comptime if <condition>:' after 'comptime' has been consumed.
-/// Delegates to parseParamIf for the actual IR generation.
+/// Delegates to parseComptimeIf for the actual IR generation.
 ParseResult StmtParser::parseComptimeIfStmt(LexerCursor startCursor,
                                             size_t curIndent) {
   Location ifLoc = translateLocation(getToken().getLoc());
   consumeToken(Token::kw_if);
-  return parseParamIf(ifLoc, startCursor, curIndent);
+  return parseComptimeIf(ifLoc, startCursor, curIndent);
 }
 
 /// Helper to parse 'for <target> in <seq>:' syntax, used by both regular
@@ -1936,7 +1936,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
         return;
 
       auto condLoc = translateLocation(groupFront.patternExpr->getLoc());
-      HLCF::ElifYieldOp::create(builder, condLoc, cond, ValueRange());
+      HLCF::IfElifCondYieldOp::create(builder, condLoc, cond, ValueRange());
     }
 
     // The first body goes in the "then" region; later bodies are elif then
@@ -2520,18 +2520,18 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   if (!hasNextBool)
     return failure();
   assert(hasNextBool.getIfPValue() && "expected PValue in param context");
-  auto paramIf =
-      ParamIfOp::create(builder, forLocation, hasNextBool.getIfPValue());
+  auto comptimeIf =
+      ComptimeIfOp::create(builder, forLocation, hasNextBool.getIfPValue());
 
   // Keep going if we have more elements.
-  builder.createBlock(&paramIf.getThenRegion());
+  builder.createBlock(&comptimeIf.getThenRegion());
 
   // If not, go to the else block.
-  builder.createBlock(&paramIf.getElseRegion());
+  builder.createBlock(&comptimeIf.getElseRegion());
   ParamForGotoElseOp::create(builder, forLocation);
   // Keep inserting after this operation.
-  builder.setInsertionPointAfter(paramIf);
-  // We always continue or goto-else from the arms of the param.if.
+  builder.setInsertionPointAfter(comptimeIf);
+  // We always continue or goto-else from the arms of the comptime.if.
   UnreachableOp::create(builder, forLocation);
 
   // After the check for too-few elements, we extract the next element and bind
@@ -2558,7 +2558,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
       return failure();
 
     //  Parse into the 'then' region of the parameter if.
-    builder.setInsertionPointToStart(&paramIf.getThenRegion().front());
+    builder.setInsertionPointToStart(&comptimeIf.getThenRegion().front());
     // Parse the body.
     if (parseSuite(curIndent))
       return failure();
@@ -3328,8 +3328,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   return success();
 }
 
-ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
-                                     size_t curIndent) {
+ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
+                                        size_t curIndent) {
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
@@ -3339,7 +3339,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
 
   // Each if/elif conditions could be dynamic or static, use some helpers to
   // generate the right structure.
-  ParamIfOp paramIfOp;
+  ComptimeIfOp comptimeIfOp;
   auto parseCondAndTerminateElifCondition = [&](Location loc) -> ParseResult {
     // For a comptime if we emit the condition as a PValue
     // without a builder.
@@ -3354,19 +3354,19 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
                  "'comptime if' condition must be evaluable at compile-time")
              << condExp->getRange();
 
-    paramIfOp = ParamIfOp::create(builder, loc, condPVal.get());
+    comptimeIfOp = ComptimeIfOp::create(builder, loc, condPVal.get());
     return success();
   };
 
   auto buildBranchAssumption = [&](Location loc,
                                    bool invertCondition) -> ConstraintAttr {
-    return LIT::buildBranchAssumption(paramIfOp.getCond(), invertCondition,
+    return LIT::buildBranchAssumption(comptimeIfOp.getCond(), invertCondition,
                                       loc);
   };
 
   // Parse a nested suite inside a param-if region. Inserts the branch
   // assumptions before parsing the suite.
-  auto parseParamIfRegion =
+  auto parseComptimeIfRegion =
       [&](ArrayRef<ConstraintAttr> assumptions) -> ParseResult {
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
@@ -3381,10 +3381,10 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
   if (parseCondAndTerminateElifCondition(ifLoc) ||
       parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
-  builder.createBlock(&paramIfOp.getThenRegion());
+  builder.createBlock(&comptimeIfOp.getThenRegion());
   ConstraintAttr currentTrueAssumption =
       buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false);
-  if (failed(parseParamIfRegion({currentTrueAssumption})))
+  if (failed(parseComptimeIfRegion({currentTrueAssumption})))
     return failure();
   ParamYieldOp::create(builder, ifLoc);
 
@@ -3397,7 +3397,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
       return failure();
 
     // Moves emission into "Condition" block if elif.
-    builder.createBlock(&cast<ParamIfOp>(paramIfOp).getElseRegion());
+    builder.createBlock(&cast<ComptimeIfOp>(comptimeIfOp).getElseRegion());
 
     if (parseCondAndTerminateElifCondition(elifLoc) ||
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
@@ -3405,23 +3405,23 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     currentConditionLoc = elifLoc;
 
     ParamYieldOp::create(builder, elifLoc);
-    builder.createBlock(&paramIfOp.getThenRegion());
+    builder.createBlock(&comptimeIfOp.getThenRegion());
     SmallVector<ConstraintAttr> thenAssumptions(accumulatedFalseAssumptions);
     thenAssumptions.push_back(
         buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false));
-    if (failed(parseParamIfRegion(thenAssumptions)))
+    if (failed(parseComptimeIfRegion(thenAssumptions)))
       return failure();
     ParamYieldOp::create(builder, elifLoc);
   }
 
-  builder.createBlock(&cast<ParamIfOp>(paramIfOp).getElseRegion());
+  builder.createBlock(&cast<ComptimeIfOp>(comptimeIfOp).getElseRegion());
   if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
       consumeIf(Token::kw_else)) {
     if (parseToken(Token::colon, "expected ':' after else"))
       return failure();
     accumulatedFalseAssumptions.push_back(
         buildBranchAssumption(currentConditionLoc, /*invertCondition=*/true));
-    if (failed(parseParamIfRegion(accumulatedFalseAssumptions)))
+    if (failed(parseComptimeIfRegion(accumulatedFalseAssumptions)))
       return failure();
   }
   ParamYieldOp::create(builder, ifLoc);
@@ -3554,8 +3554,8 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
         emitConditionExpr(entry.condExpr, condRegionIndex);
     if (failed(elifCond))
       return failure();
-    HLCF::ElifYieldOp::create(builder, entry.keywordLoc, *elifCond,
-                              /*no extra values*/ ValueRange());
+    HLCF::IfElifCondYieldOp::create(builder, entry.keywordLoc, *elifCond,
+                                    /*no extra values*/ ValueRange());
 
     if (failed(emitArmBody(ifOp.getElifRegions()[condRegionIndex + 1].front(),
                            entry)))
@@ -3607,7 +3607,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
 
 /// Validates that an import statement appears at a permitted scope: either
 /// directly at module scope (FileModuleOp) or at function scope (FnOp).
-/// Within a function, comptime control-flow ops (ParamIfOp, ParamForOp) are
+/// Within a function, comptime control-flow ops (ComptimeIfOp, ParamForOp) are
 /// transparent — the check walks through them. Any other intervening op
 /// (e.g. HLCF::IfOp, LIT::LoopOp) indicates runtime control flow and is
 /// rejected. Struct, trait, and extension bodies are also rejected.
@@ -3617,7 +3617,7 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   if (isa_and_nonnull<FileModuleOp>(parent))
     return success();
   // Within a function, walk up the region chain from the current insertion
-  // point to the FnOp. Comptime control-flow ops (ParamIfOp, ParamForOp) are
+  // point to the FnOp. Comptime control-flow ops (ComptimeIfOp, ParamForOp) are
   // transparent — we continue walking through them. Any other op in between
   // (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control flow and the import
   // is rejected.
@@ -3629,7 +3629,7 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
         break;
       if (isa<FnOp>(op))
         return success();
-      if (isa<ParamIfOp, ParamForOp>(op)) {
+      if (isa<ComptimeIfOp, ParamForOp>(op)) {
         block = op->getBlock();
         continue;
       }

@@ -960,7 +960,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
         }
       }
       // When elaboration is complete, only the first block in any region is
-      // valid (any other block may be illegal, e.g. due to how kgen.param.if
+      // valid (any other block may be illegal, e.g. due to how kgen.comptime.if
       // is handled). So we only need to go through the region arguments.
       for (Region &r : op->getRegions()) {
         for (BlockArgument arg : r.getArguments())
@@ -986,7 +986,7 @@ static LogicalResult concretizeLocsInScope(Block &scope, ImplNode *inode) {
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator::processParamIfOp
+// Elaborator::processComptimeIfOp
 //===----------------------------------------------------------------------===//
 
 /// We always erase this op and its nested scopes from the parameter graph -
@@ -1008,7 +1008,7 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   // map, and erasing a key drops its whole sub-graph. We therefore only need a
   // direct, keyed erase against `regionsWithinOp` rather than scanning every
   // scope and walking each one's ancestor chain — the latter was quadratic in
-  // the size of the enclosing function (every param.if/param.for resolution
+  // the size of the enclosing function (every comptime.if/param.for resolution
   // rescanned the whole function's scope graph).
   llvm::SmallPtrSet<Region *, 8> regionsWithinOp;
   for (Region &r : op->getRegions())
@@ -1040,7 +1040,8 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   }
 }
 
-ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
+ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
+                                                 ComptimeIfOp op) {
   // Check the condition expression.
   Attribute value;
   HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
@@ -1064,7 +1065,7 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
     ImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
-    auto op = cast<ParamIfOp>(parentFrame.ops.back());
+    auto op = cast<ComptimeIfOp>(parentFrame.ops.back());
 
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
@@ -1674,8 +1675,8 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
     return processRebindOp(node, rebindOp);
   if (auto assertOp = dyn_cast<ParamAssertOp>(op))
     return processParamAssertOp(node, assertOp);
-  if (auto ifOp = dyn_cast<ParamIfOp>(op))
-    return processParamIfOp(node, ifOp);
+  if (auto ifOp = dyn_cast<ComptimeIfOp>(op))
+    return processComptimeIfOp(node, ifOp);
   if (auto forOp = dyn_cast<ParamForOp>(op))
     return processParamForOp(node, forOp);
   if (auto call = dyn_cast<GeneratorUserOpInterface>(op))

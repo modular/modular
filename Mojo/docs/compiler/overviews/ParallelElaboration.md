@@ -179,7 +179,7 @@ a given generator is a function of the input parameters. For example:
 
 ```mlir
 kgen.generator @pickInstantiation<c: i1>() {
-  kgen.param.if <c> {
+  kgen.comptime.if <c> {
     kgen.call @foo<1>() : () -> ()
     kgen.param.yield
   } else {

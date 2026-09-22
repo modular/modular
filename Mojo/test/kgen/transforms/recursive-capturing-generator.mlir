@@ -12,7 +12,7 @@ kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: in
     kgen.return %a : index
   }
 
-  kgen.param.if <recurse> {
+  kgen.comptime.if <recurse> {
     %first = kgen.call_param[() capturing -> index: thing]()
     kgen.call @use(%first) : (index) -> ()
 

@@ -251,7 +251,7 @@ public:
   static RefType getCommonRefType(RefType ref1, RefType ref2);
 
   /// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::IfOp` or
-  /// `ParamIfOp`) whose then/else regions already contain the branch
+  /// `ComptimeIfOp`) whose then/else regions already contain the branch
   /// computations. Produces a single value into `dest` by:
   ///   1. yielding a unioned MValue when both sides are dominating refs,
   ///   2. otherwise coercing types and yielding a register-passable SSA value,

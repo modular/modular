@@ -15,7 +15,7 @@
 # RUN: %parse-mojo-isolated -mlir-print-debuginfo %s | FileCheck %s --check-prefix=LOC
 
 # Verify that a ternary expression with a comptime Bool condition emits
-# kgen.param.if (not hlcf.if) for a memory-only type (String), and that the
+# kgen.comptime.if (not hlcf.if) for a memory-only type (String), and that the
 # source-location annotations in each branch point to the corresponding branch
 # expression.  Previously the true branch incorrectly used the false
 # expression's source location.
@@ -33,11 +33,11 @@ def test_memory_only[cond: Bool]() -> String:
     return f() if cond else g()
 
 
-# A comptime Bool condition on a memory-only ternary must produce kgen.param.if,
+# A comptime Bool condition on a memory-only ternary must produce kgen.comptime.if,
 # not hlcf.if.  The true branch calls f() and the false branch calls g().
 # CHECK-LABEL: lit.fn @"test_memory_only[::Bool]()"
 # CHECK-NOT:   hlcf.if
-# CHECK:       kgen.param.if
+# CHECK:       kgen.comptime.if
 # CHECK:         lit.call {{.*}}@"f()"
 # CHECK:         kgen.param.yield
 # CHECK:       } else {
@@ -48,7 +48,7 @@ def test_memory_only[cond: Bool]() -> String:
 # Each branch must carry the source location of its own expression.
 # f() is at column 13; g() is at column 30 of the return statement.
 # LOC-LABEL:  lit.fn @"test_memory_only[::Bool]()"
-# LOC:        kgen.param.if
+# LOC:        kgen.comptime.if
 # LOC:        lit.call {{.*}}@"f()"{{.*}} loc([[LOC_F:#loc[0-9]+]])
 # LOC:        } else {
 # LOC:        lit.call {{.*}}@"g()"{{.*}} loc([[LOC_G:#loc[0-9]+]])

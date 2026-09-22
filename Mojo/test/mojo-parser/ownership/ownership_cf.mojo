@@ -493,7 +493,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
     comptime for x in TrivialRange():
-        # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next
+        # CHECK-NEXT: kgen.comptime.if {{.*}}paramfor_has_next
 
         # Make sure nothing sneaks in here.
         # CHECK-NEXT: lit.call {{.*}}marker()
@@ -524,7 +524,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
         marker()
         # CHECK-NEXT: kgen.param.for.continue
 
-    # This is the else from the param.if inside the param.for.
+    # This is the else from the comptime.if inside the param.for.
     # CHECK-NEXT: } else {
     else:
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %mem
@@ -536,7 +536,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
         # CHECK-NEXT: kgen.param.for.break
-    # Finish out the param.if and the param.for
+    # Finish out the comptime.if and the param.for
     # CHECK-NEXT:   } {elseIsolated, thenIsolated}
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {
@@ -555,7 +555,7 @@ def test_param_for2():
     # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
     comptime for x in TrivialRange():
-        # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next
+        # CHECK-NEXT: kgen.comptime.if {{.*}}paramfor_has_next
 
         # Make sure nothing sneaks in here.
         # CHECK-NEXT: lit.call {{.*}}marker()
@@ -601,7 +601,7 @@ def test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem1)
     # CHECK-NEXT: lifetime.end %mem1
     # CHECK-NEXT: __mlir_bool__
-    # CHECK-NEXT: hlcf.elif.yield
+    # CHECK-NEXT: hlcf.if.elifcond.yield
 
     # CHECK-NEXT: } then {
     elif cond2:
@@ -620,7 +620,7 @@ def test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: kgen.rebind
     # CHECK-NEXT: lit.ref.load
     # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem2)
-    # CHECK: hlcf.elif.yield
+    # CHECK: hlcf.if.elifcond.yield
 
     # CHECK-NEXT: } then {
     elif mem2.x == 0:

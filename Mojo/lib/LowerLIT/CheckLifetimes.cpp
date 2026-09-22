@@ -3067,7 +3067,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
       break;
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
-      // A single if/else shaped elif has the same region layout as ParamIfOp.
+      // A single if/else shaped elif has the same region layout as
+      // ComptimeIfOp.
       if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op);
       else
@@ -3209,11 +3210,11 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is ParamIfOp, or a simple (no extra arms) HLCF::IfOp.
+/// This is ComptimeIfOp, or a simple (no extra arms) HLCF::IfOp.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
-  assert((isa<ParamIfOp, HLCF::IfOp>(op)));
+  assert((isa<ComptimeIfOp, HLCF::IfOp>(op)));
   assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
          op.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
@@ -4431,8 +4432,9 @@ void DestructorInsertion::scanBlock(Block &block) {
       break;
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
-      // A single if/else shaped elif has the same region layout as ParamIfOp;
-      // reuse the proven if-like destructor logic (important inside loops).
+      // A single if/else shaped elif has the same region layout as
+      // ComptimeIfOp; reuse the proven if-like destructor logic (important
+      // inside loops).
       if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op, opEffects.results);
       else

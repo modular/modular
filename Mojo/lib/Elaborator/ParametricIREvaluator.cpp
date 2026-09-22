@@ -220,7 +220,7 @@ void ParametricIREvaluator::pushEvalFrame(Operation *op, Region *region,
       curr.evaluator.setRewritten(std::move(*result));
       curr.foundCached = true;
     } else {
-      bool clearCache = !isa<ParamIfOp>(op);
+      bool clearCache = !isa<ComptimeIfOp>(op);
       if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
         FunctionParameterUseDefGraph &g = *elaborator->knownGraphs.get()[gen];
         clearCache = g.hasParams || !gen.getInputParams().empty();
