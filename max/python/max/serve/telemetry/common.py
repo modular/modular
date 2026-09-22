@@ -73,6 +73,20 @@ from pythonjsonlogger import jsonlogger
 
 otelBaseUrl = "https://telemetry.modular.com:443"
 
+
+def _operator_set_endpoint(signal_var: str) -> bool:
+    """Whether the operator set ``signal_var`` or the generic endpoint variable.
+
+    The exporter must then be built with no explicit endpoint so the SDK can
+    resolve it: passing the value read here as ``endpoint=`` would let the
+    generic variable beat the signal-specific one.
+    """
+    return bool(
+        os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        or os.environ.get(signal_var)
+    )
+
+
 request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
     "max.serve.request_trace_ctx", default=None
 )
@@ -109,27 +123,25 @@ def _getWebUserId() -> str:
         return ""
 
 
-logs_resource = Resource.create(
-    {
-        "event.domain": "serve",
-        "telemetry.session": uuid.uuid4().hex,
-        "web.user.id": _getWebUserId(),
-        "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
-        "os.type": platform.system(),
-        "os.version": platform.release(),
-        "cpu.description": platform.processor(),
-        "cpu.arch": platform.architecture()[0],
-        "system.cloud": _getCloudProvider(),
-        "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
-    }
-)
+_LOGS_RESOURCE_ATTRS = {
+    "event.domain": "serve",
+    "telemetry.session": uuid.uuid4().hex,
+    "web.user.id": _getWebUserId(),
+    "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
+    "os.type": platform.system(),
+    "os.version": platform.release(),
+    "cpu.description": platform.processor(),
+    "cpu.arch": platform.architecture()[0],
+    "system.cloud": _getCloudProvider(),
+    "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
+}
+logs_resource = Resource.create(_LOGS_RESOURCE_ATTRS)
 
-metrics_resource = Resource.create(
-    {
-        "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
-        "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
-    }
-)
+_METRICS_RESOURCE_ATTRS = {
+    "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
+    "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
+}
+metrics_resource = Resource.create(_METRICS_RESOURCE_ATTRS)
 
 
 def _log_spaced_buckets(
@@ -673,23 +685,17 @@ def configure_metrics(settings: Settings) -> None:
         logger.info("Metrics initialized.")
 
 
+def _span_exporter() -> OTLPSpanExporter:
+    """Builds the span exporter, falling back to Modular's shared collector."""
+    if _operator_set_endpoint("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"):
+        return OTLPSpanExporter()
+    return OTLPSpanExporter(endpoint=otelBaseUrl + "/v1/traces")
+
+
 def configure_tracing(settings: Settings) -> None:
     if not settings.disable_telemetry:
-        # If the user set either standard OTel env var (e.g. for an
-        # in-cluster DD agent), let OTLPSpanExporter resolve the endpoint
-        # itself: its own env-var handling appends the signal-specific
-        # "/v1/traces" path to OTEL_EXPORTER_OTLP_ENDPOINT, which a plain
-        # os.environ.get() read here would not. Only fall back to the shared
-        # Modular telemetry endpoint when neither var is set.
-        user_configured_endpoint = os.environ.get(
-            "OTEL_EXPORTER_OTLP_ENDPOINT"
-        ) or os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-        exporter = (
-            OTLPSpanExporter()
-            if user_configured_endpoint
-            else OTLPSpanExporter(endpoint=otelBaseUrl + "/v1/traces")
-        )
         provider = TracerProvider(resource=logs_resource)
+        exporter = _span_exporter()
         provider.add_span_processor(BatchSpanProcessor(exporter))
         set_tracer_provider(provider)
 

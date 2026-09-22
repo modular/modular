@@ -70,6 +70,7 @@ modular_py_test(
         requirement("httpx"),
         requirement("openai"),
         requirement("opentelemetry-api"),
+        requirement("opentelemetry-exporter-otlp-proto-http"),
         requirement("opentelemetry-sdk"),
         requirement("numpy"),
         requirement("prometheus-client"),
