@@ -3400,7 +3400,20 @@ struct TileTensor[
         Return an immutable version of this tensor.
 
         Returns:
-            A `LayoutTensor` covering the same elements, but without mutability.
+            A `TileTensor` covering the same elements, but without mutability.
+        """
+        return {
+            self._unsafe_storage_cast[to_origin=ImmOrigin(Self.origin)](),
+            self.layout,
+        }
+
+    @inline(.always)
+    def as_imm(self) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
+        """
+        Return an immutable version of this tensor.
+
+        Returns:
+            A `TileTensor` covering the same elements, but without mutability.
         """
         return {
             self._unsafe_storage_cast[to_origin=ImmOrigin(Self.origin)](),
