@@ -388,10 +388,11 @@ struct StmtParser : public ParserBase {
   /// Emit an error and return failure if the current scope is not a valid
   /// location for an import statement. Imports are permitted at module scope
   /// (FileModuleOp) and at function scope (FnOp), including inside comptime
-  /// control-flow (ComptimeIfOp, ComptimeForOp) which is transparent to this
-  /// check. Runtime control-flow bodies (HLCF::IfOp, LIT::LoopOp, etc.) are
-  /// rejected. \p kwLoc should be the location of the leading `from` or
-  /// `import` keyword so the diagnostic caret lands on the keyword.
+  /// control-flow (HLCF::ComptimeIfOp, HLCF::ComptimeForOp) which is
+  /// transparent to this check. Runtime control-flow bodies (HLCF::IfOp,
+  /// LIT::LoopOp, etc.) are rejected. \p kwLoc should be the location of the
+  /// leading `from` or `import` keyword so the diagnostic caret lands on the
+  /// keyword.
   ParseResult checkImportScope(SMLoc kwLoc);
   ParseResult parseImportModuleName(SharedState::ImportPath &parsedName,
                                     bool allowRelativeImport);
@@ -2438,7 +2439,7 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
   // paramfor_next_iter, and paramfor_next_value functions to 'functional'ize.
   //
   // Parameter for loops are desugared into:
-  //   kgen.comptime.for 'it', initial=iterable.__iter__(),
+  //   hlcf.comptime.for 'it', initial=iterable.__iter__(),
   //      has_next=..., get_next=... {
   //       comptime if it.has_next():
   //         # Logically: alias e = it.__next__()
@@ -2504,8 +2505,8 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
   auto iterDecl = ParamDeclAttr::get(scope.mangleParamName("iter"), iterType);
 
   // Create the loop and parse the body into it.
-  auto paramFor = ComptimeForOp::create(builder, forLocation, initialIterVal,
-                                        hasNext, getNextIter, iterDecl);
+  auto paramFor = HLCF::ComptimeForOp::create(
+      builder, forLocation, initialIterVal, hasNext, getNextIter, iterDecl);
 
   builder.createBlock(&paramFor.getBody());
 
@@ -2521,15 +2522,15 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
   if (!hasNextBool)
     return failure();
   assert(hasNextBool.getIfPValue() && "expected PValue in param context");
-  auto comptimeIf =
-      ComptimeIfOp::create(builder, forLocation, hasNextBool.getIfPValue());
+  auto comptimeIf = HLCF::ComptimeIfOp::create(builder, forLocation,
+                                               hasNextBool.getIfPValue());
 
   // Keep going if we have more elements.
   builder.createBlock(&comptimeIf.getThenRegion());
 
   // If not, go to the else block.
   builder.createBlock(&comptimeIf.getElseRegion());
-  ComptimeForGotoElseOp::create(builder, forLocation);
+  HLCF::ComptimeForGotoElseOp::create(builder, forLocation);
   // Keep inserting after this operation.
   builder.setInsertionPointAfter(comptimeIf);
   // We always continue or goto-else from the arms of the comptime.if.
@@ -2563,7 +2564,7 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
     // Parse the body.
     if (parseSuite(curIndent))
       return failure();
-    ComptimeForContinueOp::create(builder, forLocation);
+    HLCF::ComptimeForContinueOp::create(builder, forLocation);
   }
 
   // Parse the else region if present.
@@ -2575,7 +2576,7 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
         parseLocalScopeSuite(curIndent))
       return failure();
   }
-  ComptimeYieldOp::create(builder, forLocation);
+  HLCF::ComptimeYieldOp::create(builder, forLocation);
 
   // Advance the insertion point.
   builder.setInsertionPointAfter(paramFor);
@@ -3340,7 +3341,7 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
 
   // Each if/elif conditions could be dynamic or static, use some helpers to
   // generate the right structure.
-  ComptimeIfOp comptimeIfOp;
+  HLCF::ComptimeIfOp comptimeIfOp;
   auto parseCondAndTerminateElifCondition = [&](Location loc) -> ParseResult {
     // For a comptime if we emit the condition as a PValue
     // without a builder.
@@ -3355,7 +3356,7 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
                  "'comptime if' condition must be evaluable at compile-time")
              << condExp->getRange();
 
-    comptimeIfOp = ComptimeIfOp::create(builder, loc, condPVal.get());
+    comptimeIfOp = HLCF::ComptimeIfOp::create(builder, loc, condPVal.get());
     return success();
   };
 
@@ -3387,7 +3388,7 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
       buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false);
   if (failed(parseComptimeIfRegion({currentTrueAssumption})))
     return failure();
-  ComptimeYieldOp::create(builder, ifLoc);
+  HLCF::ComptimeYieldOp::create(builder, ifLoc);
 
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
@@ -3398,24 +3399,25 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
       return failure();
 
     // Moves emission into "Condition" block if elif.
-    builder.createBlock(&cast<ComptimeIfOp>(comptimeIfOp).getElseRegion());
+    builder.createBlock(
+        &cast<HLCF::ComptimeIfOp>(comptimeIfOp).getElseRegion());
 
     if (parseCondAndTerminateElifCondition(elifLoc) ||
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
     currentConditionLoc = elifLoc;
 
-    ComptimeYieldOp::create(builder, elifLoc);
+    HLCF::ComptimeYieldOp::create(builder, elifLoc);
     builder.createBlock(&comptimeIfOp.getThenRegion());
     SmallVector<ConstraintAttr> thenAssumptions(accumulatedFalseAssumptions);
     thenAssumptions.push_back(
         buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false));
     if (failed(parseComptimeIfRegion(thenAssumptions)))
       return failure();
-    ComptimeYieldOp::create(builder, elifLoc);
+    HLCF::ComptimeYieldOp::create(builder, elifLoc);
   }
 
-  builder.createBlock(&cast<ComptimeIfOp>(comptimeIfOp).getElseRegion());
+  builder.createBlock(&cast<HLCF::ComptimeIfOp>(comptimeIfOp).getElseRegion());
   if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
       consumeIf(Token::kw_else)) {
     if (parseToken(Token::colon, "expected ':' after else"))
@@ -3425,7 +3427,7 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
     if (failed(parseComptimeIfRegion(accumulatedFalseAssumptions)))
       return failure();
   }
-  ComptimeYieldOp::create(builder, ifLoc);
+  HLCF::ComptimeYieldOp::create(builder, ifLoc);
   return success();
 }
 
@@ -3608,20 +3610,21 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
 
 /// Validates that an import statement appears at a permitted scope: either
 /// directly at module scope (FileModuleOp) or at function scope (FnOp).
-/// Within a function, comptime control-flow ops (ComptimeIfOp, ComptimeForOp)
-/// are transparent — the check walks through them. Any other intervening op
-/// (e.g. HLCF::IfOp, LIT::LoopOp) indicates runtime control flow and is
-/// rejected. Struct, trait, and extension bodies are also rejected.
+/// Within a function, comptime control-flow ops (HLCF::ComptimeIfOp,
+/// HLCF::ComptimeForOp) are transparent — the check walks through them. Any
+/// other intervening op (e.g. HLCF::IfOp, LIT::LoopOp) indicates runtime
+/// control flow and is rejected. Struct, trait, and extension bodies are also
+/// rejected.
 ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   Operation *parent = getParentDecl().getIfOperation();
   // Module scope is always valid.
   if (isa_and_nonnull<FileModuleOp>(parent))
     return success();
   // Within a function, walk up the region chain from the current insertion
-  // point to the FnOp. Comptime control-flow ops (ComptimeIfOp, ComptimeForOp)
-  // are transparent — we continue walking through them. Any other op in between
-  // (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control flow and the import
-  // is rejected.
+  // point to the FnOp. Comptime control-flow ops (HLCF::ComptimeIfOp,
+  // HLCF::ComptimeForOp) are transparent — we continue walking through them.
+  // Any other op in between (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control
+  // flow and the import is rejected.
   if (isa_and_nonnull<FnOp>(parent)) {
     Block *block = builder.getInsertionBlock();
     while (block) {
@@ -3630,7 +3633,7 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
         break;
       if (isa<FnOp>(op))
         return success();
-      if (isa<ComptimeIfOp, ComptimeForOp>(op)) {
+      if (isa<HLCF::ComptimeIfOp, HLCF::ComptimeForOp>(op)) {
         block = op->getBlock();
         continue;
       }

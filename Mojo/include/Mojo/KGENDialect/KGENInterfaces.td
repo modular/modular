@@ -336,7 +336,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       implicit parameter operator in how it behaves.
 
       Two operations that are implicitly parameter are `kgen.call` and
-      `kgen.comptime.if`.
+      `hlcf.comptime.if`.
 
       ```mlir
       kgen.call @foobar() : () -> ()
@@ -347,7 +347,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       symbol reference `@foobar` to a single concrete function.
 
       ```mlir
-      kgen.comptime.if <1> {
+      hlcf.comptime.if <1> {
         // ...
       } else {
         // ...

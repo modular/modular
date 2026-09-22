@@ -596,15 +596,15 @@ kgen.generator @param_for() -> index {
   // CHECK-NEXT: %idx0 = index.constant 0
   %idx0 = index.constant 0
   pop.store %idx0, %mem : !kgen.pointer<index>
-  // CHECK-NEXT: %0 = kgen.comptime.for
+  // CHECK-NEXT: %0 = hlcf.comptime.for
   // CHECK-NEXT: has_next
   // CHECK-NEXT: get_next_iter
   // CHECK-SAME: (%arg0 = %idx0 : index) -> index
-  kgen.comptime.for decl: index in :index 2
+  hlcf.comptime.for decl: index in :index 2
     has_next :(index) -> i1 @has_next_wrapper
     get_next_iter :(!kgen.pointer<index> imm_mem, !kgen.pointer<index> byref_result) -> !kgen.none @wrapper {
 
-    kgen.comptime.if <apply(:!lit.generator<(index) -> !kgen.scalar<bool>> @has_next_wrapper, decl)> {
+    hlcf.comptime.if <apply(:!lit.generator<(index) -> !kgen.scalar<bool>> @has_next_wrapper, decl)> {
       // CHECK: %index = kgen.param.constant
       %0 = kgen.param.constant = <decl>
       %1 = pop.load %mem : !kgen.pointer<index>
@@ -612,11 +612,11 @@ kgen.generator @param_for() -> index {
       %2 = index.add %1, %0
       pop.store %2, %mem : !kgen.pointer<index>
 
-      // CHECK-NEXT: kgen.comptime.for.continue [[PLUS1]]
-      kgen.comptime.for.continue
+      // CHECK-NEXT: hlcf.comptime.for.continue [[PLUS1]]
+      hlcf.comptime.for.continue
     } else { // CHECK-NEXT: } else {
-      // CHECK: kgen.comptime.for.break %arg0 : index
-      kgen.comptime.for.break
+      // CHECK: hlcf.comptime.for.break %arg0 : index
+      hlcf.comptime.for.break
     }
     kgen.unreachable
 

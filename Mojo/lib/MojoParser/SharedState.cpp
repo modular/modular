@@ -2843,13 +2843,13 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
-  // Handle kgen.comptime.if: the condition is already a TypedAttr, so we just
+  // Handle hlcf.comptime.if: the condition is already a TypedAttr, so we just
   // need to fold both branches and produce a POC::Cond param expression.
-  if (auto comptimeIfOp = dyn_cast<KGEN::ComptimeIfOp>(op)) {
+  if (auto comptimeIfOp = dyn_cast<HLCF::ComptimeIfOp>(op)) {
     // Substitute concrete parameter bindings, as ParamConstantOp does.
     TypedAttr condVal = evaluator.getReboundAttribute(comptimeIfOp.getCond());
     auto isParamYield = [](Operation &op) {
-      return isa<KGEN::ComptimeYieldOp>(op);
+      return isa<HLCF::ComptimeYieldOp>(op);
     };
     auto trueVal =
         foldBlock(comptimeIfOp.getThenRegion().front(), isParamYield);

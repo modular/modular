@@ -13,6 +13,7 @@
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/HLCFDialect/HLCFUtils.h"
+#include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
@@ -20,6 +21,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 using namespace M;
+using namespace M::KGEN;
 using namespace HLCF;
 
 /// Erase all operations following the given OP in its parent region. The OP
@@ -723,4 +725,97 @@ struct RemoveNoopLoop : OpRewritePattern<ForOp> {
 void ForOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                         MLIRContext *ctx) {
   results.insert<RemoveNoopLoop>(ctx);
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeIfOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
+  Block &ifBranch = op->getRegion(0).front();
+  Block &elseBranch = op->getRegion(1).front();
+  Operation *ifTerm = ifBranch.getTerminator();
+  Operation *elseTerm = elseBranch.getTerminator();
+
+  // Simple patterns to handle the case of branches containing just terminator
+  // ops.
+  if (ifTerm == &ifBranch.front() && elseTerm == &elseBranch.front() &&
+      op->getNumResults() == 0) {
+    // If both sides are yielding, we can delete the op.
+    if (isa<ComptimeYieldOp>(ifTerm) && isa<ComptimeYieldOp>(elseTerm)) {
+      b.eraseOp(op);
+      return success();
+    }
+
+    // If one branch yields and another breaks we can delete the op if the op is
+    // immediately preceding another break. The terminators can't have any
+    // returns.
+    if (ifTerm->getNumOperands() == 0 && elseTerm->getNumOperands() == 0 &&
+        isa<ComptimeYieldOp, HLCF::BreakOp>(ifTerm) &&
+        isa<ComptimeYieldOp, HLCF::BreakOp>(elseTerm) &&
+        isa<HLCF::BreakOp>(op->getNextNode())) {
+      b.eraseOp(op);
+      return success();
+    }
+  }
+
+  auto condAttr = sugarDynCast<SIMDAttr>(op.getCond());
+  if (!condAttr)
+    return b.notifyMatchFailure(op.getLoc(), "condition is not a constant");
+  bool condValue = condAttr.getAsBool();
+
+  // We can't fold away the op entirely, because it defines a parameter scope
+  // and this could create param decl conflicts. Instead, purge the dead region
+  // and insert a `kgen.unreachable`.
+  Block &deadBlock = op->getRegion(condValue).front();
+
+  // Don't match again if the dead block is already purged.
+  if (isa<UnreachableOp>(deadBlock.front()))
+    return b.notifyMatchFailure(op.getLoc(), "dead block already purged");
+
+  // Hoist all the non parameter defining ops out of the live region.
+  Block &liveBlock = op->getRegion(!condValue).front();
+  while (!liveBlock.front().hasTrait<OpTrait::IsTerminator>()) {
+    // Stop if we hit an operation defining a parameter. We don't hoist these as
+    // the parameter regions could conflict.
+    if (auto paramOp = dyn_cast<ParamOpInterface>(liveBlock.front())) {
+      bool hasParam = false;
+      paramOp.walkDeclarations([&](ParamDeclAttr attr) { hasParam = true; });
+      if (hasParam)
+        break;
+    }
+
+    // Otherwise, hoist the operation above the 'if'.
+    b.moveOpBefore(&liveBlock.front(), op);
+  }
+
+  // If we got down to a terminator that we can handle, eliminate the 'if'.
+  Operation &liveFront = liveBlock.front();
+  // If the live block is now trivial, we can remove the whole
+  // operation. Replace the results with the operands to the yield.
+  if (auto yield = dyn_cast<ComptimeYieldOp>(liveFront)) {
+    b.replaceOp(op, yield.getOperands());
+    return success();
+  }
+
+  // If we are ending control flow we can hoist it out but we have to delete
+  // all following ops to retain legality.
+  if (isa<KGEN::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(liveFront)) {
+    Block *block = op->getBlock();
+    // Delete things bottom-up so we delete uses before defs.
+    while (&block->back() != op)
+      b.eraseOp(&block->back());
+    // Move the terminator out of the 'if' and remove the 'if'.
+    b.moveOpBefore(&liveFront, op);
+    b.eraseOp(op);
+    return success();
+  }
+
+  // Otherwise, we have a parameter defining op (which we need the scope for)
+  // or control flow we don't know about.
+  for (Operation &subOp : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
+    b.eraseOp(&subOp);
+  b.setInsertionPointToStart(&deadBlock);
+  UnreachableOp::create(b, op.getLoc());
+  return success();
 }

@@ -19,34 +19,34 @@
 
 # CHECK-LABEL: lit.fn @"comptime_if_basic{{.*}}"<a: scalar<bool>>()
 def comptime_if_basic[a: __mlir_type.`!kgen.scalar<bool>`]():
-    # CHECK: kgen.comptime.if <a> {
+    # CHECK: hlcf.comptime.if <a> {
     comptime if a:
         # CHECK: lit.var.decl "inside" var
         var inside: Int
-    # CHECK: kgen.comptime.yield
+    # CHECK: hlcf.comptime.yield
     # CHECK: }
 
 
 # CHECK-LABEL: lit.fn @"comptime_if_elif{{.*}}"<a: scalar<bool>, b: !Bool>()
 def comptime_if_elif[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
-    # CHECK: kgen.comptime.if <a> {
+    # CHECK: hlcf.comptime.if <a> {
     comptime if a:
         # CHECK: lit.var.decl "inside_1" var
         var inside_1: Int
     # CHECK: } else {
-    # CHECK:     kgen.comptime.if <#lit.struct.extract<:!Bool b, "_mlir_value">> {
+    # CHECK:     hlcf.comptime.if <#lit.struct.extract<:!Bool b, "_mlir_value">> {
     elif b:
         # CHECK:     lit.var.decl "inside_2" var
         var inside_2: Int
-    # CHECK:     kgen.comptime.yield
+    # CHECK:     hlcf.comptime.yield
     # CHECK:   }
-    # CHECK:   kgen.comptime.yield
+    # CHECK:   hlcf.comptime.yield
     # CHECK: }
 
 
 # CHECK-LABEL: lit.fn @"comptime_if_else{{.*}}"<a: scalar<bool>>()
 def comptime_if_else[a: __mlir_type.`!kgen.scalar<bool>`]():
-    # CHECK: kgen.comptime.if <a> {
+    # CHECK: hlcf.comptime.if <a> {
     comptime if a:
         # CHECK: lit.var.decl "inside_then" var
         var inside_then: Int
@@ -64,30 +64,30 @@ def comptime_if_else[a: __mlir_type.`!kgen.scalar<bool>`]():
 
 # CHECK-LABEL: lit.fn @"param_if{{.*}}"<a: scalar<bool>, b: !Bool>()
 def param_if[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
-    # CHECK: kgen.comptime.if <a> {
+    # CHECK: hlcf.comptime.if <a> {
     comptime if a:
         # CHECK: lit.var.decl "inside_1" var
         var inside_1: Int
     # CHECK: } else {
-    # CHECK:     kgen.comptime.if <#lit.struct.extract<:!Bool b, "_mlir_value">> {
+    # CHECK:     hlcf.comptime.if <#lit.struct.extract<:!Bool b, "_mlir_value">> {
     elif b:
         # CHECK:     lit.var.decl "inside_2" var
         var inside_2: Int
-    # CHECK:     kgen.comptime.yield
+    # CHECK:     hlcf.comptime.yield
     # CHECK:   }
-    # CHECK:   kgen.comptime.yield
+    # CHECK:   hlcf.comptime.yield
     # CHECK: }
 
 
 # CHECK-LABEL: lit.fn @"param_if_andor_i1{{.*}}"<a: scalar<bool>, b: scalar<bool>>()
 def param_if_andor_i1[a: __mlir_type.`!kgen.scalar<bool>`, b: __mlir_type.`!kgen.scalar<bool>`]():
-    # CHECK: kgen.comptime.if <cond(a, b, a)>
+    # CHECK: hlcf.comptime.if <cond(a, b, a)>
     comptime if a and b:
         # CHECK:   lit.var.decl "v" var
         var v: Int
-    # CHECK:   kgen.comptime.yield
+    # CHECK:   hlcf.comptime.yield
     # CHECK: } else {
-    # CHECK: kgen.comptime.if <cond(a, a, b)>
+    # CHECK: hlcf.comptime.if <cond(a, a, b)>
     elif a or b:
         # CHECK:   lit.var.decl "w" var
         var w: Int
@@ -95,9 +95,9 @@ def param_if_andor_i1[a: __mlir_type.`!kgen.scalar<bool>`, b: __mlir_type.`!kgen
 
 # CHECK-LABEL: lit.fn @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 def param_if_and[a: Bool, b: Bool]():
-    # CHECK: kgen.comptime.if <#lit.struct.extract<:!Bool cond(#lit.struct.extract<:!Bool a, "_mlir_value">, b, a), "_mlir_value">> {
+    # CHECK: hlcf.comptime.if <#lit.struct.extract<:!Bool cond(#lit.struct.extract<:!Bool a, "_mlir_value">, b, a), "_mlir_value">> {
     comptime if a and b:
         # CHECK:   lit.var.decl "v" var
         var v: Int
-    # CHECK:   kgen.comptime.yield
+    # CHECK:   hlcf.comptime.yield
     # CHECK: }

@@ -1513,14 +1513,14 @@ static bool isAcceptableMValueSource(Value origin, Operation *anchorOp) {
 }
 
 /// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::IfOp` or
-/// `ComptimeIfOp`) whose then/else regions already contain the branch
+/// `HLCF::ComptimeIfOp`) whose then/else regions already contain the branch
 /// computations. Produces a single value into `dest` by:
 ///   1. yielding a unioned MValue when both sides are dominating refs,
 ///   2. otherwise coercing types and yielding a register-passable SSA value,
 ///   3. otherwise storing both sides into a scratch buffer and recreating
 ///      the op without a result.
 ///
-/// Branch terminators are chosen from the op kind (`ComptimeYieldOp` vs
+/// Branch terminators are chosen from the op kind (`HLCF::ComptimeYieldOp` vs
 /// `HLCF::YieldOp`). Regions are assumed to be unterminated when this is
 /// called.
 AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
@@ -1531,25 +1531,25 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
   assert(ifLikeOp && ifLikeOp->getNumRegions() >= 2 &&
          "expected if-like op with then/else regions");
 
-  const bool isComptimeIf = isa<ComptimeIfOp>(ifLikeOp);
+  const bool isComptimeIf = isa<HLCF::ComptimeIfOp>(ifLikeOp);
   assert((isComptimeIf || isa<HLCF::IfOp>(ifLikeOp)) &&
-         "expected ComptimeIfOp or HLCF::IfOp");
+         "expected HLCF::ComptimeIfOp or HLCF::IfOp");
 
   auto yieldValue = [&](Value v) {
     if (isComptimeIf)
-      ComptimeYieldOp::create(*builder, loc, ValueRange{v});
+      HLCF::ComptimeYieldOp::create(*builder, loc, ValueRange{v});
     else
       HLCF::YieldOp::create(*builder, loc, v);
   };
   auto yieldEmpty = [&]() {
     if (isComptimeIf)
-      ComptimeYieldOp::create(*builder, loc);
+      HLCF::ComptimeYieldOp::create(*builder, loc);
     else
       HLCF::YieldOp::create(*builder, loc);
   };
   auto recreateWithoutResult = [&]() -> Operation * {
-    if (auto comptimeIf = dyn_cast<ComptimeIfOp>(ifLikeOp))
-      return ComptimeIfOp::create(*builder, loc, comptimeIf.getCond());
+    if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(ifLikeOp))
+      return HLCF::ComptimeIfOp::create(*builder, loc, comptimeIf.getCond());
     return HLCF::IfOp::create(*builder, loc, TypeRange{},
                               cast<HLCF::IfOp>(ifLikeOp).getCond());
   };
@@ -1592,7 +1592,7 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
     // Ok, at this point we are committed. Emit a conversion to the common
     // type in each branch and produce the result as the right MValue type.
     // ifLikeOp->getRegion(0) is the then-region, getRegion(1) the else-region
-    // for both HLCF::IfOp and ComptimeIfOp.
+    // for both HLCF::IfOp and HLCF::ComptimeIfOp.
     auto emitBranch = [&](Region &region, const ExprNode *expr, Value value) {
       builder->setInsertionPointToEnd(&region.front());
       auto conv = emitZeroCostConvert({SRValue(value), expr}, commonRefType);

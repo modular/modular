@@ -16,6 +16,7 @@
 
 #include "Cache/CachedTransform.h"
 #include "InterpreterCache.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/BytecodeInterpreter.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
@@ -256,11 +257,13 @@ private:
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
-  ElaborationState processComptimeIfOp(PImplNode *parent, ComptimeIfOp op);
+  ElaborationState processComptimeIfOp(PImplNode *parent,
+                                       HLCF::ComptimeIfOp op);
 
   /// Process a comptime.for op by evaluating the sequence of induction
   /// variables and then instantiating the body for each value of the sequence.
-  ElaborationState processComptimeForOp(PImplNode *parent, ComptimeForOp op);
+  ElaborationState processComptimeForOp(PImplNode *parent,
+                                        HLCF::ComptimeForOp op);
 
   ElaborationState processCodeGenReachableOp(PImplNode *inode,
                                              CodeGenReachableOp op);

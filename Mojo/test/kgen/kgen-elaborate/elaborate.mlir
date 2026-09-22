@@ -430,13 +430,13 @@ kgen.generator @passTypeList() {
 //
 
 kgen.generator @genItf3<x>() {
-  kgen.comptime.if <eq(x, 0)> {
+  hlcf.comptime.if <eq(x, 0)> {
     "impl.0"() {attr=#kgen.param.decl.ref<"x"> : index}: () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
     "impl.1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
     kgen.call @genItf3<sub(x, 1)>() : () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   kgen.return
 }
@@ -569,11 +569,11 @@ kgen.generator @some_func() {
 // CHECK-LABEL: @constexprIfNoParams()
 kgen.generator @constexprIfNoParams() {
   // CHECK-NEXT: "should.appear"
-  kgen.comptime.if<true> {
+  hlcf.comptime.if<true> {
     "should.appear"() : () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   // CHECK-NEXT: kgen.return
   kgen.return
@@ -584,14 +584,14 @@ kgen.generator @constexprIfBasic() {
   kgen.param.declare cond_var = <32>
 
   // CHECK-NEXT: "should.appear"
-  %0 = kgen.comptime.if <lt(cond_var, 10)> -> index {
+  %0 = hlcf.comptime.if <lt(cond_var, 10)> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.comptime.yield %1 : index
+    hlcf.comptime.yield %1 : index
   } else {
     %3 = "should.appear"() : () -> index
     kgen.param.declare next_gt = <add(cond_var, 20)>
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
 
   kgen.return
@@ -603,19 +603,19 @@ kgen.generator @nestedConstexprIf() {
 
   // CHECK-NEXT: "should.appear"
   // CHECK-NOT: "should.not.appear"
-  %0 = kgen.comptime.if <lt(cond_var, 10)> -> index {
+  %0 = hlcf.comptime.if <lt(cond_var, 10)> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.comptime.yield %1 : index
+    hlcf.comptime.yield %1 : index
   } else {
-    %3 = kgen.comptime.if <gt(cond_var, 30)> -> index {
+    %3 = hlcf.comptime.if <gt(cond_var, 30)> -> index {
       %4 = "should.appear"() : () -> index
-      kgen.comptime.yield %4 : index
+      hlcf.comptime.yield %4 : index
     } else {
       %4 = "should.not.appear"() : () -> index
-      kgen.comptime.yield %4 : index
+      hlcf.comptime.yield %4 : index
     }
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
 
   kgen.return
@@ -625,10 +625,10 @@ kgen.generator @nestedConstexprIf() {
 kgen.generator @nestedConstexprIf2() {
   kgen.param.declare cond_var = <32>
 
-  %0 = kgen.comptime.if <lt(cond_var, 10)> -> index {
+  %0 = hlcf.comptime.if <lt(cond_var, 10)> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.comptime.yield %1 : index
+    hlcf.comptime.yield %1 : index
   } else {
     // CHECK-NEXT: param.constant: scalar<bool> = <true>
     %condition = kgen.param.constant : scalar<bool> = <gt(cond_var, 30)>
@@ -647,7 +647,7 @@ kgen.generator @nestedConstexprIf2() {
       hlcf.yield %4 : index
     }
     // CHECK-NOT: comptime.yield
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
 
   kgen.return
@@ -658,14 +658,14 @@ kgen.generator @nestedConstexprIf2() {
 // CHECK-LABEL: @"constexprIfInputParam,x=11"
 kgen.generator @constexprIfInputParam<x>() {
   // CHECK-NEXT: "should.appear"
-  %0 = kgen.comptime.if <gt(x, 10)> -> index {
+  %0 = hlcf.comptime.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     kgen.param.declare next_lt = <add(x, 10)>
-    kgen.comptime.yield %1 : index
+    hlcf.comptime.yield %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.param.declare next_gt = <add(x, 20)>
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
 
   kgen.return
@@ -682,13 +682,13 @@ kgen.generator @caller() {
 kgen.generator @constexprIfEarlyExit() -> index {
   kgen.param.declare x = <11>
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %0 = kgen.comptime.if <gt(x, 10)> -> index {
+  %0 = hlcf.comptime.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.return %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
   // CHECK-NOT: param.constant = <32>
   %4 = kgen.param.constant = <32>
@@ -702,22 +702,22 @@ kgen.generator @constexprIfEarlyExit() -> index {
 kgen.generator @constexprIfEarlyExit2() -> index {
   kgen.param.declare x = <11>
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %0 = kgen.comptime.if <gt(x, 10)> -> index {
+  %0 = hlcf.comptime.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.return %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
   // CHECK-NOT: "should.not.appear"
-  kgen.comptime.if <gt(x, 10)> {
+  hlcf.comptime.if <gt(x, 10)> {
     "should.not.appear"() : () -> ()
     %4 = index.constant 3
     // CHECK-NOT: kgen.return
     kgen.return %4 : index
   } else {
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   // CHECK-NOT: param.constant = <32>
   %4 = kgen.param.constant = <32>
@@ -728,13 +728,13 @@ kgen.generator @constexprIfEarlyExit2() -> index {
 // CHECK-LABEL: @constexprIfEarlyExitWithParam
 kgen.generator @constexprIfEarlyExitWithParam() -> index {
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %0 = kgen.comptime.if <gt(x, 10)> -> index {
+  %0 = hlcf.comptime.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.return %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
   kgen.param.declare x = <11>
   // CHECK-NOT: param.constant = <32>
@@ -748,13 +748,13 @@ kgen.generator @constexprIfEarlyExitWithParam2() -> index {
   // CHECK-NEXT: param.constant = <11>
   %0 = kgen.param.constant = <x>
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %1 = kgen.comptime.if <true> -> index {
+  %1 = hlcf.comptime.if <true> -> index {
     %2 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.return %2 : index
   } else {
     %3 = "should.not.appear"() : () -> index
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
   kgen.param.declare x = <11>
   // CHECK-NOT: param.constant = <32>
@@ -773,13 +773,13 @@ kgen.generator @returnTrue() -> !kgen.scalar<bool> {
 // CHECK-LABEL: @constexprIfFunctionCallCondition
 kgen.generator @constexprIfFunctionCallCondition() -> index {
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %1 = kgen.comptime.if <apply(:() -> !kgen.scalar<bool> @returnTrue)> -> index {
+  %1 = hlcf.comptime.if <apply(:() -> !kgen.scalar<bool> @returnTrue)> -> index {
     %2 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
-    kgen.comptime.yield %2 : index
+    hlcf.comptime.yield %2 : index
   } else {
     %3 = "should.not.appear"() : () -> index
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
 
   kgen.return %1 : index
@@ -799,13 +799,13 @@ kgen.generator @returnTrueStruct() -> !kgen.struct<(scalar<bool>)> {
 // CHECK-LABEL: @"ifFn
 kgen.generator @ifFn<true: !kgen.struct<(scalar<bool>)>>() -> index {
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %1 = kgen.comptime.if <apply(:(!kgen.struct<(scalar<bool>)>) -> !kgen.scalar<bool> @returnInputParam, true)> -> index {
+  %1 = hlcf.comptime.if <apply(:(!kgen.struct<(scalar<bool>)>) -> !kgen.scalar<bool> @returnInputParam, true)> -> index {
     %2 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
-    kgen.comptime.yield %2 : index
+    hlcf.comptime.yield %2 : index
   } else {
     %3 = "should.not.appear"() : () -> index
-    kgen.comptime.yield %3 : index
+    hlcf.comptime.yield %3 : index
   }
 
   kgen.return %1 : index
@@ -921,11 +921,11 @@ kgen.generator @produce_one() -> index {
 // CHECK-NEXT: call @"paramRecurse,in=2"
 
 kgen.generator @paramRecurse<in>() {
-  kgen.comptime.if <eq(in, 0)> {
-    kgen.comptime.yield
+  hlcf.comptime.if <eq(in, 0)> {
+    hlcf.comptime.yield
   } else {
     kgen.call @paramRecurse<add(in, -1)>() : () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   kgen.return
 }
@@ -951,18 +951,18 @@ kgen.generator @pointer_attr_elaborate() {
 kgen.generator @true_inside_false_param_if() {
   // CHECK-NEXT: should.appear
   // CHECK-NEXT: kgen.return
-  kgen.comptime.if <false> {
+  hlcf.comptime.if <false> {
     "should.not.appear"() : () -> ()
     kgen.return
   } else {
-    kgen.comptime.if <true> {
+    hlcf.comptime.if <true> {
       "should.appear"() : () -> ()
       kgen.return
     } else {
       "should.not.appear"() : () -> ()
-      kgen.comptime.yield
+      hlcf.comptime.yield
     }
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   kgen.return
 }
@@ -974,13 +974,13 @@ kgen.generator @true_inside_false_param_if() {
 // CHECK-NEXT: constant = <2>
 kgen.generator @param_if_different<cond: scalar<bool>>() {
   kgen.param.declare a = <3>
-  kgen.comptime.if <cond> {
+  hlcf.comptime.if <cond> {
     kgen.param.declare b = <2>
     kgen.param.constant = <b>
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
     kgen.param.constant = <a>
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   kgen.return
 }
@@ -1085,10 +1085,10 @@ kgen.generator @entry(%arg0: index) {
 // CHECK-NEXT:    kgen.return %0 : index
 
 kgen.generator @recurse<axis>(%arg0: index) -> index {
-  kgen.comptime.if <eq(axis, 0)> {
+  hlcf.comptime.if <eq(axis, 0)> {
     kgen.return %arg0 : index
   } else {
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   %0 = kgen.call @recurse<add(axis, -1)>(%arg0) : (index) -> index
   kgen.return %0 : index
@@ -1775,19 +1775,19 @@ kgen.generator @conflicting_values() {
   // CHECK-NEXT: constant = <1>
   // CHECK-NEXT: constant = <2>
   kgen.param.declare b: scalar<bool> = <true>
-  kgen.comptime.if <b> {
+  hlcf.comptime.if <b> {
     kgen.param.declare a = <1>
     kgen.param.constant = <a>
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
-  kgen.comptime.if <b> {
+  hlcf.comptime.if <b> {
     kgen.param.declare a = <2>
     kgen.param.constant = <a>
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   kgen.return
 }
@@ -2234,12 +2234,12 @@ kgen.struct.generator @S1 = struct_inst<"S1" memoryOnly>{}
 // CHECK-NEXT: "sink-does-not-conform-to"() : () -> ()
 // CHECK-NEXT: kgen.return
 kgen.generator @conformance_check<T: type>() always_inline {
-  kgen.comptime.if <#kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type, #kgen.type<typevalue<#kgen.trait_ref<[@"A", @"B"]>>, type> : !kgen.type>> {
+  hlcf.comptime.if <#kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type, #kgen.type<typevalue<#kgen.trait_ref<[@"A", @"B"]>>, type> : !kgen.type>> {
     "sink-conforms-to"() : () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
     "sink-does-not-conform-to"() : () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   kgen.return
 }

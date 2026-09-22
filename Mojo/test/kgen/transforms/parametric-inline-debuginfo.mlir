@@ -173,7 +173,7 @@ kgen.generator @foo<DT>() {
   // CHECK-NEXT: kgen.param.declare.region
   // CHECK-NEXT:   hlcf.loop
   // CHECK-NEXT:     kgen.param.declare A = <1> loc(#[[LOC0]])
-  // CHECK:        kgen.comptime.for
+  // CHECK:        hlcf.comptime.for
   // CHECK-NEXT: has_next
   // CHECK-NEXT: get_next_iter
   // CHECK-SAME:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !kgen.simd<N, DT0>) -> !kgen.simd<N, DT0>
@@ -189,13 +189,13 @@ kgen.generator @bar() always_inline {
       hlcf.break loc(#loc)
     } loc(#loc)
 
-    %0 = kgen.comptime.for I in ?
+    %0 = hlcf.comptime.for I in ?
       has_next :() -> i1 ?
       get_next_iter :() -> () ?
     (%arg1 loc(#loc) = %arg0 : !kgen.simd<N, DT>) -> !kgen.simd<N, DT> {
-      kgen.comptime.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
+      hlcf.comptime.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
     } else (%arg1 : !kgen.simd<N, DT> loc(#loc)) {
-      kgen.comptime.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
+      hlcf.comptime.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
     } loc(#loc)
 
     kgen.return %0 : !kgen.simd<N, DT> loc(#loc)

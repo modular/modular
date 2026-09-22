@@ -144,7 +144,7 @@ OriginTrackable::OriginTrackable(Value v) {
     }
 
     // The results of an if/elif operation can be owned.
-    if (isa<HLCF::IfOp, ComptimeIfOp>(res.getOwner())) {
+    if (isa<HLCF::IfOp, HLCF::ComptimeIfOp>(res.getOwner())) {
       name = StringAttr::get(v.getContext(), "(if result)");
       isIndirect = false;
       startsUninit = true;
@@ -588,8 +588,9 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   // Local control flow ops.
-  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, ComptimeForBreakOp,
-          ComptimeForContinueOp, HLCF::MatchNextOp>(op))
+  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp,
+          HLCF::ComptimeForBreakOp, HLCF::ComptimeForContinueOp,
+          HLCF::MatchNextOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
 
   // Match complete exits the enclosing match (like yield) and may produce
@@ -601,7 +602,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   // If-like operations (comptime if). Runtime if/else is HLCF::IfOp below.
-  if (isa<ComptimeIfOp>(op)) {
+  if (isa<HLCF::ComptimeIfOp>(op)) {
     // If-like ops can return owned results.
     for (auto opResult : op.getResults()) {
       auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
@@ -634,7 +635,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   /// This is HLCF::LoopOp.
-  if (isa<HLCF::LoopOp, ComptimeForOp>(op))
+  if (isa<HLCF::LoopOp, HLCF::ComptimeForOp>(op))
     return OverallOpValueEffect::loopOp;
 
   if (isa<LIT::TryOp>(op))

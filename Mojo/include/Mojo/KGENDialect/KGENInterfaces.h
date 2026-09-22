@@ -67,14 +67,14 @@ using InlineResult = std::pair<Operation *, std::function<void(Operation *)>>;
 /// Example:
 ///
 /// ```mlir
-/// kgen.comptime.if <lt(C, 1) -> output> {
-///   kgen.comptime.yield<A>
+/// hlcf.comptime.if <lt(C, 1) -> output> {
+///   hlcf.comptime.yield<A>
 /// } else {
-///   kgen.comptime.yield<B>
+///   hlcf.comptime.yield<B>
 /// }
 ///
 /// The definition of the result parameter `output` depends on the parameter
-/// expression `lt(C, 1)` and both regions of the `kgen.comptime.if`. The
+/// expression `lt(C, 1)` and both regions of the `hlcf.comptime.if`. The
 /// parameter use-def graph will determine that the definition of `output`
 /// depends directly on the parameters `A`, `B`, and `C`.
 struct ParamDefValue {

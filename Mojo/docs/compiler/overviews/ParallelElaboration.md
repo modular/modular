@@ -93,12 +93,12 @@ a given generator is a function of the input parameters. For example:
 
 ```mlir
 kgen.generator @pickInstantiation<c: i1>() {
-  kgen.comptime.if <c> {
+  hlcf.comptime.if <c> {
     kgen.call @foo<1>() : () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
     kgen.call @bar() : () -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   kgen.return
 }

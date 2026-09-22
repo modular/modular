@@ -4472,7 +4472,7 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     return emitter.emitResult(value, this, dest);
   }
 
-  // If the condition is a comptime PValue, emit kgen.comptime.if instead of
+  // If the condition is a comptime PValue, emit hlcf.comptime.if instead of
   // hlcf.if. During elaboration, processComptimeIfOp selects and inlines only
   // the live branch, preventing dead-branch ops (e.g. `comptime assert False`)
   // from ever being elaborated.
@@ -4490,7 +4490,7 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     // result type is fixed after emitting both branches. For the memory-only
     // path the op is recreated without a result at the end (same pattern as
     // the hlcf.if memory-only path below).
-    auto comptimeIfOp = ComptimeIfOp::create(
+    auto comptimeIfOp = HLCF::ComptimeIfOp::create(
         *emitter.builder, ifLoc, TypeRange{condPVal.get().getType()},
         condPVal.get());
 

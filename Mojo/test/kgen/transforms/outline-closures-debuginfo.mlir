@@ -111,17 +111,17 @@ kgen.generator @outline_closures_ref<a>() {
 // -----
 
 // COM: Fix for MOCO-869:
-// COM: decl is defined in the nested scope of `kgen.comptime.for` which is not at or above current
+// COM: decl is defined in the nested scope of `hlcf.comptime.for` which is not at or above current
 // COM: `param.declare.region`. It is safe to ignore and should not crash the compiler.
 // CHECK-LABEL: @ignore_param_defined_in_nested_non_decl_region_scope()
 kgen.generator @ignore_param_defined_in_nested_non_decl_region_scope() {
   kgen.param.declare.region closure = () {
-    kgen.comptime.for decl: index in :index 2
+    hlcf.comptime.for decl: index in :index 2
       has_next :(index) -> i1 @wrapper2
       get_next_iter :(index) -> index @wrapper {
-      kgen.comptime.for.continue loc(fused<#kgen.param.decl.ref<"decl"> : index>["x:0"])
+      hlcf.comptime.for.continue loc(fused<#kgen.param.decl.ref<"decl"> : index>["x:0"])
     } else {
-      kgen.comptime.yield
+      hlcf.comptime.yield
     }
     kgen.return
   }

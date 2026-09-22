@@ -9,11 +9,11 @@ kgen.generator @parameterIsolatedRegions<A>() {
   }
   // CHECK: {isolated}
 
-  // CHECK: kgen.comptime.if
-  kgen.comptime.if <lt(A, 1)> {
-    kgen.comptime.yield
+  // CHECK: hlcf.comptime.if
+  hlcf.comptime.if <lt(A, 1)> {
+    hlcf.comptime.yield
   } else {
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
   // CHECK: {elseIsolated, thenIsolated}
   kgen.return

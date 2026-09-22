@@ -3068,7 +3068,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
-      // ComptimeIfOp.
+      // HLCF::ComptimeIfOp.
       if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op);
       else
@@ -3176,10 +3176,10 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
 /// HLCF::MatchNextOp, HLCF::MatchCompleteOp, which all perform local control
 /// flow.
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp, ComptimeForBreakOp>(op)) {
+  if (isa<HLCF::BreakOp, HLCF::ComptimeForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     breakSet->mergeWith(liveness, valueSet.domInfo);
-  } else if (isa<HLCF::ContinueOp, ComptimeForContinueOp>(op)) {
+  } else if (isa<HLCF::ContinueOp, HLCF::ComptimeForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     continueSet->mergeWith(liveness, valueSet.domInfo);
   } else if (isa<HLCF::MatchNextOp, HLCF::MatchCompleteOp>(op)) {
@@ -3210,11 +3210,11 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is ComptimeIfOp, or a simple (no extra arms) HLCF::IfOp.
+/// This is HLCF::ComptimeIfOp, or a simple (no extra arms) HLCF::IfOp.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
-  assert((isa<ComptimeIfOp, HLCF::IfOp>(op)));
+  assert((isa<HLCF::ComptimeIfOp, HLCF::IfOp>(op)));
   assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
          op.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
@@ -3339,7 +3339,7 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // If the loop has an 'else' region, scan it and then intersect with the loop
   // region.  ParamForLoopOp's will have an 'unreachable' in the else region
   // because LowerSemanticCF already processed them.
-  if (loopOp.getNumRegions() == 2 && !isa<ComptimeForOp>(loopOp)) {
+  if (loopOp.getNumRegions() == 2 && !isa<HLCF::ComptimeForOp>(loopOp)) {
     scanBlock(loopOp.getRegion(1).front());
     liveness.mergeWith(breakSet, valueSet.domInfo);
   } else {
@@ -4433,8 +4433,8 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
-      // ComptimeIfOp; reuse the proven if-like destructor logic (important
-      // inside loops).
+      // HLCF::ComptimeIfOp; reuse the proven if-like destructor logic
+      // (important inside loops).
       if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op, opEffects.results);
       else
@@ -4634,12 +4634,12 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
 }
 
 void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
-  if (isa<HLCF::BreakOp, ComptimeForBreakOp>(op)) {
+  if (isa<HLCF::BreakOp, HLCF::ComptimeForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     consumedValues = *breakSet;
     return;
   }
-  if (isa<HLCF::ContinueOp, ComptimeForContinueOp>(op)) {
+  if (isa<HLCF::ContinueOp, HLCF::ComptimeForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     consumedValues = *continueSet;
     return;
@@ -4960,7 +4960,7 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
 /// 'else' block removed (merged into their body).
 void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // True if this is a parameter for, false if this is an infinite HLCF::LoopOp.
-  [[maybe_unused]] bool isParamFor = isa<ComptimeForOp>(loopOp);
+  [[maybe_unused]] bool isParamFor = isa<HLCF::ComptimeForOp>(loopOp);
   assert((!isParamFor ||
           isa<UnreachableOp>(loopOp.getRegion(1).front().front())) &&
          "LowerSemanticCF should have handled this");

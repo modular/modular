@@ -14,6 +14,7 @@
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
+#include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "mlir/IR/Matchers.h"
@@ -1060,6 +1061,374 @@ ErrorTreeOrSuccess
 MatchCompleteOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
   return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ComptimeForOp::verify() {
+  if (getNumOperands() != getNumResults()) {
+    return emitOpError("has ")
+           << getNumOperands() << " operands but " << getNumResults()
+           << " results; it should be the same";
+  }
+  for (auto [i, argTy, resTy] :
+       llvm::enumerate(getOperandTypes(), getResultTypes())) {
+    if (argTy == resTy)
+      continue;
+    return emitOpError("operand #")
+           << i << " has type " << argTy
+           << " but corresponding result has type " << resTy;
+  }
+  return success();
+}
+
+void ComptimeForOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(0, getOperands());
+}
+
+ValueRange ComptimeForOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  if (*target == 0)
+    return getBody().getArguments();
+  assert(*target == 1);
+  return getElseRegion().getArguments();
+}
+
+ArrayRef<ParamDeclAttr> ComptimeForOp::getInputParams() {
+  // DeclInterface requires ArrayRef; point at the inherent property storage
+  // (not getAttrs().back(), which is wrong once attrs live in Properties).
+  return {&getProperties().paramDecl, 1};
+}
+
+void ComptimeForOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
+
+bool ComptimeForOp::isImplicitlyParametric() { return true; }
+
+void ComptimeForOp::collectParameterUsesBelow(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
+
+bool ComptimeForOp::isIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return getBodyIsolated();
+  assert(regionNum == 1);
+  return getElseIsolated();
+}
+
+void ComptimeForOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return setBodyIsolated(true);
+  assert(regionNum == 1);
+  return setElseIsolated(true);
+}
+
+bool ComptimeForBreakOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
+}
+
+void ComptimeForBreakOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the loop operation.
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+bool ComptimeForContinueOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
+}
+
+void ComptimeForContinueOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to the beginning of the body region only (not the else region).
+  targets.emplace_back(0, getOperands());
+}
+
+bool ComptimeForGotoElseOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
+}
+
+void ComptimeForGotoElseOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.empty() && "Shouldn't exist by mem2reg time");
+  // Branch to the beginning of the else region.
+  targets.emplace_back(1, ValueRange());
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeIfOp
+//===----------------------------------------------------------------------===//
+
+bool ComptimeIfOp::isIsolatedFromAbove(unsigned regionNum) {
+  switch (regionNum) {
+  case 0:
+    return getThenIsolated();
+  case 1:
+    return getElseIsolated();
+  default:
+    llvm_unreachable("unknown region number");
+  }
+}
+
+void ComptimeIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  switch (regionNum) {
+  case 0:
+    setThenIsolated(true);
+    break;
+  case 1:
+    setElseIsolated(true);
+    break;
+  default:
+    llvm_unreachable("unknown region number");
+  }
+}
+
+void ComptimeIfOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.empty());
+  targets.emplace_back(0);
+  targets.emplace_back(1);
+}
+
+ValueRange ComptimeIfOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target == 0 || *target == 1);
+  return {};
+}
+
+void ComptimeIfOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
+
+bool ComptimeIfOp::isImplicitlyParametric() { return true; }
+
+/// This operation has no uses to collect in the scopes it defines.
+void ComptimeIfOp::collectParameterUsesBelow(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeYieldOp
+//===----------------------------------------------------------------------===//
+
+bool ComptimeYieldOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp, ComptimeIfOp>(op);
+}
+
+void ComptimeYieldOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the if operation.
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ComptimeForOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.for interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeForOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
+  SmallVector<Type> resultTypes;
+  Attribute hasNext = state.getReboundAttribute(getHasNext());
+  Attribute getNext = state.getReboundAttribute(getGetNextIter());
+  for (Type type : getResultTypes()) {
+    resultTypes.push_back(state.getReboundType(type));
+  }
+
+  auto hasNextCall = cast<SymbolConstantAttr>(hasNext);
+  auto iter = state.currOpSideEffectState().find(this->getOperation());
+  bool firstIteration =
+      (iter == state.currOpSideEffectState().end() || !iter->second.iterator);
+
+  // Can probably cache this for each iteration.
+  SmallVector<TypedAttr> paramValues;
+  for (auto pv : hasNextCall.getParamValues()) {
+    paramValues.push_back(state.getReboundAttribute(pv));
+  }
+
+  ErrorOr<Type> hasNextTypeResult =
+      state.lookupFuncTypeGenerator(hasNextCall.getSymbol());
+  if (hasNextTypeResult.isError()) {
+    return ErrorTree(getLoc(), hasNextTypeResult.takeError());
+  }
+
+  FuncType hasNextType =
+      cast<FuncTypeGeneratorType>(*hasNextTypeResult).getBody();
+
+  // Push an empty slot to paramValues count to mark this is the boundary
+  // of a ComptimeFor so that we know how much to pop once hitting
+  // hlcf.comptime.for.break or hlcf.comptime.for.continue
+  // state.pushParamValues({}, false, this->getOperation());
+  Attribute initial = state.getReboundAttribute(getInitial());
+  TypedAttr iterator =
+      cast<TypedAttr>(firstIteration ? initial : iter->second.iterator);
+
+  TypedAttr hasNextInput = iterator;
+  if (hasAddress(hasNextType.getArgConvention(0)))
+    hasNextInput = StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
+
+  ErrorTreeOr<TypedAttr> hasNextResult =
+      state.interpretGenerator(hasNextCall, paramValues, iterator, getLoc());
+  if (hasNextResult.isError()) {
+    return hasNextResult.takeError();
+  }
+
+  if (!cast<BoolAttr>(*hasNextResult).getValue()) {
+    // Go to else region
+    ArrayRef<Attribute> arguments =
+        firstIteration ? operands : iter->second.operands;
+    state.currOpSideEffectState().erase(this->getOperation());
+    (void)state.transferControlFlowTo(this->getOperation(), arguments);
+
+  } else {
+    state.overwriteDeclBinding(getParamDecl(), iterator);
+    iterator =
+        StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
+
+    auto getNextCall = cast<SymbolConstantAttr>(getNext);
+    paramValues.clear();
+    for (auto pv : getNextCall.getParamValues()) {
+      paramValues.push_back(state.getReboundAttribute(pv));
+    }
+
+    ErrorTreeOr<TypedAttr> getNextResult =
+        state.interpretGeneratorWithResultSlot(getNextCall, paramValues,
+                                               iterator, getLoc());
+    if (getNextResult.isError())
+      return getNextResult.takeError();
+
+    if (firstIteration) {
+      state.currOpSideEffectState()[this->getOperation()] = {
+          {}, {}, *getNextResult};
+    } else {
+      // Clear up iterator in case function returns in the body of the
+      // ComptimeFor so that the iterator value doesn't carry over to another
+      // round of interpreting this ComptimeFor by mistake.
+      iter->second.iterator = {};
+      // Set nextIterator value so that hlcf.comptime.for.continue can set the
+      // iterator value correctly for the next iteration.
+      iter->second.nextIterator = *getNextResult;
+    }
+
+    ArrayRef<Attribute> arguments =
+        firstIteration ? operands : iter->second.operands;
+
+    state.pushParamValues({iterator}, false, this->getOperation());
+    state.pushEvalFrame(getOperation(), &getBody(), {}, 5);
+    return state.transferControlFlowTo(getBody(), arguments);
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForBreakOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ComptimeForBreakOp::interpret(ArrayRef<Attribute> operands,
+                                                 InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.for.break interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                         ParametricInterpreterState &state) {
+  auto parent = this->getOperation()->getParentOfType<ComptimeForOp>();
+  state.popEvalFrame();
+  state.popParamValues(false, this->getOperation(), parent);
+  return state.transferControlFlowTo(parent, operands);
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForContinueOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+ComptimeForContinueOp::interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.for.continue interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                            ParametricInterpreterState &state) {
+  if (auto parent =
+          this->getOperation()->getParentOfType<HLCF::ComptimeForOp>()) {
+    state.popEvalFrame();
+    state.popParamValues(false, this->getOperation(), parent);
+    (void)state.transferControlFlowToParent(parent, operands);
+    auto iter = state.currOpSideEffectState().find(parent.getOperation());
+    assert(iter != state.currOpSideEffectState().end() &&
+           "hlcf.comptime.for.continue has broken state");
+    iter->second.operands = SmallVector<Attribute>(operands);
+    iter->second.iterator = iter->second.nextIterator;
+    return success();
+  }
+  return ErrorTree(getLoc(),
+                   "INTERNAL ERROR: cannot find parent ComptimeForOp");
+}
+
+//===----------------------------------------------------------------------===
+// ComptimeIfOp
+//===----------------------------------------------------------------------===
+
+ErrorTreeOrSuccess ComptimeIfOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.if interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeIfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   ParametricInterpreterState &state) {
+  Attribute cond = state.getReboundAttribute(getCond());
+  unsigned regionId = 2;
+  if (auto result = sugarDynCast<SIMDAttr>(cond)) {
+    regionId = result.getAsBool() ? 0 : 1;
+  }
+
+  if (regionId < 2) {
+    Region &target = getRegion(regionId);
+    state.pushParamValues({}, false);
+    state.pushEvalFrame(getOperation(), &target, {}, 6);
+    return state.transferControlFlowTo(target, {});
+  }
+
+  return ErrorTree(getLoc(), "wrong param if condition");
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeYieldOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ComptimeYieldOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.yield interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
+  state.popEvalFrame();
+  state.popParamValues(false, this->getOperation());
+  return state.transferControlFlowTo((*this)->getParentOp(), operands);
 }
 
 //===----------------------------------------------------------------------===//

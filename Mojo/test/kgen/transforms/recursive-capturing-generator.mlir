@@ -12,7 +12,7 @@ kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: in
     kgen.return %a : index
   }
 
-  kgen.comptime.if <recurse> {
+  hlcf.comptime.if <recurse> {
     %first = kgen.call_param[() capturing -> index: thing]()
     kgen.call @use(%first) : (index) -> ()
 
@@ -25,9 +25,9 @@ kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: in
 
     %second = kgen.call_param[() capturing -> index: thing]()
     kgen.call @use(%second) : (index) -> ()
-    kgen.comptime.yield
+    hlcf.comptime.yield
   } else {
-    kgen.comptime.yield
+    hlcf.comptime.yield
   }
 
   kgen.return

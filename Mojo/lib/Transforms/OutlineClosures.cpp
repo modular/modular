@@ -165,7 +165,7 @@ void OutlineClosuresPass::runOnOperation() {
       for (ParamDeclRefAttr capturedUse : capturedUses) {
         auto declOpIter =
             regionDeclUses->second.decls.find(capturedUse.getName());
-        // If a parameter was defined in a nested scope like kgen.comptime.for,
+        // If a parameter was defined in a nested scope like hlcf.comptime.for,
         // it is not at or above the current region scope.
         // Hence, parameter will not be in the map, and it is safe to ignore it.
         if (declOpIter == regionDeclUses->second.decls.end())

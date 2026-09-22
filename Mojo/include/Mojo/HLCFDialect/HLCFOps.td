@@ -18,6 +18,8 @@ include "Mojo/HLCFDialect/HLCFAttrs.td"
 include "Mojo/HLCFDialect/HLCFDialect.td"
 include "Mojo/HLCFDialect/HLCFInterfaces.td"
 include "Mojo/Interpreter/InterpreterInterface.td"
+include "Mojo/KGENDialect/KGENAttrs.td"
+include "Mojo/KGENDialect/KGENInterfaces.td"
 include "Mojo/KGENDialect/KGENTypes.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
@@ -789,6 +791,232 @@ def HLCF_MatchOp : HLCFParentOp<"match"> {
 
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// ComptimeForOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForOp : HLCFParentOp<"comptime.for", [
+    DeclInterface,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
+      "collectParameterUsesBelow"]>]>, NoParamDecls {
+  let summary = "compile-time for loop";
+  let description = [{
+    The `hlcf.comptime.for` operation instantiates its body with values according
+    to its iterator. It takes an initial iterator value, a 'hasNext' function
+    that take an iterator and indicates whether more elements exist, and a
+    'getNextIter' function that takes an iterator instance and returns the next
+    iterator value.
+
+    This operation can have loop-carried values - the "operands" inputs and
+    results, which are values promoted within the loop by mem2reg.
+  }];
+
+  let arguments = (ins
+    TypedAttrInterface:$initial,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$hasNext,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$getNextIter,
+    KGEN_ParamDeclAttr:$paramDecl,
+    Variadic<AnyType>:$operands,
+    UnitAttr:$bodyIsolated,
+    UnitAttr:$elseIsolated
+  );
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$body, SizedRegion<1>:$elseRegion);
+
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$initial, "TypedAttr":$hasNext,
+                   "TypedAttr":$getNextIter, "ParamDeclAttr":$paramDecl), [{
+      build($_builder, $_state, {}, initial, hasNext, getNextIter, paramDecl,
+            {}, {}, {});
+    }]>
+  ];
+
+  let assemblyFormat = [{
+    custom<ParamDecl>($paramDecl) `in` custom<ColonTypeParamValue>($initial)`\n`
+    `has_next` custom<ColonTypeParamValue>($hasNext) `\n`
+    `get_next_iter` custom<ColonTypeParamValue>($getNextIter)
+    custom<Loop>($operands, type($operands), type($results), $body)
+    `else` custom<RegionWithArgs>($elseRegion) attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    bool isIsolatedFromAbove(unsigned regionNum);
+    void notifyKnownIsolatedFromAbove(unsigned regionNum);
+    ArrayRef<KGEN::ParamDeclAttr> getInputParams();
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForBreakOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForBreakOp : HLCFTerminatorOp<"comptime.for.break", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "param loop exit operation";
+  let description = [{
+    The `hlcf.comptime.for.break` operation represents an exit from a
+    `hlcf.comptime.for`, branching to the end of all generated iterations.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForContinueOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForContinueOp : HLCFTerminatorOp<"comptime.for.continue", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "param loop continue operation";
+  let description = [{
+    The `hlcf.comptime.for.continue` operation branches to the next generated
+    iteration of the loop.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForGotoElseOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForGotoElseOp : HLCFTerminatorOp<"comptime.for.goto.else"> {
+  let summary = "param loop 'goto else' operation";
+  let description = [{
+    The `hlcf.comptime.for.goto.else` operation jumps to the 'else' block of a
+    `hlcf.comptime.for`.  It only exists to help the interface between the Mojo
+    parser and the LowerSemanticCF pass work more easily.
+  }];
+
+  let arguments = (ins);
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeIfOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
+    DeclInterface,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
+      "collectParameterUsesBelow"]>]>, NoParamDecls {
+  let summary = "compile-time constant if";
+  let description = [{
+    The `hlcf.comptime.if` op provides a compile-time guarantee that if `cond`
+    is false, only the `else` block will be elaborated, and if `cond` is true,
+    only the `then` block will be elaborated. Whichever block is elaborated
+    will be directly inlined into the scope. This op is fully removed
+    during elaboration.
+
+    The result parameter will be resolved by the parameter on the
+    `comptime.yield` in the branch that is actually elaborated.
+
+    ```mlir
+    %0 = hlcf.comptime.if <condition> -> index {
+      %i0 = index.constant 0
+      hlcf.comptime.yield %i0
+    } else {
+      %i1 = index.constant 1
+      hlcf.comptime.yield %i1
+    }
+
+    hlcf.comptime.if <condition -> result> {
+      hlcf.comptime.yield<1>
+    } else {
+      hlcf.comptime.yield<0>
+    }
+    %0 = kgen.param.constant = <result> // == <condition ? 1 : 0>
+    ```
+  }];
+
+  let arguments = (ins
+    AttrOfType<BoolScalar>:$cond,
+    UnitAttr:$thenIsolated,
+    UnitAttr:$elseIsolated
+  );
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
+
+  let extraClassDeclaration = [{
+    bool isIsolatedFromAbove(unsigned regionNum);
+    void notifyKnownIsolatedFromAbove(unsigned regionNum);
+
+    Block::OpListType &getThenOps() {
+      return getThenRegion().front().getOperations();
+    }
+    Block::OpListType &getElseOps() {
+      return getElseRegion().front().getOperations();
+    }
+
+    /// Parametric ifs have no parameters.
+    ArrayRef<KGEN::ParamDeclAttr> getInputParams() { return {}; }
+  }];
+
+  let assemblyFormat = [{
+    ` ` `<` custom<ScalarBoolParamValue>($cond) `` `>`
+    (`->` type($results)^)?  $thenRegion `else` $elseRegion attr-dict
+  }];
+
+  let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
+    build($_builder, $_state, {}, cond, {});
+  }]>];
+
+  let hasCanonicalizeMethod = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeYieldOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeYieldOp : HLCFTerminatorOp<"comptime.yield", [
+    Pure,
+    ParentOneOf<["ComptimeIfOp", "ComptimeForOp"]>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "conditional yield operation";
+  let description = [{
+    The `hlcf.comptime.yield` operation is used to denote the terminator of a
+    block in the `hlcf.comptime.if` op. Conceptually, it branches to the next
+    op after a `hlcf.comptime.if`, but in reality it's to make sure the IR
+    stays in a reasonable state and is possible to inline directly.
+
+    This op defines the parameter that is used as the result parameter on the
+    enclosing `hlcf.comptime.if`.
+
+    Example:
+
+    ```mlir
+    %0 = hlcf.comptime.if <condition> -> index {
+      hlcf.comptime.yield %arg1 : index
+    } else {
+      hlcf.comptime.yield %arg2 : index
+    }
+    ```
+
+    This operation can always be marked pure because the control-flow edge from
+    this operation leads only to after the parent operation.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ return build($_builder, $_state, {}); }]>
+  ];
+
+  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+}
+
 
 //===----------------------------------------------------------------------===//
 // ComptimeMatchOp
