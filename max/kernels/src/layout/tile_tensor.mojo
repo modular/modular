@@ -3393,6 +3393,7 @@ struct TileTensor[
         return self.as_unsafe_any_origin()
 
     @inline(.always)
+    @deprecated(use=as_imm)
     def as_immut(
         self,
     ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:

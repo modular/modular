@@ -263,6 +263,9 @@ This version is still a work in progress.
   a sliced extent is runtime too -- `:` means `0:dim`, not a marker. Strides
   are always inherited whole.
 
+- Deprecated `TileTensor.as_immut()` in favor of `TileTensor.as_imm()`, which
+  returns the same immutable view and matches the naming of `Pointer.as_imm()`.
+
 ## Breaking changes
 
 - `TileTensor`'s two runtime slicing methods are replaced by subscript
