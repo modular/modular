@@ -208,11 +208,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
     # LayoutTensors for reference matmul
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
@@ -243,11 +238,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
-        a_scales_lt.as_imm(),
-        b_scales_lt.as_imm(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         ctx,
     )
 

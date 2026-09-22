@@ -337,9 +337,9 @@ struct TileWriterThreadwise[
                 comptime dst_width = Self.dst_layout.static_shape[1]
 
                 # Slice both source and destination to half height internally
-                var masked_src = src.slice((0, dst_height), (0, dst_width))
+                var masked_src = src[:dst_height, :dst_width]
 
-                var masked_dst = self.dst.slice((0, dst_height), (0, dst_width))
+                var masked_dst = self.dst[:dst_height, :dst_width]
 
                 var casted_thread_idx = self.thread_idx
 
@@ -370,9 +370,9 @@ struct TileWriterThreadwise[
                 comptime dst_width = Self.dst_layout.static_shape[1] // 2
 
                 # Slice both source and destination to half width internally
-                var masked_src = src.slice((0, dst_height), (0, dst_width))
+                var masked_src = src[:dst_height, :dst_width]
 
-                var masked_dst = self.dst.slice((0, dst_height), (0, dst_width))
+                var masked_dst = self.dst[:dst_height, :dst_width]
 
                 # Compute half-width thread layout
                 comptime half_thread_layout = row_major[

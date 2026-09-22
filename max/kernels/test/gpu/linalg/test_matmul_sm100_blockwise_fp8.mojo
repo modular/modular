@@ -193,22 +193,16 @@ def test_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    var a_lt = a_device_nd.to_layout_tensor()
-    var b_lt = b_device_nd.to_layout_tensor()
-    var c_ref_lt = c_device_ref_nd.to_layout_tensor()
-    var a_scales_lt = a_scales_device_nd.to_layout_tensor()
-    var b_scales_lt = b_scales_device_nd.to_layout_tensor()
-
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref_lt,
-        a_lt,
-        b_lt,
-        a_scales_lt,
-        b_scales_lt,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
         ctx,
     )
 

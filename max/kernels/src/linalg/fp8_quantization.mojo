@@ -1338,21 +1338,16 @@ def naive_blockwise_scaled_fp8_matmul[
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, address_space=.GENERIC, ...],
-    a: LayoutTensor[mut=False, a_type, address_space=.GENERIC, ...],
-    b: LayoutTensor[mut=False, b_type, address_space=.GENERIC, ...],
-    a_scales: LayoutTensor[
-        mut=False, a_scales_type, address_space=.GENERIC, ...
-    ],
-    b_scales: LayoutTensor[
-        mut=False, b_scales_type, address_space=.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Dispatches the naive blockwise scaled FP8 matmul kernel on the GPU.
 
-    Converts the ``LayoutTensor`` operands to ``TileTensor`` views and enqueues
-    ``naive_blockwise_scaled_fp8_matmul_kernel`` with a 2D grid of
+    Enqueues ``naive_blockwise_scaled_fp8_matmul_kernel`` with a 2D grid of
     ``BLOCK_DIM``-sized tiles covering the ``M`` x ``N`` output.
 
     Args:
@@ -1376,13 +1371,13 @@ def naive_blockwise_scaled_fp8_matmul[
         accum_type == .float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
-    var M = c.dim(0)
-    var N = c.dim(1)
-    var K = a.dim(1)
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
+    var K = Int(a.dim[1]())
 
-    var a_scales_dim0 = a_scales.dim(0)
-    var b_scales_dim0 = b_scales.dim(0)
-    var b_scales_dim1 = b_scales.dim(1)
+    var a_scales_dim0 = Int(a_scales.dim[0]())
+    var b_scales_dim0 = Int(b_scales.dim[0]())
+    var b_scales_dim1 = Int(b_scales.dim[1]())
 
     if M == 0 or N == 0 or K == 0:
         return
@@ -1418,12 +1413,6 @@ def naive_blockwise_scaled_fp8_matmul[
         "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]", sep=""
     )
 
-    var a_tt = lt_to_tt(a).as_immut()
-    var b_tt = lt_to_tt(b).as_immut()
-    var c_tt = lt_to_tt(c)
-    var a_scales_tt = lt_to_tt(a_scales).as_immut()
-    var b_scales_tt = lt_to_tt(b_scales).as_immut()
-
     comptime kernel = naive_blockwise_scaled_fp8_matmul_kernel[
         c_type,
         a_type,
@@ -1431,11 +1420,11 @@ def naive_blockwise_scaled_fp8_matmul[
         a_scales_type,
         b_scales_type,
         accum_type,
-        type_of(a_tt).LayoutType,
-        type_of(b_tt).LayoutType,
-        type_of(c_tt).LayoutType,
-        type_of(a_scales_tt).LayoutType,
-        type_of(b_scales_tt).LayoutType,
+        a.LayoutType,
+        b.LayoutType,
+        c.LayoutType,
+        a_scales.LayoutType,
+        b_scales.LayoutType,
         BLOCK_DIM=BLOCK_DIM,
         transpose_b=transpose_b,
         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1443,11 +1432,11 @@ def naive_blockwise_scaled_fp8_matmul[
     ]
 
     ctx.enqueue_function[kernel](
-        c_tt,
-        a_tt,
-        b_tt,
-        a_scales_tt,
-        b_scales_tt,
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -2036,11 +2025,11 @@ def blockwise_scaled_fp8_with_epilogue[
             scales_granularity_mnk=scales_granularity_mnk,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](
-            c.to_layout_tensor(),
-            a.to_layout_tensor(),
-            b.to_layout_tensor(),
-            a_scales.to_layout_tensor(),
-            b_scales.to_layout_tensor(),
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
             ctx,
         )
         return

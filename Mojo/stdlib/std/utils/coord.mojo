@@ -173,72 +173,6 @@ Parameters:
 """
 
 
-# ===-----------------------------------------------------------------------===#
-# _All — "keep this dimension" marker for TileTensor.__getitem__
-# ===-----------------------------------------------------------------------===#
-
-
-struct _All(CoordLike, TrivialRegisterPassable):
-    """Marker type meaning "keep this entire dimension" in a select operation.
-
-    Used with `TileTensor.__getitem__` to indicate that a dimension should be
-    preserved in the output rather than collapsed at a specific index.
-    Uses `static_value = -2` as a sentinel distinct from `Scalar`'s `-1`.
-
-    Example:
-
-    ```
-    # From a 4D tensor (batch, N, heads, head_dim),
-    # fix batch and heads, keep N and head_dim:
-    var result = tensor.slice(batch_idx, All, head_idx, All)
-    # result is a 2D tensor (N, head_dim)
-    ```
-    """
-
-    comptime ParamListType = Coord[Self].element_types
-    """The element types (Self for scalar types)."""
-
-    comptime _ParamListType = Self.ParamListType.values
-    """The low-level parameter list of element types."""
-
-    comptime static_value: Int = -2
-    """Sentinel value distinguishing `_All` from `Scalar` (-1) and `ComptimeInt` (>=0)."""
-
-    comptime DTYPE = DType.int
-
-    comptime is_static_value = True
-
-    def __init__(out self):
-        pass
-
-    @staticmethod
-    @inline(.nodebug)
-    def __len__() -> Int:
-        return 1
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write("All")
-
-    def write_repr_to(self, mut writer: Some[Writer]):
-        writer.write("All")
-
-    @inline(.nodebug)
-    def product(self) -> Scalar[Self.DTYPE]:
-        return Scalar[Self.DTYPE](1)
-
-    @inline(.nodebug)
-    def value(self) -> Scalar[Self.DTYPE]:
-        return Scalar[Self.DTYPE](-2)
-
-    @inline(.nodebug)
-    def tuple(var self) -> Coord[*Self.ParamListType]:
-        comptime assert False, "_All is not a tuple type"
-
-
-comptime All = _All()
-"""Marker value meaning "keep this entire dimension" in `TileTensor.__getitem__`."""
-
-
 @fieldwise_init("implicit")
 struct Coord[*element_types: CoordLike](
     CoordLike, DevicePassable, Sized, Writable
@@ -285,9 +219,6 @@ struct Coord[*element_types: CoordLike](
 
     comptime is_flat = Self.rank == Self.flat_rank
     """If the `Coord` contains nested items."""
-
-    comptime contains_slices = Self.element_types.contains[type_of(All)]()
-    """If the `Coord` contains the `All` symbol."""
 
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""

@@ -13,7 +13,6 @@
 
 from std.utils.index import IndexList
 from layout import (
-    All,
     ComptimeInt,
     Coord,
     CoordLike,
@@ -25,6 +24,8 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import Layout as TileLayout
+from layout.tile_tensor import _SubscriptArgs, _subscript_static_offset
+from std.builtin.builtin_slice import ContiguousSlice
 from layout.swizzle import Swizzle
 from layout.tensor_engine import TensorOps
 from std.math import exp
@@ -532,7 +533,7 @@ def test_slice_3d() raises:
 
 
 def test_slice_dynamic() raises:
-    """Test slice with runtime (start, end) tuples."""
+    """Test subscript slicing with runtime bounds."""
     var data_2d = Array[Int32, 16](fill_with=lambda (i: Int) -> Int32: Int32(i))
 
     # 4x4 row-major:
@@ -543,7 +544,9 @@ def test_slice_dynamic() raises:
     var tensor_2d = TileTensor(data_2d, row_major[4, 4]())
 
     # Slice middle 2x2: rows [1:3], cols [1:3] -> [5,6],[9,10]
-    var sliced = tensor_2d.slice((1, 3), (1, 3))
+    var lo = 1
+    var hi = 3
+    var sliced = tensor_2d[lo:hi, lo:hi]
     assert_equal(sliced.layout.shape[0]().value(), 2)
     assert_equal(sliced.layout.shape[1]().value(), 2)
     assert_equal(sliced[0, 0], 5)
@@ -552,14 +555,14 @@ def test_slice_dynamic() raises:
     assert_equal(sliced[1, 1], 10)
 
     # Top-left 2x2
-    var top_left = tensor_2d.slice((0, 2), (0, 2))
+    var top_left = tensor_2d[0:2, 0:2]
     assert_equal(top_left[0, 0], 0)
     assert_equal(top_left[0, 1], 1)
     assert_equal(top_left[1, 0], 4)
     assert_equal(top_left[1, 1], 5)
 
     # Single row: rows [2:3], all cols
-    var row2 = tensor_2d.slice((2, 3), (0, 4))
+    var row2 = tensor_2d[2:3, :]
     assert_equal(row2.layout.shape[0]().value(), 1)
     assert_equal(row2.layout.shape[1]().value(), 4)
     assert_equal(row2[0, 0], 8)
@@ -1146,7 +1149,9 @@ def test_select_4d_to_2d() raises:
     var tensor = TileTensor(data, row_major[2, 3, 4, 2]())
 
     # Fix batch=1 and heads=2, keep N and head_dim → 2D (3, 2)
-    var selected = tensor.slice(Idx[1], All, Idx[2], All)
+    var batch = 1
+    var head = 2
+    var selected = tensor[batch, :, head, :]
 
     # Output should be rank 2 with shape (3, 2)
     assert_equal(selected.layout.shape[0]().value(), 3)
@@ -1167,17 +1172,15 @@ def test_select_4d_to_2d() raises:
 
 
 def test_select_preserves_comptime_dims() raises:
-    """Test that select preserves compile-time shape and stride info."""
+    """Test that compile-time slicing preserves shape and stride info."""
     var data = Array[Int32, 48](fill={})
     var tensor = TileTensor(data, row_major[2, 3, 4, 2]())
 
-    _ = tensor.slice(Idx[0], All, Idx[1], All)
+    _ = tensor.slice[0, :, 1, :]()
 
     # Shape should be ComptimeInt[3] and ComptimeInt[2]
     comptime SelectedType = type_of(
-        TileTensor(data, row_major[2, 3, 4, 2]()).slice(
-            Idx[0], All, Idx[1], All
-        )
+        TileTensor(data, row_major[2, 3, 4, 2]()).slice[0, :, 1, :]()
     )
     comptime assert SelectedType.LayoutType.static_shape[0] == 3
     comptime assert SelectedType.LayoutType.static_shape[1] == 2
@@ -1185,6 +1188,69 @@ def test_select_preserves_comptime_dims() raises:
     # Strides should be ComptimeInt[8] and ComptimeInt[1]
     comptime assert SelectedType.LayoutType.static_stride[0] == 8
     comptime assert SelectedType.LayoutType.static_stride[1] == 1
+
+
+def test_subscript_slice_keeps_comptime_strides() raises:
+    """Test that a subscript view has runtime extents but static strides."""
+    var data = Array[Int32, 24](fill_with=lambda (i: Int) -> Int32: Int32(i))
+
+    var tensor = TileTensor(data, row_major[2, 3, 4]())
+
+    # Every slice carries runtime bounds, so both surviving extents are
+    # dynamic even though `:` covers the whole axis. Strides are inherited.
+    var batch = 1
+    var rows = tensor[batch, 0:2, :]
+
+    comptime RowsType = type_of(rows)
+    comptime assert RowsType.LayoutType.static_shape[0] == -1
+    comptime assert RowsType.LayoutType.static_shape[1] == -1
+    comptime assert RowsType.LayoutType.static_stride[0] == 4
+    comptime assert RowsType.LayoutType.static_stride[1] == 1
+
+    assert_equal(rows.layout.shape[0]().value(), 2)
+    assert_equal(rows.layout.shape[1]().value(), 4)
+
+    # tensor[1, r, c] = 12 + r*4 + c
+    for r in range(2):
+        for c in range(4):
+            assert_equal(rows[r, c], Int32(12 + r * 4 + c))
+
+
+def test_subscript_static_index() raises:
+    """Test that a compile-time index folds its offset at compile time."""
+    var data = Array[Int32, 24](fill_with=lambda (i: Int) -> Int32: Int32(i))
+
+    var tensor = TileTensor(data, row_major[2, 3, 4]())
+
+    # Same subscript path as a runtime index; only the folding differs.
+    var plane = tensor[Idx[1], :, :]
+    assert_equal(plane.layout.shape[0]().value(), 3)
+    assert_equal(plane.layout.shape[1]().value(), 4)
+    for r in range(3):
+        for c in range(4):
+            assert_equal(plane[r, c], Int32(12 + r * 4 + c))
+
+    # Mixed: compile-time batch, runtime row range, compile-time column.
+    var col = tensor[Idx[1], 0:2, Idx[3]]
+    assert_equal(col.layout.shape[0]().value(), 2)
+    assert_equal(col[0], 15)
+    assert_equal(col[1], 19)
+
+    # The compile-time share of the offset is the product of the `Idx`
+    # values with their static strides; runtime indices contribute nothing.
+    comptime L = type_of(row_major[2, 3, 4]())
+    comptime StaticArgs = TypeList.of[
+        Trait=AnyType, ComptimeInt[1], ContiguousSlice, ComptimeInt[3]
+    ]()
+    comptime assert (
+        _subscript_static_offset[_SubscriptArgs[StaticArgs](), L]() == 15
+    )
+    comptime RuntimeArgs = TypeList.of[
+        Trait=AnyType, Int, ContiguousSlice, ContiguousSlice
+    ]()
+    comptime assert (
+        _subscript_static_offset[_SubscriptArgs[RuntimeArgs](), L]() == 0
+    )
 
 
 def test_select_3d_to_1d() raises:
@@ -1195,7 +1261,9 @@ def test_select_3d_to_1d() raises:
     var tensor = TileTensor(data, row_major[2, 3, 4]())
 
     # Fix dims 0 and 1, keep dim 2 → 1D (4,)
-    var selected = tensor.slice(Idx[1], Idx[2], All)
+    var row = 1
+    var col = 2
+    var selected = tensor[row, col, :]
 
     assert_equal(selected.layout.shape[0]().value(), 4)
 
@@ -1209,7 +1277,7 @@ def test_select_keep_all() raises:
     var data = Array[Int32, 12](fill_with=lambda (i: Int) -> Int32: Int32(i))
 
     var tensor = TileTensor(data, row_major[3, 4]())
-    var selected = tensor.slice(All, All)
+    var selected = tensor[:, :]
 
     assert_equal(selected.layout.shape[0]().value(), 3)
     assert_equal(selected.layout.shape[1]().value(), 4)

@@ -130,11 +130,11 @@ def test_matmul_dynamic_scaled_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, 1, k_dim),
     ](
-        c_ref_tile.to_layout_tensor(),
-        a_tile.to_layout_tensor().as_imm(),
-        b_tile.to_layout_tensor().as_imm(),
-        a_scales_tile.to_layout_tensor().as_imm(),
-        b_scales_tile.to_layout_tensor().as_imm(),
+        c_ref_tile,
+        a_tile,
+        b_tile,
+        a_scales_tile,
+        b_scales_tile,
         ctx,
     )
 
@@ -295,11 +295,11 @@ def test_matmul_dynamic_scaled_fp8_tensor[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, 1, k_dim),
     ](
-        c_ref_tile.to_layout_tensor(),
-        a_tile.to_layout_tensor().as_imm(),
-        b_tile.to_layout_tensor().as_imm(),
-        a_ref_scales_tile.to_layout_tensor().as_imm(),
-        b_ref_scales_tile.to_layout_tensor().as_imm(),
+        c_ref_tile,
+        a_tile,
+        b_tile,
+        a_ref_scales_tile,
+        b_ref_scales_tile,
         ctx,
     )
 

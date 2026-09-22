@@ -167,11 +167,11 @@ def test_naive_blockwise_fp8_matmul[
                 BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
             ),
         ](
-            c_dev.to_layout_tensor(),
-            a_dev.to_layout_tensor(),
-            b_dev.to_layout_tensor(),
-            a_scale_dev.to_layout_tensor(),
-            b_scale_dev.to_layout_tensor(),
+            c_dev,
+            a_dev,
+            b_dev,
+            a_scale_dev,
+            b_scale_dev,
             ctx,
         )
     else:
@@ -179,11 +179,11 @@ def test_naive_blockwise_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
         ](
-            c_dev.to_layout_tensor(),
-            a_dev.to_layout_tensor(),
-            b_dev.to_layout_tensor(),
-            a_scale_dev.to_layout_tensor(),
-            b_scale_dev.to_layout_tensor(),
+            c_dev,
+            a_dev,
+            b_dev,
+            a_scale_dev,
+            b_scale_dev,
             ctx,
         )
 

@@ -1471,11 +1471,11 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     scales_granularity_mnk: IndexList[3],
     transpose_b: Bool = False,
 ](
-    c_: TileTensor[mut=True, c_type, ...],
-    a_: TileTensor[mut=False, a_type, ...],
-    b_: TileTensor[mut=False, b_type, ...],
-    a_scales_: TileTensor[mut=False, a_scales_type, ...],
-    b_scales_: TileTensor[mut=False, b_scales_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -1494,99 +1494,38 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         transpose_b: Whether the RHS input is transposed.
 
     Args:
-        c_: Rank-3 output tensor of shape `(batch, m, n)`.
-        a_: Rank-3 LHS input tensor of shape `(batch, m, k)`.
-        b_: Rank-3 RHS input tensor of shape `(batch, k, n)`.
-        a_scales_: Rank-3 LHS scales tensor.
-        b_scales_: Rank-3 RHS scales tensor.
+        c: Rank-3 output tensor of shape `(batch, m, n)`.
+        a: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales: Rank-3 LHS scales tensor.
+        b_scales: Rank-3 RHS scales tensor.
         ctx: Device context used to dispatch the per-batch kernels.
     """
     comptime assert (
         scales_granularity_mnk[0] == 1
         and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
     ), "Only support (1,128,128) scale granularity. Extend it for other cases."
+    comptime assert c.flat_rank == 3
+    comptime assert a.flat_rank == 3
+    comptime assert b.flat_rank == 3
+    comptime assert a_scales.flat_rank == 3
+    comptime assert b_scales.flat_rank == 3
 
     comptime BLOCK_SCALE_K = 128
 
-    # Convert to LayoutTensor for internal operations.
-    var c_lt = c_.to_layout_tensor()
-    var a_lt = a_.to_layout_tensor()
-    var b_lt = b_.to_layout_tensor()
-    var a_scales_lt = a_scales_.to_layout_tensor()
-    var b_scales_lt = b_scales_.to_layout_tensor()
-
-    # naive implementation requires all tensor have AddressSpace.GENERIC
-    var c = c_lt.address_space_cast[.GENERIC]()
-    var a = a_lt.address_space_cast[.GENERIC]()
-    var b = b_lt.address_space_cast[.GENERIC]()
-    var a_scales = a_scales_lt.address_space_cast[.GENERIC]()
-    var b_scales = b_scales_lt.address_space_cast[.GENERIC]()
-
     var B = c.dim(0)
-    var M = c.dim(1)
-    var N = c.dim(2)
-    var K = a.dim(2)
-    var M_a_scales = a_scales.dim(2)
-
-    # Create 2D layouts by extracting last 2 dims from 3D layouts
-    # This preserves the original shape and stride (not assuming row-major)
-    comptime c_layout_2d = _2D_layout[c.layout]
-    comptime a_layout_2d = _2D_layout[a.layout]
-    comptime b_layout_2d = _2D_layout[b.layout]
-    comptime a_scales_layout_2d = _2D_layout[a_scales.layout]
-    comptime b_scales_layout_2d = _2D_layout[b_scales.layout]
 
     for batch in range(B):
-        # Create 2D LayoutTensor views
-        var c_view = LayoutTensor[c_type, c_layout_2d, c.origin](
-            c.ptr_at_offset(Index(batch, 0, 0)),
-            RuntimeLayout[c_layout_2d](
-                Index(M, N), Index(c.stride(1), c.stride(2))
-            ),
-        )
-        var a_view = LayoutTensor[a_type, a_layout_2d, a.origin](
-            a.ptr_at_offset(Index(batch, 0, 0)),
-            RuntimeLayout[a_layout_2d](
-                Index(M, K), Index(a.stride(1), a.stride(2))
-            ),
-        )
-        var b_view = LayoutTensor[b_type, b_layout_2d, b.origin](
-            b.ptr_at_offset(Index(batch, 0, 0)),
-            RuntimeLayout[b_layout_2d](
-                Index(N, K), Index(b.stride(1), b.stride(2))
-            ),
-        )
-        var a_scales_view = LayoutTensor[
-            a_scales_type, a_scales_layout_2d, a_scales.origin
-        ](
-            a_scales.ptr_at_offset(Index(batch, 0, 0)),
-            RuntimeLayout[a_scales_layout_2d](
-                Index(ceildiv(K, BLOCK_SCALE_K), M_a_scales),
-                Index(a_scales.stride(1), a_scales.stride(2)),
-            ),
-        )
-        var b_scales_view = LayoutTensor[
-            b_scales_type,
-            b_scales_layout_2d,
-            b_scales.origin,
-        ](
-            b_scales.ptr_at_offset(Index(batch, 0, 0)),
-            RuntimeLayout[b_scales_layout_2d](
-                Index(ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)),
-                Index(b_scales.stride(1), b_scales.stride(2)),
-            ),
-        )
-
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
             scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         ](
-            c_view,
-            a_view,
-            b_view,
-            a_scales_view,
-            b_scales_view,
+            c[batch, :, :].address_space_cast[.GENERIC](),
+            a[batch, :, :].address_space_cast[.GENERIC](),
+            b[batch, :, :].address_space_cast[.GENERIC](),
+            a_scales[batch, :, :].address_space_cast[.GENERIC](),
+            b_scales[batch, :, :].address_space_cast[.GENERIC](),
             ctx,
         )
 

@@ -248,7 +248,27 @@ This version is still a work in progress.
   base offset is carried in the view's engine as a `ComptimeInt` rather than
   computed at runtime.
 
+- `TileTensor` now slices through subscript syntax: `t[batch, 0:n, :]` fixes
+  the batch axis, narrows the next one to a runtime subrange, and keeps the
+  last whole. Every dimension takes exactly one argument. A subscript is a
+  view whenever one of its arguments is a slice, and an element load
+  otherwise, so existing indexing is unchanged. Compile-time and runtime
+  indices share the path: an `Idx[n]` index on an axis with a compile-time
+  stride is folded into a `ComptimeInt` component of the view's offset, and
+  only the rest is computed at runtime. Slice bounds are runtime values, so
+  a sliced extent is runtime too -- `:` means `0:dim`, not a marker. Strides
+  are always inherited whole.
+
 ## Breaking changes
+
+- `TileTensor`'s two runtime slicing methods are replaced by subscript
+  syntax, and the `All` marker they used is removed along with them.
+  `t.slice(batch, All, All)` becomes `t[batch, :, :]` and
+  `t.slice((0, h), (0, w))` becomes `t[0:h, 0:w]`. `All` was a `CoordLike`
+  that stood for a dimension rather than a coordinate, which is why `Coord`
+  carried a `contains_slices` member to reject it; both are gone. Where the
+  indices are compile-time values, prefer `slice[]()`, which keeps the view
+  fully static.
 
 - `KVCacheMetrics` drops `nixl_read_blocks_local`, `nixl_read_blocks_remote`,
   and the `remote_read_ratio` property computed over them. No code path ever

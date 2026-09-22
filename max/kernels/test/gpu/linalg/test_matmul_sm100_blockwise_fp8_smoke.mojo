@@ -203,11 +203,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
-        a_scales_tensor.to_layout_tensor(),
-        b_scales_tensor.to_layout_tensor(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         ctx,
     )
 

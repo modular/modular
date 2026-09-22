@@ -22,7 +22,6 @@ multidimensional data.
   high-performance tensor with explicit memory layout via a `Layout`.
 """
 from .coord import (
-    All,
     Coord,
     CoordLike,
     ComptimeInt,

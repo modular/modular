@@ -380,11 +380,11 @@ def execute_matmul_k_cache_ragged_scale[
         transpose_b=True,
         scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
     ](
-        ref_output_tt.to_layout_tensor(),
-        hidden_state_ragged_tt.to_layout_tensor(),
-        weight_ref_tt.to_layout_tensor(),
-        ref_input_scale_tt.to_layout_tensor(),
-        ref_weight_scale_tt.to_layout_tensor(),
+        ref_output_tt,
+        hidden_state_ragged_tt,
+        weight_ref_tt,
+        ref_input_scale_tt,
+        ref_weight_scale_tt,
         ctx,
     )
 

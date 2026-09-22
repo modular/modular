@@ -73,6 +73,21 @@ def _copy_widen_factor[
     return 1
 
 
+@inline(.always)
+def _offset_elements(offset_coord: Coord) -> Int:
+    """Sums a flat offset coordinate into one scalar-element count.
+
+    A view hands the engine its offset in one component per provenance: a
+    `ComptimeInt` for the part the type system folded and a `Scalar` for the
+    part only known at runtime. Adding them here, rather than demanding a
+    single component, is what lets a subscript keep the folded part static.
+    """
+    var total = 0
+    comptime for i in range(offset_coord.flat_rank):
+        total += Int(offset_coord[i].value())
+    return total
+
+
 trait TensorEngine:
     """Defines how tile tensor operates on borrowed storage.
 
@@ -345,8 +360,8 @@ trait TensorEngine:
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
@@ -2255,8 +2270,8 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
@@ -2265,9 +2280,9 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         # `storage` is a `Pointer[SIMD[dtype, element_width]]`. Reinterpret
         # it as a scalar pointer so `+ offset` advances in scalar (not SIMD)
         # units, then `rebind` back to the original handle type.
-        comptime assert offset_coord.flat_rank == 1
         return (
-            storage.bitcast[Scalar[offset_dtype]]() + offset_coord[0].value()
+            storage.bitcast[Scalar[offset_dtype]]()
+            + _offset_elements(offset_coord)
         ).bitcast[SIMD[offset_dtype, Self.element_width]]()
 
     @staticmethod
@@ -3988,27 +4003,26 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
             elements into the referenced storage.
         """
-        comptime assert offset_coord.flat_rank == 1
         comptime if is_gpu():
             var result = storage
             var leaf = Pointer(to=result).bitcast[
                 MutPointer[Scalar[type_of(storage).dtype], MutAnyOrigin]
             ]()
-            leaf[] = leaf[] + offset_coord[0].value()
+            leaf[] = leaf[] + _offset_elements(offset_coord)
             return result
         else:
             # Keep this non-raising (matching the pointer-backed engine and
             # `TileTensor`'s `DeviceBuffer` constructor) by aborting on the
             # out-of-bounds case `DevicePointer` arithmetic raises on.
             try:
-                return storage + Int(offset_coord[0].value())
+                return storage + _offset_elements(offset_coord)
             except e:
                 abort(String("DevicePointerEngine.offset: ", e))
 
@@ -5654,16 +5668,16 @@ struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
             elements into the referenced storage.
         """
-        comptime assert offset_coord.flat_rank == 1
         return (
-            storage.bitcast[Scalar[offset_dtype]]() + offset_coord[0].value()
+            storage.bitcast[Scalar[offset_dtype]]()
+            + _offset_elements(offset_coord)
         ).bitcast[SIMD[offset_dtype, Self.element_width]]()
 
     @staticmethod

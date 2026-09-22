@@ -204,11 +204,6 @@ def copy_to_numpy_tensor[
         "copy_to_numpy_tensor: nested `Coord` shapes are not supported; pass"
         " one element per axis."
     )
-    comptime assert not shape.contains_slices, (
-        "copy_to_numpy_tensor: `All` is not a dimension; pass a concrete"
-        " extent for every axis."
-    )
-
     var np = Python.import_module("numpy")
     var dtype_str = _numpy_dtype_name[dtype]().value()
 

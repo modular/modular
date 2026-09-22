@@ -131,11 +131,11 @@ def _run_one[
         transpose_b=True,
         scales_granularity_mnk=Index(1, n_g, k_g),
     ](
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
-        a_scales_tt.to_layout_tensor(),
-        b_scales_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
+        a_scales_tt,
+        b_scales_tt,
         ctx,
     )
     ctx.synchronize()

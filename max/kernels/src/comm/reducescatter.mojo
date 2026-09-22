@@ -18,7 +18,6 @@ from std.collections.optional import Optional
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
-from layout.coord import _CoordToDynamic
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
@@ -437,35 +436,33 @@ def _reducescatter_kernel[
             ](flat_tiles, out_buf, n_elements, config.stride)
         else:
             # 2D axis-aware: slice + reverse for coalesced access.
-            comptime InputTile = TileTensor[dtype, in_layout, ImmutAnyOrigin]
-            comptime DynShapeTypes = _CoordToDynamic[
-                InputTile.linear_idx_type, in_layout._shape_types
-            ]
-            comptime RevLayout = Layout[
-                DynShapeTypes.reverse(),
-                in_layout._stride_types.reverse(),
-            ]
-            comptime SlicedRevTile = TileTensor[
-                dtype, RevLayout, ImmutAnyOrigin
+            comptime assert (
+                in_layout.rank == 2
+            ), "axis-aware reduce-scatter expects a rank-2 input layout"
+            # Both axes slice both dimensions, so either one names the type.
+            comptime SlicedTile = type_of(
+                reordered[0][u_start : u_start + n_units, :]
+            )
+            comptime SlicedRevTile = SlicedTile.ViewType[
+                Layout[
+                    SlicedTile.LayoutType._shape_types.reverse(),
+                    SlicedTile.LayoutType._stride_types.reverse(),
+                ]
             ]
 
             def sliced_tiles_at[i: Int]() {imm} -> SlicedRevTile:
                 comptime if axis == 0:
                     # Scatter along rows.
-                    var sliced = reordered[i].slice(
-                        (u_start, u_start + n_units),
-                        (0, Int(reordered[0].dim[1]())),
-                    )
+                    var sliced = reordered[i][u_start : u_start + n_units, :]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
                 else:
                     # axis == 1: scatter along columns.
                     var col_start = u_start * simd_width
-                    var sliced = reordered[i].slice(
-                        (0, Int(reordered[0].dim[0]())),
-                        (col_start, col_start + n_units * simd_width),
-                    )
+                    var sliced = reordered[i][
+                        :, col_start : col_start + n_units * simd_width
+                    ]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
