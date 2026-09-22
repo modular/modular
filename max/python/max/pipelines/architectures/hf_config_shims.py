@@ -205,6 +205,41 @@ except ValueError:
     pass
 
 
+class DeepseekV4HFConfig(PretrainedConfig):
+    """HuggingFace configuration class for DeepSeek-V4-Flash models.
+
+    ``deepseek_v4`` is not registered in transformers and the repo ships no
+    ``auto_map``, so ``AutoConfig.from_pretrained`` cannot resolve it. The
+    config is flat (no sub-configs) and, unlike V3.2, drops the MLA fields
+    (``kv_lora_rank``, ``qk_nope_head_dim``, ``v_head_dim``) and every dense-MLP
+    field (``intermediate_size``, ``first_k_dense_replace``, ``moe_layer_freq``)
+    -- every layer is MoE and KV is a single ``head_dim``-wide latent. So this
+    subclasses ``PretrainedConfig`` directly and preserves each field verbatim
+    rather than inheriting ``DeepseekV3Config``'s shape.
+    """
+
+    model_type = "deepseek_v4"
+
+    def __init__(
+        self, max_position_embeddings: int = 1048576, **kwargs: Any
+    ) -> None:
+        # Same trap as ``_KimiK2Config``: transformers >= 5.12 standardizes
+        # RoPE params in ``__post_init__`` and, for a scaling rope type (V4
+        # ships ``yarn``), eagerly reads ``self.max_position_embeddings`` as the
+        # ``setdefault`` fallback for ``original_max_position_embeddings``. It
+        # is not a declared field on the base config, so on a bare
+        # ``PretrainedConfig`` subclass it is never set before ``__post_init__``
+        # runs. Bind it before delegating.
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+AutoConfig.register("deepseek_v4", DeepseekV4HFConfig, exist_ok=True)
+
+
 class LagunaHFConfig(PretrainedConfig):
     """Local config class for poolside's Laguna models (``model_type: laguna``).
 

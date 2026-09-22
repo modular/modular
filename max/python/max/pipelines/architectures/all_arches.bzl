@@ -10,6 +10,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/deepseekV3",
     "//max/python/max/pipelines/architectures/deepseekV3_2",
     "//max/python/max/pipelines/architectures/deepseekV3_2_nextn",
+    "//max/python/max/pipelines/architectures/deepseekV4",
     "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
     "//max/python/max/pipelines/architectures/deepseekV3_nextn",
     "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
