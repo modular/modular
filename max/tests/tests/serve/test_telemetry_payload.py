@@ -24,6 +24,7 @@ from collections.abc import Iterator
 
 import pytest
 from max.serve.telemetry import common
+from opentelemetry.sdk.resources import Resource
 
 
 @pytest.fixture
@@ -63,3 +64,28 @@ def test_payload_stays_ascii(posted: list[str]) -> None:
         ]
     }
     assert attrs["deployment.model"] == "mod\u00e8le/\u65e5\u672c\u8a9e"
+
+
+def test_payload_reports_the_configured_service_name(
+    monkeypatch: pytest.MonkeyPatch, posted: list[str]
+) -> None:
+    """The name comes from the resource the SDK resolved, so OTEL_SERVICE_NAME
+    reaches this payload the way it already reaches traces and metrics."""
+    monkeypatch.setattr(
+        common,
+        "logs_resource",
+        Resource.create(
+            {
+                **dict(common.logs_resource.attributes),
+                "service.name": "chosen-name",
+            }
+        ),
+    )
+    common.send_telemetry_log("m")
+    attrs = {
+        a["key"]: a["value"]["stringValue"]
+        for a in json.loads(posted[0])["resourceLogs"][0]["resource"][
+            "attributes"
+        ]
+    }
+    assert attrs["service.name"] == "chosen-name"

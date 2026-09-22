@@ -767,7 +767,7 @@ def send_telemetry_log(model_name: str) -> None:
                             "cpu.description": attrs["cpu.description"],
                             "cpu.arch": attrs["cpu.arch"],
                             "system.cloud": attrs["system.cloud"],
-                            "service.name": "unknown_service",
+                            "service.name": attrs["service.name"],
                             "telemetry.sdk.language": "python",
                             "telemetry.sdk.version": "0.0.0",
                             "telemetry.sdk.name": "opentelemetry",
