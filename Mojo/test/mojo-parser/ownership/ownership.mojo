@@ -1065,7 +1065,7 @@ def caught_eh_cleanup():
       # CHECK: [[RAISE:%.*]] = lit.call @ownership::@"maybeDim
 
       # Check for the error and handle it.
-      # CHECK-NEXT: hlcf.if [[RAISE]] {
+      # CHECK-NEXT: hlcf.elif [[RAISE]] {
       # EH is never used, so it can be immediately released.
       # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%eh1)
       # CHECK-NEXT:    lit.var.lifetime.end %eh1
@@ -1088,7 +1088,7 @@ def caught_eh_cleanup():
       # CHECK: [[RAISE:%.*]] = lit.call @ownership::@"maybeDim
 
       # Check for the error and handle it.
-      # CHECK-NEXT: hlcf.if [[RAISE]] {
+      # CHECK-NEXT: hlcf.elif [[RAISE]] {
       # Normal result is never used
       # CHECK-NEXT: lit.ownership.mark_consumed [[NORMALRESULT]]
       # CHECK-NEXT: lit.var.lifetime.end [[NORMALRESULT]]

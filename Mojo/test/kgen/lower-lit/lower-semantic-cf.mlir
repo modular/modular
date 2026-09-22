@@ -238,7 +238,7 @@ lit.fn @throwing_calls(
   %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
 
   // CHECK:      [[IS_ERR:%.*]] = lit.call @throwing_func
-  // CHECK-NEXT: hlcf.if [[IS_ERR]]
+  // CHECK-NEXT: hlcf.elif [[IS_ERR]]
   // CHECK-NEXT:   mark_consumed %result
   // CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
   // CHECK-NEXT:   lit.error_return [[TRUE]]
@@ -252,7 +252,7 @@ lit.fn @throwing_calls(
   // CHECK: lit.try "try0" {
   lit.try %error : !lit.ref<@Error, mut tlt> {
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
-    // CHECK-NEXT: hlcf.if [[IS_ERR]]
+    // CHECK-NEXT: hlcf.elif [[IS_ERR]]
     // CHECK-NEXT:   mark_consumed %result
     // CHECK-NEXT:   lit.try.raise "try0"
     // CHECK-NEXT: } else {
@@ -465,7 +465,7 @@ lit.fn @nested_try_inner_catch() {
     %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
     // CHECK: lit.call @throwing_func
     lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
-    // CHECK-NEXT: hlcf.if
+    // CHECK-NEXT: hlcf.elif
     // CHECK-NEXT:   lit.ownership.mark_consumed %result
     // CHECK-NEXT:   lit.try.raise
     // CHECK-NEXT: else
@@ -1194,7 +1194,7 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
     %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
     %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
     // CHECK: lit.call @throwing_func
-    // CHECK: hlcf.if
+    // CHECK: hlcf.elif
     // CHECK:   lit.error_return
     // CHECK: else
     // CHECK:   hlcf.yield

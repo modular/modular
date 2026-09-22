@@ -390,7 +390,7 @@ lit.fn @throwing_func(%1: !lit.struct<@Error>) throws -> !kgen.variant<@Error, n
 // CHECK-LABEL: kgen.generator @return_raise_or
 // CHECK-SAME: -> !kgen.variant<struct<() memoryOnly>, none>
 lit.fn @return_raise_or(%cond: !kgen.scalar<bool>, %err: !lit.struct<@Error>) -> !kgen.variant<@Error, none> {
-  // CHECK-NEXT: hlcf.if %arg0
+  // CHECK-NEXT: hlcf.elif %arg0
   hlcf.elif %cond {
     // CHECK: %[[ERR:.*]] = kgen.variant.create %arg1
     %0 = kgen.variant.create %err, 0 : <@Error, none>

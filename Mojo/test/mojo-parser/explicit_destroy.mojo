@@ -73,7 +73,7 @@ struct ExplicitDestroyThrowing(Deinitable where False, Movable where False):
         # CHECK: lit.call {{.*}}@"method_that_raises{{.*}}(%0, %__error__, %__call_result_tmp__)
         # CHECK-NEXT: lit.ref.struct.ger %self[field]
         # CHECK-NEXT: lit.call {{.*}}MyAffine::@"__deinit__
-        # CHECK-NEXT: hlcf.if
+        # CHECK-NEXT: hlcf.elif
         # CHECK-NEXT: lit.ownership.mark_consumed %__call_result_tmp__
         # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
         # CHECK-NEXT: lit.ownership.mark_destroyed %self

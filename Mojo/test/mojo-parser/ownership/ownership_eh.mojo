@@ -101,7 +101,7 @@ def thing_that_raises(c: __mlir_type.`!kgen.scalar<bool>`) raises -> MemExample:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<none,
     # CHECK-NEXT: lifetime.start [[RESULT]]
     # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__error__, [[RESULT]])
-    # CHECK-NEXT: hlcf.if [[IS_ERR]]
+    # CHECK-NEXT: hlcf.elif [[IS_ERR]]
     # CHECK-NEXT:   mark_consumed [[RESULT]]
     # CHECK-NEXT:   lifetime.end [[RESULT]]
     # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>

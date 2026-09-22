@@ -194,6 +194,46 @@ struct LITLowerer {
 };
 } // namespace
 
+/// Given an elif op, simplify it to only have then/else blocks, no elif arms.
+static HLCF::ElifOp eliminateElIfRegions(HLCF::ElifOp elifOp) {
+  // Simple if/else has no extra arms; leave it alone for LLVM lowering.
+  if (elifOp.getElifRegions().empty())
+    return elifOp;
+
+  ImplicitLocOpBuilder builder(elifOp->getLoc(), elifOp);
+  builder.setInsertionPoint(elifOp);
+
+  // First condition is an SSA operand; build the outermost elif from it.
+  HLCF::ElifOp outerMostElifOp =
+      HLCF::ElifOp::create(builder, elifOp.getResultTypes(), elifOp.getCond());
+  outerMostElifOp.getThenRegion().takeBody(elifOp.getThenRegion());
+  Region *currentRegion = &outerMostElifOp.getElseRegion();
+
+  // Nest additional (cond, then) pairs into the current else region.
+  for (Region &region : elifOp.getElifRegions()) {
+    currentRegion->takeBody(region);
+    builder.setInsertionPointToEnd(&currentRegion->front());
+    Operation *terminator = currentRegion->front().getTerminator();
+    if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(terminator)) {
+      auto newElifOp = HLCF::ElifOp::create(builder, elifOp.getResultTypes(),
+                                            elifYieldOp->getOperand(0));
+      // Insert yield of the nested elif results, then erase elif.yield.
+      HLCF::YieldOp::create(builder, newElifOp.getResults());
+      elifYieldOp->erase();
+      currentRegion = &newElifOp.getThenRegion();
+      continue;
+    }
+    // Moved a then region into Elif's Then region; continue into its Else.
+    auto elifOpParent = terminator->getParentOfType<HLCF::ElifOp>();
+    currentRegion = &elifOpParent.getElseRegion();
+  }
+  currentRegion->takeBody(elifOp.getElseRegion());
+  builder.setInsertionPoint(elifOp);
+  IRRewriter rewriter{builder};
+  rewriter.replaceOp(elifOp, outerMostElifOp.getResults());
+  return outerMostElifOp;
+}
+
 void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
   func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
@@ -233,7 +273,7 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getResult());
     } else if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
-      HLCF::replaceElifWithIfOps(elifOp);
+      eliminateElIfRegions(elifOp);
     } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
     }

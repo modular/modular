@@ -624,7 +624,7 @@ static Operation *addErrorRegions(Operation &op, FuncType sig,
   // Clone the op and add the error regions.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
   b.setInsertionPointAfter(&op);
-  auto ifOp = HLCF::IfOp::create(b, op.getResult(0));
+  auto ifOp = HLCF::ElifOp::create(b, op.getResult(0));
 
   // In the error region, mark the result has known consumed, then raise.
   b.createBlock(&ifOp.getThenRegion());
