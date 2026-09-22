@@ -621,7 +621,7 @@ The
 method divides a tensor into non-overlapping partitions along an axis. Unlike
 `tile()`, which returns a single sub-tile, `split()` returns every partition at
 once (or a single requested partition). Split views are immutable, so call
-[`as_immut()`](/api/mojo/layout/tile_tensor/TileTensor/#as_immut)
+[`as_imm()`](/api/mojo/layout/tile_tensor/TileTensor/#as_imm)
 on a mutable tensor first.
 
 `split()` has two forms. The static form, `split[count]()`, takes a compile-time
@@ -633,8 +633,8 @@ var data = Array[Int32, 16](fill_with=lambda (i: Int) -> Int32: Int32(i))
 var tensor = TileTensor(data, row_major[4, 4]())
 
 # Split into 2 equal halves along axis 0. Split views are immutable,
-# so call as_immut() first.
-var halves = tensor.as_immut().split[2]()
+# so call as_imm() first.
+var halves = tensor.as_imm().split[2]()
 ```
 
 The dynamic form, `split(count, idx)`, takes a run-time partition count and
@@ -646,7 +646,7 @@ var tensor = TileTensor(data, row_major[8, 2]())
 
 # Return a single runtime-sized partition: split axis 0 into 4 parts
 # and take partition index 1.
-var partition = tensor.as_immut().split[axis=0](4, 1)
+var partition = tensor.as_imm().split[axis=0](4, 1)
 ```
 
 By default, the dynamic form divides the axis as evenly as possible. The
