@@ -24,7 +24,14 @@ from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    Module,
+    TensorType,
+    ops,
+)
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import MultiKVCacheParams
@@ -81,7 +88,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
-    input_row_offsets: npt.NDArray[np.integer[Any]] | list[Buffer]
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer
     signal_buffers: list[Buffer]
     return_n_logits: Buffer
 
@@ -92,7 +99,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return (
             self.tokens,
             self.return_n_logits,
-            *self.input_row_offsets,
+            self.input_row_offsets,
             *self.vision_embeddings,
             *self.vision_scatter_indices,
             *self.signal_buffers,
@@ -291,14 +298,9 @@ class Gemma3_MultiModalModel(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
 
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
 
         image_embeddings_types = [
             TensorType(
@@ -333,7 +335,7 @@ class Gemma3_MultiModalModel(
         return (
             tokens_type,
             return_n_logits_type,
-            *input_row_offsets_types,
+            input_row_offsets_type,
             *image_embeddings_types,
             *image_token_indices_types,
             *signals.input_types(),
@@ -363,13 +365,9 @@ class Gemma3_MultiModalModel(
             )
 
             # Unpack inputs following InternVL pattern
-            (tokens, return_n_logits, *variadic_args) = graph.inputs
-
-            # Extract input_row_offsets (one per device)
-            input_row_offsets = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
+            (tokens, return_n_logits, row_offsets, *variadic_args) = (
+                graph.inputs
+            )
 
             # Extract image embeddings (one per device).
             image_embeddings = [
@@ -387,6 +385,13 @@ class Gemma3_MultiModalModel(
                 v.buffer for v in variadic_args[: len(self.devices)]
             ]
             variadic_args = variadic_args[len(self.devices) :]
+
+            # Staged once on the first device. A collective rather than a
+            # transfer per device: those sync across streams, which breaks
+            # graph capture.
+            input_row_offsets = ops.distributed_broadcast(
+                row_offsets.tensor, signal_buffers
+            )
 
             # Extract KV cache inputs from the unified {sliding, global} tree.
             kv_cache_local, kv_cache_global = (

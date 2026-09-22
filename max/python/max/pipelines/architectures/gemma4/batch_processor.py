@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer, copy_pinned_to_destinations
+from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
@@ -100,8 +100,7 @@ class Gemma4BatchProcessor(
 
         assert kv_cache_inputs is not None
 
-        devices = self.runtime.devices
-        dev = devices[0]
+        dev = self.runtime.devices[0]
         pinned = not dev.is_host
 
         batch_size = len(context_batch)
@@ -124,14 +123,11 @@ class Gemma4BatchProcessor(
             shape=(total_seq_len,),
             device=dev,
         )
-        device_row_offsets = [
-            self._device_inputs.view(
-                name=RAGGED_INPUT_ROW_OFFSETS,
-                shape=(batch_size + 1,),
-                device=device,
-            )
-            for device in devices
-        ]
+        device_row_offsets = self._device_inputs.view(
+            name=RAGGED_INPUT_ROW_OFFSETS,
+            shape=(batch_size + 1,),
+            device=dev,
+        )
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
@@ -151,8 +147,8 @@ class Gemma4BatchProcessor(
                 out=tokens_np,
             )
 
-        copy_pinned_to_destinations(host_tokens, [device_tokens])
-        copy_pinned_to_destinations(host_row_offsets, device_row_offsets)
+        device_tokens.inplace_copy_from(host_tokens)
+        device_row_offsets.inplace_copy_from(host_row_offsets)
 
         return Gemma3MultiModalModelInputs(
             tokens=device_tokens,
