@@ -19,7 +19,7 @@
 # wording fails a test.
 #
 # Page claims, and where each is verified:
-#   1. `Deinitable where False` opts a type out of automatic destruction, and
+#   1. `not Deinitable` opts a type out of automatic destruction, and
 #      its values must be consumed by a named deinitializer or transferred.
 #      -> test_named_deinitializer_consumes, test_transfer_defers_destruction;
 #         the failure to consume is claim C1 below
@@ -115,7 +115,7 @@ def record(into: Recorder, var event: String):
 # --- Opting out of automatic destruction ---
 
 
-struct Example(Deinitable where False):
+struct Example(not Deinitable):
     var events: Recorder
 
     def __init__(out self, events: Recorder):
@@ -158,7 +158,7 @@ def test_transfer_defers_destruction() raises:
 
 
 struct Transaction(
-    Deinitable where False else "call 'commit()' or 'rollback()'", Movable
+    not Deinitable else "call 'commit()' or 'rollback()'", Movable
 ):
     var events: Recorder
     var rows: Int
@@ -176,7 +176,7 @@ struct Transaction(
         record(self.events, "rolled back")
 
 
-struct MutexGuard(Deinitable where False, Movable):
+struct MutexGuard(not Deinitable, Movable):
     var events: Recorder
 
     def __init__(out self, events: Recorder):
@@ -240,9 +240,7 @@ def test_raising_deinitializer_consumes() raises:
     assert_equal(caught, "nothing to commit")
 
 
-struct Counters(
-    Deinitable where False else "call 'flush()' or 'drop()'", Movable
-):
+struct Counters(not Deinitable else "call 'flush()' or 'drop()'", Movable):
     var counts: Allocation[Int64]
     var events: Recorder
 
@@ -292,9 +290,7 @@ def test_dispose_before_raise_success_path() raises:
     assert_equal(events[1], "flushed 1")
 
 
-struct Draft(
-    Deinitable where False else "call 'save()' or 'discard()'", Movable
-):
+struct Draft(not Deinitable else "call 'save()' or 'discard()'", Movable):
     var data: String  # implicitly destructible
 
     def __init__(out self, var data: String):
@@ -349,7 +345,7 @@ struct Basic(Movable):
 
 
 struct Tally(
-    Deinitable where False else "call 'destroy()' to free the counters", Movable
+    not Deinitable else "call 'destroy()' to free the counters", Movable
 ):
     var counts: Allocation[Int64]
     var events: Recorder

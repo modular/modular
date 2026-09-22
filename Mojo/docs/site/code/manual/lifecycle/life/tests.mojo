@@ -259,7 +259,7 @@ def test_transfer_needs_no_declared_conformance() raises:
 # --- Move-only and immovable types ---
 
 
-struct Pinned(Movable where False):
+struct Pinned(not Movable):
     var n: Int
 
     def __init__(out self, n: Int):

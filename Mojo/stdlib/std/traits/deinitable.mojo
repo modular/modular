@@ -72,9 +72,8 @@ trait Deinitable:
     proper cleanup.
 
     By default, all Mojo types implement `Deinitable`, unless they
-    opt-in to required explicit named destructor methods using a
-    `Deinitable where False`, or conditionally with
-    `Deinitable where <cond>`.
+    opt-in to required explicit named destructor methods using
+    `not Deinitable`, or conditionally with `Deinitable where <cond>`.
 
     Key aspects:
 

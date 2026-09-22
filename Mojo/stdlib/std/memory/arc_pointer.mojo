@@ -38,7 +38,7 @@ from std.memory.alloc import (
 
 @doc_hidden
 struct _ArcPointerInner[T: Movable & Deinitable](
-    Movable where False,
+    not Movable,
 ):
     """
     The backing _shared_ piece of an ArcPointer.

@@ -553,7 +553,7 @@ Implicitly deinitable structs get a default `__deinit__()`. A custom
 Explicitly destroyed structs write their own cleanup logic, using a
 consuming method with `deinit self`.
 
-Opt out with `Deinitable where False`.
+Opt out with `not Deinitable`.
 :::
 
 ## `comptime` members

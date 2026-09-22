@@ -196,7 +196,7 @@ struct Alignment(TrivialRegisterPassable, Writable):
     " `unsafe_leak()` to take ownership of the underlying pointer."
 )
 struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
-    Deinitable where False, RegisterPassable, Writable
+    not Deinitable, RegisterPassable, Writable
 ):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
@@ -585,9 +585,7 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     " with its layout: `dealloc(allocation^.unsafe_with_layout(layout))`, or"
     " call `unsafe_leak()` to take ownership of the underlying pointer."
 )
-struct ThinAllocation[T: AnyType](
-    Deinitable where False, RegisterPassable, Writable
-):
+struct ThinAllocation[T: AnyType](not Deinitable, RegisterPassable, Writable):
     """An owning handle to a heap allocation of `T`, without its `Layout`.
 
     A `ThinAllocation` is the minimal owning handle to allocated storage: just

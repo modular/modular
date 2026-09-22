@@ -511,7 +511,7 @@ struct ProducerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
     Backend: PipelineBackend = NvidiaMbarBackend[num_stages],
-](Deinitable where False, Movable):
+](not Deinitable, Movable):
     """Unified handle for producing to a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.
@@ -639,7 +639,7 @@ struct ConsumerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
     Backend: PipelineBackend = NvidiaMbarBackend[num_stages],
-](Deinitable where False, Movable):
+](not Deinitable, Movable):
     """Unified handle for consuming from a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.

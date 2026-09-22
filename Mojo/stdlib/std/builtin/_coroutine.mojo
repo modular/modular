@@ -88,7 +88,7 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 
 
 struct Coroutine[type: Deinitable, origins: OriginSet](
-    Deinitable where False,
+    not Deinitable,
     RegisterPassable,
 ):
     """Represents a coroutine.
@@ -195,7 +195,7 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
 
 
 struct RaisingCoroutine[type: AnyType, origins: OriginSet](
-    Deinitable where False,
+    not Deinitable,
     RegisterPassable,
 ):
     """Represents a coroutine that can raise.

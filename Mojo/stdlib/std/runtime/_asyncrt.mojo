@@ -198,7 +198,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: Deinitable, origins: OriginSet](Movable where False):
+struct Task[type: Deinitable, origins: OriginSet](not Movable):
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
@@ -324,7 +324,7 @@ def create_raising_task[
 
 
 struct RaisingTask[type: Movable, origins: OriginSet](
-    Deinitable where False,
+    not Deinitable,
 ):
     """Represents an async task that may raise an error upon completion.
 

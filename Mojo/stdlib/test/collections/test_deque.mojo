@@ -1173,7 +1173,7 @@ struct NonEquatable(Copyable):
     pass
 
 
-struct CopyableExplicitDestroy(Copyable, Deinitable where False):
+struct CopyableExplicitDestroy(Copyable, not Deinitable):
     """Test type that is `Copyable` but must be explicitly destroyed."""
 
     var value: Int

@@ -263,11 +263,11 @@ transfer ownership of its stored value but can't copy it.
 copies that would duplicate its value.
 
 A type conforming to neither `Movable` nor `Copyable` is immovable.
-To opt out of `Movable`, conform your type to `Movable where False` or
-define it with a non-movable field:
+To opt out of `Movable`, write `not Movable` in your type's conformance
+list or define it with a non-movable field:
 
 ```mojo
-struct Pinned(Movable where False):
+struct Pinned(not Movable):
     var n: Int
 
     def __init__(out self, n: Int):

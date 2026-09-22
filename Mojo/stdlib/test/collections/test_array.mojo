@@ -542,7 +542,7 @@ struct NonWritable(Copyable):
     var value: Int
 
 
-struct NonMovable(Movable where False):
+struct NonMovable(not Movable):
     """A non-`Movable` (pinned) type; still implicitly deletable by default."""
 
     var value: Int
@@ -551,7 +551,7 @@ struct NonMovable(Movable where False):
         self.value = value
 
 
-struct LinearNonMovable(Deinitable where False, Movable where False):
+struct LinearNonMovable(not Deinitable, not Movable):
     """A fully linear type: neither `Movable` nor `Deinitable`."""
 
     var value: Int
@@ -561,7 +561,7 @@ struct NonDefaultable:
     pass
 
 
-struct DefaultableNonMovable(Defaultable, Movable where False):
+struct DefaultableNonMovable(Defaultable, not Movable):
     """A `Defaultable` type that is not `Movable`."""
 
     var value: Int

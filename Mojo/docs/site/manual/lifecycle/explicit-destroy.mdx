@@ -9,12 +9,12 @@ destruction lets a type opt out of that behavior and require its values to
 be deliberately destroyed. A type that does this is an explicitly destroyed
 type.
 
-Explicit destruction uses an unsatisfiable `Deinitable` constraint.
-Mark types with a `Deinitable where False` conditional conformance:
+Explicit destruction opts a type out of the `Deinitable` trait. Mark types
+with a `not Deinitable` entry in the conformance list:
 
 ```mojo
 @fieldwise_init
-struct Example(Deinitable where False else "call 'cleanup()'"):
+struct Example(not Deinitable else "call 'cleanup()'"):
     def cleanup(deinit self):
         # perform cleanup operations
         pass
@@ -49,9 +49,7 @@ Examples:
 ```mojo
 # Multiple cleanup paths
 @fieldwise_init
-struct Transaction(
-    Deinitable where False else "call 'commit()' or 'rollback()'"
-):
+struct Transaction(not Deinitable else "call 'commit()' or 'rollback()'"):
     def commit(deinit self) raises:  # Offers error handling
         # ...
         pass
@@ -61,7 +59,7 @@ struct Transaction(
         pass
 
 # Order matters
-struct MutexGuard(Deinitable where False):
+struct MutexGuard(not Deinitable):
     # Must be called to release the lock before other operations
     def unlock(deinit self):
         # ...
@@ -84,12 +82,11 @@ up during unwinding.
 
 ## Custom error messages
 
-Add a custom message to the `where` constraint to improve compiler
-diagnostics:
+Add a custom message to the opt-out to improve compiler diagnostics:
 
 ```mojo
 struct CustomFileHandle(
-    Deinitable where False else "call 'save_and_close()' or 'discard()'"
+    not Deinitable else "call 'save_and_close()' or 'discard()'"
 ):
     def save_and_close(deinit self) raises:
         pass
@@ -141,10 +138,9 @@ struct Basic(Movable):
     def __deinit__(deinit self):
         print(t"Destroying Basic: {self.string}")
 
-struct Tally(Movable, Deinitable where (
-    False,
-    "call 'destroy()' to free the counters"
-)):
+struct Tally(
+    Movable, not Deinitable else "call 'destroy()' to free the counters"
+):
     var counts: Allocation[Int64]
 
     def __init__(out self, buckets: Int):

@@ -2476,7 +2476,7 @@ struct Pointer[
         from std.memory.alloc import alloc, dealloc, Layout
 
         @fieldwise_init
-        struct Pinned(Movable where False):
+        struct Pinned(not Movable):
             var value: Int
 
         var allocation = alloc(Layout[Pinned].single())

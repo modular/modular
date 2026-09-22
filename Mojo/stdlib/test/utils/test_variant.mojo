@@ -437,7 +437,7 @@ struct _Bare(Movable):
 
 
 @fieldwise_init
-struct _Pinned(Movable where False):
+struct _Pinned(not Movable):
     """A non-`Movable` (pinned) type; still implicitly deletable by default."""
 
     var value: Int

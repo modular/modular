@@ -535,7 +535,7 @@ def test_optional_deinit_with_none_does_not_call_destroy() raises:
 
 # `Deinitable` but explicitly not `Movable`: rejected at the parameter
 # bound under the old `Optional[T: Movable]`, admitted under the `AnyType` floor.
-struct _NotMovable(Deinitable, Movable where False):
+struct _NotMovable(Deinitable, not Movable):
     var x: Int
 
     def __init__(out self, x: Int):

@@ -240,7 +240,7 @@ struct Optional[T: AnyType](
 
         ```mojo
         @fieldwise_init
-        struct Pinned(Movable where False):
+        struct Pinned(not Movable):
             var value: Int
 
         def make() -> Pinned:
@@ -776,7 +776,7 @@ struct Optional[T: AnyType](
 
         ```mojo
         @fieldwise_init
-        struct ExplicitDeinit(Movable, Deinitable where False):
+        struct ExplicitDeinit(Movable, not Deinitable):
             var data: Int
 
             def explicit_deinit(deinit self):

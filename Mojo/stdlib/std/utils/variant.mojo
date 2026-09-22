@@ -114,7 +114,7 @@ trait _NicheStorage(Defaultable, Deinitable):
 
 
 struct _DefaultNicheStorage[T: AnyType](
-    Defaultable, Movable where False, _NicheStorage
+    Defaultable, not Movable, _NicheStorage
 ):
     """Default niche backing: stores the value in `MaybeUninit[T]`
     (lowers to `pop.array<1, T>`)."""
@@ -605,7 +605,7 @@ struct Variant[*Ts: AnyType](
         from std.utils import Variant
 
         @fieldwise_init
-        struct Pinned(Movable where False):
+        struct Pinned(not Movable):
             var value: Int
 
         def make() -> Pinned:
@@ -917,7 +917,7 @@ struct Variant[*Ts: AnyType](
         from std.utils import Variant
 
         @fieldwise_init
-        struct Pinned(Movable where False):
+        struct Pinned(not Movable):
             var value: Int
 
         def make() -> Pinned:

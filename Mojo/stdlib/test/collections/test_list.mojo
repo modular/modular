@@ -1424,7 +1424,7 @@ def test_overaligned_struct_realloc() raises:
         assert_equal(l[i].x, Float32(i))
 
 
-struct Pinned(Movable where False):
+struct Pinned(not Movable):
     pass
 
 

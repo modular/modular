@@ -83,7 +83,7 @@ trait AnyType:
     ```mojo
     from std.pathlib import Path
 
-    struct FileBuffer(Deinitable where False):
+    struct FileBuffer(not Deinitable):
         def __init__(out self, path: Path):
             pass  # ... open the file at the specified `path` ...
 
