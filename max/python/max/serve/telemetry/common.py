@@ -14,13 +14,14 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import logging.handlers
 import math
 import os
 import platform
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextvars import ContextVar
 from time import time
 
@@ -739,53 +740,68 @@ def configure_kernel_tracing(settings: Settings) -> None:
     )
 
 
+def _string_attrs(pairs: Mapping[str, object]) -> list[dict[str, object]]:
+    """Renders a mapping as OTLP string-valued key/value attributes."""
+    return [
+        {"key": key, "value": {"stringValue": str(value)}}
+        for key, value in pairs.items()
+    ]
+
+
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
 def send_telemetry_log(model_name: str) -> None:
-    request_body = f"""{{
-  "resourceLogs": [
-    {{
-      "resource": {{
-        "attributes": [
-          {{"key": "deployment.model", "value": {{"stringValue": "{model_name}"}}}},
-          {{"key": "web.user.id", "value": {{"stringValue": "{logs_resource.attributes["web.user.id"]}"}}}},
-          {{"key": "enduser.id", "value": {{"stringValue": "{logs_resource.attributes["enduser.id"]}"}}}},
-          {{"key": "deployment.id", "value": {{"stringValue": "{logs_resource.attributes["deployment.id"]}"}}}},
-          {{"key": "os.type", "value": {{"stringValue": "{logs_resource.attributes["os.type"]}"}}}},
-          {{"key": "os.version", "value": {{"stringValue": "{logs_resource.attributes["os.version"]}"}}}},
-          {{"key": "cpu.description", "value": {{"stringValue": "{logs_resource.attributes["cpu.description"]}"}}}},
-          {{"key": "cpu.arch", "value": {{"stringValue": "{logs_resource.attributes["cpu.arch"]}"}}}},
-          {{"key": "system.cloud", "value": {{"stringValue": "{logs_resource.attributes["system.cloud"]}"}}}},
-          {{"key": "service.name", "value": {{"stringValue": "unknown_service"}}}},
-          {{"key": "telemetry.sdk.language", "value": {{"stringValue": "python"}}}},
-          {{"key": "telemetry.sdk.version", "value": {{"stringValue": "0.0.0"}}}},
-          {{"key": "telemetry.sdk.name", "value": {{"stringValue": "opentelemetry"}}}}
+    attrs = logs_resource.attributes
+    body = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": _string_attrs(
+                        {
+                            "deployment.model": model_name,
+                            "web.user.id": attrs["web.user.id"],
+                            "enduser.id": attrs["enduser.id"],
+                            "deployment.id": attrs["deployment.id"],
+                            "os.type": attrs["os.type"],
+                            "os.version": attrs["os.version"],
+                            "cpu.description": attrs["cpu.description"],
+                            "cpu.arch": attrs["cpu.arch"],
+                            "system.cloud": attrs["system.cloud"],
+                            "service.name": "unknown_service",
+                            "telemetry.sdk.language": "python",
+                            "telemetry.sdk.version": "0.0.0",
+                            "telemetry.sdk.name": "opentelemetry",
+                        }
+                    )
+                },
+                "scopeLogs": [
+                    {
+                        "logRecords": [
+                            {
+                                "attributes": _string_attrs(
+                                    {
+                                        "event.domain": "modular",
+                                        "event.name": "serve.telemetry.log",
+                                    }
+                                ),
+                                "body": {"stringValue": ""},
+                                "observedTimeUnixNano": str(
+                                    int(time() * 1_000_000_000)
+                                ),
+                                "severityNumber": 9,
+                                "severityText": "INFO",
+                            }
+                        ],
+                        "scope": {"name": "modular_logger"},
+                    }
+                ],
+            }
         ]
-      }},
-      "scopeLogs": [
-        {{
-          "logRecords": [
-            {{
-              "attributes": [
-                {{"key": "event.domain", "value": {{"stringValue": "modular"}}}},
-                {{"key": "event.name", "value": {{"stringValue": "serve.telemetry.log"}}}}
-              ],
-              "body": {{"stringValue": ""}},
-              "observedTimeUnixNano": "{int(time() * 1_000_000_000)}",
-              "severityNumber": 9,
-              "severityText": "INFO"
-            }}
-          ],
-          "scope": {{"name": "modular_logger"}}
-        }}
-      ]
-    }}
-  ]
-}}"""
+    }
 
     requests.post(
         otelBaseUrl + "/v1/logs",
-        data=request_body,
+        data=json.dumps(body),
         headers={"Content-Type": "application/json"},
         timeout=2,
     )
