@@ -18,6 +18,8 @@ Dumb change
 > A unified platform for AI development and deployment, including **MAX**🧑‍🚀 and
 **Mojo**🔥.
 
+Other dumb change.
+
 The Modular Platform is an open and fully-integrated suite of AI libraries
 and tools that accelerates model serving and scales GenAI deployments. It
 abstracts away hardware complexity so you can run the most popular open
