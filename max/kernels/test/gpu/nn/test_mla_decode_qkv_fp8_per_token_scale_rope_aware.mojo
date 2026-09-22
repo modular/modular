@@ -652,11 +652,11 @@ def run_test[
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -1348,11 +1348,11 @@ def run_test_with_scales[
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len

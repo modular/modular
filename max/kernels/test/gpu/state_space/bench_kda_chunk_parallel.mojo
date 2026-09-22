@@ -212,14 +212,14 @@ def _bench(
     var num_chunk_blocks = num_chunks * HV
     var num_seg_blocks = num_segments * HV
 
-    var q_tma = create_tma_tile[CHUNK, K](ctx, q_tt.to_layout_tensor())
-    var k_tma = create_tma_tile[CHUNK, K](ctx, k_tt.to_layout_tensor())
-    var rg_tma = create_tma_tile[CHUNK, K](ctx, rg_tt.to_layout_tensor())
-    var bl_tma = create_tma_tile[CHUNK, 4](ctx, bl_tt.to_layout_tensor())
-    var dt_tma = create_tma_tile[1, K](ctx, dt_tt.to_layout_tensor())
-    var v_tma = create_tma_tile[CHUNK, V](ctx, v_tt.to_layout_tensor())
-    var out_tma = create_tma_tile[CHUNK, V](ctx, out_tt.to_layout_tensor())
-    var outb_tma = create_tma_tile[CHUNK, V](ctx, outb_tt.to_layout_tensor())
+    var q_tma = create_tma_tile[CHUNK, K](ctx, q_tt)
+    var k_tma = create_tma_tile[CHUNK, K](ctx, k_tt)
+    var rg_tma = create_tma_tile[CHUNK, K](ctx, rg_tt)
+    var bl_tma = create_tma_tile[CHUNK, 4](ctx, bl_tt)
+    var dt_tma = create_tma_tile[1, K](ctx, dt_tt)
+    var v_tma = create_tma_tile[CHUNK, V](ctx, v_tt)
+    var out_tma = create_tma_tile[CHUNK, V](ctx, out_tt)
+    var outb_tma = create_tma_tile[CHUNK, V](ctx, outb_tt)
 
     @inline(.always)
     def launch_l1(

@@ -447,11 +447,11 @@ def run_test_paged_variable[
         # Run mha_gpu_naive: batch_size=1, num_keys=ref_num_keys
         # K passed as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -891,11 +891,11 @@ def run_test_paged_variable_multiq[
         # Run mha_gpu_naive: batch_size=1, seq_len=q_max_seq_len
         # K passed as both K and V (MLA: V = K[:,:,:512])
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             q_max_seq_len,  # seq_len
@@ -1381,11 +1381,11 @@ def run_test_paged_variable_ragged_q[
 
         # Run mha_gpu_naive: batch_size=1, seq_len=b_seq_len
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             b_seq_len,  # this batch's seq_len
@@ -2143,11 +2143,11 @@ def run_test_paged_variable_native_fp8[
 
         # Run mha_gpu_naive with BF16 inputs
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -2616,11 +2616,11 @@ def run_test_paged_variable_ragged_q_native_fp8[
         )
 
         mha_gpu_naive(
-            q_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
-            k_b_tt.to_layout_tensor(),
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             mask,
-            ref_b_tt.to_layout_tensor(),
+            ref_b_tt,
             scale,
             1,  # batch_size
             b_seq_len,  # this batch's seq_len

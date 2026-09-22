@@ -582,11 +582,11 @@ def _verify_ref(
         # causal == null; for seq_len>1, causal is the production decode rule.
         comptime if MASK == "null":
             mha_gpu_naive(
-                q_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
+                q_b_tt,
+                k_b_tt,
+                k_b_tt,
                 NullMask(),
-                ref_b_tt.to_layout_tensor(),
+                ref_b_tt,
                 SCALE,
                 1,
                 b_seq_len,
@@ -598,11 +598,11 @@ def _verify_ref(
             )
         else:
             mha_gpu_naive(
-                q_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
+                q_b_tt,
+                k_b_tt,
+                k_b_tt,
                 CausalMask(),
-                ref_b_tt.to_layout_tensor(),
+                ref_b_tt,
                 SCALE,
                 1,
                 b_seq_len,

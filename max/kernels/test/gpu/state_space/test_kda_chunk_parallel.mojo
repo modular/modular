@@ -244,17 +244,11 @@ def _run_both[
     out_chk_dev.enqueue_fill(0.0)
 
     # --- TMA descriptors for L1's one-shot GMEM loads (FlashKDA K1 port). ---
-    var q_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, q_tt.to_layout_tensor()
-    )
-    var k_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, k_tt.to_layout_tensor()
-    )
-    var rg_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, rg_tt.to_layout_tensor()
-    )
-    var bl_tma = create_tma_tile[CHUNK, 4](ctx, bl_tt.to_layout_tensor())
-    var dt_tma = create_tma_tile[1, KEY_HEAD_DIM](ctx, dt_tt.to_layout_tensor())
+    var q_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, q_tt)
+    var k_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, k_tt)
+    var rg_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, rg_tt)
+    var bl_tma = create_tma_tile[CHUNK, 4](ctx, bl_tt)
+    var dt_tma = create_tma_tile[1, KEY_HEAD_DIM](ctx, dt_tt)
 
     # --- L1: parallel prepare (state-independent; layout-agnostic). ---
     ctx.enqueue_function[
@@ -1245,17 +1239,11 @@ def _run_segmented[
     out_seg_dev.enqueue_fill(0.0)
 
     # --- TMA descriptors for L1's one-shot GMEM loads (FlashKDA K1 port). ---
-    var q_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, q_tt.to_layout_tensor()
-    )
-    var k_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, k_tt.to_layout_tensor()
-    )
-    var rg_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, rg_tt.to_layout_tensor()
-    )
-    var bl_tma = create_tma_tile[CHUNK, 4](ctx, bl_tt.to_layout_tensor())
-    var dt_tma = create_tma_tile[1, KEY_HEAD_DIM](ctx, dt_tt.to_layout_tensor())
+    var q_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, q_tt)
+    var k_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, k_tt)
+    var rg_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, rg_tt)
+    var bl_tma = create_tma_tile[CHUNK, 4](ctx, bl_tt)
+    var dt_tma = create_tma_tile[1, KEY_HEAD_DIM](ctx, dt_tt)
 
     # --- L1: parallel prepare (state-independent, shared by both paths). ---
     ctx.enqueue_function[

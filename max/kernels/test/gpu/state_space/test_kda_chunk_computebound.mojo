@@ -225,21 +225,11 @@ def _run_both[
     # bulk-tensor transport, so it takes a descriptor per tensor instead of the
     # raw pointer. Prep has no scalar arm left for q/k/gate; the output keeps
     # one for the ragged tail, which is why `output` is still passed too.
-    var v_tma = create_tma_tile[CHUNK, VALUE_HEAD_DIM](
-        ctx, v_tt.to_layout_tensor()
-    )
-    var q_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, q_tt.to_layout_tensor()
-    )
-    var k_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, k_tt.to_layout_tensor()
-    )
-    var rg_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](
-        ctx, rg_tt.to_layout_tensor()
-    )
-    var out_tma = create_tma_tile[CHUNK, VALUE_HEAD_DIM](
-        ctx, out_chk_tt.to_layout_tensor()
-    )
+    var v_tma = create_tma_tile[CHUNK, VALUE_HEAD_DIM](ctx, v_tt)
+    var q_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, q_tt)
+    var k_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, k_tt)
+    var rg_tma = create_tma_tile[CHUNK, KEY_HEAD_DIM](ctx, rg_tt)
+    var out_tma = create_tma_tile[CHUNK, VALUE_HEAD_DIM](ctx, out_chk_tt)
 
     var num_blocks = batch_size * HV
     out_dec_dev.enqueue_fill(0.0)
