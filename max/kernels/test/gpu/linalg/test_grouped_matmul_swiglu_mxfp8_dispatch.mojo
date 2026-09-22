@@ -508,9 +508,9 @@ def _test_swiglu_mxfp8_dispatch[
     )
 
     comptime hw_info = ctx.default_device_info
-    var c_ref_immut = c_ref_tensor.as_immut()
-    var a_offsets_immut = a_offsets_tensor.as_immut()
-    var a_scale_offsets_immut = a_scale_offsets_tensor.as_immut()
+    var c_ref_immut = c_ref_tensor.as_imm()
+    var a_offsets_immut = a_offsets_tensor.as_imm()
+    var a_scale_offsets_immut = a_scale_offsets_tensor.as_imm()
 
     comptime ref_silu_mxfp8 = fused_silu_mxfp8_interleaved_kernel[
         fp8_dtype,

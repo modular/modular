@@ -125,15 +125,15 @@ def _gpu_per_expert_reference[
         var b_expert = TileTensor(
             b_dev.unsafe_ptr() + expert_id * N * packed_K,
             row_major[N, packed_K](),
-        ).as_immut()
+        ).as_imm()
         var sfa_expert = TileTensor(
             a_scales_dev.unsafe_ptr() + token_start * scale_K,
             row_major(Coord(num_tokens, Idx[scale_K])),
-        ).as_immut()
+        ).as_imm()
         var sfb_expert = TileTensor(
             b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
             row_major[N, scale_K](),
-        ).as_immut()
+        ).as_imm()
         var c_expert = TileTensor(
             c_ref_dev.unsafe_ptr() + token_start * N,
             row_major(Coord(num_tokens, Idx[N])),
@@ -277,7 +277,7 @@ def _run_preb[
     # GPU preshuffle b_d → b_pre_d.
     var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, packed_K]()
-    ).as_immut()
+    ).as_imm()
     var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=packed_K],
@@ -290,14 +290,14 @@ def _run_preb[
     var a_sc_raw_u8_tt = TileTensor(
         a_sc_d.unsafe_ptr().bitcast[Scalar[.uint8]](),
         row_major(Coord(total_tokens, Idx[scale_K])),
-    ).as_immut()
+    ).as_imm()
     var a_sc_pre_tt = TileTensor(
         a_sc_pre_d,
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     )
     var a_off_tt_for_pre = TileTensor(
         a_off_d, row_major(Coord(num_active + 1))
-    ).as_immut()
+    ).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         a_sc_raw_u8_tt,
         a_sc_pre_tt,
@@ -343,18 +343,18 @@ def _run_preb[
     # construction; the dtype here is a wrapping convention).
     var a_tt = TileTensor(
         a_d, row_major(Coord(total_tokens, Idx[packed_K]))
-    ).as_immut()
+    ).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[num_experts, N * packed_K]()
-    ).as_immut()
+    ).as_imm()
     var a_sc_tt = TileTensor(
         a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    ).as_immut()
+    ).as_imm()
     var b_sc_tt = TileTensor(
         b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
     var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
     var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))

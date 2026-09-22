@@ -228,11 +228,11 @@ def test_mxfp4_matmul[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor(a_dev, a_shape).as_immut()
-    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
     var c_tt = TileTensor(c_dev, c_shape)
-    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
-    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Direct launch with explicit tile params ---
     comptime Kernel = BlockScaledMatmulAMD[
@@ -386,11 +386,11 @@ def test_mxfp4_matmul_split_k[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor(a_dev, a_shape).as_immut()
-    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
     var c_tt = TileTensor(c_dev, c_shape)
-    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
-    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Split-K launch (workspace + reduce path) ---
     _launch_block_scaled_split_k[

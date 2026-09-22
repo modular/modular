@@ -940,13 +940,13 @@ def test_quantizer_feeds_matmul[
         ctx,
         TileTensor(a_q, row_major((M, Idx[K_BYTES]))),
         TileTensor(a_sf, row_major((M, Idx[K_SCALES]))),
-        TileTensor(a_bf_d, row_major((M, Idx[K]))).as_immut(),
+        TileTensor(a_bf_d, row_major((M, Idx[K]))).as_imm(),
     )
     quantize_mxfp6_amd[fmt](
         ctx,
         TileTensor(b_q, row_major[N, K_BYTES]()),
         TileTensor(b_sf, row_major[N, K_SCALES]()),
-        TileTensor(b_bf_d, row_major[N, K]()).as_immut(),
+        TileTensor(b_bf_d, row_major[N, K]()).as_imm(),
     )
 
     var c_d = ctx.enqueue_create_buffer[.float32](M * N)

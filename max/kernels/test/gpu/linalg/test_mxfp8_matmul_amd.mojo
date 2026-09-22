@@ -183,16 +183,16 @@ def _test_case[
     ctx.enqueue_copy(sfb_d, sfb_h)
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
     var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
 
     comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
@@ -333,16 +333,16 @@ def test_mxfp8_matmul_split_k[
     ctx.enqueue_copy(sfb_d, sfb_h)
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
     var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
 
     _launch_block_scaled_split_k[
         BM=BM,
@@ -444,16 +444,16 @@ def _test_dispatch[
     ctx.enqueue_copy(sfb_d, sfb_h)
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
     var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    ).as_immut()
+    ).as_imm()
 
     block_scaled_matmul_amd[lane_bytes=FP8_LANE_BYTES](
         c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx

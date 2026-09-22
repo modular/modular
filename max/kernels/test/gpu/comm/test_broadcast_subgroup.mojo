@@ -66,7 +66,7 @@ def broadcast_subgroup_test[
     ]
     var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
 
-    var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
+    var in_tile = TileTensor(input_dev, row_major(length)).as_imm()
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     for i in range(ngpus):

@@ -112,15 +112,15 @@ def test[
     comptime if config:
         multistage_gemm[transpose_b=transpose_b, config=config.value()](
             c_tensor,
-            a_tensor.as_immut(),
-            b_tensor.as_immut(),
+            a_tensor.as_imm(),
+            b_tensor.as_imm(),
             ctx,
         )
     else:
         _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
             c_tensor,
-            a_tensor.as_immut(),
-            b_tensor.as_immut(),
+            a_tensor.as_imm(),
+            b_tensor.as_imm(),
             ctx,
         )
 
@@ -140,8 +140,8 @@ def test[
         ]
         ctx.enqueue_function[gemm_naive](
             c_ref_tensor,
-            a_tensor.as_immut(),
-            b_tensor.as_immut(),
+            a_tensor.as_imm(),
+            b_tensor.as_imm(),
             Int32(m),
             Int32(n),
             Int32(k),
@@ -152,8 +152,8 @@ def test[
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
-            a_tensor.as_immut(),
-            b_tensor.as_immut(),
+            a_tensor.as_imm(),
+            b_tensor.as_imm(),
             c_row_major=True,
             transpose_b=transpose_b,
         )
@@ -493,7 +493,7 @@ def test_partial_tile[
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
     multistage_gemm[transpose_b=False, config=config](
-        c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx
+        c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx
     )
 
     comptime BLOCK_DIM = 16
@@ -509,8 +509,8 @@ def test_partial_tile[
     ]
     ctx.enqueue_function[gemm_naive](
         c_ref_tensor,
-        a_tensor.as_immut(),
-        b_tensor.as_immut(),
+        a_tensor.as_imm(),
+        b_tensor.as_imm(),
         Int32(M),
         Int32(N),
         Int32(K),
@@ -566,7 +566,7 @@ def _run_fp32_split_k[
         num_k_partitions=num_k_partitions,
     )
     multistage_gemm[transpose_b=True, config=config](
-        c, a.as_immut(), b.as_immut(), config, ctx
+        c, a.as_imm(), b.as_imm(), config, ctx
     )
 
 

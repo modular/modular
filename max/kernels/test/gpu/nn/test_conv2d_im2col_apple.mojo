@@ -113,10 +113,10 @@ def test_conv2d_fused_apple_dynamic_round(
     # Dynamic (runtime-shaped) NHWC input + RSCF filter + NHWC output.
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), row_major(batch, H, W, C_in)
-    ).as_immut()
+    ).as_imm()
     var filter_tt = TileTensor(
         filter_dev.unsafe_ptr(), row_major(R, S, C_in, C_out)
-    ).as_immut()
+    ).as_imm()
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), row_major(batch, H_out, W_out, C_out)
     )

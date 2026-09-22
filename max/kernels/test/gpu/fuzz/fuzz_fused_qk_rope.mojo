@@ -510,7 +510,7 @@ def run_one_case(
         kv_collection.CacheType, interleaved=INTERLEAVED, target="gpu"
     ](
         q_proj=q_proj,
-        input_row_offsets=row_offsets.as_immut(),
+        input_row_offsets=row_offsets.as_imm(),
         kv_collection=kv_collection,
         freqs_cis=freqs,
         position_ids=None,

@@ -118,9 +118,9 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
             ],
             3,
         ](
-            input_0_dyn.as_unsafe_any_origin().as_immut(),
-            input_1_dyn.as_unsafe_any_origin().as_immut(),
-            input_2_dyn.as_unsafe_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_imm(),
+            input_1_dyn.as_unsafe_any_origin().as_imm(),
+            input_2_dyn.as_unsafe_any_origin().as_imm(),
         ),
         ctx,
     )
@@ -238,8 +238,8 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
             ],
             2,
         ](
-            input_0_dyn.as_unsafe_any_origin().as_immut(),
-            input_1_dyn.as_unsafe_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_imm(),
+            input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
         ctx,
     )
@@ -342,8 +342,8 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
             ],
             2,
         ](
-            input_0_dyn.as_unsafe_any_origin().as_immut(),
-            input_1_dyn.as_unsafe_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_imm(),
+            input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
         ctx,
     )
@@ -445,8 +445,8 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
             ],
             2,
         ](
-            input_0_dyn.as_unsafe_any_origin().as_immut(),
-            input_1_dyn.as_unsafe_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_imm(),
+            input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
         ctx,
     )
@@ -658,8 +658,8 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
             ],
             2,
         ](
-            input_0_dyn.as_unsafe_any_origin().as_immut(),
-            input_1_dyn.as_unsafe_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_imm(),
+            input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
         ctx,
     )
@@ -761,8 +761,8 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
             ],
             2,
         ](
-            input_0_dyn.as_unsafe_any_origin().as_immut(),
-            input_1_dyn.as_unsafe_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_imm(),
+            input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
         ctx,
     )
@@ -862,8 +862,8 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
             ],
             2,
         ](
-            input_0_dyn.as_unsafe_any_origin().as_immut(),
-            input_1_dyn.as_unsafe_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_imm(),
+            input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
         ctx,
     )

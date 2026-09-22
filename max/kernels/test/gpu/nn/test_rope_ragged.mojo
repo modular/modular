@@ -159,7 +159,7 @@ def _test_rope_ragged_gpu_impl[
         position_ids_device_buffer, position_ids_layout
     )
     var position_ids_device_tensor = (
-        position_ids_device_tensor_static.as_immut()
+        position_ids_device_tensor_static.as_imm()
         .as_unsafe_any_origin()
         .make_dynamic[DType.int64]()
     )

@@ -63,7 +63,7 @@ def _make_epilogue[
         TileTensor(
             resid_dev_buf.unsafe_ptr(),
             row_major(Coord(Int64(epi_m), Int64(epi_n))),
-        ).as_immut()
+        ).as_imm()
     )
 
 
@@ -185,23 +185,23 @@ def run_case[
         comptime if transpose_b:
             var b_tt = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
             matmul_dispatch_sm100[transpose_b=transpose_b](
-                c_ref_tt, a_tt.as_immut(), b_tt.as_immut(), ctx
+                c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
             )
             fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 has_epilogue_tensor=True,
                 epilogue_is_1d=epilogue_is_1d,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), epilogue, ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), epilogue, ctx)
         else:
             var b_tt = TileTensor(b_dev, row_major(Coord(Idx[K], Idx[N])))
             matmul_dispatch_sm100[transpose_b=transpose_b](
-                c_ref_tt, a_tt.as_immut(), b_tt.as_immut(), ctx
+                c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
             )
             fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 has_epilogue_tensor=True,
                 epilogue_is_1d=epilogue_is_1d,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), epilogue, ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), epilogue, ctx)
     elif static_k and not static_n:
         # Dynamic N: static_N == -1 -> fallback. (Assumes transpose_b: B [N, K].)
         comptime assert transpose_b, "dynamic-shape cases assume transpose_b"
@@ -212,13 +212,13 @@ def run_case[
             c_ref_dev, row_major(Coord(Int64(M), Int64(N)))
         )
         matmul_dispatch_sm100[transpose_b=transpose_b](
-            c_ref_tt, a_tt.as_immut(), b_tt.as_immut(), ctx
+            c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
         )
         fused_bias_residual_matmul_dispatch_sm100[
             transpose_b=transpose_b,
             has_epilogue_tensor=True,
             epilogue_is_1d=epilogue_is_1d,
-        ](c_tt, a_tt.as_immut(), b_tt.as_immut(), epilogue, ctx)
+        ](c_tt, a_tt.as_imm(), b_tt.as_imm(), epilogue, ctx)
     elif static_n and not static_k:
         # Dynamic K: static_K == -1 -> fallback. (Assumes transpose_b: B [N, K].)
         comptime assert transpose_b, "dynamic-shape cases assume transpose_b"
@@ -227,13 +227,13 @@ def run_case[
         var c_tt = TileTensor(c_dev, row_major(Coord(Int64(M), Idx[N])))
         var c_ref_tt = TileTensor(c_ref_dev, row_major(Coord(Int64(M), Idx[N])))
         matmul_dispatch_sm100[transpose_b=transpose_b](
-            c_ref_tt, a_tt.as_immut(), b_tt.as_immut(), ctx
+            c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
         )
         fused_bias_residual_matmul_dispatch_sm100[
             transpose_b=transpose_b,
             has_epilogue_tensor=True,
             epilogue_is_1d=epilogue_is_1d,
-        ](c_tt, a_tt.as_immut(), b_tt.as_immut(), epilogue, ctx)
+        ](c_tt, a_tt.as_imm(), b_tt.as_imm(), epilogue, ctx)
     else:
         # Fully dynamic N and K. (Assumes transpose_b: B [N, K].)
         comptime assert transpose_b, "dynamic-shape cases assume transpose_b"
@@ -244,13 +244,13 @@ def run_case[
             c_ref_dev, row_major(Coord(Int64(M), Int64(N)))
         )
         matmul_dispatch_sm100[transpose_b=transpose_b](
-            c_ref_tt, a_tt.as_immut(), b_tt.as_immut(), ctx
+            c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
         )
         fused_bias_residual_matmul_dispatch_sm100[
             transpose_b=transpose_b,
             has_epilogue_tensor=True,
             epilogue_is_1d=epilogue_is_1d,
-        ](c_tt, a_tt.as_immut(), b_tt.as_immut(), epilogue, ctx)
+        ](c_tt, a_tt.as_imm(), b_tt.as_imm(), epilogue, ctx)
 
     ctx.synchronize()
     ctx.enqueue_copy(c_host_ptr, c_dev)

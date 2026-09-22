@@ -760,10 +760,10 @@ def run_test_paged_prefill_per_token_scale[
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
     var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     mha_gpu_naive[_is_cache_length_accurate=True](

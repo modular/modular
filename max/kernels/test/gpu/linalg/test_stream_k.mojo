@@ -542,8 +542,8 @@ def run_matmul_stream_k[
 
     ctx.enqueue_function[kernel](
         c_buf_n,
-        a_buf.as_immut(),
-        b_buf.as_immut(),
+        a_buf.as_imm(),
+        b_buf.as_imm(),
         Int32(M),
         Int32(N),
         Int32(K),

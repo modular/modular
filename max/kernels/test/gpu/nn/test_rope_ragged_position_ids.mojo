@@ -108,7 +108,7 @@ def test_rope_ragged_position_ids[
         freqs_cis=freqs_t,
         context=ctx,
         output_fn=output_fn,
-        position_ids=pid_t.as_unsafe_any_origin().as_immut(),
+        position_ids=pid_t.as_unsafe_any_origin().as_imm(),
     )
     ctx.synchronize()
 

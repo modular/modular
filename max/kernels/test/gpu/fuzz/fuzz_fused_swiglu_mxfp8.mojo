@@ -213,9 +213,9 @@ def run_one_case(
     )
     var sc_off_tt = TileTensor(sc_off_dev, row_major(Coord(Idx[NUM_ACTIVE])))
 
-    var in_immut = in_tt.as_immut()
-    var row_off_immut = row_off_tt.as_immut()
-    var sc_off_immut = sc_off_tt.as_immut()
+    var in_immut = in_tt.as_imm()
+    var row_off_immut = row_off_tt.as_imm()
+    var sc_off_immut = sc_off_tt.as_imm()
 
     comptime hw_info = ctx.default_device_info
     comptime kernel = fused_silu_mxfp8_interleaved_kernel[

@@ -92,7 +92,7 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major[static_N, K]())
 
     router_gate_mixed_gemv[static_N](
-        c_tt, a_tt.as_immut(), b_tt.as_immut(), m, static_N, K, ctx
+        c_tt, a_tt.as_imm(), b_tt.as_imm(), m, static_N, K, ctx
     )
 
     ctx.enqueue_copy(c_host, c_dev)

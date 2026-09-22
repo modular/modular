@@ -123,13 +123,11 @@ def _run_gemm_vs_quant_ref[
     ctx.enqueue_copy(bsd, bsc)
     ctx.enqueue_copy(biasd, bias_h)
 
-    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
-    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_immut()
-    var as_tt = TileTensor(asd.unsafe_ptr(), row_major(M)).as_immut()
-    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_immut()
-    var bias_tt = TileTensor(
-        biasd.unsafe_ptr(), row_major(max(N, 1))
-    ).as_immut()
+    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_imm()
+    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_imm()
+    var as_tt = TileTensor(asd.unsafe_ptr(), row_major(M)).as_imm()
+    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_imm()
+    var bias_tt = TileTensor(biasd.unsafe_ptr(), row_major(max(N, 1))).as_imm()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=with_bias](
@@ -189,7 +187,7 @@ def _run_act_quant(ctx: DeviceContext, M: Int, K: Int, name: String) raises:
     var sd = ctx.enqueue_create_buffer[.float32](M)
     ctx.enqueue_copy(ad, af)
 
-    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_imm()
     var q_tt = TileTensor(qd.unsafe_ptr(), row_major(M, K))
     var s_tt = TileTensor(sd.unsafe_ptr(), row_major(M))
     enqueue_apple_int8_quantize_activation[.bfloat16](q_tt, a_tt, s_tt, ctx)
@@ -258,19 +256,17 @@ def _run_end_to_end(
     ctx.enqueue_copy(bd, bq)
     ctx.enqueue_copy(bsd, bsc)
 
-    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_imm()
     var aq_tt = TileTensor(aqd.unsafe_ptr(), row_major(M, K))
     var as_tt = TileTensor(asd.unsafe_ptr(), row_major(M))
     enqueue_apple_int8_quantize_activation[.bfloat16](aq_tt, a_tt, as_tt, ctx)
 
-    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_immut()
-    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_immut()
-    var bias_tt = TileTensor(
-        biasd.unsafe_ptr(), row_major(max(N, 1))
-    ).as_immut()
+    var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_imm()
+    var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_imm()
+    var bias_tt = TileTensor(biasd.unsafe_ptr(), row_major(max(N, 1))).as_imm()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
     enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=False](
-        c_tt, aq_tt.as_immut(), b_tt, as_tt.as_immut(), bs_tt, bias_tt, ctx
+        c_tt, aq_tt.as_imm(), b_tt, as_tt.as_imm(), bs_tt, bias_tt, ctx
     )
 
     # Read back the device-quantized A + scales for the reference.

@@ -347,7 +347,7 @@ def _test_case[
 
     # GPU preshuffle B -> b_pre_d through the plane-split kernel; the tuned
     # 16-byte atom path cannot express a 24-byte fragment.
-    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, K_BYTES]()).as_immut()
+    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, K_BYTES]()).as_imm()
     var b_pre_dst_tt = TileTensor(b_pre_d, row_major[1, N_static, K_BYTES]())
     Shuffler[1].preshuffle_b_planes[
         N=N_static, K_BYTES=K_BYTES, lane_bytes=FP6_LANE_BYTES
@@ -370,21 +370,21 @@ def _test_case[
 
     var a_tt = TileTensor(
         a_d, row_major(Coord(M_static, Idx[K_BYTES]))
-    ).as_immut()
+    ).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     # Scales: the preshuffled buffers wrapped in a row-major layout -- the
     # kernel reads the underlying bytes through `PreshuffledScaleLoader`, so
     # the TileTensor layout is unused.
     var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
 
     comptime kernel = _preb_grid_kernel[

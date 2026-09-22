@@ -42,9 +42,7 @@ def _draw(ctx: DeviceContext, seeds: List[UInt64]) raises -> List[Float32]:
 
     keyed_uniform[target="gpu"](
         TileTensor(out_dev, row_major(rows)),
-        TileTensor(seeds_dev, row_major(rows))
-        .as_unsafe_any_origin()
-        .as_immut(),
+        TileTensor(seeds_dev, row_major(rows)).as_unsafe_any_origin().as_imm(),
         ctx,
     )
 
@@ -166,7 +164,7 @@ def test_empty_batch(ctx: DeviceContext) raises:
     var out_dev = ctx.enqueue_create_buffer[.float32](0)
     keyed_uniform[target="gpu"](
         TileTensor(out_dev, row_major(0)),
-        TileTensor(seeds_dev, row_major(0)).as_unsafe_any_origin().as_immut(),
+        TileTensor(seeds_dev, row_major(0)).as_unsafe_any_origin().as_imm(),
         ctx,
     )
     ctx.synchronize()

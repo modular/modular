@@ -489,9 +489,9 @@ def test_mla_index_fp8_paged_variable_lengths[
 
             _score_paged_sm100[num_heads, depth, type_of(k_collection)](
                 sc_tile,
-                q_tile.as_immut(),
-                qs_tile.as_immut(),
-                input_row_offsets_tile.as_immut(),
+                q_tile.as_imm(),
+                qs_tile.as_imm(),
+                input_row_offsets_tile.as_imm(),
                 k_collection,
                 batch_size,
                 max_seq_len,

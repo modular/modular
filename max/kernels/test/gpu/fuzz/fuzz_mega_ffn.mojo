@@ -1945,8 +1945,8 @@ def run_case(
             src_info_dev, row_major((Idx[recv_capacity_rows], Idx[2]))
         )
         ctx.enqueue_function[combine_async](
-            c_test_tt.as_immut(),
-            src_info_tt.as_immut(),
+            c_test_tt.as_imm(),
+            src_info_tt.as_imm(),
             send_stage_dev.unsafe_ptr().unsafe_origin_cast[
                 MutUntrackedOrigin
             ](),

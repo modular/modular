@@ -195,10 +195,10 @@ def test_split_k_epilogue[
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
     var reduced_tt = TileTensor(reduced_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
-    var sfa_tt = TileTensor(sfa_d, row_major[M_static, K_SCALES]()).as_immut()
-    var sfb_tt = TileTensor(sfb_d, row_major[N_static, K_SCALES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
+    var sfa_tt = TileTensor(sfa_d, row_major[M_static, K_SCALES]()).as_imm()
+    var sfb_tt = TileTensor(sfb_d, row_major[N_static, K_SCALES]()).as_imm()
 
     var epi_ptr = epi_d.unsafe_ptr()
     var fire_ptr = fire_d.unsafe_ptr()
@@ -374,10 +374,10 @@ def test_dispatch_workspace_cap[
     ctx.enqueue_copy(seen_d, wide_h)
 
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
-    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
-    var sfa_tt = TileTensor(sfa_d, row_major[M_static, K_SCALES]()).as_immut()
-    var sfb_tt = TileTensor(sfb_d, row_major[N_static, K_SCALES]()).as_immut()
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_imm()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_imm()
+    var sfa_tt = TileTensor(sfa_d, row_major[M_static, K_SCALES]()).as_imm()
+    var sfb_tt = TileTensor(sfb_d, row_major[N_static, K_SCALES]()).as_imm()
 
     var seen_ptr = seen_d.unsafe_ptr()
     var wide_ptr = wide_d.unsafe_ptr()

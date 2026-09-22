@@ -343,8 +343,8 @@ def run_one_case(
     var v_tt = TileTensor(
         v_dev, row_major((Idx[1], total_k, Idx[head_kv], Idx[head_dim]))
     )
-    var k_op = LayoutTensorMHAOperand(k_tt.as_immut().as_unsafe_any_origin())
-    var v_op = LayoutTensorMHAOperand(v_tt.as_immut().as_unsafe_any_origin())
+    var k_op = LayoutTensorMHAOperand(k_tt.as_imm().as_unsafe_any_origin())
+    var v_op = LayoutTensorMHAOperand(v_tt.as_imm().as_unsafe_any_origin())
 
     # --- q2k + cu_seqlens to device (the run is pure-device) ------------------
     var q2k_h = ctx.enqueue_create_host_buffer[.int32](head_kv * total_q * topk)

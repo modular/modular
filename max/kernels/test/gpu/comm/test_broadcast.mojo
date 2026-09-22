@@ -104,7 +104,7 @@ def broadcast_test[
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
 
     # Create TileTensor types for input and output
-    var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
+    var in_tile = TileTensor(input_dev, row_major(length)).as_imm()
     comptime OutputTileType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]

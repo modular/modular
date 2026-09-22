@@ -315,9 +315,9 @@ def run_one_case(
         ctx,
     )
     comptime hw_info = ctx.default_device_info
-    var c_ref_immut = c_ref_tt.as_immut()
-    var a_off_immut = a_off_tt.as_immut()
-    var a_sc_off_immut = a_sc_off_tt.as_immut()
+    var c_ref_immut = c_ref_tt.as_imm()
+    var a_off_immut = a_off_tt.as_imm()
+    var a_sc_off_immut = a_sc_off_tt.as_imm()
     comptime ref_epilogue = fused_silu_mxfp8_interleaved_kernel[
         fp8_dtype,
         scales_dtype,

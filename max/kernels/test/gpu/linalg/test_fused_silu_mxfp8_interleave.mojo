@@ -248,9 +248,9 @@ def _test_silu_mxfp8[
 
     comptime hw_info = ctx.default_device_info
 
-    var in_immut = in_tensor.as_immut()
-    var row_offsets_immut = row_offsets_tensor.as_immut()
-    var scales_offsets_immut = scales_offsets_tensor.as_immut()
+    var in_immut = in_tensor.as_imm()
+    var row_offsets_immut = row_offsets_tensor.as_imm()
+    var scales_offsets_immut = scales_offsets_tensor.as_imm()
 
     comptime kernel = fused_silu_mxfp8_interleaved_kernel[
         fp8_dtype,

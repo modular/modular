@@ -33,7 +33,7 @@ def _tuple_to_list[
         capacity=len(elems)
     )
     for i in range(len(elems)):
-        output.append(elems[i].as_immut())
+        output.append(elems[i].as_imm())
     return output^
 
 
@@ -63,9 +63,9 @@ def test_concat() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_unsafe_any_origin().as_immut(),
-        x2.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
-        x3.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_imm(),
+        x2.make_dynamic[.int64]().as_unsafe_any_origin().as_imm(),
+        x3.make_dynamic[.int64]().as_unsafe_any_origin().as_imm(),
     )
 
     @__parameter
@@ -134,9 +134,9 @@ def test_concat_parallel() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_unsafe_any_origin().as_immut(),
-        x2_dyn.as_unsafe_any_origin().as_immut(),
-        x3_dyn.as_unsafe_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_imm(),
+        x2_dyn.as_unsafe_any_origin().as_imm(),
+        x3_dyn.as_unsafe_any_origin().as_imm(),
     )
 
     @__parameter
@@ -204,9 +204,9 @@ def test_concat_inner() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_unsafe_any_origin().as_immut(),
-        x2_dyn.as_unsafe_any_origin().as_immut(),
-        x3_dyn.as_unsafe_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_imm(),
+        x2_dyn.as_unsafe_any_origin().as_imm(),
+        x3_dyn.as_unsafe_any_origin().as_imm(),
     )
 
     var input_vec = _tuple_to_list(input_tuple)

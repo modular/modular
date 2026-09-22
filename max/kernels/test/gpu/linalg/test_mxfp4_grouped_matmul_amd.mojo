@@ -168,15 +168,15 @@ def test_mxfp4_grouped_matmul[
         var b_expert_tt = TileTensor(
             b_dev.unsafe_ptr() + expert_id * N * packed_K,
             row_major[N, packed_K](),
-        ).as_immut()
+        ).as_imm()
         var sfa_expert_tt = TileTensor(
             a_scales_dev.unsafe_ptr() + token_start * scale_K,
             row_major(Coord(num_tokens, Idx[scale_K])),
-        ).as_immut()
+        ).as_imm()
         var sfb_expert_tt = TileTensor(
             b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
             row_major[N, scale_K](),
-        ).as_immut()
+        ).as_imm()
         var c_expert_tt = TileTensor(
             c_ref_dev.unsafe_ptr() + token_start * N,
             row_major(Coord(num_tokens, Idx[N])),
@@ -196,16 +196,14 @@ def test_mxfp4_grouped_matmul[
     # --- Run grouped kernel under test ---
     var a_tt = TileTensor(
         a_dev, row_major(Coord(total_tokens, Idx[packed_K]))
-    ).as_immut()
-    var b_tt = TileTensor(
-        b_dev, row_major[num_experts, N, packed_K]()
-    ).as_immut()
+    ).as_imm()
+    var b_tt = TileTensor(b_dev, row_major[num_experts, N, packed_K]()).as_imm()
     var a_scales_tt = TileTensor(
         a_scales_dev, row_major(Coord(total_tokens, Idx[scale_K]))
-    ).as_immut()
+    ).as_imm()
     var b_scales_tt = TileTensor(
         b_scales_dev, row_major[num_experts, N, scale_K]()
-    ).as_immut()
+    ).as_imm()
     var a_offsets_tt = TileTensor(
         a_offsets_dev, row_major(Coord(num_active_experts + 1))
     )

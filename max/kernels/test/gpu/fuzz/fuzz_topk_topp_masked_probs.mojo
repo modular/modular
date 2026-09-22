@@ -339,13 +339,13 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
         top_p_val=top_p,
         top_k_arr=TileTensor(top_k_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         top_p_arr=TileTensor(top_p_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         temperature=TileTensor(temp_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
     )
 
     var probs_host = ctx.enqueue_create_host_buffer[.float32](in_len)

@@ -165,10 +165,10 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_unsafe_any_origin().as_immut(),
-                input_1_dyn.as_unsafe_any_origin().as_immut(),
-                input_2_dyn.as_unsafe_any_origin().as_immut(),
-                input_3_dyn.as_unsafe_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_imm(),
+                input_1_dyn.as_unsafe_any_origin().as_imm(),
+                input_2_dyn.as_unsafe_any_origin().as_imm(),
+                input_3_dyn.as_unsafe_any_origin().as_imm(),
             ),
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
@@ -246,10 +246,10 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_unsafe_any_origin().as_immut(),
-                input_1_dyn.as_unsafe_any_origin().as_immut(),
-                input_2_dyn.as_unsafe_any_origin().as_immut(),
-                input_3_dyn.as_unsafe_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_imm(),
+                input_1_dyn.as_unsafe_any_origin().as_imm(),
+                input_2_dyn.as_unsafe_any_origin().as_imm(),
+                input_3_dyn.as_unsafe_any_origin().as_imm(),
             ),
             ctx,
         )
@@ -331,15 +331,13 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
     # `DeviceBuffer` constructor's storage exactly (the tuple elements are built
     # from the same expression); the tuple can't be indexed at comptime.
     comptime StaticInTile = type_of(
-        TileTensor(in_dev[0], input_layout).as_unsafe_any_origin().as_immut()
+        TileTensor(in_dev[0], input_layout).as_unsafe_any_origin().as_imm()
     )
     var ins_static = StaticTuple[StaticInTile, num_inputs]()
 
     comptime for n in range(num_inputs):
         ins_static[n] = (
-            TileTensor(in_dev[n], input_layout)
-            .as_unsafe_any_origin()
-            .as_immut()
+            TileTensor(in_dev[n], input_layout).as_unsafe_any_origin().as_imm()
         )
 
     comptime kernel_static = _concat_inner_most_single_dim[
@@ -371,7 +369,7 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
     comptime DynInTile = type_of(
         TileTensor(in_dev[0], row_major(Coord(dyn_in_shape)))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
     var ins_dynamic = StaticTuple[
         TileTensor[dtype, DynInLayout, ImmutAnyOrigin], num_inputs
@@ -381,7 +379,7 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
         ins_dynamic[n] = (
             TileTensor(in_dev[n], row_major(Coord(dyn_in_shape)))
             .as_unsafe_any_origin()
-            .as_immut()
+            .as_imm()
         )
 
     comptime kernel_dynamic = _concat_inner_most_single_dim[

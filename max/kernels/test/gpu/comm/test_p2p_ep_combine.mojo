@@ -412,8 +412,8 @@ def test_combine[
     def run_combine_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[combine_async](
-            get_output_tensor(dev_idx, slot_idx).as_immut(),
-            get_src_token_info_tensor(dev_idx, slot_idx).as_immut(),
+            get_output_tensor(dev_idx, slot_idx).as_imm(),
+            get_src_token_info_tensor(dev_idx, slot_idx).as_imm(),
             get_combine_send_buf_ptr(dev_idx, slot_idx),
             combine_recv_bufs_inputs[slot_idx],
             combine_recv_count_bufs_inputs[slot_idx],

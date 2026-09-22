@@ -187,10 +187,10 @@ def test[
     # A = plane 0 -> ref_q_full[m, j] = dot(B[g, j, :], P[0, m, :]).
     naive_grouped_matmul(
         ref_q_full,
-        p_plane_q.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_q.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -198,10 +198,10 @@ def test[
     # A = plane 1.
     naive_grouped_matmul(
         ref_k_full,
-        p_plane_k.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_k.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -209,10 +209,10 @@ def test[
     # A = plane 2.
     naive_grouped_matmul(
         ref_v_full,
-        p_plane_v.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_v.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

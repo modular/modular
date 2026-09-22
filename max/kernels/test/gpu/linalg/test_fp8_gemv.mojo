@@ -130,10 +130,10 @@ def _run_fp8_matmul[
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var weight_tt = TileTensor(
         weight_dev.unsafe_ptr(), row_major(N, K)
-    ).as_immut()
+    ).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_fp8_matmul[c_type=c_type](out_tt, act_tt, weight_tt, ctx)
@@ -174,8 +174,8 @@ def _run_fp8_gemv_direct[
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
 
-    var act_tt = TileTensor(act_dev, row_major(1, K)).as_immut()
-    var weight_tt = TileTensor(weight_dev, row_major(N, K)).as_immut()
+    var act_tt = TileTensor(act_dev, row_major(1, K)).as_imm()
+    var weight_tt = TileTensor(weight_dev, row_major(N, K)).as_imm()
     var out_tt = TileTensor(out_dev, row_major(1, N))
 
     enqueue_apple_fp8_gemv[c_type=c_type](out_tt, act_tt, weight_tt, N, K, ctx)
@@ -234,10 +234,10 @@ def _run_tiled_fp8[
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var weight_tt = TileTensor(
         weight_dev.unsafe_ptr(), row_major(N, K)
-    ).as_immut()
+    ).as_imm()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_matmul2d_fp8[c_type=c_type](out_tt, act_tt, weight_tt, ctx)
@@ -264,7 +264,7 @@ def _run_tiled_fp8[
         var oracle_tt = TileTensor(oracle_dev.unsafe_ptr(), row_major(M, N))
         enqueue_apple_matmul[
             in_type=.bfloat16, c_type=c_type, transpose_b=True
-        ](oracle_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](oracle_tt, act_tt, wdense_tt.as_imm(), ctx)
         var oracle_host = ctx.enqueue_create_host_buffer[c_type](M * N)
         ctx.enqueue_copy(oracle_host, oracle_dev)
         ctx.synchronize()

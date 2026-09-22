@@ -286,16 +286,14 @@ def test_mxfp6_grouped_matmul[
 
     var a_tt = TileTensor(
         a_dev, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    ).as_immut()
-    var b_tt = TileTensor(
-        b_dev, row_major[num_experts, N, K_BYTES]()
-    ).as_immut()
+    ).as_imm()
+    var b_tt = TileTensor(b_dev, row_major[num_experts, N, K_BYTES]()).as_imm()
     var a_scales_tt = TileTensor(
         a_scales_dev, row_major(Coord(total_tokens, Idx[scale_K]))
-    ).as_immut()
+    ).as_imm()
     var b_scales_tt = TileTensor(
         b_scales_dev, row_major[num_experts, N, scale_K]()
-    ).as_immut()
+    ).as_imm()
     var a_offsets_tt = TileTensor(
         a_offsets_dev, row_major(Coord(num_active_experts + 1))
     )

@@ -378,7 +378,7 @@ def run_one_case(
                 v_op,
                 TileTensor(
                     idx_dev.unsafe_ptr(), row_major(Coord(len(idx_dev)))
-                ).as_immut(),
+                ).as_imm(),
                 topk,  # indices_stride (blocks)
                 batch_size,  # num_rows_q (1 token/seq)
                 NullMask(),
@@ -404,7 +404,7 @@ def run_one_case(
                 v_op,
                 TileTensor(
                     idx_dev.unsafe_ptr(), row_major(Coord(len(idx_dev)))
-                ).as_immut(),
+                ).as_imm(),
                 Int32(topk),  # indices_stride (blocks)
                 Int32(batch_size),  # num_rows_q (1 token/seq)
                 NullMask(),

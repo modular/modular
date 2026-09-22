@@ -133,7 +133,7 @@ def _run_case[
     ctx.enqueue_copy(d_in, inp)
 
     var in_tt_mut = TileTensor(d_in, row_major(Coord(rows, cols)))
-    var in_tt = in_tt_mut.as_immut()
+    var in_tt = in_tt_mut.as_imm()
     var ref_out_tt = TileTensor(d_ref_out, row_major(Coord(rows, packed_cols)))
     var ref_sc_tt = TileTensor(d_ref_sc, row_major(Coord(rows, scale_cols)))
     var got_out_tt = TileTensor(d_got_out, row_major(Coord(rows, packed_cols)))

@@ -355,10 +355,10 @@ def test_mha_vs_naive[
         ),
     )
     var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_tt.as_immut().as_unsafe_any_origin()
+        k_ref_tt.as_imm().as_unsafe_any_origin()
     )
     var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_tt.as_immut().as_unsafe_any_origin()
+        v_ref_tt.as_imm().as_unsafe_any_origin()
     )
     var null_valid_length = LayoutTensor[
         .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin

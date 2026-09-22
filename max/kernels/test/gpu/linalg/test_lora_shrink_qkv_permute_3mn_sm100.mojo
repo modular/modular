@@ -175,10 +175,10 @@ def test[
 
     naive_grouped_matmul(
         c_ref_dev,
-        a_dev.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        a_dev.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

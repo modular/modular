@@ -629,7 +629,7 @@ def test_layout_tensor[
         ),
     )
     var src_operand = LayoutTensorMHAOperand(
-        src_tt.as_immut().as_unsafe_any_origin()
+        src_tt.as_imm().as_unsafe_any_origin()
     )
 
     for is_k_major in range(2):
@@ -653,7 +653,7 @@ def test_layout_tensor[
             ),
         )
         var dst_operand = LayoutTensorMHAOperand(
-            dst_tt.as_immut().as_unsafe_any_origin()
+            dst_tt.as_imm().as_unsafe_any_origin()
         )
 
         mha_operand_copy[tile_m, kv_params](

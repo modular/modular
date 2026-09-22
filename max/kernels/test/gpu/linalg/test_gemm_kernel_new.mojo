@@ -214,8 +214,8 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_function[kernel](
         mat_c,
-        mat_a.as_immut(),
-        mat_b.as_immut(),
+        mat_a.as_imm(),
+        mat_b.as_imm(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -238,8 +238,8 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_function[gemm_naive](
         c_tensor_ref,
-        mat_a.as_immut(),
-        mat_b.as_immut(),
+        mat_a.as_imm(),
+        mat_b.as_imm(),
         Int32(M),
         Int32(N),
         Int32(K),
@@ -266,8 +266,8 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         def run_func(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[kernel](
                 mat_c,
-                mat_a.as_immut(),
-                mat_b.as_immut(),
+                mat_a.as_imm(),
+                mat_b.as_imm(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
@@ -276,8 +276,8 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         for _i in range(nwarmup):
             ctx.enqueue_function[kernel](
                 mat_c,
-                mat_a.as_immut(),
-                mat_b.as_immut(),
+                mat_a.as_imm(),
+                mat_b.as_imm(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
@@ -355,8 +355,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_function[kernel](
         mat_c,
-        mat_a.as_immut(),
-        mat_b.as_immut(),
+        mat_a.as_imm(),
+        mat_b.as_imm(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -379,8 +379,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_function[gemm_naive](
         c_tensor_ref,
-        mat_a.as_immut(),
-        mat_b.as_immut(),
+        mat_a.as_imm(),
+        mat_b.as_imm(),
         Int32(M),
         Int32(N),
         Int32(K),

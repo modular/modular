@@ -137,7 +137,7 @@ def run_pdl_race_test[
             use_tensor_core=True,
             transpose_b=True,
             pdl_level=PDLLevel.OVERLAP_AT_END,
-        ](c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx)
+        ](c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx)
         #
         # Launch consumer kernel - waits for matmul via PDL
         var num_threads = 256

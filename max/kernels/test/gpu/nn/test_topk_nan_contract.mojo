@@ -62,7 +62,7 @@ def check_nan_does_not_hide_max(ctx: DeviceContext, batch_size: Int) raises:
     topk_gpu[sampling=False, largest=True](
         ctx,
         1,
-        in_t.as_unsafe_any_origin().as_immut(),
+        in_t.as_unsafe_any_origin().as_imm(),
         TileTensor(out_vals, row_major(Coord(batch_size, 1))),
         TileTensor(out_idxs, row_major(Coord(batch_size, 1))),
         block_size=BLOCK_SIZE,
@@ -97,7 +97,7 @@ def check_all_nan_row_is_in_range(ctx: DeviceContext) raises:
     topk_gpu[sampling=False, largest=True](
         ctx,
         1,
-        in_t.as_unsafe_any_origin().as_immut(),
+        in_t.as_unsafe_any_origin().as_imm(),
         TileTensor(out_vals, row_major(Coord(1, 1))),
         TileTensor(out_idxs, row_major(Coord(1, 1))),
         block_size=BLOCK_SIZE,

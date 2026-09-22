@@ -120,8 +120,8 @@ def test[
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
         c_tensor,
-        a_tensor.as_immut(),
-        b_tensor.as_immut(),
+        a_tensor.as_imm(),
+        b_tensor.as_imm(),
         ctx,
     )
 

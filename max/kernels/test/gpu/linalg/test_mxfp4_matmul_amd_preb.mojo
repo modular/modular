@@ -301,9 +301,7 @@ def _test_case[
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
     # ---- GPU preshuffle B → b_pre_d ----
-    var b_raw_tt = TileTensor(
-        b_d, row_major[1, N_static, packed_K]()
-    ).as_immut()
+    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, packed_K]()).as_imm()
     var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[1].b_5d_grouped_layout[N=N_static, K_BYTES=packed_K],
@@ -332,21 +330,21 @@ def _test_case[
     # ---- Preb kernel under test ----
     var a_tt = TileTensor(
         a_d, row_major(Coord(M_static, Idx[packed_K]))
-    ).as_immut()
+    ).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * packed_K]()
-    ).as_immut()
+    ).as_imm()
     # Scales: pass the preshuffled buffers but wrap them with a row-major
     # layout — the kernel uses the underlying bytes through
     # `PreshuffledScaleLoader`, the TileTensor layout is unused.
     var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
 
     comptime kernel = _preb_grid_kernel[

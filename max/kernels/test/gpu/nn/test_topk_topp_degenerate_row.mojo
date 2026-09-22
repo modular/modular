@@ -109,12 +109,12 @@ def check_degenerate_row(
     var seed_t = (
         TileTensor(seed_buf, row_major(batch_size))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
     var temp_t = (
         TileTensor(temp_buf, row_major(batch_size))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
 
     ctx.enqueue_function[poison_lds_kernel[2048]](
@@ -187,7 +187,7 @@ def check_degenerate_row_probs(
         for b in range(batch_size):
             h_out[b] = Scalar[IDX](-7)
 
-    var in_t = TileTensor(d_in, in_layout).as_immut()
+    var in_t = TileTensor(d_in, in_layout).as_imm()
     var out_t = TileTensor(d_out, row_major(batch_size))
 
     ctx.enqueue_function[poison_lds_kernel[2048]](

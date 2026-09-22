@@ -61,10 +61,10 @@ def _launch[
     var b_rows = N if transpose_b else K
     var b_cols = K if transpose_b else N
     var c_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     enqueue_apple_matmul[
         in_type=a_type, c_type=c_type, transpose_b=transpose_b
     ](c_tt, a_tt, b_tt, ctx)
@@ -144,10 +144,10 @@ def _run_8x8_case[
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     comptime kernel = gemm_kernel_apple_8x8[
@@ -240,10 +240,10 @@ def _run_8x8_bias_case[
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(bias_dev, bias_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     var d_ptr = d_dev.unsafe_ptr()
@@ -825,10 +825,10 @@ def _run_split_k_case[
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_imm()
     var b_tt = TileTensor(
         b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
-    ).as_immut()
+    ).as_imm()
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     if splits > 0:

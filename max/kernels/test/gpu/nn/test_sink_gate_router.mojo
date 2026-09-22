@@ -82,9 +82,9 @@ def test_sink_gate_router[
         TileTensor(sink_dev, row_major(Coord(num_tokens, Idx[n_shared]))),
         TileTensor(
             logits_dev, row_major(Coord(num_tokens, Idx[n_stride]))
-        ).as_immut(),
-        TileTensor(bias_dev, row_major(Idx[n_routed])).as_immut(),
-        TileTensor(gscale_dev, row_major(Idx[1])).as_immut(),
+        ).as_imm(),
+        TileTensor(bias_dev, row_major(Idx[n_routed])).as_imm(),
+        TileTensor(gscale_dev, row_major(Idx[1])).as_imm(),
         route_scale,
         ctx,
     )

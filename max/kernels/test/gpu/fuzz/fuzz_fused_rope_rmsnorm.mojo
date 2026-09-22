@@ -488,10 +488,10 @@ def run_one_case(
     # === Kernel under test ===================================================
     mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
         q_rope_out,
-        q_rope.as_immut(),
-        row_offsets.as_immut(),
-        freqs.as_immut(),
-        gamma.as_immut(),
+        q_rope.as_imm(),
+        row_offsets.as_imm(),
+        freqs.as_imm(),
+        gamma.as_imm(),
         kv_collection,
         UInt32(0),  # layer_idx
         EPS,

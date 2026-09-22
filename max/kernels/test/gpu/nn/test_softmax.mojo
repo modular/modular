@@ -817,7 +817,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
             ctx,
             in_tt,
             out_tt,
-            temperature_arr=temp_tt.as_unsafe_any_origin().as_immut(),
+            temperature_arr=temp_tt.as_unsafe_any_origin().as_imm(),
         )
     else:
         var temperature = Scalar[type](0.7)

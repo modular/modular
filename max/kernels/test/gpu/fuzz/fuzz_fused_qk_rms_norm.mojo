@@ -490,14 +490,14 @@ def run_one_case(
     fused_qk_rms_norm_ragged_paged[
         target="gpu", multiply_before_cast=multiply_before_cast
     ](
-        q_proj.as_immut(),
+        q_proj.as_imm(),
         kv_collection,
-        q_gamma.as_immut(),
-        k_gamma.as_immut(),
+        q_gamma.as_imm(),
+        k_gamma.as_imm(),
         EPS,
         WEIGHT_OFFSET.cast[dtype](),
         UInt32(0),  # layer_idx
-        row_offsets.as_immut(),
+        row_offsets.as_imm(),
         q_output,
         ctx,
     )

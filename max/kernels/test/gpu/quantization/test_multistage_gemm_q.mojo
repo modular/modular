@@ -475,7 +475,7 @@ def test_repack_Q4_0_for_sm8x[
 
     build_b_buffer(N, K, gguf_b_host_ptr.unsafe_ptr())
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        lt_to_tt(gguf_b_host_lt).as_immut(),
+        lt_to_tt(gguf_b_host_lt).as_imm(),
         lt_to_tt(gguf_dequan_ref_host_lt),
         rebind[IndexList[gguf_dequan_ref_host_lt.rank]](
             gguf_dequan_ref_host_lt.runtime_layout.shape.value.canonicalize()

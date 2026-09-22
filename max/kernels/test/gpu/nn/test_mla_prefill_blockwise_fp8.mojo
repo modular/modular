@@ -392,10 +392,10 @@ def test_prefill[
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
     var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     # create reference output

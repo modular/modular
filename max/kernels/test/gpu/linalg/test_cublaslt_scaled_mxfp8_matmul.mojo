@@ -188,8 +188,8 @@ def test_scaled_mxfp8_cublaslt[
         c,
         a,
         b,
-        a_scales=a_scales.as_immut(),
-        b_scales=b_scales.as_immut(),
+        a_scales=a_scales.as_imm(),
+        b_scales=b_scales.as_imm(),
         transpose_b=True,
         c_row_major=True,
     )

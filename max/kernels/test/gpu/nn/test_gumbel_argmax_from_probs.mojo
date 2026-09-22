@@ -63,7 +63,7 @@ def _draw(
         TileTensor(out_dev, row_major(rows)),
         seed=TileTensor(seeds_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
     )
 
     var out_host = ctx.enqueue_create_host_buffer[.int64](rows)
@@ -239,10 +239,10 @@ def test_amd_split_matches_single(ctx: DeviceContext, rows: Int, d: Int) raises:
     var probs = (
         TileTensor(probs_dev, row_major(rows, d))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
     var seeds = (
-        TileTensor(seeds_dev, row_major(rows)).as_unsafe_any_origin().as_immut()
+        TileTensor(seeds_dev, row_major(rows)).as_unsafe_any_origin().as_imm()
     )
     var single_out = TileTensor(single_out_dev, row_major(rows))
     var split_out = TileTensor(split_out_dev, row_major(rows))

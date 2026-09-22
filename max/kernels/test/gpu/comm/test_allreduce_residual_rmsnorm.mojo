@@ -253,7 +253,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_immut()
+        ).as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -458,7 +458,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_immut()
+        ).as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -615,7 +615,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_immut()
+        ).as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -735,7 +735,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     comptime for i in range(ngpus):
         allreduce_residual_rmsnorm(
             in_tiles,
-            residual_tile.as_immut(),
+            residual_tile.as_imm(),
             fused_fp8_tile,
             fused_residual_output_tile,
             gamma_tensor,
@@ -883,7 +883,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var in_tiles = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: TileTensor(
             in_dev[i], in_layout
-        ).as_immut()
+        ).as_imm()
     )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -964,7 +964,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     comptime for i in range(ngpus):
         allreduce_residual_rmsnorm(
             in_tiles,
-            residual_tile.as_immut(),
+            residual_tile.as_imm(),
             fused_out_tile,
             fused_res_out_tile,
             gamma_tensor,

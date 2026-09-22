@@ -26,6 +26,6 @@ def main():
     var tensor = TileTensor(data, row_major[4, 2]())
 
     # CHECK: Assert Error: split idx out of range
-    _ = tensor.as_immut().split[axis=0](2, -1)
+    _ = tensor.as_imm().split[axis=0](2, -1)
     # CHECK-NOT: is never reached
     print("is never reached")

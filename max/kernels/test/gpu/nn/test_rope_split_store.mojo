@@ -678,7 +678,7 @@ def execute_test_with_position_ids[
         freqs_tensor,
         fused_k_cache,
         fused_v_cache,
-        pos_ids_tile.as_immut(),
+        pos_ids_tile.as_imm(),
         fused_out_tile,
         ctx,
     )
@@ -758,7 +758,7 @@ def execute_test_with_position_ids[
     var pos_ids_immut = TileTensor(
         pos_ids_tile._storage.as_unsafe_any_origin(),
         pos_ids_tile.layout,
-    ).as_immut()
+    ).as_imm()
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,

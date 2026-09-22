@@ -590,10 +590,10 @@ def _test_swiglu_dispatch[
     )
 
     comptime hw_info = ctx.default_device_info
-    var c_ref_immut = c_ref_tensor.as_immut()
-    var a_offsets_immut = a_offsets_tensor.as_immut()
-    var a_scale_offsets_immut = a_scale_offsets_tensor.as_immut()
-    var input_scales_immut = input_scales_tensor.as_immut()
+    var c_ref_immut = c_ref_tensor.as_imm()
+    var a_offsets_immut = a_offsets_tensor.as_imm()
+    var a_scale_offsets_immut = a_scale_offsets_tensor.as_imm()
+    var input_scales_immut = input_scales_tensor.as_imm()
 
     comptime fused_silu_ref = fused_silu_nvfp4_interleaved_kernel[
         fp4_dtype,

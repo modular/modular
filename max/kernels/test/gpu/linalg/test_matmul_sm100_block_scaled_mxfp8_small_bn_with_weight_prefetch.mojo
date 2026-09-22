@@ -266,8 +266,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor.as_immut(),
-        b_scales=b_scales_tensor.as_immut(),
+        a_scales=a_scales_tensor.as_imm(),
+        b_scales=b_scales_tensor.as_imm(),
         transpose_b=transpose_b,
         c_row_major=True,
     )

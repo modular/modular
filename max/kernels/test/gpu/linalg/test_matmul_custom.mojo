@@ -237,7 +237,7 @@ def run_matmul[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    _matmul_gpu(c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx)
+    _matmul_gpu(c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx)
     ctx.enqueue_copy(c_host, c_device)
 
     # running naive
@@ -380,8 +380,8 @@ def run_matmul_split_k[
 
     multistage_gemm[transpose_b=False, config=config](
         c_tensor,
-        a_tensor.as_immut(),
-        b_tensor.as_immut(),
+        a_tensor.as_imm(),
+        b_tensor.as_imm(),
         best_config,
         ctx,
     )
@@ -517,7 +517,7 @@ def run_matmul_transpose[
     ctx.enqueue_copy(b_device, b_host)
 
     _matmul_gpu[transpose_b=transpose_b, use_tensor_core=True](
-        c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx
+        c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx
     )
     ctx.enqueue_copy(c_host, c_device)
 
@@ -681,7 +681,7 @@ def run_batched_matmul(
         c_tensor.store(coord, val.cast[c_tensor.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
-        c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx
+        c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx
     )
 
     ctx.enqueue_copy(c_host, c_device)
@@ -703,7 +703,7 @@ def run_batched_matmul(
         c_tensor_n.store(coord, val.cast[c_tensor_n.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](
-        c_tensor_n, a_tensor_n.as_immut(), b_tensor_n.as_immut(), ctx
+        c_tensor_n, a_tensor_n.as_imm(), b_tensor_n.as_imm(), ctx
     )
 
     ctx.enqueue_copy(c_host_n, c_device_n)

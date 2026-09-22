@@ -398,8 +398,8 @@ def run_split_k_gemm[
     ctx.enqueue_copy(w_device, w_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    var a_nd = TileTensor(a_device, row_major(M, K)).as_immut()
-    var w_nd = TileTensor(w_device, row_major(N, K)).as_immut()
+    var a_nd = TileTensor(a_device, row_major(M, K)).as_imm()
+    var w_nd = TileTensor(w_device, row_major(N, K)).as_imm()
     var c_nd = TileTensor(c_device, Layout((M, N), (row_stride, 1)))
 
     comptime if with_epilogue:

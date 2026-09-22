@@ -77,8 +77,8 @@ def test_fp8_multistage_gemm[
     ctx.enqueue_copy(b_device, b_host_ptr)
 
     var c_tt = c_device_nd
-    var a_tt = a_device_nd.as_immut()
-    var b_tt = b_device_nd.as_immut()
+    var a_tt = a_device_nd.as_imm()
+    var b_tt = b_device_nd.as_imm()
 
     comptime kernels = MatmulKernels[dtype, dtype, .float32, transpose_b]()
     comptime config = kernels.hopper_128x128_4

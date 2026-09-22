@@ -206,7 +206,7 @@ def test_case_batched[
                 device_local_topk_idxs_tt,
                 device_out_vals_tt,
                 device_out_idxs_tt,
-                k=k_tt.as_unsafe_any_origin().as_immut(),
+                k=k_tt.as_unsafe_any_origin().as_imm(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -225,7 +225,7 @@ def test_case_batched[
         device_local_topk_idxs_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_unsafe_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_imm(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -289,7 +289,7 @@ def test_case_batched[
                     topk_idxs_cpu_tt,
                     1,
                     True,
-                    k=k_host_tt.as_unsafe_any_origin().as_immut(),
+                    k=k_host_tt.as_unsafe_any_origin().as_imm(),
                 )
 
             time_kernel(m, ctx, "topk-cpu", run_func_cpu)
@@ -302,7 +302,7 @@ def test_case_batched[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_unsafe_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_imm(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -442,7 +442,7 @@ def test_case_multi_rank[
         device_in_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_unsafe_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_imm(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -479,7 +479,7 @@ def test_case_multi_rank[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_unsafe_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_imm(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -751,9 +751,9 @@ def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
 
     gumbel_sampling_gpu(
         ctx,
-        in_tt.as_unsafe_any_origin().as_immut(),
+        in_tt.as_unsafe_any_origin().as_imm(),
         out_tt,
-        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_imm(),
     )
 
     with device_out.map_to_host() as out_host:
@@ -810,17 +810,17 @@ def test_gumbel_fused_matches_two_kernel[
 
     gumbel_sampling_gpu(
         ctx,
-        in_tt.as_unsafe_any_origin().as_immut(),
+        in_tt.as_unsafe_any_origin().as_imm(),
         ref_tt,
-        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
-        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_imm(),
+        seed=seed_tt.as_unsafe_any_origin().as_imm(),
     )
     gumbel_sampling_fused_gpu(
         ctx,
-        in_tt.as_unsafe_any_origin().as_immut(),
+        in_tt.as_unsafe_any_origin().as_imm(),
         fused_tt,
-        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
-        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_imm(),
+        seed=seed_tt.as_unsafe_any_origin().as_imm(),
     )
     ctx.synchronize()
 
@@ -920,7 +920,7 @@ def test_topk_zero_k_row[dtype: DType](ctx: DeviceContext) raises:
         device_local_topk_idxs_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_unsafe_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_imm(),
         block_size=block_size,
     )
 

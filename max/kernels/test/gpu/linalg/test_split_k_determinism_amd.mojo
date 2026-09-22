@@ -180,10 +180,10 @@ def test_mxfp4_split_k_determinism[
             for i in range(N * K_SCALES):
                 sb[i] = bitcast[sf_dtype](UInt8(random_ui64(125, 129)))
 
-        var a_tt = TileTensor(device_a, row_major[M, K_PACKED]()).as_immut()
-        var b_tt = TileTensor(device_b, row_major[N, K_PACKED]()).as_immut()
-        var as_tt = TileTensor(device_as, row_major[M, K_SCALES]()).as_immut()
-        var bs_tt = TileTensor(device_bs, row_major[N, K_SCALES]()).as_immut()
+        var a_tt = TileTensor(device_a, row_major[M, K_PACKED]()).as_imm()
+        var b_tt = TileTensor(device_b, row_major[N, K_PACKED]()).as_imm()
+        var as_tt = TileTensor(device_as, row_major[M, K_SCALES]()).as_imm()
+        var bs_tt = TileTensor(device_bs, row_major[N, K_SCALES]()).as_imm()
 
         for _ in range(reps):
             var device_c = ctx.enqueue_create_buffer[out_dtype](M * N)

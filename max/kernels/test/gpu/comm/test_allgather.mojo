@@ -101,13 +101,13 @@ def all_gather_test[
     # Build TileTensor arrays directly.
     comptime InTileType = type_of(
         TileTensor(in_bufs_list[0], row_major(lengths[0]))
-        .as_immut()
+        .as_imm()
         .as_unsafe_any_origin()
     )
     var tt_in_bufs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTileType: (
             TileTensor(in_bufs_list[i], row_major(lengths[i]))
-            .as_immut()
+            .as_imm()
             .as_unsafe_any_origin()
         )
     )
@@ -270,13 +270,13 @@ def grouped_all_gather_test[
 
     comptime InTileType = type_of(
         TileTensor(in_bufs_list[0], row_major(lengths[0]))
-        .as_immut()
+        .as_imm()
         .as_unsafe_any_origin()
     )
     var tt_in_bufs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTileType: (
             TileTensor(in_bufs_list[i], row_major(lengths[i]))
-            .as_immut()
+            .as_imm()
             .as_unsafe_any_origin()
         )
     )
@@ -411,13 +411,13 @@ def relay_all_gather_test[
 
     comptime InTileType = type_of(
         TileTensor(in_bufs_list[0], row_major(lengths[0]))
-        .as_immut()
+        .as_imm()
         .as_unsafe_any_origin()
     )
     var tt_in_bufs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTileType: (
             TileTensor(in_bufs_list[i], row_major(lengths[i]))
-            .as_immut()
+            .as_imm()
             .as_unsafe_any_origin()
         )
     )

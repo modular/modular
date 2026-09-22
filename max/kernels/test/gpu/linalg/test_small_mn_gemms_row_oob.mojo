@@ -147,7 +147,7 @@ def run_case[
     var c_tt = TileTensor(c_dev, row_major(Coord(Int64(M), Idx[N])))
 
     matmul_dispatch_sm100[transpose_b=True](
-        c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx
+        c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
     )
 
     # (a) reference: cuBLAS on-device for the logical [M, N] region. cuBLAS is

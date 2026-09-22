@@ -121,8 +121,8 @@ def test_warp_bitonic_sort_interleaved[
         ](
             indices_tensor,
             weights_tensor,
-            scores_tensor.as_immut(),
-            bias_tensor.as_immut(),
+            scores_tensor.as_imm(),
+            bias_tensor.as_imm(),
             Float32(1.0),
             ctx,
         )
@@ -201,8 +201,8 @@ def test_single_group_router[
         single_group_router[n_experts, topk_experts, True, "gpu"](
             indices_tensor,
             weights_tensor,
-            scores_tensor.as_immut(),
-            bias_tensor.as_immut(),
+            scores_tensor.as_imm(),
+            bias_tensor.as_imm(),
             routed_scaling_factor,
             ctx,
         )
@@ -270,8 +270,8 @@ def test_single_group_router_raw_score_used_for_weights[
     single_group_router[n_experts, topk_experts, True, "gpu"](
         indices_tensor,
         weights_tensor,
-        scores_tensor.as_immut(),
-        bias_tensor.as_immut(),
+        scores_tensor.as_imm(),
+        bias_tensor.as_imm(),
         Float32(1.0),
         ctx,
     )
