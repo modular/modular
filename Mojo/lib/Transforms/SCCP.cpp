@@ -317,7 +317,13 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
   // TODO: Add support for other ControlFlowNode, e.g. kgen.try, etc.
   // TODO: issue #23376, this function should work more generally for
   // ControlFlowInterfaces.
-  if (isa<IfOp, SwitchOp>(node.getOperation())) {
+  // Multi-arm `hlcf.if` (non-empty elifRegions) needs lattice values for
+  // conditions yielded inside elif cond regions; fall through to the generic
+  // path until that is supported.
+  auto ifOp = dyn_cast<IfOp>(node.getOperation());
+  if (isa<SwitchOp>(node.getOperation()) ||
+      // TODO: Handle compound hlcf.if ops more aggressively.
+      (ifOp && ifOp.getElifRegions().empty())) {
 
     // TODO: extend this logic to SwitchOp.
     SmallVector<Attribute> constantOperands;
@@ -341,7 +347,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
 
     // Each target starts from the enclosing verdict; whether this op exits
     // early is decided below, once every target is known.
-    const bool enclosingShouldContinue = shouldContinue[loopLevel];
+    bool enclosingShouldContinue = shouldContinue[loopLevel];
     for (ControlFlowTarget target : targets) {
       if (target.index) {
         // Analyze region with entry state.

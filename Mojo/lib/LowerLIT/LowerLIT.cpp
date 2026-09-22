@@ -17,8 +17,6 @@
 #include "ConcreteBindings.h"
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/HLCFDialect/HLCFDialect.h"
-#include "Mojo/HLCFDialect/HLCFOps.h"
-#include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -194,46 +192,6 @@ struct LITLowerer {
 };
 } // namespace
 
-/// Given an elif op, simplify it to only have then/else blocks, no elif arms.
-static HLCF::IfOp eliminateExtraIfArms(HLCF::IfOp ifOp) {
-  // Simple if/else has no extra arms; leave it alone for LLVM lowering.
-  if (ifOp.getElifRegions().empty())
-    return ifOp;
-
-  ImplicitLocOpBuilder builder(ifOp->getLoc(), ifOp);
-  builder.setInsertionPoint(ifOp);
-
-  // First condition is an SSA operand; build the outermost elif from it.
-  HLCF::IfOp outerMostIfOp =
-      HLCF::IfOp::create(builder, ifOp.getResultTypes(), ifOp.getCond());
-  outerMostIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
-  Region *currentRegion = &outerMostIfOp.getElseRegion();
-
-  // Nest additional (cond, then) pairs into the current else region.
-  for (Region &region : ifOp.getElifRegions()) {
-    currentRegion->takeBody(region);
-    builder.setInsertionPointToEnd(&currentRegion->front());
-    Operation *terminator = currentRegion->front().getTerminator();
-    if (auto elifCondYieldOp = dyn_cast<HLCF::IfElifCondYieldOp>(terminator)) {
-      auto newIfOp = HLCF::IfOp::create(builder, ifOp.getResultTypes(),
-                                        elifCondYieldOp->getOperand(0));
-      // Insert yield of the nested elif results, then erase if.elifcond.yield.
-      HLCF::YieldOp::create(builder, newIfOp.getResults());
-      elifCondYieldOp->erase();
-      currentRegion = &newIfOp.getThenRegion();
-      continue;
-    }
-    // Moved a then region into Elif's Then region; continue into its Else.
-    auto elifOpParent = terminator->getParentOfType<HLCF::IfOp>();
-    currentRegion = &elifOpParent.getElseRegion();
-  }
-  currentRegion->takeBody(ifOp.getElseRegion());
-  builder.setInsertionPoint(ifOp);
-  IRRewriter rewriter{builder};
-  rewriter.replaceOp(ifOp, outerMostIfOp.getResults());
-  return outerMostIfOp;
-}
-
 void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
   func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
@@ -272,8 +230,6 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
                                          call.getOperands());
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getResult());
-    } else if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
-      eliminateExtraIfArms(ifOp);
     } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
     }

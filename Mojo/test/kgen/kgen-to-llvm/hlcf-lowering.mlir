@@ -174,6 +174,33 @@ kgen.func @multiple_return(%arg0: !kgen.scalar<bool>) -> (i1, i1) {
   kgen.return %b, %b : i1, i1
 }
 
+// Multi-arm if: entry CondBr to then vs first elif cond; elifcond.yield CondBr
+// to then vs else.
+// CHECK-LABEL: @multiarm_if
+kgen.func @multiarm_if(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %a: i32, %b: i32, %c: i32) -> i32 {
+  // CHECK: llvm.cond_br %{{.*}}, ^bb1, ^bb3
+  %0 = hlcf.if %c0 -> i32 {
+    // CHECK: ^bb1:
+    // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+    hlcf.yield %a : i32
+  // CHECK: ^bb2:
+  // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+  } else {
+    // CHECK: ^bb3:
+    // CHECK: llvm.cond_br %{{.*}}, ^bb4, ^bb2
+    hlcf.if.elifcond.yield %c1
+  } then {
+    // CHECK: ^bb4:
+    // CHECK: llvm.br ^bb5(%{{.*}} : i32)
+    hlcf.yield %b : i32
+  } else {
+    hlcf.yield %c : i32
+  }
+  // CHECK: ^bb5(%{{.*}}: i32):
+  // CHECK: return
+  kgen.return %0 : i32
+}
+
 // CHECK-LABEL: @switch
 kgen.func @switch(%arg0: index) {
   // CHECK: llvm.switch %{{.*}} : i64, ^bb1 [

@@ -128,18 +128,17 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
 
   b.setInsertionPointToEnd(before);
   // Replace the operation.
-  if (auto elif = dyn_cast<IfOp>(node.getOperation())) {
-    // Multi-arm elif is expanded to nested 2-arm elifs before this pass.
-    if (elif.getNumRegions() != 2)
-      return elif.emitOpError("expected 2-region elif for LLVM lowering");
-    Type condType = typeConverter.convertType(elif.getCond().getType());
+  if (auto ifOp = dyn_cast<IfOp>(node.getOperation())) {
+    // Region layout: 0 = then, 1 = else, 2+ = (cond, then) elif pairs.
+    // Branch on the first condition to then vs. the first elif cond (or else).
+    Type condType = typeConverter.convertType(ifOp.getCond().getType());
     if (!condType)
-      return mlir::emitError(elif.getLoc(), "failed to convert condition type");
+      return mlir::emitError(ifOp.getLoc(), "failed to convert condition type");
     auto condCast = mlir::UnrealizedConversionCastOp::create(
-        b, node->getLoc(), condType, elif.getCond());
-    LLVM::CondBrOp::create(b, node->getLoc(), condCast.getResult(0),
-                           entries.front(), ValueRange(), entries.back(),
-                           ValueRange());
+        b, node->getLoc(), condType, ifOp.getCond());
+    unsigned falseRegion = ifOp.getElifRegions().empty() ? 1 : 2;
+    LLVM::CondBrOp::create(b, node->getLoc(), condCast.getResult(0), entries[0],
+                           ValueRange(), entries[falseRegion], ValueRange());
     b.eraseOp(node);
   } else if (auto sw = dyn_cast<SwitchOp>(node.getOperation())) {
     auto arg = mlir::UnrealizedConversionCastOp::create(
@@ -237,6 +236,26 @@ LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
   assert(termId < tree.targets.size() && "malformed tree");
   auto &[nodeId, target] = tree.targets[termId];
   assert(nodeId < blocks.size() && "malformed tree");
+
+  // `hlcf.if.elifcond.yield` is a two-way branch on its condition operand,
+  // carrying any extra operands into both successors as block arguments.
+  if (isa<IfElifCondYieldOp>(term.getOperation())) {
+    if (target.size() != 2)
+      return term.emitOpError(
+          "expected 2 targets for non-constant if.elifcond.yield");
+    ValueRange carry = ArrayRef(results).drop_front();
+    b.replaceOpWithNewOp<LLVM::CondBrOp>(
+        term, results.front(),
+        getTargetBlock(blocks[nodeId].first, blocks[nodeId].second,
+                       target[0].index),
+        carry,
+        getTargetBlock(blocks[nodeId].first, blocks[nodeId].second,
+                       target[1].index),
+        carry);
+    ++termId;
+    return success();
+  }
+
   if (target.size() != 1)
     return term.emitOpError("cannot lower terminator without 1 target");
   b.replaceOpWithNewOp<LLVM::BrOp>(term, results,
