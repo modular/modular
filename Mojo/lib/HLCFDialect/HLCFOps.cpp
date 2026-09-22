@@ -19,6 +19,7 @@
 #include "mlir/IR/Matchers.h"
 
 using namespace M;
+using namespace M::KGEN;
 using namespace HLCF;
 
 //===----------------------------------------------------------------------===//
@@ -507,8 +508,11 @@ bool YieldOp::isParentNode(Operation *op) {
     return true;
   // Yield in a match targets only the else region; case regions use
   // match.next / match.complete instead.
-  auto match = dyn_cast<MatchOp>(op);
-  return match && !match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<MatchOp>(op))
+    return !match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<ComptimeMatchOp>(op))
+    return !match.containsInCaseRegion(*this);
+  return false;
 }
 
 void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
@@ -922,36 +926,104 @@ MatchOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// ComptimeMatchOp
+//===----------------------------------------------------------------------===//
+
+bool ComptimeMatchOp::containsInCaseRegion(Operation *op) {
+  return getCaseRegionIndexContaining(op).has_value();
+}
+
+std::optional<unsigned>
+ComptimeMatchOp::getCaseRegionIndexContaining(Operation *op) {
+  Region *elseRegion = &getElseRegion();
+  for (Region *r = op->getParentRegion(); r; r = r->getParentRegion()) {
+    if (r == elseRegion)
+      return std::nullopt;
+    if (r->getParentOp() == getOperation()) {
+      // Region 0 is else; case regions start at 1.
+      assert(r->getRegionNumber() >= 1 && "expected a case region");
+      return r->getRegionNumber() - 1;
+    }
+  }
+  return std::nullopt;
+}
+
+LogicalResult ComptimeMatchOp::verify() {
+  if (getCaseRegions().empty())
+    return emitOpError("requires at least one case region");
+  return success();
+}
+
+void ComptimeMatchOp::getEntryTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
+  (void)operands;
+  // Begin in the first case region (region #1; #0 is else).
+  targets.emplace_back(1);
+}
+
+ValueRange ComptimeMatchOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target < getNumRegions());
+  return getRegion(*target).getArguments();
+}
+
+ErrorTreeOrSuccess ComptimeMatchOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  (void)operands;
+  return state.transferControlFlowTo(getCaseRegions().front(), {});
+}
+
+ErrorTreeOrSuccess
+ComptimeMatchOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
 // MatchNextOp
 //===----------------------------------------------------------------------===//
 
 bool MatchNextOp::isParentNode(Operation *op) {
-  auto match = dyn_cast<MatchOp>(op);
-  return match && match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<MatchOp>(op))
+    return match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<ComptimeMatchOp>(op))
+    return match.containsInCaseRegion(*this);
+  return false;
 }
 
 void MatchNextOp::getBranchTargets(
     ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
-  auto match = cast<MatchOp>(getParentNode(*this));
-  std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
-  assert(caseIdx && "match.next must be nested in a case region");
-  if (*caseIdx + 1 < match.getCaseRegions().size())
-    // Next case region number is caseIdx+1 + 1 (else is region 0).
-    targets.emplace_back(*caseIdx + 2, getOperands());
-  else
-    targets.emplace_back(0, getOperands()); // else region
+  auto emitTargets = [&](auto match) {
+    std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
+    assert(caseIdx && "match.next must be nested in a case region");
+    if (*caseIdx + 1 < match.getCaseRegions().size())
+      // Next case region number is caseIdx+1 + 1 (else is region 0).
+      targets.emplace_back(*caseIdx + 2, getOperands());
+    else
+      targets.emplace_back(0, getOperands()); // else region
+  };
+  Operation *parent = getParentNode(*this);
+  if (auto match = dyn_cast<MatchOp>(parent))
+    return emitTargets(match);
+  emitTargets(cast<ComptimeMatchOp>(parent));
 }
 
 ErrorTreeOrSuccess MatchNextOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
-  auto match = cast<MatchOp>(getParentNode(*this));
-  std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
-  assert(caseIdx && "match.next must be nested in a case region");
-  if (*caseIdx + 1 < match.getCaseRegions().size())
-    return state.transferControlFlowTo(match.getCaseRegions()[*caseIdx + 1],
-                                       operands);
-  return state.transferControlFlowTo(match.getElseRegion(), operands);
+  auto transfer = [&](auto match) -> ErrorTreeOrSuccess {
+    std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
+    assert(caseIdx && "match.next must be nested in a case region");
+    if (*caseIdx + 1 < match.getCaseRegions().size())
+      return state.transferControlFlowTo(match.getCaseRegions()[*caseIdx + 1],
+                                         operands);
+    return state.transferControlFlowTo(match.getElseRegion(), operands);
+  };
+  Operation *parent = getParentNode(*this);
+  if (auto match = dyn_cast<MatchOp>(parent))
+    return transfer(match);
+  return transfer(cast<ComptimeMatchOp>(parent));
 }
 
 ErrorTreeOrSuccess
@@ -965,8 +1037,11 @@ MatchNextOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool MatchCompleteOp::isParentNode(Operation *op) {
-  auto match = dyn_cast<MatchOp>(op);
-  return match && match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<MatchOp>(op))
+    return match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<ComptimeMatchOp>(op))
+    return match.containsInCaseRegion(*this);
+  return false;
 }
 
 void MatchCompleteOp::getBranchTargets(
@@ -977,8 +1052,7 @@ void MatchCompleteOp::getBranchTargets(
 
 ErrorTreeOrSuccess MatchCompleteOp::interpret(ArrayRef<Attribute> operands,
                                               InterpreterState &state) {
-  auto match = cast<MatchOp>(getParentNode(*this));
-  return state.transferControlFlowTo(match, operands);
+  return state.transferControlFlowTo(getParentNode(*this), operands);
 }
 
 ErrorTreeOrSuccess

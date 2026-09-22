@@ -122,3 +122,29 @@ kgen.func @match_complete_wrong_types(%arg0: i32) {
     kgen.return
   }
 }
+
+// -----
+
+// expected-note @below {{see control-flow root here}}
+kgen.func @comptime_match_next_in_else_only() {
+  hlcf.comptime.match <0> {
+    hlcf.match.complete
+  }
+  else {
+    // expected-error @below {{'hlcf.match.next' op is not nested within a suitable parent operation}}
+    hlcf.match.next
+  }
+}
+
+// -----
+
+kgen.func @comptime_match_complete_wrong_types(%arg0: i32) {
+  // expected-note @below {{to end of parent operation here}}
+  %0 = hlcf.comptime.match <0> -> i64 {
+    // expected-error @below {{'hlcf.match.complete' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
+    hlcf.match.complete %arg0 : i32
+  }
+  else {
+    kgen.return
+  }
+}
