@@ -13,12 +13,13 @@
 """Layers specific to the DeepSeek-V4-Flash architecture."""
 
 from .attention import DeepseekV4Attention
+from .cache import CacheLeaf, DeepseekV4Cache
 from .compressor import DeepseekV4Compressor
+from .csa import CompressedStream, compressed_stream
 from .dspark import (
     DSparkAttention,
     DSparkConfidenceHead,
     DSparkMarkovHead,
-    dspark_kv_idxs,
 )
 from .hadamard import hadamard_rotate
 from .hyper_connection import (
@@ -41,10 +42,13 @@ from .rope import DeepseekV4RotaryEmbedding, apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
 
 __all__ = [
+    "CacheLeaf",
+    "CompressedStream",
     "DSparkAttention",
     "DSparkConfidenceHead",
     "DSparkMarkovHead",
     "DeepseekV4Attention",
+    "DeepseekV4Cache",
     "DeepseekV4Compressor",
     "DeepseekV4Expert",
     "DeepseekV4Gate",
@@ -52,7 +56,7 @@ __all__ = [
     "DeepseekV4MoE",
     "DeepseekV4RotaryEmbedding",
     "apply_rope_tail",
-    "dspark_kv_idxs",
+    "compressed_stream",
     "expand_copies",
     "fp4_qat_quantize",
     "fp8_qat_quantize",

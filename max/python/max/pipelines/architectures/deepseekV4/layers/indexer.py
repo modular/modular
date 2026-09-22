@@ -24,6 +24,8 @@ compressed KV:
 * 64 heads of width 128, against the main block's 128 heads of width 512.
 * Its own ``Compressor`` over the same ``x``, at the same ratio, but built with
   ``rotate=True`` -- Hadamard rotation and FP4 instead of the main path's FP8.
+  Its entries live in their own pair of cache leaves; the attention layer runs
+  that stream and hands the indexer the candidate table.
 * The query side gets the same treatment: RoPE on the trailing 64 dims, then
   Hadamard, then FP4. The rotation is what makes 4-bit survivable -- it spreads
   a single outlier dim across the whole 128-wide vector before the e2m1 grid,
@@ -38,7 +40,7 @@ Causality is enforced twice, and the two are not the same rule:
 
 1. Before the top-k, entries that had not closed yet are ``-inf``'d so they
    cannot be selected.
-2. After the top-k, any index that still points at or past the query's cutoff
+2. After the top-k, any index that still points at a not-yet-closed entry
    becomes ``-1``. This fires when fewer than ``k`` entries are available: the
    top-k has to return ``k`` indices, so it pads out of the ``-inf`` region, and
    those picks are dropped here instead. ``-1`` is what ``sparse_attention``
@@ -57,27 +59,6 @@ from .compressor import DeepseekV4Compressor
 from .hadamard import hadamard_rotate
 from .quantization import fp4_qat_quantize
 from .rope import apply_rope_tail
-
-
-def compress_cutoff(seq_len: int, ratio: int, device: DeviceRef) -> TensorValue:
-    """``[seq_len, 1]`` of ``(i + 1) // ratio`` -- how many entries query ``i`` sees.
-
-    The reference spells this ``torch.arange(1, seqlen + 1).unsqueeze(1) //
-    ratio`` and uses it for both causality rules in ``Indexer.forward`` and for
-    the non-indexer path's ``get_compress_topk_idxs``.
-    """
-    return ops.unsqueeze(
-        ops.range(
-            1,
-            seq_len + 1,
-            1,
-            out_dim=seq_len,
-            device=device,
-            dtype=DType.int32,
-        )
-        // ratio,
-        1,
-    )
 
 
 class DeepseekV4Indexer(Module):
@@ -119,11 +100,11 @@ class DeepseekV4Indexer(Module):
         self,
         x: TensorValue,
         qr: TensorValue,
-        seq_len: int,
         freqs_cis: TensorValue,
-        offset: int,
+        candidates: TensorValue,
+        valid: TensorValue,
     ) -> TensorValue:
-        """Select compressed entries for every query in a prefill sequence.
+        """Select compressed entries for every query in a chunk.
 
         Args:
             x: ``[batch, seq_len, hidden_size]``, the block input the main
@@ -131,38 +112,29 @@ class DeepseekV4Indexer(Module):
             qr: ``[batch, seq_len, q_lora_rank]``, the attention's
                 ``q_norm(wq_a(x))``. Shared, not recomputed -- the indexer reads
                 the same low-rank query the block does.
-            seq_len: Static sequence length.
-            freqs_cis: The layer's rotary table, shared with the block's
-                attention and its compressor.
-            offset: Where the compressed entries start in the concatenated KV.
-                ``seq_len`` during prefill, since they are appended after the
-                per-token latent rows.
+            freqs_cis: ``[batch, seq_len, rope_head_dim // 2, 2]``, the rotary
+                rows at the chunk's positions.
+            candidates: ``[batch, n, index_head_dim]`` the indexer's own
+                compressed entries, in the same order as the attention's
+                compressed table (closed entries from the cache, then the
+                chunk's candidate windows).
+            valid: ``[batch, seq_len, n]`` bool, which candidates each query
+                may see -- the same mask the attention applies.
 
         Returns:
-            ``[batch, seq_len, k]`` int32 indices into the concatenated KV,
-            already offset, with ``-1`` in unusable slots.
-            ``k = min(index_topk, seq_len // compress_ratio)``.
+            ``[batch, seq_len, k]`` int32 candidate numbers (rows of
+            ``candidates``), with ``-1`` in unusable slots.
+            ``k = min(index_topk, n)``.
         """
         device = x.device
-        ratio = self.compress_ratio
-        n_compressed = seq_len // ratio
-        if n_compressed == 0:
-            raise ValueError(
-                f"seq_len={seq_len} is shorter than compress_ratio={ratio}; "
-                "no compressed entry exists to select"
-            )
+        b, s = int(x.shape[0]), int(x.shape[1])
+        n = int(candidates.shape[1])
 
-        q = ops.reshape(
-            self.wq_b(qr),
-            [x.shape[0], seq_len, self.n_heads, self.head_dim],
-        )
+        q = ops.reshape(self.wq_b(qr), [b, s, self.n_heads, self.head_dim])
         q = apply_rope_tail(q, freqs_cis, self.rope_head_dim)
         # Rotate first, then quantize: the rotation is there to make the FP4
         # grid tolerable, so the order is not interchangeable.
         q = fp4_qat_quantize(hadamard_rotate(q))
-
-        # The indexer's own compressed KV, also rotated and FP4'd.
-        kv = self.compressor(x, seq_len, freqs_cis)
 
         q32 = ops.cast(q, DType.float32)
         # "bshd,btd->bsht". The key side carries no head axis, so fold the
@@ -170,17 +142,14 @@ class DeepseekV4Indexer(Module):
         # [b, d, t]. Rank 3 also keeps this off the batched-matmul path whose
         # fused epilogue (the relu) cannot instantiate for rank-4 outputs once
         # t is a multiple of 128 (ISSUES.md Issue 32).
-        kv_t = ops.transpose(ops.cast(kv, DType.float32), -1, -2)
+        kv_t = ops.transpose(ops.cast(candidates, DType.float32), -1, -2)
         scores = ops.relu(
             ops.reshape(
                 ops.matmul(
-                    ops.reshape(
-                        q32,
-                        [x.shape[0], seq_len * self.n_heads, self.head_dim],
-                    ),
+                    ops.reshape(q32, [b, s * self.n_heads, self.head_dim]),
                     kv_t,
                 ),
-                [x.shape[0], seq_len, self.n_heads, n_compressed],
+                [b, s, self.n_heads, n],
             )
         )
 
@@ -193,30 +162,21 @@ class DeepseekV4Indexer(Module):
             ops.sum(scores * ops.unsqueeze(weights, -1), axis=2), axis=2
         )
 
-        # Rule 1: an entry that had not closed by query i cannot be selected.
-        cutoff = compress_cutoff(seq_len, ratio, device)
-        cols = ops.range(
-            0,
-            n_compressed,
-            1,
-            out_dim=n_compressed,
-            device=device,
-            dtype=DType.int32,
-        )
+        # Rule 1: an entry that had not closed by the query cannot be selected.
         index_score = ops.where(
-            ops.unsqueeze(cols >= cutoff, 0),
-            ops.constant(float("-inf"), DType.float32, device),
+            valid,
             index_score,
+            ops.constant(float("-inf"), DType.float32, device),
         )
 
-        k = min(self.index_topk, n_compressed)
-        _, topk_idxs = ops.top_k(index_score, k, axis=-1)
+        k = min(self.index_topk, n)
+        topk_scores, topk_idxs = ops.top_k(index_score, k, axis=-1)
         topk_idxs = ops.cast(topk_idxs, DType.int32)
 
         # Rule 2: drop the padding picks the top-k had to make out of the -inf
-        # region, then shift into the concatenated KV's coordinates.
+        # region.
         return ops.where(
-            topk_idxs >= ops.unsqueeze(cutoff, 0),
+            topk_scores > ops.constant(float("-inf"), DType.float32, device),
+            topk_idxs,
             ops.constant(-1, DType.int32, device),
-            topk_idxs + offset,
         )

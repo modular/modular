@@ -27,9 +27,8 @@ calls nothing but ``self.attn``, and ``DSparkAttention.forward`` at
 contributes nothing to a prefill, and nothing here can be checked against a
 step-0 golden.
 
-The ring buffer is taken as an argument rather than owned here, so the
-arithmetic can be gated before the cache plumbing exists. It is a plain
-``window_size``-wide window -- DSpark stages assert ``compress_ratio == 0``, so
+A stage's sliding window lives in the shared window leaf, at layer
+``num_hidden_layers + stage``: DSpark stages assert ``compress_ratio == 0``, so
 none of the CSA machinery applies to them.
 """
 
@@ -42,44 +41,15 @@ from max.nn.layer import Module
 from max.nn.linear import Linear
 
 from ..model_config import DeepseekV4Config
-from .attention import DeepseekV4Attention, weightless_rms_normalize
-from .quantization import fp8_qat_quantize
+from .attention import (
+    DeepseekV4Attention,
+    chunk_positions,
+    weightless_rms_normalize,
+    window_table,
+)
+from .cache import KEY, DeepseekV4Cache, arange, row_offsets
 from .rope import apply_rope_tail
 from .sparse_attention import sparse_attention
-
-
-def dspark_kv_idxs(
-    window: int, block_size: int, start_pos: int, device: DeviceRef
-) -> TensorValue:
-    """``[block_size, min(window, start_pos + 1) + block_size]`` fixed indices.
-
-    ``get_dspark_topk_idxs``. The name in the reference is misleading: nothing
-    is ranked. Every draft position sees the same thing -- the whole live part
-    of the ring buffer, then the ``block_size`` rows of this draft block, which
-    sit at offsets ``window ...`` because the block is concatenated after the
-    full-width cache.
-
-    Note the draft block is *not* causally masked within itself: position 0 of
-    the block attends to position 4. That is the reference's behaviour, and it
-    is consistent with the block being drafted in one shot rather than
-    autoregressively.
-    """
-    live = min(window, start_pos + 1)
-    history = ops.range(
-        0, live, 1, out_dim=live, device=device, dtype=DType.int32
-    )
-    block = window + ops.range(
-        0,
-        block_size,
-        1,
-        out_dim=block_size,
-        device=device,
-        dtype=DType.int32,
-    )
-    row = ops.concat([history, block], axis=0)
-    return ops.broadcast_to(
-        ops.unsqueeze(row, 0), [block_size, live + block_size]
-    )
 
 
 class DSparkAttention(DeepseekV4Attention):
@@ -91,88 +61,96 @@ class DSparkAttention(DeepseekV4Attention):
     querying the real sequence, not itself.
     """
 
-    def prefill_cache(self, main_x: TensorValue, seq_len: int) -> TensorValue:
-        """The latent rows a prefill writes into the ring, ``[b, seq_len, d]``.
+    def prefill_cache(
+        self, main_x: TensorValue, seq_len: int, cache: DeepseekV4Cache
+    ) -> None:
+        """Write the latent rows a prefill leaves in the stage's window.
 
-        ``DSparkAttention.forward`` at ``start_pos == 0`` computes exactly this
-        and returns its input unchanged; where the rows land in the ring is the
-        cache's problem, not this one's. Positions start at 0, so the layer's
-        rotary table is read from the front.
+        ``DSparkAttention.forward`` at ``start_pos == 0`` computes exactly
+        these rows and returns its input unchanged.
         """
-        rd = self.rope_head_dim
-        freqs_cis = self.rope.freqs_cis_base()[:seq_len]
-        kv = self.kv_norm(self.wkv(main_x))
-        kv = apply_rope_tail(kv, freqs_cis, rd)
-        # Positive bounds: see the note in rope.py and ISSUES Issue 34.
-        w = int(kv.shape[-1])
-        return ops.concat(
-            [fp8_qat_quantize(kv[..., : w - rd]), kv[..., w - rd :]], axis=-1
+        b = int(main_x.shape[0])
+        positions = chunk_positions(
+            cache.cache_lengths, b, seq_len, main_x.device
+        )
+        freqs_cis = ops.gather(self.rope.freqs_cis_base(), positions, axis=0)
+        kv = self.latent(main_x, freqs_cis)
+        cache.swa.store(
+            self.swa_layer,
+            KEY,
+            ops.reshape(kv, [b * seq_len, self.head_dim]),
+            row_offsets(b, seq_len, main_x.device),
         )
 
     def decode(
         self,
         x: TensorValue,
         main_x: TensorValue,
-        kv_cache: TensorValue,
-        start_pos: int,
-        seq_len: int,
+        cache: DeepseekV4Cache,
     ) -> TensorValue:
-        """One draft block against the ring buffer.
+        """One draft block against the stage's window.
 
         Args:
             x: ``[b, block_size, hidden]`` draft tokens, already normed.
-            main_x: ``[b, seq_len, hidden]`` the trunk's projected hidden; at
-                decode ``seq_len`` is 1.
-            kv_cache: ``[b, window, head_dim]`` ring buffer, with this step's
-                ``main_kv`` already written at ``start_pos % window``.
-            start_pos: Position of the token the trunk just produced.
-            seq_len: ``main_x``'s length.
+            main_x: ``[b, 1, hidden]`` the trunk's projected hidden state for
+                the token at ``cache.cache_lengths``; its latent is written to
+                the window before the block reads it.
+            cache: The paged leaves.
 
         Returns:
             ``[b, block_size, hidden]``.
+
+        ``get_dspark_topk_idxs`` in the reference ranks nothing despite its
+        name: every draft position sees the whole live window and then the
+        block's own rows, and the block is *not* causally masked within
+        itself -- position 0 of the block attends to position 4. That is the
+        reference's behaviour, and it is consistent with the block being
+        drafted in one shot rather than autoregressively.
         """
         rd = self.rope_head_dim
+        b = int(x.shape[0])
         block_size = int(x.shape[1])
+        device = x.device
         table = self.rope.freqs_cis_base()
-        # The draft block sits *after* the trunk's current token, so its
-        # positions start at start_pos + seq_len, not at start_pos.
-        freqs_cis = table[
-            start_pos + seq_len : start_pos + seq_len + block_size
-        ]
+
+        # The trunk's token sits at ``P``; the draft block follows it.
+        main_pos = chunk_positions(cache.cache_lengths, b, 1, device)
+        main_kv = self.latent(main_x, ops.gather(table, main_pos, axis=0))
+        cache.swa.store(
+            self.swa_layer,
+            KEY,
+            ops.reshape(main_kv, [b, self.head_dim]),
+            row_offsets(b, 1, device),
+        )
+        draft_pos = main_pos + ops.reshape(
+            arange(block_size, device) + 1, [1, block_size]
+        )
+        freqs_cis = ops.gather(table, draft_pos, axis=0)
 
         qr = self.q_norm(self.wq_a(x))
         q = ops.reshape(
-            self.wq_b(qr),
-            [x.shape[0], block_size, self.n_heads, self.head_dim],
+            self.wq_b(qr), [b, block_size, self.n_heads, self.head_dim]
         )
         q = weightless_rms_normalize(q, self.eps)
         q = apply_rope_tail(q, freqs_cis, rd)
+        kv = self.latent(x, freqs_cis)
 
-        kv = self.kv_norm(self.wkv(x))
-        kv = apply_rope_tail(kv, freqs_cis, rd)
-        kv_width = int(kv.shape[-1])
-        kv = ops.concat(
-            [
-                fp8_qat_quantize(kv[..., : kv_width - rd]),
-                kv[..., kv_width - rd :],
-            ],
-            axis=-1,
+        # The window table is built for a "chunk" of the one trunk token, so
+        # it holds positions ``P - window + 1 .. P``: exactly the live ring.
+        window, win_idxs = window_table(
+            cache.swa, self.swa_layer, main_kv, main_pos, self.window
         )
-
-        idxs = ops.broadcast_to(
-            ops.unsqueeze(
-                dspark_kv_idxs(self.window, block_size, start_pos, x.device),
-                0,
-            ),
-            [
-                x.shape[0],
-                block_size,
-                min(self.window, start_pos + 1) + block_size,
-            ],
+        live = ops.broadcast_to(win_idxs, [b, block_size, self.window])
+        block_rows = ops.reshape(
+            arange(block_size, device) + self.window, [1, 1, block_size]
+        )
+        idxs = ops.concat(
+            [live, ops.broadcast_to(block_rows, [b, block_size, block_size])],
+            axis=-1,
         )
         o = sparse_attention(
             q,
-            ops.concat([kv_cache, kv], axis=1),
+            ops.concat([window, kv], axis=1),
             self.attn_sink,
             idxs,
             self.softmax_scale,

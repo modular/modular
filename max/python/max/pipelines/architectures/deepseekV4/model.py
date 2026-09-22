@@ -27,6 +27,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -39,6 +40,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .deepseekV4 import DeepseekV4
+from .layers import DeepseekV4Cache
 from .model_config import DeepseekV4Config
 
 logger = logging.getLogger("max.pipelines")
@@ -155,24 +157,20 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
             _tokens, return_n_logits, input_row_offsets, *variadic_args = (
                 graph.inputs
             )
-            # ``kv_params`` is a ``MultiKVCacheParams`` with an ``mla`` group
-            # and an ``indexer`` group, so this unflattens into one list per
-            # group, each holding one entry per device.
-            attn_kv_collections, indexer_kv_collections = (
-                self.kv_params.unflatten_basic_kv_tree(iter(variadic_args))
+            assert isinstance(self.kv_params, MultiKVCacheParams)
+            cache = DeepseekV4Cache.from_groups(
+                model_config,
+                self.kv_params.unflatten_basic_kv_tree(iter(variadic_args)),
             )
-            del attn_kv_collections, indexer_kv_collections
-            del return_n_logits, input_row_offsets
-            # The serving graph needs the ragged and cache plumbing that the
-            # decode path is blocked on: V4 appends one compressed KV entry
-            # per ``compress_ratio`` tokens and MAX's paged cache indexes
-            # slots by token position, with no stride mode
-            # (.agent/backlogs/192/ISSUES.md Issue 30). ``DeepseekV4.__call__``
-            # is the prefill path and takes a padded ``[batch, seq]`` instead;
-            # that is what the logit verification drives.
+            del cache, return_n_logits, input_row_offsets
+            # ``DeepseekV4.__call__`` takes a padded ``[batch, seq]`` chunk
+            # over the paged leaves; the ragged batch this graph receives
+            # still has to be split into equal-length chunks (or the layers
+            # taught ragged rows) before it can serve. The cache-driving
+            # harnesses run the padded form directly.
             raise NotImplementedError(
-                "DeepSeek-V4 serving needs the compressed KV cache; prefill "
-                "runs through DeepseekV4.__call__"
+                "DeepSeek-V4 serving graph: ragged batching is not wired; "
+                "run the padded DeepseekV4.__call__ with a DeepseekV4Cache"
             )
         return graph, weights_registry
 

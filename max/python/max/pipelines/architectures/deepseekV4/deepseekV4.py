@@ -17,16 +17,15 @@ Module and weight names mirror the checkpoint's own layout (which follows the
 reference ``inference/model.py``) so the weight adapter stays a single rename.
 See ``weight_adapters.py``.
 
-Status: prefill is complete end to end -- ``__call__`` takes token ids and
-returns logits. Decode is not here, and is blocked rather than unwritten: V4's
-compressed KV cache appends one entry per ``compress_ratio`` tokens, and MAX's
-paged cache indexes slots by token position with no stride mode
-(.agent/backlogs/192/ISSUES.md Issue 30). Prefill is unaffected because the
-reference's ``start_pos == 0`` path reads freshly computed tensors and never
-the cache -- it only writes it.
+One forward serves prefill, chunked prefill and decode: it takes a padded
+``[batch, seq_len]`` chunk plus the paged cache leaves, reads the cache at
+``cache_lengths`` and appends the chunk (``layers/attention.py``). Without a
+cache it is a plain prefill from position 0, which is what the per-layer
+gates drive.
 
-DSpark is likewise decode-only by construction and so contributes nothing to a
-prefill; its stages are built and gated, but nothing calls them here.
+DSpark is decode-only by construction and so contributes nothing to a
+prefill; :meth:`DeepseekV4.fill_dspark_cache` writes the stages' windows after
+a prefill and :meth:`DSparkBlock.decode` runs a draft block.
 
 The mHC weights are declared flat on the block (``hc_attn_fn``, not
 ``hc_attn.fn``) because that is how the checkpoint names them. Grouping them
@@ -35,8 +34,6 @@ the thing this file is arranged to avoid.
 """
 
 from __future__ import annotations
-
-from typing import cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
@@ -47,6 +44,7 @@ from max.nn.norm.rms_norm import RMSNorm
 
 from .layers import (
     DeepseekV4Attention,
+    DeepseekV4Cache,
     DeepseekV4MoE,
     DSparkAttention,
     DSparkConfidenceHead,
@@ -149,6 +147,7 @@ class DeepseekV4Block(Module):
         x: TensorValue,
         seq_len: int,
         token_ids: TensorValue,
+        cache: DeepseekV4Cache | None = None,
     ) -> TensorValue:
         """``[b, s, hc, d]`` in, ``[b, s, hc, d]`` out.
 
@@ -160,7 +159,7 @@ class DeepseekV4Block(Module):
         h, post, comb = self._contract(
             x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base
         )
-        h = self.attn(self.attn_norm(h), seq_len)
+        h = self.attn(self.attn_norm(h), seq_len, cache)
         x = hc_post(h, residual, post, comb)
 
         residual = x
@@ -169,60 +168,6 @@ class DeepseekV4Block(Module):
         )
         h = self.ffn(self.ffn_norm(h), token_ids)
         return hc_post(h, residual, post, comb)
-
-    def decode_step(
-        self,
-        x: TensorValue,
-        token_ids: TensorValue,
-        pos: TensorValue,
-        ring_pos: TensorValue,
-        win_idxs: TensorValue,
-        ratio_aux: dict[str, TensorValue] | None,
-        state: dict[str, TensorValue],
-    ) -> tuple[TensorValue, dict[str, TensorValue]]:
-        """One decode token through the block. Same mHC wrapping as
-        ``__call__``; only the attention entry point differs.
-
-        ``ratio_aux`` carries the layer's ratio-specific host inputs
-        (``comp_idxs`` / ``ape_idx`` / ``should`` / ``zone_pos`` /
-        ``comp_pos``), shared across layers of the same ratio; ``None`` on
-        ratio-0 layers. ``state`` holds this layer's buffers keyed ``ring`` /
-        ``zone`` / ``kv_state`` / ``score_state``.
-        """
-        residual = x
-        h, post, comb = self._contract(
-            x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base
-        )
-        aux = ratio_aux or {}
-        out, new_ring, new_zone, new_kvs, new_scs = self.attn.decode_token(
-            self.attn_norm(h),
-            pos,
-            state["ring"],
-            ring_pos,
-            win_idxs,
-            zone=state.get("zone"),
-            comp_idxs=aux.get("comp_idxs"),
-            kv_state=state.get("kv_state"),
-            score_state=state.get("score_state"),
-            ape_idx=aux.get("ape_idx"),
-            should=aux.get("should"),
-            zone_pos=aux.get("zone_pos"),
-            comp_pos=aux.get("comp_pos"),
-        )
-        new_state = {"ring": new_ring}
-        if new_zone is not None:
-            assert new_kvs is not None and new_scs is not None
-            new_state["zone"] = new_zone
-            new_state["kv_state"] = new_kvs
-            new_state["score_state"] = new_scs
-        x = hc_post(out, residual, post, comb)
-
-        residual = x
-        h, post, comb = self._contract(
-            x, self.hc_ffn_fn, self.hc_ffn_scale, self.hc_ffn_base
-        )
-        h = self.ffn(self.ffn_norm(h), token_ids)
-        return hc_post(h, residual, post, comb), new_state
 
 
 class DSparkBlock(DeepseekV4Block):
@@ -300,6 +245,10 @@ class DSparkBlock(DeepseekV4Block):
                 device=device,
             )
 
+    def project_main(self, main_hidden: TensorValue) -> TensorValue:
+        """The trunk state the stages attend to, ``[b, s, d]``. ``mtp.0`` only."""
+        return self.main_norm(self.main_proj(main_hidden))
+
     def forward_embed(
         self,
         main_hidden: TensorValue,
@@ -320,7 +269,7 @@ class DSparkBlock(DeepseekV4Block):
             The draft stream ``[b, block_size, hc, d]``, the projected trunk
             state ``[b, s, d]``, and the draft token ids ``[b, block_size]``.
         """
-        main_x = self.main_norm(self.main_proj(main_hidden))
+        main_x = self.project_main(main_hidden)
         noise = ops.broadcast_to(
             ops.constant(
                 self.noise_token_id, token_ids.dtype, token_ids.device
@@ -336,28 +285,25 @@ class DSparkBlock(DeepseekV4Block):
         self,
         x: TensorValue,
         main_x: TensorValue,
-        kv_cache: TensorValue,
-        start_pos: int,
-        seq_len: int,
+        cache: DeepseekV4Cache,
         draft_ids: TensorValue,
     ) -> TensorValue:
         """One stage of a draft block, decode only.
 
-        Not ``__call__``: a stage takes the trunk's state and a ring buffer,
-        which a trunk block has no equivalent of, so it is a different entry
-        point rather than an override.
+        Not ``__call__``: a stage takes the trunk's state, which a trunk block
+        has no equivalent of, so it is a different entry point rather than an
+        override.
 
         At ``start_pos == 0`` the reference runs nothing but the attention's
         cache fill and returns its input, so there is no prefill path here;
-        ``DSparkAttention.prefill_cache`` is that fill, called by the model.
+        :meth:`DeepseekV4.fill_dspark_cache` is that fill.
         """
         residual = x
         h, post, comb = self._contract(
             x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base
         )
-        h = cast(DSparkAttention, self.attn).decode(
-            self.attn_norm(h), main_x, kv_cache, start_pos, seq_len
-        )
+        assert isinstance(self.attn, DSparkAttention)
+        h = self.attn.decode(self.attn_norm(h), main_x, cache)
         x = hc_post(h, residual, post, comb)
 
         residual = x
@@ -501,13 +447,19 @@ class DeepseekV4(Module):
         )
 
     def __call__(
-        self, tokens: TensorValue, seq_len: int
+        self,
+        tokens: TensorValue,
+        seq_len: int,
+        cache: DeepseekV4Cache | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """Prefill a padded batch of token ids.
+        """Run a padded chunk of token ids through the trunk.
 
         Args:
-            tokens: ``[batch, seq_len]`` int32 token ids.
-            seq_len: Static sequence length.
+            tokens: ``[batch, seq_len]`` int32 token ids at positions
+                ``cache.cache_lengths ..``; a prefill from position 0 when
+                there is no cache.
+            seq_len: Static chunk length; ``1`` for decode.
+            cache: The paged leaves to read and append to, or ``None``.
 
         Returns:
             ``[batch, seq_len, vocab_size]`` float32 logits, and the
@@ -519,7 +471,7 @@ class DeepseekV4(Module):
         targets = set(self.config.dspark_target_layer_ids)
         collected: list[TensorValue] = []
         for layer_idx, layer in enumerate(self.layers):
-            h = layer(h, seq_len, tokens)
+            h = layer(h, seq_len, tokens, cache)
             if layer_idx in targets:
                 collected.append(h)
 
@@ -530,68 +482,21 @@ class DeepseekV4(Module):
         )
         return logits, self.collect_main_hidden(collected)
 
-    def prefill_with_state(
-        self, tokens: TensorValue, seq_len: int
-    ) -> tuple[TensorValue, list[dict[str, TensorValue]]]:
-        """Prefill, also returning each trunk layer's cache-state tensors.
-
-        Per layer: ``latent`` ``[b, s, head_dim]`` (the quantized per-token
-        rows the reference writes into the sliding window); on compressed
-        layers also ``comp_kv`` / ``comp_score`` ``[b, s, proj_dim]`` float32
-        raw compressor projections, and ``zone``
-        ``[b, s // ratio, head_dim]`` when at least one window closed. The
-        host assembles the reference's ring layout and ``kv_state`` /
-        ``score_state`` buffers from these; see ``Compressor.forward``'s
-        ``start_pos == 0`` writes.
-        """
-        logits, _ = self(tokens, seq_len)
-        states = []
-        for layer in self.layers:
-            states.append(dict(cast(DeepseekV4Block, layer).attn.exported))
-        return logits, states
-
-    def decode(
+    def fill_dspark_cache(
         self,
-        token: TensorValue,
-        pos: TensorValue,
-        ring_pos: TensorValue,
-        win_idxs: TensorValue,
-        ratio_aux: dict[int, dict[str, TensorValue]],
-        states: list[dict[str, TensorValue]],
-    ) -> tuple[TensorValue, list[dict[str, TensorValue]]]:
-        """One decode token through the trunk. DSpark stages are not run:
-        the 10-step golden gate uses the DSpark-off baseline (the DSpark
-        golden is not run-to-run reproducible, ISSUES Issue 28).
-
-        Args:
-            token: ``[b, 1]`` int32, the token at position ``pos``.
-            pos: ``[1]`` int32 absolute position (``start_pos``).
-            ring_pos: ``[1]`` int32, ``pos % window``.
-            win_idxs: ``[b, 1, window]`` int32 decode window indices.
-            ratio_aux: Ratio-specific host inputs, keyed by compress ratio.
-            states: Per trunk layer, the buffers ``decode_step`` reads.
-
-        Returns:
-            ``[b, 1, vocab]`` float32 logits and the updated states.
+        main_hidden: TensorValue,
+        seq_len: int,
+        cache: DeepseekV4Cache,
+    ) -> None:
+        """What ``forward_spec`` does at ``start_pos == 0``: each stage's
+        attention writes the trunk's projected state into its window and
+        nothing else runs. Call it after the trunk forward that produced
+        ``main_hidden``, before ``cache_lengths`` advances.
         """
-        h = expand_copies(self.embed(token), self.config.hc_mult)
-        new_states: list[dict[str, TensorValue]] = []
-        for layer_idx, layer in enumerate(self.layers):
-            ratio = self.config.layer_compress_ratio(layer_idx)
-            h, new_state = cast(DeepseekV4Block, layer).decode_step(
-                h,
-                token,
-                pos,
-                ring_pos,
-                win_idxs,
-                ratio_aux.get(ratio),
-                states[layer_idx],
-            )
-            new_states.append(new_state)
-
-        x = self.norm(self.contract_head(h))
-        logits = ops.matmul(
-            ops.cast(x, DType.float32),
-            ops.transpose(ops.cast(self.head.weight, DType.float32), 0, 1),
-        )
-        return logits, new_states
+        first = self.mtp[0]
+        assert isinstance(first, DSparkBlock)
+        main_x = first.project_main(main_hidden)
+        for stage in self.mtp:
+            assert isinstance(stage, DSparkBlock)
+            assert isinstance(stage.attn, DSparkAttention)
+            stage.attn.prefill_cache(main_x, seq_len, cache)

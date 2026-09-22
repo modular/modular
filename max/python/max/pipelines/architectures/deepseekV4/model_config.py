@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -22,7 +23,6 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
-    KVCacheQuantizationConfig,
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
@@ -41,6 +41,157 @@ from max.pipelines.modeling.config_enums import (
 from max.pipelines.speculative.config import SpeculativeMethod
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+
+@dataclass(frozen=True)
+class KVLeafSpec:
+    """One paged-cache leaf of the V4 KV state (see ``layers/cache.py``).
+
+    ``kind`` names the stream: ``swa`` (the per-token latent window), ``comp``
+    / ``state`` (a compressed zone and its compressor's open rows, per ratio),
+    ``idx_comp`` / ``idx_state`` (the same for the ratio-4 indexer).
+    """
+
+    key: str
+    kind: str
+    ratio: int
+    window_size: int | None
+    head_dim: int
+    kv_dim: int
+    num_layers: int
+    float32: bool
+
+    def slots_per_page(self, page_size: int) -> int:
+        """Storage slots per page: one per token, or one per ``ratio`` tokens."""
+        return (
+            page_size // self.ratio
+            if self.kind in ("comp", "idx_comp")
+            else page_size
+        )
+
+
+def kv_leaf_specs(
+    *,
+    compress_ratios: Sequence[int],
+    num_hidden_layers: int,
+    head_dim: int,
+    index_head_dim: int,
+    sliding_window: int,
+    num_dspark_stages: int,
+) -> list[KVLeafSpec]:
+    """The leaves a V4 model needs, in the order the params tree declares them.
+
+    A compressor's open state is the last ``coff * ratio`` raw projections, so
+    it is a sliding window of that many tokens holding ``wkv`` as K and
+    ``wgate`` as V -- ``coff = 2`` for the overlapping ratio-4 compressor.
+    Ratios the model does not use produce no leaf.
+    """
+    trunk = list(compress_ratios[:num_hidden_layers])
+    specs = [
+        KVLeafSpec(
+            key="swa",
+            kind="swa",
+            ratio=0,
+            window_size=sliding_window,
+            head_dim=head_dim,
+            kv_dim=1,
+            num_layers=num_hidden_layers + num_dspark_stages,
+            float32=False,
+        )
+    ]
+    for ratio in (4, 128):
+        layers = trunk.count(ratio)
+        if layers == 0:
+            continue
+        coff = 2 if ratio == 4 else 1
+        specs.append(
+            KVLeafSpec(
+                key=f"c{ratio}a",
+                kind="comp",
+                ratio=ratio,
+                window_size=None,
+                head_dim=head_dim,
+                kv_dim=1,
+                num_layers=layers,
+                float32=False,
+            )
+        )
+        specs.append(
+            KVLeafSpec(
+                key=f"c{ratio}a_state",
+                kind="state",
+                ratio=ratio,
+                window_size=coff * ratio,
+                head_dim=coff * head_dim,
+                kv_dim=2,
+                num_layers=layers,
+                float32=True,
+            )
+        )
+        if ratio == 4:
+            specs.append(
+                KVLeafSpec(
+                    key="idx_c4a",
+                    kind="idx_comp",
+                    ratio=ratio,
+                    window_size=None,
+                    head_dim=index_head_dim,
+                    kv_dim=1,
+                    num_layers=layers,
+                    float32=False,
+                )
+            )
+            specs.append(
+                KVLeafSpec(
+                    key="idx_c4a_state",
+                    kind="idx_state",
+                    ratio=ratio,
+                    window_size=coff * ratio,
+                    head_dim=coff * index_head_dim,
+                    kv_dim=2,
+                    num_layers=layers,
+                    float32=True,
+                )
+            )
+    return specs
+
+
+def build_kv_params(
+    specs: Sequence[KVLeafSpec],
+    *,
+    kv_cache_config: KVCacheConfig,
+    cache_dtype: DType,
+    devices: Sequence[DeviceRef],
+    num_q_heads: int,
+    data_parallel_degree: int = 1,
+    speculative_method: SpeculativeMethod | None = None,
+    num_draft_tokens: int = 0,
+) -> MultiKVCacheParams:
+    """One ``MultiKVCacheParams`` with a leaf per spec, all paged by token.
+
+    The window and zone leaves store one latent per slot (MLA-shaped, K only)
+    in ``cache_dtype``; the state leaves are MHA-shaped float32 with K and V.
+    Every leaf shares the page size, so a zone leaf's page holds
+    ``page_size // ratio`` entries and the block table needs no translation.
+    """
+    page_size = kv_cache_config.kv_cache_page_size
+    children: dict[str, KVCacheParams] = {}
+    for spec in specs:
+        children[spec.key] = kv_cache_config.to_params(
+            dtype=DType.float32 if spec.float32 else cache_dtype,
+            n_kv_heads=1,
+            head_dim=spec.head_dim,
+            num_layers=spec.num_layers,
+            devices=devices,
+            data_parallel_degree=data_parallel_degree,
+            is_mla=spec.kv_dim == 1,
+            num_q_heads=num_q_heads,
+            speculative_method=speculative_method,
+            num_draft_tokens=num_draft_tokens,
+            slots_per_page=spec.slots_per_page(page_size),
+            window_size=spec.window_size,
+        )
+    return MultiKVCacheParams.from_params(children)
 
 
 @dataclass(kw_only=True)
@@ -205,6 +356,26 @@ class DeepseekV4Config(ArchConfigWithKVCache):
     def layer_is_hash_routed(self, layer_idx: int) -> bool:
         return layer_idx < self.num_hash_layers
 
+    def compressed_layer_index(self, layer_idx: int) -> int:
+        """Rank of a compressed layer among trunk layers sharing its ratio.
+
+        That rank is its layer index within the ratio's zone and state leaves.
+        """
+        ratio = self.compress_ratios[layer_idx]
+        return sum(
+            1 for i in range(layer_idx) if self.compress_ratios[i] == ratio
+        )
+
+    def kv_leaf_specs(self) -> list[KVLeafSpec]:
+        return kv_leaf_specs(
+            compress_ratios=self.compress_ratios,
+            num_hidden_layers=self.num_hidden_layers,
+            head_dim=self.head_dim,
+            index_head_dim=self.index_head_dim,
+            sliding_window=self.sliding_window,
+            num_dspark_stages=len(self.dspark_target_layer_ids),
+        )
+
     @classmethod
     def calculate_max_seq_len(
         cls,
@@ -228,26 +399,13 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
-        """Build the attention + indexer caches.
+        """Build the seven-leaf KV tree (see ``kv_leaf_specs``).
 
-        The attention cache stores one ``head_dim``-wide latent per token; unlike
-        V3.2 there is no separate ``qk_rope_head_dim`` tail appended to it, the
-        RoPE dims live inside ``head_dim``.
-
-        NOTE: the reference implementation sizes each layer's cache as
-        ``window_size + max_seq_len // compress_ratio``, which differs per layer
-        (window-only layers need just ``window_size``). MAX's ``KVCacheParams``
-        is uniform across layers, so this over-allocates the window-only layers.
-        See OPEN QUESTIONS in the bringup progress log.
+        The reference sizes each layer's cache as ``window_size + max_seq_len
+        // compress_ratio``. Here the window is one sliding-window leaf over
+        every layer and each ratio's compressed entries are a zone leaf with
+        ``page_size // ratio`` slots per page, so no layer over-allocates.
         """
-        data_parallel_degree = pipeline_config.model.data_parallel_degree
-
-        kvcache_quant_config = None
-        if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-            kvcache_quant_config = KVCacheQuantizationConfig(
-                scale_dtype=DType.float32, quantization_granularity=32
-            )
-
         speculative_method: SpeculativeMethod | None = None
         num_draft_tokens: int = 0
         if pipeline_config.speculative:
@@ -255,45 +413,23 @@ class DeepseekV4Config(ArchConfigWithKVCache):
             num_draft_tokens = (
                 pipeline_config.speculative.num_speculative_tokens or 0
             )
-
-        num_layers = DeepseekV4Config.get_num_layers(huggingface_config)
-
-        attn_kv_params = kv_cache_config.to_params(
-            dtype=cache_dtype,
-            # A single shared latent per token, exactly like MLA's absorbed form.
-            n_kv_heads=1,
+        specs = kv_leaf_specs(
+            compress_ratios=list(huggingface_config.compress_ratios),
+            num_hidden_layers=huggingface_config.num_hidden_layers,
             head_dim=huggingface_config.head_dim,
-            num_layers=num_layers,
+            index_head_dim=huggingface_config.index_head_dim,
+            sliding_window=huggingface_config.sliding_window,
+            num_dspark_stages=len(huggingface_config.dspark_target_layer_ids),
+        )
+        return build_kv_params(
+            specs,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
             devices=devices,
-            data_parallel_degree=data_parallel_degree,
-            is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
-            kvcache_quant_config=kvcache_quant_config,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
-        )
-        assert isinstance(attn_kv_params, KVCacheParams)
-
-        indexer_kv_params = kv_cache_config.to_params(
-            # The indexer always keeps its K cache in float8_e4m3fn.
-            dtype=DType.float8_e4m3fn,
-            n_kv_heads=1,
-            head_dim=huggingface_config.index_head_dim,
-            num_layers=num_layers,
-            devices=devices,
-            data_parallel_degree=data_parallel_degree,
-            is_mla=True,
-            num_q_heads=huggingface_config.num_attention_heads,
-            kvcache_quant_config=KVCacheQuantizationConfig(
-                scale_dtype=DType.float32, quantization_granularity=32
-            ),
-            speculative_method=speculative_method,
-            num_draft_tokens=num_draft_tokens,
-        )
-        assert isinstance(indexer_kv_params, KVCacheParams)
-
-        return MultiKVCacheParams.from_params(
-            {"mla": attn_kv_params, "indexer": indexer_kv_params}
         )
 
     @override

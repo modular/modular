@@ -63,27 +63,31 @@ class DeepseekV4RotaryEmbedding(YarnRotaryEmbedding):
     device: DeviceRef | None = None
 
     def freqs_cis_base(self) -> TensorValue:
-        """``(max_seq_len, head_dim // 2, 2)`` of unscaled cos/sin."""
-        if self._freqs_cis is None:
-            inv_freqs = (
-                self._compute_inv_freqs()
-                if self.scaling_params is None
-                else self._compute_yarn_freqs()
-            )
-            t = ops.range(
-                0,
-                self.max_seq_len,
-                1,
-                out_dim=self.max_seq_len,
-                device=inv_freqs.device,
-                dtype=DType.float32,
-            )
-            freqs = ops.outer(t, inv_freqs)
-            table = ops.stack([ops.cos(freqs), ops.sin(freqs)], axis=-1)
-            if self.device is not None and table.device != self.device:
-                table = ops.transfer_to(table, self.device)
-            self._freqs_cis = table
-        return TensorValue(self._freqs_cis)
+        """``(max_seq_len, head_dim // 2, 2)`` of unscaled cos/sin.
+
+        Rebuilt on every call rather than cached on the layer like the base
+        class does: one model builds several graphs (per chunk length), and
+        a value cached from one graph is illegal in the next. The table is a
+        pure function of constants, so the compiler folds it.
+        """
+        inv_freqs = (
+            self._compute_inv_freqs()
+            if self.scaling_params is None
+            else self._compute_yarn_freqs()
+        )
+        t = ops.range(
+            0,
+            self.max_seq_len,
+            1,
+            out_dim=self.max_seq_len,
+            device=inv_freqs.device,
+            dtype=DType.float32,
+        )
+        freqs = ops.outer(t, inv_freqs)
+        table = ops.stack([ops.cos(freqs), ops.sin(freqs)], axis=-1)
+        if self.device is not None and table.device != self.device:
+            table = ops.transfer_to(table, self.device)
+        return table
 
 
 def rope_for_layer(
@@ -131,7 +135,8 @@ def apply_rope_tail(
             sequence axis must be axis 1, matching the reference's
             ``freqs_cis.view(1, x.size(1), ...)`` broadcast.
         freqs_cis: ``[seq, rope_head_dim // 2, 2]`` cos/sin for the positions
-            covered by ``x``.
+            covered by ``x``, or ``[batch, seq, rope_head_dim // 2, 2]`` when
+            each request sits at its own position.
         rope_head_dim: Width of the rotated tail.
         inverse: Rotate by the conjugate, which is what the reference does to
             the attention *output* before the output projection.
@@ -153,11 +158,16 @@ def apply_rope_tail(
     real = pairs[..., 0]
     imag = pairs[..., 1]
 
-    # freqs_cis is [seq, rope_head_dim // 2, 2]; give it the rank of ``pairs``
-    # with the sequence axis at position 1 and everything between broadcast.
-    bcast: list[int | Dim] = [1, freqs_cis.shape[0]]
-    bcast += [1] * (pairs.rank - 4)
-    bcast.append(freqs_cis.shape[1])
+    # Give freqs_cis the rank of ``pairs`` with the sequence axis at position
+    # 1 and everything between broadcast; a rank-4 table also carries batch.
+    if freqs_cis.rank == 4:
+        bcast: list[int | Dim] = [freqs_cis.shape[0], freqs_cis.shape[1]]
+        bcast += [1] * (pairs.rank - 4)
+        bcast.append(freqs_cis.shape[2])
+    else:
+        bcast = [1, freqs_cis.shape[0]]
+        bcast += [1] * (pairs.rank - 4)
+        bcast.append(freqs_cis.shape[1])
     cos = ops.reshape(freqs_cis[..., 0], bcast)
     sin = ops.reshape(freqs_cis[..., 1], bcast)
     if inverse:
