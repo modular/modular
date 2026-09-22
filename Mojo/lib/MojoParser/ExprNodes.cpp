@@ -3937,6 +3937,11 @@ AnyValue BinOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
           lhsTrait.getTraitType().getSymbols());
       llvm::append_range(symbols, rhsTrait.getTraitType().getSymbols());
       sortAndDeduplicateTraitSymbols(symbols);
+
+      if (failed(checkAtMostOneClosureTrait(emitter.shared, symbols, getLoc(),
+                                            getRange())))
+        return {};
+
       if (llvm::equal(symbols, lhsTrait.getTraitType().getSymbols())) {
         emitter.emitWarning(getLoc())
             << "redundant trait composition: "

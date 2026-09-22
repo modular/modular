@@ -47,34 +47,6 @@ struct WrongReturnType(def(String) -> Int):
 
 
 # -----
-# COM: Struct satisfying two closure traits — no diagnostics.
-
-struct TwoTraitsGood(def(Int) -> Int, def(String) -> String):
-    def __call__(self, x: Int) capturing -> Int:
-        return x
-
-    def __call__(self, x: String) capturing -> String:
-        return x
-
-
-# -----
-# COM: Second closure trait conformance fails — error names the failing trait.
-
-# expected-error @below {{'TwoTraitsBadSecond' does not implement all requirements for 'def(Float64) -> Float64'}}
-# expected-note @below {{no '__call__' candidates have type 'def(TwoTraitsBadSecond, Float64) capturing thin -> Float64'}}
-# expected-note @below {{trait 'def(Float64) -> Float64' declared here}}
-struct TwoTraitsBadSecond(def(Int) -> Int, def(Float64) -> Float64):
-    # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Int) capturing thin -> Int'}}
-    # expected-note @below {{.x.dtype of the first value is 'DType.float64' but the second value is 'DType.int'}}
-    def __call__(self, x: Int) capturing -> Int:
-        return x
-
-    # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Float64) capturing thin -> String'}}
-    def __call__(self, x: Float64) capturing -> String:
-        return ""
-
-
-# -----
 # COM: A struct that explicitly declares conformance can be passed to a
 # COM: `def(Int)` parameter and called (positive, end-to-end). `capturing` is
 # COM: not required on `__call__` to conform.

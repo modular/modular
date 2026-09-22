@@ -3982,6 +3982,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<ConstraintAttr> constraintsArray =
       canonicalizeTraitSymbolsAndConstraints(shared, traitConformed,
                                              traitConstraints);
+  if (failed(checkAtMostOneClosureTrait(shared, traitConformed, identifierLoc)))
+    decl.setErroneous();
   structOp.setCanonicalTrait(
       TraitType::get(getContext(), traitConformed, constraintsArray));
 

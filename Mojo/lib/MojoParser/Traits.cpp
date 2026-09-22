@@ -1431,6 +1431,44 @@ TraitSymbolAttr LIT::extractClosureSymbol(SharedState &shared,
   return nullptr;
 }
 
+// TODO(MOCO-4627): lining up several closure signatures on one type needs a
+// proper design; until then a composition may name at most one.
+LogicalResult LIT::checkAtMostOneClosureTrait(SharedState &shared,
+                                              ArrayRef<TraitSymbolAttr> symbols,
+                                              SMLoc loc, SourceRange range) {
+  SmallVector<TraitSymbolAttr> closures;
+  for (TraitSymbolAttr symbol : symbols) {
+    if (shared.isUniversalParametricClosureTrait(symbol)) {
+      closures.push_back(symbol);
+    } else {
+      ASTDecl &decl =
+          shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
+      auto traitOp = dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation());
+      // Leaf closure trait is put in the top decl.
+      if (traitOp && traitOp.getDefinesClosure() &&
+          decl.getParentDecl() == &shared.getTopLevelDecl())
+        closures.push_back(symbol);
+    }
+    if (closures.size() > 1)
+      break;
+  }
+  if (closures.size() < 2)
+    return success();
+
+  // Print through the canonical trait: a bare single-symbol TraitType is not
+  // canonical, and rendering one as a value trips the canonicalization
+  // invariant in `DeclResolver::getTraitDecl`.
+  DeclResolver &resolver = *shared.declResolver;
+  auto diag = shared.emitError(loc)
+              << "trait composition must not contain more than one closure "
+                 "type; remove "
+              << ASTType(resolver.getCanonicalTrait(closures[0])) << " or "
+              << ASTType(resolver.getCanonicalTrait(closures[1]));
+  if (range.isValid())
+    diag << range;
+  return failure();
+}
+
 TraitType
 LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
                                   ArrayRef<ConstraintAttr> assumptions) {

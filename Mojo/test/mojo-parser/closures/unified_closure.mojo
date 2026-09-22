@@ -28,7 +28,6 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S13 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S14 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S15 < %t.mlir
-# RUN: FileCheck %s --enable-var-scope --check-prefixes=S16 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S17 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S18 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S19 < %t.mlir
@@ -308,44 +307,6 @@ def s15_bindIt(z: Int, mem: String):
         return z
 
     s15_takeIt[type_of(myclosure)](myclosure)
-
-
-# COM: Verify that all closures are rebound when closure traits are combined or inherited
-
-# S16-DAG: lit.struct.decl @MultipleClosure
-# S16-DAG: kgen.conformance @"def(Bool) -> Int"
-# S16-DAG: kgen.witness "__call__($0,::Bool)"
-# S16-DAG: imm_mem, !Bool, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]({{.*}}imm_mem, !Bool) capturing -> !Int>
-# S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::Bool)"
-# S16-DAG: kgen.conformance @"def(Int) -> Int"
-# S16-DAG: kgen.witness "__call__($0,::SIMD[DType.int, 1])"
-# S16-DAG: imm_mem, !Int{{.*}}, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]({{.*}}imm_mem, !Int) capturing -> !Int>
-# S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::SIMD[DType.int, 1])"
-
-
-def s16_takeIt[C: (def(Bool) -> Int) & def(Int) -> Int](closure: C):
-    _ = closure(3)
-
-
-trait BoolWrapper(def(Bool) -> Int):
-    pass
-
-
-struct MultipleClosure(BoolWrapper, Movable, def(Int) -> Int):
-    def __init__(out self):
-        pass
-
-    def __call__(self, x: Bool) -> Int:
-        return 1
-
-    def __call__(self, x: Int) -> Int:
-        return 2
-
-
-def s16_bindIt(z: Int):
-    var fakeclosure = MultipleClosure()
-
-    s16_takeIt[type_of(fakeclosure)](fakeclosure)
 
 
 # COM: Verify that closures can be rebound with differing parameter names
