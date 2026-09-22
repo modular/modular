@@ -833,14 +833,14 @@ PatternEmitState::emitCommands(OpBuilder &builder,
         return failure();
 
       /// Emit a dynamic test:
-      ///   hlcf.elif matches {
+      ///   hlcf.if matches {
       ///     hlcf.yield
       ///   } else {
       ///     hlcf.match.next
       ///   }
       Location loc =
           curDeclScope.getShared().translateLocation(cmd->expr->getLoc());
-      HLCF::ElifOp::create(
+      HLCF::IfOp::create(
           builder, loc, TypeRange(), matches,
           [&]() -> LogicalResult {
             HLCF::YieldOp::create(builder, loc);

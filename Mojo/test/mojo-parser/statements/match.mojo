@@ -26,11 +26,11 @@ def match_trivial(i: Int):
     case _:
         case_callee[0]()
 
-    # Guarded `case _` is an `hlcf.elif` on the guard; failure falls through.
+    # Guarded `case _` is an `hlcf.if` on the guard; failure falls through.
     # CHECK:       [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK:       [[GT:%.*]] = lit.call {{.*}}@"__gt__({{.*}}(%i, [[ZERO]])
     # CHECK:       [[B:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[GT]])
-    # CHECK:       hlcf.elif [[B]] {
+    # CHECK:       hlcf.if [[B]] {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:         hlcf.yield
     # CHECK:       } else {
@@ -90,7 +90,7 @@ def match_bindings(i: Int, var s: String):
 # CHECK-NEXT:    [[L0:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK-NEXT:    [[EQ0:%.*]] = lit.call {{.*}}@"__eq__({{.*}}(%x, [[L0]])
 # CHECK-NEXT:    [[B0:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[EQ0]])
-# CHECK-NEXT:    hlcf.elif [[B0]] {
+# CHECK-NEXT:    hlcf.if [[B0]] {
 # CHECK-NEXT:      lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {
@@ -119,7 +119,7 @@ def match_same_indent(x: Int):
 # CHECK:       kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK:       lit.call {{.*}}@"__eq__(
 # CHECK:       lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.yield
 # CHECK:       } else {
@@ -140,7 +140,7 @@ def match_indented_cases(x: Int):
 # CHECK:         lit.ref.load
 # CHECK:         lit.call {{.*}}@"__eq__(
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         hlcf.yield
 # CHECK:       } else {
 # CHECK:         hlcf.match.next
@@ -149,7 +149,7 @@ def match_indented_cases(x: Int):
 # CHECK:         lit.ref.load
 # CHECK:         lit.call {{.*}}@"__eq__(
 # CHECK:         lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         hlcf.yield
 # CHECK:       } else {
 # CHECK:         hlcf.match.next
@@ -189,7 +189,7 @@ def match_comma_subject(a: Bool, b: Bool):
 # CHECK-NEXT:      [[Z0:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK-NEXT:      [[NE0:%.*]] = lit.call {{.*}}@"__ne__({{.*}}(%c, [[Z0]])
 # CHECK-NEXT:      [[B0:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[NE0]])
-# CHECK-NEXT:      hlcf.elif [[B0]] {
+# CHECK-NEXT:      hlcf.if [[B0]] {
 # CHECK-NEXT:        hlcf.yield
 # CHECK-NEXT:      } else {
 # CHECK-NEXT:        hlcf.match.next
@@ -201,7 +201,7 @@ def match_comma_subject(a: Bool, b: Bool):
 # CHECK-NEXT:      [[L1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK-NEXT:      [[EQ1:%.*]] = lit.call {{.*}}@"__eq__({{.*}}(%x, [[L1]])
 # CHECK-NEXT:      [[B1:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[EQ1]])
-# CHECK-NEXT:      hlcf.elif [[B1]] {
+# CHECK-NEXT:      hlcf.if [[B1]] {
 # CHECK-NEXT:        hlcf.yield
 # CHECK-NEXT:      } else {
 # CHECK-NEXT:        hlcf.match.next
@@ -209,7 +209,7 @@ def match_comma_subject(a: Bool, b: Bool):
 # CHECK-NEXT:      [[Z1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK-NEXT:      [[NE1:%.*]] = lit.call {{.*}}@"__ne__({{.*}}(%c, [[Z1]])
 # CHECK-NEXT:      [[GB1:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[NE1]])
-# CHECK-NEXT:      hlcf.elif [[GB1]] {
+# CHECK-NEXT:      hlcf.if [[GB1]] {
 # CHECK-NEXT:        hlcf.yield
 # CHECK-NEXT:      } else {
 # CHECK-NEXT:        hlcf.match.next
@@ -231,7 +231,7 @@ def match_with_guard(x: Int, c: Int):
 # CHECK:       kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK:       lit.call {{.*}}@"__eq__(
 # CHECK:       lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         %inside_case = lit.var.decl "inside_case"
 # CHECK:         hlcf.yield
 # CHECK:       } else {
@@ -249,7 +249,7 @@ def match_case_body(x: Int):
 # CHECK-LABEL: lit.fn @"match_float
 # CHECK:       lit.call {{.*}}@"__eq__(
 # CHECK:       lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.yield
 # CHECK:       } else {
@@ -267,7 +267,7 @@ def match_float(x: Float64):
 # CHECK-LABEL: lit.fn @"match_string
 # CHECK:       lit.call {{.*}}@"__eq__(
 # CHECK:       lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.yield
 # CHECK:       } else {
@@ -286,7 +286,7 @@ def match_string(x: String):
 # `False` then `True` (sorted by spelling); trailing `_` is the elif else.
 # CHECK:       lit.call {{.*}}@"__eq__(
 # CHECK:       lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:         hlcf.yield
 # CHECK:       } else {
@@ -340,7 +340,7 @@ struct Color(ImplicitlyCopyable, EnumLike):
 # CHECK:       [[TAG0:%.*]] = kgen.rebind [[DISC]]
 # CHECK:       lit.call {{.*}}@"__eq__({{.*}}([[TAG0]],
 # CHECK:       lit.call {{.*}}@"__mlir_bool__(::Bool)"
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.yield
 # CHECK:       } else {
@@ -382,10 +382,10 @@ def match_color(c: Color):
 # CHECK:       [[DISC:%.*]] = lit.call {{.*}}@"_get_enum_discriminant{{.*}}
 # CHECK:       [[TAG0:%.*]] = kgen.rebind [[DISC]]
 # CHECK:       lit.call {{.*}}@"__eq__({{.*}}([[TAG0]],
-# CHECK:       hlcf.elif %{{.*}} {
+# CHECK:       hlcf.if %{{.*}} {
 # CHECK:         lit.call {{.*}}@"__getitem_param__{{.*}}(%tc)
 # CHECK:         lit.call {{.*}}@"__eq__(
-# CHECK:         hlcf.elif %{{.*}} {
+# CHECK:         hlcf.if %{{.*}} {
 # CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:           hlcf.yield
 # CHECK:         } else {
@@ -406,7 +406,7 @@ def match_color(c: Color):
 # CHECK:         hlcf.match {
 # CHECK:           lit.call {{.*}}@"__getitem_param__{{.*}}(%tc)
 # CHECK:           lit.call {{.*}}@"__eq__(
-# CHECK:           hlcf.elif %{{.*}} {
+# CHECK:           hlcf.if %{{.*}} {
 # CHECK:             hlcf.yield
 # CHECK:           } else {
 # CHECK:             hlcf.match.next
@@ -512,7 +512,7 @@ def match_as_pattern(value: String):
     # CHECK:       [[ORIGIN:%.*]] = lit.var.decl "origin" ref
     # CHECK:       lit.ref.store %point, [[ORIGIN]]
     # CHECK:       case {
-    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:       hlcf.if %{{.*}} {
     # CHECK:       [[P:%.*]] = lit.var.decl "p" ref
     # CHECK:       lit.ref.store %point, [[P]]
     # CHECK:       lit.var.decl "x" var
@@ -535,7 +535,7 @@ def match_as_pattern(value: String):
     # CHECK:       [[Z0:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK:       [[NE0:%.*]] = lit.call {{.*}}@"__ne__({{.*}}([[L1]], [[Z0]])
     # CHECK:       [[B0:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[NE0]])
-    # CHECK:       hlcf.elif [[B0]] {
+    # CHECK:       hlcf.if [[B0]] {
     # CHECK:       lit.call {{.*}}@"byte_length(
     __match value:
     case _ as s if s.byte_length() != 0:
@@ -548,7 +548,7 @@ def match_as_pattern(value: String):
 # CHECK-NEXT:        [[L0:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
 # CHECK-NEXT:        [[EQ0:%.*]] = lit.call {{.*}}@"__eq__({{.*}}(%x, [[L0]])
 # CHECK-NEXT:        [[B0:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[EQ0]])
-# CHECK-NEXT:        hlcf.elif [[B0]] {
+# CHECK-NEXT:        hlcf.if [[B0]] {
 # CHECK-NEXT:          hlcf.yield
 # CHECK-NEXT:        } else {
 # CHECK-NEXT:          hlcf.match.next
@@ -559,7 +559,7 @@ def match_as_pattern(value: String):
 # CHECK-NEXT:        [[L1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
 # CHECK-NEXT:        [[EQ1:%.*]] = lit.call {{.*}}@"__eq__({{.*}}(%x, [[L1]])
 # CHECK-NEXT:        [[B1:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[EQ1]])
-# CHECK-NEXT:        hlcf.elif [[B1]] {
+# CHECK-NEXT:        hlcf.if [[B1]] {
 # CHECK-NEXT:          hlcf.yield
 # CHECK-NEXT:        } else {
 # CHECK-NEXT:          hlcf.match.next
@@ -575,7 +575,7 @@ def match_as_pattern(value: String):
 # Or-alternatives are flattened into one nested match (not recursively nested).
 # CHECK:         hlcf.match {
 # CHECK:           kgen.param.constant: !Int = <{:scalar<index> 0}>
-# CHECK:           hlcf.elif %{{.*}} {
+# CHECK:           hlcf.if %{{.*}} {
 # CHECK:             hlcf.yield
 # CHECK:           } else {
 # CHECK:             hlcf.match.next
@@ -583,7 +583,7 @@ def match_as_pattern(value: String):
 # CHECK:           hlcf.match.complete
 # CHECK:         case {
 # CHECK:           kgen.param.constant: !Int = <{:scalar<index> 1}>
-# CHECK:           hlcf.elif %{{.*}} {
+# CHECK:           hlcf.if %{{.*}} {
 # CHECK:             hlcf.yield
 # CHECK:           } else {
 # CHECK:             hlcf.match.next
@@ -591,7 +591,7 @@ def match_as_pattern(value: String):
 # CHECK:           hlcf.match.complete
 # CHECK:         case {
 # CHECK:           kgen.param.constant: !Int = <{:scalar<index> 2}>
-# CHECK:           hlcf.elif %{{.*}} {
+# CHECK:           hlcf.if %{{.*}} {
 # CHECK:             hlcf.yield
 # CHECK:           } else {
 # CHECK:             hlcf.match.next
@@ -615,14 +615,14 @@ def match_or_pattern_int(x: Int):
 # CHECK:         hlcf.match {
 # CHECK:           lit.call {{.*}}@"__getitem_param__
 # CHECK:           lit.call {{.*}}@"__eq__(
-# CHECK:         hlcf.elif %{{.*}} {
+# CHECK:         hlcf.if %{{.*}} {
 # CHECK:           hlcf.yield
 # CHECK:         } else {
 # CHECK:           hlcf.match.next
 # CHECK:         }
 # CHECK:           lit.call {{.*}}@"__getitem_param__
 # CHECK:           lit.call {{.*}}@"__eq__(
-# CHECK:         hlcf.elif %{{.*}} {
+# CHECK:         hlcf.if %{{.*}} {
 # CHECK:           hlcf.yield
 # CHECK:         } else {
 # CHECK:           hlcf.match.next
@@ -631,14 +631,14 @@ def match_or_pattern_int(x: Int):
 # CHECK:         case {
 # CHECK:           lit.call {{.*}}@"__getitem_param__
 # CHECK:           lit.call {{.*}}@"__eq__(
-# CHECK:         hlcf.elif %{{.*}} {
+# CHECK:         hlcf.if %{{.*}} {
 # CHECK:           hlcf.yield
 # CHECK:         } else {
 # CHECK:           hlcf.match.next
 # CHECK:         }
 # CHECK:           lit.call {{.*}}@"__getitem_param__
 # CHECK:           lit.call {{.*}}@"__eq__(
-# CHECK:         hlcf.elif %{{.*}} {
+# CHECK:         hlcf.if %{{.*}} {
 # CHECK:           hlcf.yield
 # CHECK:         } else {
 # CHECK:           hlcf.match.next
@@ -719,7 +719,7 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
     # then-region projects the payload.
     # CHECK:       lit.call {{.*}}@"_get_enum_discriminant{{.*}}[imm *"opt`
     # CHECK:       lit.call {{.*}}@"__eq__(
-    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:       } else {
     # CHECK:         hlcf.elif.yield
@@ -740,7 +740,7 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
     # CHECK:       lit.ref.immut %mut_opt
     # CHECK:       lit.call {{.*}}@"_get_enum_discriminant{{.*}}[muttoimm *"mut_opt`
     # CHECK:       lit.call {{.*}}@"__eq__(
-    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 3
     # CHECK:       } else {
     # CHECK:         hlcf.elif.yield
@@ -774,7 +774,7 @@ def testLValueMutableMatch(var a: Optional[Int]):
     # CHECK:       lit.ref.immut %a
     # CHECK:       lit.call {{.*}}@"_get_enum_discriminant{{.*}}[muttoimm *"a`
     # CHECK:       lit.call {{.*}}@"__eq__(
-    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         hlcf.yield
     # CHECK:       } else {
     # CHECK:         hlcf.match.next
@@ -787,13 +787,13 @@ def testLValueMutableMatch(var a: Optional[Int]):
     case .Some(ref value):
         value += 1
 
-# Bool ladder is one `hlcf.elif` (no enclosing match: nothing follows it).
+# Bool ladder is one `hlcf.if` (no enclosing match: nothing follows it).
 # Arms are ordered by spelling (`False` then `True`).
 # The tuple ladder folds `(_, y_elt)` into the elif else of `y[0] == True`.
 # CHECK-LABEL: lit.fn @"testMatchLadder
 def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
     # CHECK:       lit.call {{.*}}@"__eq__(::Bool,::Bool)"(%x,
-    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:         hlcf.yield
     # CHECK:       } else {
@@ -814,7 +814,7 @@ def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
     # `(True, _)` is decided by y[0]; `(_, y_elt)` is the exclusive else.
     # CHECK:       lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
     # CHECK:       lit.call {{.*}}@"__eq__(::Bool,::Bool)"(
-    # CHECK:       hlcf.elif %{{.*}} {
+    # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:         hlcf.yield
     # CHECK:       } else {

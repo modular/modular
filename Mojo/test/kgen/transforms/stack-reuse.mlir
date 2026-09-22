@@ -32,8 +32,8 @@ kgen.func @control_flow_if(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>
   %s1 = pop.stack_allocation 1 x index
 
   pop.store %arg0, %s0 : !kgen.pointer<index>
-  // CHECK: hlcf.elif
-  %if = hlcf.elif %arg2 -> index {
+  // CHECK: hlcf.if
+  %if = hlcf.if %arg2 -> index {
     // CHECK-NEXT: pop.load
     %0 = pop.load %s0 : !kgen.pointer<index>
     pop.store %0, %s1 : !kgen.pointer<index>
@@ -71,8 +71,8 @@ kgen.func @control_flow_if_lifetime(%arg0: index, %arg1: index, %arg2: !kgen.sca
   pop.stack_alloc.lifetime.start(%s1) : !kgen.pointer<index>
 
   pop.store %arg0, %s0 : !kgen.pointer<index>
-  // CHECK: hlcf.elif
-  %if = hlcf.elif %arg2 -> index {
+  // CHECK: hlcf.if
+  %if = hlcf.if %arg2 -> index {
     // CHECK-NEXT: pop.load
     %0 = pop.load %s0 : !kgen.pointer<index>
     pop.store %0, %s1 : !kgen.pointer<index>

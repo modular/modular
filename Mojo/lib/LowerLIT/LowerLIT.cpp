@@ -195,43 +195,43 @@ struct LITLowerer {
 } // namespace
 
 /// Given an elif op, simplify it to only have then/else blocks, no elif arms.
-static HLCF::ElifOp eliminateElIfRegions(HLCF::ElifOp elifOp) {
+static HLCF::IfOp eliminateExtraIfArms(HLCF::IfOp ifOp) {
   // Simple if/else has no extra arms; leave it alone for LLVM lowering.
-  if (elifOp.getElifRegions().empty())
-    return elifOp;
+  if (ifOp.getElifRegions().empty())
+    return ifOp;
 
-  ImplicitLocOpBuilder builder(elifOp->getLoc(), elifOp);
-  builder.setInsertionPoint(elifOp);
+  ImplicitLocOpBuilder builder(ifOp->getLoc(), ifOp);
+  builder.setInsertionPoint(ifOp);
 
   // First condition is an SSA operand; build the outermost elif from it.
-  HLCF::ElifOp outerMostElifOp =
-      HLCF::ElifOp::create(builder, elifOp.getResultTypes(), elifOp.getCond());
-  outerMostElifOp.getThenRegion().takeBody(elifOp.getThenRegion());
-  Region *currentRegion = &outerMostElifOp.getElseRegion();
+  HLCF::IfOp outerMostIfOp =
+      HLCF::IfOp::create(builder, ifOp.getResultTypes(), ifOp.getCond());
+  outerMostIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
+  Region *currentRegion = &outerMostIfOp.getElseRegion();
 
   // Nest additional (cond, then) pairs into the current else region.
-  for (Region &region : elifOp.getElifRegions()) {
+  for (Region &region : ifOp.getElifRegions()) {
     currentRegion->takeBody(region);
     builder.setInsertionPointToEnd(&currentRegion->front());
     Operation *terminator = currentRegion->front().getTerminator();
     if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(terminator)) {
-      auto newElifOp = HLCF::ElifOp::create(builder, elifOp.getResultTypes(),
-                                            elifYieldOp->getOperand(0));
+      auto newIfOp = HLCF::IfOp::create(builder, ifOp.getResultTypes(),
+                                        elifYieldOp->getOperand(0));
       // Insert yield of the nested elif results, then erase elif.yield.
-      HLCF::YieldOp::create(builder, newElifOp.getResults());
+      HLCF::YieldOp::create(builder, newIfOp.getResults());
       elifYieldOp->erase();
-      currentRegion = &newElifOp.getThenRegion();
+      currentRegion = &newIfOp.getThenRegion();
       continue;
     }
     // Moved a then region into Elif's Then region; continue into its Else.
-    auto elifOpParent = terminator->getParentOfType<HLCF::ElifOp>();
+    auto elifOpParent = terminator->getParentOfType<HLCF::IfOp>();
     currentRegion = &elifOpParent.getElseRegion();
   }
-  currentRegion->takeBody(elifOp.getElseRegion());
-  builder.setInsertionPoint(elifOp);
+  currentRegion->takeBody(ifOp.getElseRegion());
+  builder.setInsertionPoint(ifOp);
   IRRewriter rewriter{builder};
-  rewriter.replaceOp(elifOp, outerMostElifOp.getResults());
-  return outerMostElifOp;
+  rewriter.replaceOp(ifOp, outerMostIfOp.getResults());
+  return outerMostIfOp;
 }
 
 void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
@@ -272,8 +272,8 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
                                          call.getOperands());
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getResult());
-    } else if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
-      eliminateElIfRegions(elifOp);
+    } else if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
+      eliminateExtraIfArms(ifOp);
     } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
     }

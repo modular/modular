@@ -24,8 +24,8 @@ kgen.generator @use_in_region(%arg0: index, %arg1: !kgen.scalar<bool>) -> index 
   %0 = pop.stack_allocation 1 x index
   pop.store %arg0, %0 : !kgen.pointer<index>
 
-  // CHECK-NEXT: hlcf.elif
-  hlcf.elif %arg1 {
+  // CHECK-NEXT: hlcf.if
+  hlcf.if %arg1 {
     // CHECK-NEXT: kgen.return %arg0
     %1 = pop.load %0 : !kgen.pointer<index>
     kgen.return %1 : index
@@ -44,8 +44,8 @@ kgen.generator @store_in_region(%arg0: index, %arg1: index, %arg2: !kgen.scalar<
   %0 = pop.stack_allocation 1 x index
   pop.store %arg0, %0 : !kgen.pointer<index>
 
-  // CHECK-NEXT: %0 = hlcf.elif %arg2 -> index
-  hlcf.elif %arg2 {
+  // CHECK-NEXT: %0 = hlcf.if %arg2 -> index
+  hlcf.if %arg2 {
     %1 = pop.load %0 : !kgen.pointer<index>
     // CHECK-NEXT: return %arg0
     kgen.return %1 : index
@@ -67,8 +67,8 @@ kgen.generator @repeated_store_in_region(%arg0: index, %arg1: index, %arg2: !kge
   %0 = pop.stack_allocation 1 x index
   pop.store %arg0, %0 : !kgen.pointer<index>
 
-  // CHECK-NEXT: %0 = hlcf.elif %arg2 -> index
-  hlcf.elif %arg2 {
+  // CHECK-NEXT: %0 = hlcf.if %arg2 -> index
+  hlcf.if %arg2 {
     pop.store %arg1, %0 : !kgen.pointer<index>
     %1 = pop.load %0 : !kgen.pointer<index>
     // CHECK-NEXT: %[[V:.*]] = index.add %arg1, %arg1
@@ -93,8 +93,8 @@ kgen.generator @store_in_both_regions(%arg0: index, %arg1: index, %arg2: !kgen.s
   %0 = pop.stack_allocation 1 x index
   pop.store %arg0, %0 : !kgen.pointer<index>
 
-  // CHECK-NEXT: %0 = hlcf.elif %arg2 -> index
-  hlcf.elif %arg2 {
+  // CHECK-NEXT: %0 = hlcf.if %arg2 -> index
+  hlcf.if %arg2 {
     pop.store %arg1, %0 : !kgen.pointer<index>
     // CHECK-NEXT: hlcf.yield %arg1 : index
     hlcf.yield
@@ -152,8 +152,8 @@ kgen.generator @if_empty_block(%arg0: !kgen.scalar<bool>, %arg1: index) -> index
   %0 = pop.stack_allocation 1 x index
   %1 = pop.stack_allocation 1 x index
   pop.store %arg1, %0 : !kgen.pointer<index>
-  // CHECK-NEXT: %0 = hlcf.elif %arg0 -> index
-  hlcf.elif %arg0 {
+  // CHECK-NEXT: %0 = hlcf.if %arg0 -> index
+  hlcf.if %arg0 {
     %2 = pop.load %0 : !kgen.pointer<index>
     pop.store %2, %1 : !kgen.pointer<index>
     // CHECK-NEXT: yield %arg1
@@ -201,8 +201,8 @@ kgen.func @loop_variant(%arg0: index, %arg1: index, %lb: index, %ub: index, %ste
     %cond = index.cmp slt(%curIndex, %ub)
     // CHECK-NEXT: %[[CONDB:.*]] = pop.cast_from_builtin %[[COND]] : i1 to !kgen.scalar<bool>
     %condb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
-    // CHECK-NEXT: hlcf.elif %[[CONDB]]
-    hlcf.elif %condb {
+    // CHECK-NEXT: hlcf.if %[[CONDB]]
+    hlcf.if %condb {
       hlcf.yield
     } else {
       // CHECK: break %arg5, %arg6, %arg7
@@ -507,7 +507,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
   // CHECK-NEXT: [[C0:%.*]] = index.add %arg0, %idx1
   // CHECK-NEXT: [[C1:%.*]] = index.cmp eq([[C0]], %idx0)
   // CHECK-NEXT: [[C1B:%.*]] = pop.cast_from_builtin [[C1]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: [[V0:%.*]]:4 = hlcf.elif [[C1B]] -> index, index, index, index {
+  // CHECK-NEXT: [[V0:%.*]]:4 = hlcf.if [[C1B]] -> index, index, index, index {
   // CHECK-NEXT:   [[W3:%.*]] = index.add %arg1, %idx1
   // CHECK-NEXT:   hlcf.yield [[W3]], [[C0]], [[W3]], %arg2 : index, index, index, index
   // CHECK-NEXT: } else {
@@ -528,7 +528,7 @@ kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
   %c = index.cmp eq(%var2, %idx0)
   %cb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
 
-  %0 = hlcf.elif %cb -> index {
+  %0 = hlcf.if %cb -> index {
     %4 = pop.load %varThen : !kgen.pointer<index>
     %var5 = index.add %4, %idx1
     pop.store %var5, %varThen : !kgen.pointer<index>

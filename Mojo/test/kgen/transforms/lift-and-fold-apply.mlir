@@ -99,14 +99,14 @@ kgen.generator @nohoist_cond() {
 // CHECK-LABEL: kgen.generator @hlcf_if_apply
 kgen.generator @hlcf_if_apply(%cond: !kgen.scalar<bool>) {
   // COM: make sure that the apply is being lifted to the beginning
-  // COM: of the generator since hlcf.elif regions don't create
+  // COM: of the generator since hlcf.if regions don't create
   // COM: new parameter decl scopes.
 
   kgen.param.declare p0 = <1>
   // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
   // CHECK: apply *[[L1:.*]] = [(index) -> index: @pass](*[[L0]])
-  // CHECK: hlcf.elif
-  hlcf.elif %cond  {
+  // CHECK: hlcf.if
+  hlcf.if %cond  {
     // CHECK: constant = <*[[L1]]>
     kgen.param.constant = <apply(:(index) -> index @pass, p0)>
     kgen.param.constant = <apply(:(index) -> index @pass, apply(:(index) -> index @pass, p0))>
@@ -123,7 +123,7 @@ kgen.generator @hlcf_if_apply(%cond: !kgen.scalar<bool>) {
 // CHECK-LABEL: kgen.generator @hlcf_if_in_param_if_apply
 kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !kgen.scalar<bool>) {
   // COM: make sure that the apply is being lifted to the beginning
-  // COM: of the paramDecl region since hlcf.elif regions don't create
+  // COM: of the paramDecl region since hlcf.if regions don't create
   // COME: new parameter decl scopes.
 
   kgen.param.declare p0 = <1>
@@ -131,8 +131,8 @@ kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !k
   kgen.param.if <false> {
     // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
     // CHECK: apply *[[L1:.*]] = [(index) -> index: @pass](*[[L0]])
-    // CHECK: hlcf.elif
-    hlcf.elif %cond0  {
+    // CHECK: hlcf.if
+    hlcf.if %cond0  {
       // CHECK: constant = <*[[L0]]>
       // CHECK: constant = <*[[L1]]>
       kgen.param.constant = <apply(:(index) -> index @pass, p0)>
@@ -144,7 +144,7 @@ kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !k
       hlcf.yield
     }
 
-    hlcf.elif %cond1  {
+    hlcf.if %cond1  {
       // CHECK: constant = <*[[L0]]>
       // CHECK: constant = <*[[L1]]>
       kgen.param.constant = <apply(:(index) -> index @pass, p0)>

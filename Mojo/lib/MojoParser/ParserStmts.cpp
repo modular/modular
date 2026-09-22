@@ -389,7 +389,7 @@ struct StmtParser : public ParserBase {
   /// location for an import statement. Imports are permitted at module scope
   /// (FileModuleOp) and at function scope (FnOp), including inside comptime
   /// control-flow (ParamIfOp, ParamForOp) which is transparent to this check.
-  /// Runtime control-flow bodies (HLCF::ElifOp, LIT::LoopOp, etc.) are
+  /// Runtime control-flow bodies (HLCF::IfOp, LIT::LoopOp, etc.) are
   /// rejected. \p kwLoc should be the location of the leading `from` or
   /// `import` keyword so the diagnostic caret lands on the keyword.
   ParseResult checkImportScope(SMLoc kwLoc);
@@ -1561,7 +1561,7 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
-  HLCF::ElifOp condIf = HLCF::ElifOp::create(
+  HLCF::IfOp condIf = HLCF::IfOp::create(
       *emitter.builder, whileLoc, TypeRange{}, condVal,
       [&]() -> LogicalResult {
         HLCF::YieldOp::create(*emitter.builder, whileLoc);
@@ -1902,7 +1902,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   // Emit an elif tree that tests each leading value once (`numClusters` arms).
 
   // `__eq__` of the shared subject or discriminant against this case's expected
-  // value, as an i1 for `hlcf.elif`.
+  // value, as an i1 for `hlcf.if`.
   auto emitEqCond = [&](const PatternCommand *command) -> Value {
     return emissionState.emitTestForValue(builder, command, value);
   };
@@ -1913,8 +1913,8 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
 
   Location loc = emissionState.matchLocation;
   assert(numClusters >= 1 && "cluster must have at least one leading value");
-  HLCF::ElifOp elifOp = HLCF::ElifOp::create(builder, loc, TypeRange(),
-                                             firstCond, (numClusters - 1) * 2);
+  HLCF::IfOp ifOp = HLCF::IfOp::create(builder, loc, TypeRange(), firstCond,
+                                       (numClusters - 1) * 2);
 
   // One then-region per distinct leading value. The first condition is the
   // elif operand; each later value adds a cond region and a then region.
@@ -1930,7 +1930,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
     // Later arms emit their condition into an elif cond region.
     if (arm != 0) {
       builder.setInsertionPointToStart(
-          &elifOp.getElifRegions()[(arm - 1) * 2].emplaceBlock());
+          &ifOp.getElifRegions()[(arm - 1) * 2].emplaceBlock());
       SRValue cond = emitEqCond(groupFront.commandList.front());
       if (!cond)
         return;
@@ -1942,10 +1942,10 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
     // The first body goes in the "then" region; later bodies are elif then
     // regions.
     if (arm == 0) {
-      builder.setInsertionPointToStart(&elifOp.getThenRegion().emplaceBlock());
+      builder.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
     } else {
       builder.setInsertionPointToStart(
-          &elifOp.getElifRegions()[(arm - 1) * 2 + 1].emplaceBlock());
+          &ifOp.getElifRegions()[(arm - 1) * 2 + 1].emplaceBlock());
     }
 
     // Emit the residual commands for every case that shares this leading
@@ -1970,7 +1970,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
 
   // Else is the trailing `_` (exclusive complement) when present; otherwise
   // fall through / match.next.
-  builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
+  builder.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
   if (trailingWildcard) {
     auto caseEmissionState = emissionState;
     emitCases(*trailingWildcard, caseEmissionState,
@@ -1980,7 +1980,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   } else {
     HLCF::YieldOp::create(builder, loc);
   }
-  builder.setInsertionPointAfter(elifOp);
+  builder.setInsertionPointAfter(ifOp);
   // Elif is not a terminator: even when every arm MatchCompletes (including a
   // trailing catch-all else), the enclosing match case still needs one.
   if (inMatchCase)
@@ -2032,7 +2032,7 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
           {AnyValue(guardRVal), caseEntry.guardExpr}, EC_BoolCondition);
       if (guardVal) {
         auto guardLoc = translateLocation(caseEntry.guardExpr->getLoc());
-        HLCF::ElifOp::create(
+        HLCF::IfOp::create(
             builder, guardLoc, TypeRange{}, guardVal,
             [&]() -> LogicalResult {
               // If at the top level, emit the body into the "then" block.
@@ -2358,7 +2358,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
 
     // Emit an if statement, if the condition is true then yield other break to
     // the else block.
-    HLCF::ElifOp condIf = HLCF::ElifOp::create(
+    HLCF::IfOp condIf = HLCF::IfOp::create(
         *emitter.builder, forLocation, TypeRange{}, shouldContinue,
         [&]() -> LogicalResult {
           HLCF::YieldOp::create(*emitter.builder, forLocation);
@@ -2861,7 +2861,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //     try {
   //       SUITE
   //     } except(errorVal : Error) {
-  //       hlcf.elif (contextMgr.__exit__(errorVal)) {
+  //       hlcf.if (contextMgr.__exit__(errorVal)) {
   //         hlcf.yield
   //       } else {
   //         raise errorVal
@@ -3230,7 +3230,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // Set up the except region for the nested try.  Pseudo code:
     //  except(%__inner_error__ : Error) {
     //    %stop_rethrow = contextMgr.__exit__(%__inner_error__);
-    //    hlcf.elif %stop_rethrow {
+    //    hlcf.if %stop_rethrow {
     //      hlcf.yield
     //    } else {
     //      raise %inner_error
@@ -3263,7 +3263,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // Fail, but non-fatal so return success to keep parsing.
       return success();
     // If __exit__ returns false, then re-raise the error.
-    HLCF::ElifOp stopRethrowIf = HLCF::ElifOp::create(
+    HLCF::IfOp stopRethrowIf = HLCF::IfOp::create(
         *emitter.builder, loc, TypeRange{}, exitI1Val,
         [&]() -> LogicalResult {
           // On true, nothing is to be done.
@@ -3306,7 +3306,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // exception (exc flag still true).
     Value excFlag = RefLoadOp::create(builder, loc, excVar);
     auto emitter = getEmitter();
-    HLCF::ElifOp excIf = HLCF::ElifOp::create(
+    HLCF::IfOp excIf = HLCF::IfOp::create(
         *emitter.builder, loc, TypeRange{}, excFlag,
         [&]() -> LogicalResult {
           builder = *emitter.builder;
@@ -3533,14 +3533,14 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
 
   unsigned numExtraRegions =
       elifEntries.size() > 1 ? (elifEntries.size() - 1) * 2 : 0;
-  HLCF::ElifOp elifOp = HLCF::ElifOp::create(builder, ifLoc, TypeRange(),
-                                             *firstCond, numExtraRegions);
-  elifOp.getThenRegion().emplaceBlock();
-  elifOp.getElseRegion().emplaceBlock();
-  for (Region &region : elifOp.getElifRegions())
+  HLCF::IfOp ifOp = HLCF::IfOp::create(builder, ifLoc, TypeRange(), *firstCond,
+                                       numExtraRegions);
+  ifOp.getThenRegion().emplaceBlock();
+  ifOp.getElseRegion().emplaceBlock();
+  for (Region &region : ifOp.getElifRegions())
     region.emplaceBlock();
 
-  if (failed(emitArmBody(elifOp.getThenRegion().front(), elifEntries.front())))
+  if (failed(emitArmBody(ifOp.getThenRegion().front(), elifEntries.front())))
     return failure();
 
   // Subsequent conditions stay in their regions so they are only evaluated
@@ -3549,7 +3549,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
        llvm::enumerate(ArrayRef<ElifEntry>(elifEntries).drop_front())) {
     unsigned condRegionIndex = idx * 2;
     builder.setInsertionPointToStart(
-        &elifOp.getElifRegions()[condRegionIndex].front());
+        &ifOp.getElifRegions()[condRegionIndex].front());
     FailureOr<Value> elifCond =
         emitConditionExpr(entry.condExpr, condRegionIndex);
     if (failed(elifCond))
@@ -3557,12 +3557,12 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     HLCF::ElifYieldOp::create(builder, entry.keywordLoc, *elifCond,
                               /*no extra values*/ ValueRange());
 
-    if (failed(emitArmBody(elifOp.getElifRegions()[condRegionIndex + 1].front(),
+    if (failed(emitArmBody(ifOp.getElifRegions()[condRegionIndex + 1].front(),
                            entry)))
       return failure();
   }
 
-  builder.setInsertionPointToStart(&elifOp.getElseRegion().front());
+  builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
   if (elseBodyCursor) {
     elseBodyCursor->restore(getLexer());
     if (failed(parseLocalScopeSuite(curIndent)))
@@ -3583,21 +3583,20 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
       if (elifCondIndex == ~0u) {
         // First (operand) condition.
         if (condition) {
-          markRegionUnreachable(&elifOp.getElseRegion(), ifLoc);
-          for (auto &region : elifOp.getElifRegions())
+          markRegionUnreachable(&ifOp.getElseRegion(), ifLoc);
+          for (auto &region : ifOp.getElifRegions())
             markRegionUnreachable(&region, ifLoc);
         } else {
-          markRegionUnreachable(&elifOp.getThenRegion(), ifLoc);
+          markRegionUnreachable(&ifOp.getThenRegion(), ifLoc);
         }
       } else if (condition) {
         // Additional arm is true: else and later pairs are unreachable.
-        markRegionUnreachable(&elifOp.getElseRegion(), ifLoc);
-        for (auto &region : elifOp.getElifRegions().slice(elifCondIndex + 2))
+        markRegionUnreachable(&ifOp.getElseRegion(), ifLoc);
+        for (auto &region : ifOp.getElifRegions().slice(elifCondIndex + 2))
           markRegionUnreachable(&region, ifLoc);
       } else {
         // Additional arm is false: its then is unreachable.
-        markRegionUnreachable(&elifOp.getElifRegions()[elifCondIndex + 1],
-                              ifLoc);
+        markRegionUnreachable(&ifOp.getElifRegions()[elifCondIndex + 1], ifLoc);
       }
     }
   }
@@ -3610,7 +3609,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
 /// directly at module scope (FileModuleOp) or at function scope (FnOp).
 /// Within a function, comptime control-flow ops (ParamIfOp, ParamForOp) are
 /// transparent — the check walks through them. Any other intervening op
-/// (e.g. HLCF::ElifOp, LIT::LoopOp) indicates runtime control flow and is
+/// (e.g. HLCF::IfOp, LIT::LoopOp) indicates runtime control flow and is
 /// rejected. Struct, trait, and extension bodies are also rejected.
 ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   Operation *parent = getParentDecl().getIfOperation();
@@ -3620,7 +3619,7 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   // Within a function, walk up the region chain from the current insertion
   // point to the FnOp. Comptime control-flow ops (ParamIfOp, ParamForOp) are
   // transparent — we continue walking through them. Any other op in between
-  // (HLCF::ElifOp, LIT::LoopOp, etc.) is runtime control flow and the import
+  // (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control flow and the import
   // is rejected.
   if (isa_and_nonnull<FnOp>(parent)) {
     Block *block = builder.getInsertionBlock();
@@ -4757,7 +4756,7 @@ static LogicalResult emitIfClause(StmtParser &stmtEmitter,
   if (!condRVal)
     return failure();
 
-  return success((bool)HLCF::ElifOp::create(
+  return success((bool)HLCF::IfOp::create(
       *emitter.builder, location, TypeRange(), condRVal,
       [&]() -> LogicalResult {
         llvm::SaveAndRestore builderSaver(stmtEmitter.getBuilder());

@@ -232,7 +232,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
   // %0 = hlcf.loop (%arg0 = %index1 : index, %arg1 = %index2: index, %arg2 =
   // %index6) {
   //    %1 = index.cmp slt(%arg0, %index9) # start = 1, end = 9
-  //    hlcf.elif %1 {
+  //    hlcf.if %1 {
   //      hlcf.yield
   //    } else {
   //      hlcf.break %arg1
@@ -242,20 +242,20 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
   //    hlcf.continue %1 : index
   // }
   //
-  // From hlcf.elif %1, we can infer that %arg0 is the induction variable
+  // From hlcf.if %1, we can infer that %arg0 is the induction variable
   // (inductionVarArgNumber = 0)
   // From hlcf.break %arg1, we know that %arg1 is the return value, and the
   // rest will be other loop carried variable
   Operation *parent = breakOp->getParentOp();
   Value ifCond;
   Region *thenRegion = nullptr;
-  auto elifOp = dyn_cast<ElifOp>(parent);
+  auto ifOp = dyn_cast<IfOp>(parent);
   // Multi-arm elif is expanded before this pass; only 2-region if/else shape
   // is recognized as a loop exit test.
-  if (!elifOp || elifOp.getNumRegions() != 2)
+  if (!ifOp || ifOp.getNumRegions() != 2)
     return {};
-  ifCond = elifOp.getCond();
-  thenRegion = &elifOp.getThenRegion();
+  ifCond = ifOp.getCond();
+  thenRegion = &ifOp.getThenRegion();
 
   // `pop.cast_from_builtin`. Look through that cast to recognize  `index.cmp`
   // TODO: we won't need this after migrating scalar<int>, but the pattern
@@ -528,13 +528,13 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   }
 
   Operation *ifLikeParent = breakOp->getParentOp();
-  auto elifOp = dyn_cast<ElifOp>(ifLikeParent);
-  if (!elifOp || elifOp.getNumRegions() != 2) {
+  auto ifOp = dyn_cast<IfOp>(ifLikeParent);
+  if (!ifOp || ifOp.getNumRegions() != 2) {
     return diag.attachNote(loop->getLoc())
            << "cannot infer loop bounds and steps";
   }
 
-  if (hasComplexExitLogic(loop, elifOp)) {
+  if (hasComplexExitLogic(loop, ifOp)) {
     // TODO: handle exit logic in loop unrolling and lower loops, which requires
     // raise ForOp to keep track of the exit block.
     return diag.attachNote(loop->getLoc()) << "loop has complex exit logic";
@@ -637,7 +637,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
   Operation *prevOp = nullptr;
   for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
-    if (&op == breakOp->getParentOp() && isa<ElifOp>(op)) {
+    if (&op == breakOp->getParentOp() && isa<IfOp>(op)) {
       // Don't move the parent elif of the break to the ForOp body.
       continue;
     }

@@ -2815,7 +2815,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return failure();
   };
 
-  // We can fold single-arm hlcf.elif operations in limited form that
+  // We can fold single-arm hlcf.if operations in limited form that
   // end with a yield of a single value for which both sides are foldable.
   auto foldIfLike = [&](Value cond, Block &thenBlock,
                         Block &elseBlock) -> FailureOr<TypedAttr> {
@@ -2833,11 +2833,11 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return ParamOperatorAttr::get(POC::Cond, {condVal, *trueVal, *falseVal},
                                   trueVal->getType());
   };
-  if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
+  if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
     // Only fold the simple if/else shape (no additional elif arms).
-    if (elifOp.getElifRegions().empty()) {
-      auto folded = foldIfLike(elifOp.getCond(), elifOp.getThenBlock(),
-                               elifOp.getElseBlock());
+    if (ifOp.getElifRegions().empty()) {
+      auto folded =
+          foldIfLike(ifOp.getCond(), ifOp.getThenBlock(), ifOp.getElseBlock());
       if (failed(folded) || *folded)
         return folded;
     }

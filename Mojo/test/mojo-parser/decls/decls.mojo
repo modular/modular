@@ -802,7 +802,7 @@ struct StructWithInit(Movable where False):
     # CHECK: lit.fn @"__init__
     # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
     def __init__(out self, a: Int, b: Int):
-        # CHECK: hlcf.elif
+        # CHECK: hlcf.if
         if a == b:
             # CHECK:  lit.call {{.*}}__init__{{.*}}(%a, %self)
             self = StructWithInit(a)

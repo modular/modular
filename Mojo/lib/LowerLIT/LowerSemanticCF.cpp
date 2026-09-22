@@ -107,9 +107,9 @@ private:
   void lowerBlock(Block &block, CodeEffects &effects);
   bool lowerLITLoop(LIT::LoopOp loopOp, CodeEffects &effects);
   void lowerParamFor(ParamForOp paramFor, CodeEffects &effects);
-  /// Lower an `HLCF::ElifOp`, including constant-condition dead-arm cleanup.
+  /// Lower an `HLCF::IfOp`, including constant-condition dead-arm cleanup.
   /// Returns true when the elif does not fall through (caller should stop).
-  bool lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects);
+  bool lowerIfOp(HLCF::IfOp ifOp, CodeEffects &effects);
   /// Pass through an `HLCF::MatchOp`, rewriting nested regions.
   /// Returns true when the match does not fall through (caller should stop).
   bool lowerMatchOp(HLCF::MatchOp matchOp, CodeEffects &effects);
@@ -301,10 +301,10 @@ static void markRegionDeadDueToConstantCond(Region &region,
   UnreachableOp::create(b, loc);
 }
 
-/// Lower an `HLCF::ElifOp`: prune constant-dead arms, then rewrite regions.
+/// Lower an `HLCF::IfOp`: prune constant-dead arms, then rewrite regions.
 /// Returns true when the elif does not fall through so the enclosing block
 /// should stop.
-bool LowerSemanticCF::lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects) {
+bool LowerSemanticCF::lowerIfOp(HLCF::IfOp ifOp, CodeEffects &effects) {
   // Determine whether the elif as a whole can fall through.
   bool doesFallThrough = false;
 
@@ -313,11 +313,11 @@ bool LowerSemanticCF::lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects) {
 
   // Process the first condition and the 'then' block.
   SIMDAttr elifCond;
-  if (mlir::matchPattern(elifOp.getCond(), m_Constant(&elifCond))) {
+  if (mlir::matchPattern(ifOp.getCond(), m_Constant(&elifCond))) {
     if (elifCond.getAsBool()) {
       // The 'then' region is live and is the only thing going on here.
       CodeEffects thenEffects;
-      lowerBlock(elifOp.getThenRegion().front(), thenEffects);
+      lowerBlock(ifOp.getThenRegion().front(), thenEffects);
       effects.mergeControlEffects(thenEffects);
       doesFallThrough |= thenEffects.doesFallThrough;
 
@@ -325,42 +325,42 @@ bool LowerSemanticCF::lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects) {
       nextElseLive = false;
     } else {
       // First 'then' is dead; later arms / else remain live.
-      markRegionDeadDueToConstantCond(elifOp.getThenRegion(), "'if False'",
-                                      elifOp.getLoc());
+      markRegionDeadDueToConstantCond(ifOp.getThenRegion(), "'if False'",
+                                      ifOp.getLoc());
     }
   } else {
     // The 'then' region is live.
     CodeEffects thenEffects;
-    lowerBlock(elifOp.getThenRegion().front(), thenEffects);
+    lowerBlock(ifOp.getThenRegion().front(), thenEffects);
     effects.mergeControlEffects(thenEffects);
     doesFallThrough |= thenEffects.doesFallThrough;
   }
 
   // Okay, charge through any "elif" blocks if they're live.
-  for (size_t i = 0; i < elifOp.getElifRegions().size(); i += 2) {
+  for (size_t i = 0; i < ifOp.getElifRegions().size(); i += 2) {
     // If this condition is unreachable mark it and the 'then' as dead.
     if (!nextElseLive) {
-      markRegionDeadDueToConstantCond(elifOp.getElifRegions()[i], "'if True'",
-                                      elifOp.getLoc());
-      markRegionDeadDueToConstantCond(elifOp.getElifRegions()[i + 1],
-                                      /*message=*/nullptr, elifOp.getLoc());
+      markRegionDeadDueToConstantCond(ifOp.getElifRegions()[i], "'if True'",
+                                      ifOp.getLoc());
+      markRegionDeadDueToConstantCond(ifOp.getElifRegions()[i + 1],
+                                      /*message=*/nullptr, ifOp.getLoc());
       continue;
     }
     // This condition is reachable, so process the block.
     CodeEffects condEffects;
-    lowerBlock(elifOp.getElifRegions()[i].front(), condEffects);
+    lowerBlock(ifOp.getElifRegions()[i].front(), condEffects);
     effects.mergeControlEffects(condEffects);
 
     // Check to see if the cond ended in a true/false constant.
     auto yieldOp =
-        dyn_cast<HLCF::ElifYieldOp>(elifOp.getElifRegions()[i].front().back());
+        dyn_cast<HLCF::ElifYieldOp>(ifOp.getElifRegions()[i].front().back());
     if (yieldOp &&
         mlir::matchPattern(yieldOp.getCond(), m_Constant(&elifCond))) {
       // A false condition would mean the corresponding 'then' block isn't
       // reachable but the next cond/else still is.
       if (!elifCond.getAsBool()) {
-        markRegionDeadDueToConstantCond(elifOp.getElifRegions()[i + 1],
-                                        "'if False'", elifOp.getLoc());
+        markRegionDeadDueToConstantCond(ifOp.getElifRegions()[i + 1],
+                                        "'if False'", ifOp.getLoc());
         continue;
       }
       // A true condition would mean the corresponding 'then' block is
@@ -370,7 +370,7 @@ bool LowerSemanticCF::lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects) {
 
     // Okay, the 'then' block is reachable, so lower it.
     CodeEffects thenEffects;
-    lowerBlock(elifOp.getElifRegions()[i + 1].front(), thenEffects);
+    lowerBlock(ifOp.getElifRegions()[i + 1].front(), thenEffects);
     effects.mergeControlEffects(thenEffects);
     doesFallThrough |= thenEffects.doesFallThrough;
   }
@@ -378,12 +378,12 @@ bool LowerSemanticCF::lowerElIfOp(HLCF::ElifOp elifOp, CodeEffects &effects) {
   // Handle the 'else' block if reachable.
   if (nextElseLive) {
     CodeEffects elseEffects;
-    lowerBlock(elifOp.getElseRegion().front(), elseEffects);
+    lowerBlock(ifOp.getElseRegion().front(), elseEffects);
     effects.mergeControlEffects(elseEffects);
     doesFallThrough |= elseEffects.doesFallThrough;
   } else {
-    markRegionDeadDueToConstantCond(elifOp.getElseRegion(), "'if True'",
-                                    elifOp.getLoc());
+    markRegionDeadDueToConstantCond(ifOp.getElseRegion(), "'if True'",
+                                    ifOp.getLoc());
   }
 
   return !doesFallThrough;
@@ -624,7 +624,7 @@ static Operation *addErrorRegions(Operation &op, FuncType sig,
   // Clone the op and add the error regions.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
   b.setInsertionPointAfter(&op);
-  auto ifOp = HLCF::ElifOp::create(b, op.getResult(0));
+  auto ifOp = HLCF::IfOp::create(b, op.getResult(0));
 
   // In the error region, mark the result has known consumed, then raise.
   b.createBlock(&ifOp.getThenRegion());
@@ -901,10 +901,10 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       continue;
     }
 
-    // Process a HLCF::ElifOp / ParamIfOp with a known-constant condition: mark
+    // Process a HLCF::IfOp / ParamIfOp with a known-constant condition: mark
     // the unreachable arm(s) so we don't consider them live.
-    if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
-      if (lowerElIfOp(elifOp, effects)) {
+    if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
+      if (lowerIfOp(ifOp, effects)) {
         // If the elif does not fall through, cut off the code after it.
         auto b = handleSemanticTerminatorOp(
             op, "if statement with then/else that do not fall through");
@@ -1020,7 +1020,7 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
-        isConditional || isa<ParamIfOp, HLCF::ElifOp, HLCF::MatchOp>(op);
+        isConditional || isa<ParamIfOp, HLCF::IfOp, HLCF::MatchOp>(op);
     // Handle things like if statements, HLCF::Loop, try, etc.
     for (auto &region : op.getRegions()) {
       if (checkSelfRecursion(region.front(), isSubregionConditional))

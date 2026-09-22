@@ -5,7 +5,7 @@ kgen.generator @recursive(%arg0: index) -> index {
   %idx1 = index.constant 1
   %0 = index.cmp sge(%arg0, %idx1)
   %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-  hlcf.elif %c0 {
+  hlcf.if %c0 {
     %1 = index.sub %arg0, %idx1
     %2 = kgen.call @recursive(%1) : (index) -> index
     kgen.return %2 : index
@@ -135,7 +135,7 @@ kgen.generator @sum(%from: index, %to: index) -> index {
   %result = hlcf.loop (%acc = %idx0 : index, %i = %from : index) -> index {
     %cond = index.cmp sle(%i, %to)
     %condb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
-    hlcf.elif %condb {
+    hlcf.if %condb {
       hlcf.yield
     } else {
       hlcf.break %acc : index
@@ -159,7 +159,7 @@ kgen.generator @call_it() {
 kgen.generator @early_return(%cond: i1) -> index {
   %idx0 = index.constant 0
   %condb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
-  %result = hlcf.elif %condb -> index {
+  %result = hlcf.if %condb -> index {
     hlcf.yield %idx0 : index
   } else {
     %idx1 = index.constant 1
@@ -385,7 +385,7 @@ kgen.generator @elif(%arg0: index, %arg1: index) -> index {
   %idx2 = index.constant 2
   %cond0 = index.cmp eq(%arg0, %idx0)
   %cond0b = pop.cast_from_builtin %cond0 : i1 to !kgen.scalar<bool>
-  %0 = hlcf.elif %cond0b -> index {
+  %0 = hlcf.if %cond0b -> index {
     hlcf.yield %idx0 : index
   } else {
     %cond1 = index.cmp eq(%arg0, %idx1)
@@ -424,7 +424,7 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   %2 = index.add %arg0, %idx1
   %3 = index.cmp eq(%2, %idx3)
   %c3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
-  %0:2 = hlcf.elif %c3 -> index, index {
+  %0:2 = hlcf.if %c3 -> index, index {
     hlcf.yield %2, %2 : index, index
   } else {
     hlcf.yield %idx1, %idx1 : index, index
@@ -440,7 +440,7 @@ kgen.func @elifManyRegionsWithArgs(%arg0: index) -> index {
   %2 = index.add %arg0, %idx1
   %3 = index.cmp eq(%2, %idx3)
   %c3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
-  %0:2 = hlcf.elif %c3 -> index, index {
+  %0:2 = hlcf.if %c3 -> index, index {
     hlcf.yield %2, %2 : index, index
   } else {
     %4 = index.cmp eq(%arg0, %idx4)

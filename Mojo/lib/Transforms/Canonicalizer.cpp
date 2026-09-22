@@ -57,10 +57,10 @@ namespace {
 
 /// Canonicalize elifs with no bodies an N results to N selects. This also
 /// removes trivially dead elifs.
-struct EmptyIfToSelect : public OpRewritePattern<HLCF::ElifOp> {
+struct EmptyIfToSelect : public OpRewritePattern<HLCF::IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HLCF::ElifOp op,
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &b) const override {
     // TODO: Generalize to multi-arm elif (empty arms yielding values).
     if (!op.getElifRegions().empty())
@@ -88,10 +88,10 @@ struct EmptyIfToSelect : public OpRewritePattern<HLCF::ElifOp> {
 /// Canonicalize elifs with a single operation in either then or else blocks
 /// into a select of the yields. The canonicalization hoists out the
 /// operation(s) therefore they're performed unconditionally.
-struct IfToSelect : public OpRewritePattern<HLCF::ElifOp> {
+struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HLCF::ElifOp op,
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &rewriter) const override {
     // TODO: Generalize to multi-arm elif (nested selects of single-op arms).
     if (!op.getElifRegions().empty())
@@ -155,10 +155,10 @@ struct IfToSelect : public OpRewritePattern<HLCF::ElifOp> {
   }
 };
 
-struct IfYieldSelect : public OpRewritePattern<HLCF::ElifOp> {
+struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HLCF::ElifOp op,
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &b) const override {
     // TODO: Generalize to multi-arm elif (nested selects of dominating yields).
     if (!op.getElifRegions().empty())
@@ -430,11 +430,11 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
 /// Given an elif, the condition argument is known to be true within the 'then'
 /// region and false in the 'else' region. Propagate this by replacing the
 /// condition with a constant in both regions.
-struct ConditionPropagation : OpRewritePattern<HLCF::ElifOp> {
+struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
   ConditionPropagation(MLIRContext *ctx)
       : OpRewritePattern(ctx, /*benefit=*/9) {}
 
-  LogicalResult matchAndRewrite(HLCF::ElifOp op,
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &b) const override {
     // TODO: Generalize to multi-arm elif (propagate true/false into each arm).
     if (!op.getElifRegions().empty())

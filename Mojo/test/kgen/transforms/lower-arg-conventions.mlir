@@ -164,8 +164,8 @@ kgen.func @byref_throws(
   %0 = kgen.param.constant: i1 = <?>
   %cflag = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
 
-  // CHECK: hlcf.elif %[[COND]]
-  hlcf.elif %cflag {
+  // CHECK: hlcf.if %[[COND]]
+  hlcf.if %cflag {
     %1 = kgen.param.constant: scalar<bool> = <true>
     // CHECK: [[ERR:%.*]] = pop.load %[[ERROR]]
     // CHECK-NEXT: [[RESULT:%.*]] = kgen.variant.create [[ERR]], 0
@@ -179,7 +179,7 @@ kgen.func @byref_throws(
     kgen.return %2 : !kgen.scalar<bool>
   }
 
-  // CHECK:      %[[RES:.*]] = hlcf.elif %[[COND]] -> !kgen.variant
+  // CHECK:      %[[RES:.*]] = hlcf.if %[[COND]] -> !kgen.variant
   // CHECK-NEXT:   [[ERR:%.*]] = pop.load %[[ERROR]]
   // CHECK-NEXT:   [[RESULT:%.*]] = kgen.variant.create [[ERR]], 0
   // CHECK-NEXT:   hlcf.yield [[RESULT]]
@@ -205,7 +205,7 @@ kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
 
   // CHECK: [[RES:%.*]] = kgen.call @byref_throws()
   // CHECK-NEXT: [[IS_ERR:%.*]] = kgen.variant.is [[RES]], 0
-  // CHECK-NEXT: hlcf.elif [[IS_ERR]] {
+  // CHECK-NEXT: hlcf.if [[IS_ERR]] {
   // CHECK-NEXT:   [[ERR:%.*]] = kgen.variant.get [[RES]], 0
   // CHECK-NEXT:   store [[ERR]], [[ERROR]]
   // CHECK-NEXT:   yield
@@ -222,7 +222,7 @@ kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
 
   // CHECK: [[RES:%.*]] = kgen.call_indirect %arg0()
   // CHECK-NEXT: [[IS_ERR:%.*]] = kgen.variant.is [[RES]], 0
-  // CHECK-NEXT: hlcf.elif [[IS_ERR]] {
+  // CHECK-NEXT: hlcf.if [[IS_ERR]] {
   // CHECK-NEXT:   [[ERR:%.*]] = kgen.variant.get [[RES]], 0
   // CHECK-NEXT:   store [[ERR]], [[ERROR]]
   // CHECK-NEXT:   yield
@@ -287,7 +287,7 @@ kgen.func @byref_error(
   %1 = pop.stack_allocation 1 x struct<(i16) memoryOnly>
   // CHECK-NEXT: [[R:%.*]]:2 = kgen.call_indirect %arg0(%idx0, [[VAL]])
   %2 = kgen.call_indirect %f(%idx0, %0, %1) : (index, !kgen.pointer<f16> byref_error, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> !kgen.scalar<bool>
-  // CHECK-NEXT: hlcf.elif [[R]]#0 {
+  // CHECK-NEXT: hlcf.if [[R]]#0 {
   // CHECK-NEXT:   pop.store [[R]]#1, [[ERR]]
   // CHECK-NEXT:   hlcf.yield
   // CHECK-NEXT: } else {

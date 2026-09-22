@@ -34,5 +34,5 @@ def test_assert_with_message(cond: Bool):
 
 
 # After lowering, the debug_assert call should produce conditional checks.
-# LOWER: hlcf.elif
+# LOWER: hlcf.if
 # LOWER: kgen.unreachable

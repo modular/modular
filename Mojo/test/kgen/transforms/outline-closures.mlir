@@ -146,8 +146,8 @@ kgen.generator @useAfterDef() -> index {
 kgen.generator @nested(%pred: !kgen.scalar<bool>) -> index {
   kgen.param.declare C = <15>
 
-  // CHECK: hlcf.elif
-  %if = hlcf.elif %pred -> index {
+  // CHECK: hlcf.if
+  %if = hlcf.if %pred -> index {
     %cst = index.constant 0
     // CHECK-NEXT: index.constant 0
 

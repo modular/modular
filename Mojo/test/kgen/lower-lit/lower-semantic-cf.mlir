@@ -8,8 +8,8 @@ lit.fn @my_abort() -> !kgen.never {
 lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.fn @dead_returns
   lit.fn @dead_returns(%c: !kgen.scalar<bool>, %a: i32, %b: i32) -> i32 {
-    // CHECK: hlcf.elif %c
-    hlcf.elif %c {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
       // CHECK-NEXT: kgen.return %b : i32
       lit.return %b: i32
       lit.return %a: i32 // expected-warning {{unreachable code after return statement}}
@@ -73,20 +73,20 @@ lit.file_module @FileModule {
   // CHECK-LABEL: lit.fn @break_and_continue
   lit.fn @break_and_continue(%c: !kgen.scalar<bool>) {
     // CHECK-NEXT: hlcf.loop
-    // CHECK-NEXT: hlcf.elif %c {
+    // CHECK-NEXT: hlcf.if %c {
     // CHECK-NEXT:   hlcf.yield
     // CHECK-NEXT: } else {
     // CHECK-NEXT:   hlcf.break
     // CHECK-NEXT: }
     lit.loop {
-      hlcf.elif %c {
+      hlcf.if %c {
         hlcf.yield
       } else {
         lit.loop.break.else
       }
 
-      // CHECK-NEXT: hlcf.elif %c {
-      hlcf.elif %c {
+      // CHECK-NEXT: hlcf.if %c {
+      hlcf.if %c {
         // CHECK-NEXT: hlcf.break
         lit.break
         lit.continue // expected-warning {{unreachable code after break statement}}
@@ -124,7 +124,7 @@ lit.fn @no_return() -> !kgen.none {
 lit.fn @if_true_return() -> index {
   %0 = index.constant 0
   %true = kgen.param.constant: scalar<bool> = <true>
-  hlcf.elif %true {
+  hlcf.if %true {
     lit.return %0 : index
     hlcf.yield
   } else {
@@ -138,13 +138,13 @@ lit.fn @if_true_return() -> index {
 lit.fn @while_true() -> index {
   %true = kgen.param.constant: scalar<bool> = <true>
   lit.loop {
-    hlcf.elif %true {
+    hlcf.if %true {
       hlcf.yield
     } else {
       lit.loop.break.else
     }
 
-    hlcf.elif %true {
+    hlcf.if %true {
       lit.continue
       hlcf.yield
     } else {
@@ -161,7 +161,7 @@ lit.fn @while_true() -> index {
 // CHECK-LABEL: lit.fn @if_false_raise
 lit.fn @if_false_raise() throws -> !kgen.scalar<bool> {
   %false = kgen.param.constant: scalar<bool> = <false>
-  hlcf.elif %false {
+  hlcf.if %false {
     hlcf.yield
   // CHECK: else
   } else {
@@ -178,7 +178,7 @@ lit.fn @for_else_raise() throws -> !kgen.scalar<bool> {
   lit.loop {
     %cond = "foo"() : () -> i1
     %cond_sb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
-    hlcf.elif %cond_sb {
+    hlcf.if %cond_sb {
       hlcf.yield
     } else {
       lit.loop.break.else
@@ -238,7 +238,7 @@ lit.fn @throwing_calls(
   %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
 
   // CHECK:      [[IS_ERR:%.*]] = lit.call @throwing_func
-  // CHECK-NEXT: hlcf.elif [[IS_ERR]]
+  // CHECK-NEXT: hlcf.if [[IS_ERR]]
   // CHECK-NEXT:   mark_consumed %result
   // CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
   // CHECK-NEXT:   lit.error_return [[TRUE]]
@@ -252,7 +252,7 @@ lit.fn @throwing_calls(
   // CHECK: lit.try "try0" {
   lit.try %error : !lit.ref<@Error, mut tlt> {
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
-    // CHECK-NEXT: hlcf.elif [[IS_ERR]]
+    // CHECK-NEXT: hlcf.if [[IS_ERR]]
     // CHECK-NEXT:   mark_consumed %result
     // CHECK-NEXT:   lit.try.raise "try0"
     // CHECK-NEXT: } else {
@@ -338,7 +338,7 @@ lit.fn @return_after_return() -> !kgen.none {
   // CHECK: kgen.return %none : !kgen.none
   lit.return %0 : !kgen.none
   %1 = kgen.param.constant: scalar<bool> = <true>  // expected-warning {{unreachable code after return statement}}
-  hlcf.elif %1 {
+  hlcf.if %1 {
     %2 = kgen.param.constant: none = <#kgen.none>
     lit.return %2 : !kgen.none
     hlcf.yield
@@ -351,7 +351,7 @@ lit.fn @return_after_return() -> !kgen.none {
 // CHECK-LABEL: lit.fn @if_else_return
 lit.fn @if_else_return(%cond: !kgen.scalar<bool>) -> index {
   %0 = index.constant 0
-  hlcf.elif %cond {
+  hlcf.if %cond {
     lit.return %0 : index
     hlcf.yield
   } else {
@@ -368,7 +368,7 @@ lit.fn @if_else_raise[mut elt, mut lt](%cond: !kgen.scalar<bool>,
     %result[*""]: !lit.ref<none, mut lt> byref_result
 ) throws -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: scalar<bool> = <false>
-  hlcf.elif %cond {
+  hlcf.if %cond {
     lit.return %0 : !kgen.scalar<bool>
     hlcf.yield
   } else {
@@ -386,7 +386,7 @@ lit.fn @coroutine2() async -> index {
   %true = kgen.param.constant: scalar<bool> = <true>
 
   lit.loop  {
-    hlcf.elif %true {
+    hlcf.if %true {
       hlcf.yield
     } else {
       lit.loop.break.else
@@ -465,7 +465,7 @@ lit.fn @nested_try_inner_catch() {
     %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
     // CHECK: lit.call @throwing_func
     lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
-    // CHECK-NEXT: hlcf.elif
+    // CHECK-NEXT: hlcf.if
     // CHECK-NEXT:   lit.ownership.mark_consumed %result
     // CHECK-NEXT:   lit.try.raise
     // CHECK-NEXT: else
@@ -535,13 +535,13 @@ lit.fn @try_finally(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> (i32, 
   %true = kgen.param.constant: scalar<bool> = <true>
 
   // CHECK: hlcf.loop "_loop_0" {
-  // CHECK-NEXT: hlcf.elif %simd {
+  // CHECK-NEXT: hlcf.if %simd {
   // CHECK-NEXT:         hlcf.yield
   // CHECK-NEXT:       } else {
   // CHECK-NEXT:         kgen.unreachable
   // CHECK-NEXT:       }
   lit.loop {
-    hlcf.elif %true {
+    hlcf.if %true {
       hlcf.yield
     } else {
       lit.loop.break.else
@@ -549,8 +549,8 @@ lit.fn @try_finally(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> (i32, 
 
     // CHECK-NEXT: lit.try
     lit.try {
-      // CHECK-NEXT: hlcf.elif %arg0
-      hlcf.elif %arg0 {
+      // CHECK-NEXT: hlcf.if %arg0
+      hlcf.if %arg0 {
         // CHECK: clean.up
         // CHECK-NEXT: break
         hlcf.break
@@ -590,14 +590,14 @@ lit.fn @try_finally_return(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>
   %true = kgen.param.constant: scalar<bool> = <true>
 
   // CHECK: hlcf.loop "_loop_0" {
-  // CHECK-NEXT: hlcf.elif %simd {
+  // CHECK-NEXT: hlcf.if %simd {
   // CHECK-NEXT:         hlcf.yield
   // CHECK-NEXT:       } else {
   // CHECK-NEXT:         kgen.unreachable
   // CHECK-NEXT:       }
 
   lit.loop {
-    hlcf.elif %true {
+    hlcf.if %true {
       hlcf.yield
     } else {
       lit.loop.break.else
@@ -605,8 +605,8 @@ lit.fn @try_finally_return(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>
 
     // CHECK-NEXT: lit.try
     lit.try {
-      // CHECK-NEXT: hlcf.elif %arg2
-      hlcf.elif %arg2 {
+      // CHECK-NEXT: hlcf.if %arg2
+      hlcf.if %arg2 {
         // CHECK-NEXT: return %arg1
         hlcf.break
       // CHECK-NEXT: else
@@ -669,7 +669,7 @@ lit.fn @nested_try_finally() {
 // CHECK-LABEL: lit.fn @try_in_loop
 lit.fn @try_in_loop(%arg0: !kgen.scalar<bool>) {
   lit.loop {
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       hlcf.yield
     } else {
       lit.loop.break.else
@@ -711,7 +711,7 @@ lit.fn @recurse(%x: !kgen.scalar<index>) -> !kgen.scalar<index> {
 lit.fn @coroutine_await(%arg0: !kgen.scalar<bool>) {
   // CHECK-NEXT: co.suspend
   co.suspend (%hdl0) {
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       // CHECK: kgen.return
       lit.return
       hlcf.yield
@@ -729,26 +729,26 @@ lit.fn @coroutine_await(%arg0: !kgen.scalar<bool>) {
 lit.fn @loop_with_else(%arg0: !kgen.scalar<bool>) {
   // CHECK: hlcf.loop "_loop_0"
   lit.loop {
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       hlcf.yield
     } else {
       lit.loop.break.else
     }
 
     lit.loop {
-      hlcf.elif %arg0 {
+      hlcf.if %arg0 {
         hlcf.yield
       } else {
         lit.loop.break.else
       }
 
-      // CHECK: hlcf.elif %arg0 {
+      // CHECK: hlcf.if %arg0 {
       // CHECK-NEXT:   hlcf.yield
       // CHECK-NEXT: } else {
       // CHECK-NEXT:   hlcf.break
       // CHECK-NEXT: }
       // CHECK-NEXT: hlcf.loop "_loop_1" {
-      // CHECK-NEXT:   hlcf.elif %arg0 {
+      // CHECK-NEXT:   hlcf.if %arg0 {
       // CHECK-NEXT:     hlcf.yield
       // CHECK-NEXT:   } else {
       // CHECK-NEXT:     hlcf.continue "_loop_0"
@@ -784,7 +784,7 @@ lit.trait.decl @Trait {
 // Checking the loop body clobbered the "can raise" flag for the try block.
 lit.fn @loop_with_cond_raise(%cond: !kgen.scalar<bool>) {
   lit.try {
-    hlcf.elif %cond {
+    hlcf.if %cond {
       lit.raise
       hlcf.yield
     } else {
@@ -792,13 +792,13 @@ lit.fn @loop_with_cond_raise(%cond: !kgen.scalar<bool>) {
     }
 
     lit.loop {
-      hlcf.elif %cond {
+      hlcf.if %cond {
         hlcf.yield
       } else {
         hlcf.break
       }
 
-      hlcf.elif %cond {
+      hlcf.if %cond {
         hlcf.yield
       } else {
         hlcf.break
@@ -835,7 +835,7 @@ lit.fn @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
   %0 = lit.call @self_recursive_arg(%a, %cond) : !lit.generator<("a": index, "cond": i1) -> !kgen.none>
   %cond_sb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
-  hlcf.elif %cond_sb {
+  hlcf.if %cond_sb {
     %4 = kgen.param.constant: index = <1>
     %5 = index.sub %a, %4
     // No warning.
@@ -882,7 +882,7 @@ lit.fn @self_recursive_arg_diff(%a: index) -> !kgen.none {
 // CHECK-NEXT: %idx2 = index.constant 2
 // CHECK-NEXT: [[V1:%*.]] = index.cmp eq(%arg0, %idx0)
 // CHECK-NEXT: [[V1SB:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
-// CHECK-NEXT: [[V0:%.*]] = hlcf.elif [[V1SB]] -> index {
+// CHECK-NEXT: [[V0:%.*]] = hlcf.if [[V1SB]] -> index {
 // CHECK-NEXT:   hlcf.yield %arg0 : index
 // CHECK-NEXT: } else {
 // CHECK-NEXT: [[V2:%*.]] = index.cmp eq(%arg0, %idx1)
@@ -901,7 +901,7 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx2 = index.constant 2
   %c0 = index.cmp eq(%arg0, %idx0)
   %c0_sb = pop.cast_from_builtin %c0 : i1 to !kgen.scalar<bool>
-  %0 = hlcf.elif %c0_sb -> index {
+  %0 = hlcf.if %c0_sb -> index {
     hlcf.yield %arg0 : index
   } else {
     %c = index.cmp eq(%arg0, %idx1)
@@ -924,7 +924,7 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
 // CHECK-NEXT: %idx2 = index.constant 2
 // CHECK-NEXT: [[V1:%*.]] = index.cmp eq(%arg0, %idx0)
 // CHECK-NEXT: [[V1SB:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
-// CHECK-NEXT: [[V0:%.*]] = hlcf.elif [[V1SB]] -> index {
+// CHECK-NEXT: [[V0:%.*]] = hlcf.if [[V1SB]] -> index {
 // CHECK-NEXT:   hlcf.yield %arg0 : index
 // CHECK-NEXT: } else {
 // CHECK-NEXT:   %simd = kgen.param.constant: scalar<bool> = <true>
@@ -942,7 +942,7 @@ lit.fn @elif_2(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx2 = index.constant 2
   %c0 = index.cmp eq(%arg0, %idx0)
   %c0_sb = pop.cast_from_builtin %c0 : i1 to !kgen.scalar<bool>
-  %0 = hlcf.elif %c0_sb -> index {
+  %0 = hlcf.if %c0_sb -> index {
     hlcf.yield %arg0 : index
   } else {
     %simd = kgen.param.constant: scalar<bool> = <true>
@@ -964,8 +964,8 @@ lit.fn @elif_2(%arg0: index, %arg1: index, %arg2: index) -> index {
 // CHECK-LABEL: lit.fn @mangle_params_finally_1
 lit.fn @mangle_params_finally_1<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
   lit.try {
-    // CHECK: hlcf.elif %c
-    hlcf.elif %c {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
       %none_0 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
       // CHECK-NEXT: kgen.return
@@ -999,8 +999,8 @@ lit.fn @mangle_params_finally_1<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
 // CHECK-LABEL: lit.fn @mangle_params_finally_2
 lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
   lit.try {
-    // CHECK: hlcf.elif %c
-    hlcf.elif %c {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
       %none_1 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
       // CHECK-NEXT: kgen.return
@@ -1010,8 +1010,8 @@ lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
       hlcf.yield
     }
 
-    // CHECK: hlcf.elif %c
-    hlcf.elif %c {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
       %none_1 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`f0"
       // CHECK-NEXT: kgen.return
@@ -1058,8 +1058,8 @@ lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
       lit.return %none_0 : !kgen.none
       lit.end_fn
     }
-    // CHECK: hlcf.elif
-    hlcf.elif %c {
+    // CHECK: hlcf.if
+    hlcf.if %c {
       %none_0 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
       // CHECK: kgen.return
@@ -1089,7 +1089,7 @@ lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
 
 // CHECK-LABEL: lit.fn @containsEarlyReturn
 lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
-  // CHECK: hlcf.elif %arg {
+  // CHECK: hlcf.if %arg {
   // CHECK:     %none = kgen.param.constant: none = <#kgen.none>
   // CHECK:     kgen.return %none : !kgen.none
   // CHECK:   } else {
@@ -1097,7 +1097,7 @@ lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
   // CHECK:     kgen.return %none : !kgen.none
   // CHECK:   }
   // CHECK:   kgen.unreachable
-  hlcf.elif %arg {
+  hlcf.if %arg {
     %none_0 = kgen.param.constant: none = <#kgen.none>
     lit.return %none_0 : !kgen.none
     hlcf.yield
@@ -1117,7 +1117,7 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
 // CHECK-NEXT: kgen.param.if <cond1> {
 // CHECK-NEXT:   kgen.return %rhs : index
 // CHECK-NEXT:  } else {
-// CHECK-NEXT:  hlcf.elif %cond2 {
+// CHECK-NEXT:  hlcf.if %cond2 {
 // CHECK-NEXT:    hlcf.yield
 // CHECK-NEXT:  } else {
 // CHECK-NEXT:    hlcf.yield
@@ -1136,7 +1136,7 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
      lit.return %rhs : index
      kgen.param.yield
    } else {
-     hlcf.elif %cond2 {
+     hlcf.if %cond2 {
        hlcf.yield
      } else {
        hlcf.yield
@@ -1158,24 +1158,24 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
 
   // CHECK:  index.cmp eq(%arg0, %idx0)
   // CHECK-NEXT: pop.cast_from_builtin
-  // CHECK-NEXT: hlcf.elif {{%.*}} -> index {
+  // CHECK-NEXT: hlcf.if {{%.*}} -> index {
   %c0 = index.cmp eq(%arg0, %idx0)
   %c0_sb = pop.cast_from_builtin %c0 : i1 to !kgen.scalar<bool>
-  %0 = hlcf.elif %c0_sb -> index {
+  %0 = hlcf.if %c0_sb -> index {
     hlcf.yield %arg0 : index
   } else {
     hlcf.yield %arg1 : index
   }
   // CHECK:  index.cmp eq(%arg0, %idx1)
   // CHECK-NEXT:   pop.cast_from_builtin
-  // CHECK-NEXT: hlcf.elif {{%.*}} {
+  // CHECK-NEXT: hlcf.if {{%.*}} {
   // CHECK-NEXT:   kgen.return %arg0 : index
   // CHECK-NEXT: } else {
   // CHECK-NEXT:   kgen.return %arg1 : index
   // CHECK-NEXT: }
   %c1 = index.cmp eq(%arg0, %idx1)
   %c1_sb = pop.cast_from_builtin %c1 : i1 to !kgen.scalar<bool>
-  hlcf.elif %c1_sb {
+  hlcf.if %c1_sb {
     lit.return %arg0 : index
     hlcf.yield
   } else {
@@ -1194,7 +1194,7 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
     %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
     %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
     // CHECK: lit.call @throwing_func
-    // CHECK: hlcf.elif
+    // CHECK: hlcf.if
     // CHECK:   lit.error_return
     // CHECK: else
     // CHECK:   hlcf.yield
@@ -1228,7 +1228,7 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
 // Derived from MOCO-1475
 lit.fn @crashing_try_warning(%cond: !kgen.scalar<bool>) -> !kgen.none {
   lit.loop {
-    hlcf.elif %cond {
+    hlcf.if %cond {
       hlcf.yield
     } else {
       lit.loop.break.else
@@ -1253,7 +1253,7 @@ lit.fn @crashing_try_warning(%cond: !kgen.scalar<bool>) -> !kgen.none {
 
 // Derived from MOCO-2119.
 // We had some weirdness where the outer kgen.param.if was incorrectly using
-// the hlcf.elif's doesFallThrough as its own doesFallThrough, and then that was
+// the hlcf.if's doesFallThrough as its own doesFallThrough, and then that was
 // causing it to not replace the lit.end_fn with a kgen.unreachable.
 lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
   kgen.param.if <parambool> {
@@ -1261,7 +1261,7 @@ lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
     kgen.param.yield
   } else {
     %runbool_sb = pop.cast_from_builtin %runbool : i1 to !kgen.scalar<bool>
-    hlcf.elif %runbool_sb {
+    hlcf.if %runbool_sb {
       hlcf.yield
     } else {
       hlcf.yield
@@ -1302,8 +1302,8 @@ lit.fn @dead_code_after_param_assert_false<cond: i1>() -> !kgen.none {
 lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
   // CHECK: hlcf.match
   hlcf.match {
-    // CHECK: hlcf.elif %c
-    hlcf.elif %c {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
       // CHECK: hlcf.match.complete
       hlcf.match.complete
     } else {
@@ -1314,8 +1314,8 @@ lit.fn @match_pass_through(%c: !kgen.scalar<bool>, %a: i32) -> i32 {
   }
   case {
     // Second case can match.next, so the else remains reachable.
-    // CHECK: hlcf.elif %c
-    hlcf.elif %c {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
       // CHECK: hlcf.match.complete
       hlcf.match.complete
     } else {

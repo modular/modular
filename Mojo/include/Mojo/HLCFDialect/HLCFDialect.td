@@ -50,7 +50,7 @@ def HLCFDialect : Dialect {
       "foo.region"() ({
 
         // Both regions of this if operation are roots of control-flow trees.
-        hlcf.elif %arg1 {
+        hlcf.if %arg1 {
 
           // The body of this loop is a leaf of the current tree.
           hlcf.loop {
@@ -58,7 +58,7 @@ def HLCFDialect : Dialect {
           }
 
           // Both regions of this if operation are leaves of the current tree.
-          hlcf.elif %arg1 {
+          hlcf.if %arg1 {
             hlcf.yield
           } else {
             hlcf.yield
@@ -78,7 +78,7 @@ def HLCFDialect : Dialect {
 
     In this code snippet, there are three control-flow trees, one rooted at the
     body top-level `hlcf.loop` and two rooted at the regions of the first
-    `hlcf.elif`. These two trees are completely isolated with respect to
+    `hlcf.if`. These two trees are completely isolated with respect to
     control-flow.
 
     Control-flow is validated from the top of each tree. For example, the
@@ -87,7 +87,7 @@ def HLCFDialect : Dialect {
     ```mlir
     hlcf.loop {
       "foo.region"() ({
-        hlcf.elif %arg0 {
+        hlcf.if %arg0 {
           // No surrounding loop scope.
           hlcf.break
         } else {
@@ -100,7 +100,7 @@ def HLCFDialect : Dialect {
     ```
 
     The nested `hlcf.break` terminator has no surrounding loop scope because it
-    is contained in a tree rooted at `hlcf.elif`.
+    is contained in a tree rooted at `hlcf.if`.
 
     There is special logic for functions, specifically operations that implement
     `FunctionOpInterface`. HLCF regions nested directly underneath a function
@@ -111,7 +111,7 @@ def HLCFDialect : Dialect {
     ```mlir
     func.func @some_function(%arg0: i1) {
       hlcf.loop {
-        hlcf.elif %arg0 {
+        hlcf.if %arg0 {
           // Valid return. Current region is a child of a tree rooted at a
           // function operation.
           hlcf.return
@@ -119,7 +119,7 @@ def HLCFDialect : Dialect {
           hlcf.yield
         }
         "foo.region"() ({
-          hlcf.elif %arg0 {
+          hlcf.if %arg0 {
             // Invalid return. Current region is not the child of a tree rooted
             // at a function operation.
             hlcf.return

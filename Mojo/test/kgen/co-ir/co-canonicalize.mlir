@@ -84,7 +84,7 @@ kgen.func @await_execute(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.poin
     %idx1 = index.constant 1
     pop.store %idx0, %arg2 : !kgen.pointer<index>
     %c2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
-    hlcf.elif %c2 {
+    hlcf.if %c2 {
       kgen.return %idx1, %idx0 : index, index
     } else {
       hlcf.yield

@@ -28,7 +28,7 @@ lit.fn @bad_continue() {
 lit.fn @bad_break_2(%arg0: !kgen.scalar<bool>) {
   // CHECK: hlcf.loop "_loop_0"
   lit.loop {
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       hlcf.yield
     } else {
       lit.loop.break.else

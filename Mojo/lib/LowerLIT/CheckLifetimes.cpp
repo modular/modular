@@ -2158,7 +2158,7 @@ private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
-  void checkElIfOp(HLCF::ElifOp op);
+  void checkIfOp(HLCF::IfOp op);
   void checkMatchOp(HLCF::MatchOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -3065,13 +3065,13 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
-    case OverallOpValueEffect::elifOp: {
-      auto elifOp = cast<HLCF::ElifOp>(op);
+    case OverallOpValueEffect::ifOp: {
+      auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as ParamIfOp.
-      if (elifOp.getElifRegions().empty())
+      if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op);
       else
-        checkElIfOp(elifOp);
+        checkIfOp(ifOp);
       break;
     }
     case OverallOpValueEffect::matchOp:
@@ -3209,11 +3209,11 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is ParamIfOp, or a simple (no extra arms) HLCF::ElifOp.
+/// This is ParamIfOp, or a simple (no extra arms) HLCF::IfOp.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
-  assert((isa<ParamIfOp, HLCF::ElifOp>(op)));
+  assert((isa<ParamIfOp, HLCF::IfOp>(op)));
   assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
          op.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
@@ -3225,8 +3225,8 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   liveness.mergeWith(livenessCopy, valueSet.domInfo);
 }
 
-// This is used for the HLCF::ElifOp.
-void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
+// This is used for the HLCF::IfOp.
+void UninitializedValueScan::checkIfOp(HLCF::IfOp op) {
   // Region layout: thenRegion, elseRegion, then additional (cond, then) pairs
   // in elifRegions. Live-out is the intersection of all then arms and else.
   auto thenLiveOutValues =
@@ -4267,7 +4267,7 @@ private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op, SmallVector<ResultEffect> &resultEffects);
-  void checkElIfOp(HLCF::ElifOp op, SmallVector<ResultEffect> &resultEffects);
+  void checkIfOp(HLCF::IfOp op, SmallVector<ResultEffect> &resultEffects);
   void checkMatchOp(HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -4429,14 +4429,14 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op, opEffects.results);
       break;
-    case OverallOpValueEffect::elifOp: {
-      auto elifOp = cast<HLCF::ElifOp>(op);
+    case OverallOpValueEffect::ifOp: {
+      auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as ParamIfOp;
       // reuse the proven if-like destructor logic (important inside loops).
-      if (elifOp.getElifRegions().empty())
+      if (ifOp.getElifRegions().empty())
         checkIfLikeOp(op, opEffects.results);
       else
-        checkElIfOp(elifOp, opEffects.results);
+        checkIfOp(ifOp, opEffects.results);
       break;
     }
     case OverallOpValueEffect::matchOp:
@@ -4458,7 +4458,7 @@ void DestructorInsertion::scanBlock(Block &block) {
 
     assert((opEffects.results.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp ||
-            overall == OverallOpValueEffect::elifOp ||
+            overall == OverallOpValueEffect::ifOp ||
             overall == OverallOpValueEffect::matchOp) &&
            "OperationEffects::analyze returned wrong # effects");
 
@@ -4675,7 +4675,7 @@ void DestructorInsertion::checkIfLikeOp(
 
   // If there are any result effects, process them first before going into the
   // body.  This happens when the 'if' defines an owned register value, as in:
-  //   %x = hlcf.elif %cond { } else { }
+  //   %x = hlcf.if %cond { } else { }
   //   -> here.
   // If the register result isn't used, for example, we want the dtor inserted
   // below the 'if' and not propagated into the arms of the 'if'.
@@ -4730,9 +4730,9 @@ void DestructorInsertion::checkIfLikeOp(
   consumedValues = std::move(merged);
 }
 
-// This is used for the HLCF::ElifOp.
-void DestructorInsertion::checkElIfOp(
-    HLCF::ElifOp op, SmallVector<ResultEffect> &resultEffects) {
+// This is used for the HLCF::IfOp.
+void DestructorInsertion::checkIfOp(HLCF::IfOp op,
+                                    SmallVector<ResultEffect> &resultEffects) {
   // Handle owned register results of the elif the same way as if-like ops.
   if (!resultEffects.empty()) {
     ImplicitLocOpBuilder builder(op.getLoc(), op->getBlock(),

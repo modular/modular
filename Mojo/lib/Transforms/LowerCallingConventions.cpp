@@ -189,11 +189,11 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     return;
   }
 
-  // Handle `hlcf.elif`, `hlcf.loop`, `kgen.call`,
+  // Handle `hlcf.if`, `hlcf.loop`, `kgen.call`,
   // `kgen.call_indirect`, and `co.get_results`. Yields already drop none
   // operands above; result-bearing elif ops must drop matching none
   // results or CF verify sees yield/result arity mismatches.
-  if (isa<HLCF::ElifOp, HLCF::LoopOp, CallOp, CallIndirectOp, CO::GetResultsOp,
+  if (isa<HLCF::IfOp, HLCF::LoopOp, CallOp, CallIndirectOp, CO::GetResultsOp,
           CO::AwaitOp, CO::InvokeOp, CO::HotInvokeOp>(op)) {
     auto [anyNone, newResults] = removeNoneTypes(op->getResultTypes());
     // Exit early if there are no none results.

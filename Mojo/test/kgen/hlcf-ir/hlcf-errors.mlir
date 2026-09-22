@@ -31,7 +31,7 @@ kgen.func @return_mismatch_result_count(%arg0: i32) -> i64 {
 
 kgen.func @yield_mismatch(%arg0: !kgen.scalar<bool>, %arg1 : i32) {
   // expected-note @below {{to end of parent operation here}}
-  %0 = hlcf.elif %arg0 -> i64 {
+  %0 = hlcf.if %arg0 -> i64 {
     // expected-error @below {{'hlcf.yield' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
     hlcf.yield %arg1 : i32
   } else {
@@ -43,7 +43,7 @@ kgen.func @yield_mismatch(%arg0: !kgen.scalar<bool>, %arg1 : i32) {
 
 // expected-note @below {{see control-flow root here}}
 kgen.func @break_no_loop(%arg0: !kgen.scalar<bool>) {
-  hlcf.elif %arg0 {
+  hlcf.if %arg0 {
     kgen.return
   } else {
     // expected-error @below {{'hlcf.break' op is not nested within a suitable parent operation}}
@@ -89,7 +89,7 @@ kgen.func @labelled_break_mismatch(%arg0: i32) {
 
 // expected-note @below {{see control-flow root here}}
 kgen.func @match_next_no_match(%arg0: !kgen.scalar<bool>) {
-  hlcf.elif %arg0 {
+  hlcf.if %arg0 {
     kgen.return
   } else {
     // expected-error @below {{'hlcf.match.next' op is not nested within a suitable parent operation}}

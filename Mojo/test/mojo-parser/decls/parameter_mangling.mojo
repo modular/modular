@@ -53,7 +53,7 @@ def test_implicit_parameters(x: MyStruct, y: MyStruct):
 
 # CHECK-LABEL: lit.fn @"test_nested_alias_mangling_1
 def test_nested_alias_mangling_1[x: Int](c: Bool):
-    # CHECK: hlcf.elif
+    # CHECK: hlcf.if
     if c:
         # CHECK: lit.alias.decl *"y`"
         comptime y = x
@@ -67,7 +67,7 @@ def test_nested_alias_mangling_1[x: Int](c: Bool):
 
 # CHECK-LABEL: lit.fn @"test_nested_alias_mangling_2
 def test_nested_alias_mangling_2[x: Int](c: Bool):
-    # CHECK: hlcf.elif
+    # CHECK: hlcf.if
     if c:
         # CHECK: lit.alias.decl *"y`"
         comptime y = x

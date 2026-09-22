@@ -8,8 +8,8 @@ kgen.func @stack_allocation(%cond: !kgen.scalar<bool>) {
   // CHECK-NEXT: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 4 : i64}
   // CHECK-NEXT: llvm.intr.lifetime.start %[[PTR0]]
   %0 = pop.stack_allocation 16 x !kgen.simd<1, f32>
-  // CHECK: hlcf.elif
-  hlcf.elif %cond {
+  // CHECK: hlcf.if
+  hlcf.if %cond {
     // CHECK-NEXT: %[[C4:.*]] = llvm.mlir.constant(4 : i64) : i64
     // CHECK-NEXT: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32> {alignment = 16 : i64}
     // CHECK-NEXT: llvm.intr.lifetime.start %[[PTR1]]

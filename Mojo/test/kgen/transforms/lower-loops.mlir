@@ -8,7 +8,7 @@ kgen.func @induction_var_no_retvals_no_iterargs() {
   // CHECK-NEXT: hlcf.loop (%arg0 = [[IDX2]] : index) {
   // CHECK-NEXT:   [[V0:%.*]] = index.cmp sgt(%arg0, [[IDX0]])
   // CHECK-NEXT:   [[V0B:%.*]] = pop.cast_from_builtin [[V0]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:   hlcf.elif [[V0B]] {
+  // CHECK-NEXT:   hlcf.if [[V0B]] {
   // CHECK-NEXT:     hlcf.yield
   // CHECK-NEXT:   } else {
   // CHECK-NEXT:     hlcf.break
@@ -39,7 +39,7 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT: hlcf.loop (%arg0 = [[IDX2]] : index) {
   // CHECK-NEXT:   [[V0:%.*]] = index.cmp sgt(%arg0, [[IDX0]])
   // CHECK-NEXT:   [[V0B:%.*]] = pop.cast_from_builtin [[V0]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:   hlcf.elif [[V0B]] {
+  // CHECK-NEXT:   hlcf.if [[V0B]] {
   // CHECK-NEXT:     hlcf.yield
   // CHECK-NEXT:   } else {
   // CHECK-NEXT:     hlcf.break
@@ -49,7 +49,7 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT:   hlcf.loop (%arg1 = [[IDX4]] : index) {
   // CHECK-NEXT:     [[V3:%.*]] = index.cmp slt(%arg1, [[IDX8]])
   // CHECK-NEXT:     [[V3B:%.*]] = pop.cast_from_builtin [[V3]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:     hlcf.elif [[V3B]] {
+  // CHECK-NEXT:     hlcf.if [[V3B]] {
   // CHECK-NEXT:       hlcf.yield
   // CHECK-NEXT:     } else {
   // CHECK-NEXT:       hlcf.break
@@ -90,7 +90,7 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT: %0:2 = hlcf.loop (%arg0 = [[IDX1]] : index, %arg1 = [[IDX0]] : index, %arg2 = [[IDX0]] : index) -> (index, index) {
   // CHECK-NEXT:   [[V1:%.*]] = index.cmp slt(%arg0, [[IDX9]])
   // CHECK-NEXT:   [[V1B:%.*]] = pop.cast_from_builtin [[V1]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:   hlcf.elif [[V1B]] {
+  // CHECK-NEXT:   hlcf.if [[V1B]] {
   // CHECK-NEXT:     hlcf.yield
   // CHECK-NEXT:   } else {
   // CHECK-NEXT:     hlcf.break %arg1, %arg2 : index, index
@@ -100,7 +100,7 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT:   [[V3:%.*]] = hlcf.loop (%arg3 = [[IDX4]] : index, %arg4 = %arg2 : index) -> index {
   // CHECK-NEXT:     [[V4:%.*]] = index.cmp slt(%arg3, [[IDX8]])
   // CHECK-NEXT:     [[V4B:%.*]] = pop.cast_from_builtin [[V4]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:     hlcf.elif [[V4B]] {
+  // CHECK-NEXT:     hlcf.if [[V4B]] {
   // CHECK-NEXT:       hlcf.yield
   // CHECK-NEXT:     } else {
   // CHECK-NEXT:       hlcf.break %arg4 : index
@@ -144,7 +144,7 @@ kgen.func @loop_carried_dependency() {
    // CHECK-NEXT: hlcf.loop (%arg0 = [[IDX0]] : index) {
    // CHECK-NEXT:   [[V0:%.*]] = index.cmp sle(%arg0, [[IDX3]])
    // CHECK-NEXT:   [[V0B:%.*]] = pop.cast_from_builtin [[V0]] : i1 to !kgen.scalar<bool>
-   // CHECK-NEXT:   hlcf.elif [[V0B]] {
+   // CHECK-NEXT:   hlcf.if [[V0B]] {
    // CHECK-NEXT:     hlcf.yield
    // CHECK-NEXT:   } else {
    // CHECK-NEXT:     hlcf.break
@@ -191,7 +191,7 @@ kgen.func @pop_scalar_si64_bounds(%lb: !kgen.scalar<si64>, %ub: !kgen.scalar<si6
   // CHECK-NEXT:   [[I1:%.*]] = pop.cast_to_builtin [[C1]] : !kgen.scalar<index> to index
   // CHECK-NEXT:   [[CMP:%.*]] = index.cmp slt([[I0]], [[I1]])
   // CHECK-NEXT:   [[CMPB:%.*]] = pop.cast_from_builtin [[CMP]] : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT:   hlcf.elif [[CMPB]] {
+  // CHECK-NEXT:   hlcf.if [[CMPB]] {
   // CHECK-NEXT:     hlcf.yield
   // CHECK-NEXT:   } else {
   // CHECK-NEXT:     hlcf.break

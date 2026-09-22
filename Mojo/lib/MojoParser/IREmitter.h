@@ -250,7 +250,7 @@ public:
   /// it. Otherwise return null.
   static RefType getCommonRefType(RefType ref1, RefType ref2);
 
-  /// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::ElifOp` or
+  /// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::IfOp` or
   /// `ParamIfOp`) whose then/else regions already contain the branch
   /// computations. Produces a single value into `dest` by:
   ///   1. yielding a unioned MValue when both sides are dominating refs,

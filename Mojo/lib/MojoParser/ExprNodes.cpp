@@ -4041,8 +4041,8 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
   if (!lhsI1SRValue)
     return {};
 
-  auto ifOp = HLCF::ElifOp::create(*emitter.builder, ifLoc,
-                                   TypeRange{lhsV.getType()}, lhsI1SRValue);
+  auto ifOp = HLCF::IfOp::create(*emitter.builder, ifLoc,
+                                 TypeRange{lhsV.getType()}, lhsI1SRValue);
   emitter.builder->createBlock(&ifOp.getThenRegion());
   emitter.builder->createBlock(&ifOp.getElseRegion());
 
@@ -4161,10 +4161,10 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
   HLCF::YieldOp::create(*emitter.builder, ifLoc);
 
   // MemoryOnly results don't need the 'elif' result.  There is no way to remove
-  // results after creating it, so we create a new ElifOp and move IR over.
+  // results after creating it, so we create a new IfOp and move IR over.
   emitter.builder->setInsertionPointAfter(ifOp);
   auto newIfOp =
-      HLCF::ElifOp::create(*emitter.builder, ifLoc, TypeRange{}, lhsI1SRValue);
+      HLCF::IfOp::create(*emitter.builder, ifLoc, TypeRange{}, lhsI1SRValue);
   deadCodeCheck();
   newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
@@ -4468,7 +4468,7 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   }
 
   // If the condition is a comptime PValue, emit kgen.param.if instead of
-  // hlcf.elif. During elaboration, processParamIfOp selects and inlines only
+  // hlcf.if. During elaboration, processParamIfOp selects and inlines only
   // the live branch, preventing dead-branch ops (e.g. `comptime assert False`)
   // from ever being elaborated.
   if (PValue condPVal = condRVal.getIfPValue()) {
@@ -4484,7 +4484,7 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     // Create with a placeholder result (the condition's i1 type); the real
     // result type is fixed after emitting both branches. For the memory-only
     // path the op is recreated without a result at the end (same pattern as
-    // the hlcf.elif memory-only path below).
+    // the hlcf.if memory-only path below).
     auto paramIfOp =
         ParamIfOp::create(*emitter.builder, ifLoc,
                           TypeRange{condPVal.get().getType()}, condPVal.get());
@@ -4523,8 +4523,8 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 
   // At this point since we don't know the type of trueExpr / falseExpr, use a
   // dummy type for the 'elif' result.  We'll fix it later.
-  auto ifOp = HLCF::ElifOp::create(*emitter.builder, ifLoc,
-                                   TypeRange{condValue.getType()}, condValue);
+  auto ifOp = HLCF::IfOp::create(*emitter.builder, ifLoc,
+                                 TypeRange{condValue.getType()}, condValue);
 
   // Emit the trueVal and falseVal's, coercing any UValue to the other operand
   // type if present, but otherwise not diagnosing conflicts or merging types
@@ -4578,18 +4578,17 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
   if (!prevCmpI1Value)
     return {};
   SRValue prevCmpI1SRValue;
-  HLCF::ElifOp ifOp;
+  HLCF::IfOp ifOp;
   if (emitter.builder) {
     prevCmpI1SRValue =
         emitter.emitSRValue({prevCmpI1Value, this}, EC_BoolCondition);
     if (!prevCmpI1SRValue)
       return {};
     // In the dynamic case we need to build the RHS evaluation in the Then
-    // region of an ElifOp.  But if we end up having all parameters, it will not
+    // region of an IfOp.  But if we end up having all parameters, it will not
     // have been necessary.
-    ifOp =
-        HLCF::ElifOp::create(*emitter.builder, ifLocation,
-                             prevCmpVal.getType().mlirType, prevCmpI1SRValue);
+    ifOp = HLCF::IfOp::create(*emitter.builder, ifLocation,
+                              prevCmpVal.getType().mlirType, prevCmpI1SRValue);
     emitter.builder->createBlock(&ifOp.getThenRegion());
   }
   AnyValue newRHS = emitter.emitExpr(exprs[opIdx + 1], EC_OperatorOperandValue);
@@ -4631,7 +4630,7 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
     return ret;
   }
 
-  // We need to return the result of the ElifOp as a RValue.
+  // We need to return the result of the IfOp as a RValue.
   // More concretely, it will be an SRValue or, for exotic memory-only bool
   // equivalents, one of the pointer type RValues.
   // But for simplicity, let's only support return values that can fit in an

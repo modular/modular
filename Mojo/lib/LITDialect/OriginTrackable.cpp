@@ -144,7 +144,7 @@ OriginTrackable::OriginTrackable(Value v) {
     }
 
     // The results of an if/elif operation can be owned.
-    if (isa<HLCF::ElifOp, ParamIfOp>(res.getOwner())) {
+    if (isa<HLCF::IfOp, ParamIfOp>(res.getOwner())) {
       name = StringAttr::get(v.getContext(), "(if result)");
       isIndirect = false;
       startsUninit = true;
@@ -600,7 +600,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return OverallOpValueEffect::localControlFlowOp;
   }
 
-  // If-like operations (comptime if). Runtime if/else is HLCF::ElifOp below.
+  // If-like operations (comptime if). Runtime if/else is HLCF::IfOp below.
   if (isa<ParamIfOp>(op)) {
     // If-like ops can return owned results.
     for (auto opResult : op.getResults()) {
@@ -612,7 +612,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return OverallOpValueEffect::ifLikeOp;
   }
 
-  if (isa<HLCF::ElifOp>(op)) {
+  if (isa<HLCF::IfOp>(op)) {
     // If-like ops can return owned results.
     for (auto opResult : op.getResults()) {
       auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
@@ -620,7 +620,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
                               : ResultEffect::regDefine;
       results.push_back(resultEffect);
     }
-    return OverallOpValueEffect::elifOp;
+    return OverallOpValueEffect::ifOp;
   }
 
   if (isa<HLCF::MatchOp>(op)) {

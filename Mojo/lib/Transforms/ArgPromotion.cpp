@@ -116,7 +116,7 @@ struct UseIterator : public ProjectionUseIterator<UseIterator> {
       assert(op->getNumResults() == 1);
       return op->getResult(0);
     }
-    // TODO: We could also project through `hlcf.yield` to `hlcf.elif`, etc.
+    // TODO: We could also project through `hlcf.yield` to `hlcf.if`, etc.
     return {};
   }
 };

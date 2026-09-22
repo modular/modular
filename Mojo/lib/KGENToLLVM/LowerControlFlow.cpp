@@ -128,7 +128,7 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
 
   b.setInsertionPointToEnd(before);
   // Replace the operation.
-  if (auto elif = dyn_cast<ElifOp>(node.getOperation())) {
+  if (auto elif = dyn_cast<IfOp>(node.getOperation())) {
     // Multi-arm elif is expanded to nested 2-arm elifs before this pass.
     if (elif.getNumRegions() != 2)
       return elif.emitOpError("expected 2-region elif for LLVM lowering");

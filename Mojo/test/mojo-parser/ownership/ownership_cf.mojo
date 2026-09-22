@@ -73,7 +73,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: lifetime.end %_b
     var _b = MemExample()
 
-    # CHECK: hlcf.elif %cond {
+    # CHECK: hlcf.if %cond {
     if cond:
         # CHECK-NEXT: lifetime.start %_a
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%_a)
@@ -95,7 +95,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: lifetime.start %c
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%c)
     var c = MemExample()
-    # CHECK: hlcf.elif %cond {
+    # CHECK: hlcf.if %cond {
     if cond:
         # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%c)
         # CHECK-NEXT: lifetime.end %c
@@ -120,7 +120,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     var d = MemExample()
 
     # CHECK: [[ONE:%.+]] = kgen.param.constant: scalar<bool> = <true>
-    # CHECK-NEXT: hlcf.elif [[ONE]] {
+    # CHECK-NEXT: hlcf.if [[ONE]] {
     # expected-warning @below {{'if' condition always evaluates to 'True'; 'else' branch is unreachable}}
     if True:
         # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
@@ -237,7 +237,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
     # CHECK-NEXT: lit.try "{{.*}}" {
     try:
-        # CHECK-NEXT:  hlcf.elif %cond {
+        # CHECK-NEXT:  hlcf.if %cond {
         if cond:
             raise Error()
         # CHECK-NOT: %d
@@ -270,7 +270,7 @@ def chris_origin_example(a: Bool, b: Bool):
     try:
         # CHECK: lit.try
         try:
-            # CHECK: hlcf.elif
+            # CHECK: hlcf.if
             if a:
                 # CHECK: __init__{{.*}}(%x)
                 x = MemExample()
@@ -279,13 +279,13 @@ def chris_origin_example(a: Bool, b: Bool):
                 raise Error()
         # CHECK: except
         # CHECK: lit.call {{.*}}__mlir_bool__
-        # CHECK-NEXT: hlcf.elif %{{.*}} {
+        # CHECK-NEXT: hlcf.if %{{.*}} {
         # CHECK-NEXT: __deinit__{{.*}}(%x)
         # CHECK: return
         # CHECK: else
         # CHECK: lit.try.raise
         # CHECK: else
-        # CHECK: hlcf.elif
+        # CHECK: hlcf.if
         # CHECK: return
         # CHECK: else
         finally:
@@ -317,7 +317,7 @@ def loop_example(cond1: __mlir_type.`!kgen.scalar<bool>`, cond2: __mlir_type.`!k
     # Unneeded boilerplate due to 'while True':
     # CHECK-NEXT: hlcf.loop "_loop_0" {
     # CHECK-NEXT:  = kgen.param.constant: scalar<bool> = <true>
-    # CHECK-NEXT:      hlcf.elif
+    # CHECK-NEXT:      hlcf.if
     # CHECK-NEXT:        hlcf.yield
     # CHECK-NEXT:      } else {
     # CHECK-NEXT:        kgen.unreachable
@@ -326,7 +326,7 @@ def loop_example(cond1: __mlir_type.`!kgen.scalar<bool>`, cond2: __mlir_type.`!k
         # CHECK-NEXT: lifetime.start %c
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%c)
         c = MemExample()
-        # CHECK-NEXT: hlcf.elif %cond2 {
+        # CHECK-NEXT: hlcf.if %cond2 {
         if cond2:
             # CHECK-NEXT: lifetime.start %b
             # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%b)
@@ -379,7 +379,7 @@ struct TestLoopWithWholeObjectBit(Movable where False):
         var buf = MemExample()
 
         # CHECK-NEXT: hlcf.loop "_loop_0" {
-        # CHECK-NEXT:   hlcf.elif %cond {
+        # CHECK-NEXT:   hlcf.if %cond {
         # CHECK-NEXT:     hlcf.yield
         # CHECK-NEXT:   } else {
         # CHECK-NEXT:     hlcf.break
@@ -404,7 +404,7 @@ struct TestLoopWithWholeObjectBit(Movable where False):
 def testInfiniteloop():
     # CHECK-NEXT:  hlcf.loop "_loop_0" {
     # CHECK-NEXT:    [[T:%.+]] = kgen.param.constant: scalar<bool> = <true>
-    # CHECK-NEXT:    hlcf.elif [[T]] {
+    # CHECK-NEXT:    hlcf.if [[T]] {
     # CHECK-NEXT:      hlcf.yield
     # CHECK-NEXT:    } else {
     # CHECK-NEXT:      kgen.unreachable
@@ -500,7 +500,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
         marker()
 
         # CHECK-NEXT: lit.call {{.*}}__mlir_bool__
-        # CHECK-NEXT: hlcf.elif %{{.*}} {
+        # CHECK-NEXT: hlcf.if %{{.*}} {
         if cond:
             # CHECK: lit.call {{.*}}__deinit__{{.*}}(%mem)
             # CHECK-NEXT: lifetime.end %mem
@@ -509,7 +509,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
             # CHECK-NEXT: kgen.param.for.break
             break
 
-        # CHECK: hlcf.elif %{{.*}} {
+        # CHECK: hlcf.if %{{.*}} {
         if cond2:
             # CHECK: lit.call {{.*}}__deinit__{{.*}}(%mem)
             # CHECK-NEXT: lifetime.end %mem
@@ -582,7 +582,7 @@ def test_elif(cond: Bool, cond2: Bool):
     var mem3 = MemExample()
 
     # CHECK:  __mlir_bool__
-    # CHECK-NEXT: hlcf.elif %{{.*}} {
+    # CHECK-NEXT: hlcf.if %{{.*}} {
     if cond:
         # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem3)
         # CHECK-NEXT: lifetime.end %mem3
@@ -650,7 +650,7 @@ def loop_any_origin(var mem: MemExample, cond: Bool):
     # there is an access through AnyOrigin within the loop.
     # CHECK: hlcf.loop
     # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_bool__
-    # CHECK-NEXT:     hlcf.elif
+    # CHECK-NEXT:     hlcf.if
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     } else {
     # CHECK-NEXT:       lit.call {{.*}}MemExample::@"__deinit__

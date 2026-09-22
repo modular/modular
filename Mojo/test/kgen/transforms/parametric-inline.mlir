@@ -13,7 +13,7 @@ kgen.generator @parent() {
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee() -> index always_inline {
   %cond = "some.cond"() : () -> !kgen.scalar<bool>
-  hlcf.elif %cond {
+  hlcf.if %cond {
     %0 = index.constant 1
     kgen.return %0 : index
   } else {
@@ -42,7 +42,7 @@ kgen.generator @parent<A>() {
 kgen.generator @callee<T: type>() -> !kgen.param<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.param<T>
   %cond = "some.cond"() : () -> !kgen.scalar<bool>
-  hlcf.elif %cond {
+  hlcf.if %cond {
     kgen.return %0 : !kgen.param<T>
   } else {
     hlcf.yield
@@ -504,9 +504,9 @@ kgen.generator @callee() always_inline {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() {
   // CHECK: declare.region F
-    // CHECK-NEXT: hlcf.elif
+    // CHECK-NEXT: hlcf.if
       // CHECK-NEXT: kgen.return
-  // CHECK: hlcf.elif
+  // CHECK: hlcf.if
   // CHECK-NEXT: hlcf.break "[[LABEL:.*]]"
   kgen.call @callee() : () -> ()
   kgen.return
@@ -516,14 +516,14 @@ kgen.generator @parent() {
 kgen.generator @callee() always_inline {
   %cond = "some.cond"() : () -> !kgen.scalar<bool>
   kgen.param.declare.region F = () {
-    hlcf.elif %cond {
+    hlcf.if %cond {
       kgen.return
     } else {
       hlcf.yield
     }
     kgen.return
   }
-  hlcf.elif %cond {
+  hlcf.if %cond {
     kgen.return
   } else {
     hlcf.yield
@@ -550,8 +550,8 @@ kgen.generator @callee<A>() -> index always_inline {
 
 // CHECK-LABEL: kgen.generator @inline_call_in_if
 kgen.generator @inline_call_in_if(%cond: !kgen.scalar<bool>) {
-  // CHECK-NEXT: hlcf.elif
-  hlcf.elif %cond {
+  // CHECK-NEXT: hlcf.if
+  hlcf.if %cond {
     // CHECK: inlined.a
     kgen.call @callee() : () -> ()
     hlcf.yield
@@ -1016,7 +1016,7 @@ kgen.generator @entry() {
 
 kgen.generator @unreachable_and_early_ret() always_inline {
   %true = kgen.param.constant: scalar<bool> = <true>
-  hlcf.elif %true {
+  hlcf.if %true {
     kgen.return
   } else {
     hlcf.yield
@@ -1027,7 +1027,7 @@ kgen.generator @unreachable_and_early_ret() always_inline {
 // CHECK-LABEL: kgen.generator @call_it
 kgen.generator @call_it() {
   // CHECK-NEXT: hlcf.loop
-    // CHECK: hlcf.elif
+    // CHECK: hlcf.if
       // CHECK-NEXT: hlcf.break
     // CHECK: kgen.unreachable
   // CHECK-NEXT: }

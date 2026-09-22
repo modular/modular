@@ -503,7 +503,7 @@ BreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool YieldOp::isParentNode(Operation *op) {
-  if (isa<SwitchOp, ElifOp>(op))
+  if (isa<SwitchOp, IfOp>(op))
     return true;
   // Yield in a match targets only the else region; case regions use
   // match.next / match.complete instead.
@@ -605,13 +605,13 @@ LogicalResult ForYieldOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// ElifOp
+// IfOp
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseElif(OpAsmParser &parser, Region &thenRegion,
-          SmallVectorImpl<std::unique_ptr<Region>> &elifRegionsRegions,
-          Region &elseRegion) {
+parseIf(OpAsmParser &parser, Region &thenRegion,
+        SmallVectorImpl<std::unique_ptr<Region>> &elifRegionsRegions,
+        Region &elseRegion) {
   // First then region (condition is an SSA operand parsed by ODS).
   if (failed(parser.parseRegion(thenRegion)))
     return failure();
@@ -651,10 +651,9 @@ parseElif(OpAsmParser &parser, Region &thenRegion,
   }
 }
 
-static void printElif(OpAsmPrinter &printer, Operation *elifOp,
-                      Region &thenRegion,
-                      MutableArrayRef<Region> conditionalRegions,
-                      Region &elseRegion) {
+static void printIf(OpAsmPrinter &printer, Operation *ifOp, Region &thenRegion,
+                    MutableArrayRef<Region> conditionalRegions,
+                    Region &elseRegion) {
   auto printArgumentList = [&](ArrayRef<BlockArgument> args) {
     if (args.empty())
       return;
@@ -684,7 +683,7 @@ static void printElif(OpAsmPrinter &printer, Operation *elifOp,
   printer.printRegion(elseRegion, /*printEntryBlockArgs=*/false);
 }
 
-LogicalResult ElifOp::verify() {
+LogicalResult IfOp::verify() {
   if (getElifRegions().size() % 2 != 0) {
     return emitOpError(
         "operator elif conditions do not match the number of elif regions.");
@@ -692,9 +691,8 @@ LogicalResult ElifOp::verify() {
   return success();
 }
 
-void ElifOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+void IfOp::getEntryTargets(ArrayRef<Attribute> operands,
+                           SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == 1);
   // Region layout: 0 = then, 1 = else, 2+ = additional (cond, then) pairs.
   unsigned nextOnFalse = getElifRegions().empty() ? 1 : 2;
@@ -706,15 +704,15 @@ void ElifOp::getEntryTargets(
   }
 }
 
-ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
+ValueRange IfOp::getEntryArguments(std::optional<unsigned int> target) {
   if (!target)
     return getResults();
   assert(*target < getNumRegions());
   return getRegion(target.value()).getArguments();
 }
 
-ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
-                                     InterpreterState &state) {
+ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
   auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0]);
   if (!cond)
     return ErrorTree(getLoc(), "non-constant condition");
@@ -727,55 +725,51 @@ ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
 }
 
 ErrorTreeOrSuccess
-ElifOp::parametric_interpret(ArrayRef<Attribute> operands,
-                             ParametricInterpreterState &state) {
+IfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                           ParametricInterpreterState &state) {
   return interpret(operands, state);
 }
 
-ElifOp ElifOp::create(OpBuilder &builder, Location loc, TypeRange resultTypes,
-                      Value cond, function_ref<LogicalResult()> emitThen,
-                      function_ref<LogicalResult()> emitElse) {
-  ElifOp elifOp = ElifOp::create(builder, loc, resultTypes, cond);
+IfOp IfOp::create(OpBuilder &builder, Location loc, TypeRange resultTypes,
+                  Value cond, function_ref<LogicalResult()> emitThen,
+                  function_ref<LogicalResult()> emitElse) {
+  IfOp ifOp = IfOp::create(builder, loc, resultTypes, cond);
 
-  builder.setInsertionPointToStart(&elifOp.getThenRegion().emplaceBlock());
+  builder.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
   if (failed(emitThen()))
     return {};
 
-  builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
+  builder.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
   if (failed(emitElse()))
     return {};
 
-  builder.setInsertionPointAfter(elifOp);
-  return elifOp;
+  builder.setInsertionPointAfter(ifOp);
+  return ifOp;
 }
 
-OpBuilder ElifOp::getThenBodyBuilder() {
+OpBuilder IfOp::getThenBodyBuilder() {
   assert(!getThenRegion().empty() && "Need a then block");
   return OpBuilder::atBlockEnd(&getThenRegion().front());
 }
 
-OpBuilder ElifOp::getElseBodyBuilder() {
+OpBuilder IfOp::getElseBodyBuilder() {
   assert(!getElseRegion().empty() && "Need an else block");
   return OpBuilder::atBlockEnd(&getElseRegion().front());
 }
 
-Block &ElifOp::getThenBlock() { return getThenRegion().front(); }
+Block &IfOp::getThenBlock() { return getThenRegion().front(); }
 
-Block &ElifOp::getElseBlock() { return getElseRegion().front(); }
+Block &IfOp::getElseBlock() { return getElseRegion().front(); }
 
-Operation *ElifOp::getThenTerminator() {
-  return getThenBlock().getTerminator();
-}
+Operation *IfOp::getThenTerminator() { return getThenBlock().getTerminator(); }
 
-Operation *ElifOp::getElseTerminator() {
-  return getElseBlock().getTerminator();
-}
+Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
 
 //===----------------------------------------------------------------------===//
 // ElifYieldOp
 //===----------------------------------------------------------------------===//
 
-bool ElifYieldOp::isParentNode(Operation *op) { return isa<ElifOp>(op); }
+bool ElifYieldOp::isParentNode(Operation *op) { return isa<IfOp>(op); }
 
 void ElifYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,
@@ -809,7 +803,7 @@ void ElifYieldOp::getBranchTargets(
 
 ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
-  auto parent = cast<ElifOp>(getOperation()->getParentOp());
+  auto parent = cast<IfOp>(getOperation()->getParentOp());
   // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
   unsigned myRegionNumber =
       getOperation()->getParentRegion()->getRegionNumber();

@@ -4,7 +4,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error @below {{cannot run on operations with CFG regions}}
   // expected-note @below {{try running it before lower-control-flow}}
   kgen.func @stack_allocation(%cond: !kgen.scalar<bool>) {
-    hlcf.elif %cond {
+    hlcf.if %cond {
       %0 = pop.stack_allocation 4 x !kgen.simd<4, f32>
       hlcf.yield
     } else {

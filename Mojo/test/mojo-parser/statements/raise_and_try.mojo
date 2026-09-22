@@ -132,7 +132,7 @@ def raiseErrorInDef() raises:
 
 # CHECK-LABEL: lit.fn @"raiseErrorInIf
 def raiseErrorInIf(cond: Bool) raises:
-    # CHECK: hlcf.elif
+    # CHECK: hlcf.if
     if cond:
         # CHECK: lit.call {{.*}}@Error::@"__init__{{.*}}(%__error__)
         # CHECK-NEXT: lit.raise

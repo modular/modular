@@ -1512,7 +1512,7 @@ static bool isAcceptableMValueSource(Value origin, Operation *anchorOp) {
   return false;
 }
 
-/// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::ElifOp` or
+/// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::IfOp` or
 /// `ParamIfOp`) whose then/else regions already contain the branch
 /// computations. Produces a single value into `dest` by:
 ///   1. yielding a unioned MValue when both sides are dominating refs,
@@ -1532,8 +1532,8 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
          "expected if-like op with then/else regions");
 
   const bool isParamIf = isa<ParamIfOp>(ifLikeOp);
-  assert((isParamIf || isa<HLCF::ElifOp>(ifLikeOp)) &&
-         "expected ParamIfOp or HLCF::ElifOp");
+  assert((isParamIf || isa<HLCF::IfOp>(ifLikeOp)) &&
+         "expected ParamIfOp or HLCF::IfOp");
 
   auto yieldValue = [&](Value v) {
     if (isParamIf)
@@ -1550,8 +1550,8 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
   auto recreateWithoutResult = [&]() -> Operation * {
     if (auto paramIf = dyn_cast<ParamIfOp>(ifLikeOp))
       return ParamIfOp::create(*builder, loc, paramIf.getCond());
-    return HLCF::ElifOp::create(*builder, loc, TypeRange{},
-                                cast<HLCF::ElifOp>(ifLikeOp).getCond());
+    return HLCF::IfOp::create(*builder, loc, TypeRange{},
+                              cast<HLCF::IfOp>(ifLikeOp).getCond());
   };
 
   // Handles the "both sides are MValues" case: yield a common-ref conversion
@@ -1592,7 +1592,7 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
     // Ok, at this point we are committed. Emit a conversion to the common
     // type in each branch and produce the result as the right MValue type.
     // ifLikeOp->getRegion(0) is the then-region, getRegion(1) the else-region
-    // for both HLCF::ElifOp and ParamIfOp.
+    // for both HLCF::IfOp and ParamIfOp.
     auto emitBranch = [&](Region &region, const ExprNode *expr, Value value) {
       builder->setInsertionPointToEnd(&region.front());
       auto conv = emitZeroCostConvert({SRValue(value), expr}, commonRefType);

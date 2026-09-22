@@ -29,7 +29,7 @@ kgen.func @remove_trivial_loop_1(%arg0: index) -> index {
 kgen.func @remove_trivial_loop_2(%cond: !kgen.scalar<bool>, %arg0: index) -> index {
   // CHECK-NEXT: hlcf.loop
   %r = hlcf.loop () -> index {
-    hlcf.elif %cond {
+    hlcf.if %cond {
       hlcf.continue
     } else {
       hlcf.yield
@@ -44,7 +44,7 @@ kgen.func @remove_trivial_loop_2(%cond: !kgen.scalar<bool>, %arg0: index) -> ind
 kgen.func @remove_trivial_loop_3(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: index) -> index {
   // CHECK-NEXT: hlcf.loop
   %r = hlcf.loop () -> index {
-    hlcf.elif %cond {
+    hlcf.if %cond {
       hlcf.break %arg1: index
     } else {
       hlcf.yield
@@ -59,8 +59,8 @@ kgen.func @remove_trivial_loop_3(%cond: !kgen.scalar<bool>, %arg0: index, %arg1:
 kgen.func @remove_trivial_loop_4(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: index) -> index {
   // CHECK-NOT: hlcf.loop
   %r = hlcf.loop () -> index {
-    // CHECK-NEXT: hlcf.elif
-    hlcf.elif %cond {
+    // CHECK-NEXT: hlcf.if
+    hlcf.if %cond {
       // CHECK-NEXT: return %arg2
       kgen.return %arg1: index
     } else {
@@ -80,8 +80,8 @@ kgen.func @remove_trivial_loop_5(%cond: !kgen.scalar<bool>, %arg0: index, %arg1:
   // CHECK-COUNT-1: hlcf.loop
   %r = hlcf.loop () -> index {
     %t = hlcf.loop () -> index {
-      // CHECK-NEXT: hlcf.elif
-      hlcf.elif %cond {
+      // CHECK-NEXT: hlcf.if
+      hlcf.if %cond {
         // CHECK-NEXT: continue
         hlcf.continue
       } else {
@@ -142,8 +142,8 @@ kgen.func @remove_trivial_loop_7() {
 kgen.func @remove_trivial_loop_8(%cond: !kgen.scalar<bool>) {
   // CHECK-NEXT: hlcf.loop
   hlcf.loop {
-    // CHECK-NEXT: hlcf.elif
-    hlcf.elif %cond {
+    // CHECK-NEXT: hlcf.if
+    hlcf.if %cond {
       hlcf.continue
     } else {
       // CHECK-NOT: hlcf.loop
@@ -192,8 +192,8 @@ kgen.func @remove_trivial_loop_11(%cond: !kgen.scalar<bool>) {
   hlcf.loop () {
     // CHECK-NEXT: hlcf.loop
     hlcf.loop () {
-      // CHECK-NEXT: hlcf.elif
-      hlcf.elif %cond {
+      // CHECK-NEXT: hlcf.if
+      hlcf.if %cond {
         hlcf.continue
       } else {
         kgen.return
@@ -211,8 +211,8 @@ kgen.func @remove_trivial_loop_12(%cond: !kgen.scalar<bool>) {
   hlcf.loop () {
     // CHECK-NEXT: hlcf.loop
     hlcf.loop () {
-      // CHECK-NEXT: hlcf.elif
-      hlcf.elif %cond {
+      // CHECK-NEXT: hlcf.if
+      hlcf.if %cond {
         hlcf.yield
       } else {
         hlcf.break

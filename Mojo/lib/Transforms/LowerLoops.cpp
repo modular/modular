@@ -119,7 +119,7 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
     break;
   }
 
-  // Create ElifOp with ThenBlock yields and ElseBlock breaks. `index.cmp`
+  // Create IfOp with ThenBlock yields and ElseBlock breaks. `index.cmp`
   // produces an `i1`, so normalize to the `scalar<bool>` condition.
   //
   // TODO: this won't be needed after migrating scalar<int>, but we need to
@@ -128,7 +128,7 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   Value cmpCond = KGEN::POP::CastFromBuiltinOp::create(
                       rewriter, forLoop->getLoc(), boolTy, cmpOp)
                       .getResult();
-  auto ifOp = ElifOp::create(rewriter, forLoop->getLoc(), TypeRange{}, cmpCond);
+  auto ifOp = IfOp::create(rewriter, forLoop->getLoc(), TypeRange{}, cmpCond);
 
   rewriter.createBlock(&ifOp.getThenRegion());
   YieldOp::create(rewriter, forLoop->getLoc());

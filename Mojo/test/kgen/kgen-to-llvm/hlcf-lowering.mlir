@@ -10,7 +10,7 @@ kgen.func @nested_continue(%arg0: !kgen.scalar<bool>) {
     // CHECK-NEXT: ^bb1:
     // CHECK-NEXT: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
     // CHECK-NEXT: llvm.cond_br %[[C0]], ^bb2, ^bb3
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       // CHECK-NEXT: ^bb2:
       // CHECK-NEXT: llvm.return
       kgen.return
@@ -33,7 +33,7 @@ kgen.func @nested_break(%arg0: !kgen.scalar<bool>) {
     // CHECK-NEXT: ^bb1:
     // CHECK-NEXT: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
     // CHECK-NEXT: llvm.cond_br %[[C0]], ^bb2, ^bb3
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       // CHECK-NEXT: ^bb2:
       // CHECK-NEXT: llvm.br ^bb4
       hlcf.yield
@@ -58,18 +58,18 @@ kgen.func @deeply_nested(%arg0: !kgen.scalar<bool>, %arg1: !kgen.scalar<bool>, %
   // CHECK-NEXT: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
   // CHECK-NEXT: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
   // CHECK-NEXT: llvm.cond_br %[[C0]], ^bb1, ^bb10
-  hlcf.elif %arg0 {
+  hlcf.if %arg0 {
     // CHECK-NEXT: ^bb1:
     // CHECK-NEXT: llvm.br ^bb2
     hlcf.loop {
       // CHECK-NEXT: ^bb2:
       // CHECK-NEXT: %[[C1:.*]] = builtin.unrealized_conversion_cast %[[A1SB]] : !kgen.scalar<bool> to i1
       // CHECK-NEXT: llvm.cond_br %[[C1]], ^bb3, ^bb7
-      hlcf.elif %arg1 {
+      hlcf.if %arg1 {
         // CHECK-NEXT: ^bb3:
         // CHECK-NEXT: %[[C2:.*]] = builtin.unrealized_conversion_cast %[[A2SB]] : !kgen.scalar<bool> to i1
         // CHECK-NEXT: llvm.cond_br %[[C2]], ^bb4, ^bb5
-        hlcf.elif %arg2 {
+        hlcf.if %arg2 {
           // CHECK-NEXT: ^bb4:
           // CHECK-NEXT: llvm.br ^bb9
           hlcf.break
@@ -114,7 +114,7 @@ kgen.func @operands_and_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i6
     // CHECK-NEXT: %[[V1:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
     // CHECK-NEXT: %[[C0:.*]] = builtin.unrealized_conversion_cast %[[V0]] : !kgen.scalar<bool> to i1
     // CHECK-NEXT: llvm.cond_br %[[C0]], ^bb2, ^bb3
-    %2 = hlcf.elif %0 -> i32 {
+    %2 = hlcf.if %0 -> i32 {
       // CHECK-NEXT: ^bb2:
       // CHECK-NEXT: %[[R0:.*]] = builtin.unrealized_conversion_cast %arg1
       // CHECK-NEXT: %[[R1:.*]] = builtin.unrealized_conversion_cast %arg2
@@ -130,7 +130,7 @@ kgen.func @operands_and_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i6
     // CHECK-NEXT: %[[V2:.*]] = builtin.unrealized_conversion_cast %[[ARG2]]
     // CHECK-NEXT: %[[C1:.*]] = builtin.unrealized_conversion_cast %[[V0]] : !kgen.scalar<bool> to i1
     // CHECK-NEXT: llvm.cond_br %[[C1]], ^bb5, ^bb6
-    %3 = hlcf.elif %0 -> !kgen.scalar<bool> {
+    %3 = hlcf.if %0 -> !kgen.scalar<bool> {
       // CHECK-NEXT: ^bb5:
       // CHECK-NEXT: %[[R0:.*]] = builtin.unrealized_conversion_cast %[[A0SB]]
       // CHECK-NEXT: llvm.br ^bb7(%[[R0]] : i1)
@@ -161,7 +161,7 @@ kgen.func @multiple_return(%arg0: !kgen.scalar<bool>) -> (i1, i1) {
   // CHECK-NEXT: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
   // CHECK-NEXT: %[[B:.*]] = builtin.unrealized_conversion_cast %[[A0SB]] : !kgen.scalar<bool> to i1
   %b = builtin.unrealized_conversion_cast %arg0 : !kgen.scalar<bool> to i1
-  hlcf.elif %arg0 {
+  hlcf.if %arg0 {
     // CHECK: ^bb1:
     // CHECK-NEXT: %[[S0:.*]] = llvm.mlir.undef
     // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %[[B]], %[[S0]][0]
@@ -201,7 +201,7 @@ kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
   // CHECK-NEXT: %[[A0SB:.*]] = builtin.unrealized_conversion_cast %arg0 : i1 to !kgen.scalar<bool>
   // CHECK-NEXT: llvm.br ^bb2
   %0 = hlcf.match -> i32 {
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       hlcf.match.complete %arg1 : i32
     } else {
       hlcf.match.next
@@ -209,7 +209,7 @@ kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
     kgen.unreachable
   }
   case {
-    hlcf.elif %arg0 {
+    hlcf.if %arg0 {
       hlcf.match.complete %arg1 : i32
     } else {
       hlcf.match.next

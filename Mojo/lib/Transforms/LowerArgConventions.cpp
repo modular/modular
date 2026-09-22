@@ -696,7 +696,7 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
     auto isError = VariantIsOp::create(b, res, 0);
     res.replaceAllUsesExcept(isError, isError);
 
-    auto ifOp = HLCF::ElifOp::create(b, isError);
+    auto ifOp = HLCF::IfOp::create(b, isError);
     b.createBlock(&ifOp.getThenRegion());
     POP::StoreOp::create(b, VariantGetOp::create(b, res, 0),
                          transform.errorOperand);
@@ -738,7 +738,7 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
     res.replaceAllUsesWith(newOp->getResult(0));
 
     // Store the relevant result in the branch where it was valid.
-    auto ifOp = HLCF::ElifOp::create(b, newOp->getResult(0));
+    auto ifOp = HLCF::IfOp::create(b, newOp->getResult(0));
     Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
     HLCF::YieldOp::create(b);
     bool errorOnly = abiLowering == PromoteError;
@@ -788,10 +788,10 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   }
 
   // We can't guarantee what the result is, so we emit conditional variant
-  // repacking. We create an HLCF::ElifOp, with a condition checking if there is
+  // repacking. We create an HLCF::IfOp, with a condition checking if there is
   // no error (i.e. the then branch will handle normal return). The result of
-  // this ElifOp is what we will return.
-  auto ifOp = HLCF::ElifOp::create(b, TypeRange{newVariantTy}, oldRetVal);
+  // this IfOp is what we will return.
+  auto ifOp = HLCF::IfOp::create(b, TypeRange{newVariantTy}, oldRetVal);
 
   // Populate the then branch (normal return).
   Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
