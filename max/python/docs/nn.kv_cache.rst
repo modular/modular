@@ -69,6 +69,7 @@ Attention dispatch
    :template: autosummary/class.rst
 
    AttnKey
+   AttnKeyInterface
    MHAAttnKey
    MLAAttnKey
    MSAAttnKey

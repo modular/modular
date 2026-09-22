@@ -60,14 +60,19 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     attention_dispatch_metadata: _Tensor | None = None
     """The device's attention dispatch metadata, as a rank-1 int64 tensor."""
     draft_attention_dispatch_metadata: _Tensor | None = None
-    """The draft cache's attention dispatch metadata, as a rank-1 int64
-    tensor."""
+    """Attention dispatch metadata resolved for the draft-forward query
+    width, as a rank-1 int64 tensor.
+
+    The ``draft_`` prefix names the shorter query length, not the draft
+    model; a target cache leaf carries this variant too.
+    """
     mla_num_partitions: _Tensor | None = None
     """Capturable-graph scalar the SM100 MLA dispatcher uses to align
     grid-time partition decisions with the kernel's divmod. Populated only
     for MLA paths; ``None`` otherwise."""
     draft_mla_num_partitions: _Tensor | None = None
-    """The draft cache's analog of :attr:`mla_num_partitions`."""
+    """The analog of :attr:`mla_num_partitions` for the draft-forward query
+    width, carried by target cache leaves as well as draft ones."""
     kv_blocks_per_layer: list[_Buffer] | None = None
     """One single-layer KV buffer per layer, used when the backing pool
     allocates a standalone buffer per layer

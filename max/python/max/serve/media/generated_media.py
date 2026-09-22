@@ -68,11 +68,18 @@ class GeneratedMediaStorageLimitExceeded(RuntimeError):
 class GeneratedMediaStore:
     """Stores generated media files for later download via HTTP.
 
+    Creating a store sets up the per-category media directories and the
+    cache accounting that backs eviction.
+
     Args:
-        root_dir: Root directory under which the per-category media
+        root_dir: The root directory under which the per-category media
             subdirectories are created.
-        max_storage_bytes: Maximum total size of stored assets, in bytes;
-            older assets are evicted to make room for new ones.
+        max_storage_bytes: The maximum total size of stored assets, in
+            bytes, defaulting to 512 MiB. Older assets are evicted to make
+            room for new ones.
+
+    Raises:
+        ValueError: If ``max_storage_bytes`` is not greater than zero.
     """
 
     def __init__(
@@ -81,7 +88,6 @@ class GeneratedMediaStore:
         *,
         max_storage_bytes: int = 512 * 1024 * 1024,
     ) -> None:
-        """Initialize per-process media directories and cache accounting."""
         if max_storage_bytes <= 0:
             raise ValueError("max_storage_bytes must be greater than zero.")
 

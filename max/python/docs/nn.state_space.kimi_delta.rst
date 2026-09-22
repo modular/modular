@@ -32,13 +32,3 @@ Constants
    :template: autosummary/data.rst
 
    KDA_GATE_LOWER_BOUND
-
-Functions
----------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   kda_decode

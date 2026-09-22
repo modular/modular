@@ -897,7 +897,8 @@ class BatchCharacteristics:
     decode forward should prepare its attention dispatch metadata *for*, which
     may exceed the batch's real per-request values.
 
-    ``PagedKVCacheManager.runtime_inputs`` uses it to resolve the dispatch
+    :meth:`~max.pipelines.kv_cache.PagedKVCacheManager.runtime_inputs` uses
+    it to resolve the dispatch
     key once: e.g. for graph-capture replay, ``max_cache_valid_length`` is
     aligned up to a cache length recorded during capture and every data-parallel
     replica must run the identical captured graph. The batch's real values must
@@ -1385,7 +1386,7 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
     ) -> AttnKeyInterface:
         """Resolves the decode dispatch shape for the given shape.
 
-        Returns an ``AttnKeyInterface`` for a single cache, or a
+        Returns an :class:`AttnKeyInterface` for a single cache, or a
         ``MultiAttnKey`` tree mirroring the cache tree.
         """
         ...
@@ -2273,7 +2274,7 @@ class MHAKVCacheParams(KVCacheParams):
             max_cache_valid_length: Maximum valid cache length in the batch.
 
         Returns:
-            The resolved ``AttnKeyInterface``
+            The resolved :class:`AttnKeyInterface`.
         """
         device = self._primary_device
         if batch_size <= 0 or device is None:
@@ -2537,7 +2538,7 @@ class MLAKVCacheParams(KVCacheParams):
             max_cache_valid_length: Maximum valid cache length in the batch.
 
         Returns:
-            The resolved ``AttnKeyInterface``
+            The resolved :class:`AttnKeyInterface`.
         """
         device = self._primary_device
         if batch_size <= 0 or device is None:

@@ -39,7 +39,7 @@ class AttnKey(AttnKeyInterface):
 
     The resolved ``num_partitions`` (the kernel grid) plus the batch and prompt
     dimensions. The runtime ``max_cache_valid_length`` is supplied to
-    ``pack_into_buffer`` rather than stored, so dispatches that differ only
+    :meth:`pack_into_buffer` rather than stored, so dispatches that differ only
     in cache length share one identity. Concrete subclasses
     (:class:`MHAAttnKey`, :class:`MLAAttnKey`)
     implement the kernel-specific buffer layout.
