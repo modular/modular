@@ -40,14 +40,35 @@ of two flips the ceiling and changes the scale by a factor of two.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, Dim, TensorValue, ops
+from max.nn.kernels import (
+    dynamic_scaled_matmul,
+    quantize_dynamic_scaled_float8,
+)
+from max.nn.linear import Linear
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+
+if TYPE_CHECKING:
+    from ..model_config import DeepseekV4Config
 
 # From ``inference/kernel.py::act_quant_kernel``.
 FP8_MAX = 448.0
 AMAX_FLOOR = 1e-4
 KV_QUANT_BLOCK = 64
+# ``inference/model.py`` ``block_size``: the activation group and the weight
+# block edge of every fp8 linear (``linear()`` -> ``act_quant(x, 128, ...)``).
+LINEAR_QUANT_BLOCK = 128
 
 # From ``inference/kernel.py::fp4_quant_kernel``. The FP4 floor is the smallest
 # normal float32 times ``fp4_max``, not the FP8 path's 1e-4.
@@ -210,3 +231,166 @@ def _roundtrip(
 
     roundtripped = ops.cast(ops.cast(clamped, dtype), DType.float32) * scale
     return ops.cast(ops.reshape(roundtripped, x.shape), x.dtype)
+
+
+# --------------------------------------------------------------------------- #
+# Native fp8 linears (PROBE-B G1/G2)
+# --------------------------------------------------------------------------- #
+
+_WEIGHT_BLOCK_SIZE = [LINEAR_QUANT_BLOCK, LINEAR_QUANT_BLOCK]
+
+
+def fp8_block_quant_config(
+    hf_quantization_config: Mapping[str, object] | None, num_layers: int
+) -> QuantConfig | None:
+    """The blockwise-fp8 ``QuantConfig`` a DeepSeek-V4 checkpoint declares.
+
+    ``None`` when the checkpoint declares no quantization (a dequantized copy).
+    The reference's ``linear()`` quantizes every activation with 128-element
+    groups and a power-of-two (``ue8m0``) scale and stores 128x128 weight
+    blocks with e8m0 scales, so anything else is refused rather than misread.
+    The scale dtype here is float32: the adapter widens the checkpoint's e8m0
+    scales (exactly, ``2 ** (e - 127)``) because the blockwise fp8 matmul only
+    accepts float32 scales. No repo code reads ``scale_fmt``; the rounding it
+    asks for is guaranteed by :class:`DeepseekV4Fp8Linear` instead.
+    """
+    if not hf_quantization_config:
+        return None
+    method = hf_quantization_config.get("quant_method")
+    if method != "fp8":
+        raise ValueError(
+            f"DeepSeek-V4 expects quant_method 'fp8', got {method!r}"
+        )
+    fmt = hf_quantization_config.get("fmt")
+    if fmt != "e4m3":
+        raise ValueError(f"DeepSeek-V4 expects fmt 'e4m3', got {fmt!r}")
+    scheme = hf_quantization_config.get("activation_scheme")
+    if scheme != "dynamic":
+        raise ValueError(
+            f"DeepSeek-V4 expects a dynamic activation scheme, got {scheme!r}"
+        )
+    scale_fmt = hf_quantization_config.get("scale_fmt")
+    if scale_fmt != "ue8m0":
+        raise ValueError(
+            "DeepSeek-V4 native fp8 implements only power-of-two activation "
+            f"scales (scale_fmt 'ue8m0'), got {scale_fmt!r}"
+        )
+    block_size = hf_quantization_config.get("weight_block_size")
+    if (
+        not isinstance(block_size, (list, tuple))
+        or list(block_size) != _WEIGHT_BLOCK_SIZE
+    ):
+        raise ValueError(
+            f"DeepSeek-V4 expects weight_block_size {_WEIGHT_BLOCK_SIZE}, got "
+            f"{block_size!r}"
+        )
+    layers = set(range(num_layers))
+    return QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, LINEAR_QUANT_BLOCK),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float32,
+            block_size=(LINEAR_QUANT_BLOCK, LINEAR_QUANT_BLOCK),
+        ),
+        mlp_quantized_layers=layers,
+        attn_quantized_layers=layers,
+        format=QuantFormat.BLOCKSCALED_FP8,
+    )
+
+
+class DeepseekV4Fp8Linear(Linear):
+    """``inference/model.py::linear`` for an fp8 weight, on MAX's blockwise kernels.
+
+    The stock quantized ``Linear`` path derives the activation scale as
+    ``amax / 448`` (``scales_type=float32`` in ``_QuantizeFp8Kernel``); the
+    reference rounds it *up to a power of two* (``scale_fmt="ue8m0"``,
+    ``fast_round_scale``), and the checkpoint was trained that way. So this
+    quantizes with e8m0 scales -- the kernel's e8m0 branch is exactly
+    ``2 ** ceil(log2(amax / 448))`` and divides by the (exact) power of two --
+    then widens the scales to float32 for ``mo.matmul_dynamic_scaled_fp8``,
+    which accepts nothing else. Verified bit-identical to the reference
+    ``act_quant`` on the G4 experiment (PROGRESS-194-QUANT §1).
+
+    The activation is cast to bfloat16 first because that is the reference's
+    input contract (``act_quant_kernel`` is instantiated for bf16 input; the
+    reference model's residual stream is bf16), and the result comes back in
+    the caller's dtype after the kernel's bf16 output, as ``fp8_gemm`` returns
+    ``torch.get_default_dtype()``.
+
+    One floor differs: the kernel floors ``amax / 448`` at 1e-10 where the
+    reference floors ``amax`` at 1e-4. Only a group whose largest magnitude is
+    below 1e-4 sees it.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        device: DeviceRef,
+        quant_config: QuantConfig,
+        name: str | None = None,
+    ) -> None:
+        if in_dim % LINEAR_QUANT_BLOCK or out_dim % LINEAR_QUANT_BLOCK:
+            # Every fp8 projection in the checkpoint is a multiple of 128 on
+            # both axes; a partial block would need padding on the scale table.
+            raise ValueError(
+                f"fp8 linear {out_dim}x{in_dim} is not a multiple of "
+                f"{LINEAR_QUANT_BLOCK} on both axes"
+            )
+        super().__init__(
+            in_dim,
+            out_dim,
+            DType.float8_e4m3fn,
+            device,
+            quant_config=quant_config,
+            name=name,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        assert self.quant_config is not None
+        assert self.weight_scale is not None
+        leading = list(x.shape[:-1])
+        rows: Dim = Dim(1)
+        for d in leading:
+            rows = rows * d
+        x2 = ops.reshape(x, [rows, x.shape[-1]])
+        quantized, scales = quantize_dynamic_scaled_float8(
+            ops.cast(x2, DType.bfloat16),
+            self.quant_config.input_scale,
+            self.quant_config.weight_scale,
+            group_size_or_per_token=LINEAR_QUANT_BLOCK,
+            out_type=DType.float8_e4m3fn,
+            scales_type=DType.float8_e8m0fnu,
+        )
+        out = dynamic_scaled_matmul(
+            quantized,
+            self.weight.to(x.device),
+            ops.cast(scales, DType.float32),
+            self.weight_scale.to(x.device),
+            self.quant_config.input_scale,
+            self.quant_config.weight_scale,
+            out_type=DType.bfloat16,
+        )
+        out = ops.cast(out, x.dtype)
+        return ops.reshape(out, leading + [out.shape[-1]])
+
+
+def linear_for(
+    config: DeepseekV4Config, in_dim: int, out_dim: int, device: DeviceRef
+) -> Linear:
+    """A projection whose checkpoint weight is fp8 when the model is quantized.
+
+    With ``config.quant_config`` unset (the dequantized gates' path) this is
+    the plain ``Linear`` in ``config.dtype``; otherwise the native fp8 linear.
+    Only for projections the checkpoint stores in fp8 (attention's five,
+    ``indexer.wq_b``, the shared expert); bf16 weights such as
+    ``indexer.weights_proj`` keep the plain ``Linear``.
+    """
+    if config.quant_config is None:
+        return Linear(in_dim, out_dim, config.dtype, device)
+    return DeepseekV4Fp8Linear(in_dim, out_dim, device, config.quant_config)

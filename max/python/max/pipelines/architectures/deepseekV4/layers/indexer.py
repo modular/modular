@@ -57,7 +57,7 @@ from max.nn.linear import Linear
 from ..model_config import DeepseekV4Config
 from .compressor import DeepseekV4Compressor
 from .hadamard import hadamard_rotate
-from .quantization import fp4_qat_quantize
+from .quantization import fp4_qat_quantize, linear_for
 from .rope import apply_rope_tail
 
 
@@ -79,11 +79,8 @@ class DeepseekV4Indexer(Module):
         # Note this is the *indexer's* head width, 128, not the block's 512.
         self.softmax_scale = self.head_dim**-0.5
 
-        self.wq_b = Linear(
-            config.q_lora_rank,
-            self.n_heads * self.head_dim,
-            config.dtype,
-            device,
+        self.wq_b = linear_for(
+            config, config.q_lora_rank, self.n_heads * self.head_dim, device
         )
         # The reference pins this one to bf16 explicitly
         # (``dtype=torch.bfloat16`` on the ColumnParallelLinear), which for this

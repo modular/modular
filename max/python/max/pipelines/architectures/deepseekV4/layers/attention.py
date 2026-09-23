@@ -81,7 +81,7 @@ from .cache import (
 from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .indexer import DeepseekV4Indexer
-from .quantization import fp8_qat_quantize
+from .quantization import fp8_qat_quantize, linear_for
 from .ragged import RaggedRows, WindowRows
 from .rope import apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
@@ -196,33 +196,30 @@ class DeepseekV4Attention(Module):
             shape=(self.n_heads,),
             device=device,
         )
-        self.wq_a = Linear(
-            config.hidden_size, config.q_lora_rank, config.dtype, device
+        self.wq_a = linear_for(
+            config, config.hidden_size, config.q_lora_rank, device
         )
         self.q_norm = RMSNorm(
             config.q_lora_rank, config.dtype, config.rms_norm_eps
         )
-        self.wq_b = Linear(
-            config.q_lora_rank,
-            self.n_heads * self.head_dim,
-            config.dtype,
-            device,
+        self.wq_b = linear_for(
+            config, config.q_lora_rank, self.n_heads * self.head_dim, device
         )
-        self.wkv = Linear(
-            config.hidden_size, self.head_dim, config.dtype, device
-        )
+        self.wkv = linear_for(config, config.hidden_size, self.head_dim, device)
         self.kv_norm = RMSNorm(self.head_dim, config.dtype, config.rms_norm_eps)
+        # Not ``linear_for``: the checkpoint stores wo_a fp8, but the reference
+        # declares it ``dtype=torch.bfloat16`` and consumes ``.weight`` raw in
+        # the grouped einsum below, so it never runs the fp8 ``linear()`` path
+        # and its activation is never quantized. The weight adapter
+        # host-dequantizes it for that reason.
         self.wo_a = Linear(
             self.n_heads * self.head_dim // self.o_groups,
             self.o_groups * self.o_lora_rank,
             config.dtype,
             device,
         )
-        self.wo_b = Linear(
-            self.o_groups * self.o_lora_rank,
-            config.hidden_size,
-            config.dtype,
-            device,
+        self.wo_b = linear_for(
+            config, self.o_groups * self.o_lora_rank, config.hidden_size, device
         )
 
         self.rope = rope_for_layer(config, layer_idx, max_seq_len)

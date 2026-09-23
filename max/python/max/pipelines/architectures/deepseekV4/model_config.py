@@ -299,6 +299,10 @@ class DeepseekV4Config(ArchConfigWithKVCache):
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None
+    # ``None`` = native whenever the model is quantized and the checkpoint's
+    # experts are fp4 (``expert_dtype``); ``False`` keeps the dense f32 experts
+    # of the dequantized gates while the rest of the model runs fp8 natively.
+    native_routed_experts: bool | None = None
 
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
@@ -364,6 +368,13 @@ class DeepseekV4Config(ArchConfigWithKVCache):
 
     def layer_is_hash_routed(self, layer_idx: int) -> bool:
         return layer_idx < self.num_hash_layers
+
+    @property
+    def routed_experts_native(self) -> bool:
+        """Whether the routed experts run on the W4A8 grouped kernel."""
+        if self.native_routed_experts is not None:
+            return self.native_routed_experts
+        return self.quant_config is not None and self.expert_dtype == "fp4"
 
     def compressed_layer_index(self, layer_idx: int) -> int:
         """Rank of a compressed layer among trunk layers sharing its ratio.
