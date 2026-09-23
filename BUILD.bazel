@@ -406,6 +406,21 @@ filegroup(
     tags = [TOP_LEVEL_TAG],
 )
 
+# Opt-in accelerator backend support. Gates an accelerator's dialect
+# registration and its third-party dependency edges, so a default build
+# neither fetches nor links them.
+bool_flag(
+    name = "accel_backend",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "accel_backend_setting",
+    flag_values = {"//:accel_backend": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 bool_flag(
     name = "use_sglang",
     build_setting_default = False,
