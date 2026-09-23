@@ -483,8 +483,14 @@ class TextBatchConstructor:
         self._lora_manager: LoRAManagerV3 | None = get_lora_manager(pipeline)
 
         # Gated requests are held before DP pooling/binding, so the CE
-        # planner only ever prices grammar-ready work.
-        self._grammar_gate = AsyncGrammarGate.create(pipeline)
+        # planner only ever prices grammar-ready work. A worker that never
+        # enforces a grammar (prefill_only under DI) gets no gate, so a
+        # forwarded grammar is not compiled on its TTFT path.
+        self._grammar_gate = (
+            AsyncGrammarGate.create(pipeline)
+            if self.structured_output_enabled
+            else None
+        )
         self._grammar_pending: OrderedDict[
             RequestID, _GrammarPendingRequest
         ] = OrderedDict()

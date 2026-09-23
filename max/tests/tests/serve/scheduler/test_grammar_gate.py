@@ -124,10 +124,15 @@ def make_helper(
     )
 
 
-def make_gated_pipeline(helper: StructuredOutputHelper) -> Mock:
+def make_gated_pipeline(
+    helper: StructuredOutputHelper, needs_bitmask_constraints: bool = True
+) -> Mock:
     pipeline = Mock()
     pipeline.release = Mock()
     pipeline._structured_output = helper
+    pipeline.pipeline_config = Mock(
+        needs_bitmask_constraints=needs_bitmask_constraints
+    )
     return pipeline
 
 
@@ -376,6 +381,25 @@ def test_tool_grammar_request_is_gated() -> None:
     assert len(inputs.batches[0]) == 1
     assert isinstance(ctx.matcher, _StubMatcher)
     assert backend.compile_json_schema_calls == 0
+
+
+def test_prefill_only_worker_never_compiles_forwarded_grammar() -> None:
+    """A DI prefill worker admits a decode-forwarded tool grammar ungated."""
+    backend = _ControlledBackend()
+    backend.release_build.clear()  # would deadlock if a build were submitted
+    bc = make_batch_constructor(
+        make_gated_pipeline(
+            make_helper(backend), needs_bitmask_constraints=False
+        )
+    )
+    assert bc._grammar_gate is None
+
+    ctx = make_context(grammar="root ::= object")
+    bc.enqueue_new_request(ctx)
+
+    assert ctx.request_id in bc.replicas[0].ce_reqs
+    assert ctx.matcher is None
+    assert backend.create_matcher_calls == 0
 
 
 def test_build_matcher_dispatch() -> None:
