@@ -775,7 +775,9 @@ Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
 // IfElifCondYieldOp
 //===----------------------------------------------------------------------===//
 
-bool IfElifCondYieldOp::isParentNode(Operation *op) { return isa<IfOp>(op); }
+bool IfElifCondYieldOp::isParentNode(Operation *op) {
+  return isa<IfOp, ComptimeIfOp>(op);
+}
 
 void IfElifCondYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,
@@ -810,7 +812,18 @@ void IfElifCondYieldOp::getBranchTargets(
 
 ErrorTreeOrSuccess IfElifCondYieldOp::interpret(ArrayRef<Attribute> operands,
                                                 InterpreterState &state) {
-  auto parent = cast<IfOp>(getOperation()->getParentOp());
+  Operation *parentOp = getOperation()->getParentOp();
+  MutableArrayRef<Region> elifRegions;
+  Region *elseRegion;
+  if (auto ifOp = dyn_cast<IfOp>(parentOp)) {
+    elifRegions = ifOp.getElifRegions();
+    elseRegion = &ifOp.getElseRegion();
+  } else {
+    auto comptimeIf = cast<ComptimeIfOp>(parentOp);
+    elifRegions = comptimeIf.getElifRegions();
+    elseRegion = &comptimeIf.getElseRegion();
+  }
+
   // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
   unsigned myRegionNumber =
       getOperation()->getParentRegion()->getRegionNumber();
@@ -819,15 +832,15 @@ ErrorTreeOrSuccess IfElifCondYieldOp::interpret(ArrayRef<Attribute> operands,
   ArrayRef<Attribute> blockArguments = operands.slice(1);
   if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0])) {
     if (cond.getAsBool()) {
-      return state.transferControlFlowTo(
-          parent.getElifRegions()[myElifIndex + 1], blockArguments);
-    }
-    unsigned nextIndex = myElifIndex + 2;
-    if (nextIndex < parent.getElifRegions().size()) {
-      return state.transferControlFlowTo(parent.getElifRegions()[nextIndex],
+      return state.transferControlFlowTo(elifRegions[myElifIndex + 1],
                                          blockArguments);
     }
-    return state.transferControlFlowTo(parent.getElseRegion(), blockArguments);
+    unsigned nextIndex = myElifIndex + 2;
+    if (nextIndex < elifRegions.size()) {
+      return state.transferControlFlowTo(elifRegions[nextIndex],
+                                         blockArguments);
+    }
+    return state.transferControlFlowTo(*elseRegion, blockArguments);
   }
   return ErrorTree(getLoc(), "non-constant condition in elif chain.");
 }
@@ -1170,6 +1183,14 @@ void ComptimeForGotoElseOp::getBranchTargets(
 // ComptimeIfOp
 //===----------------------------------------------------------------------===//
 
+LogicalResult ComptimeIfOp::verify() {
+  if (getElifRegions().size() % 2 != 0) {
+    return emitOpError(
+        "operator elif conditions do not match the number of elif regions.");
+  }
+  return success();
+}
+
 bool ComptimeIfOp::isIsolatedFromAbove(unsigned regionNum) {
   switch (regionNum) {
   case 0:
@@ -1177,7 +1198,8 @@ bool ComptimeIfOp::isIsolatedFromAbove(unsigned regionNum) {
   case 1:
     return getElseIsolated();
   default:
-    llvm_unreachable("unknown region number");
+    // Elif (cond, then) regions do not carry isolation bits today.
+    return false;
   }
 }
 
@@ -1190,7 +1212,8 @@ void ComptimeIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
     setElseIsolated(true);
     break;
   default:
-    llvm_unreachable("unknown region number");
+    // Elif regions have no isolation attribute to set.
+    break;
   }
 }
 
@@ -1198,15 +1221,21 @@ void ComptimeIfOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());
-  targets.emplace_back(0);
-  targets.emplace_back(1);
+  // Region layout: 0 = then, 1 = else, 2+ = additional (cond, then) pairs.
+  unsigned nextOnFalse = getElifRegions().empty() ? 1 : 2;
+  if (auto cond = sugarDynCast<SIMDAttr>(getCond())) {
+    targets.emplace_back(cond.getAsBool() ? 0 : nextOnFalse);
+  } else {
+    targets.emplace_back(0);
+    targets.emplace_back(nextOnFalse);
+  }
 }
 
 ValueRange ComptimeIfOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return getResults();
-  assert(*target == 0 || *target == 1);
-  return {};
+  assert(*target < getNumRegions());
+  return getRegion(*target).getArguments();
 }
 
 void ComptimeIfOp::walkDefinitions(
@@ -1400,19 +1429,23 @@ ErrorTreeOrSuccess
 ComptimeIfOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
   Attribute cond = state.getReboundAttribute(getCond());
-  unsigned regionId = 2;
-  if (auto result = sugarDynCast<SIMDAttr>(cond)) {
-    regionId = result.getAsBool() ? 0 : 1;
+  auto result = sugarDynCast<SIMDAttr>(cond);
+  if (!result)
+    return ErrorTree(getLoc(), "wrong param if condition");
+
+  unsigned regionId;
+  if (result.getAsBool()) {
+    regionId = 0;
+  } else if (getElifRegions().empty()) {
+    regionId = 1;
+  } else {
+    regionId = 2;
   }
 
-  if (regionId < 2) {
-    Region &target = getRegion(regionId);
-    state.pushParamValues({}, false);
-    state.pushEvalFrame(getOperation(), &target, {}, 6);
-    return state.transferControlFlowTo(target, {});
-  }
-
-  return ErrorTree(getLoc(), "wrong param if condition");
+  Region &target = getRegion(regionId);
+  state.pushParamValues({}, false);
+  state.pushEvalFrame(getOperation(), &target, {}, 6);
+  return state.transferControlFlowTo(target, {});
 }
 
 //===----------------------------------------------------------------------===//

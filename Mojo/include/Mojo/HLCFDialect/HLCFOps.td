@@ -520,20 +520,21 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
 //===----------------------------------------------------------------------===//
 
 def HLCF_IfElifCondYieldOp : HLCFTerminatorOp<"if.elifcond.yield", [
-    ParentOneOf<["IfOp"]>,
+    ParentOneOf<["IfOp", "ComptimeIfOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "yield operation for additional conditions of if operations";
   let description = [{
-    The `hlcf.if.elifcond.yield` operation is a control-flow terminator used only in
-    the *additional* condition regions of a parent `hlcf.if` (the regions in
-    `$elifRegions`). It transfers control either to the paired `then` region
-    when the condition is true, or to the next condition region / the `else`
-    region when false.
+    The `hlcf.if.elifcond.yield` operation is a control-flow terminator used only
+    in the *additional* condition regions of a parent `hlcf.if` or
+    `hlcf.comptime.if` (the regions in `$elifRegions`). It transfers control
+    either to the paired `then` region when the condition is true, or to the
+    next condition region / the `else` region when false.
 
     This op takes at least one `!kgen.scalar<bool>` value which is the
     condition, but can take an arbitrary number of other values. These values
     are passed into the "then" or subsequent/"else" block, enabling mem2reg
-    promotion of values stored in the condition block.
+    promotion of values stored in the condition block. For `hlcf.comptime.if`,
+    the condition is typically produced by `kgen.param.constant`.
 
     Example:
 
@@ -915,30 +916,46 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
       "collectParameterUsesBelow"]>]>, NoParamDecls {
   let summary = "compile-time constant if";
   let description = [{
-    The `hlcf.comptime.if` op provides a compile-time guarantee that if `cond`
-    is false, only the `else` block will be elaborated, and if `cond` is true,
-    only the `then` block will be elaborated. Whichever block is elaborated
-    will be directly inlined into the scope. This op is fully removed
+    The `hlcf.comptime.if` op provides a compile-time guarantee that only one
+    arm is elaborated: the first arm whose condition is true, or the final
+    `$elseRegion` when every condition is false. Whichever block is elaborated
+    is directly inlined into the enclosing scope. This op is fully removed
     during elaboration.
 
-    The result parameter will be resolved by the parameter on the
-    `comptime.yield` in the branch that is actually elaborated.
+    The first condition is `$cond`. Additional arms are written as
+    `else { cond } then { then }` pairs in `$elifRegions`, where each condition
+    region is terminated by `hlcf.if.elifcond.yield` (typically of a
+    `kgen.param.constant` bool). The final `$elseRegion` runs when every
+    condition is false.
+
+    All `then` / `else` regions are terminated by `hlcf.comptime.yield` (or
+    another function-level terminator such as `hlcf.return`).
+
+    Example (single if/else):
 
     ```mlir
     %0 = hlcf.comptime.if <condition> -> index {
       %i0 = index.constant 0
-      hlcf.comptime.yield %i0
+      hlcf.comptime.yield %i0 : index
     } else {
       %i1 = index.constant 1
-      hlcf.comptime.yield %i1
+      hlcf.comptime.yield %i1 : index
     }
+    ```
 
-    hlcf.comptime.if <condition -> result> {
-      hlcf.comptime.yield<1>
+    Example (if / elif / else):
+
+    ```mlir
+    %0 = hlcf.comptime.if <cond0> -> index {
+      hlcf.comptime.yield %arg0 : index
     } else {
-      hlcf.comptime.yield<0>
+      %c1 = kgen.param.constant: scalar<bool> = <cond1>
+      hlcf.if.elifcond.yield %c1
+    } then {
+      hlcf.comptime.yield %arg1 : index
+    } else {
+      hlcf.comptime.yield %arg2 : index
     }
-    %0 = kgen.param.constant = <result> // == <condition ? 1 : 0>
     ```
   }];
 
@@ -948,7 +965,9 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
     UnitAttr:$elseIsolated
   );
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
+  let regions = (region SizedRegion<1>:$thenRegion,
+                        SizedRegion<1>:$elseRegion,
+                        VariadicRegion<SizedRegion<1>>:$elifRegions);
 
   let extraClassDeclaration = [{
     bool isIsolatedFromAbove(unsigned regionNum);
@@ -967,13 +986,22 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
 
   let assemblyFormat = [{
     ` ` `<` custom<ScalarBoolParamValue>($cond) `` `>`
-    (`->` type($results)^)?  $thenRegion `else` $elseRegion attr-dict
+    (`->` type($results)^)?
+    custom<If>($thenRegion, $elifRegions, $elseRegion) attr-dict
   }];
 
-  let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
-    build($_builder, $_state, {}, cond, {});
-  }]>];
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$cond), [{
+      build($_builder, $_state, {}, cond, /*thenIsolated=*/{},
+            /*elseIsolated=*/{}, /*nElifRegions=*/0);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "TypedAttr":$cond), [{
+      build($_builder, $_state, results, cond, /*thenIsolated=*/{},
+            /*elseIsolated=*/{}, /*nElifRegions=*/0);
+    }]>,
+  ];
 
+  let hasVerifier = 1;
   let hasCanonicalizeMethod = 1;
 }
 

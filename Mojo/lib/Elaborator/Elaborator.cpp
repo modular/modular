@@ -1047,13 +1047,37 @@ ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
   Attribute value;
   HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
 
-  // Take whichever branch the condition indicated, and simply inline those ops
-  // then elaborate them. We can do this by splicing the op list into the parent
-  // block. We splice it this way to avoid remapping the ops when we process
-  // them later.
-  bool resultBool = cast<SIMDAttr>(value).getAsBool();
-  // Get the appropriate region.
-  Region &toProcess = op->getRegion(!resultBool);
+  // Select the live arm: first true condition's then, else the final else.
+  size_t liveRegion;
+  if (cast<SIMDAttr>(value).getAsBool()) {
+    liveRegion = 0;
+  } else {
+    liveRegion = 1; // else, unless an elif matches
+    for (unsigned i = 0, e = op.getElifRegions().size(); i != e; i += 2) {
+      auto yield = cast<HLCF::IfElifCondYieldOp>(
+          op.getElifRegions()[i].front().getTerminator());
+      auto paramConst = yield.getCond().getDefiningOp<ParamConstantOp>();
+      if (!paramConst) {
+        parent->setToError(ErrorTree(
+            yield.getLoc(),
+            "expected kgen.param.constant as comptime.if elif condition"));
+        return ElaborationState::error();
+      }
+      Attribute elifCond;
+      HANDLE_EVALUATOR_CONC(elifCond, parent, yield.getLoc(),
+                            paramConst.getValue());
+      if (cast<SIMDAttr>(elifCond).getAsBool()) {
+        // Region layout: 0 = then, 1 = else, 2+ = (cond, then) pairs.
+        liveRegion = 2 + i + 1;
+        break;
+      }
+    }
+  }
+
+  // Take the selected arm and simply inline those ops then elaborate them. We
+  // can do this by splicing the op list into the parent block. We splice it
+  // this way to avoid remapping the ops when we process them later.
+  Region &toProcess = op->getRegion(liveRegion);
 
   // Push a new node and skip over the current frame until it completes.
   ImplNode::WorkItem item{{}, nullptr, parent->getEvaluator()};
@@ -1061,7 +1085,7 @@ ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
+  item.onComplete = [liveRegion, debug = config.elaborateDebugInfo](
                         ImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
@@ -1071,7 +1095,7 @@ ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
     Block::iterator iter = op->getIterator();
-    Block &block = op->getRegion(!resultBool).front();
+    Block &block = op->getRegion(liveRegion).front();
 
     // First update the locations if necessary
     if (debug) {
