@@ -156,6 +156,20 @@ This version is still a work in progress.
   - `unsafe_assume_init()` reinterprets the span as initialized, for memory
     that was initialized some other way.
 
+- The default `Writable` implementation now formats `EnumLike` types by their
+  active case rather than their fields. A case prints as
+  `TypeName.case(payload)`, or as `TypeName.case` when it has no payload
+  (`NoneType`):
+
+  ```mojo
+  print(Shape.circle(3))       # Shape.circle(3)
+  print(repr(Shape.circle(3))) # Shape.circle(Int(3))
+  print(Shape.empty())         # Shape.empty
+  ```
+
+  Types that implement their own `write_to()` or `write_repr_to()`, such as
+  `Optional` and `Bool`, are unaffected.
+
 ## Tooling changes
 
 ## Removed

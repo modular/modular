@@ -16,6 +16,7 @@ from std.benchmark import keep
 from std.compile import compile_info
 from std.collections.string.format import _FormatUtils
 from std.format._utils import write_sequence_to
+from std.utils import Variant
 
 
 @fieldwise_init
@@ -49,6 +50,76 @@ def test_format_string() raises:
     assert_equal(
         StringSlice("{!r}").format(TestWritable(42)), "write_repr_to: 42"
     )
+
+
+# FIXME: Use `enum` syntax once it synthesizes `EnumLike`.
+struct Shape(EnumLike, Writable):
+    comptime _enum_case_length = 3
+    comptime _enum_case_names = ParameterList.of[
+        "empty".value, "circle".value, "label".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, Int, String
+    ].values
+    var _value: Variant[NoneType, Int, String]
+
+    @staticmethod
+    def empty() -> Self:
+        return Self(_value=Variant[NoneType, Int, String](NoneType()))
+
+    @staticmethod
+    def circle(radius: Int) -> Self:
+        return Self(_value=Variant[NoneType, Int, String](radius))
+
+    @staticmethod
+    def label(var text: String) -> Self:
+        return Self(_value=Variant[NoneType, Int, String](text^))
+
+    def __init__(out self, *, var _value: Variant[NoneType, Int, String]):
+        self._value = _value^
+
+    def _get_enum_discriminant(self) -> Int:
+        if self._value.isa[NoneType]():
+            return 0
+        if self._value.isa[Int]():
+            return 1
+        return 2
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime PayloadType = TypeList[Trait=AnyType, Self._enum_case_types]()[
+            id
+        ]
+        comptime assert id != 0, "empty has no payload"
+        comptime if id == 1:
+            return rebind[PayloadType](
+                Pointer(to=self._value.unsafe_get[Int]()).unsafe_origin_cast[
+                    origin_of(self)
+                ]()[]
+            )
+        else:
+            return rebind[PayloadType](
+                Pointer(to=self._value.unsafe_get[String]()).unsafe_origin_cast[
+                    origin_of(self)
+                ]()[]
+            )
+
+
+def test_default_write_to_enum_like() raises:
+    var empty = Shape.empty()
+    var circle = Shape.circle(3)
+    var label = Shape.label("hi")
+
+    assert_equal(String(empty), "Shape.empty")
+    assert_equal(String(circle), "Shape.circle(3)")
+    assert_equal(String(label), "Shape.label(hi)")
+
+    assert_equal(repr(empty), "Shape.empty")
+    assert_equal(repr(circle), "Shape.circle(Int(3))")
+    assert_equal(repr(label), "Shape.label('hi')")
 
 
 def test_default_write_to_simple() raises:

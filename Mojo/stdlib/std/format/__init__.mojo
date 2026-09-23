@@ -74,6 +74,8 @@ print(repr(p)) # Point: x=1.5, y=2.7
 """
 
 from std.builtin.constrained import _field_conforms_to_error
+from std.builtin.enum_like import EnumLike
+from std.builtin.variadics import ParameterList, TypeList
 from std.collections import Span
 from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
@@ -198,7 +200,9 @@ trait Writable:
 
         The default implementation uses reflection to format all fields as
         `TypeName(field1=value1, field2=value2, ...)`, calling `write_to()`
-        on each field. All fields must conform to `Writable`.
+        on each field. All fields must conform to `Writable`. `EnumLike` types
+        are instead formatted as `TypeName.case(payload)`, or `TypeName.case`
+        when the active case's payload is `NoneType`.
 
         Args:
             writer: The destination for formatted output.
@@ -234,7 +238,9 @@ trait Writable:
 
         The default implementation uses reflection to format all fields as
         `TypeName(field1=value1, field2=value2, ...)`, calling `write_repr_to()`
-        on each field. All fields must conform to `Writable`.
+        on each field. All fields must conform to `Writable`. `EnumLike` types
+        are instead formatted as `TypeName.case(payload)`, or `TypeName.case`
+        when the active case's payload is `NoneType`.
 
         Args:
             writer: The destination for formatted output.
@@ -275,6 +281,10 @@ def _reflection_write_to[
     //,
     f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
+    comptime if conforms_to(T, EnumLike):
+        _enum_reflection_write_to[f=f](this, writer)
+        return
+
     comptime r = reflect[T]
     comptime names = r.field_names()
     comptime types = r.field_types()
@@ -301,3 +311,36 @@ def _reflection_write_to[
         f(field, writer)
 
     writer.write_string(")")
+
+
+@inline(.always)
+def _enum_reflection_write_to[
+    T: EnumLike & Writable,
+    W: Writer,
+    //,
+    f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
+](this: T, mut writer: W):
+    """Writes `TypeName.case(payload)`, or `TypeName.case` for `NoneType`
+    payloads."""
+    comptime names = ParameterList[T._enum_case_names]()
+    comptime types = TypeList[Trait=AnyType, T._enum_case_types]()
+    comptime type_name = _unqualified_type_name[T]()
+    writer.write_string(type_name)
+    writer.write_string(".")
+
+    var discriminant = this._get_enum_discriminant()
+    comptime for i in range(T._enum_case_length):
+        if discriminant == i:
+            writer.write_string(StaticString(names[i]))
+
+            comptime PayloadType = types[i]
+            comptime if PayloadType != NoneType:
+                comptime assert conforms_to(PayloadType, Writable), (
+                    "the payload of every case must conform to `Writable` to"
+                    " use the default `Writable` implementation for an"
+                    " `EnumLike` type"
+                )
+                writer.write_string("(")
+                f(this._unsafe_get_enum_payload[i](), writer)
+                writer.write_string(")")
+            return
