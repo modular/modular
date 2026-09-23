@@ -19,9 +19,9 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from ..inkling.memory_planner import InklingMemoryPlanner
 from ..inkling.model_config import InklingConfig
 from ..inkling.tokenizer import InklingTokenizer
-from .memory_planner import UnifiedMTPInklingMemoryPlanner
 from .model import UnifiedMTPInklingModel
 from .weight_adapters import convert_with_mtp_state_dict
 
@@ -48,5 +48,5 @@ unified_mtp_inkling_arch = SupportedArchitecture(
     supports_device_graph_capture=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
-    memory_planner=UnifiedMTPInklingMemoryPlanner,
+    memory_planner=InklingMemoryPlanner,
 )

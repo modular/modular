@@ -27,15 +27,14 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     Weight,
-    ops,
 )
 from max.nn.layer import Module, Shardable
-from max.nn.state_space import causal_conv1d_varlen_fwd
+from max.nn.state_space import short_conv_ring_commit, short_conv_ring_fwd
 
 
 class ShortConvolution(Module, Shardable):
-    """Depthwise causal conv1d with a residual, stateful across decode
-    steps via a caller-owned conv state pool."""
+    """Depthwise causal conv1d with a residual; history lives in a
+    caller-owned ring of past inputs indexed by position."""
 
     def __init__(
         self,
@@ -44,11 +43,14 @@ class ShortConvolution(Module, Shardable):
         kernel_size: int,
         dtype: DType,
         device: DeviceRef,
+        commit_conv_state: bool = True,
     ) -> None:
         super().__init__()
         self.channels = channels
         self.kernel_size = kernel_size
         self.dtype = dtype
+        # False for the MTP draft, which convolves with no history.
+        self.commit_conv_state = commit_conv_state
         self._sharding_strategy: ShardingStrategy | None = None
         self.weight = Weight(
             "weight", dtype, [channels, 1, kernel_size], device=device
@@ -106,6 +108,7 @@ class ShortConvolution(Module, Shardable):
                 kernel_size=self.kernel_size,
                 dtype=self.dtype,
                 device=device,
+                commit_conv_state=self.commit_conv_state,
             )
             sharded.weight = weight
             shards.append(sharded)
@@ -114,35 +117,26 @@ class ShortConvolution(Module, Shardable):
     def __call__(
         self,
         x: TensorValue,
-        conv_state_pool: BufferValue,
+        conv_ring: BufferValue,
         conv_row: TensorValue,
         input_row_offsets: TensorValue,
-        has_initial_state: TensorValue,
+        positions: TensorValue,
     ) -> TensorValue:
-        """Returns ``x + conv(x)``; updates ``conv_state_pool`` in place.
+        """Returns ``x + conv(x)``.
 
-        ``has_initial_state`` says whether to read the row's stored history.
-        The cache group wipes a fresh request's row and copies a resumed one
-        into it before the forward runs, so reading a wiped row is the zero
-        padding a first chunk wants.
+        Taps before the chunk read the ring slot. ``commit_conv_state``
+        writes the chunk's last inputs to the ring.
         """
-        device = x.device
-        channels, _, kernel_size = self.weight.shape
-
-        # The kernel adds the residual and widens to its own accumulator, so
-        # x goes in and comes back at the model dtype.
-        return causal_conv1d_varlen_fwd(
+        out = short_conv_ring_fwd(
             x,
-            self.weight.reshape([channels, kernel_size]),
-            # No bias tensor at any site; the kernel wants one anyway.
-            ops.broadcast_to(
-                ops.constant(0.0, x.dtype, device=device), [channels]
-            ),
-            conv_state_pool,
-            ops.cast(input_row_offsets, DType.int32),
+            self.weight.reshape([self.channels, self.kernel_size]),
+            conv_ring,
+            input_row_offsets,
+            positions,
             conv_row,
-            has_initial_state,
-            activation="none",
-            channels_last=True,
-            use_residual=True,
         )
+        if self.commit_conv_state:
+            short_conv_ring_commit(
+                x, conv_ring, input_row_offsets, positions, conv_row
+            )
+        return out

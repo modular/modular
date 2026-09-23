@@ -19,7 +19,6 @@ from collections.abc import Sequence
 from max.dtype import DType
 from max.graph import (
     BufferType,
-    BufferValue,
     DeviceRef,
     Dim,
     DimLike,
@@ -108,47 +107,17 @@ def split_kv_by_flavor(
 
 def draft_row_inputs(
     row_offsets: Sequence[TensorValue],
-) -> tuple[list[list[TensorValue]], list[TensorValue]]:
-    """Rows the draft convolves in, and its always-absent conv history.
-
-    The pools are zeroed every forward, so nothing distinguishes one row
-    from another beyond being a batch item's own -- position serves.
-    """
+) -> list[list[TensorValue]]:
+    """Rows the draft convolves in: every batch item reads the single zero
+    slot of :class:`InklingConvScratchPools`."""
     rows: list[list[TensorValue]] = []
-    has_state: list[TensorValue] = []
     for offsets in row_offsets:
-        batch_size = offsets.shape[0] - 1
-        row = ops.range(
-            ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
-            ops.cast(batch_size, DType.uint32),
-            ops.constant(1, DType.uint32, device=DeviceRef.CPU()),
-            out_dim=batch_size,
-            device=offsets.device,
-            dtype=DType.uint32,
+        row = ops.broadcast_to(
+            ops.constant(0, DType.uint32, device=offsets.device),
+            [offsets.shape[0] - 1],
         )
         rows.append([row] * len(ConvSite))
-        has_state.append(
-            ops.broadcast_to(
-                ops.constant(False, DType.bool, device=DeviceRef.CPU()).to(
-                    offsets.device
-                ),
-                [batch_size],
-            )
-        )
-    return rows, has_state
-
-
-def zero_conv_pools(pools: Sequence[Sequence[BufferValue]]) -> None:
-    """Clears draft conv slots so a re-prefill does not replay old windows."""
-    for rank_pools in pools:
-        for pool in rank_pools:
-            ops.buffer_store(
-                pool,
-                ops.broadcast_to(
-                    ops.constant(0.0, pool.dtype, device=pool.device),
-                    pool.shape,
-                ),
-            )
+    return rows
 
 
 def merge_positions(
@@ -346,11 +315,7 @@ class InklingMTPProposer:
         tokens: TensorValue,
         target_hidden: _TargetHidden,
     ) -> Proposed:
-        conv_pools = batch.extra[DRAFT_CONV_POOLS]
-        zero_conv_pools(conv_pools)
-        draft_rows, draft_has_state = draft_row_inputs(
-            batch.query_offsets_per_dev
-        )
+        draft_rows = draft_row_inputs(batch.query_offsets_per_dev)
         hidden = self.draft.forward_depth(
             0,
             self.draft.embed_tokens(tokens, batch.signal_buffers),
@@ -358,9 +323,8 @@ class InklingMTPProposer:
             self._kv_by_flavor(batch),
             batch.query_offsets_per_dev,
             self.target.merged_positions(batch),
-            conv_pools,
+            batch.extra[DRAFT_CONV_POOLS],
             draft_rows,
-            draft_has_state,
             batch.signal_buffers,
         )
         return Proposed(
@@ -372,9 +336,7 @@ class InklingMTPProposer:
         self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
     ) -> Proposed:
         step_dim = f"{self.carry_dim_names.prefix}{index}_batch"
-        draft_rows, draft_has_state = draft_row_inputs(
-            batch.query_offsets_per_dev
-        )
+        draft_rows = draft_row_inputs(batch.query_offsets_per_dev)
         embeds = [
             embed.rebind([step_dim, self.hidden_dim])
             for embed in self.draft.embed_tokens(
@@ -390,7 +352,6 @@ class InklingMTPProposer:
             self._decode_positions(batch, index).rebind([step_dim]),
             batch.extra[DRAFT_CONV_POOLS],
             draft_rows,
-            draft_has_state,
             batch.signal_buffers,
         )
         return Proposed(

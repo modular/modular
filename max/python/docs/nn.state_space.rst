@@ -34,3 +34,5 @@ Functions
    kda_decode
    mamba2_ssd_chunk_scan_varlen_fwd
    mamba2_ssd_chunk_scan_varlen_fwd_inplace
+   short_conv_ring_commit
+   short_conv_ring_fwd

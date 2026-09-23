@@ -99,6 +99,7 @@ class InklingMTPDepthLayer(Module):
             quant_config=None,
             is_local=is_local,
             force_dense_mlp=True,
+            commit_conv_state=False,
         )
 
     def __call__(
@@ -107,10 +108,10 @@ class InklingMTPDepthLayer(Module):
         hidden: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
-        has_initial_state: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         hidden_states_first: bool,
     ) -> list[TensorValue]:
@@ -133,10 +134,10 @@ class InklingMTPDepthLayer(Module):
             hs,
             kv_collections,
             input_row_offsets,
+            positions,
             log_scaling,
             conv_pools,
             conv_rows,
-            has_initial_state,
             cache_idx,
             signal_buffers,
         )
@@ -249,27 +250,27 @@ class InklingMultiTokenPredictor(Module):
         positions: TensorValue,
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
-        has_initial_state: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
         """Runs MTP depth ``depth_idx`` and optionally applies chain_norm."""
         depth = self.layers[depth_idx]
         assert isinstance(depth, InklingMTPDepthLayer)
         if self.num_devices > 1:
-            log_scaling = ops.distributed_broadcast(
-                self.log_scaling(positions), signal_buffers
+            positions_per_rank = ops.distributed_broadcast(
+                positions, signal_buffers
             )
         else:
-            log_scaling = [self.log_scaling(positions)]
+            positions_per_rank = [positions]
+        log_scaling = [self.log_scaling(p) for p in positions_per_rank]
         hs = depth(
             token_embeds,
             hidden,
             kv_collections[depth.kv_key],
             input_row_offsets,
+            positions_per_rank,
             log_scaling,
             self.depth_conv_pools(conv_pools, depth_idx),
             conv_rows,
-            has_initial_state,
             signal_buffers,
             self.hidden_states_first,
         )

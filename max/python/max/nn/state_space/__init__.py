@@ -26,6 +26,7 @@ from .mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
+from .short_conv_ring import short_conv_ring_commit, short_conv_ring_fwd
 from .varlen_causal_conv1d import causal_conv1d_varlen_fwd
 
 __all__ = [
@@ -36,4 +37,6 @@ __all__ = [
     "kda_decode",
     "mamba2_ssd_chunk_scan_varlen_fwd",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
+    "short_conv_ring_commit",
+    "short_conv_ring_fwd",
 ]

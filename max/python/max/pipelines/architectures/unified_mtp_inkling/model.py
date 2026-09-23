@@ -175,13 +175,8 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
         super()._wire_batch_processor(model, model_config)
         if is_virtual_device_mode():
             return
-        max_batch_size = self.max_batch_size
-        assert max_batch_size is not None
-        draft_layout = self._fused_nn_model.draft.conv_layout
         self._draft_scratch = InklingConvScratchPools(
-            draft_layout,
-            max_slots=max_batch_size,
-            devices=self.devices,
+            self._fused_nn_model.draft.conv_layout, devices=self.devices
         )
         assert isinstance(
             self._batch_processor, UnifiedMTPInklingBatchProcessor

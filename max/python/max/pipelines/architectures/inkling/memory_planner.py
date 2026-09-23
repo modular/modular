@@ -100,7 +100,7 @@ class InklingMemoryPlanner(PagedMemoryPlanner):
 
         Scales with the tokens in one forward: max_batch_input_tokens under
         chunked prefill, the whole prompt without it. The conv state is pages
-        of the KV pool and the MTP draft's scratch has its own planner.
+        of the KV pool.
         """
         text_config = InklingTextConfig.from_hf(huggingface_config.text_config)
         vision_config = InklingVisionConfig.from_hf(

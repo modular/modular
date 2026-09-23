@@ -88,6 +88,7 @@ class InklingDecoderLayer(Module):
         quant_config: QuantConfig | None = None,
         is_local: bool | None = None,
         force_dense_mlp: bool = False,
+        commit_conv_state: bool = True,
     ) -> None:
         super().__init__()
         self.num_devices = len(devices)
@@ -108,6 +109,7 @@ class InklingDecoderLayer(Module):
             dtype=dtype,
             devices=devices,
             is_local=is_local,
+            commit_conv_state=commit_conv_state,
         )
         self.attn.sharding_strategy = tensor_parallel
         self.attn_shards = list(self.attn.shard(devices))
@@ -117,6 +119,7 @@ class InklingDecoderLayer(Module):
             kernel_size=text_config.sconv_kernel_size,
             dtype=dtype,
             device=device,
+            commit_conv_state=commit_conv_state,
         )
         self.attn_sconv.sharding_strategy = replicate
         self.attn_sconv_shards = list(self.attn_sconv.shard(devices))
@@ -186,6 +189,7 @@ class InklingDecoderLayer(Module):
             kernel_size=text_config.sconv_kernel_size,
             dtype=dtype,
             device=device,
+            commit_conv_state=commit_conv_state,
         )
         self.mlp_sconv.sharding_strategy = replicate
         self.mlp_sconv_shards = list(self.mlp_sconv.shard(devices))
@@ -196,10 +200,10 @@ class InklingDecoderLayer(Module):
         delta_in: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
-        has_initial_state: Sequence[TensorValue],
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
@@ -221,10 +225,10 @@ class InklingDecoderLayer(Module):
             norm_xs,
             kv_collections,
             input_row_offsets,
+            positions,
             log_scaling,
             conv_pools,
             conv_rows,
-            has_initial_state,
             cache_layer_idx,
             signal_buffers,
         )
@@ -235,10 +239,10 @@ class InklingDecoderLayer(Module):
         norm_xs: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
-        has_initial_state: Sequence[TensorValue],
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
@@ -252,12 +256,12 @@ class InklingDecoderLayer(Module):
                 norm_xs[rank],
                 kv_collection=kv_collections[rank],
                 input_row_offsets=input_row_offsets[rank],
+                positions=positions[rank],
                 log_scaling=log_scaling[rank],
-                k_conv_pool=conv_pools[rank][ConvSite.K],
+                k_conv_ring=conv_pools[rank][ConvSite.K],
                 k_conv_row=conv_rows[rank][ConvSite.K],
-                v_conv_pool=conv_pools[rank][ConvSite.V],
+                v_conv_ring=conv_pools[rank][ConvSite.V],
                 v_conv_row=conv_rows[rank][ConvSite.V],
-                has_initial_state=has_initial_state[rank],
                 cache_layer_idx=cache_layer_idx,
             )
             for rank, shard in enumerate(self.attn_shards)
@@ -268,8 +272,8 @@ class InklingDecoderLayer(Module):
             attention,
             [pools[ConvSite.ATTN_OUT] for pools in conv_pools],
             [rows[ConvSite.ATTN_OUT] for rows in conv_rows],
-            has_initial_state,
             input_row_offsets,
+            positions,
         )
         hs, norm_outs = _reduce_add_norm(
             attn_delta, hs, self.mlp_norm_shards, signal_buffers
@@ -279,8 +283,8 @@ class InklingDecoderLayer(Module):
             self._feed_forward(norm_outs),
             [pools[ConvSite.MLP_OUT] for pools in conv_pools],
             [rows[ConvSite.MLP_OUT] for rows in conv_rows],
-            has_initial_state,
             input_row_offsets,
+            positions,
         )
         return hs + mlp_delta
 
@@ -289,10 +293,10 @@ class InklingDecoderLayer(Module):
         hs: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
-        has_initial_state: Sequence[TensorValue],
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
@@ -309,10 +313,10 @@ class InklingDecoderLayer(Module):
             norm_xs,
             kv_collections,
             input_row_offsets,
+            positions,
             log_scaling,
             conv_pools,
             conv_rows,
-            has_initial_state,
             cache_layer_idx,
             signal_buffers,
         )
@@ -325,8 +329,8 @@ class InklingDecoderLayer(Module):
         partials: Sequence[TensorValue],
         pools: Sequence[BufferValue],
         rows: Sequence[TensorValue],
-        has_initial_state: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
     ) -> list[TensorValue]:
         """Convolves each rank's full-width partial sum of a branch's output.
 
@@ -339,7 +343,7 @@ class InklingDecoderLayer(Module):
                 pools[rank],
                 rows[rank],
                 input_row_offsets[rank],
-                has_initial_state[rank],
+                positions[rank],
             )
             for rank, conv in enumerate(convs)
         ]
@@ -467,7 +471,8 @@ class Inkling(Module):
         device = config.devices[0]
         replicate = ShardingStrategy.replicate(self.num_devices)
 
-        # Sized for the decoder layers alone; MTP adds a row per draft depth.
+        # Only used to address leaves and rows; the kernels take the ring
+        # length from the pool's shape.
         self.conv_layout = InklingConvStateLayout.from_config(
             text_config, tp_size=self.num_devices
         )
@@ -588,14 +593,16 @@ class Inkling(Module):
             row_offsets = ops.distributed_broadcast(
                 input_row_offsets, signal_buffers
             )
-            log_scaling = ops.distributed_broadcast(
-                self._log_scaling(positions), signal_buffers
+            positions_per_rank = ops.distributed_broadcast(
+                positions, signal_buffers
             )
         else:
             assert isinstance(self.embed, Embedding)
             hs = [self.embed(tokens)]
             row_offsets = [input_row_offsets]
-            log_scaling = [self._log_scaling(positions)]
+            positions_per_rank = [positions]
+        # Every rank needs the positions for its conv rings.
+        log_scaling = [self._log_scaling(p) for p in positions_per_rank]
         if self.embed_norm_shards:
             hs = forward_sharded_layers(self.embed_norm_shards, hs)
         # Merged after the embedding norm, so the tower's rows skip it.
@@ -604,24 +611,6 @@ class Inkling(Module):
         )
 
         num_devices = self.num_devices
-
-        # The group wipes a fresh request's row and copies a resumed one into
-        # it before the forward reads it, so the stored state is always the
-        # right one to start from.
-        #
-        # Sized off the row ids, which carry the batch as a plain dimension.
-        # Deriving it from the offsets instead spells the batch
-        # `input_row_offsets_len - 1`, and a subgraph signature cannot hold an
-        # expression.
-        has_initial_state = [
-            ops.broadcast_to(
-                ops.constant(True, DType.bool, device=DeviceRef.CPU()).to(
-                    device_state.leaves[0].live_row_ids.device
-                ),
-                [device_state.leaves[0].live_row_ids.shape[1]],
-            )
-            for device_state in state
-        ]
 
         def sites_for_layer(
             layer_idx: int,
@@ -650,10 +639,10 @@ class Inkling(Module):
                 previous[num_devices:],
                 kv_collections[self.layer_kv_keys[layer_idx]],
                 row_offsets,
+                positions_per_rank,
                 log_scaling,
                 pools,
                 rows,
-                has_initial_state,
                 ops.constant(
                     self.layer_cache_indices[layer_idx],
                     DType.uint32,

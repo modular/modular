@@ -500,7 +500,12 @@ class InklingConfig(ArchConfigWithKVCache):
             # graph's input signature.
             attention = nest_inkling_mtp_kv_params(attention, mtp, mtp_depths)
         state = RecurrentStateParams(
-            regions=conv_state_regions(text_config, tp_size=len(devices)),
+            # The ring must cover a rollback of up to mtp_depths tokens.
+            regions=conv_state_regions(
+                text_config,
+                tp_size=len(devices),
+                num_draft_tokens=mtp_depths,
+            ),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

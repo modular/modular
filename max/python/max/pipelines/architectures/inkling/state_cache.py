@@ -11,20 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Per-request slot pool for Inkling's short-convolution state: one pool per
-convolution site per layer per device, updated in place by the conv kernel.
-The attention K and V sites sit behind the sharded qkvr projection, so rank
-``r`` owns only the channel range ``[r * C / tp_size, (r + 1) * C / tp_size)``
-of those two. The branch sites are full-width on every rank.
+conv site per layer per device. The K and V sites are channel-sharded with
+the qkvr projection; the two residual sites are full width on every rank.
 
-A slot is never cleared. A request's first chunk has no convolution history by
-definition, so it runs with ``has_initial_state`` false and the kernel reads
-zeros instead of the slot; the same kernel writes every state frame at the end
-of the chunk, left-zero-padded, so whatever the previous tenant left behind is
-overwritten before any later chunk reads it."""
+A slot is a ring of conv inputs indexed by position; see
+:mod:`max.nn.state_space.short_conv_ring`. It holds
+``kernel_size - 1 + num_draft_tokens`` entries, enough history for a chunk
+that starts after rolling back every draft token.
+
+Slots are never cleared. Taps before position zero read as zero, so a fresh
+request never sees the previous tenant's inputs."""
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
@@ -34,15 +33,12 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, BufferValue, DeviceRef, Value
 from max.nn.kv_cache import RecurrentStateRegion
-from max.support.human_readable_formatter import to_human_readable_bytes
 from typing_extensions import Self
 
 if TYPE_CHECKING:
     # `model_config` imports this module for the regions a cache declares,
     # and every use here is an annotation.
     from .model_config import InklingTextConfig
-
-logger = logging.getLogger("max.pipelines")
 
 # The conv kernel accumulates in float32 regardless of the model dtype.
 CONV_STATE_DTYPE: Final = DType.float32
@@ -64,15 +60,18 @@ def _leaf_id(site: ConvSite, is_local: bool, prefix: str = "") -> str:
 
 
 def conv_state_regions(
-    text_config: InklingTextConfig, *, tp_size: int = 1
+    text_config: InklingTextConfig,
+    *,
+    tp_size: int = 1,
+    num_draft_tokens: int = 0,
 ) -> tuple[RecurrentStateRegion, ...]:
     """Returns the conv leaves a request occupies, per device.
 
-    The backbone's only: an MTP draft zeroes its pools at the top of every
-    forward, so they carry nothing between steps.
+    Backbone only; the MTP draft uses scratch pools, see
+    :class:`InklingConvScratchPools`.
     """
     return InklingConvStateLayout.from_config(
-        text_config, tp_size=tp_size
+        text_config, tp_size=tp_size, num_draft_tokens=num_draft_tokens
     ).regions()
 
 
@@ -81,7 +80,9 @@ class InklingConvStateLayout:
     """Per-device channel widths of each layer's four sites, in
     :class:`ConvSite` order."""
 
-    state_len: int
+    ring_len: int
+    """Entries per slot: ``kernel_size - 1`` plus the speculative width."""
+
     layers: tuple[tuple[int, int, int, int], ...]
     is_local: tuple[bool, ...] = ()
     """Which layers are sliding-window, in :attr:`layers` order.
@@ -126,7 +127,7 @@ class InklingConvStateLayout:
             RecurrentStateRegion(
                 leaf_id=_leaf_id(site, is_local, self.leaf_prefix),
                 num_layers=len(self.layers_of_kind(is_local)),
-                row_shape=(self.layers[first][site], self.state_len),
+                row_shape=(self.ring_len, self.layers[first][site]),
                 dtype=CONV_STATE_DTYPE,
             )
             for is_local in self.kinds()
@@ -145,11 +146,6 @@ class InklingConvStateLayout:
         leaf = self.kinds().index(is_local) * len(ConvSite) + int(site)
         return leaf, ordinal
 
-    def bytes_per_request(self) -> int:
-        """Bytes one request occupies on one device."""
-        channels = sum(map(sum, self.layers))
-        return channels * self.state_len * CONV_STATE_DTYPE.size_in_bytes
-
     def take_pools(
         self, inputs: Iterator[Value[Any]], num_devices: int
     ) -> list[list[BufferValue]]:
@@ -165,7 +161,7 @@ class InklingConvStateLayout:
         return [
             BufferType(
                 CONV_STATE_DTYPE,
-                shape=["max_conv_slots", channels, self.state_len],
+                shape=["max_conv_slots", self.ring_len, channels],
                 device=device,
             )
             for device in devices
@@ -179,6 +175,7 @@ class InklingConvStateLayout:
         text_config: InklingTextConfig,
         *,
         tp_size: int = 1,
+        num_draft_tokens: int = 0,
         leaf_prefix: str = "",
     ) -> Self:
         """Derives the layout from the checkpoint config."""
@@ -189,6 +186,7 @@ class InklingConvStateLayout:
                 for i in range(text_config.num_hidden_layers)
             ],
             tp_size=tp_size,
+            num_draft_tokens=num_draft_tokens,
             leaf_prefix=leaf_prefix,
         )
 
@@ -199,6 +197,7 @@ class InklingConvStateLayout:
         is_local: Sequence[bool],
         *,
         tp_size: int = 1,
+        num_draft_tokens: int = 0,
         leaf_prefix: str = "",
     ) -> Self:
         """Layout for decoder blocks with an explicit local/global mix."""
@@ -210,7 +209,7 @@ class InklingConvStateLayout:
             kv_width = text_config.kv_conv_dim(local) // tp_size
             layers.append((kv_width, kv_width, residual_width, residual_width))
         return cls(
-            state_len=text_config.sconv_kernel_size - 1,
+            ring_len=text_config.sconv_kernel_size - 1 + num_draft_tokens,
             layers=tuple(layers),
             is_local=tuple(is_local),
             leaf_prefix=leaf_prefix,
@@ -218,39 +217,23 @@ class InklingConvStateLayout:
 
 
 class InklingConvScratchPools:
-    """The MTP draft's convolution pools, which are scratch, not state.
-
-    Every forward zeroes them before the draft runs, so nothing survives a
-    step and there is no slot to track: a batch item convolves in the row its
-    position names.
-    """
+    """The MTP draft's conv pools: one zero slot that every batch item
+    reads. The draft never commits, so its taps before a chunk read as
+    zero."""
 
     def __init__(
-        self,
-        layout: InklingConvStateLayout,
-        max_slots: int,
-        devices: Sequence[Device],
+        self, layout: InklingConvStateLayout, devices: Sequence[Device]
     ) -> None:
         self._pools: list[list[Buffer]] = [
             [
                 Buffer.zeros(
-                    [max_slots, channels, layout.state_len],
-                    CONV_STATE_DTYPE,
-                    device,
+                    [1, layout.ring_len, channels], CONV_STATE_DTYPE, device
                 )
                 for widths in layout.layers
                 for channels in widths
             ]
             for device in devices
         ]
-        per_request = layout.bytes_per_request()
-        logger.info(
-            f"Inkling draft conv scratch: {max_slots} slots x "
-            f"{layout.num_layers} depths x {len(ConvSite)} sites = "
-            f"{to_human_readable_bytes(max_slots * per_request)} per device "
-            f"({to_human_readable_bytes(per_request)} per request) on "
-            f"{len(devices)} device(s)"
-        )
 
     def pools(self, device_idx: int) -> list[Buffer]:
         """Per-site pools of one rank, in depth then :class:`ConvSite` order."""

@@ -55,7 +55,11 @@ def log_scaling_tau(
 
 
 class InklingAttention(Module, Shardable):
-    """One decoder layer's attention block, unfused."""
+    """One decoder layer's attention block, unfused.
+
+    The K and V short convs read their history from a ring of past inputs
+    and commit the chunk's tail afterwards.
+    """
 
     def __init__(
         self,
@@ -68,6 +72,7 @@ class InklingAttention(Module, Shardable):
         tp_size: int = 1,
         is_sharding: bool = False,
         is_local: bool | None = None,
+        commit_conv_state: bool = True,
     ) -> None:
         super().__init__()
         device = devices[0]
@@ -114,12 +119,14 @@ class InklingAttention(Module, Shardable):
                 kernel_size=text_config.sconv_kernel_size,
                 dtype=dtype,
                 device=device,
+                commit_conv_state=commit_conv_state,
             )
             self.v_sconv = ShortConvolution(
                 channels=kv_conv_dim,
                 kernel_size=text_config.sconv_kernel_size,
                 dtype=dtype,
                 device=device,
+                commit_conv_state=commit_conv_state,
             )
         self.q_norm = RMSNorm(
             self.head_dim, dtype, eps=text_config.rms_norm_eps
@@ -153,17 +160,18 @@ class InklingAttention(Module, Shardable):
         *,
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
+        positions: TensorValue,
         log_scaling: TensorValue,
-        k_conv_pool: BufferValue,
+        k_conv_ring: BufferValue,
         k_conv_row: TensorValue,
-        v_conv_pool: BufferValue,
+        v_conv_ring: BufferValue,
         v_conv_row: TensorValue,
-        has_initial_state: TensorValue,
         cache_layer_idx: TensorValue,
     ) -> TensorValue:
         """Runs the block over one ragged batch. ``cache_layer_idx`` is an
         operand, not a folded constant, so every layer of one attention flavor
-        can share a compiled subgraph."""
+        can share a compiled subgraph.
+        """
         total_tokens = x.shape[0]
         q_dim, k_dim, v_dim, r_dim = self.out_dims
 
@@ -171,10 +179,18 @@ class InklingAttention(Module, Shardable):
         q, k, v, r = ops.split(qkvr, [q_dim, k_dim, v_dim, r_dim], axis=-1)
 
         k = self.k_sconv(
-            k, k_conv_pool, k_conv_row, input_row_offsets, has_initial_state
+            k,
+            k_conv_ring,
+            k_conv_row,
+            input_row_offsets,
+            positions,
         )
         v = self.v_sconv(
-            v, v_conv_pool, v_conv_row, input_row_offsets, has_initial_state
+            v,
+            v_conv_ring,
+            v_conv_row,
+            input_row_offsets,
+            positions,
         )
 
         q = self.q_norm(

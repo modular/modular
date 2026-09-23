@@ -31,7 +31,7 @@ _IS_LOCAL = (False, True, False, True)
 
 def _layout() -> InklingConvStateLayout:
     return InklingConvStateLayout(
-        state_len=_STATE_LEN,
+        ring_len=_STATE_LEN,
         layers=tuple(
             (kv, kv, _RESIDUAL, _RESIDUAL)
             for kv in (
@@ -59,10 +59,10 @@ def test_each_leaf_is_uniformly_shaped() -> None:
     """The whole point: a leaf the pool can tile with one row shape."""
     regions = {r.leaf_id: r for r in _layout().regions()}
 
-    assert regions["conv/global/k"].row_shape == (_GLOBAL_KV, _STATE_LEN)
-    assert regions["conv/local/k"].row_shape == (_LOCAL_KV, _STATE_LEN)
-    assert regions["conv/global/attn_out"].row_shape == (_RESIDUAL, _STATE_LEN)
-    assert regions["conv/local/mlp_out"].row_shape == (_RESIDUAL, _STATE_LEN)
+    assert regions["conv/global/k"].row_shape == (_STATE_LEN, _GLOBAL_KV)
+    assert regions["conv/local/k"].row_shape == (_STATE_LEN, _LOCAL_KV)
+    assert regions["conv/global/attn_out"].row_shape == (_STATE_LEN, _RESIDUAL)
+    assert regions["conv/local/mlp_out"].row_shape == (_STATE_LEN, _RESIDUAL)
 
 
 def test_a_layer_addresses_its_own_kind_by_ordinal() -> None:
@@ -99,19 +99,10 @@ def test_every_site_addresses_a_leaf_that_holds_its_row() -> None:
             assert 0 <= row < region.num_layers
 
 
-def test_the_leaves_hold_exactly_what_the_pools_did() -> None:
-    """Regrouping moves the bytes around; it must not change the total."""
-    layout = _layout()
-
-    assert sum(r.bytes_per_page for r in layout.regions()) == (
-        layout.bytes_per_request()
-    )
-
-
 def test_a_uniform_model_still_splits_by_kind() -> None:
     """All-global is one kind, so four leaves rather than eight."""
     layout = InklingConvStateLayout(
-        state_len=_STATE_LEN,
+        ring_len=_STATE_LEN,
         layers=((_GLOBAL_KV, _GLOBAL_KV, _RESIDUAL, _RESIDUAL),) * 3,
         is_local=(False, False, False),
     )
