@@ -741,10 +741,10 @@ public:
           !loweringOr.isError())
         (*loweringOr)->markExportedKernel(funcOp);
     }
-    if (failed(convertLLVMMetadata(
-            funcOp, func.getFuncTypeGenerator().getBody(),
-            func.getLLVMMetadataAttr(), func.getLLVMArgMetadata(), ids,
-            typeConverter, target)))
+    if (failed(convertLLVMMetadata(funcOp,
+                                   func.getFuncTypeGenerator().getBody(),
+                                   func.getFnAttrsAttr(), func.getFnArgAttrs(),
+                                   ids, typeConverter, target)))
       return failure();
 
     if (func.getCoroutineType()) {

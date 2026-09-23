@@ -660,7 +660,7 @@ private:
   void applyArgumentless(StringRef spelling, const CallNode *callNode,
                          function_ref<void()> applyImpl);
 
-  ArrayAttr getLLVMMetadataArray(ArrayRef<Operand> operands);
+  ArrayAttr getLLVMFnAttrArray(ArrayRef<Operand> operands);
 
   /// Register an LLVM arg metadata in the internal list to avoid churning mlir
   /// attributes as these arg metadata decorators are parsed. Must call finalize
@@ -673,13 +673,13 @@ private:
   StringRef baseName;
   TypeCheckedFnSignature &tcSignature;
 
-  /// The working list of LLVMArgMetadata. Either empty, or initialized to a
+  /// The working list of FnArgMetadata. Either empty, or initialized to a
   /// list with the same length as the total number of function arguments on
   /// first use.
-  SmallVector<Attribute> llvmArgMetadata;
+  SmallVector<Attribute> fnArgAttributes;
 
   /// The working vector of the LLVMMetadata.
-  SmallVector<Attribute> llvmMetadata;
+  SmallVector<Attribute> fnAttributes;
 
   /// The inline decorator already applied, empty until one is.
   StringRef inlineSpelling;
@@ -1357,47 +1357,47 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
   return {};
 }
 
-ArrayAttr FnSigDecorators::getLLVMMetadataArray(ArrayRef<Operand> operands) {
+ArrayAttr FnSigDecorators::getLLVMFnAttrArray(ArrayRef<Operand> operands) {
   IREmitter emitter(sigDecl, EC_Decorator);
-  SmallVector<Attribute> metadata;
+  SmallVector<Attribute> fnAttrs;
   for (Operand value : operands) {
-    StringAttr metadataName;
-    ExprNode *metadataValue;
+    StringAttr fnAttrName;
+    ExprNode *fnAttrValue;
     // Handle the case of only a metadata name, with no value associated.
     if (value.unpackStyle == ArgUnpackStyle::kPositional) {
       auto declRef = dyn_cast<DeclRefNode>(value.expr);
       if (!declRef) {
-        emitError(value.getLoc(), "Expected LLVM metadata name");
+        emitError(value.getLoc(), "Expected function attribute name");
         continue;
       }
-      metadataName = StringAttr::get(getContext(), declRef->spelling);
-      metadataValue = nullptr;
+      fnAttrName = StringAttr::get(getContext(), declRef->spelling);
+      fnAttrValue = nullptr;
     } else {
       if (!value.name) {
-        emitError(value.getLoc(), "LLVM metadata requires a name");
+        emitError(value.getLoc(), "function attribute requires a name");
         continue;
       }
-      metadataName = value.name;
-      metadataValue = value.expr;
+      fnAttrName = value.name;
+      fnAttrValue = value.expr;
     }
 
     // It might be possible that name comes from alias, therefore need to
     // analyze all module's aliases to see if alias's value needs to be used.
     if (std::optional<AliasDeclOp> aliasOp =
-            getLLVMMetadataNameAlias(shared, sigDecl, metadataName))
-      metadata.push_back(*aliasOp->getValue());
+            getLLVMMetadataNameAlias(shared, sigDecl, fnAttrName))
+      fnAttrs.push_back(*aliasOp->getValue());
     else
-      metadata.push_back(metadataName);
+      fnAttrs.push_back(fnAttrName);
 
-    if (metadataValue) {
+    if (fnAttrValue) {
       if (PValue attr = emitter.emitExprPValue(value.expr, EC_Decorator))
-        metadata.push_back(attr);
+        fnAttrs.push_back(attr);
     } else {
       // Store unit attr as value.
-      metadata.push_back(UnitAttr::get(getContext()));
+      fnAttrs.push_back(UnitAttr::get(getContext()));
     }
   }
-  return ArrayAttr::get(getContext(), metadata);
+  return ArrayAttr::get(getContext(), fnAttrs);
 }
 
 void FnSigDecorators::applyLLVMMetadata(SMLoc decoratorLoc,
@@ -1408,8 +1408,8 @@ void FnSigDecorators::applyLLVMMetadata(SMLoc decoratorLoc,
     return;
   }
 
-  ArrayAttr metadata = getLLVMMetadataArray(node->operands);
-  llvmMetadata.append(metadata.begin(), metadata.end());
+  ArrayAttr fnAttrs = getLLVMFnAttrArray(node->operands);
+  fnAttributes.append(fnAttrs.begin(), fnAttrs.end());
 }
 
 void FnSigDecorators::applyLLVMArgMetadata(SMLoc decoratorLoc,
@@ -1453,12 +1453,12 @@ void FnSigDecorators::applyLLVMArgMetadata(SMLoc decoratorLoc,
   }
 
   // First time setting arg metadata, initialize with array of empty attributes.
-  if (llvmArgMetadata.empty())
-    llvmArgMetadata.insert(llvmArgMetadata.begin(),
+  if (fnArgAttributes.empty())
+    fnArgAttributes.insert(fnArgAttributes.begin(),
                            tcSignature.argList.parsedArgs.size(),
                            ArrayAttr::get(getContext(), {}));
 
-  llvmArgMetadata[argIdx] = getLLVMMetadataArray(node->operands.drop_front());
+  fnArgAttributes[argIdx] = getLLVMFnAttrArray(node->operands.drop_front());
 }
 
 void FnSigDecorators::finalize() {
@@ -1479,13 +1479,12 @@ void FnSigDecorators::finalize() {
                       LinkageNameAttr::get(decl.getContext(), baseName));
   }
 
-  if (!llvmArgMetadata.empty())
-    funcOp.setLLVMArgMetadataArrayAttr(
-        ArrayAttr::get(getContext(), llvmArgMetadata));
+  if (!fnArgAttributes.empty())
+    funcOp.setFnArgAttrsAttr(ArrayAttr::get(getContext(), fnArgAttributes));
 
-  if (!llvmMetadata.empty()) {
+  if (!fnAttributes.empty()) {
     // NOTE: @llvm_metadata are processed and added in reverse order
-    funcOp.setLLVMMetadataArrayAttr(ArrayAttr::get(getContext(), llvmMetadata));
+    funcOp.setFnAttrsAttr(ArrayAttr::get(getContext(), fnAttributes));
   }
 }
 

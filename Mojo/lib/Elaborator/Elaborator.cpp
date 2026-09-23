@@ -55,13 +55,11 @@ using namespace KGEN;
 using namespace AsyncRT;
 
 /// Short living attribute that is needed to set on KGEN::FuncOp or
-/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVMetadata
+/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVM attributes
 /// after concretization and will be removed from the operation, therefore won't
 /// survive Elaborator.
-static constexpr StringRef kLLVMMetadataArrayAttrName =
-    "kgen.elaborator.llvm_metadata_array";
-static constexpr StringRef kLLVMArgMetadataArrayAttrName =
-    "kgen.elaborator.llvm_arg_metadata_array";
+static constexpr StringRef kFnAttrsAttrName = "kgen.elaborator.fn_attrs";
+static constexpr StringRef kFnArgAttrsAttrName = "kgen.elaborator.fn_arg_attrs";
 
 //===----------------------------------------------------------------------===//
 // InterpreterCache
@@ -320,8 +318,8 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 /// Convert llvm metadata array attrs into dicts by treating every pair of
 /// attributes in the array as (key, value) pairs, where the key is always a
 /// StringAttr.
-static ErrorTreeOr<DictionaryAttr>
-concretizeLLVMMetadataArrays(Location loc, ArrayAttr array) {
+static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
+                                                              ArrayAttr array) {
   NamedAttrList llvmMetadata;
   DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
@@ -360,32 +358,31 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
     op->setAttrs(newAttrs);
 
   if (auto func = dyn_cast<FuncOp>(op)) {
-    if (auto llvmMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMMetadataArrayAttrName))) {
+    if (auto fnAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnAttrsAttrName))) {
       ErrorTreeOr<DictionaryAttr> result =
-          concretizeLLVMMetadataArrays(op->getLoc(), llvmMetadataArray);
+          concretizeLLVMFnAttrArrays(op->getLoc(), fnAttrs);
       if (result.isError()) {
         parent->setToError(result.takeError());
         return ElaborationState::error();
       }
-      func.setLLVMMetadataAttr(result.takeValue());
-      func->removeAttr(kLLVMMetadataArrayAttrName);
+      func.setFnAttrsAttr(result.takeValue());
+      func->removeAttr(kFnAttrsAttrName);
     }
-    if (auto llvmArgMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMArgMetadataArrayAttrName))) {
-      SmallVector<Attribute> resultArray;
-      for (Attribute perArgMetadataArray : llvmArgMetadataArray) {
-        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMMetadataArrays(
-            op->getLoc(), cast<ArrayAttr>(perArgMetadataArray));
+    if (auto argAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnArgAttrsAttrName))) {
+      SmallVector<Attribute> resultAttrs;
+      for (Attribute perArgAttrArray : argAttrs) {
+        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMFnAttrArrays(
+            op->getLoc(), cast<ArrayAttr>(perArgAttrArray));
         if (result.isError()) {
           parent->setToError(result.takeError());
           return ElaborationState::error();
         }
-        resultArray.push_back(result.takeValue());
+        resultAttrs.push_back(result.takeValue());
       }
-      func.setLLVMArgMetadataAttr(
-          ArrayAttr::get(op->getContext(), resultArray));
-      func->removeAttr(kLLVMArgMetadataArrayAttrName);
+      func.setFnArgAttrsAttr(ArrayAttr::get(op->getContext(), resultAttrs));
+      func->removeAttr(kFnArgAttrsAttrName);
     }
   }
 
@@ -1843,17 +1840,11 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
         generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
     cast<FuncOp>(*instance).setInlineLevelAttr(
         generatorOp.getInlineLevelAttr());
-    // Process LLVM metadata recorded in the generator by fusing names and
-    // values from the LLVMetadataName and LLVMMetadataValue dictionaries.
     auto newFunc = cast<FuncOp>(*instance);
-    if (!generatorOp.getLLVMMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMMetadataArrayAttrName,
-                       generatorOp.getLLVMMetadataArray());
-    }
-    if (!generatorOp.getLLVMArgMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMArgMetadataArrayAttrName,
-                       generatorOp.getLLVMArgMetadataArray());
-    }
+    if (!generatorOp.getFnAttrs().empty())
+      newFunc->setAttr(kFnAttrsAttrName, generatorOp.getFnAttrs());
+    if (!generatorOp.getFnArgAttrs().empty())
+      newFunc->setAttr(kFnArgAttrsAttrName, generatorOp.getFnArgAttrs());
     instantiateBody = true;
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);

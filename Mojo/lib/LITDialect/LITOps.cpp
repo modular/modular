@@ -1103,10 +1103,10 @@ void FnOp::print(OpAsmPrinter &p) {
   // Don't print the following in lit.fn.
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
-  if (getLLVMMetadataArray().empty())
-    ignoredAttrNames.push_back(getLLVMMetadataArrayAttrName());
-  if (getLLVMArgMetadataArray().empty())
-    ignoredAttrNames.push_back(getLLVMArgMetadataArrayAttrName());
+  if (getFnAttrs().empty())
+    ignoredAttrNames.push_back(getFnAttrsAttrName());
+  if (getFnArgAttrs().empty())
+    ignoredAttrNames.push_back(getFnArgAttrsAttrName());
   if (!isImplicitConversion())
     ignoredAttrNames.push_back(getImplicitConversionAttrName());
 
@@ -1132,13 +1132,13 @@ LogicalResult FnOp::verify() {
   if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
     return failure();
 
-  if ((getLLVMMetadataArray().size() & 1) != 0)
-    return emitOpError("expected an even number elements in LLVMMetadataArray");
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
-      !argsArray.empty() && argsArray.size() != getNumArguments()) {
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+  if ((getFnAttrs().size() & 1) != 0)
+    return emitOpError("expected an even number elements in fnAttrs");
+  if (ArrayAttr argAttrs = getFnArgAttrs();
+      !argAttrs.empty() && argAttrs.size() != getNumArguments()) {
+    return emitOpError("fnArgAttrs size does not equal number of "
                        "arguments, got ")
-           << argsArray.size();
+           << argAttrs.size();
   }
 
   // Check that the number of argument labels matches the number of argument

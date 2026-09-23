@@ -2052,12 +2052,12 @@ ASTDecl *ClosureEmitter::promoteClosure(
     entryBlock.insertArgument(static_cast<unsigned>(0), selfRuntimeArgType,
                               selfArgLoc);
 
-    if (ArrayAttr argMeta = function.getLLVMArgMetadataArray();
-        argMeta && !argMeta.empty()) {
-      SmallVector<Attribute> newMeta;
-      newMeta.push_back(ArrayAttr::get(ctx, {}));
-      llvm::append_range(newMeta, argMeta);
-      function.setLLVMArgMetadataArrayAttr(ArrayAttr::get(ctx, newMeta));
+    if (ArrayAttr argAttrs = function.getFnArgAttrs();
+        argAttrs && !argAttrs.empty()) {
+      SmallVector<Attribute> newArgAttrs;
+      newArgAttrs.push_back(ArrayAttr::get(ctx, {}));
+      llvm::append_range(newArgAttrs, argAttrs);
+      function.setFnArgAttrsAttr(ArrayAttr::get(ctx, newArgAttrs));
     }
 
     // Augment DISubroutineType with self argument.

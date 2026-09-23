@@ -101,8 +101,8 @@ def LIT_FnOp : LITOp<"fn", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     OptionalAttr<AnyAttr>:$thunkKey,
     UnitAttr:$noDocRequired
   );

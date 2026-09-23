@@ -131,16 +131,15 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   if (linkageNameAttr)
     wrapper.setLinkageNameAttr(linkageNameAttr);
 
-  SmallVector<Attribute> metadataArray =
-      llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
+  SmallVector<Attribute> attrsArray =
+      llvm::to_vector(sliced.getFnAttrsAttr().getValue());
   if (kernelId) {
-    metadataArray.push_back(
+    attrsArray.push_back(
         StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
-    metadataArray.push_back(b.getIndexAttr(*kernelId));
+    attrsArray.push_back(b.getIndexAttr(*kernelId));
   }
-  wrapper.setLLVMMetadataArrayAttr(
-      ArrayAttr::get(sliced.getContext(), metadataArray));
-  wrapper.setLLVMArgMetadataArrayAttr(sliced.getLLVMArgMetadataArrayAttr());
+  wrapper.setFnAttrsAttr(ArrayAttr::get(sliced.getContext(), attrsArray));
+  wrapper.setFnArgAttrsAttr(sliced.getFnArgAttrsAttr());
   Block *entry =
       b.createBlock(&wrapper.getBodyRegion(), {}, sigBase.getArguments(),
                     llvm::map_to_vector(sliced.getArguments(),
@@ -161,7 +160,7 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
 /// Returns nullptr if no function with the given kernel ID is found.
 static FuncOp findFuncByKernelId(ModuleOp module, uint64_t kernelId) {
   for (auto func : module.getOps<FuncOp>()) {
-    if (auto meta = func.getLLVMMetadataAttr()) {
+    if (auto meta = func.getFnAttrs()) {
       if (auto idAttr = meta.get("kgen.offload.kernelid")) {
         if (cast<IntegerAttr>(idAttr).getInt() ==
             static_cast<int64_t>(kernelId))
@@ -351,13 +350,12 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   } else {
     GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
     ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
-    SmallVector<Attribute> metadataArray =
-        llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
-    metadataArray.push_back(
+    SmallVector<Attribute> fnAttrs =
+        llvm::to_vector(sliced.getFnAttrsAttr().getValue());
+    fnAttrs.push_back(
         StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
-    metadataArray.push_back(b.getIndexAttr(kAsmEntryKernelId));
-    sliced.setLLVMMetadataArrayAttr(
-        ArrayAttr::get(sliced.getContext(), metadataArray));
+    fnAttrs.push_back(b.getIndexAttr(kAsmEntryKernelId));
+    sliced.setFnAttrsAttr(ArrayAttr::get(sliced.getContext(), fnAttrs));
   }
 
   // Run elaboration through to the end of the optimization pipeline.
@@ -575,13 +573,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             // Set kernelId
             GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
             ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
-            SmallVector<Attribute> metadataArray =
-                llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
-            metadataArray.push_back(
+            SmallVector<Attribute> fnAttrs =
+                llvm::to_vector(sliced.getFnAttrsAttr().getValue());
+            fnAttrs.push_back(
                 StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
-            metadataArray.push_back(b.getIndexAttr(kernelInfo.kernelId));
-            sliced.setLLVMMetadataArrayAttr(
-                ArrayAttr::get(sliced.getContext(), metadataArray));
+            fnAttrs.push_back(b.getIndexAttr(kernelInfo.kernelId));
+            sliced.setFnAttrsAttr(ArrayAttr::get(sliced.getContext(), fnAttrs));
           }
         }
         if (newName) {

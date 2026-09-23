@@ -358,11 +358,11 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
 
   funcOp.setExportKind(traitFn.getExportKind());
 
-  if (!traitFn.getLLVMMetadataArray().empty())
-    funcOp.setLLVMMetadataArrayAttr(traitFn.getLLVMMetadataArrayAttr());
+  if (!traitFn.getFnAttrs().empty())
+    funcOp.setFnAttrsAttr(traitFn.getFnAttrsAttr());
 
-  if (!traitFn.getLLVMArgMetadataArray().empty())
-    funcOp.setLLVMArgMetadataArrayAttr(traitFn.getLLVMArgMetadataArrayAttr());
+  if (!traitFn.getFnArgAttrs().empty())
+    funcOp.setFnArgAttrsAttr(traitFn.getFnArgAttrsAttr());
 
   funcOp.setInlineLevelAttr(getInlineLevelAttr(
       funcOp.getContext(), KGEN::InlineLevel::AlwaysNoDebug));

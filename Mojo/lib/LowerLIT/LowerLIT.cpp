@@ -356,8 +356,7 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
                      func.getDecoratorsAttr(), func.getInlineLevelAttr(),
                      func.getExportKindAttr(), func.getExternalAttr(),
                      /*inlinedForm=*/nullptr, func.getLinkageNameAttr(),
-                     func.getLLVMMetadataArray(),
-                     func.getLLVMArgMetadataArray(), sourceParamList,
+                     func.getFnAttrs(), func.getFnArgAttrs(), sourceParamList,
                      sourceFuncTypeGen);
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
@@ -395,8 +394,8 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   auto region = ParamDeclareRegionOp::create(
       b, /*sym_name=*/nullptr, /*sym_visibility=*/nullptr, decl, sourceName,
       func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
-      func.getInlineLevelAttr(), func.getLinkageNameAttr(),
-      func.getLLVMMetadataArray(), func.getLLVMArgMetadataArray());
+      func.getInlineLevelAttr(), func.getLinkageNameAttr(), func.getFnAttrs(),
+      func.getFnArgAttrs());
   // The convenience builder only takes a level, so an unfolded
   // `@inline(expr)` has to be carried over separately.
   region.setInlineLevelAttr(func.getInlineLevelAttr());

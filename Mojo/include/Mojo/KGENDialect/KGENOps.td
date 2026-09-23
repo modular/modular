@@ -80,10 +80,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     The presence of this attribute means that the function was already compiled
     all the way to an object file once, so we should avoid doing it again.
 
-    The function can contain opaque metadata to pass onto LLVM in its
-    `llvmMetadata` dictionary attribute. Note that this is not the same as LLVM
-    function attributes, which is contained in the `llvmAttrs` dictionary
-    attribute.
+    The function can be provided opaque attributes to pass onto LLVM, either on
+    the function itself (fnAttrs) or on its arguments (fnArgAttrs).
   }];
 
   let arguments = (ins
@@ -94,8 +92,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     TypedAttrInterface:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     UnitAttr:$external, UnitAttr:$convergent,
-    DefaultValuedAttr<DictionaryAttr, "{}">:$LLVMMetadata,
-    DefaultValuedAttr<DictArrayAttr, "{}">:$LLVMArgMetadata,
+    DefaultValuedAttr<DictionaryAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<DictArrayAttr, "{}">:$fnArgAttrs,
     DefaultValuedAttr<StringArrayAttr, "ArrayRef<StringAttr>{}">:$crossDeviceCaptures,
     OptionalAttr<TypeAttr>:$coroutineType,
     OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
@@ -137,16 +135,16 @@ def KGEN_FuncOp : KGENOp<"func", [
                    CArg<"bool", "false">:$convergent,
                    CArg<"LinkageNameAttr", "{}">:$linkageName,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
-                   CArg<"DictionaryAttr", "{}">:$llvmMetadata,
-                   CArg<"ArrayAttr", "{}">:$llvmArgMetadata), [{
-      if (!llvmMetadata)
-        llvmMetadata = DictionaryAttr::get(name.getContext());
-      if (!llvmArgMetadata)
-        llvmArgMetadata = ArrayAttr::get(name.getContext(), {});
+                   CArg<"DictionaryAttr", "{}">:$fnAttrs,
+                   CArg<"ArrayAttr", "{}">:$fnArgAttrs), [{
+      if (!fnAttrs)
+        fnAttrs = DictionaryAttr::get(name.getContext());
+      if (!fnArgAttrs)
+        fnArgAttrs = ArrayAttr::get(name.getContext(), {});
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
       build($_builder, $_state, name, /*sym_visibility=*/nullptr, sigGen,
             decorators, KGEN::getInlineLevelAttr($_builder.getContext(), inlineLevel),
-            exportKind, external, convergent, llvmMetadata, llvmArgMetadata,
+            exportKind, external, convergent, fnAttrs, fnArgAttrs,
             /*crossDeviceCaptures=*/{}, /*coroutineType=*/{}, linkageName);
     }]>,
   ];
@@ -204,8 +202,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     // Source-declared parameter list (names + passing kinds + variadic
     // kinds). Captured during `LowerLIT` from the source
     // `FuncTypeGeneratorType`'s `PogListAttr` metadata, with default values
@@ -261,20 +259,20 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"TypedAttr", "{}">:$inlinedForm,
                    CArg<"LinkageNameAttr", "{}">:$linkageNameAttr,
-                   CArg<"ArrayAttr", "{}">:$llvmMetadataArray,
-                   CArg<"ArrayAttr", "{}">:$llvmArgMetadataArray), [{
-      if (!llvmMetadataArray)
-        llvmMetadataArray = ArrayAttr::get(symName.getContext(), {});
-      if (!llvmArgMetadataArray)
-        llvmArgMetadataArray = ArrayAttr::get(symName.getContext(), {});
+                   CArg<"ArrayAttr", "{}">:$fnAttrs,
+                   CArg<"ArrayAttr", "{}">:$fnArgAttrs), [{
+      if (!fnAttrs)
+        fnAttrs = ArrayAttr::get(symName.getContext(), {});
+      if (!fnArgAttrs)
+        fnArgAttrs = ArrayAttr::get(symName.getContext(), {});
       build($_builder, $_state,
             symName, /*sym_visibility=*/nullptr, sourceName, type,
             functionType, inputParams,
             /*decorators=*/{},
             KGEN::getInlineLevelAttr($_builder.getContext(), inlineLevel),
             ExportKind::NotExported,
-            /*external=*/false, inlinedForm, linkageNameAttr, llvmMetadataArray,
-            llvmArgMetadataArray, /*sourceParamList=*/PogListAttr(),
+            /*external=*/false, inlinedForm, linkageNameAttr, fnAttrs,
+            fnArgAttrs, /*sourceParamList=*/PogListAttr(),
             /*sourceFuncTypeGenerator=*/TypedAttr());
     }]>,
     OpBuilder<(ins "StringAttr":$symName, "FuncTypeGeneratorType":$type), [{
@@ -909,8 +907,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     UnitAttr:$isolated
   );
   let regions = (region SizedRegion<1>:$bodyRegion);

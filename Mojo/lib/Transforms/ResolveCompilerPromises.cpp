@@ -287,15 +287,13 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
       /*inputParamTypes=*/{},
       FuncType::get(fnType, convs, sig.getFnEffects())));
 
-  // Extend LLVM per-arg metadata.
-  if (ArrayRef<Attribute> oldLLVMArgMetadata =
-          func.getLLVMArgMetadata().getValue();
-      !oldLLVMArgMetadata.empty()) {
-    SmallVector<Attribute> llvmArgMetadata(oldLLVMArgMetadata);
-    llvmArgMetadata.insert(llvmArgMetadata.end(), newTypes.size(),
-                           DictionaryAttr::get(func.getContext()));
-    func.setLLVMArgMetadataAttr(
-        ArrayAttr::get(func->getContext(), llvmArgMetadata));
+  // Extend LLVM argument attributes.
+  if (ArrayRef<Attribute> oldLLVMArgAttrs = func.getFnArgAttrs().getValue();
+      !oldLLVMArgAttrs.empty()) {
+    SmallVector<Attribute> llvmArgAttrs(oldLLVMArgAttrs);
+    llvmArgAttrs.insert(llvmArgAttrs.end(), newTypes.size(),
+                        DictionaryAttr::get(func.getContext()));
+    func.setFnArgAttrsAttr(ArrayAttr::get(func->getContext(), llvmArgAttrs));
   }
 
   // If captures went up to an exported function, propagate them through

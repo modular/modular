@@ -276,11 +276,11 @@ LogicalResult ParamDeclareRegionOp::verify() {
   if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
     return failure();
 
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
-      !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+  if (ArrayAttr fnArgAttrs = getFnArgAttrs();
+      !fnArgAttrs.empty() && fnArgAttrs.size() != getNumArguments())
+    return emitOpError("fnArgAttrs size does not equal number of "
                        "arguments, got ")
-           << argsArray.size();
+           << fnArgAttrs.size();
   return success();
 }
 
@@ -422,10 +422,10 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
       gen.getInputParamsAttrName(),       gen.getInlineLevelAttrName(),
       gen.getDecoratorsAttrName()};
   ArrayAttr emptyArray = ArrayAttr::get(op->getContext(), {});
-  if (attrs.get(gen.getLLVMMetadataArrayAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getLLVMMetadataArrayAttrName());
-  if (attrs.get(gen.getLLVMArgMetadataArrayAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getLLVMArgMetadataArrayAttrName());
+  if (attrs.get(gen.getFnAttrsAttrName()) == emptyArray)
+    elidedAttrs.push_back(gen.getFnAttrsAttrName());
+  if (attrs.get(gen.getFnArgAttrsAttrName()) == emptyArray)
+    elidedAttrs.push_back(gen.getFnArgAttrsAttrName());
   p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
 
   p << ' ';
@@ -436,9 +436,9 @@ LogicalResult GeneratorOp::verify() {
   if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
     return failure();
 
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
+  if (ArrayAttr argsArray = getFnArgAttrs();
       !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+    return emitOpError("FnArgAttrArray size does not equal number of "
                        "arguments, got ")
            << argsArray.size();
 
@@ -532,12 +532,12 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
       func.getExportKindAttrName(), func.getSymNameAttrName(),
       func.getFuncTypeGeneratorAttrName(), func.getInlineLevelAttrName(),
       func.getDecoratorsAttrName()};
-  if (attrs.get(func.getLLVMMetadataAttrName()) ==
+  if (attrs.get(func.getFnAttrsAttrName()) ==
       DictionaryAttr::get(op->getContext()))
-    elidedAttrs.push_back(func.getLLVMMetadataAttrName());
-  if (attrs.get(func.getLLVMArgMetadataAttrName()) ==
+    elidedAttrs.push_back(func.getFnAttrsAttrName());
+  if (attrs.get(func.getFnArgAttrsAttrName()) ==
       ArrayAttr::get(op->getContext(), {}))
-    elidedAttrs.push_back(func.getLLVMArgMetadataAttrName());
+    elidedAttrs.push_back(func.getFnArgAttrsAttrName());
   if (attrs.get(func.getCrossDeviceCapturesAttrName()) ==
       StringArrayAttr::get(func.getContext(), {}))
     elidedAttrs.push_back(func.getCrossDeviceCapturesAttrName());
@@ -569,11 +569,11 @@ LogicalResult FuncOp::verify() {
              << " but function type expected " << type;
     }
   }
-  if (ArrayAttr argsArray = getLLVMArgMetadata();
-      !argsArray.empty() && argsArray.size() != getNumArguments()) {
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+  if (ArrayAttr fnArgAttrs = getFnArgAttrs();
+      !fnArgAttrs.empty() && fnArgAttrs.size() != getNumArguments()) {
+    return emitOpError("fnArgAttrs size does not equal number of "
                        "arguments, got ")
-           << argsArray.size();
+           << fnArgAttrs.size();
   }
   return success();
 }

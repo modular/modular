@@ -204,8 +204,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getFunctionType(), inputParamDecls,
           inlineLevelOrAutomatic(regionDecl.getInlineLevel()),
           /*inlinedForm=*/nullptr, regionDecl.getLinkageNameAttr(),
-          regionDecl.getLLVMMetadataArray(),
-          regionDecl.getLLVMArgMetadataArray());
+          regionDecl.getFnAttrs(), regionDecl.getFnArgAttrs());
       symtab.insert(liftedWrapper);
       outlinedGenerators.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(liftedWrapper);
