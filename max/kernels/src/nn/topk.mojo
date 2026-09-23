@@ -1367,8 +1367,27 @@ def _topk_stage2[
                     batch_i_topk_vals[k] = total.u
                     batch_i_topk_idxs[k] = _local_topk_idxs[total.p]
 
-                # Early exit if no valid index
+                # Nothing selectable is left, so stop reducing -- but the rest
+                # of the row still has to be written. A caller reads all
+                # `max_k` slots and tells the padding apart by the sentinel,
+                # so an unwritten tail is stale device memory read back as
+                # real picks with arbitrary indices. The `k >= k_batch` exit
+                # above fills its own tail; this one never fired there because
+                # `k_batch == max_k` whenever no per-row `k` is passed.
                 if total.u == _topk_dead_val[T, largest]():
+                    comptime if not sampling:
+                        for remaining_k in range(k + 1, _max_k):
+                            batch_i_topk_vals[remaining_k] = _topk_dead_val[
+                                T, largest
+                            ]()
+                            batch_i_topk_idxs[remaining_k] = Scalar[
+                                out_idx_type
+                            ](-1)
+                    else:
+                        for remaining_k in range(k + 1, _max_k):
+                            batch_i_topk_vals[remaining_k] = _topk_dead_val[
+                                T, largest
+                            ]()
                     break
             barrier()
 
