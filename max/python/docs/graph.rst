@@ -118,4 +118,5 @@ Configuration
    :template: autosummary/class.rst
 
    GraphDebugConfig
+   ProfileScopeColor
 
