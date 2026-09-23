@@ -128,6 +128,8 @@ class BatchMetrics:
 
     used_kv_pct: float
     total_kv_blocks: int
+    # The fullest replica's `pressure_pct`, as a fraction.
+    kv_pressure_pct: float
     cache_hit_rate: float
     cache_hit_tokens: int
     cache_miss_tokens: int
@@ -296,6 +298,7 @@ class BatchMetrics:
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
+        kv_pressure_pct = 0.0
         device_blocks_served = 0
         used_host_kv_pct = 0.0
         total_host_kv_bytes = 0
@@ -363,6 +366,14 @@ class BatchMetrics:
             used_kv_blocks = sum(bc.used for bc in block_counts)
             assert total_kv_blocks > 0
             used_kv_pct = used_kv_blocks / total_kv_blocks
+
+            kv_pressure_pct = (
+                max(
+                    kv_cache.pressure_pct(replica_idx)
+                    for replica_idx in range(num_replicas)
+                )
+                / 100
+            )
 
             host_byte_counts = [
                 kv_cache.host_byte_count(replica_idx)
@@ -508,6 +519,7 @@ class BatchMetrics:
             total_preemption_count=total_preemption_count,
             used_kv_pct=used_kv_pct,
             total_kv_blocks=total_kv_blocks,
+            kv_pressure_pct=kv_pressure_pct,
             cache_hit_rate=cache_hit_rate,
             cache_hit_tokens=cache_hit_tokens,
             cache_miss_tokens=cache_miss_tokens,
@@ -587,7 +599,11 @@ class BatchMetrics:
 
         kv_str = ""
         if self.total_kv_blocks != 0:
-            usage_str = f"KVCache usage: {self.used_kv_pct:.1%} of {self.total_kv_blocks} blocks"
+            usage_str = (
+                f"KVCache usage: {self.used_kv_pct:.1%} of "
+                f"{self.total_kv_blocks} blocks "
+                f"(admission pressure: {self.kv_pressure_pct:.1%})"
+            )
             # Only show the cache-hit clause when this batch newly admitted
             # at least one request. CE batches that are pure chunked-prefill
             # continuations report 0 admissions and would otherwise display
@@ -869,6 +885,7 @@ class BatchMetrics:
         if self.total_kv_blocks != 0:
             extra["used_kv_pct"] = self.used_kv_pct
             extra["total_kv_blocks"] = self.total_kv_blocks
+            extra["kv_pressure_pct"] = self.kv_pressure_pct
 
         if self.num_new_admissions > 0:
             extra["num_new_admissions"] = self.num_new_admissions

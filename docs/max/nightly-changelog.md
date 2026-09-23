@@ -404,4 +404,7 @@ This version is still a work in progress.
   row rather than one each, and nothing about that was visible from outside,
   so the model loaded and served as usual.
 
+- Fixed the scheduler refusing to admit queued prefill on models with a
+  recurrent state cache while KV cache memory was still free.
+
 ## Mojo language

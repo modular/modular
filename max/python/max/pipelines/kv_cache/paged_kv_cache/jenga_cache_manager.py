@@ -736,6 +736,19 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         """Returns the device KV cache block occupancy for the given replica."""
         return self.huge_block_count(replica_idx)
 
+    def pressure_pct(self, replica_idx: int = 0) -> float:
+        """Returns the fullest leaf's page occupancy, in ``[0, 100]``.
+
+        Reads 100 once no leaf can allocate another page.
+        """
+        return max(
+            (
+                count.used_pct
+                for count in self.little_block_count(replica_idx).values()
+            ),
+            default=0.0,
+        )
+
     # ============================================================================
     # KVConnector APIs (full-attention groups only -- see __init__)
     # ============================================================================

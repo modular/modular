@@ -50,6 +50,7 @@ def create_mock_kv_cache() -> Mock:
     cache.contains = Mock(return_value=False)
     cache.pending_transfers_exist = Mock(return_value=False)
     cache.block_count = Mock(return_value=BlockCount(free=100, total=100))
+    cache.pressure_pct = Mock(return_value=0.0)
     return cache
 
 

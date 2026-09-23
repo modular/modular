@@ -91,6 +91,14 @@ class PagedKVCacheManagerInterface(ABC):
     def block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the device KV cache block occupancy for the given replica."""
 
+    def pressure_pct(self, replica_idx: int = 0) -> float:
+        """Returns how close the replica is to refusing work, in ``[0, 100]``.
+
+        Defaults to block occupancy. A manager whose blocks are coarser than
+        what a request allocates overrides this.
+        """
+        return self.block_count(replica_idx).used_pct
+
     @abstractmethod
     def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
         """Returns the host KV tier occupancy in bytes for the given replica."""

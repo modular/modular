@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from math import lcm
 
 import numpy as np
 import pytest
@@ -47,6 +48,7 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors import NullConnector
 from max.pipelines.kv_cache.paged_kv_cache import (
@@ -90,8 +92,9 @@ def create_manager(
     params: KVCacheParamInterface, num_huge_blocks: int, max_batch_size: int
 ) -> JengaKVCacheManager:
     tp_degree = params.tensor_parallel_degree
-    huge_page_bytes = max(
-        leaf.bytes_per_page // tp_degree for leaf in params.leaves().values()
+    # A huge block is the least common multiple of the leaf page sizes.
+    huge_page_bytes = lcm(
+        *(leaf.bytes_per_page // tp_degree for leaf in params.leaves().values())
     )
     return JengaKVCacheManager.create(
         params=params,
@@ -113,6 +116,17 @@ def make_multi_leaf_manager(
             SLIDING: make_leaf(n_kv_heads=1, window_size=4),
             FULL: make_leaf(n_kv_heads=3),
         }
+    )
+    return create_manager(params, num_huge_blocks, max_batch_size)
+
+
+def make_three_leaf_manager(
+    num_huge_blocks: int, max_batch_size: int = 64
+) -> JengaKVCacheManager:
+    """Returns a manager with page sizes 6:5:4, so a huge block holds 10, 12
+    and 15 pages of the three leaves."""
+    params = MultiKVCacheParams.from_params(
+        {f"leaf{heads}": make_leaf(n_kv_heads=heads) for heads in (6, 5, 4)}
     )
     return create_manager(params, num_huge_blocks, max_batch_size)
 
@@ -311,6 +325,64 @@ def test_block_count_is_reported_per_replica() -> None:
     assert mgr.block_count(0).free == 9
     assert mgr.block_count(1).free == 6
     assert mgr.block_count(0).total == mgr.block_count(1).total == 9
+
+
+def test_pressure_reads_the_fullest_leaf_not_the_huge_blocks_touched() -> None:
+    """Checks ``pressure_pct`` tracks the fullest leaf's pages."""
+    mgr = make_three_leaf_manager(num_huge_blocks=12)
+    held = []
+    for _ in range(31):
+        ctx = make_ctx(num_tokens=1)
+        mgr.claim(ctx)
+        mgr.alloc(ctx)
+        held.append(ctx)
+
+    # 31 one-page requests spread over ceil(31/10) + ceil(31/12) +
+    # ceil(31/15) = 10 of the 11 allocable huge blocks.
+    assert mgr.block_count().used == 10
+    assert mgr.block_count().used_pct == pytest.approx(90.9, abs=0.05)
+
+    assert mgr.pressure_pct() == pytest.approx(87.1, abs=0.05)
+    assert all(c.free > 0 for c in mgr.little_block_count().values())
+
+    pressure = mgr.pressure_pct()
+    while True:
+        ctx = make_ctx(num_tokens=1)
+        mgr.claim(ctx)
+        try:
+            mgr.alloc(ctx)
+        except InsufficientBlocksError:
+            mgr.release(ctx)
+            break
+        held.append(ctx)
+        pressure = mgr.pressure_pct()
+
+    assert len(held) == 40
+    assert pressure == 100.0
+
+
+def test_pressure_holds_over_repeated_passes_on_one_pool() -> None:
+    """Checks pressure stays under 90 across repeated passes over one pool.
+
+    Released pages are reused in release order, so later passes touch more
+    huge blocks.
+    """
+    mgr = make_three_leaf_manager(num_huge_blocks=12)
+    for pass_idx in range(4):
+        held = []
+        for _ in range(31):
+            ctx = make_ctx(num_tokens=1)
+            mgr.claim(ctx)
+            mgr.alloc(ctx)
+            held.append(ctx)
+
+        assert mgr.pressure_pct() <= 90.0, f"pass {pass_idx}"
+        assert mgr.block_count().used_pct > 90.0, f"pass {pass_idx}"
+
+        # Interleave each leaf's free pages across its huge blocks.
+        for ctx in held[::2] + held[1::2]:
+            mgr.release(ctx)
+        assert mgr.block_count().free == mgr.block_count().total
 
 
 def test_a_padding_dummy_runs_on_the_null_page() -> None:

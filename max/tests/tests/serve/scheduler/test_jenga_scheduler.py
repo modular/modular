@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import queue
+from math import lcm
 
 import numpy as np
 import pytest
@@ -57,6 +58,7 @@ WINDOW_SIZE = 25
 def create_scheduler(
     is_jenga: bool,
     *,
+    params: MultiKVCacheParams | None = None,
     num_huge_pages: int = 500,
     max_batch_size: int = 512,
     max_seq_len: int = 1000,
@@ -66,31 +68,33 @@ def create_scheduler(
 ) -> tuple[TokenGenerationScheduler, queue.Queue[TextContext]]:
     session = InferenceSession(devices=[CPU()])
     page_size = PAGE_SIZE
-    params = MultiKVCacheParams.from_params(
-        {
-            "sliding": MHAKVCacheParams(
-                dtype=DType.float32,
-                num_layers=1,
-                n_kv_heads=1,
-                head_dim=16,
-                page_size=page_size,
-                window_size=WINDOW_SIZE,
-                enable_prefix_caching=enable_prefix_caching,
-                devices=[DeviceRef.CPU()],
-            ),
-            "full": MHAKVCacheParams(
-                dtype=DType.float32,
-                num_layers=1,
-                n_kv_heads=1,
-                head_dim=1,
-                page_size=page_size,
-                enable_prefix_caching=enable_prefix_caching,
-                devices=[DeviceRef.CPU()],
-            ),
-        }
-    )
+    if params is None:
+        params = MultiKVCacheParams.from_params(
+            {
+                "sliding": MHAKVCacheParams(
+                    dtype=DType.float32,
+                    num_layers=1,
+                    n_kv_heads=1,
+                    head_dim=16,
+                    page_size=page_size,
+                    window_size=WINDOW_SIZE,
+                    enable_prefix_caching=enable_prefix_caching,
+                    devices=[DeviceRef.CPU()],
+                ),
+                "full": MHAKVCacheParams(
+                    dtype=DType.float32,
+                    num_layers=1,
+                    n_kv_heads=1,
+                    head_dim=1,
+                    page_size=page_size,
+                    enable_prefix_caching=enable_prefix_caching,
+                    devices=[DeviceRef.CPU()],
+                ),
+            }
+        )
     bytes_per_leaf = {leaf.bytes_per_page for leaf in params.leaves().values()}
-    huge_page_bytes = max(bytes_per_leaf)
+    # A huge block is the least common multiple of the leaf page sizes.
+    huge_page_bytes = lcm(*bytes_per_leaf)
     avail_bytes = num_huge_pages * huge_page_bytes
     if is_jenga:
         kv_cache: PagedKVCacheManagerInterface = JengaKVCacheManager.create(
@@ -418,3 +422,59 @@ def test_jenga_rejects_a_max_seq_len_that_cannot_fit() -> None:
     # for the full leaf at 16 pages of 10 tokens each.
     assert "Insufficient cache memory" in str(e.value)
     assert "Reduce --max-length to at most 640" in str(e.value)
+
+
+def _three_leaf_params() -> MultiKVCacheParams:
+    """Returns three leaves with page sizes 6:5:4, so a huge block holds 10,
+    12 and 15 pages of them."""
+    return MultiKVCacheParams.from_params(
+        {
+            f"leaf{heads}": MHAKVCacheParams(
+                dtype=DType.float32,
+                num_layers=1,
+                n_kv_heads=heads,
+                head_dim=1,
+                page_size=PAGE_SIZE,
+                enable_prefix_caching=False,
+                devices=[DeviceRef.CPU()],
+            )
+            for heads in (6, 5, 4)
+        }
+    )
+
+
+def test_jenga_keeps_admitting_while_touched_huge_blocks_hold_free_pages() -> (
+    None
+):
+    """Checks queued prefill is admitted while leaves still have free pages.
+
+    Runs four passes over one pool, since released pages are reused in
+    release order and later passes touch more huge blocks.
+    """
+    scheduler, request_queue = create_scheduler(
+        True,
+        params=_three_leaf_params(),
+        num_huge_pages=12,
+        max_batch_size=34,
+        max_seq_len=20,
+    )
+    kv_cache = scheduler.batch_constructor.kv_cache
+    assert isinstance(kv_cache, JengaKVCacheManager)
+    assert kv_cache.block_count().total == 11
+
+    for pass_idx in range(4):
+        for i in range(48):
+            enqueue_request(
+                request_queue,
+                prompt_len=5,
+                max_seq_len=20 if i % 4 == 3 else 10,
+            )
+        infos = run_until_completion(scheduler, max_num_iters=100)
+
+        ce = [b.batch_size for b in infos if b.batch_type == CE]
+        tg = [
+            b.batch_size for b in infos if b.batch_type == TG and b.batch_size
+        ]
+        assert ce == [34, 14], f"pass {pass_idx}"
+        assert sum(b.preempted for b in infos) == 0, f"pass {pass_idx}"
+        assert (len(tg), sum(tg)) == (18, 312), f"pass {pass_idx}"

@@ -59,6 +59,7 @@ def _make_metrics(**overrides: Any) -> BatchMetrics:
         total_preemption_count=14,
         used_kv_pct=0.15,
         total_kv_blocks=16,
+        kv_pressure_pct=0.15,
         cache_hit_rate=0.17,
         cache_hit_tokens=18,
         cache_miss_tokens=19,
@@ -106,6 +107,7 @@ def test_metric_to_string() -> None:
         total_preemption_count=14,
         used_kv_pct=0.15,
         total_kv_blocks=16,
+        kv_pressure_pct=0.24,
         cache_hit_rate=0.17,
         cache_hit_tokens=18,
         cache_miss_tokens=19,
@@ -133,7 +135,7 @@ def test_metric_to_string() -> None:
 
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks, Cache hit rate: 17.0% (18 hit, 19 miss) | Host KVCache Usage: 20.0% of 21.00 KiB, Copied: 22.00 KiB H2D, 23.00 KiB D2H | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks (admission pressure: 24.0%), Cache hit rate: 17.0% (18 hit, 19 miss) | Host KVCache Usage: 20.0% of 21.00 KiB, Copied: 22.00 KiB H2D, 23.00 KiB D2H | All Preemptions: 14 reqs"
     )
 
     metrics.total_kv_blocks = 0
@@ -346,6 +348,7 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
         total_preemption_count=0,
         used_kv_pct=0.101,
         total_kv_blocks=13359,
+        kv_pressure_pct=0.101,
         cache_hit_rate=0.0,
         cache_hit_tokens=0,
         cache_miss_tokens=0,
@@ -372,7 +375,10 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
     )
 
     formatted = metrics.pretty_format()
-    assert "KVCache usage: 10.1% of 13359 blocks |" in formatted
+    assert (
+        "KVCache usage: 10.1% of 13359 blocks (admission pressure: 10.1%) |"
+        in formatted
+    )
     assert "Cache hit rate" not in formatted
     assert "hit," not in formatted
     assert "miss)" not in formatted

@@ -84,13 +84,14 @@ def create_mock_lora_manager(max_num_loras: int = 2) -> Mock:
 def set_mock_kv_usage(cache: Mock, used_fraction: float) -> None:
     """Point a mock cache's device block count at a given usage fraction.
 
-    ``_identify_priority`` reads ``block_count().used_pct``, so a mock that
-    reaches it needs real numbers rather than an auto-created ``Mock``.
+    ``_identify_priority`` reads ``pressure_pct()``, so a mock that reaches
+    it needs real numbers rather than an auto-created ``Mock``.
     """
     used = round(used_fraction * 100)
     cache.block_count = Mock(
         return_value=BlockCount(free=100 - used, total=100)
     )
+    cache.pressure_pct = Mock(return_value=float(used))
 
 
 def create_mock_kv_cache() -> Mock:
