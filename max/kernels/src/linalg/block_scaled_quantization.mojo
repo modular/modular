@@ -33,6 +33,7 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    RowMajorLayout,
     DefaultEngine,
     TensorEngine,
     TileTensor,
@@ -40,6 +41,7 @@ from layout import (
     coord_to_index_list,
 )
 from layout.tile_layout import TensorLayout
+from std.collections import OptionalReg
 from std.logger import Logger
 from max.gpu.primitives import warp
 from max.gpu.primitives.warp import lane_group_max, shuffle_xor
@@ -1433,6 +1435,10 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     ScalesOffsetsEngine: TensorEngine,
     ExpertIdsEngine: TensorEngine,
     SfEngine: TensorEngine,
+    row_indices_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64].element_types
+    ],
+    RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
     num_threads: Int = 128,
     k_tiles_per_block: Int = 1,
 ](
@@ -1460,6 +1466,11 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     sf_tensor: TileTensor[
         .float32, sf_layout, ImmutAnyOrigin, Engine=SfEngine
     ],  # tensor-wise scale factor
+    row_indices: OptionalReg[
+        TileTensor[
+            .int32, row_indices_layout, ImmutAnyOrigin, Engine=RowIndicesEngine
+        ]
+    ] = None,
 ):
     """GPU kernel that quantizes per-expert BF16 activation tiles to NVFP4/MXFP4/MXFP8 with TMA-based scale-factor stores.
 
@@ -1501,6 +1512,9 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         ScalesOffsetsEngine: Engine policy of the `scales_offsets` tensor.
         ExpertIdsEngine: Engine policy of the `expert_ids` tensor.
         SfEngine: Engine policy of the `sf_tensor`.
+        row_indices_layout: TileTensor layout of the optional source row
+            indices tensor.
+        RowIndicesEngine: Engine policy of the `row_indices` tensor.
         num_threads: Number of threads per block in the launch grid
             (defaults to 128).
         k_tiles_per_block: Column tiles handled by one block. Batching them
@@ -1515,6 +1529,12 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_offsets: Contiguous row boundaries per expert of shape
             `[num_experts + 1]` as `uint32`, where range `i` spans
             rows `row_offsets[i]` through `row_offsets[i + 1]`.
+        row_indices: Optional source row indices of shape `[padded_rows]` as
+            `int32`. When present, permuted output row `i` reads input row
+            `row_indices[i]`, fusing the MoE expert permutation gather into
+            the quantize loads. The output layout and scale tiles are
+            unchanged; absent means the input is already in permuted row
+            order.
         scales_offsets: Per-expert offset into the scales tensor of
             shape `[num_experts]` as `uint32`.
         expert_ids: Expert ID for each active range of shape
@@ -1534,6 +1554,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     comptime assert ScalesOffsetsEngine.element_size == 1
     comptime assert ExpertIdsEngine.element_size == 1
     comptime assert SfEngine.element_size == 1
+    comptime assert RowIndicesEngine.element_size == 1
     comptime assert scales_offsets_layout.all_dims_known
     comptime num_experts = scales_offsets_layout.static_shape[0]
 
@@ -1728,9 +1749,11 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
 
             var input_vector = SIMD[input_dtype, ELEMENTS_PER_THREAD](0)
             if is_valid:
-                var global_row = token_start + local_row
+                var source_row = token_start + local_row
+                if row_indices:
+                    source_row = Int(row_indices.value()[source_row])
                 input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
-                    (global_row, input_col)
+                    (source_row, input_col)
                 )
 
             var thread_max = abs(input_vector).reduce_max()
@@ -1811,6 +1834,10 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     ScalesOffsetsEngine: TensorEngine,
     ExpertIdsEngine: TensorEngine,
     SfEngine: TensorEngine,
+    RowIndicesLayoutType: TensorLayout = RowMajorLayout[
+        *Coord[Int64].element_types
+    ],
+    RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     output_tensor: TileTensor[
         mut=True, output_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
@@ -1842,6 +1869,15 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         mut=False, .float32, address_space=.GENERIC, ..., Engine=SfEngine
     ],
     ctx: DeviceContext,
+    row_indices: OptionalReg[
+        TileTensor[
+            mut=False,
+            .int32,
+            RowIndicesLayoutType,
+            ImmutAnyOrigin,
+            Engine=RowIndicesEngine,
+        ]
+    ] = None,
 ) raises:
     """Launches the grouped per-expert quantization kernel for NVFP4/MXFP4/MXFP8 on SM100 hardware.
 
@@ -1863,6 +1899,8 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         ScalesOffsetsEngine: Engine policy of the `scales_offsets` tensor.
         ExpertIdsEngine: Engine policy of the `expert_ids` tensor.
         SfEngine: Engine policy of the `sf_tensor`.
+        RowIndicesLayoutType: Layout of the optional `row_indices` tensor.
+        RowIndicesEngine: Engine policy of the `row_indices` tensor.
     Args:
         output_tensor: Output quantized tensor of packed FP4 `uint8`
             or `float8_e4m3fn` for MXFP8.
@@ -1879,6 +1917,10 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         sf_tensor: Per-expert tensor-wise scale factor of shape
             `[num_experts]` as `float32`.
         ctx: Device context used to enqueue the kernel.
+        row_indices: Optional source row indices of shape `[padded_rows]`
+            as `int32`. When present, permuted output row `i` reads input row
+            `row_indices[i]`, fusing the MoE expert permutation gather into
+            the quantize loads; the output stays in permuted row order.
     """
     # The kernel masks columns at 8-element lane granularity, so a column
     # count that is not a multiple of 8 would still load and store partially
@@ -1977,6 +2019,8 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             ScalesOffsetsEngine,
             ExpertIdsEngine,
             SfEngine,
+            RowIndicesLayoutType,
+            RowIndicesEngine,
             num_threads=BLOCK_THREADS,
             k_tiles_per_block=k_tiles_per_block,
         ]
@@ -1989,6 +2033,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             scales_offsets,
             expert_ids,
             sf_tensor,
+            row_indices,
             grid_dim=(
                 Int(scales_tensor.dim[0]()),
                 uceildiv(Int(scales_tensor.dim[1]()), k_tiles_per_block),

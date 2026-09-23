@@ -261,6 +261,78 @@ def test_grouped_nvfp4_quantization[
         host_ref_output.free()
         host_ref_scales.free()
 
+    # --- Fused gather variant ---
+    # Shuffle the input rows and hand the kernel the inverse permutation
+    # as row indices. Gathering through those indices during the quantize
+    # loads must reproduce the identity run byte for byte, on both the
+    # packed payload and the scale tiles. A rotation is not its own inverse
+    # beyond two rows, so indices applied in the wrong direction fail.
+    var perm = alloc[Int](total_tokens)
+    var indices_host = alloc[Int32](total_tokens)
+    for i in range(total_tokens):
+        perm[i] = (i + 1) % total_tokens
+    var shuffled_host = alloc[Scalar[dtype]](total_tokens * N)
+    for j in range(total_tokens):
+        for c in range(N):
+            shuffled_host[j * N + c] = host_input[perm[j] * N + c]
+    for j in range(total_tokens):
+        indices_host[perm[j]] = Int32(j)
+
+    var dev_shuffled = ctx.enqueue_create_buffer[dtype](
+        max(total_tokens * N, 1)
+    )
+    var dev_indices = ctx.enqueue_create_buffer[.int32](max(total_tokens, 1))
+    var dev_output2 = ctx.enqueue_create_buffer[out_dtype](
+        max(total_tokens * output_N, 1) + output_N
+    )
+    var dev_scales2 = ctx.enqueue_create_buffer[scales_dtype](
+        max(total_scales, 1)
+    )
+    ctx.enqueue_copy(dev_shuffled, shuffled_host)
+    ctx.enqueue_copy(dev_indices, indices_host)
+    ctx.enqueue_copy(dev_output2, sentinel_host)
+
+    var shuffled_tensor = TileTensor(dev_shuffled, row_major(input_shape))
+    var output2_tensor = TileTensor(dev_output2, row_major(output_shape))
+    var scales2_tensor = TileTensor(dev_scales2, row_major(scales_shape))
+    var indices_tensor = TileTensor(dev_indices, row_major(Coord(total_tokens)))
+
+    grouped_quantize_dynamic_scaled_fp4_async(
+        output2_tensor,
+        scales2_tensor,
+        shuffled_tensor,
+        row_offsets_tensor,
+        scales_offsets_tensor,
+        expert_ids_tensor,
+        sf_tensor_device,
+        ctx,
+        row_indices=indices_tensor.as_unsafe_any_origin().as_imm(),
+    )
+
+    var host_output2 = alloc[Scalar[out_dtype]](
+        total_tokens * output_N + output_N
+    )
+    var host_scales2 = alloc[Scalar[scales_dtype]](max(total_scales, 1))
+    ctx.enqueue_copy(host_output2, dev_output2)
+    ctx.enqueue_copy(host_scales2, dev_scales2)
+    ctx.synchronize()
+
+    for i in range(output_N):
+        assert_equal(Int(host_output2[total_tokens * output_N + i]), SENTINEL)
+    for i in range(total_tokens * output_N):
+        assert_equal(host_output2[i], host_output[i])
+    for i in range(total_scales):
+        assert_equal(
+            host_scales2[i].cast[.float64](),
+            host_scales[i].cast[.float64](),
+        )
+
+    shuffled_host.free()
+    indices_host.free()
+    perm.free()
+    host_output2.free()
+    host_scales2.free()
+
     host_input.free()
     host_output.free()
     host_scales.free()

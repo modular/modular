@@ -924,6 +924,60 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
         )
 
 
+@extensibility.register(
+    "mo.grouped.quantize.dynamic.block.scaled.with_row_indices"
+)
+struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
+    """Registers the `mo.grouped.quantize.dynamic.block.scaled.with_row_indices` graph op with the graph compiler.
+
+    Row-gather variant of `mo.grouped.quantize.dynamic.block.scaled`: output
+    row `i` quantizes input row `row_indices[i]`, which fuses the MoE expert
+    permutation gather into the quantize loads. A separate op carries the
+    extra operand because graph ops have no optional inputs, and the fusion
+    lives in the kernel because prologue fusion absorbs only elementwise and
+    view producers, not gathers. Fold it back into the base op once the
+    graph compiler fuses gathers generically.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType,
+        //,
+        scales_rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
+        sf_tensor: InputTensor[dtype=.float32, rank=1, ...],
+        row_indices: InputTensor[dtype=.int32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize dynamic block scaled only supports GPUs"
+
+        grouped_quantize_dynamic_scaled_fp4_async(
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            row_offsets.to_tile_tensor[.int64](),
+            scales_offsets.to_tile_tensor[.int64](),
+            expert_ids.to_tile_tensor[.int64](),
+            sf_tensor.to_tile_tensor[.int64](),
+            context,
+            row_indices.to_tile_tensor[.int64]()
+            .as_unsafe_any_origin()
+            .as_imm(),
+        )
+
+
 @extensibility.register("mo.quantize.dynamic.block.scaled.mxfp4")
 struct Struct_quantize_dynamic_block_scaled_mxfp4:
     """Registers the `mo.quantize.dynamic.block.scaled.mxfp4` graph op with the graph compiler.

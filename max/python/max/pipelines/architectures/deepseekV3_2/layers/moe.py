@@ -18,7 +18,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.comm.ep.ep_kernels import fused_silu
 from max.nn.kernels import moe_create_indices
-from max.nn.moe import MoEQuantized
+from max.nn.moe import MoEQuantized, NvMxf4f8Strategy
 
 
 class DeepseekV3_2MoE(MoEQuantized):
@@ -124,36 +124,35 @@ class DeepseekV3_2MoE(MoEQuantized):
         )
         scales_offset = create_indices_result[5] if nvfp4 else None
 
-        permutated_states = ops.gather(
-            x,
-            ops.cast(token_order // self.num_experts_per_token, DType.int32),
-            axis=0,
+        gather_indices = ops.cast(
+            token_order // self.num_experts_per_token, DType.int32
         )
-
-        total_m = ops.shape_to_tensor(permutated_states.shape)[0].cast(
-            DType.uint32
-        )
+        total_m = ops.shape_to_tensor(token_order.shape)[0].cast(DType.uint32)
 
         if nvfp4:
             assert scales_offset is not None
+            assert isinstance(strategy, NvMxf4f8Strategy)
+            # The grouped quantize gathers rows through the permutation
+            # indices itself, so the permuted activations never materialize.
             permuted_quant, permuted_scales = strategy.grouped_quantize(
-                permutated_states,
+                x,
                 self._token_group_size,
                 nvfp4.gate_up_input,
                 expert_start,
                 scales_offset,
                 expert_ids,
+                indices=gather_indices,
             )
         else:
             permuted_quant, permuted_scales = strategy.quantize(
-                permutated_states,
+                ops.gather(x, gather_indices, axis=0),
                 self._token_group_size,
             )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
             self.gate_up_proj_scales,
             self.down_proj_scales,
-            permutated_states.device,
+            x.device,
         )
 
         expert_inputs: tuple[TensorValue, ...] = (

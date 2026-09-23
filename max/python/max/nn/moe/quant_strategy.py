@@ -257,6 +257,7 @@ class NvMxf4f8Strategy:
         expert_start: TensorValue,
         scales_offset: TensorValue,
         expert_ids: TensorValue,
+        indices: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations per-expert with padded scale alignment."""
         if self.is_nvfp4 and input_scale is None:
@@ -280,6 +281,7 @@ class NvMxf4f8Strategy:
                 DType.float8_e4m3fn if self.is_nvfp4 else DType.float8_e8m0fnu
             ),
             out_type=self.dtype,
+            indices=indices,
         )
 
     def grouped_matmul(

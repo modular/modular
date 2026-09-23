@@ -8632,6 +8632,7 @@ def grouped_quantize_dynamic_block_scaled(
     sf_vector_size: int = 16,
     scales_type: DType = DType.float8_e4m3fn,
     out_type: DType = DType.uint8,
+    indices: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Grouped dynamic NVFP4/MXFP4/MXFP8 quantization for MoE experts.
 
@@ -8649,6 +8650,12 @@ def grouped_quantize_dynamic_block_scaled(
             Shape: ``[num_experts]``, dtype ``int32``.
         sf_tensor: Per-expert tensor-wise scale factors.
             Shape: ``[num_experts]``, dtype ``float32``.
+        indices: Optional source row indices per permuted row, fusing the
+            MoE expert permutation gather into the quantize loads.
+            Shape: ``[padded_rows]``, dtype ``int32``. When given, the input
+            is read at row ``indices[i]`` for permuted row ``i``, and the
+            output rows and scale tiles are sized by ``indices.shape[0]``
+            rather than ``input.shape[0]``.
         sf_vector_size: The block size for the scaling factors.
         scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
         out_type: Output dtype. ``uint8`` for packed FP4.
@@ -8678,13 +8685,14 @@ def grouped_quantize_dynamic_block_scaled(
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
     SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
-    total_m_tiles = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
+    num_rows = indices.shape[0] if indices is not None else input.shape[0]
+    total_m_tiles = ceildiv(num_rows, Dim(SF_MN_GROUP_SIZE))
     # A row belongs to exactly one group, so the number of non-empty groups
     # is bounded by both the group count and the row count; padding one tile
     # per group beyond that bound is wasted work at low occupancy (e.g.
     # single-token decode routed across hundreds of experts).
     total_m_tiles += AlgebraicDim.apply(
-        kgen.POC.min, expert_ids.shape[0], input.shape[0]
+        kgen.POC.min, expert_ids.shape[0], num_rows
     )
     scales_shape: list[Dim | int] = [
         total_m_tiles,
@@ -8694,15 +8702,21 @@ def grouped_quantize_dynamic_block_scaled(
         SF_ATOM_K,
     ]
 
+    op_name = "mo.grouped.quantize.dynamic.block.scaled"
+    values = [input, row_offsets, scales_offsets, expert_ids, sf_tensor]
+    if indices is not None:
+        op_name = "mo.grouped.quantize.dynamic.block.scaled.with_row_indices"
+        values.append(indices)
+
     result = ops.custom(
-        "mo.grouped.quantize.dynamic.block.scaled",
+        op_name,
         device=input.device,
-        values=[input, row_offsets, scales_offsets, expert_ids, sf_tensor],
+        values=values,
         out_types=[
             TensorType(
                 dtype=out_type,
                 shape=[
-                    input.shape[0],
+                    num_rows,
                     input.shape[1]
                     if out_type == DType.float8_e4m3fn
                     else input.shape[1] // 2,

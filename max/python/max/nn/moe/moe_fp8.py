@@ -620,35 +620,34 @@ class MoEQuantized(MoE):
             else None
         )
 
-        permuted = ops.gather(
-            x,
-            ops.cast(
-                ops.floor_div(token_order, self.num_experts_per_token),
-                DType.int32,
-            ),
-            axis=0,
+        gather_indices = ops.cast(
+            ops.floor_div(token_order, self.num_experts_per_token),
+            DType.int32,
         )
-
-        total_m = ops.shape_to_tensor(permuted.shape)[0].cast(DType.uint32)
+        total_m = ops.shape_to_tensor(token_order.shape)[0].cast(DType.uint32)
 
         if self._uses_nvidia_block_scaled_ep_layout:
             assert scales_offset is not None
+            assert isinstance(strategy, NvMxf4f8Strategy)
+            # The grouped quantize gathers rows through the permutation
+            # indices itself, so the permuted activations never materialize.
             permuted_quant, permuted_scales = strategy.grouped_quantize(
-                permuted,
+                x,
                 self._token_group_size,
                 nvfp4.gate_up_input if nvfp4 else None,
                 expert_start,
                 scales_offset,
                 expert_ids,
+                indices=gather_indices,
             )
         else:
             permuted_quant, permuted_scales = strategy.quantize(
-                permuted,
+                ops.gather(x, gather_indices, axis=0),
                 self._token_group_size,
             )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
-            self.gate_up_proj_scales, self.down_proj_scales, permuted.device
+            self.gate_up_proj_scales, self.down_proj_scales, x.device
         )
 
         expert_inputs: tuple[TensorValue, ...] = (
