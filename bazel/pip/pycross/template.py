@@ -207,7 +207,7 @@ def targets():
         }}),
         actual = select({{
             "@@//:use_sglang_setting": ":quack-kernels@0.6.1",
-            "@@//:use_vllm_setting": ":quack-kernels@0.3.3",
+            "@@//:use_vllm_setting": ":quack-kernels@0.6.1",
         }}),
     )
 
@@ -221,14 +221,28 @@ def targets():
         }}),
         actual = select({{
             "@@//:use_sglang_setting": ":tokenspeed-mla@0.1.1",
-            "@@//:use_vllm_setting": ":tokenspeed-mla@0.1.2",
+            "@@//:use_vllm_setting": ":tokenspeed-mla@0.1.8",
+        }}),
+    )
+
+    native.alias(
+        name = "torchcodec@multiple",
+        testonly = True,
+        target_compatible_with = select({{
+            "@@//:use_sglang_setting": [],
+            "@@//:use_vllm_setting": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }}),
+        actual = select({{
+            "@@//:use_sglang_setting": ":torchcodec@0.11.1",
+            "@@//:use_vllm_setting": ":torchcodec@0.16.0",
         }}),
     )
 
     native.alias(
         name = "vllm@multiple",
         testonly = True,
-        actual = ":vllm@0.24.0",
+        actual = ":vllm@0.26.0",
         target_compatible_with = ["@@//:nvidia_gpu"],
     )
 
