@@ -703,10 +703,6 @@ def test_quantized[
     var a_dev_tt = TileTensor(a_device, a_tt_shape)
     var b_dev_tt = TileTensor(b_device, b_tt_shape)
 
-    var c_dev_lt = c_dev_tt.to_layout_tensor()
-    var a_dev_lt = a_dev_tt.to_layout_tensor()
-    var b_dev_lt = b_dev_tt.to_layout_tensor()
-
     if is_benchmark():
         comptime nrun = 200
         comptime nwarmup = 2
@@ -716,9 +712,9 @@ def test_quantized[
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](
-                c_dev_lt,
-                a_dev_lt,
-                b_dev_lt,
+                c_dev_tt,
+                a_dev_tt,
+                b_dev_tt,
                 config,
                 ctx,
             )
@@ -728,9 +724,9 @@ def test_quantized[
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](
-                c_dev_lt,
-                a_dev_lt,
-                b_dev_lt,
+                c_dev_tt,
+                a_dev_tt,
+                b_dev_tt,
                 config,
                 ctx,
             )
@@ -751,9 +747,9 @@ def test_quantized[
     multistage_gemm_q[
         group_size=group_size, pack_factor=pack_factor, config=config
     ](
-        c_dev_lt,
-        a_dev_lt,
-        b_dev_lt,
+        c_dev_tt,
+        a_dev_tt,
+        b_dev_tt,
         config,
         ctx,
     )

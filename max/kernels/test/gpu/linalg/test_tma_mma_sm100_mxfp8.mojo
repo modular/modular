@@ -838,10 +838,10 @@ def test_block_scaled_mxfp8[
         m,
         n,
         Idx[k],
-        a_scales_host_ref.to_layout_tensor(),
-        b_scales_host_ref.to_layout_tensor(),
-        a_scales_host.to_layout_tensor(),
-        b_scales_host.to_layout_tensor(),
+        a_scales_host_ref,
+        b_scales_host_ref,
+        a_scales_host,
+        b_scales_host,
     )
     # Initialize matmul operands
     if simple_init():

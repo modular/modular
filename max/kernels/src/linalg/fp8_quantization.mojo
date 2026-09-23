@@ -1721,6 +1721,100 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
     )
 
 
+def naive_blockwise_scaled_fp8_grouped_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType,
+    c_tt_layout: TensorLayout,
+    a_tt_layout: TensorLayout,
+    b_tt_layout: TensorLayout,
+    a_scale_tt_layout: TensorLayout,
+    b_scale_tt_layout: TensorLayout,
+    a_offsets_tt_layout: TensorLayout,
+    expert_ids_tt_layout: TensorLayout,
+    //,
+    BLOCK_DIM_N: Int = 32,
+    BLOCK_DIM_M: Int = 16,
+    transpose_b: Bool = True,
+    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, c_type, c_tt_layout, ...],
+    a: TileTensor[mut=False, a_type, a_tt_layout, ...],
+    b: TileTensor[mut=False, b_type, b_tt_layout, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, a_scale_tt_layout, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, b_scale_tt_layout, ...],
+    a_offsets: TileTensor[mut=False, a_offsets_type, a_offsets_tt_layout, ...],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, expert_ids_tt_layout, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of the naive blockwise scaled FP8 grouped matmul.
+
+    Bridges to the LayoutTensor implementation, which stays the reference
+    until the grouped FP8 path is TileTensor-native.
+
+    Parameters:
+        c_type: Element type of the output accumulator.
+        a_type: Element type of the FP8 input matrix.
+        b_type: Element type of the FP8 weight tensor.
+        a_scales_type: Element type of the per-block scales for `a`.
+        b_scales_type: Element type of the per-block scales for `b`.
+        a_offsets_type: Element type of the per-expert row offsets.
+        expert_ids_type: Element type of the expert id tensor.
+        c_tt_layout: Compile-time `TensorLayout` of `c`.
+        a_tt_layout: Compile-time `TensorLayout` of `a`.
+        b_tt_layout: Compile-time `TensorLayout` of `b`.
+        a_scale_tt_layout: Compile-time `TensorLayout` of `a_scales`.
+        b_scale_tt_layout: Compile-time `TensorLayout` of `b_scales`.
+        a_offsets_tt_layout: Compile-time `TensorLayout` of `a_offsets`.
+        expert_ids_tt_layout: Compile-time `TensorLayout` of `expert_ids`.
+        BLOCK_DIM_N: Thread-block width over the N dimension.
+        BLOCK_DIM_M: Thread-block height over the M dimension.
+        transpose_b: `True` when `b` is stored transposed.
+        scales_granularity_mnk: Optional per-dimension scale block sizes.
+        elementwise_lambda_fn: Optional elementwise epilogue.
+
+    Args:
+        c: Rank-2 output accumulator tensor holding all expert outputs.
+        a: Rank-2 FP8 input matrix in K-major format.
+        b: Rank-3 FP8 weight tensor indexed by expert, in K-major format.
+        a_scales: Per-block scales for `a` in M-major format.
+        b_scales: Per-block scales for `b` indexed by expert.
+        a_offsets: Prefix-sum offsets delimiting each expert's rows in `a`.
+        expert_ids: Expert id (or `-1` to skip) for each grid-Z slice.
+        max_num_tokens_per_expert: Maximum row count assigned to any single
+            expert.
+        num_active_experts: Number of active experts to dispatch.
+        ctx: Device context used to enqueue the kernel.
+    """
+    naive_blockwise_scaled_fp8_grouped_matmul[
+        BLOCK_DIM_N=BLOCK_DIM_N,
+        BLOCK_DIM_M=BLOCK_DIM_M,
+        transpose_b=transpose_b,
+        scales_granularity_mnk=scales_granularity_mnk,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](
+        c.to_layout_tensor(),
+        a.to_layout_tensor(),
+        b.to_layout_tensor(),
+        a_scales.to_layout_tensor(),
+        b_scales.to_layout_tensor(),
+        a_offsets.to_layout_tensor(),
+        expert_ids.to_layout_tensor(),
+        max_num_tokens_per_expert,
+        num_active_experts,
+        ctx,
+    )
+
+
 def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     c_layout: Layout,
     a_layout: Layout,

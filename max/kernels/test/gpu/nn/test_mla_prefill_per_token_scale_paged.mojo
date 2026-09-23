@@ -62,6 +62,7 @@ from std.sys import get_defined_int
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
     Layout,
     LayoutTensor,
@@ -752,11 +753,9 @@ def run_test_paged_prefill_per_token_scale[
         ),
     )
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Coord(Idx[0])),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(
@@ -767,11 +766,11 @@ def run_test_paged_prefill_per_token_scale[
     )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_ref_4d_device.to_layout_tensor(),
+        q_ref_4d_device,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,

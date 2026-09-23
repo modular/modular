@@ -4567,18 +4567,14 @@ def _flare_mla_prefill_kv_cache_ragged[
     var layer_idx_cast = Int(layer_idx)
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
 
-    # Convert k and v to LayoutTensors for RaggedMHAOperand wrapping.
-    var k_lt = k.to_layout_tensor()
-    var v_lt = v.to_layout_tensor()
-
     def _mla_dispatch[
         mask_t: MHAMask
-    ](mask: mask_t) raises {var k_rope, var k_lt, var v_lt, imm}:
+    ](mask: mask_t) raises {var k_rope, var k, var v, imm}:
         flare_mla_prefill[rank=3,](
             output,
             q,
-            k_lt,
-            v_lt,
+            k,
+            v,
             k_rope,
             mask,
             input_row_offsets,

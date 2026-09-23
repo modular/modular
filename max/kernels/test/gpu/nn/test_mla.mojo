@@ -21,12 +21,9 @@ from std.sys import (
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -39,9 +36,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -236,18 +230,16 @@ def test[
         var k_operand = LayoutTensorMHAOperand(
             k_device.as_imm().as_unsafe_any_origin()
         )
-        var null_valid_length = LayoutTensor[
-            .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ](
-            None,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+        var null_valid_length = TileTensor(
+            MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            row_major(Coord(Idx[0])),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
-            q_device.to_layout_tensor(),
+            q_device,
             k_operand,
             k_operand,
             CausalMask(),
-            output_ref_device.to_layout_tensor(),
+            output_ref_device,
             null_valid_length,
             scale,
             batch_size,
@@ -590,11 +582,9 @@ def test_prefill[
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Coord(Idx[0])),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(
@@ -606,11 +596,11 @@ def test_prefill[
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_device_rank4.to_layout_tensor(),
+        q_device_rank4,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,

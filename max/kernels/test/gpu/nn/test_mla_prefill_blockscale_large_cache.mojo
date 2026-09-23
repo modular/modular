@@ -290,15 +290,13 @@ def run_finite_check[
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
-    var k_lt = k_device.to_layout_tensor()
-    var v_lt = v_device.to_layout_tensor()
 
     print("    launching...")
     flare_mla_prefill[rank=3](
         output_device,
         q_device,
-        k_lt,
-        v_lt,
+        k_device,
+        v_device,
         kv_cache,
         CausalMask(),
         input_ro_tt,

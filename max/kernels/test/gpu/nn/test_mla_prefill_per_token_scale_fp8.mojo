@@ -569,12 +569,12 @@ def test_prefill[
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_ref_4d_device.to_layout_tensor(),
+        q_ref_4d_device,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
-        dangling_valid_length.to_layout_tensor(),
+        output_ref_device,
+        dangling_valid_length,
         scale,
         batch_size,
         seq_len,

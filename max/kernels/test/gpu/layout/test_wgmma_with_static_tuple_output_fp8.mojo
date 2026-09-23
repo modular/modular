@@ -200,16 +200,12 @@ def wgmma_e4m3_e4m3_f32[
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    var c_ref_lt = c_device_ref_tt.to_layout_tensor()
-    var a_lt = a_device_tt.to_layout_tensor()
-    var b_lt = b_device_tt.to_layout_tensor()
-
     if transpose_b:
         vendor_blas.matmul(
             ctx,
-            c_ref_lt,
-            a_lt,
-            b_lt,
+            c_device_ref_tt,
+            a_device_tt,
+            b_device_tt,
             c_row_major=True,
             transpose_b=True,
         )
@@ -234,9 +230,9 @@ def wgmma_e4m3_e4m3_f32[
 
         vendor_blas.matmul(
             ctx,
-            c_ref_lt,
-            a_lt,
-            b_device_col_major_tt.to_layout_tensor(),
+            c_device_ref_tt,
+            a_device_tt,
+            b_device_col_major_tt,
             c_row_major=True,
             transpose_b=True,
         )

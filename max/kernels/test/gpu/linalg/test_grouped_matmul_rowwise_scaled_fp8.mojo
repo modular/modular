@@ -215,28 +215,20 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     ctx.enqueue_copy(a_scales_ref_device_buffer, a_scales_ref_host_ptr)
     ctx.enqueue_copy(b_scales_device_buffer, b_scales_host_ptr)
 
-    # Reference path (LayoutTensor) - distinct code from the KUT.
-    var a_ref = a_device_tt.to_layout_tensor()
-    var b_ref = b_device_tt.to_layout_tensor()
-    var c_ref = c_device_ref_tt.to_layout_tensor()
-    var a_scales_ref = a_scales_ref_device_tt.to_layout_tensor()
-    var b_scales_ref = b_scales_device_tt.to_layout_tensor()
-    var a_offsets_ref = a_offsets_device_tt.to_layout_tensor()
-    var expert_ids_ref = expert_ids_device_tt.to_layout_tensor()
-
+    # Reference path - distinct code from the KUT.
     naive_blockwise_scaled_fp8_grouped_matmul[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, 1, K),
     ](
-        c_ref,
-        a_ref,
-        b_ref,
-        a_scales_ref,
-        b_scales_ref,
-        a_offsets_ref,
-        expert_ids_ref,
+        c_device_ref_tt,
+        a_device_tt,
+        b_device_tt,
+        a_scales_ref_device_tt,
+        b_scales_device_tt,
+        a_offsets_device_tt,
+        expert_ids_device_tt,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

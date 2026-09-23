@@ -309,12 +309,12 @@ def _run[
         _use_valid_length=False,
         _is_cache_length_accurate=True,
     ](
-        q_t.to_layout_tensor(),
+        q_t,
         k_op,
         v_op,
         mask,
-        o_t.to_layout_tensor(),
-        vl_t.to_layout_tensor(),
+        o_t,
+        vl_t,
         scale,
         batch,
         seq,  # max_prompt_len

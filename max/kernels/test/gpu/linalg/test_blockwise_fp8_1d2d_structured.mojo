@@ -250,15 +250,6 @@ def test_blockwise_fp8_1d2d_structured[
         ),
     )
 
-    # Bridge to LayoutTensor for reference kernel
-    var a = a_tt.to_layout_tensor()
-    var b = b_tt.to_layout_tensor()
-    var c_ref = c_ref_tt.to_layout_tensor()
-    var a_scales = a_scales_tt.to_layout_tensor()
-    var b_scales = b_scales_tt.to_layout_tensor()
-    var a_offsets = a_offsets_tt.to_layout_tensor()
-    var expert_ids = expert_ids_tt.to_layout_tensor()
-
     # ===== Reference: naive blockwise FP8 grouped matmul =====
     naive_blockwise_scaled_fp8_grouped_matmul[
         BLOCK_DIM_M=16,
@@ -266,13 +257,13 @@ def test_blockwise_fp8_1d2d_structured[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref,
-        a,
-        b,
-        a_scales,
-        b_scales,
-        a_offsets,
-        expert_ids,
+        c_ref_tt,
+        a_tt,
+        b_tt,
+        a_scales_tt,
+        b_scales_tt,
+        a_offsets_tt,
+        expert_ids_tt,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

@@ -52,6 +52,7 @@ from std.sys import get_defined_int
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
     Layout,
     LayoutTensor,
@@ -336,9 +337,6 @@ def run_test_paged_prefill_blockscale[
 
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var k_lt = k_device.to_layout_tensor()
-    var v_lt = v_device.to_layout_tensor()
-
     # ------------------------------------------------------------------
     # Step 7: Launch the kernel. The same `flare_mla_prefill` overload
     # the generic paged test uses; routing to blockscale happens
@@ -349,8 +347,8 @@ def run_test_paged_prefill_blockscale[
     flare_mla_prefill[rank=3](
         output_device,
         q_device,
-        k_lt,
-        v_lt,
+        k_device,
+        v_device,
         kv_cache,
         CausalMask(),
         input_ro_tt,
@@ -445,11 +443,9 @@ def run_test_paged_prefill_blockscale[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Coord(Idx[0])),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(
@@ -460,11 +456,11 @@ def run_test_paged_prefill_blockscale[
     )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_device_rank4.to_layout_tensor(),
+        q_device_rank4,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,

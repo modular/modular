@@ -219,14 +219,6 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(a_scales_device_buffer, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device_buffer, b_scales_host_ptr)
 
-    var a = a_device_tt.to_layout_tensor()
-    var b = b_device_tt.to_layout_tensor()
-    var c_ref = c_device_ref_tt.to_layout_tensor()
-    var a_scales = a_scales_device_tt.to_layout_tensor()
-    var b_scales = b_scales_device_tt.to_layout_tensor()
-    var a_offsets = a_offsets_device_tt.to_layout_tensor()
-    var expert_ids = expert_ids_device_tt.to_layout_tensor()
-
     # Reference first
     naive_blockwise_scaled_fp8_grouped_matmul[
         BLOCK_DIM_M=16,
@@ -234,13 +226,13 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref,
-        a,
-        b,
-        a_scales,
-        b_scales,
-        a_offsets,
-        expert_ids,
+        c_device_ref_tt,
+        a_device_tt,
+        b_device_tt,
+        a_scales_device_tt,
+        b_scales_device_tt,
+        a_offsets_device_tt,
+        expert_ids_device_tt,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

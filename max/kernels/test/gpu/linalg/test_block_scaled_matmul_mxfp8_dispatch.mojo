@@ -187,11 +187,11 @@ def test_mxfp8_dispatch[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
     ](
-        c_ref.to_layout_tensor(),
-        a.to_layout_tensor(),
-        b.to_layout_tensor(),
-        a_scales.to_layout_tensor(),
-        b_scales.to_layout_tensor(),
+        c_ref,
+        a,
+        b,
+        a_scales,
+        b_scales,
         ctx,
     )
 

@@ -46,6 +46,7 @@ from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.index import Index
 from std.utils.numerics import isnan
 from layout import (
+    Coord,
     Idx,
     Layout,
     LayoutTensor,
@@ -225,14 +226,9 @@ def test[
 
     # Reference over the SAME saturated KV bytes.
     var output_ref_device_ptr = ctx.enqueue_create_buffer[q_type](o_size)
-    comptime output_ref_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var output_ref_device = LayoutTensor[q_type, output_ref_layout](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_ref_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_ref_device_ptr = ctx.enqueue_create_buffer[q_type](k_size)
     var k_ref_device = LayoutTensor[q_type, k_layout](
@@ -245,14 +241,12 @@ def test[
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
         var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
-        var null_valid_length = LayoutTensor[
-            .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ](
-            None,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+        var null_valid_length = TileTensor(
+            MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            row_major(Coord(Idx[0])),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
-            q_tt.to_layout_tensor(),
+            q_tt,
             k_operand,
             k_operand,
             CausalMask(),

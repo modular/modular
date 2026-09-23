@@ -2642,8 +2642,8 @@ def flare_mla_prefill[
 ](
     output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
-    k: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
-    v: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
+    k: TileTensor[mut=False, address_space=.GENERIC, ...],
+    v: TileTensor[mut=False, address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
     valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
@@ -2745,8 +2745,14 @@ def flare_mla_prefill[
                         "q",
                         coord_to_index_list(q.layout.shape_coord()),
                     ),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg(
+                        "k",
+                        coord_to_index_list(k.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "v",
+                        coord_to_index_list(v.layout.shape_coord()),
+                    ),
                     trace_arg(
                         "output",
                         coord_to_index_list(output.layout.shape_coord()),
@@ -2770,24 +2776,8 @@ def flare_mla_prefill[
             max_prompt_len = Int(k_rope.max_prompt_length())
 
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
-        var k_operand = RaggedMHAOperand(
-            TileTensor(
-                k.ptr,
-                row_major(
-                    Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))
-                ),
-            ),
-            cro_buf,
-        )
-        var v_operand = RaggedMHAOperand(
-            TileTensor(
-                v.ptr,
-                row_major(
-                    Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))
-                ),
-            ),
-            cro_buf,
-        )
+        var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
         comptime kv_num_heads = cache_t.kv_params.num_heads
@@ -2798,7 +2788,7 @@ def flare_mla_prefill[
 
         comptime mha_config = MHAConfig[dtype](
             type_of(q).static_shape[rank - 2],  # num_heads
-            Int(k.layout.shape[rank - 1]),  # depth
+            type_of(k).static_shape[rank - 1],  # depth
             num_keys_per_block=num_keys_per_block,
             WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,

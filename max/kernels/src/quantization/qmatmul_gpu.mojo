@@ -1640,6 +1640,59 @@ def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
 
 
 @doc_hidden
+@inline(.always)
+def multistage_gemm_q[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    *,
+    group_size: Int,
+    pack_factor: Int,
+    config: MatmulConfig[a_type, b_type, c_type, True],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    runtime_config: MatmulConfig[a_type, b_type, c_type, True],
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of `multistage_gemm_q`.
+
+    Bridges to the LayoutTensor implementation, which stays the reference
+    until the quantized multistage GEMM is TileTensor-native.
+
+    Parameters:
+        c_type: The dtype of the output matrix.
+        a_type: The dtype of the A matrix elements.
+        b_type: The dtype of the packed quantized B matrix elements.
+        group_size: The number of K elements sharing a single scale.
+        pack_factor: The number of quantized values packed per B element.
+        config: The compile-time matmul configuration.
+        elementwise_lambda_fn: An optional elementwise epilogue.
+
+    Args:
+        c: The output tile tensor in global memory.
+        a: The left-hand (activation) tile tensor in global memory.
+        b: The packed quantized weight tile tensor in global memory.
+        runtime_config: The runtime matmul configuration.
+        ctx: The device context used to enqueue the kernel.
+    """
+    multistage_gemm_q[
+        group_size=group_size,
+        pack_factor=pack_factor,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](
+        c.to_layout_tensor(),
+        a.to_layout_tensor(),
+        b.to_layout_tensor(),
+        runtime_config,
+        ctx,
+    )
+
+
 def multistage_gemm_q[
     c_type: DType,
     a_type: DType,

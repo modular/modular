@@ -20,6 +20,7 @@ from std.utils.numerics import FPUtils
 from std.utils.index import IndexList
 from std.memory import bitcast
 from layout import Coord, CoordLike, Idx, Layout, LayoutTensor, TileTensor
+from layout.tile_layout import TensorLayout
 from std.simd import _convert_f32_to_float8_ue8m0
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
@@ -954,6 +955,85 @@ def get_batched_scale_factor[
                 (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
             )
         ]
+    )
+
+
+def convert_ref_scales_to_mxfp8_format[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    ref_a_scales_tt_layout: TensorLayout,
+    ref_b_scales_tt_layout: TensorLayout,
+    a_scales_tt_layout: TensorLayout,
+    b_scales_tt_layout: TensorLayout,
+    //,
+    ref_scales_type: DType,
+    scales_type: DType,
+    *,
+    REF_BLOCK_SIZE: Int,
+    SF_VECTOR_SIZE: Int,
+](
+    m: MType,
+    n: NType,
+    k: KType,
+    ref_a_scales: TileTensor[
+        mut=False,
+        ref_scales_type,
+        ref_a_scales_tt_layout,
+        address_space=.GENERIC,
+        ...,
+    ],
+    ref_b_scales: TileTensor[
+        mut=False,
+        ref_scales_type,
+        ref_b_scales_tt_layout,
+        address_space=.GENERIC,
+        ...,
+    ],
+    a_scales: TileTensor[
+        mut=True, scales_type, a_scales_tt_layout, address_space=.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        mut=True, scales_type, b_scales_tt_layout, address_space=.GENERIC, ...
+    ],
+):
+    """TileTensor overload of `convert_ref_scales_to_mxfp8_format`.
+
+    Bridges to the LayoutTensor implementation, which stays the reference
+    until the MXFP8 scale-factor helpers are TileTensor-native.
+
+    Parameters:
+        MType: CoordLike type carrying the M dimension size.
+        NType: CoordLike type carrying the N dimension size.
+        KType: CoordLike type carrying the K dimension size.
+        ref_a_scales_tt_layout: `TensorLayout` of the 2D reference A scales.
+        ref_b_scales_tt_layout: `TensorLayout` of the 2D reference B scales.
+        a_scales_tt_layout: `TensorLayout` of the 5D output A scales.
+        b_scales_tt_layout: `TensorLayout` of the 5D output B scales.
+        ref_scales_type: Element type of the reference scales.
+        scales_type: Element type of the output scales.
+        REF_BLOCK_SIZE: Block size of the reference scales.
+        SF_VECTOR_SIZE: Scale-factor vector size of the output scales.
+
+    Args:
+        m: M dimension size.
+        n: N dimension size.
+        k: K dimension size.
+        ref_a_scales: 2D reference A scales.
+        ref_b_scales: 2D reference B scales.
+        a_scales: 5D output A scales.
+        b_scales: 5D output B scales.
+    """
+    convert_ref_scales_to_mxfp8_format[
+        REF_BLOCK_SIZE=REF_BLOCK_SIZE, SF_VECTOR_SIZE=SF_VECTOR_SIZE
+    ](
+        m,
+        n,
+        k,
+        ref_a_scales.to_layout_tensor(),
+        ref_b_scales.to_layout_tensor(),
+        a_scales.to_layout_tensor(),
+        b_scales.to_layout_tensor(),
     )
 
 
