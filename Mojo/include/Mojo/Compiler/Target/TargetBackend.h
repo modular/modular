@@ -24,6 +24,7 @@
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
+#include "Support/RCRef.h"
 #include "Target/TargetTraits.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -41,6 +42,7 @@
 namespace llvm {
 class Function;
 class GlobalVariable;
+class MemoryBuffer;
 class Module;
 class PassBuilder;
 class TargetMachine;
@@ -53,6 +55,22 @@ struct object_creator;
 namespace mlir {
 class Operation;
 } // namespace mlir
+
+namespace M::KGEN {
+// Forward-declared for `OffloadEmitContext`'s non-owning pointer, so the
+// pass-manager headers stay out of this widely-included header.
+struct PassManagerConfigOptions;
+} // namespace M::KGEN
+
+namespace M::Cache {
+// Forward-declared so `OffloadEmitContext` can hold an `RCRef<TransformCache>`
+// without pulling the Cache/AsyncRT headers into this widely-included header;
+// consumers include `Cache/CachedTransform.h` for the definition.
+template <typename KeyInfo>
+class BlobCache;
+struct TransformCacheKey;
+using TransformCache = BlobCache<TransformCacheKey>;
+} // namespace M::Cache
 
 namespace M::KGEN {
 
@@ -103,6 +121,19 @@ struct EmitContext {
   llvm::StringRef linkerPath;
   RunLlc runLlc;
   LinkObject linkObject;
+};
+
+/// Ambient state for a backend that owns the offload lower+emit path
+/// (`ownsOffloadLowering`).
+struct OffloadEmitContext {
+  const CompilationOptions &options;
+  mlir::Location loc;
+  /// Pass-manager config (`--mlir-print-ir-{before,after}*`, etc.) forwarded to
+  /// the offload lowering pipeline the backend runs internally. Non-owning.
+  PassManagerConfigOptions *pmOptions = nullptr;
+  /// Optional content-addressed cache for the backend's expensive
+  /// external-toolchain artifact; null keeps the backend uncached.
+  RCRef<Cache::TransformCache> transformCache = {};
 };
 
 /// Immutable description of an LLVM-level compilation target.
@@ -265,6 +296,20 @@ public:
   /// Appends backend-specific arguments to the link step.
   virtual void appendLinkArgs(llvm::SmallVectorImpl<llvm::StringRef> &args,
                               const CompilationOptions &options) const {}
+
+  /// Whether this backend owns the entire offload lower+emit path via
+  /// `lowerAndEmitOffload` (its artifact comes from an external toolchain, not
+  /// LLVM codegen); the LLVM-Module emit hooks below are then unreachable.
+  virtual bool ownsOffloadLowering() const { return false; }
+
+  /// Lowers and emits `module`, returning the device artifact. The target
+  /// arch is `ctx.options.targetCpu`. Only called when `ownsOffloadLowering()`
+  /// is true.
+  virtual ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+  lowerAndEmitOffload(mlir::Operation *module,
+                      const OffloadEmitContext &ctx) const {
+    return Error("this backend does not own the offload lowering path");
+  }
 
   virtual ErrorOr<BufferRef> emitAssembly(llvm::Module &module,
                                           EmitContext &ctx) const = 0;

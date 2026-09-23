@@ -17,6 +17,7 @@
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "Mojo/Compiler/ObjectCompiler.h"
 #include "Mojo/Compiler/SaveAsmOutput.h"
+#include "Mojo/Compiler/Target/TargetBackend.h"
 #include "Mojo/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -262,10 +263,37 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     const SymbolTable &symtab, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elabOptions);
 
-/// Given the pre-elaboration function `func` belonging to a module with the
-/// symbol table `symtab`, slice out a standalone module rooted at `func` and
-/// elaborate it and compile to assembly for the provided `target.
+/// Everything compiling one generator produces. Each caller below projects out
+/// the subset its own result type carries, so neither `CrossDeviceFunction` nor
+/// `OffloadCompilationResult` grows a field only the other one reads.
+namespace {
+struct CompiledStandaloneKernel {
+  StringAttr contents;
+  unsigned numCaptures;
+  /// Per-capture storage size in bytes; length equals `numCaptures`.
+  mlir::DenseI64ArrayAttr captureSizes;
+  OwningOpRef<Operation *> capturesFunc;
+};
+} // namespace
+
 static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
+    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+    const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
+    EmissionOptions emissionOptions, CompilationOptions compilationOptions,
+    ElaborateGeneratorsOptions elaboratorOptions);
+
+static ErrorOr<OffloadCompilationResult>
+compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
+                        StringAttr name, const SymbolTable &symtab,
+                        TargetInfoAttr target, ArrayRef<EmitAs> emissionKinds,
+                        EmissionOptions emissionOptions,
+                        CompilationOptions compilationOptions,
+                        ElaborateGeneratorsOptions elaboratorOptions);
+
+/// Given the pre-elaboration function `func` belonging to a module with the
+/// symbol table `symtab`, slice out a standalone module rooted at `func`,
+/// elaborate it, and compile it for `target`.
+static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
     GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
     const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
     EmissionOptions emissionOptions, CompilationOptions compilationOptions,
@@ -310,24 +338,39 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   std::unique_ptr<ObjectCompiler> compiler = compilerOr.takeValue();
 
-  // Initialize the target machine.
-  auto tmOr = createTargetMachine(compilationOptions, /*isJIT=*/false);
-  if (tmOr.isError())
-    return tmOr.takeError();
-  std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
+  // A backend that owns offload lowering drives its own lower+emit and needs
+  // no LLVM TargetMachine.
+  ErrorOr<const TargetBackend *> backendOr =
+      TargetBackendRegistry::get().lookup(target.getTriple());
+  const TargetBackend *backend = backendOr.isError() ? nullptr : *backendOr;
+  bool backendOwnsOffload = backend && backend->ownsOffloadLowering();
+
+  std::unique_ptr<llvm::TargetMachine> tm;
+  if (!backendOwnsOffload) {
+    ErrorOr<std::unique_ptr<llvm::TargetMachine>> tmOr =
+        createTargetMachine(compilationOptions, /*isJIT=*/false);
+    if (tmOr.isError())
+      return tmOr.takeError();
+    tm = tmOr.takeValue();
+  }
 
   // Slice out a pre-elaboration module for the new target to compile for.
   ExportMap exportedSymbols;
   exportedSymbols.insert({func.getSymNameAttr(), ExportKind::Exported});
   // Make sure to slice out anything referenced in the input parameters. When
   // generator references are instantiated in the standalone module, they are
-  // instantiated with the new target.
+  // instantiated with the new target. Mirrors `bundleCompileOffloadOp` so a
+  // per-kernel offload slice exports the same dependency set.
   mlir::AttrTypeWalker walker;
   walker.addWalk([&](SymbolConstantAttr ref) {
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});
   });
   walker.addWalk([&](FuncSymbolAttr ref) {
+    exportedSymbols.insert(
+        {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+  });
+  walker.addWalk([&](TypeGeneratorRefAttr ref) {
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});
   });
@@ -390,6 +433,22 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   buf.reserve(256 * 128); // 32 KB
   llvm::raw_svector_ostream os(buf);
 
+  // When the backend owns the offload path, it runs its own MLIR lowering
+  // pipeline and external toolchain to produce the device artifact; the
+  // LLVM-based emission kinds below do not apply.
+  if (backendOwnsOffload) {
+    OffloadEmitContext emitCtx{compilationOptions, func.getLoc(), &pmOptions,
+                               compiler->getTransformCache()};
+    ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> artifactOr =
+        backend->lowerAndEmitOffload(*module, emitCtx);
+    if (artifactOr.isError())
+      return artifactOr.takeError();
+    os << artifactOr.takeValue()->getBuffer();
+    return CompiledStandaloneKernel{
+        StringAttr::get(buf, StringType::get(func.getContext())), numCaptures,
+        captureSizes, std::move(capturesFunc)};
+  }
+
   // Emit the module in the requested form.
   switch (emissionKind) {
   case EmitAs::ASM:
@@ -433,9 +492,61 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     break;
   }
 
-  return CrossDeviceFunction{
+  return CompiledStandaloneKernel{
       StringAttr::get(buf, StringType::get(func.getContext())), numCaptures,
-      std::move(capturesFunc)};
+      captureSizes, std::move(capturesFunc)};
+}
+
+/// Cross-device closure compilation (the comptime `compile_closure` path).
+static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
+    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+    const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
+    EmissionOptions emissionOptions, CompilationOptions compilationOptions,
+    ElaborateGeneratorsOptions elaboratorOptions) {
+  DEFINE_OR_RETURN_ERROR(
+      CompiledStandaloneKernel, compiled,
+      compileStandaloneKernel(func, symbol, name, symtab, target, emissionKind,
+                              emissionOptions, compilationOptions,
+                              elaboratorOptions));
+  return CrossDeviceFunction{compiled.contents, compiled.numCaptures,
+                             std::move(compiled.capturesFunc)};
+}
+
+/// Per-kernel offload compilation. Builds the elaborator's record directly so
+/// the capture sizes the `kgen.compile_offload` lowering emits come from the
+/// compile that computed them.
+static ErrorOr<OffloadCompilationResult>
+compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
+                        StringAttr name, const SymbolTable &symtab,
+                        TargetInfoAttr target, ArrayRef<EmitAs> emissionKinds,
+                        EmissionOptions emissionOptions,
+                        CompilationOptions compilationOptions,
+                        ElaborateGeneratorsOptions elaboratorOptions) {
+  assert(!emissionKinds.empty() && "expected at least one emission kind");
+  // The device artifact an owning backend emits does not vary with the
+  // emission kind, so one compile serves every requested kind.
+  DEFINE_OR_RETURN_ERROR(
+      CompiledStandaloneKernel, compiled,
+      compileStandaloneKernel(func, symbol, name, symtab, target,
+                              emissionKinds[0], emissionOptions,
+                              compilationOptions, elaboratorOptions));
+
+  auto populateOp = cast<FuncOp>(compiled.capturesFunc.get());
+  StringAttr moduleName = getXXH3Hash(compiled.contents);
+  DenseMap<EmitAs, StringAttr> contents;
+  DenseMap<EmitAs, StringAttr> moduleNames;
+  for (EmitAs kind : emissionKinds) {
+    contents.insert({kind, compiled.contents});
+    moduleNames.insert({kind, moduleName});
+  }
+
+  OpBuilder b(symbol.getContext());
+  return OffloadCompilationResult{std::move(compiled.capturesFunc),
+                                  b.getIndexAttr(compiled.numCaptures),
+                                  compiled.captureSizes,
+                                  SymbolConstantAttr::get(populateOp),
+                                  std::move(contents),
+                                  std::move(moduleNames)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -502,33 +613,66 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       StringRef targetDataLayout = target.getDataLayout().toString();
       if (!targetDataLayout.empty())
         compilationOptions.targetDataLayout = targetDataLayout;
-      // Pull any `contract=fast|off` fp-mode item out of this offload's
-      // emission options (they are not global llvm cl options) and apply it on
-      // top of the host `-fp-mode` for this kernel only.
-      compilationOptions.fpMode = hostFpMode;
-      std::string filteredEmissionOptions;
-      if (std::optional<std::string> badItem = splitFpModeEmissionOptions(
-              offloadInfo.emissionOptions, compilationOptions.fpMode,
-              filteredEmissionOptions))
+      // Every offload compile below -- bundled or per-kernel -- needs the same
+      // fp-mode, target-abi and link options derived from this group.
+      if (std::optional<std::string> badItem = applyOffloadEmissionOptions(
+              offloadInfo.emissionOptions, offloadInfo.emissionLinkOptions,
+              hostFpMode, compilationOptions))
         return Error(llvm::formatv("invalid fp-mode emission option '{0}', "
                                    "expected 'contract=fast' or 'contract=off'",
                                    *badItem));
-      offloadInfo.emissionOptions = filteredEmissionOptions;
+      offloadInfo.emissionOptions = compilationOptions.emissionOptions;
 
-      // Likewise pull `target-abi` into the compilation options. It stays in
-      // the emission-option string, which identifies the offload in debug
-      // output and cache keys, and is skipped when the remaining options are
-      // applied as cl options.
-      compilationOptions.targetABI.clear();
-      {
-        SmallVector<StringRef> items;
+      // A backend that owns offload lowering emits one artifact per entry
+      // function, so there is nothing to bundle: slice and compile each kernel
+      // on its own. This sits after the option setup above so the per-kernel
+      // compiles see the same fp-mode, target-abi and link options as a
+      // bundled group would. Each compile below parses its options into
+      // LLVM's registered cl options, so they are reset after the loop.
+      ErrorOr<const TargetBackend *> offloadBackendOr =
+          TargetBackendRegistry::get().lookup(target.getTriple());
+      if (!offloadBackendOr.isError() &&
+          (*offloadBackendOr)->ownsOffloadLowering()) {
+        SmallVector<StringRef> perKernelOptions;
         StringRef(offloadInfo.emissionOptions)
-            .split(items, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-        applyTargetABIEmissionOptions(items, compilationOptions.targetABI);
-      }
+            .split(perKernelOptions, /*Separator=*/",",
+                   /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
-      compilationOptions.emissionOptions = offloadInfo.emissionOptions;
-      compilationOptions.emissionLinkOptions = offloadInfo.emissionLinkOptions;
+        for (auto &[op, symbols] : offloadInfo.symbols) {
+          auto func = cast<GeneratorOp>(op);
+          for (auto &[symbol, kernelInfo] : symbols) {
+            assert(!kernelInfo.emissionKinds.empty() &&
+                   "bundleCompileOffloadOp inserts at least one EmitAs");
+            SmallVector<EmitAs> emissionKinds(kernelInfo.emissionKinds.begin(),
+                                              kernelInfo.emissionKinds.end());
+            ErrorOr<OffloadCompilationResult> kernelOr =
+                compileElaboratorKernel(func, symbol, kernelInfo.name, symtab,
+                                        target, emissionKinds, perKernelOptions,
+                                        compilationOptions, elabOptions);
+            if (kernelOr.isError())
+              return kernelOr.takeError();
+            targetResult.insert({kernelInfo.kernelId, kernelOr.takeValue()});
+          }
+        }
+
+        // `compileStandaloneKernel` parses these into LLVM's registered cl
+        // options per kernel and does not reset them, so restore this loop's
+        // per-target invariant here instead of leaking one target's
+        // configuration into the next. `target-abi` is excluded because that
+        // path deliberately never parses it as a cl option.
+        SmallVector<StringRef> clPerKernelOptions;
+        llvm::copy_if(
+            perKernelOptions, std::back_inserter(clPerKernelOptions),
+            [](StringRef item) { return !isTargetABIEmissionOption(item); });
+        if (ErrorOrSuccess resetOr = resetEmissionOptions(clPerKernelOptions);
+            resetOr.isError())
+          return resetOr.takeError();
+
+        // TODO(MOCO-4850): this skips the `offloadOutputPrefix` handling
+        // below, so `--offload-output-prefix` writes no sidecar for a backend
+        // that owns its lowering. The artifact itself is still embedded.
+        continue;
+      }
 
       OwningOpRef<ModuleOp> module =
           produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping,
@@ -628,11 +772,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (!currentBitcodeLibs.empty())
         compiler->getBitcodeLibs() = currentBitcodeLibs;
 
-      // Initialize the target machine.
-      auto tmOr = createTargetMachine(compilationOptions, /*isJIT=*/false);
-      if (tmOr.isError())
-        return tmOr.takeError();
-      std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
+      // Backends owning offload lowering left through the per-kernel branch
+      // above, so everything reaching here needs an LLVM TargetMachine.
+      DEFINE_OR_RETURN_ERROR(std::unique_ptr<llvm::TargetMachine>, tm,
+                             createTargetMachine(compilationOptions,
+                                                 /*isJIT=*/false));
 
       // Run elaboration through to the end of the optimization pipeline.
       // The scope comes before the pass manager in this declaration. Thus

@@ -285,6 +285,34 @@ bool isMetalTriple(const llvm::Triple &triple);
 bool overrideExported(const llvm::Triple &triple);
 bool overrideExported(const CompilationOptions &options);
 
+/// Applies one offload group's emission options to `options`, the way every
+/// offload compile needs them regardless of how its artifact is produced: the
+/// `contract=fast|off` fp-mode item is pulled out of `emissionOptions` and
+/// applied on top of `hostFpMode`; `target-abi` is pulled into `targetABI`
+/// while staying in the option string, which identifies the offload in debug
+/// output and cache keys; and the filtered options plus `linkOptions` are
+/// recorded. Returns the offending item if an fp-mode item is malformed.
+inline std::optional<std::string>
+applyOffloadEmissionOptions(llvm::StringRef emissionOptions,
+                            llvm::StringRef linkOptions, FpMode hostFpMode,
+                            CompilationOptions &options) {
+  options.fpMode = hostFpMode;
+  std::string filtered;
+  if (std::optional<std::string> badItem =
+          splitFpModeEmissionOptions(emissionOptions, options.fpMode, filtered))
+    return badItem;
+
+  options.targetABI.clear();
+  llvm::SmallVector<llvm::StringRef> items;
+  llvm::StringRef(filtered).split(items, ',', /*MaxSplit=*/-1,
+                                  /*KeepEmpty=*/false);
+  applyTargetABIEmissionOptions(items, options.targetABI);
+
+  options.emissionOptions = filtered;
+  options.emissionLinkOptions = linkOptions.str();
+  return std::nullopt;
+}
+
 } // namespace M::KGEN
 
 #endif // KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
