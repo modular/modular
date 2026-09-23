@@ -104,54 +104,47 @@ class DeepseekV4Indexer(Module):
         candidates: TensorValue,
         valid: TensorValue,
     ) -> TensorValue:
-        """Select compressed entries for every query in a chunk.
+        """Select compressed entries for every query in a ragged batch.
 
         Args:
-            x: ``[batch, seq_len, hidden_size]``, the block input the main
-                attention also consumes.
-            qr: ``[batch, seq_len, q_lora_rank]``, the attention's
-                ``q_norm(wq_a(x))``. Shared, not recomputed -- the indexer reads
-                the same low-rank query the block does.
-            freqs_cis: ``[batch, seq_len, rope_head_dim // 2, 2]``, the rotary
-                rows at the chunk's positions.
-            candidates: ``[batch, n, index_head_dim]`` the indexer's own
-                compressed entries, in the same order as the attention's
-                compressed table (closed entries from the cache, then the
-                chunk's candidate windows).
-            valid: ``[batch, seq_len, n]`` bool, which candidates each query
-                may see -- the same mask the attention applies.
+            x: ``[T, hidden_size]``, the block input the main attention also
+                consumes.
+            qr: ``[T, q_lora_rank]``, the attention's ``q_norm(wq_a(x))``.
+                Shared, not recomputed -- the indexer reads the same low-rank
+                query the block does.
+            freqs_cis: ``[T, rope_head_dim // 2, 2]``, the rotary rows at the
+                tokens' positions.
+            candidates: ``[T, n, index_head_dim]`` each token's candidate
+                table: the indexer's own compressed entries in candidate order
+                (closed entries from the cache, then its request's fresh
+                windows).
+            valid: ``[T, n]`` bool, which candidates each query may see -- the
+                same mask the attention applies.
 
         Returns:
-            ``[batch, seq_len, k]`` int32 candidate numbers (rows of
-            ``candidates``), with ``-1`` in unusable slots.
-            ``k = min(index_topk, n)``.
+            ``[T, k]`` int32 candidate numbers (rows of ``candidates``), with
+            ``-1`` in unusable slots. ``k = min(index_topk, n)``.
         """
         device = x.device
-        b, s = int(x.shape[0]), int(x.shape[1])
+        t = x.shape[0]
         n = int(candidates.shape[1])
 
-        q = ops.reshape(self.wq_b(qr), [b, s, self.n_heads, self.head_dim])
+        # ``apply_rope_tail`` wants the sequence on axis 1.
+        q = ops.reshape(self.wq_b(qr), [1, t, self.n_heads, self.head_dim])
         q = apply_rope_tail(q, freqs_cis, self.rope_head_dim)
         # Rotate first, then quantize: the rotation is there to make the FP4
         # grid tolerable, so the order is not interchangeable.
         q = fp4_qat_quantize(hadamard_rotate(q))
 
-        q32 = ops.cast(q, DType.float32)
-        # "bshd,btd->bsht". The key side carries no head axis, so fold the
-        # query's (s, h) into one row axis and run a rank-3 matmul against
-        # [b, d, t]. Rank 3 also keeps this off the batched-matmul path whose
-        # fused epilogue (the relu) cannot instantiate for rank-4 outputs once
-        # t is a multiple of 128 (ISSUES.md Issue 32).
-        kv_t = ops.transpose(ops.cast(candidates, DType.float32), -1, -2)
-        scores = ops.relu(
-            ops.reshape(
-                ops.matmul(
-                    ops.reshape(q32, [b, s * self.n_heads, self.head_dim]),
-                    kv_t,
-                ),
-                [b, s, self.n_heads, n],
-            )
+        q32 = ops.reshape(
+            ops.cast(q, DType.float32), [t, self.n_heads, self.head_dim]
         )
+        # "thd,tnd->thn": one rank-3 batched matmul with the tokens as the
+        # batch. Rank 3 also keeps this off the batched-matmul path whose
+        # fused epilogue (the relu) cannot instantiate for rank-4 outputs once
+        # n is a multiple of 128 (ISSUES.md Issue 32).
+        kv_t = ops.transpose(ops.cast(candidates, DType.float32), -1, -2)
+        scores = ops.relu(ops.matmul(q32, kv_t))
 
         # One learned weight per head per query, folded with both softmax
         # scales the reference applies here rather than to the scores.
@@ -159,7 +152,7 @@ class DeepseekV4Indexer(Module):
             self.softmax_scale * self.n_heads**-0.5
         )
         index_score = ops.squeeze(
-            ops.sum(scores * ops.unsqueeze(weights, -1), axis=2), axis=2
+            ops.sum(scores * ops.unsqueeze(weights, -1), axis=1), axis=1
         )
 
         # Rule 1: an entry that had not closed by the query cannot be selected.

@@ -17,11 +17,14 @@ Module and weight names mirror the checkpoint's own layout (which follows the
 reference ``inference/model.py``) so the weight adapter stays a single rename.
 See ``weight_adapters.py``.
 
-One forward serves prefill, chunked prefill and decode: it takes a padded
-``[batch, seq_len]`` chunk plus the paged cache leaves, reads the cache at
-``cache_lengths`` and appends the chunk (``layers/attention.py``). Without a
-cache it is a plain prefill from position 0, which is what the per-layer
-gates drive.
+One forward serves prefill, chunked prefill and decode: it takes a ragged
+batch (``T`` tokens, ``input_row_offsets``) plus the paged cache leaves, reads
+the cache at each request's ``cache_lengths`` and appends its chunk
+(``layers/attention.py``, ``layers/ragged.py``). :meth:`DeepseekV4.serve` is
+that entry with the pipeline's logits contract; :meth:`DeepseekV4.__call__`
+is the padded ``[batch, seq_len]`` form the gates drive, expressed as the
+uniform-offsets case of the same path. Without a cache it is a plain prefill
+from position 0.
 
 DSpark is decode-only by construction and so contributes nothing to a
 prefill; :meth:`DeepseekV4.fill_dspark_cache` writes the stages' windows after
@@ -41,6 +44,7 @@ from max.nn.embedding import Embedding
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
+from max.nn.transformer import logits_postprocess
 
 from .layers import (
     DeepseekV4Attention,
@@ -49,6 +53,7 @@ from .layers import (
     DSparkAttention,
     DSparkConfidenceHead,
     DSparkMarkovHead,
+    RaggedRows,
     expand_copies,
     hc_head,
     hc_mix_width,
@@ -145,11 +150,11 @@ class DeepseekV4Block(Module):
     def __call__(
         self,
         x: TensorValue,
-        seq_len: int,
+        rows: RaggedRows,
         token_ids: TensorValue,
         cache: DeepseekV4Cache | None = None,
     ) -> TensorValue:
-        """``[b, s, hc, d]`` in, ``[b, s, hc, d]`` out.
+        """``[1, T, hc, d]`` in, ``[1, T, hc, d]`` out.
 
         Two identical wrappings. Each reads ``post`` and ``comb`` off the state
         *before* its sublayer runs, so the mixing weights describe the incoming
@@ -159,7 +164,7 @@ class DeepseekV4Block(Module):
         h, post, comb = self._contract(
             x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base
         )
-        h = self.attn(self.attn_norm(h), seq_len, cache)
+        h = self.attn(self.attn_norm(h), rows, cache)
         x = hc_post(h, residual, post, comb)
 
         residual = x
@@ -419,6 +424,8 @@ class DeepseekV4(Module):
                 DSparkBlock(config, stage_id, device, config.max_seq_len)
                 for stage_id in range(len(config.dspark_target_layer_ids))
             ]
+            if config.dspark_stages
+            else []
         )
 
     @staticmethod
@@ -446,6 +453,39 @@ class DeepseekV4(Module):
             self.config.hc_eps,
         )
 
+    def _lm_head(self, x: TensorValue) -> TensorValue:
+        """The reference's head: bf16 storage, float32 matmul."""
+        return ops.matmul(
+            ops.cast(x, DType.float32),
+            ops.transpose(ops.cast(self.head.weight, DType.float32), 0, 1),
+        )
+
+    def trunk(
+        self,
+        tokens: TensorValue,
+        rows: RaggedRows,
+        cache: DeepseekV4Cache | None,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Run a ragged batch through the blocks and the head contraction.
+
+        Args:
+            tokens: ``[1, T]`` token ids.
+            rows: The batch's token bookkeeping (``layers/ragged.py``).
+            cache: The paged leaves to read and append to, or ``None``.
+
+        Returns:
+            ``[1, T, hidden]`` the contracted stream before ``norm``, and
+            ``[1, T, hidden * n_targets]`` the trunk state DSpark would read.
+        """
+        h = expand_copies(self.embed(tokens), self.config.hc_mult)
+        targets = set(self.config.dspark_target_layer_ids)
+        collected: list[TensorValue] = []
+        for layer_idx, layer in enumerate(self.layers):
+            h = layer(h, rows, tokens, cache)
+            if layer_idx in targets:
+                collected.append(h)
+        return self.contract_head(h), self.collect_main_hidden(collected)
+
     def __call__(
         self,
         tokens: TensorValue,
@@ -454,8 +494,12 @@ class DeepseekV4(Module):
     ) -> tuple[TensorValue, TensorValue]:
         """Run a padded chunk of token ids through the trunk.
 
+        The gates' entry: a ``[batch, seq_len]`` chunk is the ragged batch
+        with uniform row offsets, so this reshapes and defers to
+        :meth:`trunk`.
+
         Args:
-            tokens: ``[batch, seq_len]`` int32 token ids at positions
+            tokens: ``[batch, seq_len]`` token ids at positions
                 ``cache.cache_lengths ..``; a prefill from position 0 when
                 there is no cache.
             seq_len: Static chunk length; ``1`` for decode.
@@ -467,20 +511,55 @@ class DeepseekV4(Module):
             read. The logits are float32 because the reference's head is --
             it stores bf16 and upcasts before the matmul.
         """
-        h = expand_copies(self.embed(tokens), self.config.hc_mult)
-        targets = set(self.config.dspark_target_layer_ids)
-        collected: list[TensorValue] = []
-        for layer_idx, layer in enumerate(self.layers):
-            h = layer(h, seq_len, tokens, cache)
-            if layer_idx in targets:
-                collected.append(h)
-
-        x = self.norm(self.contract_head(h))
-        logits = ops.matmul(
-            ops.cast(x, DType.float32),
-            ops.transpose(ops.cast(self.head.weight, DType.float32), 0, 1),
+        batch = int(tokens.shape[0])
+        rows = RaggedRows.uniform(
+            batch,
+            seq_len,
+            tokens.device,
+            cache.cache_lengths if cache is not None else None,
         )
-        return logits, self.collect_main_hidden(collected)
+        x, main_hidden = self.trunk(
+            ops.reshape(tokens, [1, batch * seq_len]), rows, cache
+        )
+        logits = self._lm_head(self.norm(x))
+        return (
+            ops.reshape(logits, [batch, seq_len, self.config.vocab_size]),
+            ops.reshape(main_hidden, [batch, seq_len, main_hidden.shape[2]]),
+        )
+
+    def serve(
+        self,
+        tokens: TensorValue,
+        input_row_offsets: TensorValue,
+        return_n_logits: TensorValue,
+        cache: DeepseekV4Cache,
+    ) -> tuple[TensorValue, ...]:
+        """The serving graph body: ragged tokens in, the pipeline's logits out.
+
+        Args:
+            tokens: ``[T]`` token ids of the whole batch.
+            input_row_offsets: ``[batch + 1]`` uint32 row offsets.
+            return_n_logits: ``[1]`` int64, trailing logits per request.
+            cache: The paged leaves.
+
+        Returns:
+            What :func:`~max.nn.transformer.logits_postprocess` returns for
+            ``config.return_logits`` / ``config.return_hidden_states``.
+        """
+        t = tokens.shape[0]
+        rows = RaggedRows.from_offsets(
+            input_row_offsets, t, cache.cache_lengths
+        )
+        x, _ = self.trunk(ops.reshape(tokens, [1, t]), rows, cache)
+        return logits_postprocess(
+            ops.reshape(x, [t, self.config.hidden_size]),
+            input_row_offsets,
+            return_n_logits,
+            norm=self.norm,
+            lm_head=self._lm_head,
+            return_logits=self.config.return_logits,
+            return_hidden_states=self.config.return_hidden_states,
+        )
 
     def fill_dspark_cache(
         self,

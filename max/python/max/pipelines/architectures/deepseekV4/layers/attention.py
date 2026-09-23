@@ -42,15 +42,21 @@ Which compressed entries a query may see depends on the layer's ratio. Ratio-128
 layers take every entry that closed before them. Ratio-4 layers ask the lightning
 indexer, which scores the entries and keeps the best ``index_topk``.
 
+The batch is ragged: ``T`` tokens of ``b`` requests end to end, described by
+:class:`~.ragged.RaggedRows` (per-token request, chunk index, position) and,
+per compression ratio, :class:`~.ragged.WindowRows` (the candidate windows the
+chunks touch). Every projection runs on the tokens as one ``[1, T, ...]``
+sequence; only the stores, the compressed streams and the attention read look
+at the split. A padded ``[b, s]`` chunk is the uniform-offsets case of the
+same path (``DeepseekV4.__call__``).
+
 With a cache, the fused ``latent_sparse_attention_ragged`` kernel reads a
 query's window straight out of the window leaf and its compressed entries out
-of the zone leaf by entry index, once this chunk's latents and candidate
-entries have been stored into them. Without a cache (a fresh sequence, the
+of the zone leaf by entry index, once this batch's latents and candidate
+entries have been stored into them. Without a cache (a fresh batch, the
 reference for the cache gates) attention is order-invariant over its selected
-rows, so they are laid out in position order in one table -- ``[window rows,
-the chunk's own latents, the chunk's candidate entries]`` -- and the
-reference's ring-slot / zone-offset index arithmetic becomes "row ``i + o`` of
-the table, or ``-1``".
+rows, so they are laid out in one table -- ``[every token's latent, every
+window's candidate entry]`` -- addressed by absolute row, or ``-1``.
 """
 
 from __future__ import annotations
@@ -70,13 +76,13 @@ from .cache import (
     DeepseekV4Cache,
     arange,
     idiv,
-    row_offsets,
     scalar,
 )
 from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .indexer import DeepseekV4Indexer
 from .quantization import fp8_qat_quantize
+from .ragged import RaggedRows, WindowRows
 from .rope import apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
 
@@ -286,30 +292,29 @@ class DeepseekV4Attention(Module):
     def __call__(
         self,
         x: TensorValue,
-        seq_len: int,
+        rows: RaggedRows,
         cache: DeepseekV4Cache | None = None,
     ) -> TensorValue:
-        """Attention for a chunk of ``seq_len`` tokens.
+        """Attention for a ragged batch of ``T`` tokens.
 
         Args:
-            x: ``[batch, seq_len, hidden_size]``, already ``attn_norm``-ed.
-            seq_len: Static chunk length.
-            cache: The paged leaves; the chunk starts at
-                ``cache.cache_lengths`` and is appended to them. ``None`` runs
-                a fresh sequence from position 0 without storing anything.
+            x: ``[1, T, hidden_size]``, already ``attn_norm``-ed.
+            rows: The batch's token bookkeeping; each request's chunk starts
+                at its ``cache_lengths``.
+            cache: The paged leaves the chunks are read from and appended to.
+                ``None`` runs fresh sequences from position 0 without storing
+                anything (``rows.starts`` must then be zero).
         """
-        b = int(x.shape[0])
-        s = seq_len
+        t = rows.total
         device = x.device
         rd = self.rope_head_dim
-        positions = chunk_positions(
-            cache.cache_lengths if cache is not None else None, b, s, device
-        )
-        freqs_cis = ops.gather(self.rope.freqs_cis_base(), positions, axis=0)
+        positions = rows.positions
+        freqs_table = self.rope.freqs_cis_base()
+        freqs_cis = ops.gather(freqs_table, positions, axis=0)
 
         # Query: low-rank, normed, per-head normed again (weightless), rotated.
         qr = self.q_norm(self.wq_a(x))
-        q = ops.reshape(self.wq_b(qr), [b, s, self.n_heads, self.head_dim])
+        q = ops.reshape(self.wq_b(qr), [1, t, self.n_heads, self.head_dim])
         q = weightless_rms_normalize(q, self.eps)
         q = apply_rope_tail(q, freqs_cis, rd)
 
@@ -318,93 +323,105 @@ class DeepseekV4Attention(Module):
             cache.swa.store(
                 self.swa_layer,
                 KEY,
-                ops.reshape(kv, [b * s, self.head_dim]),
-                row_offsets(b, s, device),
+                ops.reshape(kv, [t, self.head_dim]),
+                rows.offsets,
             )
 
         stream: CompressedStream | None = None
         candidates: TensorValue | None = None
         if self.compressor is not None:
             ratio = self.compress_ratio
-            x32 = ops.cast(x, DType.float32)
+            x32 = ops.cast(ops.reshape(x, [t, x.shape[2]]), DType.float32)
+            windows = WindowRows.build(rows, ratio, self.compressor.coff)
             stream = compressed_stream(
                 self.compressor,
                 x32,
-                positions,
-                self.rope.freqs_cis_base(),
+                rows,
+                windows,
+                freqs_table,
                 self.max_seq_len,
                 cache.state.get(ratio) if cache is not None else None,
                 cache.comp.get(ratio) if cache is not None else None,
                 self.zone_layer,
             )
-            # Query ``i`` at position ``t`` sees entries below ``(t + 1) //
-            # ratio``: every window that closed strictly before it.
+            # Query at position ``p`` sees entries below ``(p + 1) // ratio``:
+            # every window that closed strictly before it.
             cutoff = idiv(positions + scalar(1, device), ratio)
             valid = stream.valid(cutoff)
             if self.indexer is not None:
                 idx_stream = compressed_stream(
                     self.indexer.compressor,
                     x32,
-                    positions,
-                    self.rope.freqs_cis_base(),
+                    rows,
+                    windows,
+                    freqs_table,
                     self.max_seq_len,
                     cache.idx_state if cache is not None else None,
                     cache.idx_comp if cache is not None else None,
                     self.zone_layer,
                 )
                 candidates = self.indexer(
-                    x, qr, freqs_cis, idx_stream.table, valid
+                    ops.reshape(x, [t, x.shape[2]]),
+                    ops.reshape(qr, [t, qr.shape[2]]),
+                    freqs_cis,
+                    idx_stream.table,
+                    valid,
                 )
             else:
-                n_cand = stream.cap + stream.n_new
+                n_cand = stream.n_cand
                 candidates = ops.where(
                     valid,
-                    ops.reshape(arange(n_cand, device), [1, 1, n_cand]),
+                    ops.reshape(arange(n_cand, device), [1, n_cand]),
                     scalar(-1, device),
                 )
 
         if cache is None:
-            o = self._attend_table(q, kv, positions, stream, candidates)
+            o = self._attend_table(q, kv, rows, stream, candidates)
         else:
-            o = self._attend_leaves(q, cache, stream, candidates)
+            o = self._attend_leaves(q, rows, cache, stream, candidates)
         o = apply_rope_tail(o, freqs_cis, rd, inverse=True)
         return self._output_projection(o)
 
     def _attend_leaves(
         self,
         q: TensorValue,
+        rows: RaggedRows,
         cache: DeepseekV4Cache,
         stream: CompressedStream | None,
         candidates: TensorValue | None,
     ) -> TensorValue:
         """The fused kernel over the window leaf and this layer's zone leaf.
 
-        Both leaves already hold the chunk's rows, so the kernel needs no
+        Both leaves already hold the batch's rows, so the kernel needs no
         fresh operands: the window is addressed by position from
         ``cache_lengths`` and the compressed entries by the numbers
         ``stream.entries`` resolves.
         """
-        b, s, h, d = (int(v) for v in q.shape)
-        rows = b * s
+        t = rows.total
+        h, d = int(q.shape[2]), int(q.shape[3])
         device = q.device
         if stream is not None:
             assert candidates is not None
             comp_leaf = cache.comp[self.compress_ratio]
-            entries = ops.reshape(
-                stream.entries(candidates), [rows, int(candidates.shape[-1])]
-            )
+            entries = stream.entries(candidates)
             layer_comp = self.zone_layer
         else:
             # A window-only layer has no zone leaf; the kernel still takes a
-            # compressed operand, so it gets the window leaf and no entries.
+            # compressed operand, so it gets the window leaf and one entry per
+            # row that the kernel skips. A zero-width entry tensor is not a
+            # usable operand here: the kernel reads its device pointer, which
+            # an empty buffer does not provide.
             comp_leaf = cache.swa
-            entries = ops.constant(
-                np.zeros((rows, 0), np.int32), DType.int32, device
+            entries = ops.broadcast_to(
+                ops.constant(
+                    np.full((1, 1), -1, np.int32), DType.int32, device
+                ),
+                [t, 1],
             )
             layer_comp = self.swa_layer
         o = latent_sparse_attention_ragged(
-            ops.reshape(q, [rows, h, d]),
-            row_offsets(b, s, device),
+            ops.reshape(q, [t, h, d]),
+            rows.offsets,
             entries,
             self.attn_sink,
             cache.swa.values,
@@ -414,30 +431,53 @@ class DeepseekV4Attention(Module):
             scale=self.softmax_scale,
             window=self.window,
         )
-        return ops.reshape(o, [b, s, h, d])
+        return ops.reshape(o, [1, t, h, d])
 
     def _attend_table(
         self,
         q: TensorValue,
         kv: TensorValue,
-        positions: TensorValue,
+        rows: RaggedRows,
         stream: CompressedStream | None,
         candidates: TensorValue | None,
     ) -> TensorValue:
-        """Graph-side attention over a gathered table, for a cache-less chunk."""
-        table, idxs = window_table(
-            None, self.swa_layer, kv, positions, self.window
+        """Graph-side attention over a gathered table, for cache-less batches.
+
+        The table is ``[every token's latent, every window's candidate]``;
+        query ``t`` sees the ``window`` rows ending at itself within its own
+        request (``-1`` before the request's first token) and the fresh
+        candidates ``candidates`` names.
+        """
+        t = rows.total
+        device = q.device
+        window = self.window
+        rel = ops.reshape(arange(window, device) - (window - 1), [1, window])
+        win_rows = ops.reshape(rows.index, [t, 1]) + rel
+        in_request = (ops.reshape(rows.local, [t, 1]) + rel) >= scalar(
+            0, device
         )
+        idxs = ops.where(in_request, win_rows, scalar(-1, device))
+        table = kv
         if stream is not None:
             assert candidates is not None
-            offset = scalar(int(table.shape[1]), positions.device)
-            table = ops.concat([table, stream.table], axis=1)
+            head_dim = int(kv.shape[2])
+            table = ops.concat(
+                [
+                    kv,
+                    ops.reshape(
+                        ops.cast(stream.fresh, kv.dtype),
+                        [1, stream.windows.total, head_dim],
+                    ),
+                ],
+                axis=1,
+            )
+            fresh = stream.fresh_rows(candidates)
             comp_idxs = ops.where(
-                candidates >= scalar(0, positions.device),
-                candidates + offset,
-                scalar(-1, positions.device),
+                fresh >= scalar(0, device),
+                fresh + rows.end,
+                scalar(-1, device),
             )
             idxs = ops.concat([idxs, comp_idxs], axis=-1)
         return sparse_attention(
-            q, table, self.attn_sink, idxs, self.softmax_scale
+            q, table, self.attn_sink, ops.unsqueeze(idxs, 0), self.softmax_scale
         )

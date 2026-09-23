@@ -38,6 +38,7 @@ from .moe import (
     sqrt_softplus,
 )
 from .quantization import fp4_qat_quantize, fp8_qat_quantize
+from .ragged import RaggedRows, WindowRows
 from .rope import DeepseekV4RotaryEmbedding, apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
 
@@ -55,6 +56,8 @@ __all__ = [
     "DeepseekV4Indexer",
     "DeepseekV4MoE",
     "DeepseekV4RotaryEmbedding",
+    "RaggedRows",
+    "WindowRows",
     "apply_rope_tail",
     "compressed_stream",
     "expand_copies",

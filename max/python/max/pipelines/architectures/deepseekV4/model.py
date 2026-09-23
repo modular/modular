@@ -19,15 +19,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
-import numpy as np
-import numpy.typing as npt
 from max import tree
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -36,6 +33,9 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    SingleReplicaRaggedBatchProcessor,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
@@ -50,20 +50,56 @@ logger = logging.getLogger("max.pipelines")
 class DeepseekV4Inputs(ModelInputs):
     """Inputs for one DeepSeek-V4 model execution."""
 
-    tokens: npt.NDArray[np.integer[Any]] | Buffer
+    tokens: Buffer
     """Input token IDs, ragged."""
 
-    input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer
+    input_row_offsets: Buffer
     """Offsets of each sequence in the ragged ``tokens``."""
 
     return_n_logits: Buffer
     """Number of trailing logits to return."""
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        assert self.kv_cache_inputs is not None
+        return (
+            self.tokens,
+            self.input_row_offsets,
+            self.return_n_logits,
+            *tree.leaves(self.kv_cache_inputs),
+        )
+
+
+class DeepseekV4BatchProcessor(
+    SingleReplicaRaggedBatchProcessor[TextContext, DeepseekV4Inputs]
+):
+    """Ragged single-replica batching; the stock ragged KV input order."""
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        signal_buffers: list[Buffer],
+    ) -> DeepseekV4Inputs:
+        del signal_buffers
+        return DeepseekV4Inputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            return_n_logits=return_n_logits,
+            kv_cache_inputs=kv_cache_inputs,
+        )
 
 
 class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
     """A DeepSeek-V4-Flash pipeline model for text generation."""
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV4Config
+    batch_processor_cls: ClassVar[type[DeepseekV4BatchProcessor]] = (
+        DeepseekV4BatchProcessor
+    )
 
     model: Model
     """The compiled and initialized MAX Engine model."""
@@ -110,9 +146,8 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
         # ``norm.weight`` is the one norm every V4 checkpoint has, hash-routed
         # or not, so it is the safe probe for the norm storage dtype.
         model_config.norm_dtype = state_dict["norm.weight"].dtype
-        max_batch_total_tokens = self.planned_max_batch_total_tokens
-        assert max_batch_total_tokens is not None, "max_length must be set"
-        model_config.max_batch_context_length = max_batch_total_tokens
+        # The adapter drops the ``mtp.*`` weights, so the stages are not built.
+        model_config.dspark_stages = False
         return model_config
 
     def _build_graph_for_compile(
@@ -122,19 +157,6 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
         model_config: DeepseekV4Config,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
         nn_model = DeepseekV4(model_config)
         nn_model.load_state_dict(
             state_dict,
@@ -143,18 +165,12 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
         )
         weights_registry = nn_model.state_dict(auto_initialize=False)
 
-        flattened_kv_types = self.kv_params.flattened_kv_inputs()
-
-        with Graph(
-            "deepseekV4",
-            input_types=[
-                tokens_type,
-                return_n_logits_type,
-                input_row_offsets_type,
-                *flattened_kv_types,
-            ],
-        ) as graph:
-            _tokens, return_n_logits, input_row_offsets, *variadic_args = (
+        assert self.batch_processor is not None
+        input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=self.kv_params, device_refs=self.device_refs
+        )
+        with Graph("deepseekV4", input_types=input_types) as graph:
+            tokens, input_row_offsets, return_n_logits, *variadic_args = (
                 graph.inputs
             )
             assert isinstance(self.kv_params, MultiKVCacheParams)
@@ -162,36 +178,17 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
                 model_config,
                 self.kv_params.unflatten_basic_kv_tree(iter(variadic_args)),
             )
-            del cache, return_n_logits, input_row_offsets
-            # ``DeepseekV4.__call__`` takes a padded ``[batch, seq]`` chunk
-            # over the paged leaves; the ragged batch this graph receives
-            # still has to be split into equal-length chunks (or the layers
-            # taught ragged rows) before it can serve. The cache-driving
-            # harnesses run the padded form directly.
-            raise NotImplementedError(
-                "DeepSeek-V4 serving graph: ragged batching is not wired; "
-                "run the padded DeepseekV4.__call__ with a DeepseekV4Cache"
+            outputs = nn_model.serve(
+                tokens.tensor,
+                input_row_offsets.tensor,
+                return_n_logits.tensor,
+                cache,
             )
+            graph.output(*outputs)
         return graph, weights_registry
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(DeepseekV4Inputs, model_inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
-        assert curr_kv_cache_inputs is not None
-
-        model_outputs = self.model.execute(
-            model_inputs.tokens,
-            model_inputs.return_n_logits,
-            model_inputs.input_row_offsets,
-            *tree.leaves(curr_kv_cache_inputs),
-        )
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1]),
-                next_token_logits=cast(Buffer, model_outputs[0]),
-                logit_offsets=cast(Buffer, model_outputs[2]),
-            )
-        return ModelOutputs(
-            logits=cast(Buffer, model_outputs[0]),
-            next_token_logits=cast(Buffer, model_outputs[0]),
-        )
+        model_outputs = self.model.execute(*model_inputs.buffers)
+        assert self.batch_processor is not None
+        return self.batch_processor.process_outputs(model_outputs)

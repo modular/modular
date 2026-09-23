@@ -210,7 +210,12 @@ class DeepseekV4Config(ArchConfigWithKVCache):
     """
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
-    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"float8_e4m3fn"}
+    # float32: a checkpoint dequantized offline, which is what the numerical
+    # gates run and what serving runs until the native fp8/fp4 path lands.
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float8_e4m3fn",
+        "float32",
+    }
 
     # MAX specific fields.
     dtype: DType
@@ -298,6 +303,10 @@ class DeepseekV4Config(ArchConfigWithKVCache):
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    # Whether to build the DSpark draft stages (``mtp.*``). Serving leaves them
+    # out: the checkpoint adapter drops their weights and their decode path is
+    # unverified (ISSUES.md Issue 28).
+    dspark_stages: bool = True
 
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":

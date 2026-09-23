@@ -108,22 +108,31 @@ class CacheLeaf:
         return ops.cast(self.values.cache_lengths, DType.int32)
 
     def gather(
-        self, layer: int, kv_idx: int, slots: TensorValue
+        self,
+        layer: int,
+        kv_idx: int,
+        slots: TensorValue,
+        lut_rows: TensorValue | None = None,
     ) -> TensorValue:
-        """Rows at ``slots`` (``[batch, n]`` int32) -> ``[batch, n, head_dim]``.
+        """Rows at ``slots`` (``[rows, n]`` int32) -> ``[rows, n, head_dim]``.
 
-        Every slot must be non-negative and inside the request's allocated
-        pages; callers clamp dead slots onto a live one and mask them out
-        afterwards. Heads are always 1 on these leaves.
+        ``lut_rows`` (``[rows]`` int32) names the request each row of
+        ``slots`` addresses; without it the rows are the batch itself. Every
+        slot must be non-negative and inside that request's allocated pages;
+        callers clamp dead slots onto a live one and mask them out afterwards.
+        Heads are always 1 on these leaves.
         """
         blocks = ops.buffer_load(self.values.kv_blocks)
         b, n = slots.shape[0], slots.shape[1]
         page_col = idiv(slots, self.slots_per_page)
         in_page = slots - page_col * self.slots_per_page
         lut = ops.cast(self.values.lookup_table, DType.int32)
-        # ``gather_nd`` wants the batch dims to match exactly, and the table's
-        # is symbolic.
-        lut = ops.rebind(lut, [b, lut.shape[1]])
+        if lut_rows is not None:
+            lut = ops.gather(lut, lut_rows, axis=0)
+        else:
+            # ``gather_nd`` wants the batch dims to match exactly, and the
+            # table's is symbolic.
+            lut = ops.rebind(lut, [b, lut.shape[1]])
         pages = ops.gather_nd(lut, ops.unsqueeze(page_col, -1), batch_dims=1)
 
         def const(v: int) -> TensorValue:
@@ -150,7 +159,8 @@ class CacheLeaf:
         Row ``t`` of request ``b`` lands on slot ``cache_lengths[b] + t``.
         A compressed leaf passes its own ``cache_lengths`` (the token count
         divided by ``ratio``) so the slots count entries, not tokens; the
-        bound inputs are rescaled the same way.
+        bound inputs are rescaled the same way, ``rows_per_seq`` being an
+        upper bound on the rows any one request stores.
         """
         values = self.values
         if cache_lengths is not None:
