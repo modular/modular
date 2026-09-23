@@ -192,27 +192,33 @@ async def _start_stream(
     by the generator yielding a ``JSONResponse``, which the caller can return
     as the HTTP status instead of emitting inside an already-200 stream.
 
-    Returns that error response, if the stream opened with one, and a stream
-    that replays the chunk this consumed.
+    Returns the ``JSONResponse`` and an empty stream if it is the first
+    chunk, after closing ``stream``; otherwise ``None`` and a stream
+    equivalent to ``stream``.
     """
-    iterator = stream.__aiter__()
+
+    async def empty() -> AsyncGenerator[_T, None]:
+        return
+        yield  # unreachable; makes this an async generator
+
     try:
-        first = await iterator.__anext__()
+        first = await stream.__anext__()
     except StopAsyncIteration:
-
-        async def empty() -> AsyncGenerator[_T, None]:
-            return
-            yield  # unreachable; makes this an async generator
-
         return None, empty()
+
+    if isinstance(first, JSONResponse):
+        # The caller returns this and drops the generator, suspended in the
+        # `except` arm that yielded it. Close it so the `finally` that ends
+        # the max.request span and records the request metrics runs in this
+        # task, before the response goes out.
+        await stream.aclose()
+        return first, empty()
 
     async def chained() -> AsyncGenerator[_T, None]:
         yield first
-        async for item in iterator:
+        async for item in stream:
             yield item
 
-    if isinstance(first, JSONResponse):
-        return first, chained()
     return None, chained()
 
 
