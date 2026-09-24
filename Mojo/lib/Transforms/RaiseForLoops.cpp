@@ -23,6 +23,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
 #define DEBUG_TYPE "raise-for-loops"
@@ -211,6 +212,184 @@ invertCmpPred(HLCF::ForLoopBoundCmpPredicate pred) {
     return HLCF::ForLoopBoundCmpPredicate::SGT;
   }
   llvm_unreachable("invalid cmp predicate");
+}
+
+/// Matches the range-for idiom: an `hlcf.loop` with a `lit.try` whose `except`
+/// breaks *this* loop (the iterator's StopIteration). Returns it, or null.
+static LIT::TryOp matchRangeForIdiom(LoopOp loop) {
+  StringAttr loopLabel = loop.getLabelAttr();
+  for (Operation &op : loop.getBody().front()) {
+    auto tryOp = dyn_cast<LIT::TryOp>(&op);
+    if (!tryOp)
+      continue;
+    bool breaksThisLoop = false;
+    tryOp.getExceptRegion().walk([&](BreakOp breakOp) {
+      // Unlabelled break targets the nearest enclosing loop, i.e. this one.
+      StringAttr breakLabel = breakOp.getLabelAttr();
+      if (!breakLabel || breakLabel == loopLabel)
+        breaksThisLoop = true;
+    });
+    if (breaksThisLoop)
+      return tryOp;
+  }
+  return {};
+}
+
+/// Rewrites Mojo's exception-based `for i in range(n)` into the ascending
+/// counted form raise-for-loops understands. `_ZeroStartingRange` counts up, so
+/// the loop is `i=0`, StopIteration on `pop.cmp eq(i, n)` inside a `lit.try`
+/// whose `except` breaks. This replaces that exit with `if (i < n) yield else
+/// break` and feeds `continue` the `i + 1` increment. Ops preceding the raise
+/// (loop-exit work, e.g. cleanup) ride the break path out of the loop. Bails
+/// (no-op) on any shape mismatch or if a leading op uses a loop-internal value,
+/// so raise-for-loops just skips the loop rather than miscompile.
+static void normalizeRangeForIdiom(LoopOp loop, LIT::TryOp tryOp) {
+  Block &body = loop.getBody().front();
+  Location loc = loop.getLoc();
+
+  // The StopIteration `raise` guarded by `pop.cmp eq(counter, n)`.
+  LIT::TryRaiseOp raiseOp;
+  tryOp.getTryRegion().walk([&](LIT::TryRaiseOp r) {
+    if (!raiseOp)
+      raiseOp = r;
+  });
+  if (!raiseOp)
+    return;
+  auto guardIf = raiseOp->getParentOfType<IfOp>();
+  if (!guardIf || !guardIf.getElifRegions().empty())
+    return;
+  auto guardCmp = guardIf.getCond().getDefiningOp<POP::CmpOp>();
+  if (!guardCmp || guardCmp.getPred() != KGEN::CmpPredicate::EQ)
+    return;
+  auto counterArg = dyn_cast<BlockArgument>(guardCmp.getLhs());
+  if (!counterArg || counterArg.getOwner() != &body)
+    return;
+  unsigned cIdx = counterArg.getArgNumber();
+
+  // Trip count `n` is the guard's other operand; must be loop invariant to be
+  // the `i < n` bound. Counter must start at 0.
+  Value n = guardCmp.getRhs();
+  Operation *nDefiningOp = n.getDefiningOp();
+  if (nDefiningOp ? loop->isAncestor(nDefiningOp) : n.getParentBlock() == &body)
+    return;
+  KGEN::SIMDAttr initAttr;
+  if (!mlir::matchPattern(loop.getOperand(cIdx), mlir::m_Constant(&initAttr)) ||
+      initAttr.getValues().size() != 1 ||
+      !initAttr.getValues().front().getData().isZero())
+    return;
+
+  // The except break carries the loop's exit values.
+  BreakOp breakOp;
+  tryOp.getExceptRegion().walk([&](BreakOp b) {
+    if (!breakOp)
+      breakOp = b;
+  });
+  if (!breakOp)
+    return;
+  SmallVector<Value> breakOperands(breakOp.getOperands());
+  // The break is rebuilt outside the `lit.try`, which is then erased, so an
+  // operand defined inside it (the except block's exception payload) would be
+  // left dangling. Bail rather than build a use of a value about to die.
+  for (Value operand : breakOperands)
+    if (tryOp->isAncestor(operand.getParentBlock()->getParentOp()))
+      return;
+  StringAttr label = loop.getLabelAttr();
+
+  auto contOp = dyn_cast<ContinueOp>(body.getTerminator());
+  if (!contOp)
+    return;
+
+  // `self.curr` bookkeeping (dead after the idiom is gone): the `curr + 1`
+  // increment and the `curr if done else curr + 1` select. The increment also
+  // confirms the count-up shape.
+  POP::AddOp increment;
+  POP::SelectOp curSelect;
+  for (Operation &op : body) {
+    if (auto add = dyn_cast<POP::AddOp>(&op)) {
+      if (add.getLhs() == counterArg)
+        increment = add;
+    } else if (auto sel = dyn_cast<POP::SelectOp>(&op)) {
+      if (sel.getCondition() == guardCmp.getResult())
+        curSelect = sel;
+    }
+  }
+  if (!increment)
+    return;
+
+  // The `lit.try`'s normal-path yield: positionally, `i` and the next counter.
+  auto tryYield =
+      dyn_cast<LIT::TryYieldOp>(tryOp.getTryRegion().front().getTerminator());
+  if (!tryYield || tryYield.getNumOperands() != tryOp.getNumResults())
+    return;
+
+  // Post-normalization value for each try result: `i` -> counter, next counter
+  // -> `i + 1`. Bail on any other carried value.
+  SmallVector<Value> resultReplacements;
+  resultReplacements.reserve(tryOp.getNumResults());
+  for (Value yielded : tryYield.getOperands()) {
+    if (yielded == counterArg)
+      resultReplacements.push_back(counterArg);
+    else if (yielded == increment.getResult() ||
+             (curSelect && yielded == curSelect.getResult()))
+      resultReplacements.push_back(increment.getResult());
+    else
+      return;
+  }
+
+  // Ops before the raise run on the exit path and get hoisted with the break;
+  // reject any using a loop-internal value (can't move past the loop) with a
+  // soft error. Track results so a leading op may feed a later one.
+  Block *raiseBlock = raiseOp->getBlock();
+  DenseSet<Value> movableResults;
+  for (Operation &leadingOp : raiseBlock->without_terminator()) {
+    for (Value operand : leadingOp.getOperands()) {
+      if (movableResults.contains(operand))
+        continue;
+      Operation *defScope = operand.getParentBlock()->getParentOp();
+      if (loop->isAncestor(defScope)) {
+        InFlightDiagnostic diag = mlir::emitWarning(leadingOp.getLoc())
+                                  << "raise-for-loops: loop-exit op depends on "
+                                     "a loop-internal value; cannot hoist it "
+                                     "out of the loop";
+        bool dropDiag = true;
+        LLVM_DEBUG(dropDiag = false;);
+        if (dropDiag)
+          diag.abandon();
+        return;
+      }
+    }
+    for (Value result : leadingOp.getResults())
+      movableResults.insert(result);
+  }
+
+  OpBuilder b(loop.getContext());
+
+  // `if (i < n) { yield } else { <exit ops>; break }` at the top of the body.
+  b.setInsertionPointToStart(&body);
+  Value cond =
+      POP::CmpOp::create(b, loc, KGEN::CmpPredicate::LT, counterArg, n);
+  auto ifOp = IfOp::create(b, loc, TypeRange{}, cond);
+  b.createBlock(&ifOp.getThenRegion());
+  YieldOp::create(b, loc);
+  Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
+  // The exit-path ops precede the break; the raise below relocates the whole
+  // break block after the loop.
+  for (Operation &leadingOp :
+       llvm::make_early_inc_range(raiseBlock->without_terminator()))
+    leadingOp.moveBefore(elseBlock, elseBlock->end());
+  b.setInsertionPointToEnd(elseBlock);
+  BreakOp::create(b, loc, breakOperands, label);
+
+  // Rewire try results, then drop the `lit.try` and now-dead bookkeeping.
+  for (auto [res, repl] : llvm::zip(tryOp.getResults(), resultReplacements))
+    res.replaceAllUsesWith(repl);
+  tryOp.erase();
+  auto eraseIfDead = [](Operation *op) {
+    if (op && op->use_empty())
+      op->erase();
+  };
+  eraseIfDead(curSelect);
+  eraseIfDead(guardCmp);
 }
 
 static std::optional<ForLoopBoundsAndSteps>
@@ -551,24 +730,49 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
   IRRewriter rewriter{OpBuilder(loop)};
 
-  // hlcf.for requires bounds, step, and induction variable to be MLIR `index`
-  // type. If they come from a pop.cmp branch they may be !kgen.scalar<si64>;
-  // insert casts.
   mlir::IndexType indexTy = rewriter.getIndexType();
   auto *ctx = loop->getContext();
   SIMDType popIndexTy = SIMDType::get(ctx, 1, KGENDType(KGENDType::index));
 
-  auto castToIndex = [&](Value v) -> Value {
-    if (v.getType() == indexTy)
+  // `ForControlVariableType` accepts `index` or `!kgen.scalar<signed integer>`,
+  // so a scalar loop needs no cast at all. Forcing one round-trips the
+  // induction variable through `pop.cast` on entry and again at the yield,
+  // every iteration, which hides its value range from later analyses: address
+  // arithmetic loses its disjoint-`or` form and the copies stay live, costing
+  // registers a 1024-thread launch does not have.
+  auto isControlVariableType = [&](Type t) {
+    if (t == indexTy)
+      return true;
+    auto simd = dyn_cast<SIMDType>(t);
+    return simd && simd.isScalar() && simd.getResolvedDType().has_value() &&
+           simd.getResolvedDType()->isSInt();
+  };
+
+  // The verifier requires the three bounds to share one type, and the body's
+  // induction argument and its initial value ride along with them. Anything
+  // less than full agreement falls back to `index`, where the casts below
+  // reconcile the types.
+  unsigned indVarNo = loopInfo->inductionVarArgNumber;
+  Type controlTy = indexTy;
+  Type boundsTy = loopInfo->lowerBound.getType();
+  if (boundsTy == loopInfo->upperBound.getType() &&
+      boundsTy == loopInfo->step.getType() &&
+      boundsTy == loop->getOperand(indVarNo).getType() &&
+      boundsTy == body.getArgument(indVarNo).getType() &&
+      isControlVariableType(boundsTy))
+    controlTy = boundsTy;
+
+  auto castToControlTy = [&](Value v) -> Value {
+    if (v.getType() == controlTy)
       return v;
     rewriter.setInsertionPoint(loop);
     Value cast = POP::CastOp::create(rewriter, loop->getLoc(), popIndexTy, v);
     return POP::CastToBuiltinOp::create(rewriter, loop->getLoc(), indexTy,
                                         cast);
   };
-  loopInfo->lowerBound = castToIndex(loopInfo->lowerBound);
-  loopInfo->upperBound = castToIndex(loopInfo->upperBound);
-  loopInfo->step = castToIndex(loopInfo->step);
+  loopInfo->lowerBound = castToControlTy(loopInfo->lowerBound);
+  loopInfo->upperBound = castToControlTy(loopInfo->upperBound);
+  loopInfo->step = castToControlTy(loopInfo->step);
 
   // Collect return value arg numbers (indices).
   llvm::SetVector<int64_t> returnValueArgNumbers;
@@ -589,8 +793,8 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
                     loopInfo->inductionVarArgNumber);
 
   // The first forOperand is the initial value for the induction variable block
-  // argument. hlcf.for requires it to be index typed when the bounds are index.
-  if (!forOperands.empty() && forOperands[0].getType() != indexTy) {
+  // argument, which must match the type the bounds settled on.
+  if (!forOperands.empty() && forOperands[0].getType() != controlTy) {
     rewriter.setInsertionPoint(loop);
     Value cast = POP::CastOp::create(rewriter, loop->getLoc(), popIndexTy,
                                      forOperands[0]);
@@ -613,15 +817,13 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
       reorderValues(body.getArguments(), returnValueArgNumbers,
                     loopInfo->inductionVarArgNumber);
 
-  // When the induction variable is not index-typed (e.g. !kgen.scalar<si64>),
-  // hlcf.for still requires an index block arg. After adding it, insert casts
-  // at the start of the block to convert index back to the original type, and
-  // replace all uses of the original block arg with the cast result.
+  // Only when the body's induction argument disagrees with the loop's control
+  // type does it need converting back at the top of the block.
   Type origIndVarType = reorderedArgs[0].getType();
   Operation *lastInsertedOp = nullptr;
   for (auto [i, arg] : llvm::enumerate(reorderedArgs)) {
-    if (i == 0 && origIndVarType != indexTy) {
-      Value idxArg = block->addArgument(indexTy, arg.getLoc());
+    if (i == 0 && origIndVarType != controlTy) {
+      Value idxArg = block->addArgument(controlTy, arg.getLoc());
       rewriter.setInsertionPointToStart(block);
       Value fromBuiltin = POP::CastFromBuiltinOp::create(rewriter, arg.getLoc(),
                                                          popIndexTy, idxArg);
@@ -662,9 +864,9 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
             reorderValueIntoGroups(c.getOperands(), returnValueArgNumbers,
                                    loopInfo->inductionVarArgNumber);
 
-        // If the induction variable is not index-typed, cast it back to index
-        // before creating hlcf.for.yield.
-        if (origIndVarType != indexTy) {
+        // Cast the next induction value back only if the body works in a
+        // different type than the loop's control type.
+        if (origIndVarType != controlTy) {
           Value nextIndVar = reorderedOperands[0].front();
           Value castToIdx = POP::CastOp::create(rewriter, op.getLoc(),
                                                 popIndexTy, nextIndVar);
@@ -700,6 +902,18 @@ void RaiseForLoops::runOnOperation() {
   loopJumpOps.clear();
   loopsToRaiseInOrder.clear();
   parentLoops.clear();
+
+  // Normalize `for i in range(n)` to the counted form before analysis (collect
+  // first, since the rewrite mutates the IR).
+  {
+    SmallVector<std::pair<LoopOp, LIT::TryOp>> rangeForLoops;
+    getOperation()->walk([&](LoopOp loop) {
+      if (LIT::TryOp tryOp = matchRangeForIdiom(loop))
+        rangeForLoops.push_back({loop, tryOp});
+    });
+    for (auto [loop, tryOp] : rangeForLoops)
+      normalizeRangeForIdiom(loop, tryOp);
+  }
 
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
 

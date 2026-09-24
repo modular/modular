@@ -743,6 +743,9 @@ def _block_reduce_value_count[
     return result
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
 @__name(
     t"topk_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
 )

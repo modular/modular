@@ -1141,7 +1141,13 @@ OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
   auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
   if (!vec || !idx)
     return {};
-  return SIMDAttr::get(vec.getValues()[idx.getInt()], getType());
+  // SCCP folds speculatively, so a raised counted loop hands this the
+  // induction variable's exit value, one past the vector. That state is
+  // unreachable at runtime; decline to fold rather than index out of bounds.
+  int64_t pos = idx.getInt();
+  if (pos < 0 || static_cast<size_t>(pos) >= vec.getValues().size())
+    return {};
+  return SIMDAttr::get(vec.getValues()[pos], getType());
 }
 
 ErrorTreeOrSuccess SIMDExtractElementOp::interpret(ArrayRef<Attribute> operands,
@@ -1188,8 +1194,14 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
   if (!vec || !val || !idx)
     return {};
+  // See SIMDExtractElementOp::fold: the position can be out of range while
+  // SCCP explores a state the loop bound makes unreachable.
+  int64_t pos = idx.getInt();
+  if (pos < 0 || static_cast<size_t>(pos) >= vec.getValues().size() ||
+      val.getValues().empty())
+    return {};
   SmallVector<DTypeValue> values(vec.getValues());
-  values[idx.getInt()] = val.getValues().front();
+  values[pos] = val.getValues().front();
   return SIMDAttr::get(values, getType());
 }
 

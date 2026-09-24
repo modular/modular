@@ -644,3 +644,21 @@ kgen.func @bitcast_roundtrip_nonzero_index(%arg0: !kgen.pointer<none>) -> !kgen.
   %3 = pop.load %0 : !kgen.pointer<pointer<none>>
   hlcf.return %3 : !kgen.pointer<none>
 }
+
+// -----
+
+// A zero-element stack decomposes to no scalars, so the pun has no element to
+// be rewritten onto. Decomposition must be declined rather than crash.
+// CHECK-LABEL: @zero_element_stack_bitcast
+kgen.func @zero_element_stack_bitcast(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
+  // CHECK: pop.stack_allocation 0 x pointer<none>
+  // CHECK: pop.pointer.bitcast
+  %index0 = kgen.param.constant = <0>
+  %0 = pop.stack_allocation 0 x pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(array<1, pointer<none>>)>>
+  %2 = kgen.struct.gep %1[0] : <struct<(array<1, pointer<none>>)>>
+  %3 = pop.array.gep %2[%index0] : <array<1, pointer<none>>>
+  pop.store %arg0, %3 : !kgen.pointer<pointer<none>>
+  %4 = pop.load %0 : !kgen.pointer<pointer<none>>
+  hlcf.return %4 : !kgen.pointer<none>
+}
