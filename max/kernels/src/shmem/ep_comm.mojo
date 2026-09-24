@@ -25,10 +25,17 @@ from std.atomic import Atomic, Ordering, fence
 from std.sys import (
     get_defined_bool,
     get_defined_int,
+    inlined_assembly,
     is_amd_gpu,
     is_nvidia_gpu,
 )
-from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
+from std.sys.info import (
+    CompilationTarget,
+    _is_amd_mi355x,
+    align_of,
+    simd_width_of,
+    size_of,
+)
 from std.ffi import c_size_t
 
 from linalg.block_scaled_utils import compute_mxfp8_block_scale
@@ -68,7 +75,7 @@ from max.gpu import (
 from max.gpu.primitives.grid_controls import (
     PDL,
 )
-from max.gpu.sync import barrier, named_barrier
+from max.gpu.sync import barrier, named_barrier, s_waitcnt
 from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import (
@@ -171,12 +178,84 @@ comptime _signal_atomic = Atomic[UInt64]
 
 
 @inline(.always)
+def _acquire_wait[
+    dtype: DType,
+    //,
+    *,
+    scope: StaticString = "",
+    wait_while_equal: Bool = False,
+](
+    ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    sentinel: Scalar[dtype],
+) -> Scalar[dtype]:
+    """Spins until `ptr[]` differs from `sentinel`, then takes the acquire once.
+
+    An acquire load lowers to a load plus a cache invalidate (`buffer_inv` on
+    AMD, `fence.acquire` on NVIDIA), so spinning on one pays the invalidate
+    every iteration. Polling with plain loads and fencing once on exit gives
+    the same ordering with a single invalidate.
+
+    Use `scope=DEVICE_SCOPE` for a flag in this device's own counter block,
+    and the default system scope for one written by a peer.
+
+    Parameters:
+        dtype: Element type of the flag.
+        scope: Synchronization scope of the exit fence.
+        wait_while_equal: Spin while the flag equals `sentinel` instead.
+
+    Args:
+        ptr: The flag to poll.
+        sentinel: The value that ends (or, with `wait_while_equal`, sustains)
+            the wait.
+
+    Returns:
+        The value that ended the wait.
+    """
+    var observed = ptr.load[volatile=True]()
+    comptime if wait_while_equal:
+        while observed == sentinel:
+            observed = ptr.load[volatile=True]()
+    else:
+        while observed != sentinel:
+            observed = ptr.load[volatile=True]()
+    fence[ordering=Ordering.ACQUIRE, scope=scope]()
+    return observed
+
+
+@inline(.always)
+def _publish_peer_stores[scope: StaticString = ""]() -> None:
+    """Completes this wave's stores into peer memory ahead of a counter bump
+    the caller then does RELAXED.
+
+    Pair with `block_memcpy[..., bypass_l2=True]`. Use `scope=DEVICE_SCOPE` when
+    another SM on this device reads the counter and signals the peer, and
+    system scope when this warp signals the peer itself.
+
+    On MI355X, where `block_memcpy` issues system-scope stores, this covers
+    only those stores: plain stores stay dirty in the issuing XCD's L2, so
+    data a block writes for CUs elsewhere on the device still needs a
+    device-scope release. Everywhere else it is a release fence.
+
+    Parameters:
+        scope: Scope of the release fence.
+    """
+    comptime if _is_amd_mi355x():
+        # A system-scope store completes only once it is visible at system
+        # scope, so waiting for completion is the whole release: there are
+        # no dirty lines for a `buffer_wbl2` to write back.
+        s_waitcnt[vmcnt=0]()
+    else:
+        fence[ordering=Ordering.RELEASE, scope=scope]()
+
+
+@inline(.always)
 def block_memcpy[
     dst_addr_space: AddressSpace,
     src_addr_space: AddressSpace,
     //,
     num_bytes: Int,
     block_size: Int,
+    bypass_l2: Bool = False,
 ](
     dst_p: UnsafePointer[mut=True, UInt8, _, address_space=dst_addr_space],
     src_p: UnsafePointer[mut=False, UInt8, _, address_space=src_addr_space],
@@ -186,17 +265,43 @@ def block_memcpy[
     Copies a memory area from source to destination. This function will use the
     vectorized store and load instructions to copy the memory area. User should
     make sure pointers are aligned to the simd width.
+
+    Set `bypass_l2` when the destination is another agent's memory and the
+    caller publishes with `_publish_peer_stores`. On MI355X the stores then
+    carry system-scope cache bits and are visible as they complete; elsewhere
+    the flag changes nothing and the caller's release fence publishes them.
     """
-    comptime simd_width = simd_width_of[DType.uint8]()
-    for i in range(thread_idx, num_bytes // simd_width, block_size):
-        dst_p.store[alignment=simd_width](
-            i * simd_width,
-            src_p.load[
-                width=simd_width,
-                alignment=simd_width,
-                invariant=True,
-            ](i * simd_width),
-        )
+    comptime if bypass_l2 and _is_amd_mi355x():
+        # See https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
+        # Use the 16-byte global store with `sc0 sc1` to ensure the store bypass
+        # the per-chiplet L2 cache. Unlike Nvidia, AMD use per chiplet L2
+        # caches, and stores won't be visible to other chiplets until they are
+        # flushed to L3/xGMI.
+        comptime store_width = 16
+        comptime assert (
+            num_bytes % store_width == 0
+        ), "num_bytes must be a multiple of the 16-byte store width"
+        for i in range(thread_idx, num_bytes // store_width, block_size):
+            var data = src_p.load[
+                width=store_width, alignment=store_width, invariant=True
+            ](i * store_width)
+            inlined_assembly[
+                "global_store_dwordx4 $0, $1, off sc0 sc1",
+                NoneType,
+                constraints="v,v,~{memory}",
+                has_side_effect=True,
+            ](Int(dst_p + i * store_width), bitcast[DType.uint32, 4](data))
+    else:
+        comptime simd_width = simd_width_of[DType.uint8]()
+        for i in range(thread_idx, num_bytes // simd_width, block_size):
+            dst_p.store[alignment=simd_width](
+                i * simd_width,
+                src_p.load[
+                    width=simd_width,
+                    alignment=simd_width,
+                    invariant=True,
+                ](i * simd_width),
+            )
 
 
 @inline(.always)
@@ -2895,26 +3000,9 @@ struct EPDispatchKernel[
                 )
 
                 # Wait until all the tokens for the expert have been sent.
-                comptime if is_amd_gpu():
-                    # TODO(KERN-3184): Investigate why AMD GPUs are slow if the below
-                    # ACQUIRE atomic load is used instead of this volatile load.
-                    while (
-                        expert_finished_counter.load[volatile=True](
-                            counter_offset
-                        )
-                        != expert_count
-                    ):
-                        pass
-                    # Acquire the flag's release; the volatile poll is unordered.
-                    fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
-                else:
-                    while (
-                        _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                            expert_finished_counter + counter_offset
-                        )
-                        != expert_count
-                    ):
-                        pass
+                _ = _acquire_wait[scope=DEVICE_SCOPE](
+                    expert_finished_counter + counter_offset, expert_count
+                )
 
                 # The rank flag published here is keyed by the SOURCE rank, so
                 # a destination acquiring it learns that THIS rank is complete.
@@ -3141,13 +3229,10 @@ struct EPDispatchKernel[
                         var _pg = (
                             prod_gen_p + Self.n_experts + Int(target_expert)
                         )
-                        var _pv = _counter_atomic.load[
-                            ordering=Ordering.ACQUIRE
-                        ](_pg)
-                        while _pv != prod_gen:
-                            _pv = _counter_atomic.load[
-                                ordering=Ordering.ACQUIRE
-                            ](_pg)
+                        # The publisher plain-stores the base then
+                        # RELEASE-stores this tag, so the acquire here is
+                        # what orders the base read below against it.
+                        _ = _acquire_wait[scope=DEVICE_SCOPE](_pg, prod_gen)
                         _fl_row = prod_gen_p[Int(target_expert)] + slot_idx
 
                     var dst_recv_buf_ptr = recv_buf_ptrs[
@@ -3161,7 +3246,7 @@ struct EPDispatchKernel[
                         )
                     )
 
-                    block_memcpy[Self.msg_bytes, WARP_SIZE](
+                    block_memcpy[Self.msg_bytes, WARP_SIZE, bypass_l2=True](
                         dst_recv_buf_ptr,
                         curr_send_buf_ptr,
                         lane_id(),
@@ -3182,9 +3267,10 @@ struct EPDispatchKernel[
 
                     syncwarp()
 
+                    _publish_peer_stores[scope=DEVICE_SCOPE]()
                     if lane_id() == 0:
                         _ = _counter_atomic.fetch_add[
-                            ordering=Ordering.RELEASE
+                            ordering=Ordering.RELAXED
                         ](expert_finished_counter + counter_offset, 1)
 
             # We set up `n_rcs` Reliable Communications (RCs) for each
@@ -3317,14 +3403,10 @@ struct EPDispatchKernel[
 
         var token_count: UInt32 = 0
         if tid < Self.n_experts:
-            var target_count_ptr = recv_count_p + tid
-            var _token_count = _signal_atomic.load[ordering=Ordering.ACQUIRE](
-                target_count_ptr
+            # System scope: `recv_count_p` is written by the peer.
+            var _token_count = _acquire_wait[wait_while_equal=True](
+                recv_count_p + tid, UInt64.MAX_FINITE
             )
-            while _token_count == UInt64.MAX_FINITE:
-                _token_count = _signal_atomic.load[ordering=Ordering.ACQUIRE](
-                    target_count_ptr
-                )
             token_count = UInt32(_token_count)
         Self._comm_barrier[n_comm_threads, comm_barrier_id]()
 
@@ -3585,13 +3667,10 @@ struct EPDispatchKernel[
 
         # Wait for the auxiliary SM to signal that all offsets are ready.
         if warp_id() - comm_warp_base == 0:
-            var flag = _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                atomic_counter + Self.ready_flag_offset
+            _ = _acquire_wait[scope=DEVICE_SCOPE](
+                atomic_counter + Self.ready_flag_offset,
+                Int32(EP_DATA_READY_FLAG),
             )
-            while flag != EP_DATA_READY_FLAG:
-                flag = _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                    atomic_counter + Self.ready_flag_offset
-                )
 
             if tid == 0:
                 smem_vals[0] = Int32(
@@ -3787,12 +3866,13 @@ struct EPDispatchKernel[
         shared_expert_token_count: Int,
         pack_sm_id: Int,
         n_active_comm_sms: Int,
+        n_send_sms: Int,
     ) -> None:
         """Copies already-quantized shared expert tokens from send_buf to output.
 
-        Waits for dispatch_async signal SMs to indicate all tokens have been
-        written to the send buffer, then uses tile-based copy via
-        copy_msg_tile_to_output_tensor. Only SMs needed for the copy participate.
+        Waits for every send SM to publish its rows of the send buffer, then
+        uses tile-based copy via copy_msg_tile_to_output_tensor. Only SMs
+        needed for the copy participate.
 
         Args:
             format_handler: Instance of token_fmt_type for token decoding.
@@ -3805,6 +3885,8 @@ struct EPDispatchKernel[
                 different SM mapping inside a fused persistent kernel.
             n_active_comm_sms: Count of communication SMs available for the copy
                 (``grid_dim.x - n_offset_sms`` in the standalone kernels).
+            n_send_sms: Count of send SMs whose `send_buf_ready` bumps to wait
+                for (``grid_dim.x - n_signal_sms`` in the standalone kernels).
         """
         comptime tile_size = Self.token_fmt_type.dispatch_wait_tile_shape[0]
         comptime sms_per_tile = Self.token_fmt_type.dispatch_wait_tile_shape[1]
@@ -3818,15 +3900,11 @@ struct EPDispatchKernel[
         if sm_id >= n_sms_for_shared:
             return
 
-        # Wait for all dispatch_async signal SMs to finish writing to send_buf.
+        # Wait for every send SM to publish its rows of the send buffer.
         if warp_id() == 0 and thread_idx.x == 0:
-            var ready = _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                fused_se_counter
+            _ = _acquire_wait[scope=DEVICE_SCOPE](
+                fused_se_counter, Int32(n_send_sms)
             )
-            while ready != Int32(Self.n_signal_sms):
-                ready = _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                    fused_se_counter
-                )
 
             # Signal that this SM has started; the last one resets both counters.
             var started = Atomic[scope=DEVICE_SCOPE].fetch_add[
@@ -4605,12 +4683,10 @@ struct EPCombineKernel[
 
         if thread_idx.x < Self.n_experts:
             var target_count_ptr = recv_count_p + thread_idx.x
-            while (
-                _signal_atomic.load[ordering=Ordering.ACQUIRE](target_count_ptr)
-                == UInt64.MAX_FINITE
-            ):
-                pass
-
+            # System scope: `recv_count_p` is written by the peer.
+            _ = _acquire_wait[wait_while_equal=True](
+                target_count_ptr, UInt64.MAX_FINITE
+            )
             target_count_ptr[] = UInt64.MAX_FINITE
         barrier()
 
@@ -4678,23 +4754,9 @@ struct EPCombineKernel[
         var sm_id = reduce_sm_id
 
         if thread_idx.x == 0:
-            comptime if is_amd_gpu():
-                # TODO(KERN-3184): Investigate why AMD GPUs are slow if the below
-                # ACQUIRE atomic load is used instead of this volatile load.
-                while (
-                    atomic_counter.load[volatile=True](sm_id) != DATA_READY_FLAG
-                ):
-                    pass
-                # Acquire the flag's release; the volatile poll is unordered.
-                fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
-            else:
-                while (
-                    _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                        atomic_counter + sm_id
-                    )
-                    != DATA_READY_FLAG
-                ):
-                    pass
+            _ = _acquire_wait[scope=DEVICE_SCOPE](
+                atomic_counter + sm_id, Int32(DATA_READY_FLAG)
+            )
 
             # Reset the atomic counter for the next round.
             atomic_counter.store(sm_id, 0)
@@ -5161,18 +5223,6 @@ def dispatch_kernel[
                 my_rank,
                 block_idx.x,
             )
-            comptime if fused_shared_expert:
-                # Skip signaling if there are no tokens for shared experts.
-                if shared_expert_token_count > 0:
-                    barrier()
-                    if thread_idx.x == 0:
-                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                            ordering=Ordering.RELEASE
-                        ](
-                            wait_atomic_counter
-                            + dispatch_impl.send_buf_ready_offset,
-                            1,
-                        )
         else:
             dispatch_impl.copy_and_send_tokens[input_scales_wrapper](
                 input_tokens,
@@ -5185,6 +5235,23 @@ def dispatch_kernel[
                 block_idx.x,
                 Int(grid_dim.x) - dispatch_impl.n_signal_sms,
             )
+            comptime if fused_shared_expert:
+                # This RELEASE ensures that all previous writes to the send
+                # buffer is visible to other threads on the device, so they can
+                # proceed with reading the shared-expert inputs. On Nvidia logic
+                # in ``copy_and_send_tokens`` actually guarantees the visibility.
+                # The RELEASE operation below only ensures this visibility for
+                # MI355X.
+                if shared_expert_token_count > 0:
+                    barrier()
+                    if thread_idx.x == 0:
+                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                            ordering=Ordering.RELEASE
+                        ](
+                            wait_atomic_counter
+                            + dispatch_impl.send_buf_ready_offset,
+                            1,
+                        )
 
         # ===== dispatch_wait =====
         # Use runtime grid_dim so the host can launch a smaller grid for decode.
@@ -5221,6 +5288,7 @@ def dispatch_kernel[
                     Int(shared_expert_token_count),
                     block_idx.x,
                     Int(grid_dim.x) - dispatch_impl.n_offset_sms,
+                    Int(grid_dim.x) - dispatch_impl.n_signal_sms,
                 )
 
             dispatch_impl.copy_received_tokens_to_output(
