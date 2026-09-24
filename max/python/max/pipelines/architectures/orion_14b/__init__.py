@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import orion_arch
+"""Orion transformer architecture for text generation."""
 
-ARCHITECTURES = [orion_arch]
+from .arch import orion_14b_arch
 
-__all__ = ["ARCHITECTURES", "orion_arch"]
+__all__ = ["orion_14b_arch"]

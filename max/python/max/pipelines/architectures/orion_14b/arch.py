@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,36 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.architectures.llama3 import weight_adapters
-from max.pipelines.architectures.llama3.model import Llama3Model
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    RopeType,
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextTokenizer,
-)
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
 
-orion_arch = SupportedArchitecture(
+from . import weight_adapters
+from .model import OrionModel
+from .model_config import OrionConfig
+
+orion_14b_arch = SupportedArchitecture(
     name="OrionForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["OrionStarAI/Orion-14B-Chat"],
+    example_repo_ids=[
+        "OrionStarAI/Orion-14B-Base",
+        "OrionStarAI/Orion-14B-Chat",
+    ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={
-        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-    },
-    pipeline_model=Llama3Model,
+    default_encoding=OrionConfig.DEFAULT_ENCODING,
+    supported_encodings=OrionConfig.SUPPORTED_ENCODINGS,
+    pipeline_model=OrionModel,
+    multi_gpu_supported=False,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=OrionConfig,
+    memory_planner=PagedMemoryPlanner,
 )
