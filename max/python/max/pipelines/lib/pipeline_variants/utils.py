@@ -47,7 +47,7 @@ from max.pipelines.modeling.types import RequestID
 from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
-from transformers import AutoConfig
+from transformers import AutoConfig, PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
     from max.pipelines.modeling.types import PipelineTokenizer
@@ -512,6 +512,24 @@ class StructuredOutputHelper:
         if not hasattr(tokenizer, "delegate"):
             return cls(enabled=False)
         tokenizer_delegate = tokenizer.delegate
+
+        # Degrade rather than raise, as with a tokenizer that has no
+        # delegate at all: nothing outside structured output needs a
+        # grammar, so a slow tokenizer should not fail the model worker.
+        if (
+            not isinstance(tokenizer_delegate, PreTrainedTokenizerFast)
+            and "TikToken" not in type(tokenizer_delegate).__name__
+        ):
+            logger.warning(
+                "Structured output disabled: %s is a slow tokenizer, and the"
+                " grammar backends require PreTrainedTokenizerFast or a"
+                " TikToken-based tokenizer. Text generation is unaffected;"
+                " response_format and grammar-constrained tool calling will"
+                " not be available.",
+                type(tokenizer_delegate).__name__,
+            )
+            return cls(enabled=False)
+
         vocab_size = len(tokenizer_delegate)
 
         backend = make_grammar_backend(

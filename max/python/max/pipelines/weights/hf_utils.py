@@ -29,7 +29,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import Any, BinaryIO, cast
+from typing import Any, BinaryIO, ClassVar, cast
 
 import huggingface_hub
 from huggingface_hub import errors as hf_hub_errors
@@ -479,7 +479,7 @@ class HuggingFaceRepo:
             )
         elif self.repo_type == "online":
             return huggingface_hub.model_info(
-                self.repo_id, files_metadata=False
+                self.repo_id, revision=self.revision, files_metadata=False
             )
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
@@ -525,12 +525,29 @@ class HuggingFaceRepo:
             fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
                 list[str],
-                fs.glob(f"{remote_base}/{safetensor_search_pattern}"),
+                fs.glob(
+                    f"{remote_base}/{safetensor_search_pattern}",
+                    revision=self.revision,
+                ),
             )
             gguf_paths = cast(
-                list[str], fs.glob(f"{remote_base}/{gguf_search_pattern}")
+                list[str],
+                fs.glob(
+                    f"{remote_base}/{gguf_search_pattern}",
+                    revision=self.revision,
+                ),
             )
+            # For a non-default revision HfFileSystem echoes it back into the
+            # returned paths as `repo_id@revision/...`, so the prefix to strip
+            # is longer than the bare repo id. Detect which form came back
+            # rather than assuming, so default-revision repos are unaffected.
             strip_prefix = f"{self.repo_id}/"
+            revision_prefix = f"{self.repo_id}@{self.revision}/"
+            if any(
+                path.startswith(revision_prefix)
+                for path in (*safetensor_paths, *gguf_paths)
+            ):
+                strip_prefix = revision_prefix
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
 
@@ -558,7 +575,9 @@ class HuggingFaceRepo:
     def size_of(self, filename: str) -> int | None:
         """Returns file size in bytes for online repos, or None."""
         if self.repo_type == "online":
-            url = huggingface_hub.hf_hub_url(self.repo_id, filename)
+            url = huggingface_hub.hf_hub_url(
+                self.repo_id, filename, revision=self.revision
+            )
             metadata = huggingface_hub.get_hf_file_metadata(url)
             return metadata.size
         raise NotImplementedError("not implemented for non-online repos.")
@@ -568,9 +587,12 @@ class HuggingFaceRepo:
         """Returns encodings supported by this repo's weight files."""
         supported_encodings: set[SupportedEncoding] = set()
 
-        # Parse gguf file names.
+        # Parse gguf file names, falling back to the header for files
+        # published without a dtype in the name.
         for gguf_path in self.weight_files.get(WeightsFormat.gguf, []):
-            encoding = parse_supported_encoding_from_file_name(gguf_path)
+            encoding = parse_supported_encoding_from_file_name(
+                gguf_path
+            ) or self._gguf_encoding_from_header(gguf_path)
             if encoding:
                 supported_encodings.add(encoding)
 
@@ -630,6 +652,48 @@ class HuggingFaceRepo:
                     supported_encodings.add("float6_e2m3fn")
 
         return list(supported_encodings)
+
+    # GGML file types that map onto an unquantized MAX encoding. Quantized
+    # types are deliberately absent: those are still resolved from the file
+    # name, which carries the quantization scheme (q4_k_m, q6_k, ...).
+    _GGUF_FILE_TYPE_TO_ENCODING: ClassVar[dict[int, SupportedEncoding]] = {
+        0: "float32",  # ALL_F32
+        1: "float16",  # MOSTLY_F16
+        32: "bfloat16",  # MOSTLY_BF16
+    }
+
+    def _gguf_encoding_from_header(
+        self, gguf_file: str | Path
+    ) -> SupportedEncoding | None:
+        """Reads ``general.file_type`` from a GGUF header.
+
+        Weight-file naming is the primary signal for GGUF encodings, but a
+        file published without a dtype in its name (``Orion-14B-Chat.gguf``)
+        carries the answer in its own metadata. Returns ``None`` when the
+        header cannot be read or names a quantized type.
+        """
+        try:
+            if self.repo_type == "local":
+                with open(
+                    os.path.join(self.local_path, str(gguf_file)), "rb"
+                ) as f:
+                    file_type = _read_gguf_file_type(f)
+            else:
+                fs = huggingface_hub.HfFileSystem()
+                with fs.open(
+                    f"{self.repo_id}/{gguf_file}",
+                    "rb",
+                    revision=self.revision,
+                ) as f:
+                    file_type = _read_gguf_file_type(f)
+        except Exception as e:
+            _logger.debug(
+                "Failed to read GGUF header from %s: %s", gguf_file, e
+            )
+            return None
+        if file_type is None:
+            return None
+        return self._GGUF_FILE_TYPE_TO_ENCODING.get(file_type)
 
     def _get_safetensors_encoding(
         self, file: BinaryIO
@@ -691,7 +755,16 @@ class HuggingFaceRepo:
                             self._get_safetensors_encoding(f)
                         )
                 elif fs is not None:
-                    with fs.open(f"{self.repo_id}/{weight_file}", "rb") as f:
+                    # Pass the revision explicitly: HfFileSystem otherwise
+                    # defaults to `main`, so a repo whose weights live on
+                    # another revision (a PR ref, a branch) raises
+                    # FileNotFoundError here, gets swallowed below, and
+                    # silently yields no encodings at all.
+                    with fs.open(
+                        f"{self.repo_id}/{weight_file}",
+                        "rb",
+                        revision=self.revision,
+                    ) as f:
                         shard_encodings, unknown = (
                             self._get_safetensors_encoding(f)
                         )
@@ -701,10 +774,11 @@ class HuggingFaceRepo:
                 for dtype, tensor_name in unknown:
                     unknown_counts[dtype] += 1
                     unknown_examples.setdefault(dtype, tensor_name)
-            except Exception:
+            except Exception as e:
                 _logger.debug(
-                    "Failed to read safetensors header from %s",
+                    "Failed to read safetensors header from %s: %s",
                     weight_file,
+                    e,
                 )
         for dtype, count in sorted(unknown_counts.items()):
             _logger.warning(
@@ -742,7 +816,9 @@ class HuggingFaceRepo:
     ) -> dict[WeightsFormat, list[Path]]:
         files = []
         for gguf_file in self.weight_files.get(WeightsFormat.gguf, []):
-            file_encoding = parse_supported_encoding_from_file_name(gguf_file)
+            file_encoding = parse_supported_encoding_from_file_name(
+                gguf_file
+            ) or self._gguf_encoding_from_header(gguf_file)
             if file_encoding == encoding:
                 files.append(Path(gguf_file))
 
@@ -789,7 +865,9 @@ class HuggingFaceRepo:
         """Returns whether the given file exists in the repo."""
         if self.repo_type == "local":
             return os.path.exists(os.path.join(self.local_path, filename))
-        return huggingface_hub.file_exists(self.repo_id, filename)
+        return huggingface_hub.file_exists(
+            self.repo_id, filename, revision=self.revision
+        )
 
     @property
     def formats_available(self) -> list[WeightsFormat]:
@@ -828,17 +906,77 @@ class HuggingFaceRepo:
                         return candidate
             return supported[0]
         elif str(file).endswith(".gguf"):
-            encoding = parse_supported_encoding_from_file_name(str(file))
+            encoding = parse_supported_encoding_from_file_name(
+                str(file)
+            ) or self._gguf_encoding_from_header(file)
             if encoding:
                 return encoding
 
             raise ValueError(
-                f"gguf file, but encoding not found in file name: {file}"
+                "gguf file, but encoding found in neither the file name nor"
+                f" its `general.file_type` metadata: {file}"
             )
         else:
             raise ValueError(
                 f"weight path: {file} not gguf or safetensors, cannot infer encoding from file."
             )
+
+
+# GGUF metadata value type -> fixed byte width. STRING (8) and ARRAY (9) are
+# variable length and handled separately.
+_GGUF_SCALAR_WIDTH = {
+    0: 1,
+    1: 1,
+    2: 2,
+    3: 2,
+    4: 4,
+    5: 4,
+    6: 4,
+    7: 1,
+    10: 8,
+    11: 8,
+    12: 8,
+}
+
+
+def _read_gguf_file_type(f: BinaryIO) -> int | None:
+    """Returns ``general.file_type`` from a GGUF header, or ``None``.
+
+    Reads only the metadata block, stopping at the key, so this stays cheap
+    over a network file system. Returns ``None`` for a non-GGUF file or a
+    header that omits the key.
+    """
+    if f.read(4) != b"GGUF":
+        return None
+    f.read(4)  # version
+    f.read(8)  # tensor count
+    (n_kv,) = struct.unpack("<Q", f.read(8))
+
+    def read_str() -> str:
+        (n,) = struct.unpack("<Q", f.read(8))
+        return f.read(n).decode("utf-8", "replace")
+
+    def skip_value(value_type: int) -> None:
+        if value_type == 8:
+            read_str()
+        elif value_type == 9:
+            (elem_type,) = struct.unpack("<I", f.read(4))
+            (count,) = struct.unpack("<Q", f.read(8))
+            if elem_type == 8:
+                for _ in range(count):
+                    read_str()
+            else:
+                f.read(_GGUF_SCALAR_WIDTH[elem_type] * count)
+        else:
+            f.read(_GGUF_SCALAR_WIDTH[value_type])
+
+    for _ in range(n_kv):
+        key = read_str()
+        (value_type,) = struct.unpack("<I", f.read(4))
+        if key == "general.file_type" and value_type in (4, 5):
+            return int(struct.unpack("<I", f.read(4))[0])
+        skip_value(value_type)
+    return None
 
 
 # TODO: Over time we'd like to extend this into a new HFAssetResolver class that
