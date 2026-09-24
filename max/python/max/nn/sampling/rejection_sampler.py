@@ -541,28 +541,56 @@ def synthetic_acceptance_sampler(
     base_acceptance_rate: float,
     num_draft_steps: int,
     seed: TensorValue,
+    *,
+    temperature: TensorValue | None = None,
+    top_k: TensorValue | None = None,
+    max_k: TensorValue | None = None,
+    top_p: TensorValue | None = None,
+    min_top_p: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Synthetic sampler for speculative decoding benchmarking.
 
     Accepts each draft position independently with probability
     ``base_acceptance_rate``. Once a position is rejected all subsequent
-    positions are also rejected. Recovered tokens and bonus tokens are
-    taken from the target argmax — generated text is not a faithful
-    speculative decode; intended for throughput benchmarking only.
+    positions are also rejected. Accepted positions commit the draft token,
+    so generated text is not a faithful speculative decode.
+
+    With sampling params, recovered and bonus tokens are the draws of
+    :func:`stochastic_acceptance_sampler`, whose position 0 uses the same
+    kernel and seed as plain decoding: at rate 0 the output matches decoding
+    without speculation. Without them, they are the target argmax.
 
     Args:
         draft_tokens: Draft token ids ``[batch, num_steps]``.
         target_logits: Verified target logits.
         base_acceptance_rate: Per-position acceptance probability.
         num_draft_steps: Number of speculative draft steps.
-        seed: Per-execute seed tensor. A rank-1 per-row seed uses its row-0
-            value: synthetic acceptance is batch-level benchmarking noise.
+        seed: Per-execute seed tensor. The accept draws use its row-0 value.
+        temperature, top_k, max_k, top_p, min_top_p: Per-row sampling
+            params, all or none.
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
-    target_tokens_draft, bonus_tokens, device = _compute_target_tokens(
-        draft_tokens, target_logits
-    )
+    if temperature is None:
+        target_tokens_draft, bonus_tokens, device = _compute_target_tokens(
+            draft_tokens, target_logits
+        )
+    else:
+        assert top_k is not None
+        assert max_k is not None
+        assert top_p is not None
+        assert min_top_p is not None
+        device = draft_tokens.device
+        _, target_tokens_draft, bonus_tokens = stochastic_acceptance_sampler(
+            draft_tokens,
+            target_logits,
+            temperature=temperature,
+            top_k=top_k,
+            max_k=max_k,
+            top_p=top_p,
+            min_top_p=min_top_p,
+            seed=seed,
+        )
 
     _set_domain_seed(seed, _SEED_DOMAIN_SYNTHETIC)
 
@@ -578,7 +606,14 @@ def synthetic_acceptance_sampler(
     first_rejected_idx = ops.squeeze(
         _find_first_rejected(synthetic_rejected, device), axis=-1
     )
-    return first_rejected_idx, target_tokens_draft, bonus_tokens
+    # Callers feed ``recovered`` back to the draft as the committed tokens.
+    shape = [Dim("batch_size"), Dim("num_steps")]
+    recovered = ops.where(
+        ops.rebind(synthetic_rejected, shape),
+        ops.rebind(target_tokens_draft, shape),
+        ops.rebind(draft_tokens, shape).cast(target_tokens_draft.dtype),
+    )
+    return first_rejected_idx, recovered, bonus_tokens
 
 
 def greedy_acceptance_sampler(
@@ -634,7 +669,7 @@ class AcceptanceSampler:
     - Otherwise → greedy (accept iff draft token == target argmax).
 
     Synthetic mode takes priority over stochastic when both are
-    configured; the stochastic params are ignored in that case.
+    configured, but still samples with the stochastic params.
 
     ``relaxed_topk`` / ``relaxed_delta`` require ``draft_proposal="argmax"``;
     the relaxed rule assumes the drafted token is the draft's own argmax, so
@@ -731,7 +766,7 @@ class AcceptanceSampler:
             temperature, top_k, max_k, top_p, min_top_p: Per-row
                 sampling params. Required when the sampler was built
                 with ``use_stochastic=True`` and synthetic mode is off;
-                ignored otherwise.
+                optional in synthetic mode, ignored in greedy mode.
             in_thinking_phase: Optional ``[batch_size]`` bool tensor
                 marking rows currently inside a ``<think>...</think>``
                 span. Required when the sampler was built with
@@ -755,6 +790,11 @@ class AcceptanceSampler:
                 base_acceptance_rate=self._base_rate,
                 num_draft_steps=self._num_draft_steps,
                 seed=seed,
+                temperature=temperature,
+                top_k=top_k,
+                max_k=max_k,
+                top_p=top_p,
+                min_top_p=min_top_p,
             )
         if self._use_stochastic:
             assert seed is not None, "stochastic acceptance requires a seed"
