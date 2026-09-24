@@ -84,228 +84,172 @@ SupportedInstruments = API_PROXIES | SDK_INSTRUMENTS
 # than {Type} objects
 SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.request_count": _meter.create_counter(
-        "maxserve.request_count", description="Http request count"
+        "maxserve.request_count",
+        description=(
+            "Total API requests since server start. Liveness and "
+            "observability endpoints (/health, /version, /ping and /metrics) "
+            "are excluded."
+        ),
     ),  # type: ignore
     "maxserve.request_time": _meter.create_histogram(
-        "maxserve.request_time", unit="ms", description="Time spent in requests"
+        "maxserve.request_time",
+        unit="ms",
+        description=(
+            "Total time spent handling a request, measured from the HTTP "
+            "middleware receiving it to the response completing: request "
+            "parsing, validation, queueing, model execution and response "
+            "generation."
+        ),
     ),  # type: ignore
     "maxserve.input_processing_time": _meter.create_histogram(
         "maxserve.input_processing_time",
         unit="ms",
-        description="Input processing time",
+        description="Input processing time (IPT).",
     ),  # type: ignore
     "maxserve.output_processing_time": _meter.create_histogram(
         "maxserve.output_processing_time",
         unit="ms",
-        description="Output processing time",
+        description="Output generation time (OGT).",
     ),  # type: ignore
     "maxserve.time_to_first_token": _meter.create_histogram(
         "maxserve.time_to_first_token",
         unit="ms",
         description=(
-            "Time to first token, measured from when the API server received "
-            "the request (same origin as 'maxserve.request_time'), so it "
-            "includes request parsing, validation and media resolution as "
-            "well as tokenization, queueing and prefill."
+            "Time to first token (TTFT). Measured from when the server received the request, so it includes request parsing, validation, media resolution, tokenization, queueing, and prefill."
         ),
     ),  # type: ignore
     "maxserve.num_input_tokens": _meter.create_counter(
-        "maxserve.num_input_tokens", description="Count of input tokens"
+        "maxserve.num_input_tokens",
+        description="Cumulative input tokens processed.",
     ),  # type: ignore
     "maxserve.num_input_characters": _meter.create_counter(
-        "maxserve.num_input_characters", description="Count of input characters"
+        "maxserve.num_input_characters",
+        description="Cumulative input characters processed.",
     ),  # type: ignore
     "maxserve.num_output_tokens": _meter.create_counter(
-        "maxserve.num_output_tokens", description="Count of generated tokens"
+        "maxserve.num_output_tokens",
+        description="Cumulative output tokens generated.",
     ),  # type: ignore
     "maxserve.num_requests_queued": _meter.create_gauge(
         "maxserve.num_requests_queued",
         description=(
-            "Current depth of the scheduler's CE / prefill queue, "
-            "sampled once per scheduler iteration. Mirrors the "
-            "'Pending: N reqs' value in scheduler logs."
+            "Current depth of the scheduler's CE/prefill queue, sampled once per scheduler iteration."
         ),
     ),  # type: ignore
     "maxserve.num_requests_running": _meter.create_up_down_counter(
         "maxserve.num_requests_running",
-        description="Count of requests currently being processed",
+        description="Requests currently being processed.",
     ),  # type: ignore
     "maxserve.num_requests_awaiting_admission": _meter.create_up_down_counter(
         "maxserve.num_requests_awaiting_admission",
         description=(
-            "Count of requests received by the API server but not yet handed "
-            "off to the model worker (i.e. still in tokenization / pre-submit "
-            "on the API side). Incremented on arrival and decremented just "
-            "before the request is enqueued to the model worker, so a "
-            "persistently high value indicates a backlog stuck in the API "
-            "server rather than in the scheduler."
+            "Requests received by the API server but not yet handed off to the model worker. A persistently high value indicates a backlog in the API server rather than the scheduler."
         ),
     ),  # type: ignore
     "maxserve.requests_awaiting_admission": _meter.create_histogram(
         "maxserve.requests_awaiting_admission",
         description=(
-            "Distribution of the ingress backlog (requests accepted by the "
-            "API server but not yet handed off to the model worker), sampled "
-            "periodically. Companion to the "
-            "'maxserve.num_requests_awaiting_admission' up/down counter: the "
-            "counter is the live value for dashboards, while this histogram "
-            "captures the distribution / tail (p50/p99) over time."
+            "Distribution of the ingress backlog (requests accepted by the API server but not yet handed off to the model worker), sampled periodically. Captures the p50/p99 tail over time."
         ),
     ),  # type: ignore
     "maxserve.num_responses_buffered": _meter.create_gauge(
         "maxserve.num_responses_buffered",
         description=(
-            "Egress backlog: model-worker responses received by the API "
-            "server but not yet consumed by the streaming layer (sum of the "
-            "per-request output-queue depths), sampled periodically. A "
-            "persistently high value means the API server is shipping tokens "
-            "back to clients (detokenize + serialize + network) slower than "
-            "the model produces them, and the unbounded output queues are "
-            "accumulating in API-process memory."
+            "Model-worker responses received by the API server but not yet consumed by the streaming layer (sum of per-request output-queue depths), sampled periodically."
         ),
     ),  # type: ignore
     "maxserve.responses_buffered": _meter.create_histogram(
         "maxserve.responses_buffered",
         description=(
-            "Distribution of the egress backlog (responses received by the "
-            "API server but not yet streamed to clients), sampled "
-            "periodically. Companion to the 'maxserve.num_responses_buffered' "
-            "gauge: the gauge shows the latest value for live dashboards, "
-            "while this histogram captures the distribution / tail (p50/p99) "
-            "over time, which a scrape-interval gauge sample would miss."
+            "Distribution of the egress backlog, sampled periodically. Captures the p50/p99 tail that a scrape-interval gauge sample would miss."
         ),
     ),  # type: ignore
     "maxserve.response_queue_time": _meter.create_histogram(
         "maxserve.response_queue_time",
         unit="ms",
         description=(
-            "Time a model-worker response waits in the API server's "
-            "per-request output queue before the streaming layer consumes it. "
-            "Sampled at the head of line (once per consumer wake), so it "
-            "tracks the egress-side delay the user experiences when the API "
-            "server falls behind the model on decode."
+            "Time a model-worker response waits in the per-request output queue before the streaming layer consumes it."
         ),
     ),  # type: ignore
     "maxserve.model_load_time": _meter.create_histogram(
         "maxserve.model_load_time",
         unit="ms",
         description=(
-            "Time to load a model. Recorded once per model-worker startup, "
-            "both as an untagged aggregate and split by the 'component' tag "
-            "(build, compile, init, graph_capture, pinned_memory, spawn, "
-            "total), mirroring the per-phase breakdown in the model worker's "
-            "startup log lines."
+            "Model-worker startup duration. Also split by `component` tag (`build`, `compile`, `init`, `graph_capture`, `pinned_memory`, `spawn`, `total`)."
         ),
     ),  # type: ignore
     "maxserve.itl": _meter.create_histogram(
-        "maxserve.itl", unit="ms", description="inter token latency"
+        "maxserve.itl", unit="ms", description="Inter-token latency."
     ),  # type: ignore
     "maxserve.time_per_output_token": _meter.create_histogram(
         "maxserve.time_per_output_token",
         unit="ms",
         description=(
-            "Mean decode-phase latency per generated token, emitted once per "
-            "request: decode_time / (num_generated_tokens - 1). Excludes the "
-            "first token and prefill/TTFT; accounts for speculative decoding."
+            "Mean decode-phase latency per generated token (TPOT). Emitted once per request as decode_time / (num_generated_tokens - 1). Excludes the first token and prefill/TTFT."
         ),
     ),  # type: ignore
     "maxserve.pipeline_load": _meter.create_counter(
         "maxserve.pipeline_load",
-        description="Count of pipelines loaded for each model",
+        description="Pipelines loaded for each model.",
     ),  # type: ignore
     "maxserve.batch_size": _meter.create_histogram(
         "maxserve.batch_size",
         description=(
-            "Distribution of batch sizes (number of requests), labeled by "
-            "'batch_type' (CE prefill or TG decode). For TG this is the "
-            "decode batch size; for CE see 'batch_input_tokens' for the "
-            "token-count view."
+            "Distribution of batch sizes (number of requests), labeled by `batch_type` (CE prefill or TG decode)."
         ),
     ),  # type: ignore
     "maxserve.batch_execution_time": _meter.create_histogram(
         "maxserve.batch_execution_time",
         unit="ms",
-        description="Distribution of batch execution time",
+        description="Distribution of batch execution time.",
     ),  # type: ignore
     "maxserve.di.decode_admission_queue_wait_time": _meter.create_histogram(
         "maxserve.di.decode_admission_queue_wait_time",
         unit="ms",
         description=(
-            "Decode-local time a request spends in decode's own admission "
-            "queue (self.pending_reqs) before being admitted into the "
-            "in-flight set and dispatched to prefill. Decode-clock only, "
-            "single process. Added after the dispatch-latency breakdown "
-            "(di.dispatch_rtt/prefill_span/reply_rtt) showed the "
-            "decode-prefill pipeline staying flat while TTFT still grew "
-            "sharply past mc=40 -- this covers the one remaining segment "
-            "upstream of dispatch that had no wait-time instrumentation."
+            "Time a request spends in the decode node's admission queue before dispatch to prefill."
         ),
     ),  # type: ignore
     "maxserve.di.decode_send_time": _meter.create_histogram(
         "maxserve.di.decode_send_time",
         unit="ms",
         description=(
-            "Decode-side time to build and send a PrefillRequest (struct "
-            "construction, msgspec serialization, ZMQ enqueue). Decode-local; "
-            "does not include network transit. Part of the DI dispatch "
-            "latency breakdown."
+            "Time to build and send a prefill request on the decode side (struct construction, serialization, ZMQ enqueue)."
         ),
     ),  # type: ignore
     "maxserve.di.dispatch_rtt": _meter.create_histogram(
         "maxserve.di.dispatch_rtt",
         unit="ms",
         description=(
-            "Decode-clock round trip from sending a PrefillRequest to "
-            "receiving prefill's 'arrived' ack ping. Covers the outbound ZMQ "
-            "hop, prefill's negligible ack-send overhead, and the ack's "
-            "return hop combined -- a one-way network leg is not measurable "
-            "without synchronized clocks, so this is reported as a round "
-            "trip rather than split. Part of the DI dispatch latency "
-            "breakdown."
+            "Decode-clock round trip from sending a prefill request to receiving the prefill node's acknowledgment."
         ),
     ),  # type: ignore
     "maxserve.di.prefill_span": _meter.create_histogram(
         "maxserve.di.prefill_span",
         unit="ms",
         description=(
-            "Decode-clock time between prefill's 'arrived' and 'ce_done' "
-            "ack pings for a request: prefill's queue wait + CE execution + "
-            "the second ping's return hop. Cross-check this against "
-            "'maxserve.di.prefill_queue_wait_time' + "
-            "'maxserve.batch_execution_time' (batch_type=CE), which measure "
-            "the same work on prefill's own clock without the ping transit. "
-            "Part of the DI dispatch latency breakdown."
+            'Decode-clock time between the prefill node\'s "arrived" and "ce_done" acknowledgments for a request. Covers prefill queue wait plus CE execution plus the return hop.'
         ),
     ),  # type: ignore
     "maxserve.di.reply_rtt": _meter.create_histogram(
         "maxserve.di.reply_rtt",
         unit="ms",
         description=(
-            "Decode-clock time from prefill's 'ce_done' ack ping to the "
-            "real PrefillResponse arriving: KV-transfer initiation, reply "
-            "construction/serialization on prefill, and its network transit. "
-            "Part of the DI dispatch latency breakdown."
+            'Decode-clock time from the prefill node\'s "ce_done" acknowledgment to the actual prefill response arriving. Covers KV-transfer initiation, reply serialization, and network transit.'
         ),
     ),  # type: ignore
     "maxserve.di.prefill_queue_wait_time": _meter.create_histogram(
         "maxserve.di.prefill_queue_wait_time",
         unit="ms",
         description=(
-            "Prefill-local time a request spends enqueued before its first "
-            "CE batch executes. Prefill-clock only, single process -- tests "
-            "whether TTFT growth at high concurrency is queue saturation "
-            "rather than dispatch/network overhead."
+            "Prefill-local time a request spends enqueued before its first CE batch executes."
         ),
     ),  # type: ignore
     "maxserve.di.decode_postprocess_time": _meter.create_histogram(
         "maxserve.di.decode_postprocess_time",
         unit="ms",
         description=(
-            "Decode-local time from receiving a PrefillResponse to handing "
-            "the result off to the response queue. Decode-clock only; does "
-            "not include the API-process hop after the response queue (see "
-            "'maxserve.response_queue_time' for the API-side tail). Part of "
-            "the DI dispatch latency breakdown."
+            "Decode-local time from receiving a prefill response to handing the result off to the response queue."
         ),
     ),  # type: ignore
     "maxserve.di.early_sync_time": _meter.create_histogram(
@@ -350,83 +294,72 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.cache.num_used_blocks": _meter.create_gauge(
         "maxserve.cache.num_used_blocks",
         unit="blocks",
-        description="Number of used blocks or pages, measured at the scheduler after batch work.",
+        description="Number of KV cache blocks currently in use.",
     ),  # type: ignore
     "maxserve.cache.num_total_blocks": _meter.create_gauge(
         "maxserve.cache.num_total_blocks",
         unit="blocks",
-        description="Total number of blocks or pages, measured at the scheduler after batch work.",
+        description="Total number of KV cache blocks.",
     ),  # type: ignore
     "maxserve.cache.request_prefix_coverage": _meter.create_histogram(
         "maxserve.cache.request_prefix_coverage",
         unit="percent",
         description=(
-            "Per-request prefix cache coverage (cached prefix tokens / "
-            "prompt tokens), emitted once per admitted request and "
-            "unweighted by request size. For the token-weighted cache hit "
-            "rate, derive it from maxserve.cache.hits and "
-            "maxserve.cache.misses instead."
+            "Per-request prefix cache coverage (cached prefix tokens / prompt tokens). For the token-weighted cache hit rate, derive it from `maxserve_cache_hits_tokens_total` and `maxserve_cache_misses_tokens_total`."
         ),
     ),  # type: ignore
     "maxserve.cache.preemption_count": _meter.create_counter(
         "maxserve.cache.preemption_count",
-        description="Total number of preemptions",
+        description="Total number of preemptions.",
     ),  # type: ignore
     "maxserve.cache.hits": _meter.create_counter(
         "maxserve.cache.hits",
         unit="tokens",
         description=(
-            "Cumulative KV cache hit tokens across all CE batches "
-            "(prompt tokens served from prefix cache). Tagged with the tier "
-            "that served each token: g0 for the on-device prefix cache, "
-            "external for the KV connector. The tiers sum to the untagged "
-            "total. g0 includes cross-replica device-to-device copies, and "
-            "counts first admissions only, so it does not match "
-            "maxserve.cache.device_blocks_served scaled by the page size."
+            "Cumulative KV cache hit tokens (prompt tokens served from the prefix cache). Tagged with a `tier` label (`g0` for the on-device prefix cache, `external` for the KV connector). The per-tier series sum to the untagged total."
         ),
     ),  # type: ignore
     "maxserve.cache.misses": _meter.create_counter(
         "maxserve.cache.misses",
         unit="tokens",
         description=(
-            "Cumulative KV cache miss tokens across all CE batches "
-            "(prompt tokens actually prefilled by the model)."
+            "Cumulative KV cache miss tokens (prompt tokens actually prefilled by the model)."
         ),
     ),  # type: ignore
     "maxserve.input_tokens_per_request": _meter.create_histogram(
         "maxserve.input_tokens_per_request",
         unit="tokens",
-        description="Distribution of input tokens per request",
+        description="Distribution of input tokens per request.",
     ),  # type: ignore
     "maxserve.output_tokens_per_request": _meter.create_histogram(
         "maxserve.output_tokens_per_request",
         unit="tokens",
-        description="Distribution of output tokens per request",
+        description="Distribution of output tokens per request.",
     ),  # type: ignore
     "maxserve.dkv.nixl_read_latency": _meter.create_histogram(
         "maxserve.dkv.nixl_read_latency",
         unit="ms",
-        description="NIXL READ transfer latency",
+        description="NIXL READ transfer latency.",
     ),  # type: ignore
     "maxserve.dkv.nixl_read_latency_max": _meter.create_histogram(
         "maxserve.dkv.nixl_read_latency_max",
         unit="ms",
-        description="Slowest single NIXL READ transfer in a batch's window",
+        description="Slowest single NIXL READ transfer in a batch's window.",
     ),  # type: ignore
     "maxserve.dkv.nixl_write_latency": _meter.create_histogram(
         "maxserve.dkv.nixl_write_latency",
         unit="ms",
-        description="NIXL WRITE transfer latency",
+        description="NIXL WRITE transfer latency.",
     ),  # type: ignore
     "maxserve.dkv.rpc_acquire_latency": _meter.create_histogram(
         "maxserve.dkv.rpc_acquire_latency",
         unit="ms",
-        description="dKV acquire_blocks RPC latency",
+        description="dKV acquire_blocks RPC latency.",
     ),  # type: ignore
     "maxserve.dkv.rpc_read_latency": _meter.create_histogram(
         "maxserve.dkv.rpc_read_latency",
         unit="ms",
-        description="dKV read_blocks RPC latency",
+        description="dKV read_blocks RPC latency.",
     ),  # type: ignore
     "maxserve.dkv.read_blocks": _meter.create_counter(
         "maxserve.dkv.read_blocks",
@@ -486,12 +419,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
         "maxserve.spec_decode.acceptance_rate_per_position",
         unit="percent",
-        description="Draft token acceptance rate per position (0-100%)",
+        description="Draft-token acceptance rate per position (0-100%).",
     ),  # type: ignore
     "maxserve.batch_input_tokens": _meter.create_histogram(
         "maxserve.batch_input_tokens",
         unit="tokens",
-        description="Distribution of input tokens per scheduler batch (CE prefill or TG decode).",
+        description="Distribution of input tokens per scheduler batch.",
     ),  # type: ignore
     "maxserve.batch_context_tokens": _meter.create_histogram(
         "maxserve.batch_context_tokens",
@@ -506,57 +439,39 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.batch_prompt_throughput": _meter.create_histogram(
         "maxserve.batch_prompt_throughput",
         unit="tokens/s",
-        description="Per-batch prompt-side throughput in tokens/second.",
+        description="Per-batch prompt-side throughput per second.",
     ),  # type: ignore
     "maxserve.batch_generation_throughput": _meter.create_histogram(
         "maxserve.batch_generation_throughput",
         unit="tokens/s",
-        description="Per-batch generation-side throughput in tokens/second.",
+        description="Per-batch generation-side throughput per second.",
     ),  # type: ignore
     "maxserve.dp_active_token_occupancy": _meter.create_histogram(
         "maxserve.dp_active_token_occupancy",
         unit="%",
         description=(
-            "Per-batch data-parallel balance: mean/max of per-rank "
-            "active-token load as a percentage. 100 = perfectly balanced "
-            "ranks; the floor is 100/DP-degree (all load on one rank). "
-            "Excludes DP padding dummies. Recorded only when "
-            "data_parallel_degree > 1."
+            "Per-batch data-parallel balance, measured as the mean/max of per-rank active-token load as a percentage. 100% means perfectly balanced ranks."
         ),
     ),  # type: ignore
     "maxserve.dp_context_token_occupancy": _meter.create_histogram(
         "maxserve.dp_context_token_occupancy",
         unit="%",
         description=(
-            "Per-batch data-parallel balance: mean/max of per-rank "
-            "context-token (KV / attention) load as a percentage. 100 = "
-            "perfectly balanced ranks; the floor is 100/DP-degree (all "
-            "load on one rank). Excludes DP padding dummies. Recorded only "
-            "when data_parallel_degree > 1 and at least one rank has "
-            "processed tokens (fresh prefill batches are skipped)."
+            "Per-batch data-parallel balance, measured as the mean/max of per-rank context-token (KV/attention) load as a percentage. 100% means perfectly balanced ranks."
         ),
     ),  # type: ignore
     "maxserve.dp_active_tokens": _meter.create_counter(
         "maxserve.dp_active_tokens",
         unit="tokens",
         description=(
-            "Cumulative active tokens scheduled across all DP replicas, "
-            "excluding padding dummies. Divided by "
-            "maxserve.dp_step_capacity_tokens over the same window, this "
-            "gives the token-weighted DP occupancy (each batch weighted by "
-            "its step cost rather than counted once). Recorded only when "
-            "data_parallel_degree > 1."
+            "Cumulative active tokens scheduled across all data-parallel replicas, excluding padding. Divide by `maxserve_dp_step_capacity_tokens_total` over the same window for token-weighted DP occupancy."
         ),
     ),  # type: ignore
     "maxserve.dp_step_capacity_tokens": _meter.create_counter(
         "maxserve.dp_step_capacity_tokens",
         unit="tokens",
         description=(
-            "Cumulative synchronized step capacity in tokens: for each "
-            "batch, DP-degree times the heaviest rank's active tokens "
-            "(ranks step together, so the heaviest rank sets the step "
-            "cost). Denominator for token-weighted DP occupancy. Recorded "
-            "only when data_parallel_degree > 1."
+            "Cumulative synchronized step capacity. For each batch, this is the data-parallel degree times the heaviest rank's active tokens."
         ),
     ),  # type: ignore
     "maxserve.batch_terminated_reqs": _meter.create_histogram(
@@ -583,9 +498,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.cache.device_blocks_served",
         unit="blocks",
         description=(
-            "Cumulative KV blocks served directly from the local device "
-            "prefix cache, with no host/disk promotion or cross-replica "
-            "copy needed."
+            "Cumulative KV blocks served directly from the local device prefix cache."
         ),
     ),  # type: ignore
     "maxserve.cache.h2d_bytes_copied": _meter.create_counter(
@@ -601,18 +514,14 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.cache.cross_replica_blocks_copied",
         unit="blocks",
         description=(
-            "Cumulative KV blocks copied device-to-device across "
-            "data-parallel replicas to reuse a prefix-cache hit resident "
-            "on another replica."
+            "Cumulative KV blocks copied device-to-device across data-parallel replicas to reuse a prefix-cache hit on another replica."
         ),
     ),  # type: ignore
     "maxserve.cache.cross_replica_bytes_copied": _meter.create_counter(
         "maxserve.cache.cross_replica_bytes_copied",
         unit="bytes",
         description=(
-            "Cumulative bytes moved by device-to-device KV copies across "
-            "data-parallel replicas. Rate this to see NVLink/interconnect "
-            "bandwidth consumed by cross-replica prefix reuse."
+            "Cumulative bytes moved by device-to-device KV copies across data-parallel replicas."
         ),
     ),  # type: ignore
     "maxserve.cache.d2h_bytes_copied": _meter.create_counter(
@@ -636,7 +545,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.spec_decode.avg_acceptance_length": _meter.create_histogram(
         "maxserve.spec_decode.avg_acceptance_length",
         unit="tokens",
-        description="Mean draft-token acceptance length per spec-decode batch.",
+        description="Mean draft-token acceptance length per speculative decoding batch.",
     ),  # type: ignore
     "maxserve.dkv.nixl_read_gib_per_s": _meter.create_histogram(
         "maxserve.dkv.nixl_read_gib_per_s",
@@ -681,12 +590,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.vision.preprocess_cache_hits": _meter.create_counter(
         "maxserve.vision.preprocess_cache_hits",
         unit="images",
-        description="Cumulative images found already preprocessed, whose decode and preprocessing are both skipped. Recorded either from the API server's admission peek or from the tokenizer's own cache lookup after tokenization, depending on the architecture; the two windows differ, so the rate is not comparable across architectures.",
+        description="Cumulative images found already preprocessed, whose decode and preprocessing are both skipped.",
     ),  # type: ignore
     "maxserve.vision.preprocess_cache_misses": _meter.create_counter(
         "maxserve.vision.preprocess_cache_misses",
         unit="images",
-        description="Cumulative images not already preprocessed, which the API server must decode and preprocess. Recorded from the same vantage as 'maxserve.vision.preprocess_cache_hits'.",
+        description="Cumulative images not already preprocessed, which the API server must decode and preprocess.",
     ),  # type: ignore
     "maxserve.vision.image_admission_decode_time": _meter.create_histogram(
         "maxserve.vision.image_admission_decode_time",
@@ -711,55 +620,39 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.video.frames_per_clip": _meter.create_histogram(
         "maxserve.video.frames_per_clip",
         unit="frames",
-        description="Sampled frame count per newly-encoded video clip.",
+        description="Sampled frame count per newly encoded video clip.",
     ),  # type: ignore
     "maxserve.media.items": _meter.create_counter(
         "maxserve.media.items",
         description=(
-            "Cumulative client-supplied media items the API server resolved "
-            "into bytes, split by 'media_kind' (image, video) and 'source' "
-            "(inline for a data: URI, url for http(s), file for file:). "
-            "Counted only once an item resolves; a rejected item is counted "
-            "by 'maxserve.media.rejections' instead."
+            "Cumulative media items the API server resolved into bytes, split by `media_kind` (`image`, `video`) and `source` (`inline` for a data URI, `url` for http(s), `file` for a local path). A rejected item is counted by `maxserve_media_rejections_total` instead."
         ),
     ),  # type: ignore
     "maxserve.media.resolve_time": _meter.create_histogram(
         "maxserve.media.resolve_time",
         unit="ms",
         description=(
-            "Per-item API-server wall-clock time to turn one media reference "
-            "into bytes: the http(s) download, the base64 decode of a data: "
-            "URI, or the local file read. Excludes the image decode, which is "
-            "'maxserve.media.image_decode_ms'. Items on one request are "
-            "resolved concurrently, so these windows overlap; the sum is not "
-            "the request's elapsed resolve time."
+            "Per-item time to turn one media reference into bytes: the http(s) download, the base64 decode of a data URI, or the local file read. Excludes the image decode. Split by `source` (`inline`, `url`, `file`). Items on one request are resolved concurrently, so these windows overlap and their sum isn't the request's elapsed resolve time."
         ),
     ),  # type: ignore
     "maxserve.media.item_size": _meter.create_histogram(
         "maxserve.media.item_size",
         unit="bytes",
         description=(
-            "Encoded size of one resolved media item, as it arrived on the "
-            "wire or in the request body. Not the decoded pixel buffer."
+            "Encoded size of one resolved media item as it arrived on the wire or in the request body. Not the decoded pixel buffer. Split by `media_kind`."
         ),
     ),  # type: ignore
     "maxserve.media.image_size": _meter.create_histogram(
         "maxserve.media.image_size",
         unit="pixels",
         description=(
-            "Pixel count (width * height) of one client-supplied image as it "
-            "arrived, read from the header in the API server before any "
-            "resize, split by the 'format' PIL reports for it."
+            "Pixel count (`width * height`) of one image as it arrived, read from the header before any resize, split by `format`."
         ),
     ),  # type: ignore
     "maxserve.media.image_decodes": _meter.create_counter(
         "maxserve.media.image_decodes",
         description=(
-            "Cumulative client-supplied images whose pixels the API server "
-            "actually decoded, split by 'format'. The denominator of the "
-            "per-format decode cost, whose numerator is "
-            "'maxserve.media.image_decode_ms'; an image the preprocess cache "
-            "let us skip is sized but not counted here."
+            "Cumulative images whose pixels the API server actually decoded, split by `format`. An image the preprocess cache let the server skip is sized but not counted here."
         ),
     ),  # type: ignore
     # Milliseconds are in the name rather than in a declared unit: with
@@ -771,80 +664,52 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.media.image_decode_ms": _meter.create_counter(
         "maxserve.media.image_decode_ms",
         description=(
-            "Cumulative milliseconds of per-image codec decode in the API "
-            "server: header parse through the full pixel decode, split by "
-            "'format'. Excludes the per-architecture processor (resize, "
-            "patchify, normalize)."
+            "Cumulative milliseconds of per-image codec decode, split by `format`. Excludes the per-architecture processor (resize, patchify, normalize), whose cost follows the pixel count rather than the container."
         ),
     ),  # type: ignore
     "maxserve.media.rejections": _meter.create_counter(
         "maxserve.media.rejections",
         description=(
-            "Cumulative media items the API server refused, split by "
-            "'reason'. Every value is a 400 to the client, so this counts "
-            "client-visible failures, not server faults."
+            "Cumulative media items the API server refused, split by `reason`. Every value is an HTTP 400 to the client, so this counts client-visible failures rather than server faults."
         ),
     ),  # type: ignore
     "maxserve.media.items_per_request": _meter.create_histogram(
         "maxserve.media.items_per_request",
         unit="items",
         description=(
-            "Media items of one 'media_kind' carried by a single request, "
-            "counted in the API server before any media is downloaded and "
-            "before the per-request count caps, so a request refused for "
-            "carrying too many items is still sampled. Requests carrying "
-            "none of that kind are not sampled, so the distribution starts "
-            "at one."
+            "Media items of one `media_kind` carried by a single request, counted before any media is downloaded and before the per-request count caps, so a request refused for carrying too many items is still sampled. Requests carrying none of that kind aren't sampled, so the distribution starts at one."
         ),
     ),  # type: ignore
     "maxserve.media.preprocess_cache_evictions": _meter.create_counter(
         "maxserve.media.preprocess_cache_evictions",
         description=(
-            "Cumulative preprocessed-media entries the API-server tokenizer "
-            "dropped to stay inside its byte budget, split by 'media_kind'. "
-            "Budget pressure only -- an idle-timeout reclaim is not counted. "
-            "Separates a low 'maxserve.vision.preprocess_cache_hits' rate "
-            "caused by a workload with no repeats from one caused by a "
-            "cache thrashing at its budget, which have opposite remedies."
+            "Cumulative preprocessed-media entries the tokenizer dropped to stay inside its byte budget, split by `media_kind`. Budget pressure only, so an idle-timeout reclaim isn't counted."
         ),
     ),  # type: ignore
     "maxserve.media.preprocess_cache_size": _meter.create_gauge(
         "maxserve.media.preprocess_cache_size",
         unit="bytes",
         description=(
-            "Host bytes the API-server tokenizer's preprocessed-media cache "
-            "retains right now, split by 'media_kind'. Read after "
-            "tokenization, so it is sampled once per media request rather "
-            "than on a timer."
+            "Host bytes the tokenizer's preprocessed-media cache retains, split by `media_kind`. Sampled after tokenization, once per media request rather than on a timer."
         ),
     ),  # type: ignore
     "maxserve.media.preprocess_cache_capacity": _meter.create_gauge(
         "maxserve.media.preprocess_cache_capacity",
         unit="bytes",
         description=(
-            "The byte budget 'maxserve.media.preprocess_cache_size' is "
-            "evicted down to, split by 'media_kind'. Zero means caching is "
-            "disabled for that kind. Constant for a process; published "
-            "beside the occupancy so the ratio is readable without knowing "
-            "the deployment's configuration."
+            "The byte budget `maxserve_media_preprocess_cache_size_bytes` is evicted down to, split by `media_kind`. Zero means caching is disabled for that kind."
         ),
     ),  # type: ignore
     "maxserve.tool_call.conformance_errors": _meter.create_counter(
         "maxserve.tool_call.conformance_errors",
         description=(
-            "Count of generated tool calls that failed the observability-only "
-            "schema-conformance check, split by the 'outcome' tag "
-            "(invalid_json, unknown_tool, schema_mismatch). Mirrors the "
-            "'tool_call_conformance' warning log; the function name and failing "
-            "JSON paths stay in the log to keep label cardinality bounded."
+            "Generated tool calls that failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `unknown_tool`, `schema_mismatch`)."
         ),
     ),  # type: ignore
     "maxserve.structured_output.grammar_rejections": _meter.create_counter(
         "maxserve.structured_output.grammar_rejections",
         description=(
-            "Count of structured-output requests rejected at admission "
-            "(HTTP 400) because the active grammar backend could not compile "
-            "the schema, split by the 'kind' tag (tool_grammar, json_schema)."
+            "Structured-output requests rejected at admission (HTTP 400) because the grammar backend couldn't compile the schema, split by `kind` label (`tool_grammar`, `json_schema`)."
         ),
     ),  # type: ignore
     "maxserve.structured_output.grammar_build_time": _meter.create_histogram(
@@ -862,12 +727,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.response_format.conformance_errors": _meter.create_counter(
         "maxserve.response_format.conformance_errors",
         description=(
-            "Count of response_format (json_schema/json_object) responses "
-            "whose final content failed the observability-only "
-            "schema-conformance check, split by the 'outcome' tag "
-            "(invalid_json, schema_mismatch). Mirrors the "
-            "'response_format_conformance' warning log; the failing JSON "
-            "paths stay in the log to keep label cardinality bounded."
+            "`response_format` (`json_schema`/`json_object`) responses whose final content failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `schema_mismatch`)."
         ),
     ),  # type: ignore
     "maxserve.tool_call.responses": _meter.create_counter(
@@ -963,7 +823,7 @@ for _name, _inst in list(SERVE_METRICS.items()):
         _shadow_name = _name + HISTOGRAM_SHADOW_SUFFIX
         SERVE_METRICS[_shadow_name] = _meter.create_histogram(
             _shadow_name,
-            description=f"Exponential-histogram shadow of {_name} (MXSERV-258)",
+            description=f"Exponential-histogram shadow of {_name} (MXSERV-258).",
         )  # type: ignore
 del _name, _inst
 
