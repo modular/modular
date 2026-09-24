@@ -79,22 +79,32 @@ static void moveIfRegions(PatternRewriter &rewriter, IfOp src, IfOp dst) {
     rewriter.inlineRegionBefore(srcRegion, dstRegion, dstRegion.begin());
 }
 
-/// When the first condition of a multi-arm if is statically false, drop the
-/// dead then arm and promote the first elif arm to be the new if.
-static LogicalResult dropDeadThenPromoteFirstElif(IfOp op,
-                                                  PatternRewriter &rewriter) {
-  assert(!op.getElifRegions().empty() &&
-         "expected at least one elif (cond, then) pair");
-  Region &condRegion = op.getElifRegions()[0];
-  Region &thenRegion = op.getElifRegions()[1];
+/// If `condRegion` is a trivial `hlcf.if.elifcond.yield %c` (no carry-over
+/// values) and `%c` is a constant bool, return that bool. Otherwise failure.
+static FailureOr<bool> matchTrivialConstantElifCond(Region &condRegion) {
   auto yield = dyn_cast<IfElifCondYieldOp>(condRegion.front().getTerminator());
-  // Only promote when the condition region is a trivial yield of a condition
-  // with no mem2reg carry-over values (those become block args on then/else).
+  if (!yield || &condRegion.front().front() != yield ||
+      !yield.getValues().empty())
+    return failure();
+  KGEN::SIMDAttr cond;
+  if (!matchPattern(yield.getCond(), m_Constant(&cond)))
+    return failure();
+  return cond.getAsBool();
+}
+
+/// Promote the elif arm at `condIdx` (index into `$elifRegions` of a cond
+/// region) to be the first condition of a new if, keeping remaining elifs.
+/// Requires a trivial elifcond.yield with no carry-over values.
+static LogicalResult promoteElifArmToIf(IfOp op, PatternRewriter &rewriter,
+                                        unsigned condIdx) {
+  Region &condRegion = op.getElifRegions()[condIdx];
+  Region &thenRegion = op.getElifRegions()[condIdx + 1];
+  auto yield = dyn_cast<IfElifCondYieldOp>(condRegion.front().getTerminator());
   if (!yield || &condRegion.front().front() != yield ||
       !yield.getValues().empty())
     return failure();
 
-  unsigned remainingElifs = op.getElifRegions().size() - 2;
+  unsigned remainingElifs = op.getElifRegions().size() - (condIdx + 2);
   auto newOp = IfOp::create(rewriter, op.getLoc(), op.getResultTypes(),
                             yield.getCond(), remainingElifs);
   rewriter.inlineRegionBefore(thenRegion, newOp.getThenRegion(),
@@ -102,10 +112,42 @@ static LogicalResult dropDeadThenPromoteFirstElif(IfOp op,
   rewriter.inlineRegionBefore(op.getElseRegion(), newOp.getElseRegion(),
                               newOp.getElseRegion().begin());
   for (unsigned i = 0; i != remainingElifs; ++i)
-    rewriter.inlineRegionBefore(op.getElifRegions()[i + 2],
+    rewriter.inlineRegionBefore(op.getElifRegions()[condIdx + 2 + i],
                                 newOp.getElifRegions()[i],
                                 newOp.getElifRegions()[i].begin());
   rewriter.replaceOp(op, newOp.getResults());
+  return success();
+}
+
+/// First condition is statically false. Skip every leading elif whose
+/// condition is a trivial constant-false yield, then either take a
+/// constant-true arm, take the else, or promote the first remaining (dynamic)
+/// elif arm — all in one rewrite so an N-arm chain is O(N), not O(N²).
+static LogicalResult foldFalseLeadingIfArms(IfOp op,
+                                            PatternRewriter &rewriter) {
+  assert(!op.getElifRegions().empty() &&
+         "expected at least one elif (cond, then) pair");
+
+  unsigned condIdx = 0;
+  const unsigned numElifRegions = op.getElifRegions().size();
+  while (condIdx < numElifRegions) {
+    FailureOr<bool> constCond =
+        matchTrivialConstantElifCond(op.getElifRegions()[condIdx]);
+    if (failed(constCond))
+      // Dynamic / non-trivial: promote this arm as the new if.
+      return promoteElifArmToIf(op, rewriter, condIdx);
+
+    if (*constCond) {
+      // Constant true: keep only this then arm.
+      replaceOpWithRegion(rewriter, op, op.getElifRegions()[condIdx + 1]);
+      return success();
+    }
+    // Constant false: drop this (cond, then) pair and keep scanning.
+    condIdx += 2;
+  }
+
+  // Every condition was constant false — take the else.
+  replaceOpWithRegion(rewriter, op, op.getElseRegion());
   return success();
 }
 
@@ -186,8 +228,9 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
 
 /// If the first condition is known at compile time, keep only the live arm(s).
 /// True → replace with the then region. False with no elif → replace with the
-/// else region. False with elifs → drop the dead then and promote the first
-/// elif arm to a new if (when its condition region is a trivial yield).
+/// else region. False with elifs → drop every leading constant-false arm in
+/// one rewrite (then take a constant-true arm, the else, or promote the first
+/// remaining dynamic elif).
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   RemoveStaticCondition(MLIRContext *ctx)
       : OpRewritePattern(ctx, /*benefit=*/10) {}
@@ -207,7 +250,7 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
       replaceOpWithRegion(rewriter, op, op.getElseRegion());
       return success();
     }
-    return dropDeadThenPromoteFirstElif(op, rewriter);
+    return foldFalseLeadingIfArms(op, rewriter);
   }
 };
 

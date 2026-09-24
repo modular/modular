@@ -369,6 +369,48 @@ kgen.func @fold_multiarms_elif_false(%arg0: index, %arg1: index, %arg2: index) -
   hlcf.return %0: index
 }
 
+// Leading constant-false arms must collapse in one rewrite (not peel one arm
+// per iteration — that is O(N^2) on long elif chains).
+// CHECK-LABEL: @fold_multiarms_leading_false_prefix
+kgen.func @fold_multiarms_leading_false_prefix(%arg0: index, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK-NEXT: hlcf.return %arg2
+  %false = kgen.param.constant: scalar<bool> = <false>
+  %true = kgen.param.constant: scalar<bool> = <true>
+  %0 = hlcf.if %false -> index {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.if.elifcond.yield %false
+  } then {
+    hlcf.yield %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %true
+  } then {
+    hlcf.yield %arg2: index
+  } else {
+    hlcf.yield %arg3: index
+  }
+  hlcf.return %0: index
+}
+
+// All conditions constant false → else, still in one rewrite.
+// CHECK-LABEL: @fold_multiarms_all_false_to_else
+kgen.func @fold_multiarms_all_false_to_else(%arg0: index, %arg1: index, %arg2: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK-NEXT: hlcf.return %arg2
+  %false = kgen.param.constant: scalar<bool> = <false>
+  %0 = hlcf.if %false -> index {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.if.elifcond.yield %false
+  } then {
+    hlcf.yield %arg1: index
+  } else {
+    hlcf.yield %arg2: index
+  }
+  hlcf.return %0: index
+}
+
 // CHECK-LABEL: @hoist_multiarms_identical_yields
 kgen.func @hoist_multiarms_identical_yields(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %arg0: index) -> index {
   // CHECK-NOT: hlcf.if
