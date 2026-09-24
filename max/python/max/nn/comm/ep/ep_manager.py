@@ -87,7 +87,7 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
 
     Memory Layout (all sizes in Int32 elements):
     - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
-    - dispatch_wait/combine_async: 7 * n_experts + 7
+    - dispatch_wait/combine_async: 8 * n_experts + 8
     - combine_wait: MAX_SMS_PER_DEVICE
 
     The dispatch_wait region holds the per-expert counters and the cleanup,
@@ -112,7 +112,12 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     MAX_SMS_PER_DEVICE = 304
 
     dispatch_async_size = 2 * n_experts + MAX_GPUS_PER_NODE
-    dispatch_wait_size = 7 * n_experts + 7
+    # Mirrors ``EPLocalSyncCounters`` in ``max/kernels/src/shmem/ep_comm.mojo``,
+    # which is the definition of record; Mojo comptime constants are not
+    # reachable from Python, so the two are kept in step by hand. Past the
+    # regions described above sit the dispatch_wait SM-to-expert schedule and
+    # combine_async's completion counters, both sized at the worst-case degree.
+    dispatch_wait_size = 8 * n_experts + 8
     combine_wait_size = MAX_SMS_PER_DEVICE
     return dispatch_async_size + dispatch_wait_size + combine_wait_size
 

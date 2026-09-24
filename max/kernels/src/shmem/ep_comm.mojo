@@ -2498,7 +2498,7 @@ struct EPLocalSyncCounters[n_experts: Int](
 
     Memory Layout (all sizes in Int32 elements):
     - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
-    - dispatch_wait/combine_async: 7 * n_experts + 7
+    - dispatch_wait/combine_async: 8 * n_experts + 8
     - combine_wait: MAX_SMS_PER_DEVICE
     """
 
@@ -2545,7 +2545,8 @@ struct EPLocalSyncCounters[n_experts: Int](
     def dispatch_wait_size() -> Int:
         """Returns the size in Int32 elements needed by dispatch_wait kernel.
 
-        Layout (see EPDispatchKernel for exact offset constants):
+        Layout (see EPDispatchKernel and EPCombineKernel for exact offset
+        constants):
           Region A [0, 2*n_experts): per expert-rank combine_async compat data
           Region B [2*n_experts, 3*n_experts): within-expert rank prefix sums
           Region C [3*n_experts, 4*n_experts): per-expert work counters
@@ -2558,18 +2559,20 @@ struct EPLocalSyncCounters[n_experts: Int](
             2*n_local_experts + 3 words placed by
             `l1_vslot_ticket_offset`; inside Region C's unused tail where
             the expert-parallel degree leaves room, otherwise past Region G
-          Region I [6*n_experts + 7, +n_local_experts): the SM-to-expert
-            schedule, placed by `sm_schedule_offset`
+          Region I: the dispatch_wait SM-to-expert schedule
+          Region J: combine_async's blocks-finished counter and its
+            per-(expert, rank) completion counters
 
         Region A will be used by combine_async kernel to track the number of
-        tokens of each expert-rank pair. Region D, E, F and G needs to be reset
-        to 0 once the dispatch_wait kernel is done.
+        tokens of each expert-rank pair. Regions D through J are reset to 0 by
+        whichever kernel owns them, on its way out.
 
         The returned size is the worst case over the expert-parallel degree,
-        at which Region H sits past Region G with n_local_experts ==
-        n_experts, because the host allocates from n_experts alone.
+        because the host allocates from n_experts alone.
         """
-        return 7 * Self.n_experts + 7
+        # Must stay even: region A is accessed eight bytes at a time and
+        # callers stride whole blocks of these counters per buffer slot.
+        return 8 * Self.n_experts + 8
 
     @inline(.always)
     @staticmethod
@@ -2579,7 +2582,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         Must match dispatch_wait_size() since combine_async reuses the same
         memory region.
         """
-        return 7 * Self.n_experts + 7
+        return Self.dispatch_wait_size()
 
     @inline(.always)
     @staticmethod
@@ -4351,6 +4354,21 @@ struct EPCombineKernel[
     comptime n_local_experts = Self.n_experts // Self.n_ranks
     comptime n_warps = Self.num_threads // WARP_SIZE
 
+    # Under `use_balanced_send` the tokens are spread across all warps instead.
+    # A token-count gate in `send_tokens_back` falls back to the per-pair
+    # assignment at decode, where the table build costs more than the imbalance
+    # it removes, and the FFN-gated megakernel send always takes the per-pair
+    # loop.
+    comptime use_balanced_send = (
+        not Self.use_shmem
+        and not Self.skip_a2a
+        and Self.p2p_world_size == Self.n_ranks
+    )
+    # Completion state for `use_balanced_send`. Both are zero at allocation
+    # and each entry is returned to zero as it is consumed.
+    comptime blocks_done_offset = 7 * Self.n_experts + 7
+    comptime pair_done_offset = Self.blocks_done_offset + 1
+
     # Aux SMs for combine_wait kernel: single SM waits for arrivals.
     comptime n_wait_sms = 1
     # Reduce SMs for combine_wait kernel.
@@ -4563,208 +4581,454 @@ struct EPCombineKernel[
         )
 
         # Each rank holds `n_local_experts` experts, and for each expert, it
-        # needs to send back different tokens to `n_ranks` remote ranks. We use
-        # one block per-expert-per-rank to send back the tokens.
-        for _global_idx in range(sm_id, Self.n_experts, n_send_sms):
-            var global_idx = _global_idx
-            comptime if Self.skip_a2a:
-                global_idx = _global_idx + Self.n_local_experts * Int(my_rank)
+        # needs to send back different tokens to `n_ranks` remote ranks.
+        var run_legacy = True
+        # The balanced walk hands each warp a run of units that crosses
+        # experts, so it has no per-expert point at which to acquire the FFN's
+        # completion; the per-pair loop below keeps that gate.
+        comptime if Self.use_balanced_send and not gate_ffn_done:
+            # Spreading tokens across all warps only pays for itself when
+            # there are enough of them. `dispatch_wait` left a cumulative count
+            # in the last pair.
+            run_legacy = (
+                Int(atomic_counter.load(2 * (Self.n_experts - 1)))
+                - EP_DATA_READY_FLAG
+            ) < 4 * Self.n_experts
+            if not run_legacy:
+                comptime assert Self.n_experts <= Self.num_threads, (
+                    "balanced send builds its pair table with one thread per"
+                    " (expert, rank) pair"
+                )
+                comptime assert Self.n_ranks <= WARP_SIZE
+                # `use_balanced_send` requires every rank to be peer-reachable,
+                # so each is reachable by direct store and `my_p2p_world` is 0.
+                # The pair table and the send below both assume it.
 
-            var target_rank, local_expert_id = udivmod(
-                global_idx, Self.n_local_experts
-            )
+                # Pair table in LDS. `start`/`count` are the pair's rows in
+                # `input_tokens`; `vbase` is the pair's first work unit within
+                # its destination rank, so a claimed unit maps back to a pair
+                # by a scan. Every block builds the same table.
+                var smem_start = unsafe_stack_allocation[
+                    Self.n_experts, Int32, address_space=.SHARED
+                ]()
+                var smem_count = unsafe_stack_allocation[
+                    Self.n_experts, Int32, address_space=.SHARED
+                ]()
+                var smem_vbase = unsafe_stack_allocation[
+                    Self.n_experts, Int32, address_space=.SHARED
+                ]()
+                # Unit-space bounds, one per rank plus the grand total, so
+                # rank `r` owns `[smem_rank_base[r], smem_rank_base[r + 1])`.
+                var smem_rank_base = unsafe_stack_allocation[
+                    Self.n_ranks + 1, Int32, address_space=.SHARED
+                ]()
 
-            var expert_rank_offset = Self.recv_count_layout(
-                (local_expert_id, target_rank)
-            )
-            var dst_p2p_world, dst_p2p_rank = udivmod(
-                target_rank, Self.p2p_world_size
-            )
-
-            # Info for where the tokens for the current expert and rank start
-            # and end are stored in the atomic counter by the
-            # `dispatch_wait_kernel`.
-            comptime DATA_READY_FLAG = 1024
-            var token_end_count = atomic_counter.load[
-                width=2,
-                alignment=align_of[SIMD[.int32, 2]](),
-                invariant=True,
-            ](2 * expert_rank_offset)
-            var token_end = token_end_count[0] - DATA_READY_FLAG
-            var token_start = token_end - token_end_count[1]
-
-            # Combine-seam gate: block until MegaFFN finished expert
-            # `local_expert_id`, so its output rows are in GMEM before this
-            # block reads them (combine drops its PDL entry-wait, so this
-            # per-expert acquire IS the cross-kernel output edge). The producer
-            # publishes a MONOTONE count of completed output tiles -- one
-            # release-add per contributor, whose release sequence is what
-            # carries every contributor's rows -- so the gate waits for that
-            # count to REACH the expert's tile total, never for a distinguished
-            # value. Only gate a NON-EMPTY (expert, rank) range: a 0-token
-            # expert produces no tile AND is never read here. One elected lane
-            # spins (bounded -> trap, never a silent hang); the `barrier()` fans
-            # release-visibility out to the block and gates every thread. The
-            # slot is never written here (multiple (expert, rank) blocks read
-            # one expert) -- the producer/caller owns the per-launch zero.
-            comptime if gate_ffn_done:
-                if token_end > token_start:
-                    if tid == 0:
-                        var done = ffn_done_ptr.value() + local_expert_id
-                        var target = ffn_done_sentinel
-                        comptime if ffn_done_tiles_per_m_block > 0:
-                            var rows = row_offsets_ptr.value()
-                            var tokens_e = Int(rows[local_expert_id + 1]) - Int(
-                                rows[local_expert_id]
-                            )
-                            target = UInt32(
-                                ceildiv(tokens_e, ffn_done_m_block)
-                                * ffn_done_tiles_per_m_block
-                            )
-                        var spins = 0
-                        while (
-                            Atomic[UInt32].load[ordering=Ordering.ACQUIRE](done)
-                            < target
-                        ):
-                            spins += 1
-                            if spins >= ffn_done_max_spin:
-                                abort()
-                    _scoped_barrier[Self.num_threads, comm_barrier_id]()
-
-            # If the target device is on the same node, we can directly copy the
-            # tokens to the receive buffer, skipping the send buffer.
-            if dst_p2p_world == my_p2p_world:
-                for token_idx in range(token_start, token_end):
-                    var src_token_info = src_info.load[width=2](
-                        (token_idx, Idx[0])
+                # Walk pairs in (rank, expert) order so each destination rank
+                # owns a contiguous run of work units.
+                var units = Int32(0)
+                if Int(tid) < Self.n_experts:
+                    var t_rank, t_expert = udivmod(
+                        Int(tid), Self.n_local_experts
                     )
-                    var src_idx = src_token_info[0]
-                    var src_topk_idx = src_token_info[1]
-
-                    if not Self._recv_offset_in_bounds(src_idx, src_topk_idx):
-                        continue
-
-                    var dst_recv_buf_ptr = recv_buf_ptrs[
-                        dst_p2p_rank
-                    ] + Self.recv_buf_layout((src_idx, src_topk_idx, Idx[0]))
-                    block_memcpy[
-                        hid_dim * size_of[input_type](), Self.num_threads
-                    ](
-                        dst_recv_buf_ptr,
-                        input_tokens.ptr_at_offset((token_idx, Idx[0])).bitcast[
-                            UInt8
-                        ](),
-                        tid,
+                    var t_pair = t_expert * Self.n_ranks + t_rank
+                    var tec = atomic_counter.load[
+                        width=2, alignment=align_of[SIMD[.int32, 2]]()
+                    ](2 * t_pair)
+                    # Clamp: a corrupt count would otherwise size the unit
+                    # space.
+                    var cnt = tec[1].clamp(
+                        Int32(0), Int32(Self.max_tokens_per_rank)
                     )
-
-            # If the target device is on a different node, we need to send the
-            # tokens to the target device using the SHMEM API.
-            else:
-                comptime if Self.use_shmem:
-                    # The tokens are sent back to the original rank using the
-                    # same RC as the one they come from.
-                    comptime n_rcs = min(Self.n_local_experts, Self.n_warps)
-                    var rc_map_offset = (sm_id * Self.n_warps + wid) % n_rcs
-
-                    var n_rounds = ceildiv(
-                        token_end - token_start, Int32(Self.n_warps)
+                    smem_count[t_pair] = cnt
+                    smem_start[t_pair] = (
+                        tec[0] - Int32(EP_DATA_READY_FLAG)
+                    ) - cnt
+                    # An empty pair still has to be signalled, so give it one
+                    # no-op unit and the completion path stays uniform.
+                    units = max(cnt, Int32(1))
+                var incl = block_prefix_sum[
+                    Self.n_experts,
+                    thread_base=thread_base,
+                    n_scoped_threads=Self.num_threads,
+                    barrier_id=comm_barrier_id,
+                ](units)
+                if Int(tid) < Self.n_experts:
+                    smem_vbase[Int(tid)] = incl
+                _scoped_barrier[Self.num_threads, comm_barrier_id]()
+                if Int(tid) <= Self.n_ranks:
+                    smem_rank_base[Int(tid)] = (
+                        Int32(0) if Int(tid)
+                        == 0 else smem_vbase[
+                            Int(tid) * Self.n_local_experts - 1
+                        ]
                     )
-                    for round_i in range(n_rounds):
-                        var token_idx = (
-                            token_start
-                            + round_i * Int32(Self.n_warps)
-                            + Int32(wid)
-                        )
-                        if token_idx < token_end:
-                            var curr_send_buf_ptr = (
-                                send_buf_p
-                                + Self.send_buf_layout((token_idx, Idx[0]))
-                            )
+                _scoped_barrier[Self.num_threads, comm_barrier_id]()
+                if Int(tid) < Self.n_experts:
+                    # Exclusive, rebased to the pair's own destination rank.
+                    smem_vbase[Int(tid)] = (
+                        incl
+                        - units
+                        - smem_rank_base[
+                            ufloordiv(Int(tid), Self.n_local_experts)
+                        ]
+                    )
+                _scoped_barrier[Self.num_threads, comm_barrier_id]()
 
-                            # To use SHMEM API, we need to copy the tokens to
-                            # the send buffer first.
-                            block_memcpy[
-                                hid_dim * size_of[input_type](), WARP_SIZE
+                # Static partition of the unit space. Every unit is one token
+                # of identical size, so a fixed split is already balanced --
+                # no claim atomics, which matters because the obvious dynamic
+                # version funnels every warp through one counter per
+                # destination rank and that contention cost more than the
+                # imbalance it removed.
+                var total_units = Int(smem_rank_base[Self.n_ranks])
+                var wid = sm_id * Self.n_warps + Int(tid) // WARP_SIZE
+                var n_warps_total = n_send_sms * Self.n_warps
+                var lane = Int(lane_id())
+
+                # Pairs this warp touched, flushed in batches: one publish per
+                # batch instead of one per token keeps several tokens' stores
+                # in flight at once.
+                comptime FLUSH = 8
+                var pend = Array[Int32, FLUSH](uninitialized=True)
+                var n_pend = 0
+
+                @inline(.always)
+                def flush_pending() capturing -> None:
+                    if n_pend == 0:
+                        return
+                    # Publish this warp's copies before anyone counts them.
+                    # That is what lets a different warp signal the pair:
+                    # completion no longer depends on the signaller sharing an
+                    # L2 with the copier. Device scope: this pairs with the
+                    # signalling warp's acquire on this device, whose own
+                    # release store carries the copies to the peer.
+                    _publish_peer_stores[scope=DEVICE_SCOPE]()
+                    syncwarp()
+                    if lane == 0:
+                        for i in range(n_pend):
+                            var pr = Int(pend[i])
+                            var cn = Int(smem_count[pr])
+                            var prev = _counter_atomic.fetch_add[
+                                ordering=Ordering.RELAXED
                             ](
-                                curr_send_buf_ptr,
+                                atomic_counter + Self.pair_done_offset + pr,
+                                1,
+                            )
+                            if Int(prev) + 1 == max(cn, 1):
+                                fence[
+                                    ordering=Ordering.ACQUIRE,
+                                    scope=DEVICE_SCOPE,
+                                ]()
+                                atomic_counter.store(
+                                    Self.pair_done_offset + pr, Int32(0)
+                                )
+                                var e_l = pr // Self.n_ranks
+                                var d_r = pr % Self.n_ranks
+                                ep_signal_completion[
+                                    Self.use_shmem,
+                                    n_experts_per_device=Self.n_local_experts,
+                                    skip_a2a=Self.skip_a2a,
+                                ](
+                                    my_rank,
+                                    Int32(d_r),
+                                    recv_count_ptrs,
+                                    Self.recv_count_layout((e_l, my_rank)),
+                                    UInt64(cn),
+                                    rank_completion_counter,
+                                )
+                    n_pend = 0
+
+                # Contiguous run per warp rather than a stride: successive
+                # units of one pair go to the same peer, so a warp keeps a
+                # single destination stream alive instead of hopping.
+                var chunk = ceildiv(total_units, n_warps_total)
+                var u_lo = wid * chunk
+                var u_hi = min(u_lo + chunk, total_units)
+                for u in range(u_lo, u_hi):
+                    # Which destination rank owns this unit.
+                    var rl = 0
+                    comptime for rr in range(Self.n_ranks):
+                        if u >= Int(smem_rank_base[rr]):
+                            rl = rr
+                    var ru = u - Int(smem_rank_base[rl])
+                    # Largest pair slot in this rank whose vbase <= ru.
+                    # Unrolled and branch-free: the runtime scan it replaces
+                    # made this function's nesting deep enough to defeat the
+                    # compiler's destructor-insertion pass.
+                    var e_local = 0
+                    comptime for c in range(Self.n_local_experts):
+                        if Int(smem_vbase[rl * Self.n_local_experts + c]) <= ru:
+                            e_local = c
+                    var pair = e_local * Self.n_ranks + rl
+                    var k = ru - Int(
+                        smem_vbase[rl * Self.n_local_experts + e_local]
+                    )
+                    var cnt = Int(smem_count[pair])
+
+                    if k < cnt:
+                        var ti = Int(smem_start[pair]) + k
+                        var sti = src_info.load[width=2]((ti, Idx[0]))
+                        if Self._recv_offset_in_bounds(sti[0], sti[1]):
+                            block_memcpy[
+                                hid_dim * size_of[input_type](),
+                                WARP_SIZE,
+                                bypass_l2=True,
+                            ](
+                                recv_buf_ptrs[rl]
+                                + Self.recv_buf_layout(
+                                    (sti[0], sti[1], Idx[0])
+                                ),
                                 input_tokens.ptr_at_offset(
-                                    (token_idx, Idx[0])
+                                    (ti, Idx[0])
                                 ).bitcast[UInt8](),
-                                lane_id(),
+                                lane,
                             )
 
+                    pend[n_pend] = Int32(pair)
+                    n_pend += 1
+                    if n_pend == FLUSH:
+                        flush_pending()
+                flush_pending()
+
+        # We use one block per-expert-per-rank to send back the tokens.
+        if run_legacy:
+            for _global_idx in range(sm_id, Self.n_experts, n_send_sms):
+                var global_idx = _global_idx
+                comptime if Self.skip_a2a:
+                    global_idx = _global_idx + Self.n_local_experts * Int(
+                        my_rank
+                    )
+
+                var target_rank, local_expert_id = udivmod(
+                    global_idx, Self.n_local_experts
+                )
+
+                var expert_rank_offset = Self.recv_count_layout(
+                    (local_expert_id, target_rank)
+                )
+                var dst_p2p_world, dst_p2p_rank = udivmod(
+                    target_rank, Self.p2p_world_size
+                )
+
+                # Info for where the tokens for the current expert and rank start
+                # and end are stored in the atomic counter by the
+                # `dispatch_wait_kernel`.
+                comptime DATA_READY_FLAG = 1024
+                var token_end_count = atomic_counter.load[
+                    width=2,
+                    alignment=align_of[SIMD[.int32, 2]](),
+                    invariant=True,
+                ](2 * expert_rank_offset)
+                var token_end = token_end_count[0] - DATA_READY_FLAG
+                var token_start = token_end - token_end_count[1]
+
+                # Combine-seam gate: block until MegaFFN finished expert
+                # `local_expert_id`, so its output rows are in GMEM before this
+                # block reads them (combine drops its PDL entry-wait, so this
+                # per-expert acquire IS the cross-kernel output edge). The producer
+                # publishes a MONOTONE count of completed output tiles -- one
+                # release-add per contributor, whose release sequence is what
+                # carries every contributor's rows -- so the gate waits for that
+                # count to REACH the expert's tile total, never for a distinguished
+                # value. Only gate a NON-EMPTY (expert, rank) range: a 0-token
+                # expert produces no tile AND is never read here. One elected lane
+                # spins (bounded -> trap, never a silent hang); the `barrier()` fans
+                # release-visibility out to the block and gates every thread. The
+                # slot is never written here (multiple (expert, rank) blocks read
+                # one expert) -- the producer/caller owns the per-launch zero.
+                comptime if gate_ffn_done:
+                    if token_end > token_start:
+                        if tid == 0:
+                            var done = ffn_done_ptr.value() + local_expert_id
+                            var target = ffn_done_sentinel
+                            comptime if ffn_done_tiles_per_m_block > 0:
+                                var rows = row_offsets_ptr.value()
+                                var tokens_e = Int(
+                                    rows[local_expert_id + 1]
+                                ) - Int(rows[local_expert_id])
+                                target = UInt32(
+                                    ceildiv(tokens_e, ffn_done_m_block)
+                                    * ffn_done_tiles_per_m_block
+                                )
+                            var spins = 0
+                            while (
+                                Atomic[UInt32].load[ordering=Ordering.ACQUIRE](
+                                    done
+                                )
+                                < target
+                            ):
+                                spins += 1
+                                if spins >= ffn_done_max_spin:
+                                    abort()
                         _scoped_barrier[Self.num_threads, comm_barrier_id]()
 
-                        if (
-                            wid < n_rcs
-                            and local_expert_id % n_rcs == rc_map_offset
+                # If the target device is on the same node, we can directly copy the
+                # tokens to the receive buffer, skipping the send buffer.
+                if dst_p2p_world == my_p2p_world:
+                    for token_idx in range(token_start, token_end):
+                        var src_token_info = src_info.load[width=2](
+                            (token_idx, Idx[0])
+                        )
+                        var src_idx = src_token_info[0]
+                        var src_topk_idx = src_token_info[1]
+
+                        if not Self._recv_offset_in_bounds(
+                            src_idx, src_topk_idx
                         ):
+                            continue
+
+                        var dst_recv_buf_ptr = recv_buf_ptrs[
+                            dst_p2p_rank
+                        ] + Self.recv_buf_layout(
+                            (src_idx, src_topk_idx, Idx[0])
+                        )
+                        block_memcpy[
+                            hid_dim * size_of[input_type](), Self.num_threads
+                        ](
+                            dst_recv_buf_ptr,
+                            input_tokens.ptr_at_offset(
+                                (token_idx, Idx[0])
+                            ).bitcast[UInt8](),
+                            tid,
+                        )
+
+                # If the target device is on a different node, we need to send the
+                # tokens to the target device using the SHMEM API.
+                else:
+                    comptime if Self.use_shmem:
+                        # The tokens are sent back to the original rank using the
+                        # same RC as the one they come from.
+                        comptime n_rcs = min(Self.n_local_experts, Self.n_warps)
+                        var rc_map_offset = (sm_id * Self.n_warps + wid) % n_rcs
+
+                        var n_rounds = ceildiv(
+                            token_end - token_start, Int32(Self.n_warps)
+                        )
+                        for round_i in range(n_rounds):
                             var token_idx = (
                                 token_start
                                 + round_i * Int32(Self.n_warps)
-                                + Int32(lane_id())
+                                + Int32(wid)
                             )
                             if token_idx < token_end:
-                                var src_token_info = src_info.load[width=2](
-                                    (token_idx, Idx[0])
+                                var curr_send_buf_ptr = (
+                                    send_buf_p
+                                    + Self.send_buf_layout((token_idx, Idx[0]))
                                 )
-                                var src_idx = src_token_info[0]
-                                var src_topk_idx = src_token_info[1]
 
-                                if Self._recv_offset_in_bounds(
-                                    src_idx, src_topk_idx
-                                ):
-                                    var curr_send_buf_ptr = (
-                                        send_buf_p
-                                        + Self.send_buf_layout(
-                                            (token_idx, Idx[0])
+                                # To use SHMEM API, we need to copy the tokens to
+                                # the send buffer first.
+                                block_memcpy[
+                                    hid_dim * size_of[input_type](), WARP_SIZE
+                                ](
+                                    curr_send_buf_ptr,
+                                    input_tokens.ptr_at_offset(
+                                        (token_idx, Idx[0])
+                                    ).bitcast[UInt8](),
+                                    lane_id(),
+                                )
+
+                            _scoped_barrier[Self.num_threads, comm_barrier_id]()
+
+                            if (
+                                wid < n_rcs
+                                and local_expert_id % n_rcs == rc_map_offset
+                            ):
+                                var token_idx = (
+                                    token_start
+                                    + round_i * Int32(Self.n_warps)
+                                    + Int32(lane_id())
+                                )
+                                if token_idx < token_end:
+                                    var src_token_info = src_info.load[width=2](
+                                        (token_idx, Idx[0])
+                                    )
+                                    var src_idx = src_token_info[0]
+                                    var src_topk_idx = src_token_info[1]
+
+                                    if Self._recv_offset_in_bounds(
+                                        src_idx, src_topk_idx
+                                    ):
+                                        var curr_send_buf_ptr = (
+                                            send_buf_p
+                                            + Self.send_buf_layout(
+                                                (token_idx, Idx[0])
+                                            )
                                         )
-                                    )
-                                    var dst_recv_buf_ptr = recv_buf_ptrs[
-                                        my_p2p_rank
-                                    ] + Self.recv_buf_layout(
-                                        (
-                                            Int(src_idx),
-                                            Int(src_topk_idx),
-                                            Idx[0],
+                                        var dst_recv_buf_ptr = recv_buf_ptrs[
+                                            my_p2p_rank
+                                        ] + Self.recv_buf_layout(
+                                            (
+                                                Int(src_idx),
+                                                Int(src_topk_idx),
+                                                Idx[0],
+                                            )
                                         )
-                                    )
 
-                                    shmem_put_nbi[kind=SHMEMScope.default](
-                                        dst_recv_buf_ptr,
-                                        curr_send_buf_ptr,
-                                        c_size_t(Self.msg_bytes),
-                                        Int32(target_rank),
-                                    )
+                                        shmem_put_nbi[kind=SHMEMScope.default](
+                                            dst_recv_buf_ptr,
+                                            curr_send_buf_ptr,
+                                            c_size_t(Self.msg_bytes),
+                                            Int32(target_rank),
+                                        )
 
-            _scoped_barrier[Self.num_threads, comm_barrier_id]()
+                _scoped_barrier[Self.num_threads, comm_barrier_id]()
 
-            # Once all the tokens for the current expert and rank have been
-            # sent, signal the completion of the communication.
-            comptime n_rcs = min(Self.n_local_experts, Self.n_warps)
-            var rc_map_offset = (sm_id * Self.n_warps + wid) % n_rcs
-            if wid < n_rcs and local_expert_id % n_rcs == rc_map_offset:
-                if lane_id() == 0:
-                    var signal_offset = Self.recv_count_layout(
-                        (local_expert_id, my_rank)
-                    )
+                # Once all the tokens for the current expert and rank have been
+                # sent, signal the completion of the communication.
+                comptime n_rcs = min(Self.n_local_experts, Self.n_warps)
+                var rc_map_offset = (sm_id * Self.n_warps + wid) % n_rcs
+                if wid < n_rcs and local_expert_id % n_rcs == rc_map_offset:
+                    if lane_id() == 0:
+                        var signal_offset = Self.recv_count_layout(
+                            (local_expert_id, my_rank)
+                        )
 
-                    ep_signal_completion[
-                        Self.use_shmem,
-                        n_experts_per_device=Self.n_local_experts,
-                        skip_a2a=Self.skip_a2a,
-                    ](
-                        my_rank,
-                        Int32(target_rank),
-                        recv_count_ptrs,
-                        signal_offset,
-                        UInt64(token_end - token_start),
-                        rank_completion_counter,
-                    )
+                        ep_signal_completion[
+                            Self.use_shmem,
+                            n_experts_per_device=Self.n_local_experts,
+                            skip_a2a=Self.skip_a2a,
+                        ](
+                            my_rank,
+                            Int32(target_rank),
+                            recv_count_ptrs,
+                            signal_offset,
+                            UInt64(token_end - token_start),
+                            rank_completion_counter,
+                        )
 
-                    atomic_counter.store[
-                        width=2, alignment=align_of[SIMD[.int32, 2]]()
-                    ](expert_rank_offset * 2, 0)
+                        comptime if not Self.use_balanced_send:
+                            atomic_counter.store[
+                                width=2, alignment=align_of[SIMD[.int32, 2]]()
+                            ](expert_rank_offset * 2, 0)
+
+        # Last block out resets its own counter and clears region A. The counter
+        # is bumped once per block, outside the expert loop, because the
+        # loop's trip count is neither one nor the same for every block: it is
+        # empty on the balanced-send path, and a grid smaller than `n_experts`
+        # walks it more than once. Counting iterations instead reaches
+        # `n_send_sms` while other blocks are still reading region A, which
+        # wipes the counts they need. Reaching `n_send_sms` here proves every
+        # block is past its reads, so this cannot race and needs no spin.
+        var smem_done = unsafe_stack_allocation[
+            1, Int32, address_space=.SHARED
+        ]()
+        _scoped_barrier[Self.num_threads, comm_barrier_id]()
+        if tid == 0:
+            var prev_b = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+                atomic_counter + Self.blocks_done_offset, 1
+            )
+            smem_done[0] = Int32(1) if Int(prev_b) + 1 == n_send_sms else Int32(
+                0
+            )
+        _scoped_barrier[Self.num_threads, comm_barrier_id]()
+        if smem_done[0] == Int32(1):
+            if tid == 0:
+                atomic_counter.store(Self.blocks_done_offset, Int32(0))
+            if Int(tid) < Self.n_experts:
+                atomic_counter.store[
+                    width=2, alignment=align_of[SIMD[.int32, 2]]()
+                ](2 * Int(tid), SIMD[.int32, 2](0, 0))
 
     # ===-------------------------------------------------------------------===#
     # Combine Callback Kernel Methods
