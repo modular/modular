@@ -27,6 +27,7 @@
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Target/TargetTraits.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
@@ -141,6 +142,9 @@ int main(int argc, char **argv) {
 
   // Register test passes.
   mlir::PassRegistration<TestAlwaysFailPass>{};
+
+  // Passes contributed by whichever backend plugins this build links.
+  KGEN::TargetTraitsRegistry::get().registerAllPasses();
 
   // Create our context.
   AsyncRT::CPUDeviceOptions asyncrtOpts;

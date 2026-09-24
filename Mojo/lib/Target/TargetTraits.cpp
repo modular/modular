@@ -187,4 +187,20 @@ TargetTraitsRegistry::lookup(const llvm::Triple &triple) const {
   return result;
 }
 
+void TargetTraitsRegistry::registerAllDialects(
+    mlir::DialectRegistry &registry) const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->registerDialects(registry);
+}
+
+void TargetTraitsRegistry::loadAllDialects(mlir::MLIRContext *ctx) const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->loadDialects(ctx);
+}
+
+void TargetTraitsRegistry::registerAllPasses() const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->registerPasses();
+}
+
 } // namespace M::KGEN

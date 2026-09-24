@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
-load("//bazel:api.bzl", "mojo_binary", "requirement")
+load("//bazel:api.bzl", "modular_cc_library", "mojo_binary", "requirement")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "MODULAR_CONFIGS", "TOP_LEVEL_TAG")
 
 # gazelle:default_visibility :see_docs_and_update_this_for_your_package
@@ -412,6 +412,12 @@ filegroup(
 bool_flag(
     name = "accel_backend",
     build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+# The gated accelerator backend lives outside this tree; nothing to link here.
+modular_cc_library(
+    name = "accel_registration",
     tags = [ALLOW_UNUSED_TAG],
 )
 

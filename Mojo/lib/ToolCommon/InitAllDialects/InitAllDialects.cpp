@@ -28,6 +28,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MDialect.h"
+#include "Target/TargetTraits.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -299,6 +300,9 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       .addExtensions<InterpreterDialectExtension,
                      ParameterPrettyFormatExtension, KGENDialectExtension>();
   mlir::LLVM::registerInlinerInterface(registry);
+
+  // Dialects contributed by whichever backend plugins this build links.
+  KGEN::TargetTraitsRegistry::get().registerAllDialects(registry);
 }
 
 void M::preloadAllKGENDialects(MLIRContext *ctx) {
@@ -318,4 +322,7 @@ void M::preloadAllKGENDialects(MLIRContext *ctx) {
       mlir::ub::UBDialect
       // clang-format on
       >();
+
+  // Dialects contributed by whichever backend plugins this build links.
+  KGEN::TargetTraitsRegistry::get().loadAllDialects(ctx);
 }
