@@ -2930,6 +2930,41 @@ def scalb[
 
 
 # ===----------------------------------------------------------------------=== #
+# gcd/lcm helpers
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def _gcd_or_lcm[is_gcd: Bool](values: VariadicList[Int, _]) -> Int:
+    """Computes gcd or lcm of a variadic list of integers without allocation.
+
+    This helper enables code reuse between the variadic implementations
+    of gcd() and lcm().
+
+    Parameters:
+        is_gcd: If True, computes gcd; if False, computes lcm.
+
+    Args:
+        values: A variadic list of integers.
+
+    Returns:
+        The gcd or lcm of the given integers.
+    """
+    if len(values) == 0:
+        return 0 if is_gcd else 1
+
+    var result = values[0]
+    for i in range(1, len(values)):
+        comptime if is_gcd:
+            result = gcd(values[i], result)
+            if result == 1:
+                return result
+        else:
+            result = lcm(result, values[i])
+    return result
+
+
+# ===----------------------------------------------------------------------=== #
 # gcd
 # ===----------------------------------------------------------------------=== #
 
@@ -2984,6 +3019,7 @@ def gcd(s: Span[Int, _], /) -> Int:
     return result
 
 
+@always_inline
 def gcd(*values: Int) -> Int:
     """Computes the greatest common divisor of a variadic number of integers.
 
@@ -2993,15 +3029,7 @@ def gcd(*values: Int) -> Int:
     Returns:
         The greatest common divisor of the given integers.
     """
-    # TODO: Deduplicate when VariadicList is iterable.
-    if len(values) == 0:
-        return 0
-    var result = values[0]
-    for i in range(1, len(values)):
-        result = gcd(values[i], result)
-        if result == 1:
-            return result
-    return result
+    return _gcd_or_lcm[is_gcd=True](values)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3043,6 +3071,7 @@ def lcm(s: Span[Int, _], /) -> Int:
     return result
 
 
+@always_inline
 def lcm(*values: Int) -> Int:
     """Computes the least common multiple of a variadic list of integers.
 
@@ -3052,14 +3081,7 @@ def lcm(*values: Int) -> Int:
     Returns:
         The least common multiple of the list.
     """
-    # TODO: Deduplicate when VariadicList is iterable.
-    if len(values) == 0:
-        return 1
-
-    var result = values[0]
-    for i in range(1, len(values)):
-        result = lcm(result, values[i])
-    return result
+    return _gcd_or_lcm[is_gcd=False](values)
 
 
 # ===----------------------------------------------------------------------=== #
