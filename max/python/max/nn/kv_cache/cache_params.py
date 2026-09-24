@@ -57,7 +57,11 @@ from .input_types import (
     RecurrentStateInputsPerDevice,
 )
 from .utils import (
+    ATTN_DISPATCH_METADATA,
+    DRAFT_ATTN_DISPATCH_METADATA,
     AttnKeyInterface,
+    DispatchMetadataSpec,
+    GraphInputStagingInterface,
     MHAAttnKey,
     MLAAttnKey,
     MSAAttnKey,
@@ -1261,6 +1265,8 @@ class CacheLeafParamInterface(Protocol):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
+        *,
+        staging: GraphInputStagingInterface | None = None,
     ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime cache inputs spanning all replicas.
 
@@ -1268,6 +1274,17 @@ class CacheLeafParamInterface(Protocol):
         Returns the :class:`KVCacheInputs` pytree (a tuple of per-device
         leaves, or a dict of named subtrees for multi-cache models) whose
         leaves each hold one ``(replica, TP shard)`` device's inputs."""
+        ...
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """The dispatch metadata this tree stages, keyed by name in a replica.
+
+        Empty for a kernel that reads it on the host: nothing is transferred,
+        so there is nothing to stage. ``_prefix`` keeps the leaves of a tree
+        apart, the same way :meth:`leaves` does.
+        """
         ...
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
@@ -1382,6 +1399,30 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
     def tensor_parallel_degree(self) -> int:
         """Returns the tensor parallel degree."""
         ...
+
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec | None:
+        """Returns the spec of the metadata :meth:`resolve_attn_key` packs.
+
+        ``None`` when this cache resolves a tree of keys rather than one, so
+        a caller cannot size a single input for it.
+        """
+        return None
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """The dispatch metadata this cache stages, keyed by name.
+
+        Empty for a kernel that reads it on the host. A draft key under
+        speculative decoding is a second input of the same shape.
+        """
+        spec = self.dispatch_metadata_spec()
+        if spec is None or not spec.on_device:
+            return {}
+        staged = {_prefix + ATTN_DISPATCH_METADATA: spec}
+        if self.speculative_method is not None:
+            staged[_prefix + DRAFT_ATTN_DISPATCH_METADATA] = spec
+        return staged
 
     def resolve_attn_key(
         self,
@@ -2001,7 +2042,6 @@ class KVCacheParams(KVCacheParamInterface):
 
     def _build_kvcache_inputs_per_device(
         self,
-        device: Device,
         blocks: Buffer,
         cache_lengths: Buffer,
         lookup_table: Buffer,
@@ -2011,12 +2051,13 @@ class KVCacheParams(KVCacheParamInterface):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        max_cache_valid_length: int,
         blocks_per_layer: list[Buffer] | None = None,
         scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
+        attention_dispatch_metadata: Buffer,
+        draft_attention_dispatch_metadata: Buffer | None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         raise NotImplementedError
 
@@ -2025,6 +2066,8 @@ class KVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
+        *,
+        staging: GraphInputStagingInterface | None = None,
     ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Builds the runtime KV-cache leaf spanning all replicas.
 
@@ -2034,7 +2077,9 @@ class KVCacheParams(KVCacheParamInterface):
         same replica-major order as :meth:`get_symbolic_inputs`.
         """
         tp_shards: list[KVCacheInputsPerDevice[Buffer, Buffer]] = []
-        for assignment, buffer in zip(assignments, buffers, strict=True):
+        for replica_idx, (assignment, buffer) in enumerate(
+            zip(assignments, buffers, strict=True)
+        ):
             assert isinstance(buffer, KVCacheBuffer)
             bc = assignment.batch_characteristics
             batch_size = bc.batch_size
@@ -2051,6 +2096,29 @@ class KVCacheParams(KVCacheParamInterface):
                 else None
             )
 
+            # Staged once per replica rather than per shard: the shards
+            # of a replica read the same dispatch shape, so it is one host
+            # write fanned out to each of them.
+            devices = [blocks.device for blocks in buffer.values]
+            attn_metadata = target_key.dispatch_metadata_buffers(
+                staging,
+                name=f"{replica_idx}/{_prefix}{ATTN_DISPATCH_METADATA}",
+                devices=devices,
+                max_cache_valid_length=max_cl,
+            )
+            draft_attn_metadata = (
+                draft_key.dispatch_metadata_buffers(
+                    staging,
+                    name=(
+                        f"{replica_idx}/{_prefix}{DRAFT_ATTN_DISPATCH_METADATA}"
+                    ),
+                    devices=devices,
+                    max_cache_valid_length=max_cl,
+                )
+                if draft_key is not None
+                else None
+            )
+
             for i, (cl, luts, blocks) in enumerate(
                 zip(
                     assignment.cache_lengths_by_device,
@@ -2059,7 +2127,6 @@ class KVCacheParams(KVCacheParamInterface):
                     strict=True,
                 )
             ):
-                device = blocks.device
                 lut = luts[buffer.leaf_id]
                 kv_scales = (
                     buffer.scales[i] if buffer.scales is not None else None
@@ -2081,7 +2148,6 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 tp_shards.append(
                     self._build_kvcache_inputs_per_device(
-                        device,
                         blocks,
                         cl,
                         lut,
@@ -2091,7 +2157,12 @@ class KVCacheParams(KVCacheParamInterface):
                         scales_lut,
                         target_key,
                         draft_key,
-                        max_cl,
+                        attention_dispatch_metadata=attn_metadata[i],
+                        draft_attention_dispatch_metadata=(
+                            draft_attn_metadata[i]
+                            if draft_attn_metadata is not None
+                            else None
+                        ),
                         # Read off the buffers rather than recomputed, so the
                         # distance the kernel addresses with is the one the
                         # allocation was built with.
@@ -2282,6 +2353,10 @@ class MHAKVCacheParams(KVCacheParams):
         """Whether every device holds identical KV state."""
         return False
 
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
+        """Returns the spec :class:`MHAAttnKey` packs into."""
+        return MHAAttnKey.dispatch_metadata_spec()
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2330,10 +2405,7 @@ class MHAKVCacheParams(KVCacheParams):
         return _filter_tiny_cache_lengths(probe_lengths, self.num_draft_tokens)
 
     def _attn_metadata_buffer(self, device: DeviceRef) -> TensorType:
-        # MHA decode kernels read a 4-int dispatch buffer on the host (CPU),
-        # matching ``MHAAttnKey.pack_into_buffer``. ``device`` is accepted so
-        # subclasses can emit device-resident metadata of a different shape.
-        return TensorType(DType.int64, shape=[4], device=DeviceRef.CPU())
+        return MHAAttnKey.dispatch_metadata_spec().tensor_type(device)
 
     def _get_symbolic_inputs_for_replica(
         self, replica_idx: int, prefix: str, page_namespace: str = ""
@@ -2468,7 +2540,6 @@ class MHAKVCacheParams(KVCacheParams):
 
     def _build_kvcache_inputs_per_device(
         self,
-        device: Device,
         blocks: Buffer,
         cache_lengths: Buffer,
         lookup_table: Buffer,
@@ -2478,12 +2549,13 @@ class MHAKVCacheParams(KVCacheParams):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        max_cache_valid_length: int,
         blocks_per_layer: list[Buffer] | None = None,
         scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
+        attention_dispatch_metadata: Buffer,
+        draft_attention_dispatch_metadata: Buffer | None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
@@ -2495,14 +2567,8 @@ class MHAKVCacheParams(KVCacheParams):
             kv_scales=kv_scales,
             scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
-            attention_dispatch_metadata=target_key.pack_into_buffer(
-                device, max_cache_valid_length
-            ),
-            draft_attention_dispatch_metadata=draft_key.pack_into_buffer(
-                device, max_cache_valid_length
-            )
-            if draft_key is not None
-            else None,
+            attention_dispatch_metadata=attention_dispatch_metadata,
+            draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
             kv_blocks_per_layer=blocks_per_layer,
             kv_scales_per_layer=scales_per_layer,
         )
@@ -2545,6 +2611,10 @@ class MLAKVCacheParams(KVCacheParams):
     def num_q_heads_per_device(self) -> int:
         """Returns the query attention heads on one device."""
         return max(self.num_q_heads // self.tensor_parallel_degree, 1)
+
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
+        """Returns the spec :class:`MLAAttnKey` packs into."""
+        return MLAAttnKey.dispatch_metadata_spec()
 
     def resolve_attn_key(
         self,
@@ -2669,12 +2739,11 @@ class MLAKVCacheParams(KVCacheParams):
                 if self.quantized_kv_cache
                 else None,
                 # MLA decode kernels read a 3-int dispatch buffer on the
-                # accelerator, matching ``MLAAttnKey.pack_into_buffer``.
-                attention_dispatch_metadata=TensorType(
-                    DType.int64, shape=[3], device=device
+                attention_dispatch_metadata=MLAAttnKey.dispatch_metadata_spec().tensor_type(
+                    device
                 ),
-                draft_attention_dispatch_metadata=TensorType(
-                    DType.int64, shape=[3], device=device
+                draft_attention_dispatch_metadata=MLAAttnKey.dispatch_metadata_spec().tensor_type(
+                    device
                 )
                 if self.speculative_method is not None
                 else None,
@@ -2692,7 +2761,6 @@ class MLAKVCacheParams(KVCacheParams):
 
     def _build_kvcache_inputs_per_device(
         self,
-        device: Device,
         blocks: Buffer,
         cache_lengths: Buffer,
         lookup_table: Buffer,
@@ -2702,12 +2770,13 @@ class MLAKVCacheParams(KVCacheParams):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        max_cache_valid_length: int,
         blocks_per_layer: list[Buffer] | None = None,
         scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
+        attention_dispatch_metadata: Buffer,
+        draft_attention_dispatch_metadata: Buffer | None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         # MLA never uses per-layer buffers; the parameters exist only to match
         # the base signature threaded by ``build_runtime_inputs``.
@@ -2725,14 +2794,8 @@ class MLAKVCacheParams(KVCacheParams):
             kv_scales=kv_scales,
             scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
-            attention_dispatch_metadata=target_key.pack_into_buffer(
-                device, max_cache_valid_length
-            ),
-            draft_attention_dispatch_metadata=draft_key.pack_into_buffer(
-                device, max_cache_valid_length
-            )
-            if draft_key is not None
-            else None,
+            attention_dispatch_metadata=attention_dispatch_metadata,
+            draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
             mla_num_partitions=Buffer.from_numpy(
                 np.array([target_key.num_partitions], dtype=np.int64)
             ),
@@ -2752,6 +2815,10 @@ class MSAKVCacheParams(MHAKVCacheParams):
     # metadata in its kernel. Once the indexer graph is migrated to a dedicated
     # MSA input record, drop ``attention_dispatch_metadata`` from the symbolic
     # and runtime inputs entirely instead of carrying the 1-int placeholder.
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
+        """Returns the spec :class:`MSAAttnKey` packs into."""
+        return MSAAttnKey.dispatch_metadata_spec()
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2768,8 +2835,7 @@ class MSAKVCacheParams(MHAKVCacheParams):
         return [1, max_cache_length]
 
     def _attn_metadata_buffer(self, device: DeviceRef) -> TensorType:
-        # ``MSAAttnKey.pack_into_buffer`` emits a single sentinel int.
-        return TensorType(DType.int64, shape=[1], device=DeviceRef.CPU())
+        return MSAAttnKey.dispatch_metadata_spec().tensor_type(device)
 
 
 @dataclass
@@ -2975,6 +3041,8 @@ class RecurrentStateParams(CacheLeafParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
+        *,
+        staging: GraphInputStagingInterface | None = None,
     ) -> tuple[RecurrentStateInputsPerDevice[Buffer, Buffer], ...]:
         """Gathers this forward's state rows, replica-major.
 
@@ -3006,6 +3074,12 @@ class RecurrentStateParams(CacheLeafParamInterface):
                     RecurrentStateInputsPerDevice(leaves=tuple(leaves))
                 )
         return tuple(inputs)
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """Nothing: a state cache resolves no attention dispatch."""
+        return {}
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns one pool leaf per state leaf, each one state wide.
@@ -3426,6 +3500,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
+        *,
+        staging: GraphInputStagingInterface | None = None,
     ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime KV-cache tree spanning all replicas.
 
@@ -3450,10 +3526,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
                     assignments,
                     [b.children[k] for b in multi_buffers if k in b.children],
                     _prefix=_prefix + k + ".",
+                    # The prefix is what keeps the children's metadata apart;
+                    # without it they would stage under the one name.
+                    staging=staging,
                 ),
             )
             for k, p in self.children.items()
         )
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """The metadata every child stages, under the child's own prefix."""
+        staged: dict[str, DispatchMetadataSpec] = {}
+        for name, child in self.children.items():
+            staged.update(child.staged_dispatch_metadata(_prefix + name + "."))
+        return staged
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns the leaves of every child, prefixed by the child's name."""

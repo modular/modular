@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -30,12 +29,7 @@ from typing import (
 )
 
 import numpy as np
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    is_virtual_device_mode,
-)
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.comm import Signals
@@ -44,6 +38,10 @@ from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext
 from max.pipelines.context.tokens import TokenBuffer
+from max.pipelines.graph_input_stager import (
+    GraphInputStager,
+    InputDescriptor,
+)
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelInputs,
@@ -145,103 +143,32 @@ RAGGED_INPUT_ROW_OFFSETS = "ragged_input_row_offsets"
 """Device input holding each context's start offset into that token stream."""
 
 
-class ModelInputBuffers:
-    """Device input buffers sized to the largest batch the pipeline allows.
+def ragged_token_descriptors(
+    runtime: BatchProcessorRuntime,
+) -> list[InputDescriptor]:
+    """The two device inputs every ragged batch stages.
 
-    Each logical input is declared once, up front, with the exact shape its
-    batching dimensions let it reach, so its backing allocation is that bound
-    and no more. A step then asks for the prefix it needs, and that view is
-    cached per shape: graph replay skips the input copy only when capture and
-    replay are handed the same ``Buffer`` object, so recreating an equal view
-    would copy.
-
-    A name's buffer is per device and never shared with another name, and a
-    step writing under a name overwrites what the previous step left there.
-    Callers own copying host data in.
-
-    A step that outgrows its declaration raises: the declared maximum is
-    meant to be the real bound, so overrunning it means the dimensions the
-    input was sized from are wrong, not that this batch is unusual.
-
-    Never keep pinned host staging here: that must be allocated fresh every
-    step so the next overlap step's host writes can't clobber an in-flight
-    H2D copy.
+    Sized from the batching dimensions rather than a shared capacity: the
+    token stream holds one batch's active windows, and the row offsets hold
+    one entry per context plus the trailing total. Described in one place so
+    the architectures that stage a ragged batch cannot drift apart on the
+    sizes.
     """
-
-    def __init__(self) -> None:
-        self._declared: dict[str, tuple[DType, tuple[int, ...]]] = {}
-        self._backings: dict[tuple[str, int], Buffer] = {}
-        self._views: dict[tuple[str, int, tuple[int, ...]], Buffer] = {}
-
-    def declare(
-        self, *, name: str, dtype: DType, max_shape: tuple[int, ...]
-    ) -> None:
-        """Registers an input and the largest shape it can ever take.
-
-        Declaring allocates nothing: the backing buffer is created on the
-        first :meth:`view` for a device, which keeps virtual device mode
-        (warm-cache and cross-compilation, where ``VirtualDeviceContext``
-        cannot ``memAlloc``) from allocating for batches it never runs.
-
-        Args:
-            name: Stable identifier for this logical input.
-            dtype: Element type, fixed for the life of the input.
-            max_shape: The shape at the pipeline's batching limits.
-
-        Raises:
-            ValueError: If ``name`` was already declared differently.
-        """
-        max_shape = tuple(max_shape)
-        declared = self._declared.setdefault(name, (dtype, max_shape))
-        if declared != (dtype, max_shape):
-            raise ValueError(
-                f"Model input {name!r} is already declared as "
-                f"{declared[0]}{list(declared[1])}, cannot redeclare it as "
-                f"{dtype}{list(max_shape)}"
-            )
-
-    def view(
-        self, *, name: str, shape: tuple[int, ...], device: Device
-    ) -> Buffer:
-        """Returns this step's buffer for ``name``: a prefix of its backing.
-
-        Args:
-            name: A name passed to :meth:`declare`.
-            shape: This step's shape, within the declared maximum.
-            device: Device to hold the buffer; each device gets its own.
-
-        Raises:
-            KeyError: If ``name`` was never declared.
-            RuntimeError: If ``shape`` outgrows the declared maximum, which
-                means the batching dimensions the input was sized from do
-                not bound it.
-        """
-        shape = tuple(shape)
-        key = (name, id(device), shape)
-        view = self._views.get(key)
-        if view is not None:
-            return view
-
-        dtype, max_shape = self._declared[name]
-        num_elements = math.prod(shape)
-        capacity = math.prod(max_shape)
-        if num_elements > capacity:
-            raise RuntimeError(
-                f"Model input {name!r} needs {num_elements} elements "
-                f"(shape={list(shape)}) on {device}, beyond the {capacity} "
-                f"it was sized for (max_shape={list(max_shape)}). The "
-                f"batching dimensions this input was declared from do not "
-                f"bound it."
-            )
-
-        backing_key = (name, id(device))
-        backing = self._backings.get(backing_key)
-        if backing is None:
-            backing = Buffer(shape=(capacity,), dtype=dtype, device=device)
-            self._backings[backing_key] = backing
-        view = backing[:num_elements].view(dtype, shape)
-        self._views[key] = view
-        return view
+    staging_device = [runtime.devices[0]]
+    return [
+        InputDescriptor(
+            name=RAGGED_INPUT_TOKENS,
+            dtype=DType.int64,
+            max_shape=(runtime.max_batch_active_tokens,),
+            destinations=staging_device,
+        ),
+        InputDescriptor(
+            name=RAGGED_INPUT_ROW_OFFSETS,
+            dtype=DType.uint32,
+            max_shape=(runtime.max_global_batch_size + 1,),
+            destinations=staging_device,
+        ),
+    ]
 
 
 class BatchProcessor(ABC, Generic[ContextT, InputsT]):
@@ -251,30 +178,13 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
         self,
         config: ArchConfig,
         runtime: BatchProcessorRuntime,
+        inputs: Sequence[InputDescriptor] = (),
     ) -> None:
         self.config = config
         self.runtime = runtime
         # Holds the reused non-pinned device input buffers so captured graphs
         # replay in place. Pinned host staging never belongs here.
-        self._device_inputs = ModelInputBuffers()
-
-    def _declare_ragged_token_inputs(self) -> None:
-        """Declares the two device inputs every ragged batch stages.
-
-        Sizes them from the batching dimensions rather than a shared
-        capacity: the token stream holds one batch's active windows, and the
-        row offsets hold one entry per context plus the trailing total.
-        """
-        self._device_inputs.declare(
-            name=RAGGED_INPUT_TOKENS,
-            dtype=DType.int64,
-            max_shape=(self.runtime.max_batch_active_tokens,),
-        )
-        self._device_inputs.declare(
-            name=RAGGED_INPUT_ROW_OFFSETS,
-            dtype=DType.uint32,
-            max_shape=(self.runtime.max_global_batch_size + 1,),
-        )
+        self._stager = GraphInputStager(inputs)
 
     @abstractmethod
     def get_symbolic_inputs(
@@ -308,9 +218,11 @@ class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT]):
         self,
         config: ArchConfig,
         runtime: BatchProcessorRuntime,
+        inputs: Sequence[InputDescriptor] = (),
     ) -> None:
-        super().__init__(config, runtime)
-        self._declare_ragged_token_inputs()
+        super().__init__(
+            config, runtime, [*ragged_token_descriptors(runtime), *inputs]
+        )
         # Pre-allocate row offsets for multistep decode to avoid materializing
         # and copying a buffer on each step. Skip in virtual device mode
         # (warm-cache/cross-compilation) since VirtualDeviceContext does not
@@ -615,8 +527,7 @@ class UnifiedSpecDecodeBatchProcessor(
         config: Any,
         runtime: BatchProcessorRuntime,
     ) -> None:
-        super().__init__(config, runtime)
-        self._declare_ragged_token_inputs()
+        super().__init__(config, runtime, ragged_token_descriptors(runtime))
         self._seed_counter = 0
 
     def _next_seed(self, device0: Device) -> Buffer:
@@ -647,44 +558,26 @@ class UnifiedSpecDecodeBatchProcessor(
         """Prepares ragged token inputs with persistent buffers and a per-step seed."""
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.runtime.devices[0]
-        buffer_type = Buffer if device0.is_host else DevicePinnedBuffer
 
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
         batch_size = len(context_batch)
 
-        persistent_tokens = self._device_inputs.view(
-            name=RAGGED_INPUT_TOKENS,
-            shape=(total_seq_len,),
-            device=device0,
-        )
-        persistent_input_row_offsets = self._device_inputs.view(
-            name=RAGGED_INPUT_ROW_OFFSETS,
-            shape=(batch_size + 1,),
-            device=device0,
-        )
-
-        tokens_host = buffer_type(
-            dtype=DType.int64,
-            shape=(total_seq_len,),
-            device=device0,
-        )
-        offsets_host = buffer_type(
-            dtype=DType.uint32,
-            shape=(batch_size + 1,),
-            device=device0,
-        )
-
-        np.concatenate(
-            [ctx.tokens.active for ctx in context_batch],
-            out=tokens_host.to_numpy(),
-        )
-        persistent_tokens.inplace_copy_from(tokens_host)
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=offsets_host.to_numpy(),
-        )
-        persistent_input_row_offsets.inplace_copy_from(offsets_host)
+        with self._stager.stage() as staging:
+            tokens_host, (persistent_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
+            )
+            offsets_host, (persistent_input_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.concatenate(
+                [ctx.tokens.active for ctx in context_batch],
+                out=tokens_host.to_numpy(),
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=offsets_host.to_numpy(),
+            )
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)

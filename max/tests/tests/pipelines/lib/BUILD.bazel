@@ -34,6 +34,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines:graph_input_stager",
         "//max/python/max/pipelines:logging_utils",
         "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/gemma4",

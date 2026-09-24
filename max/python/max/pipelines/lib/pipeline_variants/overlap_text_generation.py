@@ -125,9 +125,12 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
 from max.pipelines.context.tokens import TokenBuffer
+from max.pipelines.graph_input_stager import (
+    GraphInputStager,
+    InputDescriptor,
+)
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
-    _contiguous_prefix_2d,
     cache_valid_length_for_context,
     prompt_tokens_for_context,
 )
@@ -285,6 +288,32 @@ def _mixed_verify_width(
     if width is None:
         return None
     return min(width, num_speculative_tokens)
+
+
+SPEC_DRAFT_TOKENS = "spec_draft_tokens"
+"""Device input holding each request's draft tokens for verification."""
+
+
+def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
+    """Returns a contiguous 2D prefix view of ``buffer``.
+
+    For the persistent pinned mirrors below, which a forward copies *into*
+    from the device. :class:`GraphInputStager` stages host to device and
+    hands its own staging out fresh each step, so it does not model a buffer
+    whose whole point is to persist and be written from the other direction.
+    """
+    if rows < 0 or cols < 0:
+        raise ValueError("rows and cols must be non-negative")
+
+    num_elements = rows * cols
+    if num_elements > buffer.num_elements:
+        raise ValueError(
+            "Requested contiguous prefix exceeds backing buffer capacity: "
+            f"{num_elements} > {buffer.num_elements}."
+        )
+
+    flat = buffer.view(buffer.dtype, (buffer.num_elements,))
+    return flat[:num_elements].view(buffer.dtype, (rows, cols))
 
 
 def _contiguous_prefix_3d(
@@ -449,10 +478,11 @@ class SpecDecodeState:
     kv_manager: PagedKVCacheManagerInterface
     """The KVCache manager for model."""
 
-    persistent_draft_tokens: Buffer
-    """Persistent input buffer for draft tokens.
+    stager: GraphInputStager
+    """The declared model inputs this pipeline stages, sized up front.
 
-    A stable buffer must be used for inputs to device graphs."""
+    Holds :data:`SPEC_DRAFT_TOKENS`, whose device buffer is stable across
+    steps because a device graph input must be."""
 
     persistent_temperature: Buffer
     """Persistent per-batch temperature for stochastic target acceptance."""
@@ -528,7 +558,7 @@ class SpecDecodeState:
 
     persistent_draft_probs_full: Buffer | None = None
     """Persistent input buffer for the draft's whole proposal distribution, ``[max_batch, K, vocab_size]``, paired with
-    :attr:`persistent_draft_tokens`. ``None`` unless
+    the :data:`SPEC_DRAFT_TOKENS` input. ``None`` unless
     ``draft_proposal == "sampled"``. Device-only:
     unlike the scalar probabilities it is never mirrored to the host, since
     only the acceptance graph reads it."""
@@ -584,10 +614,15 @@ class SpecDecodeState:
             max_batch_size,
         )
 
-        persistent_draft_tokens = Buffer(
-            dtype=DType.int64,
-            shape=(total_max_batch, num_speculative_tokens),
-            device=buffer_device,
+        stager = GraphInputStager(
+            [
+                InputDescriptor(
+                    name=SPEC_DRAFT_TOKENS,
+                    dtype=DType.int64,
+                    max_shape=(total_max_batch, num_speculative_tokens),
+                    destinations=[buffer_device],
+                )
+            ]
         )
         persistent_temperature = Buffer(
             dtype=DType.float32,
@@ -682,7 +717,7 @@ class SpecDecodeState:
         return SpecDecodeState(
             num_speculative_tokens=num_speculative_tokens,
             kv_manager=kv_manager,
-            persistent_draft_tokens=persistent_draft_tokens,
+            stager=stager,
             persistent_temperature=persistent_temperature,
             persistent_top_k=persistent_top_k,
             persistent_top_p=persistent_top_p,
@@ -2335,21 +2370,12 @@ class OverlapTextGenerationPipeline(
 
         if self._spec_decode_state is not None:
             assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
-            draft_tokens = Buffer.from_numpy(
-                np.zeros(
+            with self._spec_decode_state.stager.stage() as staging:
+                draft_tokens_host, (persistent_draft_tokens,) = staging.get(
+                    SPEC_DRAFT_TOKENS,
                     (batch_size * dp_size, num_speculative_tokens),
-                    dtype=np.int64,
                 )
-            )
-            persistent_draft_tokens = (
-                self._spec_decode_state.persistent_draft_tokens
-            )
-            persistent_draft_tokens = _contiguous_prefix_2d(
-                persistent_draft_tokens,
-                batch_size * dp_size,
-                num_speculative_tokens,
-            )
-            persistent_draft_tokens.inplace_copy_from(draft_tokens)
+                draft_tokens_host.to_numpy().fill(0)
             model_inputs.draft_tokens = persistent_draft_tokens
 
             if self._spec_decode_state.persistent_draft_probs_full is not None:
@@ -3637,34 +3663,32 @@ class OverlapTextGenerationPipeline(
                     ctx.spec_decoding_state.draft_tokens_to_verify = []
 
         # Load or create draft tokens.
-        draft_tokens_pinned = DevicePinnedBuffer(
-            shape=(len(context_batch), num_draft_tokens_to_verify),
-            dtype=DType.int64,
-            device=self._devices[0],
-        )
-        draft_tokens_np = draft_tokens_pinned.to_numpy()
-        if num_draft_tokens_to_verify:
-            for i, ctx in enumerate(context_batch):
-                # If there are no draft_tokens to verify, populate it with a
-                # arbitrary token value. This is to trigger token verification
-                # more often. When we do not verify tokens, we cannot replay cuda
-                # graph which hurts perf.
-                if not ctx.spec_decoding_state.draft_tokens_to_verify:
-                    ctx.spec_decoding_state.draft_tokens_to_verify = [
-                        MAGIC_DRAFT_TOKEN_ID
-                    ] * num_draft_tokens_to_verify
-                tokens = ctx.spec_decoding_state.draft_tokens_to_verify
-                if len(tokens) > num_draft_tokens_to_verify:
-                    tokens = tokens[:num_draft_tokens_to_verify]
-                    ctx.spec_decoding_state.draft_tokens_to_verify = tokens
-                assert len(tokens) == num_draft_tokens_to_verify
-                draft_tokens_np[i, :] = tokens
-
-        draft_tokens_device = self._spec_decode_state.persistent_draft_tokens
-        draft_tokens_device = _contiguous_prefix_2d(
-            draft_tokens_device, len(context_batch), num_draft_tokens_to_verify
-        )
-        draft_tokens_device.inplace_copy_from(draft_tokens_pinned)
+        # This step's staging and the stable device input it feeds. The
+        # host buffer carries traffic in both directions within one step: the
+        # forward writes the accepted tokens back into the device buffer and
+        # they are mirrored into it below, after the scope has sent it.
+        with self._spec_decode_state.stager.stage() as staging:
+            draft_tokens_pinned, (draft_tokens_device,) = staging.get(
+                SPEC_DRAFT_TOKENS,
+                (len(context_batch), num_draft_tokens_to_verify),
+            )
+            draft_tokens_np = draft_tokens_pinned.to_numpy()
+            if num_draft_tokens_to_verify:
+                for i, ctx in enumerate(context_batch):
+                    # If there are no draft_tokens to verify, populate it with
+                    # a arbitrary token value. This is to trigger token
+                    # verification more often. When we do not verify tokens, we
+                    # cannot replay cuda graph which hurts perf.
+                    if not ctx.spec_decoding_state.draft_tokens_to_verify:
+                        ctx.spec_decoding_state.draft_tokens_to_verify = [
+                            MAGIC_DRAFT_TOKEN_ID
+                        ] * num_draft_tokens_to_verify
+                    tokens = ctx.spec_decoding_state.draft_tokens_to_verify
+                    if len(tokens) > num_draft_tokens_to_verify:
+                        tokens = tokens[:num_draft_tokens_to_verify]
+                        ctx.spec_decoding_state.draft_tokens_to_verify = tokens
+                    assert len(tokens) == num_draft_tokens_to_verify
+                    draft_tokens_np[i, :] = tokens
 
         draft_probs_full_device = self._prepare_draft_probs_full(
             len(context_batch), num_draft_tokens_to_verify

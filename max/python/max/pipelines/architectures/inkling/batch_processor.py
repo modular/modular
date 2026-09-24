@@ -19,11 +19,12 @@ from dataclasses import dataclass
 
 import numpy as np
 from max import tree
-from max.driver import Buffer, DevicePinnedBuffer
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
+from max.pipelines.graph_input_stager import InputDescriptor
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     RAGGED_INPUT_ROW_OFFSETS,
@@ -88,7 +89,19 @@ class InklingBatchProcessor(
     def __init__(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
-        super().__init__(config, runtime)
+        super().__init__(
+            config,
+            runtime,
+            # One position per token, so the token stream's bound covers it.
+            [
+                InputDescriptor(
+                    name=_TOKEN_POSITIONS,
+                    dtype=DType.uint32,
+                    max_shape=(runtime.max_batch_active_tokens,),
+                    destinations=[runtime.devices[0]],
+                )
+            ],
+        )
         assert isinstance(config, InklingConfig)
         self._hidden_size = config.text_config.hidden_size
         self._dtype = config.dtype
@@ -96,12 +109,6 @@ class InklingBatchProcessor(
         self._signal_buffers = list(runtime.signal_buffers)
         self._return_n_logits_buffers: dict[int, Buffer] = {}
         self._no_images: tuple[Buffer, Buffer] | None = None
-        # One position per token, so the token stream's bound covers it too.
-        self._device_inputs.declare(
-            name=_TOKEN_POSITIONS,
-            dtype=DType.uint32,
-            max_shape=(runtime.max_batch_active_tokens,),
-        )
 
     def bind_runtime_state(self, vision_model: Model) -> None:
         """Hands over what only exists once the model is compiled and loaded."""
@@ -175,66 +182,48 @@ class InklingBatchProcessor(
     def _stage_token_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> tuple[Buffer, Buffer, Buffer]:
-        # Host staging is fresh per step so overlap writes can't clobber an
-        # in-flight copy; device destinations are reused for graph replay.
-        device0 = self.runtime.devices[0]
         lengths = np.fromiter(
             (context.tokens.active_length for context in context_batch),
             dtype=np.int64,
             count=len(context_batch),
         )
         total_seq_len = int(lengths.sum())
-        pinned = not device0.is_host
-        host_buffer_cls: type[Buffer | DevicePinnedBuffer] = (
-            DevicePinnedBuffer if pinned else Buffer
-        )
-        host_tokens: Buffer = host_buffer_cls(
-            dtype=DType.int64, shape=(total_seq_len,), device=device0
-        )
-        host_row_offsets: Buffer = host_buffer_cls(
-            dtype=DType.uint32, shape=(len(context_batch) + 1,), device=device0
-        )
-        host_positions: Buffer = host_buffer_cls(
-            dtype=DType.uint32, shape=(total_seq_len,), device=device0
-        )
 
-        offsets = np.cumsum([0, *lengths], dtype=np.int64)
-        host_row_offsets.to_numpy()[:] = offsets
-        if total_seq_len:
-            np.concatenate(
-                [context.tokens.active for context in context_batch],
-                out=host_tokens.to_numpy(),
+        with self._stager.stage() as staging:
+            host_tokens, (device_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
             )
-        # One ramp shifted per sequence covers the whole ragged batch.
-        first_positions = (
-            np.fromiter(
-                (context.tokens.current_position for context in context_batch),
-                dtype=np.int64,
-                count=len(context_batch),
+            host_row_offsets, (device_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (len(context_batch) + 1,)
             )
-            - lengths
-        )
-        host_positions.to_numpy()[:] = np.arange(
-            total_seq_len, dtype=np.int64
-        ) + np.repeat(first_positions - offsets[:-1], lengths)
+            host_positions, (device_positions,) = staging.get(
+                _TOKEN_POSITIONS, (total_seq_len,)
+            )
 
-        if not pinned:
-            return host_tokens, host_row_offsets, host_positions
-
-        staged = []
-        for name, host in (
-            (RAGGED_INPUT_TOKENS, host_tokens),
-            (RAGGED_INPUT_ROW_OFFSETS, host_row_offsets),
-            (_TOKEN_POSITIONS, host_positions),
-        ):
-            device_buffer = self._device_inputs.view(
-                name=name,
-                shape=tuple(host.shape),
-                device=device0,
+            offsets = np.cumsum([0, *lengths], dtype=np.int64)
+            host_row_offsets.to_numpy()[:] = offsets
+            if total_seq_len:
+                np.concatenate(
+                    [context.tokens.active for context in context_batch],
+                    out=host_tokens.to_numpy(),
+                )
+            # One ramp shifted per sequence covers the whole ragged batch.
+            first_positions = (
+                np.fromiter(
+                    (
+                        context.tokens.current_position
+                        for context in context_batch
+                    ),
+                    dtype=np.int64,
+                    count=len(context_batch),
+                )
+                - lengths
             )
-            device_buffer.inplace_copy_from(host)
-            staged.append(device_buffer)
-        return staged[0], staged[1], staged[2]
+            host_positions.to_numpy()[:] = np.arange(
+                total_seq_len, dtype=np.int64
+            ) + np.repeat(first_positions - offsets[:-1], lengths)
+
+        return device_tokens, device_row_offsets, device_positions
 
     def _empty_image_operands(self) -> tuple[Buffer, Buffer]:
         """Zero-row operands for a batch with no images to encode."""

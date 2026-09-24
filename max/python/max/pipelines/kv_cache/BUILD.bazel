@@ -125,6 +125,7 @@ modular_py_library(
         ":nixl_backend",
         ":nixl_plugin_deps",
         ":prefix_hit",
+        "//max/python/max/pipelines:graph_input_stager",
         "//max/python/max/pipelines/context",
         requirement("numpy"),
         requirement("msgspec"),

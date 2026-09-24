@@ -17,16 +17,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 
 import numpy as np
 from max import tree
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    copy_pinned_to_destinations,
-)
+from max.driver import Buffer
 from max.dtype import DType
 from max.nn.kv_cache import (
     BatchCharacteristics,
@@ -39,13 +33,19 @@ from max.nn.kv_cache.cache_params import (
     KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
-    KVLeafRegion,
     spec_decode_cache_slack,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import build_max_lengths_tensors
+from max.nn.kv_cache.utils import (
+    build_max_lengths_tensors,
+)
 from max.pipelines.context import TextContext
+from max.pipelines.graph_input_stager import (
+    GraphInputStager,
+    GraphInputStaging,
+    InputDescriptor,
+)
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     ByteCount,
@@ -57,7 +57,7 @@ from max.support.math import ceildiv
 
 from ..connectors import create_connector
 from .cache_manager import (
-    _contiguous_prefix_2d,
+    KV_CACHE_LENGTHS,
     cache_valid_length_for_context,
     prompt_tokens_for_context,
 )
@@ -77,73 +77,6 @@ from .jenga_block_pool import (
 from .kv_group_coordinator import KVGroupCoordinatorInterface
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass(frozen=True)
-class _PersistentKVDeviceInputBuffers:
-    """The graph inputs a replica binds, keyed the way its leaves read them.
-
-    One replica's buffers, since its rows index its own slab.
-    """
-
-    staged_by_device: list[dict[str, Buffer]]
-    """Inputs a forward rewrites, on each device."""
-
-    bound_by_device: list[dict[str, Buffer]]
-    """Inputs bound once, which no forward rewrites."""
-
-    cache_lengths_by_device: list[Buffer]
-    """Cache lengths on each device."""
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        leaves: Mapping[str, KVLeafRegion],
-        bound: Mapping[str, list[Buffer]],
-        max_batch_size: int,
-        max_num_blocks: int,
-        devices: Sequence[Device],
-    ) -> _PersistentKVDeviceInputBuffers:
-        """Builds one replica's graph inputs at the widest a forward can ask.
-
-        Allocated once and viewed per forward, because a graph input that
-        moved would have to be rebound. Batch-major, so a step's slice of one
-        is contiguous.
-        """
-        declared: dict[str, tuple[tuple[int, ...], DType]] = {}
-        for leaf in leaves.values():
-            declared.update(
-                leaf.staged_input_shapes(max_batch_size, max_num_blocks)
-            )
-
-        staged_by_device = [
-            {
-                key: Buffer(shape=shape, dtype=dtype, device=device)
-                for key, (shape, dtype) in declared.items()
-            }
-            for device in devices
-        ]
-        cache_lengths_by_device = [
-            Buffer(shape=(max_batch_size,), dtype=DType.uint32, device=device)
-            for device in devices
-        ]
-        bound_by_device: list[dict[str, Buffer]] = [{} for _ in devices]
-        for key, per_device in bound.items():
-            for device_idx, view in enumerate(per_device):
-                bound_by_device[device_idx][key] = view
-
-        return cls(
-            staged_by_device=staged_by_device,
-            bound_by_device=bound_by_device,
-            cache_lengths_by_device=cache_lengths_by_device,
-        )
-
-    def cache_lengths_view(self, batch_size: int) -> list[Buffer]:
-        """Returns this batch's slice of each device's cache-length input."""
-        views = [buffer[:batch_size] for buffer in self.cache_lengths_by_device]
-        assert all(buffer.is_contiguous for buffer in views)
-        return views
 
 
 class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
@@ -365,27 +298,64 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         devices_per_replica = split_into_groups(
             devices, self.params.data_parallel_degree
         )
-        self._staging_devices = [ds[0] for ds in devices_per_replica]
+        self._devices_per_replica = devices_per_replica
 
         leaves = params.leaves()
         max_num_blocks = max(
             leaf_info.ratio * self._num_huge_blocks
             for leaf_info in leaf_infos.values()
         )
-        self._persistent_kv_device_input_buffers = [
-            _PersistentKVDeviceInputBuffers.create(
-                leaves=leaves,
-                bound=params.slab_to_bound_views(replica_slabs),
-                max_batch_size=max_batch_size,
-                max_num_blocks=max_num_blocks,
-                devices=ds,
-            )
-            for ds, replica_slabs in zip(
-                devices_per_replica,
-                split_into_groups(slabs, self.params.data_parallel_degree),
-                strict=True,
+        # One instance across every leaf, shard and replica. Leaf ids are
+        # already unique, a replica's shards are the destinations of one
+        # name, and the replica scopes the name because two replicas can be
+        # handed the same device.
+        #
+        # Declared at the widest a forward can ask, because a graph input
+        # that moved would have to be rebound. Batch-major, so a step's
+        # slice of one is contiguous.
+        # A row-addressed view onto the slab is a graph input the cache
+        # already owns: bound once, never staged, and never rewritten by a
+        # forward. Per replica, keyed the way its leaves read it.
+        self._bound: list[Mapping[str, list[Buffer]]] = [
+            params.slab_to_bound_views(replica_slabs)
+            for replica_slabs in split_into_groups(
+                slabs, self.params.data_parallel_degree
             )
         ]
+        described: list[InputDescriptor] = []
+        for replica_idx, replica_devices in enumerate(devices_per_replica):
+            described.append(
+                InputDescriptor(
+                    name=f"{replica_idx}/{KV_CACHE_LENGTHS}",
+                    dtype=DType.uint32,
+                    max_shape=(max_batch_size,),
+                    destinations=replica_devices,
+                )
+            )
+            # Metadata the kernel reads on the device is a transfer like
+            # any other, so it rides the forward's.
+            described.extend(
+                InputDescriptor(
+                    name=f"{replica_idx}/{name}",
+                    dtype=spec.dtype,
+                    max_shape=spec.shape,
+                    destinations=replica_devices,
+                )
+                for name, spec in params.staged_dispatch_metadata().items()
+            )
+            for leaf in leaves.values():
+                described.extend(
+                    InputDescriptor(
+                        name=f"{replica_idx}/{key}",
+                        dtype=dtype,
+                        max_shape=shape,
+                        destinations=replica_devices,
+                    )
+                    for key, (shape, dtype) in leaf.staged_input_shapes(
+                        max_batch_size, max_num_blocks
+                    ).items()
+                )
+        self._stager = GraphInputStager(described)
 
         super().__init__(
             pools=pools,
@@ -424,10 +394,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
 
         # A row-addressed view is a graph input, and no request means no
         # rows to bind it with.
-        binds_rows = any(
-            buffers.bound_by_device[0]
-            for buffers in self._persistent_kv_device_input_buffers
-        )
+        binds_rows = any(self._bound)
         if binds_rows and not any(batches):
             raise ValueError("runtime_inputs called with an empty batch")
 
@@ -441,21 +408,32 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 # Initiate saves of everything committed since the last forward.
                 self.offload(replica_idx)
 
-        assignments = [
-            self._compute_kv_cache_assignments(
-                replica_idx=replica_idx,
-                batch=ctxs,
-                max_cache_length=max_cache_length,
-                batch_characteristics=batch_characteristics,
+        # One scope per forward: every replica stages into it, and leaving
+        # it sends the lot.
+        with self._stager.stage() as staging:
+            assignments = [
+                self._compute_kv_cache_assignments(
+                    staging,
+                    replica_idx=replica_idx,
+                    batch=ctxs,
+                    max_cache_length=max_cache_length,
+                    batch_characteristics=batch_characteristics,
+                )
+                for replica_idx, ctxs in enumerate(batches)
+            ]
+            # Built inside the scope because the dispatch metadata is staged
+            # down there: its transfer folds into this forward's rather than
+            # being one of its own.
+            inputs = self.params.build_runtime_inputs(
+                assignments, self._kv_buffers, staging=staging
             )
-            for replica_idx, ctxs in enumerate(batches)
-        ]
         self._resume_state(batches)
-        return self.params.build_runtime_inputs(assignments, self._kv_buffers)
+        return inputs
 
     @traced
     def _compute_kv_cache_assignments(
         self,
+        staging: GraphInputStaging,
         *,
         replica_idx: int,
         batch: Sequence[TextContext],
@@ -505,33 +483,25 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 f"buffer capacity: {batch_size} > {self._max_batch_size}."
             )
 
-        device = self._staging_devices[replica_idx]
-        buffer_cls = Buffer if device.is_host else DevicePinnedBuffer
-        cache_lengths_host = buffer_cls(
-            shape=(batch_size,), dtype=DType.uint32, device=device
+        replica_devices = self._devices_per_replica[replica_idx]
+        cache_lengths_host, cache_lengths_by_device = staging.get(
+            f"{replica_idx}/{KV_CACHE_LENGTHS}", (batch_size,)
         )
-        cache_lengths = self._persistent_kv_device_input_buffers[
-            replica_idx
-        ].cache_lengths_view(batch_size)
-
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)
 
-        # Pinned host staging is allocated per forward rather than reused:
-        # an H2D copies what the buffer holds when the copy runs, so the next
-        # forward's writes could overtake this one's.
         plans: dict[str, list[list[int]]] = {}
         for group in self._groups.values():
             plans.update(group.forward_blocks(batch, num_blocks))
 
-        staged_host: dict[str, Buffer] = {}
+        staged: dict[str, tuple[Buffer, ...]] = {}
         for leaf_id, leaf in self._leaves.items():
             into: dict[str, np.ndarray] = {}
-            for key, (shape, dtype) in leaf.staged_input_shapes(
+            for key, (shape, _) in leaf.staged_input_shapes(
                 batch_size, lut_num_blocks
             ).items():
-                host = buffer_cls(shape=shape, dtype=dtype, device=device)
-                staged_host[key] = host
+                # Narrowed to the shape the group writes, whatever it is.
+                host, staged[key] = staging.get(f"{replica_idx}/{key}", shape)
                 into[key] = host.to_numpy()
             leaf.write_staged_inputs(plans[leaf_id], into)
 
@@ -545,8 +515,8 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             )
             cache_lengths_np[batch_idx] = cache_length
 
-            # Update the maximum lengths seen so far. The shared helpers keep
-            # this in lockstep with the graph-capture replay path's
+            # Update the maximum lengths seen so far. The shared helpers
+            # keep this in lockstep with the graph-capture replay path's
             # upper-bound characteristics.
             max_prompt_len = max(max_prompt_len, prompt_tokens_for_context(ctx))
             absolute_max_cached_len = max(
@@ -556,13 +526,14 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 ),
             )
 
-        # Choose the shape used to prepare attention dispatch metadata. When
-        # ``batch_characteristics`` is provided (e.g. graph-capture replay), the
-        # dispatch key is resolved once from those (aligned, upper-bound) values
-        # so it matches a captured graph; otherwise the real per-replica values
-        # are used. LUT / cache_lengths always use the real values; only the
-        # dispatch metadata and ``max_prompt_length`` / ``max_cache_length``
-        # follow ``dispatch_*``.
+        # Choose the shape used to prepare attention dispatch metadata.
+        # When ``batch_characteristics`` is provided (e.g. graph-capture
+        # replay), the dispatch key is resolved once from those (aligned,
+        # upper-bound) values so it matches a captured graph; otherwise
+        # the real per-replica values are used. LUT / cache_lengths always
+        # use the real values; only the dispatch metadata and
+        # ``max_prompt_length`` / ``max_cache_length`` follow
+        # ``dispatch_*``.
         if batch_characteristics is not None:
             bc = batch_characteristics
             if (
@@ -583,34 +554,18 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 absolute_max_cached_len,
             )
         )
-        # Copy each group's inputs and cache_lengths to every TP shard's
-        # device buffer. The pinned host staging is dropped when this method
-        # returns; the memory manager defers its free until the owning
-        # device's stream completes, and ``copy_pinned_to_destinations`` makes
-        # the owning device wait for the other TP shards so the staging is not
-        # recycled while their copies are still reading it.
-        copy_pinned_to_destinations(cache_lengths_host, cache_lengths)
-
-        persistent = self._persistent_kv_device_input_buffers[replica_idx]
-        staged: list[dict[str, Buffer]] = [
-            {} for _ in persistent.staged_by_device
+        staged_by_device: list[dict[str, Buffer]] = [
+            {key: value[device_idx] for key, value in staged.items()}
+            for device_idx in range(len(replica_devices))
         ]
-        for key, host in staged_host.items():
-            destinations: list[Buffer] = []
-            for device_idx, per_key in enumerate(persistent.staged_by_device):
-                # Narrowed to the shape the group wrote, whatever that is.
-                view = _contiguous_prefix_2d(per_key[key], *host.shape)
-                staged[device_idx][key] = view
-                destinations.append(view)
-            copy_pinned_to_destinations(host, destinations)
-
         # Inputs bound once ride along unnarrowed and uncopied.
-        for device_idx, bound in enumerate(persistent.bound_by_device):
-            staged[device_idx].update(bound)
+        for key, views in self._bound[replica_idx].items():
+            for device_idx, view in enumerate(views):
+                staged_by_device[device_idx][key] = view
 
         return KVCacheAssignments(
-            cache_lengths_by_device=cache_lengths,
-            staged_by_device=staged,
+            cache_lengths_by_device=list(cache_lengths_by_device),
+            staged_by_device=staged_by_device,
             max_prompt_length=max_prompt_length_host,
             max_cache_length=max_cache_length_host,
             batch_characteristics=BatchCharacteristics(
@@ -633,12 +588,8 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             replica_idx: Whose slab the rows belong to.
             rows: Per bound input, the source and destination rows.
         """
-        bound = self._persistent_kv_device_input_buffers[
-            replica_idx
-        ].bound_by_device
         for key, (src, dst) in rows.items():
-            for per_key in bound:
-                view = per_key[key]
+            for view in self._bound[replica_idx][key]:
                 # A rank-N buffer wants an index per dimension; every axis
                 # but the row one is taken whole.
                 rest = (slice(None),) * (view.rank - 1)
@@ -657,12 +608,8 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             replica_idx: Whose slab the rows belong to.
             rows: Per bound input, the rows to zero.
         """
-        bound = self._persistent_kv_device_input_buffers[
-            replica_idx
-        ].bound_by_device
         for key, span in rows.items():
-            for device_idx, per_key in enumerate(bound):
-                view = per_key[key]
+            for device_idx, view in enumerate(self._bound[replica_idx][key]):
                 rest = (slice(None),) * (view.rank - 1)
                 dst = view[(slice(span.start, span.stop), *rest)]
                 cache_key = (replica_idx, device_idx, key)

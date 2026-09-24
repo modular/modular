@@ -15,7 +15,7 @@
 import numpy as np
 import pytest
 from max import tree
-from max.driver import CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -559,6 +559,81 @@ def _make_multi_kv_manager(
         total_num_pages=total_num_pages,
         max_batch_size=max_batch_size,
     )
+
+
+def _make_multi_mla_kv_manager(
+    *, total_num_pages: int = 16, page_size: int = 128
+) -> PagedKVCacheManager:
+    """A tree of two MLA caches, the shape DeepSeek V3.2 serves."""
+    devices = [DeviceRef.CPU()]
+    children = {
+        name: MLAKVCacheParams(
+            dtype=DType.float32,
+            head_dim=head_dim,
+            num_q_heads=8,
+            num_layers=10,
+            page_size=page_size,
+            devices=devices,
+        )
+        for name, head_dim in (("target", 128), ("indexer", 64))
+    }
+    return PagedKVCacheManager(
+        params=MultiKVCacheParams.from_params(children),
+        session=InferenceSession(devices=[CPU()]),
+        total_num_pages=total_num_pages,
+        max_batch_size=128,
+    )
+
+
+def test_a_tree_stages_one_dispatch_metadata_per_leaf() -> None:
+    """The leaf's prefix is what keeps the children's inputs apart."""
+    params = _make_multi_mla_kv_manager().params
+
+    assert set(params.staged_dispatch_metadata()) == {
+        "target.attn_dispatch_metadata",
+        "indexer.attn_dispatch_metadata",
+    }
+
+
+def test_a_host_resident_kernel_stages_no_dispatch_metadata() -> None:
+    """MHA reads its metadata on the host, so nothing is transferred."""
+    params = _make_multi_kv_manager().params
+
+    assert params.staged_dispatch_metadata() == {}
+
+
+@pytest.mark.asyncio
+async def test_multi_cache_mla_metadata_is_staged_per_leaf() -> None:
+    """Both MLA leaves of a tree get a stable buffer of their own.
+
+    Under one name they would overwrite each other, and before the tree
+    forwarded its staging they fell back to a fresh buffer per forward.
+    """
+    kv_manager = _make_multi_mla_kv_manager()
+
+    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
+
+    def metadata(inputs: object) -> list[Buffer]:
+        """Each leaf's dispatch metadata, in declaration order."""
+        assert isinstance(inputs, dict)
+        buffers = []
+        for leaf in inputs.values():
+            assert isinstance(leaf, tuple)
+            shard = leaf[0]
+            assert isinstance(shard, KVCacheInputsPerDevice)
+            assert shard.attention_dispatch_metadata is not None
+            buffers.append(shard.attention_dispatch_metadata)
+        return buffers
+
+    first = metadata(kv_manager.runtime_inputs([[ctx]]))
+    second = metadata(kv_manager.runtime_inputs([[ctx]]))
+
+    assert len(first) == 2
+    assert first[0]._data_ptr() != first[1]._data_ptr()
+    # The allocation a captured graph binds outlives the step that filled it.
+    assert [b._data_ptr() for b in second] == [b._data_ptr() for b in first]
 
 
 @pytest.mark.asyncio

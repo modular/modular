@@ -88,15 +88,11 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     ) -> Qwen3_5Inputs:
         from .model import Qwen3_5Inputs
 
-        base_inputs = super().prepare_initial_token_inputs(
-            replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-
         all_contexts = [ctx for batch in replica_batches for ctx in batch]
-        request_ids = [ctx.request_id for ctx in all_contexts]
 
+        # Checked before anything is staged: this batch cannot be served at
+        # all, so there is no point building its inputs first.
+        #
         # TODO(kevinbi): nothing between here and the model worker's main
         # loop catches this, so it ends the worker process rather than the
         # one request that asked for the impossible. Failing just the
@@ -114,6 +110,13 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
                 "M-RoPE positions are not wired into the compiled graph "
                 "and every token after an image would get a flat position."
             )
+
+        base_inputs = super().prepare_initial_token_inputs(
+            replica_batches,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+        )
+        request_ids = [ctx.request_id for ctx in all_contexts]
 
         return Qwen3_5Inputs(
             tokens=base_inputs.tokens,
