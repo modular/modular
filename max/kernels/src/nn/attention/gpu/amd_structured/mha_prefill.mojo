@@ -355,7 +355,7 @@ __extension Attention:
             process_tile[0, False]()
 
         # Final softmax denominator and output store.
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
-        )
+        self.out_reg_buffer.apply_softmax_denominator[
+            p_scale_log2=type_of(self.p_reg_buffer).p_scale_log2
+        ](self.softmax.rowsum_tensor)
         self.store_output()

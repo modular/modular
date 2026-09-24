@@ -353,12 +353,18 @@ struct OutputRegisterBuffer[
 
     @inline(.always)
     def apply_softmax_denominator[
-        layout_type: TensorLayout, //
+        layout_type: TensorLayout,
+        //,
+        p_scale_log2: Int = 0,
     ](self, rowsum: TileTensor[Self.dtype, layout_type, ...]):
         comptime assert rowsum.flat_rank == 2
         var reg_vec = self.reg_tile.vectorize[1, Self.output_frag_size]()
         comptime for m_mma in range(Self.num_m_mmas):
             var rowsum_inv = recip(rowsum[m_mma, 0][0])
+            comptime if p_scale_log2 != 0:
+                rowsum_inv *= Scalar[Self.dtype](
+                    1.0 / Float64(1 << p_scale_log2)
+                )
 
             comptime for n_mma in range(Self.num_n_mmas):
                 reg_vec[n_mma * Self.num_m_mmas + m_mma, 0] *= rowsum_inv
@@ -436,12 +442,33 @@ struct PRegisterBuffer[
             `get_mma_tile_shared` (defaults to None).
         raw_fp8_cast: When True, use raw `v_cvt_pk_fp8_f32` without
             the compiler's clamp + NaN-scrub wrapper for f32 to fp8
-            casts; only safe when inputs are bounded in (0, 1]
-            (defaults to False).
+            casts; only safe when P is a softmax output in (0, 1]. With a
+            float8_e4m3fn operand it also scales P by 2^`p_scale_log2`
+            before the cast (defaults to False).
     """
 
     comptime reg_dtype = Self.accum_type_
     comptime mma_dtype = Self.dtype
+
+    # With `raw_fp8_cast`, P is a softmax output in (0, 1]. Converting it to
+    # e4m3 rounds values below 2^-10 to zero while the fp32 row sum still
+    # includes them, so the output is too small. P is scaled by
+    # 2^p_scale_log2 before the conversion, which keeps values down to 2^-18
+    # of the row max and stays below the e4m3 maximum of 448. Callers pass
+    # `p_scale_log2` to `OutputRegisterBuffer.apply_softmax_denominator`,
+    # which divides it back out, so the row sum and LSE are unchanged.
+    comptime p_scale_log2 = 8 if (
+        Self.raw_fp8_cast and Self.dtype == .float8_e4m3fn
+    ) else 0
+
+    @staticmethod
+    @inline(.always)
+    def _scale_p[
+        width: Int
+    ](p: SIMD[Self.accum_type_, width]) -> SIMD[Self.accum_type_, width]:
+        comptime if Self.p_scale_log2 != 0:
+            return p * Scalar[Self.accum_type_](1 << Self.p_scale_log2)
+        return p
 
     # TileTensor storage (with staging dimension).
     comptime _staged_rows = (
@@ -509,6 +536,9 @@ struct PRegisterBuffer[
 
     @inline(.always)
     def __init__(out self, smem_tile: Self.SmemTileType):
+        comptime assert (
+            Self.dtype == .bfloat16 or Self.dtype == .float8_e4m3fn
+        ), "attention P operand supports bf16 or float8_e4m3fn"
         self.reg_tile = stack_allocation[
             Self.accum_type_, address_space=.LOCAL
         ](Self.reg_layout)
@@ -708,7 +738,9 @@ struct PRegisterBuffer[
                 comptime if num_gather <= 1:
                     # input_frag_size <= output_frag_size: cast one row, slice.
                     # bf16 [32,32,16]: input_frag_size=8, frag=16 → slice 8 of 16.
-                    var casted = src_vec[tile_idx, 0].cast[Self.mma_dtype]()
+                    var casted = Self._scale_p(src_vec[tile_idx, 0]).cast[
+                        Self.mma_dtype
+                    ]()
                     result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
                         casted.slice[
                             Self.input_frag_size,
@@ -733,14 +765,18 @@ struct PRegisterBuffer[
                         # compiler's clamp + NaN-scrub wrapper is a no-op
                         # that just adds ~6 VALU ops per f32→fp8 pair.
                         lo = _cast_f32_to_fp8_raw[Self.mma_dtype](
-                            src_vec[tile_idx * 2, 0]
+                            Self._scale_p(src_vec[tile_idx * 2, 0])
                         )
                         hi = _cast_f32_to_fp8_raw[Self.mma_dtype](
-                            src_vec[tile_idx * 2 + 1, 0]
+                            Self._scale_p(src_vec[tile_idx * 2 + 1, 0])
                         )
                     else:
-                        lo = src_vec[tile_idx * 2, 0].cast[Self.mma_dtype]()
-                        hi = src_vec[tile_idx * 2 + 1, 0].cast[Self.mma_dtype]()
+                        lo = Self._scale_p(src_vec[tile_idx * 2, 0]).cast[
+                            Self.mma_dtype
+                        ]()
+                        hi = Self._scale_p(src_vec[tile_idx * 2 + 1, 0]).cast[
+                            Self.mma_dtype
+                        ]()
                     var joined = lo.join(hi)
                     result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
                         joined.slice[
@@ -770,8 +806,8 @@ struct PRegisterBuffer[
                 ).vectorize[1, Self.output_frag_size]()
 
                 comptime for m in range(Self.num_m_mmas):
-                    var lo = group[m, 0].cast[Self.mma_dtype]()
-                    var hi = group[m + Self.num_m_mmas, 0].cast[
+                    var lo = Self._scale_p(group[m, 0]).cast[Self.mma_dtype]()
+                    var hi = Self._scale_p(group[m + Self.num_m_mmas, 0]).cast[
                         Self.mma_dtype
                     ]()
                     var joined = lo.join(hi)
@@ -789,7 +825,7 @@ struct PRegisterBuffer[
             # Non-tr_load: cast + interleave pairs of 4-element sub-groups.
             # Input [0..3, 4..7, 8..11, 12..15] →
             # Output [0,4, 1,5, 2,6, 3,7, 8,12, 9,13, 10,14, 11,15]
-            var row = src_vec[tile_idx, 0].cast[Self.mma_dtype]()
+            var row = Self._scale_p(src_vec[tile_idx, 0]).cast[Self.mma_dtype]()
             var lo4 = row.slice[4, offset=0]()
             var hi4 = row.slice[4, offset=4]()
             var lo_half = lo4.interleave(hi4)  # 8 elems
@@ -882,7 +918,9 @@ struct PRegisterBuffer[
         ]()
         var p_reg_tile = p_reg_vec.tile[1, 1](reg_idx, 0)
         comptime frag_size = p_reg_tile.element_size
-        var reg_val = p_reg_tile.ptr.load[width=frag_size]().cast[Self.dtype]()
+        var reg_val = Self._scale_p(
+            p_reg_tile.ptr.load[width=frag_size]()
+        ).cast[Self.dtype]()
 
         # Apply swizzle to spread rows across different LDS banks.
         # Use block base (smem_base + byte_offset) so the swizzle
@@ -974,9 +1012,11 @@ struct PRegisterBuffer[
                         # so the compiler's clamp + NaN-scrub wrapper around
                         # pop.cast is a no-op that just adds ~6 VALU ops per
                         # f32→fp8 pair.
-                        reg16 = _cast_f32_to_fp8_raw[Self.dtype](loaded)
+                        reg16 = _cast_f32_to_fp8_raw[Self.dtype](
+                            Self._scale_p(loaded)
+                        )
                     else:
-                        reg16 = loaded.cast[Self.dtype]()
+                        reg16 = Self._scale_p(loaded).cast[Self.dtype]()
                     var warp_off = m_mma * Int(m_mma_stride) + (
                         n_mma_in_block * Int(Self.num_n_mmas) + n_mma
                     ) * Int(warp_stride)
@@ -1018,9 +1058,11 @@ struct PRegisterBuffer[
                     comptime for n_mma in range(Self.num_n_mmas):
                         comptime reg_idx = n_mma * Self.num_m_mmas + m_mma
                         var p_reg_tile = p_reg_vec.tile[1, 1](reg_idx, 0)
-                        var reg_val = p_reg_tile.raw_load[
-                            width=p_reg_tile.element_size
-                        ](0).cast[Self.dtype]()
+                        var reg_val = Self._scale_p(
+                            p_reg_tile.raw_load[width=p_reg_tile.element_size](
+                                0
+                            )
+                        ).cast[Self.dtype]()
 
                         var elem_off = (
                             swizzled_group * simd_w
@@ -1064,16 +1106,16 @@ struct PRegisterBuffer[
                         comptime hi_idx = (
                             1 + i * num_n_mmas_per_bk
                         ) * Self.num_m_mmas + m_mma
-                        var lo = (
-                            p_reg_vec.tile[1, 1](lo_idx, 0)
-                            .raw_load[width=frag_w](0)
-                            .cast[Self.dtype]()
-                        )
-                        var hi = (
-                            p_reg_vec.tile[1, 1](hi_idx, 0)
-                            .raw_load[width=frag_w](0)
-                            .cast[Self.dtype]()
-                        )
+                        var lo = Self._scale_p(
+                            p_reg_vec.tile[1, 1](lo_idx, 0).raw_load[
+                                width=frag_w
+                            ](0)
+                        ).cast[Self.dtype]()
+                        var hi = Self._scale_p(
+                            p_reg_vec.tile[1, 1](hi_idx, 0).raw_load[
+                                width=frag_w
+                            ](0)
+                        ).cast[Self.dtype]()
                         var joined = lo.join(hi)
 
                         var group_idx = r * (Self.BK // group_w) + c
