@@ -2113,7 +2113,7 @@ struct MXTokenFormat[
     comptime bits_per_element = Self.mx_format.bits_per_element()
     comptime is_fp6 = Self.bits_per_element == 6
 
-    comptime dispatch_wait_tile_shape = (128, 1)
+    comptime dispatch_wait_tile_shape = (32, 1)
     comptime dispatch_smem_size = 0
 
     comptime TensorType = TileTensor[
@@ -2498,7 +2498,7 @@ struct EPLocalSyncCounters[n_experts: Int](
 
     Memory Layout (all sizes in Int32 elements):
     - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
-    - dispatch_wait/combine_async: 6 * n_experts + 7
+    - dispatch_wait/combine_async: 7 * n_experts + 7
     - combine_wait: MAX_SMS_PER_DEVICE
     """
 
@@ -2558,6 +2558,8 @@ struct EPLocalSyncCounters[n_experts: Int](
             2*n_local_experts + 3 words placed by
             `l1_vslot_ticket_offset`; inside Region C's unused tail where
             the expert-parallel degree leaves room, otherwise past Region G
+          Region I [6*n_experts + 7, +n_local_experts): the SM-to-expert
+            schedule, placed by `sm_schedule_offset`
 
         Region A will be used by combine_async kernel to track the number of
         tokens of each expert-rank pair. Region D, E, F and G needs to be reset
@@ -2567,7 +2569,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         at which Region H sits past Region G with n_local_experts ==
         n_experts, because the host allocates from n_experts alone.
         """
-        return 6 * Self.n_experts + 7
+        return 7 * Self.n_experts + 7
 
     @inline(.always)
     @staticmethod
@@ -2577,7 +2579,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         Must match dispatch_wait_size() since combine_async reuses the same
         memory region.
         """
-        return 6 * Self.n_experts + 7
+        return 7 * Self.n_experts + 7
 
     @inline(.always)
     @staticmethod
@@ -2778,6 +2780,9 @@ struct EPDispatchKernel[
     # These two offsets are only used when fused_shared_expert is True.
     comptime send_buf_ready_offset = 4 * Self.n_experts + 2
     comptime shared_expert_started_offset = 4 * Self.n_experts + 3
+
+    # The comm SMs' expert assignment.
+    comptime sm_schedule_offset = 6 * Self.n_experts + 7
 
     # Rank-completion flags (`ep_ord_r` only) live in a dedicated tail region
     # of the receive-count buffer, one word per SOURCE rank, immediately after
@@ -3334,6 +3339,71 @@ struct EPDispatchKernel[
 
     @staticmethod
     @inline(.always)
+    def _publish_sm_schedule[
+        comm_thread_base: Int = 0,
+        n_comm_threads: Int = Self.num_threads,
+        comm_barrier_id: Int = -1,
+    ](
+        smem_expert_tiles: UnsafePointer[
+            Int32, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+        ],
+        atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
+        n_comm_sms: Int,
+    ) -> None:
+        """Hands out comm SMs in proportion to each expert's work.
+
+        Binding SM i to expert `i % n_local_experts` spreads them evenly
+        instead, so the launch ends with the busiest expert rather than the
+        average: routing captured from a served model puts up to 10x the mean
+        on one expert, and its fixed share of SMs grinds on while the rest sit
+        idle. Every expert holding tokens keeps at least one SM so none is
+        stranded, and the rest split by tile count.
+
+        Args:
+            smem_expert_tiles: Per-local-expert tile counts, in shared memory.
+            atomic_counter: Atomic counter base for the dispatch_wait region.
+            n_comm_sms: Comm SMs in the launched grid.
+        """
+        var tid = thread_idx.x - comm_thread_base
+        var my_tiles = Int32(0)
+        if tid < Self.n_local_experts:
+            my_tiles = smem_expert_tiles[tid]
+        var tiles_upto = block_prefix_sum[
+            Self.n_local_experts,
+            thread_base=comm_thread_base,
+            n_scoped_threads=n_comm_threads,
+            barrier_id=comm_barrier_id,
+        ](my_tiles)
+        var active_upto = block_prefix_sum[
+            Self.n_local_experts,
+            thread_base=comm_thread_base,
+            n_scoped_threads=n_comm_threads,
+            barrier_id=comm_barrier_id,
+        ](Int32(1) if my_tiles > 0 else Int32(0))
+        var smem_sched_totals = unsafe_stack_allocation[
+            2, Int32, address_space=.SHARED
+        ]()
+        if tid == Self.n_local_experts - 1:
+            smem_sched_totals[0] = tiles_upto
+            smem_sched_totals[1] = active_upto
+        Self._comm_barrier[n_comm_threads, comm_barrier_id]()
+
+        var total_tiles = Int(smem_sched_totals[0])
+        var n_active = Int(smem_sched_totals[1])
+        var usable = total_tiles > 0 and n_active <= n_comm_sms
+        if tid < Self.n_local_experts:
+            # Exclusive upper bound of expert `tid`'s SM range; -1 tells the
+            # comm SMs to keep the round-robin binding.
+            var bound = Int32(-1)
+            if usable:
+                bound = Int32(
+                    Int(active_upto)
+                    + Int(tiles_upto) * (n_comm_sms - n_active) // total_tiles
+                )
+            atomic_counter.store(Self.sm_schedule_offset + tid, bound)
+
+    @staticmethod
+    @inline(.always)
     def wait_for_arrivals_and_compute_offsets[
         comm_thread_base: Int = 0,
         n_comm_threads: Int = Self.num_threads,
@@ -3384,10 +3454,15 @@ struct EPDispatchKernel[
             expert_ids.flat_rank == 1
         ), "expert_ids expects rank == 1"
         comptime shared_expert_offset = 1 if Self.fused_shared_expert else 0
+        comptime tile_size = Self.token_fmt_type.dispatch_wait_tile_shape[0]
+        comptime sms_per_tile = Self.token_fmt_type.dispatch_wait_tile_shape[1]
         var tid = thread_idx.x - comm_thread_base
 
         var prefix_sum_arr = unsafe_stack_allocation[
             Self.n_experts, DType.uint32, address_space=.SHARED
+        ]()
+        var smem_expert_tiles = unsafe_stack_allocation[
+            Self.n_local_experts, Int32, address_space=.SHARED
         ]()
 
         if tid < Self.n_local_experts + shared_expert_offset:
@@ -3451,9 +3526,32 @@ struct EPDispatchKernel[
                 Self.rank_prefix_offset + tid, Int32(within_expert_prefix)
             )
 
+            if tid % Self.n_ranks == Self.n_ranks - 1:
+                smem_expert_tiles[local_expert_id] = Int32(
+                    ceildiv(Int(within_expert_prefix), tile_size) * sms_per_tile
+                )
+
         # Region C: initialize per-expert work-claiming counters to 0.
         if tid < Self.n_local_experts:
             atomic_counter.store(Self.work_counter_offset + tid, Int32(0))
+
+        Self._comm_barrier[n_comm_threads, comm_barrier_id]()
+        # Round-robin is already optimal when no expert could outrun its own
+        # share of SMs even holding every token, so skip the two block-wide
+        # scans below in that case: at decode sizes they are most of the
+        # kernel. The bound uses the grand total, which the prefix sum above
+        # already left in shared memory.
+        var worst_case_tiles = (
+            ceildiv(Int(prefix_sum_arr[Self.n_experts - 1]), tile_size)
+            * sms_per_tile
+        )
+        if worst_case_tiles <= n_active_offset_sms // Self.n_local_experts:
+            if tid < Self.n_local_experts:
+                atomic_counter.store(Self.sm_schedule_offset + tid, Int32(-1))
+        else:
+            Self._publish_sm_schedule[
+                comm_thread_base, n_comm_threads, comm_barrier_id
+            ](smem_expert_tiles, atomic_counter, n_active_offset_sms)
 
         Self._comm_barrier[n_comm_threads, comm_barrier_id]()
 
@@ -3625,13 +3723,9 @@ struct EPDispatchKernel[
 
         var sm_id = scatter_sm_id
         var tid = thread_idx.x - comm_thread_base
-        var local_expert_id = umod(sm_id, Self.n_local_experts)
-        var global_expert_idx = (
-            Int(my_rank) * Self.n_local_experts + local_expert_id
-        )
 
-        # Shared memory: rank prefix sums, per-tile token-to-rank map,
-        # expert start, and chunk_start broadcast slot.
+        # Shared memory: rank prefix sums, per-tile token-to-rank map, and
+        # the expert start / tile id / chosen-expert broadcast slots.
         var rank_prefix = unsafe_stack_allocation[
             Self.n_ranks, Int32, address_space=.SHARED
         ]()
@@ -3639,17 +3733,17 @@ struct EPDispatchKernel[
             tile_size, Int32, address_space=.SHARED
         ]()
         var smem_vals = unsafe_stack_allocation[
-            2, Int32, address_space=.SHARED
+            3, Int32, address_space=.SHARED
         ]()
 
         @inline(.always)
-        def fetch_tile_id() {imm} -> Int32:
-            """Fetch the start of the next tile for the current expert. Should
-            be called by a single thread.
+        def fetch_tile_id(expert: Int) {imm} -> Int32:
+            """Fetch the start of the next tile for `expert`. Should be called
+            by a single thread.
             """
             return Atomic[scope=DEVICE_SCOPE].fetch_add[
                 ordering=Ordering.ACQUIRE
-            ](atomic_counter + Self.work_counter_offset + local_expert_id, 1)
+            ](atomic_counter + Self.work_counter_offset + expert, 1)
 
         @inline(.always)
         def fill_tok_rank_map(tile_id: Int, _total: Int) {mut} -> None:
@@ -3672,16 +3766,34 @@ struct EPDispatchKernel[
                 Int32(EP_DATA_READY_FLAG),
             )
 
+            # Claim this SM's expert from the schedule the aux SM published.
+            # Each entry is the exclusive upper bound of one expert's SM
+            # range, so the ranges are disjoint and at most one lane matches.
+            # A non-positive bound means the aux SM declined to schedule (no
+            # tokens, or fewer SMs than experts holding them), and no lane
+            # matches, which leaves the round-robin binding below in place.
+            if tid == 0:
+                smem_vals[2] = Int32(umod(sm_id, Self.n_local_experts))
+            syncwarp()
+            var sched = atomic_counter + Self.sm_schedule_offset
+            for e in range(Int(tid), Self.n_local_experts, WARP_SIZE):
+                var hi = Int(sched[e])
+                var lo = 0 if e == 0 else Int(sched[e - 1])
+                if hi > 0 and lo <= Int(sm_id) and Int(sm_id) < hi:
+                    smem_vals[2] = Int32(e)
+            syncwarp()
+
+            # Warp-local: this warp wrote it, so no block barrier is owed
+            # until the other warps read it below.
+            var chosen = Int(smem_vals[2])
             if tid == 0:
                 smem_vals[0] = Int32(
-                    rebind[UInt32](
-                        row_offsets[local_expert_id + shared_expert_offset]
-                    )
+                    rebind[UInt32](row_offsets[chosen + shared_expert_offset])
                 )
-                smem_vals[1] = fetch_tile_id()
+                smem_vals[1] = fetch_tile_id(chosen)
 
             # Load within-expert rank prefix sums for this expert.
-            var base = Self.rank_prefix_offset + local_expert_id * Self.n_ranks
+            var base = Self.rank_prefix_offset + chosen * Self.n_ranks
             comptime assert (
                 Self.n_ranks <= WARP_SIZE
             ), "n_ranks must be less than or equal to warp size"
@@ -3694,6 +3806,11 @@ struct EPDispatchKernel[
                 Int(smem_vals[1]), Int(rank_prefix[Self.n_ranks - 1])
             )
         Self._comm_barrier[n_comm_threads, comm_barrier_id]()
+
+        var local_expert_id = Int(smem_vals[2])
+        var global_expert_idx = (
+            Int(my_rank) * Self.n_local_experts + local_expert_id
+        )
 
         var expert_start_val = Int(smem_vals[0])
         var tile_id = Int(smem_vals[1])
@@ -3843,7 +3960,7 @@ struct EPDispatchKernel[
                 Self._comm_barrier[n_comm_threads, comm_barrier_id]()
                 if warp_id() - comm_warp_base == 0:
                     if tid == 0:
-                        smem_vals[1] = fetch_tile_id()
+                        smem_vals[1] = fetch_tile_id(local_expert_id)
                     syncwarp()
                     fill_tok_rank_map(Int(smem_vals[1]), total_tokens)
                 Self._comm_barrier[n_comm_threads, comm_barrier_id]()

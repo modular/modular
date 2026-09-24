@@ -87,7 +87,7 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
 
     Memory Layout (all sizes in Int32 elements):
     - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
-    - dispatch_wait/combine_async: 6 * n_experts + 7
+    - dispatch_wait/combine_async: 7 * n_experts + 7
     - combine_wait: MAX_SMS_PER_DEVICE
 
     The dispatch_wait region holds the per-expert counters and the cleanup,
@@ -95,9 +95,10 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     the L1 virtual-slot ticket and the L2 pool cursors. Those sit inside the
     unused part of the per-expert window at high expert-parallel degree, and
     only past the flags when a low degree closes it, needing
-    2 * n_local_experts + 3 further words. This size is the worst case over
-    the degree (n_local_experts == n_experts), because the caller allocating
-    the buffer knows n_experts but not the degree.
+    2 * n_local_experts + 3 further words. A further n_local_experts words
+    past those hold the dispatch_wait SM-to-expert schedule. This size is the
+    worst case over the degree (n_local_experts == n_experts), because the
+    caller allocating the buffer knows n_experts but not the degree.
 
     Args:
         n_experts: Number of experts in the model.
@@ -111,7 +112,7 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     MAX_SMS_PER_DEVICE = 304
 
     dispatch_async_size = 2 * n_experts + MAX_GPUS_PER_NODE
-    dispatch_wait_size = 6 * n_experts + 7
+    dispatch_wait_size = 7 * n_experts + 7
     combine_wait_size = MAX_SMS_PER_DEVICE
     return dispatch_async_size + dispatch_wait_size + combine_wait_size
 
