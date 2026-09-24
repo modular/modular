@@ -158,6 +158,11 @@ public:
   /// operation.
   void applyBodyDecorators(function_ref<LogicalResult(ExprNode *)> process);
 
+  /// Process body decorators on a declaration that handles none of its own.
+  /// Leftover decorators are emitted as expressions, so this rejects the ones
+  /// the expression emitter cannot name.
+  void applyBodyDecorators();
+
 private:
   /// Validate compiler decorators that are allowed to propagate.
   LogicalResult validateCompilerDecorator(TypedAttr attr);
@@ -512,6 +517,157 @@ void Decorators::applySignatureDecorators(
   decl.setBodyDecorators(bodyDecorators);
 }
 
+//===----------------------------------------------------------------------===//
+// Struct decorators
+//
+// `@__annotation(value, ...)` attaches comptime values to a struct or one of
+// its fields. The values are evaluated here and stored verbatim in the decl's
+// `annotations` attribute; `#kgen.struct_annotation` reads one back by index,
+// which the reflection library wraps as `reflect[T].annotation[index]`.
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct StructDecorators : public SharedStateUser {
+  StructDecorators(StructDeclOp structOp, ASTDecl &structDecl,
+                   DeclResolver &resolver)
+      : SharedStateUser(resolver.shared), structOp(structOp),
+        structDecl(structDecl) {}
+
+  /// Return true if `decorator` is `@__annotation`, in either the bare or the
+  /// called form. A declaration with nowhere to store annotations uses this to
+  /// diagnose the decorator itself, rather than letting it reach the emitter
+  /// as an unknown name.
+  static bool isAnnotationDecorator(ExprNode *decorator);
+
+  LogicalResult processBodyDecorator(ExprNode *decorator);
+
+  /// Attach an `@__annotation` decorator's values to `fieldOp`, returning
+  /// failure if `decorator` is some other decorator. A field's operands may
+  /// name the struct's parameters, so they are emitted in the struct's scope.
+  LogicalResult processFieldDecorator(ExprNode *decorator,
+                                      StructFieldOp fieldOp);
+
+private:
+  /// Process the @fieldwise_init body decorator on structs.
+  void processFieldwiseInitDecorator(SMLoc decoratorLoc, bool isImplicit);
+
+  /// Match `@__annotation(...)`, returning the call node, or null if
+  /// `decorator` is some other decorator. The bare `@__annotation` form is
+  /// diagnosed here.
+  const CallNode *matchAnnotationDecorator(ExprNode *decorator);
+
+  /// Evaluate the operands of an `@__annotation(...)` decorator in the
+  /// struct's scope and prepend them to `op`'s annotations. Decorators reach
+  /// us innermost-first, so prepending restores source order.
+  template <typename OpTy>
+  void applyAnnotationDecorator(const CallNode *callNode, OpTy op);
+
+  StructDeclOp structOp;
+  ASTDecl &structDecl;
+};
+} // namespace
+
+static constexpr StringLiteral kAnnotationDecorator = "__annotation";
+
+bool StructDecorators::isAnnotationDecorator(ExprNode *decorator) {
+  const ExprNode *callee = decorator;
+  if (auto callNode = dyn_cast<CallNode>(decorator))
+    callee = callNode->callee;
+  auto declRef = dyn_cast<DeclRefNode>(callee);
+  return declRef && declRef->spelling == kAnnotationDecorator;
+}
+
+const CallNode *
+StructDecorators::matchAnnotationDecorator(ExprNode *decorator) {
+  if (!isAnnotationDecorator(decorator))
+    return nullptr;
+
+  auto callNode = dyn_cast<CallNode>(decorator);
+  if (!callNode) {
+    emitError(decorator->getLoc(), "@__annotation requires at least one value")
+        << decorator->getRange();
+    return nullptr;
+  }
+  return callNode;
+}
+
+template <typename OpTy>
+void StructDecorators::applyAnnotationDecorator(const CallNode *callNode,
+                                                OpTy op) {
+  if (callNode->operands.empty()) {
+    emitError(callNode->getLoc(), "@__annotation requires at least one value")
+        << callNode->getRange();
+    return;
+  }
+
+  IREmitter emitter(structDecl, EC_Decorator);
+  // Owned: getAssumptionsFromScope returns by value, and the same scope backs
+  // every operand.
+  SmallVector<ConstraintAttr> assumptions =
+      ASTDecl::getAssumptionsFromScope(&structDecl);
+  SmallVector<TypedAttr> values;
+  for (const Operand &operand : callNode->operands) {
+    if (!operand.isPositional()) {
+      // `*args` and `**kwargs` are not keyword arguments, and expanding one
+      // would mean splicing a comptime variadic into the annotation list.
+      emitError(operand.expr->getLoc(),
+                operand.isKeyword()
+                    ? "@__annotation does not accept keyword arguments"
+                    : "@__annotation does not accept unpacked arguments")
+          << operand.expr->getRange();
+      return;
+    }
+    PValue value = emitter.emitExprPValue(operand.expr, EC_Decorator);
+    if (!value)
+      return; // Error already emitted.
+
+    // Store the materialized form, so an annotation written as `9` or `"x"`
+    // reads back as an `Int` or `String` rather than as the literal type that
+    // only exists to be converted away. An emission with no contextual type
+    // stops at the literal type, so the target has to be asked for.
+    if (ASTType target = value.getType().getNonmaterializableTarget(shared)) {
+      value = emitter.emitExprPValue(operand.expr, EC_Decorator, target);
+      if (!value)
+        return; // Error already emitted.
+    }
+
+    // Every annotation value is `Movable & Deinitable`, so a reader can move
+    // one out and destroy it. A type value satisfies neither -- its metatype
+    // is not a value at all.
+    if (value.getIfTypeValue()) {
+      emitError(operand.expr->getLoc(),
+                "@__annotation value must be a value, not a type")
+          << operand.expr->getRange();
+      return;
+    }
+    ASTType valueType = value.getType();
+    for (StringRef traitName : {"Movable", "Deinitable"}) {
+      if (valueType.provenConformsToBuiltinTrait(
+              traitName, operand.expr->getLoc(), shared, assumptions))
+        continue;
+      emitError(operand.expr->getLoc())
+          << "@__annotation value of type " << valueType
+          << " does not conform to '" << traitName << "'"
+          << operand.expr->getRange();
+      return;
+    }
+    values.push_back(value.get());
+  }
+
+  if (ParameterExprArrayAttr existing = op.getAnnotationsAttr())
+    llvm::append_range(values, existing.getValue());
+  op.setAnnotationsAttr(ParameterExprArrayAttr::get(op.getContext(), values));
+}
+
+LogicalResult StructDecorators::processFieldDecorator(ExprNode *decorator,
+                                                      StructFieldOp fieldOp) {
+  if (!isAnnotationDecorator(decorator))
+    return failure();
+  if (const CallNode *annotation = matchAnnotationDecorator(decorator))
+    applyAnnotationDecorator(annotation, fieldOp);
+  return success();
+}
+
 // Helper function to extract symbol name from a TypedAttr
 static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
   // Helper lambda to extract name from a symbol reference
@@ -563,6 +719,20 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
   }
 
   return success(llvm::is_contained(plainDre, *symbolName));
+}
+
+void Decorators::applyBodyDecorators() {
+  applyBodyDecorators([&](ExprNode *decorator) -> LogicalResult {
+    // Only structs and struct fields have somewhere to store annotations, and
+    // they handle the decorator themselves. Letting it fall through to the
+    // expression emitter would report "unknown declaration '__annotation'".
+    if (!StructDecorators::isAnnotationDecorator(decorator))
+      return failure();
+    emitError(decorator->getLoc(),
+              "@__annotation is only supported on structs and struct fields")
+        << decorator->getRange();
+    return success();
+  });
 }
 
 void Decorators::applyBodyDecorators(
@@ -2559,8 +2729,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       // and would otherwise skip that step, silently dropping their body
       // decorators -- which makes a @doc_hidden @unavailable function appear
       // to require a doc string. Apply them here as well.
-      Decorators(decl).applyBodyDecorators(
-          [&](ExprNode *decorator) { return failure(); });
+      Decorators(decl).applyBodyDecorators();
       return success();
     }
 
@@ -2709,8 +2878,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     emitter.emitNormalReturn(funcOp.getLoc(), Value(), /*emitEndFunc=*/false);
 
   // Now that the body of the function is parsed, run any body decorators.
-  Decorators(decl).applyBodyDecorators(
-      [&](ExprNode *decorator) { return failure(); });
+  Decorators(decl).applyBodyDecorators();
 
   // If this function is @always_inline("builtin"), check that its body obeys
   // the right invariants.
@@ -4079,24 +4247,6 @@ static FnOp lookupSpecialInit(ASTDecl &structDecl,
   return {};
 }
 
-namespace {
-struct StructDecorators : public SharedStateUser {
-  StructDecorators(StructDeclOp structOp, ASTDecl &structDecl,
-                   DeclResolver &resolver)
-      : SharedStateUser(resolver.shared), structOp(structOp),
-        structDecl(structDecl) {}
-
-  LogicalResult processBodyDecorator(ExprNode *decorator);
-
-private:
-  /// Process the @fieldwise_init body decorator on structs.
-  void processFieldwiseInitDecorator(SMLoc decoratorLoc, bool isImplicit);
-
-  StructDeclOp structOp;
-  ASTDecl &structDecl;
-};
-} // namespace
-
 /// Look at the initializers of the specified struct to see if there is already
 /// a fieldwise init.  If so, return it, otherwise return null.
 static FnOp findFieldwiseInit(ASTDecl &structDecl) {
@@ -4204,6 +4354,11 @@ LogicalResult StructDecorators::processBodyDecorator(ExprNode *decorator) {
       structDecl.setErroneous();
       return failure();
     }
+  }
+  if (isAnnotationDecorator(decorator)) {
+    if (const CallNode *annotation = matchAnnotationDecorator(decorator))
+      applyAnnotationDecorator(annotation, structOp);
+    return success();
   }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
@@ -4384,7 +4539,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                      structOp.getConvention());
 
   // If any of the fields are bad, we do not process decorators since they
-  // assume that the struct body if valid.
+  // assume that the struct body is valid.
   if (hasBadField && !structDecl.getBodyDecorators().empty()) {
     structDecl.setErroneous();
     return failure();
@@ -4583,7 +4738,13 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   // Process field decorators syntactically to avoid recursive scope lookups
   // that can arise when using the IR emitter from within a struct's scope.
   // Currently only @doc_hidden and @__allow_legacy_any_origin_fields are
-  // supported on struct fields.
+  // supported on struct fields, plus @__annotation, whose operands are
+  // arbitrary comptime expressions. Those are emitted in the struct's scope,
+  // which is already name-lookup ready: resolveBody(StructDeclOp) marks it
+  // before resolving any field.
+  ASTDecl &structDecl = *decl.getParentDecl();
+  StructDecorators structDecorators(
+      cast<StructDeclOp>(structDecl.getIfOperation()), structDecl, *this);
   for (auto &[decorator, _] : decoratorExprs) {
     if (auto *declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "doc_hidden") {
@@ -4596,6 +4757,8 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
         continue;
       }
     }
+    if (succeeded(structDecorators.processFieldDecorator(decorator, fieldOp)))
+      continue;
     shared.emitError(decorator->getLoc(),
                      "decorators not supported on this statement")
         << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());

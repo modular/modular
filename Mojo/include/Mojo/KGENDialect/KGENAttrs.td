@@ -1362,12 +1362,20 @@ def KGEN_StructAnnotationAttr : KGEN_ExprAttr<"StructAnnotation",
     `fieldIndex` selects the struct's own annotations, otherwise it selects
     the annotations on the field at that index.
 
-    The attribute's own type is derived, as the `index`th element of
-    `#kgen.struct_annotation_types` for the same struct and field, so it does
-    not appear in the syntax. Only `annotationListType` has to be spelled: the
-    element trait it carries names Mojo traits, which KGEN cannot look up
+    The attribute's own type is the `index`th element of
+    `#kgen.struct_annotation_types` for the same struct and field. It is
+    computed from the other operands rather than spelled, so it does not
+    appear in the syntax: only `annotationListType` has to be written, because
+    the element trait it carries names Mojo traits, which KGEN cannot look up
     itself. Writing it this way lets the whole reader be expressed as an
     `__mlir_attr` in the standard library, with no dedicated parser node.
+
+    The type is *stored* rather than recomputed on demand, so that rebinding
+    this attribute reduces the type expression through the same evaluator pass
+    as every other type. Deriving it in `getType()` instead rebuilt it from
+    unreduced operands on every call, which left it a fold behind the
+    generator type computed from the same bindings -- a disagreement
+    `BindParamsAttr::get` treats as malformed IR.
 
     Example:
 
@@ -1380,17 +1388,31 @@ def KGEN_StructAnnotationAttr : KGEN_ExprAttr<"StructAnnotation",
     "TypedAttr":$typeValue,
     "TypedAttr":$fieldIndex,
     "TypedAttr":$index,
-    "ParamListType":$annotationListType
+    "ParamListType":$annotationListType,
+    AttributeSelfTypeParameter<"", "Type">:$type
   );
 
-  let assemblyFormat = [{
-    `<` custom<TypeParamValue>($typeValue) `,`
-    custom<ColonTypeParamValue>($fieldIndex) `,`
-    custom<ColonTypeParamValue>($index) `,` $annotationListType `>`
-  }];
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
+        "TypedAttr":$fieldIndex, "TypedAttr":$index,
+        "ParamListType":$annotationListType), [{
+      return $_get(typeValue.getContext(), typeValue, fieldIndex, index,
+                   annotationListType,
+                   deriveType(typeValue, fieldIndex, index,
+                              annotationListType));
+    }]>
+  ];
+
+  let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
-    Type getType() const;
+    /// Compute the type an annotation read has, given its operands: the
+    /// `index`th element of the struct's annotation type list.
+    ///
+    /// Defined out-of-line in `KGENAttrs.cpp` because it builds a
+    /// `ParamType`, which is generated in a separate header.
+    static Type deriveType(TypedAttr typeValue, TypedAttr fieldIndex,
+                           TypedAttr index, ParamListType annotationListType);
   }];
 }
 

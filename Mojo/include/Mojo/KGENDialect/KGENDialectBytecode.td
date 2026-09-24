@@ -520,7 +520,8 @@ def StructAnnotationAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
   TypedAttr:$fieldIndex,
   TypedAttr:$index,
-  ConcreteType<"ParamListType">:$annotationListType
+  ConcreteType<"ParamListType">:$annotationListType,
+  Type:$type
 )>;
 
 def StructFieldIndexByNameAttr : DialectAttribute<(attr

@@ -698,9 +698,10 @@ kgen.generator @get_target_plugin_folds() {
 }
 
 // `@__annotation` values are attached to a struct generator and read back by
-// index. `struct_annotation`'s own type is derived -- the `index`th element of
-// `struct_annotation_types` for the same struct and field -- so it is absent
-// from the syntax and reappears on the way out.
+// index. `struct_annotation`'s own type is the `index`th element of
+// `struct_annotation_types` for the same struct and field. It is computed from
+// the other operands rather than spelled, so it is absent from the syntax and
+// reappears on the way out.
 // CHECK: kgen.struct.generator @Annotated
 // CHECK-SAME: annotationTypes = #kgen<exprs[#kgen.type<index> : !kgen.type]>
 // CHECK-SAME: annotations = #kgen<exprs[7 : index]>
