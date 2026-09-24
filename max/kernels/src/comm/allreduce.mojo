@@ -1095,12 +1095,12 @@ def _allreduce_lamport_kernel[
        `get_accum_type[dtype]`, apply `output_lambda`, and write the result;
     6. fused into the same loop, clear this pack's remote slots in the generation
        reused two calls from now (`(flag+2)%3`) over the extent the previous
-       writer wrote (`prev_num_elements`), priming it for reuse (a short tail
-       loop covers any leftover when the previous call was larger);
+       writer wrote (`prev_num_packs`, 16-byte packs), priming it for reuse (a
+       short tail loop covers any leftover when the previous call was larger);
     7. advance this rank's generation counter exactly once (grid-barrier
-       epilogue), recording this call's size for the next call's clear.
+       epilogue), recording this call's pack count for the next call's clear.
 
-    The generation counter (`flag`) and clear extent (`prev_num_elements`) are
+    The generation counter (`flag`) and clear extent (`prev_num_packs`) are
     read from and advanced in this rank's device-resident `Signal.lamport_state`
 
     Parameters:
@@ -1163,11 +1163,12 @@ def _allreduce_lamport_kernel[
     with PDL():
         var state = rank_sigs[_my_rank][].lamport_state_ptr()
         var flag = Int(state.load[width=1, volatile=True](Lamport.STATE_FLAG))
-        var clear_size = Int(
-            state.load[width=1, volatile=True](Lamport.STATE_PREV_ELEMS)
+        # Packs to reset in the generation cleared this call: the previous
+        # call's written extent in 16-byte packs, independent of either call's
+        # dtype.
+        var clear_packs = Int(
+            state.load[width=1, volatile=True](Lamport.STATE_PREV_PACKS)
         )
-        # Packs to reset in the generation cleared this call
-        var clear_packs = clear_size // atomic_width
 
         # Generation geometry. The per-generation stride is FIXED at the reserved
         # capacity (`Lamport.MAX_PACKS` packs per rank slot), NOT this call's
@@ -1277,7 +1278,7 @@ def _allreduce_lamport_kernel[
             if Int(arrived) == Int(grid_dim.x) - 1:
                 state.store[volatile=True](Lamport.STATE_FLAG, UInt32(flag + 1))
                 state.store[volatile=True](
-                    Lamport.STATE_PREV_ELEMS, UInt32(_num_elements)
+                    Lamport.STATE_PREV_PACKS, UInt32(num_packs)
                 )
                 state.store[volatile=True](Lamport.STATE_ARRIVAL, UInt32(0))
 

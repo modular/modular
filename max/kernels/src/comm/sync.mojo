@@ -216,12 +216,13 @@ struct Signal:
 
     var lamport_state: StaticTuple[Scalar[Self.flag_t], 4]
     """Device-resident state for the in-kernel Lamport generation advance:
-    `[flag, prev_num_elements, arrival, reserved]`.
+    `[flag, prev_num_packs, arrival, reserved]`.
 
     - `flag`: monotonically-increasing generation counter (read at kernel entry,
       advanced once per call in the grid-barrier epilogue).
-    - `prev_num_elements`: previous call's element count = this call's
-      `clear_size`.
+    - `prev_num_packs`: previous call's written extent in 16-byte packs = this
+      call's clear extent (dtype-independent, so mixed-dtype call sequences on
+      one signal buffer clear exactly what was written).
     - `arrival`: per-call block-arrival counter for the exactly-once advance.
     - reserved: pads to 16 bytes so `lamport_region` stays 16-byte aligned (the
       128-bit atomic stores require it).

@@ -68,10 +68,13 @@ struct Lamport:
     """
 
     # Layout of the `Signal.lamport_state` block:
-    # [flag, prev_num_elements, arrival, reserved].
+    # [flag, prev_num_packs, arrival, reserved].
+    # `prev_num_packs` is in 16-byte packs, not elements: calls of different
+    # dtypes share one signal buffer, and each must clear exactly the region the
+    # previous call wrote regardless of either call's element width.
     comptime STATE_LEN = 4
     comptime STATE_FLAG = 0
-    comptime STATE_PREV_ELEMS = 1
+    comptime STATE_PREV_PACKS = 1
     comptime STATE_ARRIVAL = 2
 
 

@@ -118,10 +118,10 @@ def _allreduce_lamport_rmsnorm_kernel[
     # Generation geometry (read the device-resident counter once per call).
     var state = rank_sigs[my_rank][].lamport_state_ptr()
     var flag = Int(state.load[width=1, volatile=True](Lamport.STATE_FLAG))
-    var clear_size = Int(
-        state.load[width=1, volatile=True](Lamport.STATE_PREV_ELEMS)
+    # Previous call's written extent in dtype-independent 16-byte packs.
+    var clear_packs = Int(
+        state.load[width=1, volatile=True](Lamport.STATE_PREV_PACKS)
     )
-    var clear_packs = clear_size // atomic_width
     comptime gen_stride_packs = ngpus * Lamport.MAX_PACKS
     var data_gen_off = LamportGeneration.data_index(flag) * gen_stride_packs
     var clear_gen_off = LamportGeneration.clear_index(flag) * gen_stride_packs
@@ -236,8 +236,8 @@ def _allreduce_lamport_rmsnorm_kernel[
         var arrived = Atomic.fetch_add(state + Lamport.STATE_ARRIVAL, UInt32(1))
         if Int(arrived) == Int(grid_dim.x) - 1:
             (state + Lamport.STATE_FLAG).store[volatile=True](UInt32(flag + 1))
-            (state + Lamport.STATE_PREV_ELEMS).store[volatile=True](
-                UInt32(rows * cols)
+            (state + Lamport.STATE_PREV_PACKS).store[volatile=True](
+                UInt32(cur_packs)
             )
             (state + Lamport.STATE_ARRIVAL).store[volatile=True](UInt32(0))
 
