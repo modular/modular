@@ -22,10 +22,10 @@ than delegated.
 from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.architectures.llama3.weight_adapters import (
     convert_gguf_state_dict,
 )
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_dtype_cast
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
