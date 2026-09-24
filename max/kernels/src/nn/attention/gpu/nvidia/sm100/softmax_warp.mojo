@@ -3064,7 +3064,7 @@ def fa4_softmax[
         # emulation path (`exp2_emulation`) rather than hardware
         # `ex2.approx`.  Default 16 on sm_100; disabled on sm_103 where
         # the emulation does not pay off.
-        comptime default_emulate_count: Int = 0 if "sm_103" in _accelerator_arch() else 16
+        comptime default_emulate_count: Int = 0 if "sm_103" in _accelerator_arch() else 14
         # `default_emulate_count` is calibrated at vs_len=64; the
         # `// 64` normalizes it back to that reference so non-default
         # vs_len scales the count proportionally.  Override at compile
