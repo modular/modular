@@ -381,6 +381,50 @@ def num_matrix_view_rows_decode[
 # nn.attention.gpu.nvidia.sm100.attention_utils (centralized shared memory type aliases).
 
 
+# With fp8 P, P = exp2(s - m) is converted to e4m3 before the P@V MMA.
+# e4m3 rounds values below 2^-10 to zero while the fp32 row sum still
+# includes them, so the output is too small. P is scaled by
+# 2^fp8_p_bias before the conversion. The lazy rescale lets P reach
+# 2^-threshold, so fp8 caps the threshold at -2 and uses a scale of
+# 2^(8 + threshold): P stays at or below 2^8, under the e4m3 maximum of
+# 448, and values down to 2^-16 of the row max are kept. The row sum
+# carries the same factor, which cancels in O / l; the LSE and the
+# attention-sink term subtract it.
+comptime _FP8_P_MAX_RESCALE_THRESHOLD: Float32 = -2.0
+
+
+def fp8_p_rescale_threshold[fp8_p: Bool](threshold: Float32) -> Float32:
+    """Returns the lazy-rescale threshold the softmax uses.
+
+    Parameters:
+        fp8_p: Whether P is converted to fp8 before the P@V MMA.
+
+    Args:
+        threshold: The configured threshold, in the log2 domain.
+
+    Returns:
+        The threshold, capped at -2 when `fp8_p` is True.
+    """
+    return max(threshold, _FP8_P_MAX_RESCALE_THRESHOLD) if fp8_p else threshold
+
+
+def fp8_p_bias[fp8_p: Bool](threshold: Float32) -> Float32:
+    """Returns the log2 of the scale applied to P before its fp8 conversion.
+
+    Parameters:
+        fp8_p: Whether P is converted to fp8 before the P@V MMA.
+
+    Args:
+        threshold: The configured lazy-rescale threshold, in the log2 domain.
+
+    Returns:
+        `8 + fp8_p_rescale_threshold(threshold)` when `fp8_p` is True, else 0.
+    """
+    return (
+        8 + fp8_p_rescale_threshold[fp8_p](threshold)
+    ) if fp8_p else Float32(0)
+
+
 # ------------------------------------------------------------------------------
 # MLA decoding configuration for SM100
 # ------------------------------------------------------------------------------
@@ -3809,6 +3853,12 @@ struct MLA_SM100_Decode_Common[
         comptime MaskName: String = Self.MaskType.name()
         comptime MaskTypeName: String = Self.MaskType.get_type_name()
         comptime assert Self.AccumType.is_floating_point()
+        # With per-token KV scales, P is multiplied by the KV scale before the
+        # fp8 conversion, so its range is not bounded by 1 and it is not scaled.
+        comptime scale_fp8_p = native_fp8 and not has_per_token_scales
+        comptime p_bias = fp8_p_bias[scale_fp8_p](
+            Self.config.skip_correction_threshold
+        ).cast[Self.AccumType]()
 
         comptime NoMask: Bool = (MaskName == "NullMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")
@@ -4085,9 +4135,9 @@ struct MLA_SM100_Decode_Common[
                 )
             current_max *= log2e_f32
 
-            comptime rescale_threshold: Float32 = (
-                Self.config.skip_correction_threshold
-            )
+            comptime rescale_threshold: Float32 = fp8_p_rescale_threshold[
+                scale_fp8_p
+            ](Self.config.skip_correction_threshold)
             # Double-buffered write/read: even iterations use buffer 0,
             # odd iterations use buffer 1. Branchless selection via
             # (tiles_done & 1) * WARPGROUP_SIZE — one AND + one MUL + one ADD,
@@ -4127,9 +4177,12 @@ struct MLA_SM100_Decode_Common[
             # (worst case `MASK_VALUE - MASK_VALUE = 0` for fully-masked rows,
             # giving `exp2(0) = 1` and `li = N`; the resulting partial_lse is
             # so negative that the combine kernel weights this split as 0).
+            var p_offset = -new_max
+            comptime if p_bias != 0:
+                p_offset = p_bias - new_max
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
-                float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
+                float2_register[i] = exp2(element.fma(log2e_f32, p_offset))
                 float2_current_sum += float2_register[i]
 
             # compute softmax using S_tmem_slot -> produce probabilities in regs
@@ -4223,11 +4276,13 @@ struct MLA_SM100_Decode_Common[
         li_Smem_Tensor[lane_id] = li
         named_barrier[Int32(WARPGROUP_SIZE)](2)
         li += li_Smem_Tensor[lane_id ^ 64][0]
+        # li is a sum of exp2(s - p_ref).
+        var p_ref = mi - p_bias
 
         # --------------------------------------------------------------------------
         # Split-K: Store partial LSE to lse_accum_split for combine kernel
         # --------------------------------------------------------------------------
-        # LSE (Log-Sum-Exp) in log2 format: lse = log2(li) + mi
+        # LSE (Log-Sum-Exp) in log2 format: lse = log2(li) + p_ref
         # This allows the combine kernel to merge partial results:
         #   global_lse = log2(sum(exp2(lse_i - max_lse))) + max_lse
         #   scale_i = exp2(lse_i - global_lse)
@@ -4263,7 +4318,7 @@ struct MLA_SM100_Decode_Common[
                         partial_lse = min_or_neg_inf[Self.AccumType]()
                     else:
                         partial_lse = (
-                            log2(max(li[0], Scalar[Self.AccumType](0))) + mi
+                            log2(max(li[0], Scalar[Self.AccumType](0))) + p_ref
                         )
                     var stride_batch = (
                         offset_position.max_seq_len * Self.config.num_q_heads
@@ -4285,7 +4340,7 @@ struct MLA_SM100_Decode_Common[
             else:
                 var head_idx = block_idx.x * Self.config.BM + row
                 if half_idx == 0 and head_idx < Self.config.num_q_heads:
-                    # Compute LSE in log2 format: log2(li) + mi
+                    # Compute LSE in log2 format: log2(li) + p_ref
                     # li is the running sum of exp2 values; mi is the running max
                     # in log2 scale. When all scores in this split are causally
                     # masked, the online softmax produces NaN via exp2(-inf+inf),
@@ -4294,7 +4349,7 @@ struct MLA_SM100_Decode_Common[
                     # the combine kernel (same as pdl_early_exit for empty splits).
                     # On NVIDIA GPUs, max(NaN, 0) = 0 per PTX semantics.
                     var partial_lse = (
-                        log2(max(li[0], Scalar[Self.AccumType](0))) + mi
+                        log2(max(li[0], Scalar[Self.AccumType](0))) + p_ref
                     )
 
                     # LSE offset calculation:
@@ -4361,15 +4416,15 @@ struct MLA_SM100_Decode_Common[
         # max(li, 0) guard and the combine kernel's weighting.
         #
         # Attn sink (no-split only): account for non-selected tokens by
-        # adding exp2(attn_sink_log2 - mi) to the denominator. For the
+        # adding exp2(attn_sink_log2 - p_ref) to the denominator. For the
         # split path, attn_sink is deferred to the combine kernel to
         # avoid double-counting across splits.
         var o_scale_li: Scalar[Self.AccumType]
         comptime if has_attn_sink and not Self.config.decoding_warp_split_k:
-            # No-split path with attn_sink: o_scale = 1 / (li + exp2(attn_sink_log2 - mi))
+            # No-split path with attn_sink: o_scale = 1 / (li + exp2(attn_sink_log2 - p_ref))
             # FlashMLA reference: kernel.cuh:346
             var denominator = li[0] + exp2(
-                attn_sink_log2.cast[Self.AccumType]() - mi
+                attn_sink_log2.cast[Self.AccumType]() - p_ref
             )
             o_scale_li = (
                 recip(SIMD[Self.AccumType, 1](denominator))[0] if li[0]

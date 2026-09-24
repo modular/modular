@@ -90,6 +90,8 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    fp8_p_bias,
+    fp8_p_rescale_threshold,
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
@@ -337,6 +339,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         comptime MaskName: String = Self.MaskType.name()
         comptime MaskTypeName: String = Self.MaskType.get_type_name()
         comptime assert Self.AccumType.is_floating_point()
+        comptime p_bias = fp8_p_bias[True](
+            Self.config.skip_correction_threshold
+        ).cast[Self.AccumType]()
         comptime assert (
             Self.BM == 32
         ), "Softmax_Layout_G requires BM=32 (1×4 datapath)."
@@ -499,7 +504,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # Per-row max: register-only reduce + 4-way SMEM consolidation.
             # Double-buffered to avoid the W-W race between N+1's write and
             # iteration N's read.
-            comptime rescale_threshold: Float32 = (
+            comptime rescale_threshold: Float32 = fp8_p_rescale_threshold[True](
                 Self.config.skip_correction_threshold
             )
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
@@ -533,12 +538,13 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 scale_for_old_max = 1.0
                 new_max = mi
 
-            # exp2(s - new_max) + per-thread sum over the col-quadrant.
+            # exp2(s + p_offset) + per-thread sum over the col-quadrant.
             var float2_register = s_row.vectorize[2]()
             var float2_current_sum: SIMD[Self.AccumType, 2] = 0.0
+            var p_offset = p_bias - new_max
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
-                float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
+                float2_register[i] = exp2(element.fma(log2e_f32, p_offset))
                 float2_current_sum += float2_register[i]
 
             # Correction-scale write to TMEM (skip on the first processed
@@ -605,6 +611,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # Split-K LSE write — all 4 warps hold identical (mi, li); pick
         # `warp_in_wg == 0` as the single writer.
         comptime if Self.config.decoding_warp_split_k:
+            # li is a sum of exp2(s - p_ref).
+            var p_ref = mi - p_bias
             comptime if Self.fold_q:
                 var q_local = row // Self.config.num_q_heads
                 var head_local = row % Self.config.num_q_heads
@@ -616,7 +624,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         partial_lse = min_or_neg_inf[Self.AccumType]()
                     else:
                         partial_lse = (
-                            log2(max(li, Scalar[Self.AccumType](0))) + mi
+                            log2(max(li, Scalar[Self.AccumType](0))) + p_ref
                         )
                     var stride_batch = (
                         offset_position.max_seq_len * Self.config.num_q_heads
@@ -639,7 +647,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 var head_idx = block_idx.x * Self.BM + row
                 if warp_in_wg == 0 and head_idx < Self.config.num_q_heads:
                     var partial_lse = (
-                        log2(max(li, Scalar[Self.AccumType](0))) + mi
+                        log2(max(li, Scalar[Self.AccumType](0))) + p_ref
                     )
                     var seq_idx = block_idx.y
                     var stride_batch = (
