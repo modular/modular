@@ -1845,6 +1845,14 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
       newFunc->setAttr(kFnAttrsAttrName, generatorOp.getFnAttrs());
     if (!generatorOp.getFnArgAttrs().empty())
       newFunc->setAttr(kFnArgAttrsAttrName, generatorOp.getFnArgAttrs());
+    // The instance is created with an empty discardable dictionary; forward
+    // the offload target-attribute dictionary so the target backend can read
+    // it off the compiled kernel function.
+    if (auto targetAttrs = generatorOp->getDiscardableAttr(
+            CompileOffloadOp::getTargetAttrsForwardedAttrName())) {
+      newFunc->setAttr(CompileOffloadOp::getTargetAttrsForwardedAttrName(),
+                       targetAttrs);
+    }
     instantiateBody = true;
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
@@ -2010,17 +2018,41 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
 
+  DictionaryAttr targetAttrs = op.getTargetAttrsAttr();
+
   targetOffloadInfos.modify([&](auto &info) {
-    std::string groupKey =
-        emissionOptionsStr.str() + emissionLinkOptionsStr.str();
-    OffloadInfo::Group &offloadInfo = info[target].groups[groupKey];
+    OffloadInfo::Group &offloadInfo =
+        info[target].groups[makeOffloadGroupKey(op)];
     offloadInfo.emissionOptions = emissionOptionsStr;
     offloadInfo.emissionLinkOptions = emissionLinkOptionsStr;
+    offloadInfo.targetAttrs = targetAttrs;
 
     // Slice out a pre-elaboration module for the new target to compile for.
     ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
     exportedSymbols.insert_or_assign(func.getSymNameAttr(),
                                      ExportKind::Exported);
+
+    if (targetAttrs) {
+      // Function symbols referenced only from `target_attrs` (e.g. window
+      // transform functions) have no SSA use in the slice, so a `NotExported`
+      // entry would be DCEd; export them.
+      //
+      // `insert_or_assign` upgrades a symbol the param replacers below reached
+      // first, and `Exported` is external linkage in the artifact, not just
+      // liveness. That is deliberate -- reachable only through an attribute,
+      // the symbol has nothing else to keep it alive -- but it does mean the
+      // same callee linked differently depending on how it is referenced.
+      mlir::AttrTypeWalker attrWalker;
+      attrWalker.addWalk([&](SymbolConstantAttr ref) {
+        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
+                                         ExportKind::Exported);
+      });
+      attrWalker.addWalk([&](FuncSymbolAttr ref) {
+        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
+                                         ExportKind::Exported);
+      });
+      attrWalker.walk(targetAttrs);
+    }
 
     // Make sure to slice out anything referenced in the input parameters. When
     // generator references are instantiated in the standalone module, they are
@@ -2630,12 +2662,7 @@ static WalkResult rewriteCompileOffloadOp(
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
   TargetInfoAttr target =
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
-  StringRef emissionOptionsStr =
-      cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
-  StringRef emissionLinkOptionsStr =
-      cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
-  std::string groupKey =
-      emissionOptionsStr.str() + emissionLinkOptionsStr.str();
+  std::string groupKey = makeOffloadGroupKey(op);
 
   auto targetIter = compiledOffload.find(target);
   if (targetIter == compiledOffload.end()) {

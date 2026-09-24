@@ -1638,6 +1638,14 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
      where multiple functions of the same target are bundled together for
      compilation.
 
+     `target_attrs` is an optional dictionary of backend-interpreted launch
+     metadata, keyed by target-prefixed names. Core KGEN treats it as opaque: the elaborator concretizes the values, folds
+     the dictionary into the offload bundling key, exports any function
+     symbols it references, and forwards it verbatim onto the compiled kernel
+     function as the `kgen.target_attrs` discardable attribute. Only the
+     `TargetBackend` that owns the target's offload lowering assigns meaning
+     to individual keys.
+
      Example:
 
      ```mlir
@@ -1650,7 +1658,8 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
                         AttrOfType<KGEN_StringType>:$emission_option,
                         AttrOfType<KGEN_StringType>:$emission_link_option,
                         AttrOfType<AnyType>:$func,
-                        OptionalAttr<AttrOfType<Index>>:$kernelID);
+                        OptionalAttr<AttrOfType<Index>>:$kernelID,
+                        OptionalAttr<DictionaryAttr>:$target_attrs);
 
    let results = (outs AnyType:$result);
 
@@ -1662,8 +1671,13 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
                                  $func) attr-dict `>` `:` type($result)
    }];
 
-
-
+   let extraClassDeclaration = [{
+    /// Name of the discardable attribute carrying the concretized
+    /// `target_attrs` dictionary on the compiled kernel function.
+    static constexpr llvm::StringLiteral getTargetAttrsForwardedAttrName() {
+      return "kgen.target_attrs";
+    }
+   }];
 }
 
 //===----------------------------------------------------------------------===//

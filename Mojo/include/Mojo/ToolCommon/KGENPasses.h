@@ -145,11 +145,16 @@ struct OffloadInfo {
     /// during kernel compilation. Corresponds to `emission_link_option` on the
     /// `kgen.compile_offload` op.
     std::string emissionLinkOptions;
+    /// The `target_attrs` dictionary every offload in this group carries; null
+    /// when they carry none. Group-scoped rather than per-kernel because the
+    /// group key includes it, so a group cannot mix dictionaries. Stamped onto
+    /// each sliced clone in `compileOffloads`.
+    mlir::DictionaryAttr targetAttrs;
   };
 
-  /// Groups are keyed by the concatenation of `emission_option` and
-  /// `emission_link_option` so that kernels with different link options are
-  /// compiled separately.
+  /// Groups are keyed by `makeOffloadGroupKey`, so kernels differing in any
+  /// input the sliced module bakes in -- emission options, or the
+  /// `target_attrs` launch metadata -- are compiled separately.
   using EmissionOptionsGroup = llvm::MapVector<std::string, Group>;
   EmissionOptionsGroup groups;
 };

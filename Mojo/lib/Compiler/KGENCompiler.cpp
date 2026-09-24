@@ -132,6 +132,14 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   if (linkageNameAttr)
     wrapper.setLinkageNameAttr(linkageNameAttr);
 
+  // The wrapper becomes the kernel entry the backend compiles; carry the
+  // offload target-attribute dictionary along so it stays readable there.
+  if (auto targetAttrs = sliced->getDiscardableAttr(
+          CompileOffloadOp::getTargetAttrsForwardedAttrName())) {
+    wrapper->setAttr(CompileOffloadOp::getTargetAttrsForwardedAttrName(),
+                     targetAttrs);
+  }
+
   SmallVector<Attribute> attrsArray =
       llvm::to_vector(sliced.getFnAttrsAttr().getValue());
   if (kernelId) {
@@ -690,6 +698,23 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         // If there are input parameters, we have to go generate a stub to root
         // instantiation of the generator. Go find the cloned generator.
         auto func = cast<GeneratorOp>(op);
+
+        // Stamp the group's launch metadata on the clone, never on `func`: the
+        // source generator is shared by every group that offloads it, and all
+        // bundling completes before any slicing, so writing it there would let
+        // the last group win for all of them.
+        if (offloadInfo.targetAttrs) {
+          StringRef attrName =
+              CompileOffloadOp::getTargetAttrsForwardedAttrName();
+          Operation *sliced = mapping.lookup(func);
+          sliced->setAttr(attrName, offloadInfo.targetAttrs);
+          KGEN_DEBUG(0, {
+            llvm::dbgs() << "Offload kernel " << func.getSymName()
+                         << " target_attrs: "
+                         << sliced->getDiscardableAttr(attrName) << "\n";
+          });
+        }
+
         StringAttr newCalleeName = StringAttr::get(
             func->getContext(),
             FlatSymbolRefAttr::get(func).getAttr().str() + "_callee");
