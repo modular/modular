@@ -135,6 +135,9 @@ comptime EP_DATA_READY_FLAG = 1 << 10
 # Used to track per-rank expert completion.
 comptime MAX_GPUS_PER_NODE = 8
 
+# Largest `sm_count` among the GPUs these kernels target.
+comptime MAX_SMS_PER_DEVICE = 304
+
 
 @inline(.always)
 def _BLOCK_SCOPE() -> StaticString:
@@ -2391,7 +2394,7 @@ struct EPLocalSyncCounters[n_experts: Int](
     Memory Layout (all sizes in Int32 elements):
     - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
     - dispatch_wait/combine_async: 6 * n_experts + 7
-    - combine_wait: 2 * n_experts
+    - combine_wait: MAX_SMS_PER_DEVICE
     """
 
     var ptr: UnsafePointer[Int32, MutUntrackedOrigin]
@@ -2475,7 +2478,7 @@ struct EPLocalSyncCounters[n_experts: Int](
     @staticmethod
     def combine_wait_size() -> Int:
         """Returns the size in Int32 elements needed by combine_wait kernel."""
-        return 2 * Self.n_experts
+        return MAX_SMS_PER_DEVICE
 
     @inline(.always)
     @staticmethod
@@ -4591,6 +4594,13 @@ struct EPCombineKernel[
                 the data-ready flag (``grid_dim.x - n_wait_sms`` in the
                 standalone kernels).
         """
+        comptime assert (
+            Self.n_sms
+            <= EPLocalSyncCounters[Self.n_experts].combine_wait_size()
+        ), (
+            "combine_wait indexes its data-ready flags by block, so the"
+            " counter region must cover every block of the launched grid"
+        )
         comptime DATA_READY_FLAG = 1024
 
         if thread_idx.x < Self.n_experts:

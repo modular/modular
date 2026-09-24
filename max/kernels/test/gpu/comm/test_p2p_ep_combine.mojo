@@ -73,6 +73,7 @@ def test_combine[
     n_ranks: Int,
     n_slots: Int,
     n_tokens_per_rank: Int,
+    skewed: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime input_type = DType.bfloat16
     comptime n_local_experts = n_experts // n_ranks
@@ -195,6 +196,28 @@ def test_combine[
         legalize_topk_ids[n_experts, top_k](
             host_topk_ids_list[dev_idx], n_slots * n_tokens_per_rank
         )
+
+        comptime if skewed:
+            # Pile the tokens onto three local experts per rank in a 5:2:1
+            # split, leaving the rest empty. `combine_async`'s balanced send
+            # spreads one (expert, rank) pair's tokens over many warps and
+            # lets whichever warp lands the last one signal the pair, so it
+            # needs a pair hot enough to be shared and pairs that are empty.
+            # Uniform routing gives every pair about the same handful of
+            # tokens and reaches neither. A token's top_k walks the ranks, and
+            # each further lap shifts to the next triple of local experts, so
+            # its experts stay distinct however top_k compares to n_ranks.
+            comptime n_local = n_experts // n_ranks
+            comptime n_laps = (top_k + n_ranks - 1) // n_ranks
+            comptime assert 3 * n_laps <= n_local
+            for t in range(n_slots * n_tokens_per_rank):
+                var phase = t % 8
+                var hot = 0 if phase < 5 else (1 if phase < 7 else 2)
+                for k in range(top_k):
+                    var r = (t + k) % n_ranks
+                    host_topk_ids_list[dev_idx][t * top_k + k] = Int32(
+                        r * n_local + hot + 3 * (k // n_ranks)
+                    )
 
         randn(
             host_input_tokens_list[dev_idx],
@@ -661,4 +684,28 @@ def main() raises:
                 n_ranks=num_gpus,
                 n_slots=1,
                 n_tokens_per_rank=128,
+            ](ctx)
+
+            # Same shape, routing piled onto three local experts per rank.
+            test_combine[
+                hidden_size=7168,
+                top_k=8,
+                n_experts=num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=128,
+                skewed=True,
+            ](ctx)
+
+            # A decode-sized batch: few tokens, most (expert, rank) pairs empty.
+            # This is below the threshold where `combine_async` spreads tokens
+            # across all warps, so it covers the per-pair assignment the
+            # prefill-sized cases above no longer reach.
+            test_combine[
+                hidden_size=7168,
+                top_k=8,
+                n_experts=num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=8,
             ](ctx)

@@ -45,6 +45,8 @@ from shmem.ep_comm import (
 )
 from std.testing import assert_almost_equal, assert_equal
 
+from linalg.matmul.gpu.amd import Shuffler
+from std.math import align_up
 from linalg.fp4_utils import (
     E2M1_TO_FLOAT32,
     MXFP4_SF_VECTOR_SIZE,
@@ -661,8 +663,11 @@ struct NVFP4DispatchTest[
         )
 
 
-struct MXFP4DispatchTest[
-    fp4_dtype: DType,
+struct MXDispatchTest[
+    # `uint8` selects MXFP4 (two E2M1 nibbles per byte); an FP8 dtype
+    # (e.g. `float8_e4m3fn`) selects MXFP8 (one element per byte). Both use
+    # one E8M0 scale per MXFP4_SF_VECTOR_SIZE elements.
+    quant_dtype: DType,
     scales_dtype: DType,
     _hidden_size: Int,
     _top_k: Int,
@@ -670,6 +675,10 @@ struct MXFP4DispatchTest[
     _n_ranks: Int,
     _n_slots: Int,
     _n_tokens_per_rank: Int,
+    # KS224 up-proj fold: `dispatch_wait` writes each token's E8M0 scale
+    # straight into the grouped matmul's per-expert `scale_4d` slot instead
+    # of a row-major scale row. AMD CDNA4 only.
+    _fuse_a_scale_preshuffle: Bool,
 ](DispatchTestT):
     comptime hidden_size = Self._hidden_size
     comptime top_k = Self._top_k
@@ -677,84 +686,96 @@ struct MXFP4DispatchTest[
     comptime n_ranks = Self._n_ranks
     comptime n_slots = Self._n_slots
     comptime n_tokens_per_rank = Self._n_tokens_per_rank
+    comptime fuse_a_scale_preshuffle = Self._fuse_a_scale_preshuffle
     comptime max_recv_num_tokens = min(
         Self.n_experts, Self.n_ranks * Self.top_k
     ) * Self.n_tokens_per_rank
     comptime n_local_experts = Self.n_experts // Self.n_ranks
+    comptime k_scales = Self.hidden_size // MXFP4_SF_VECTOR_SIZE
 
     comptime scales_padded_size = Self.max_recv_num_tokens + Self.n_local_experts * SF_MN_GROUP_SIZE
 
-    comptime uint8_last_dim = Self.hidden_size // 2
+    # Per-expert `scale_4d` row capacity, mirroring the host-side
+    # `ep_mxfp4_down_slot_stride`: an expert can receive every token of every
+    # rank, and the slot stride rounds that up to the scale atom's MN block.
+    comptime max_padded_m = align_up(
+        Self.n_tokens_per_rank * Self.n_ranks, 32
+    ) if Self.fuse_a_scale_preshuffle else 0
+    comptime scales_rows = (
+        Self.n_local_experts * Self.max_padded_m
+    ) if Self.fuse_a_scale_preshuffle else Self.max_recv_num_tokens
+    comptime scales_per_slot = (
+        Self.n_local_experts * Self.max_padded_m * Self.k_scales
+    ) if Self.fuse_a_scale_preshuffle else (
+        Self.scales_padded_size * Self.k_scales
+    )
+
+    comptime is_fp4 = Self.quant_dtype == DType.uint8
+    comptime quant_last_dim = (
+        Self.hidden_size // 2 if Self.is_fp4 else Self.hidden_size
+    )
 
     comptime output_layout = row_major(
-        (Self.max_recv_num_tokens, Idx[Self.uint8_last_dim])
+        (Self.max_recv_num_tokens, Idx[Self.quant_last_dim])
     )
     comptime output_scales_layout = row_major(
-        (
-            Idx[Self.max_recv_num_tokens],
-            Self.hidden_size // MXFP4_SF_VECTOR_SIZE,
-        )
+        (Idx[Self.scales_rows], Self.k_scales)
     )
     comptime TokenFormatType = MXTokenFormat[
-        quant_dtype=Self.fp4_dtype,
+        quant_dtype=Self.quant_dtype,
         scales_dtype=Self.scales_dtype,
         output_layout=type_of(Self.output_layout),
         scales_layout=type_of(Self.output_scales_layout),
         Self.hidden_size,
         Self.top_k,
+        fuse_a_scale_preshuffle=Self.fuse_a_scale_preshuffle,
     ]
 
-    var device_output_bufs_list: List[DeviceBuffer[Self.fp4_dtype]]
+    var device_output_bufs_list: List[DeviceBuffer[Self.quant_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
     var host_output_bufs_list: List[
-        MutPointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
+        MutPointer[Scalar[Self.quant_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_bufs_list: List[
         MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
-        self.device_output_bufs_list = List[DeviceBuffer[Self.fp4_dtype]](
+        self.device_output_bufs_list = List[DeviceBuffer[Self.quant_dtype]](
             capacity=Self.n_ranks
         )
         self.device_output_scales_bufs_list = List[
             DeviceBuffer[Self.scales_dtype]
         ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
-            MutPointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
+            MutPointer[Scalar[Self.quant_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
             MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
-                list_of_ctx[i].enqueue_create_buffer[Self.fp4_dtype](
+                list_of_ctx[i].enqueue_create_buffer[Self.quant_dtype](
                     Self.n_slots
                     * Self.max_recv_num_tokens
-                    * Self.uint8_last_dim
+                    * Self.quant_last_dim
                 )
             )
             self.device_output_scales_bufs_list.append(
                 list_of_ctx[i].enqueue_create_buffer[Self.scales_dtype](
-                    Self.n_slots
-                    * Self.scales_padded_size
-                    * Self.hidden_size
-                    // MXFP4_SF_VECTOR_SIZE
+                    Self.n_slots * Self.scales_per_slot
                 )
             )
             self.host_output_bufs_list.append(
-                alloc[Scalar[Self.fp4_dtype]](
+                alloc[Scalar[Self.quant_dtype]](
                     Self.n_slots
                     * Self.max_recv_num_tokens
-                    * Self.uint8_last_dim
+                    * Self.quant_last_dim
                 )
             )
             self.host_output_scales_bufs_list.append(
                 alloc[Scalar[Self.scales_dtype]](
-                    Self.n_slots
-                    * Self.scales_padded_size
-                    * Self.hidden_size
-                    // MXFP4_SF_VECTOR_SIZE
+                    Self.n_slots * Self.scales_per_slot
                 )
             )
 
@@ -773,19 +794,18 @@ struct MXFP4DispatchTest[
     ):
         var output_tensor = TileTensor(
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
-            + slot_idx * Self.max_recv_num_tokens * Self.uint8_last_dim,
+            + slot_idx * Self.max_recv_num_tokens * Self.quant_last_dim,
             layout=Self.output_layout,
         )
         var output_scales_tensor = TileTensor(
             ptr=self.device_output_scales_bufs_list[dev_idx].unsafe_ptr()
-            + slot_idx
-            * Self.scales_padded_size
-            * Self.hidden_size
-            // MXFP4_SF_VECTOR_SIZE,
+            + slot_idx * Self.scales_per_slot,
             layout=Self.output_scales_layout,
         )
 
-        result = Self.TokenFormatType(output_tensor, output_scales_tensor)
+        result = Self.TokenFormatType(
+            output_tensor, output_scales_tensor, Self.max_padded_m
+        )
 
     @inline(.always)
     def save_outputs_to_host(
@@ -813,37 +833,62 @@ struct MXFP4DispatchTest[
         expected_val: BFloat16,
     ) raises -> None:
         var output_offset = (
-            slot_idx * Self.max_recv_num_tokens * Self.uint8_last_dim
-            + token_idx * Self.uint8_last_dim
-            + (hid_dim_idx // 2)
+            slot_idx * Self.max_recv_num_tokens * Self.quant_last_dim
+            + token_idx * Self.quant_last_dim
+            + (hid_dim_idx // 2 if Self.is_fp4 else hid_dim_idx)
         )
 
-        var uint8_val = self.host_output_bufs_list[dev_idx][output_offset]
+        var quant_val = self.host_output_bufs_list[dev_idx][output_offset]
 
-        var scale_offset = (
-            slot_idx
-            * Self.max_recv_num_tokens
-            * Self.hidden_size
-            // MXFP4_SF_VECTOR_SIZE
-            + token_idx * (Self.hidden_size // MXFP4_SF_VECTOR_SIZE)
-            + (hid_dim_idx // MXFP4_SF_VECTOR_SIZE)
-        )
+        # The per-slot stride must be `scales_per_slot`: that is the stride
+        # `get_token_handler` offsets the device tensor with (and the
+        # allocation stride). Using the unpadded token count here reads the
+        # wrong slot region for every slot but the first.
+        var scale_offset: Int
+        comptime if Self.fuse_a_scale_preshuffle:
+            # Decode the `scale_4d` slot layout the fold wrote: this token's
+            # scale is addressed by (expert, row within expert, k) rather
+            # than by the flat receive-buffer row. Reproducing the offset
+            # here is what pins the producer to the layout the grouped
+            # matmul reads.
+            scale_offset = slot_idx * Self.scales_per_slot + Shuffler[
+                1
+            ].scale_4d_slot_byte_off[K_SCALES=Self.k_scales](
+                expert_idx,
+                expert_token_idx,
+                hid_dim_idx // MXFP4_SF_VECTOR_SIZE,
+                Self.max_padded_m,
+            )
+        else:
+            scale_offset = (
+                slot_idx * Self.scales_per_slot
+                + token_idx * Self.k_scales
+                + (hid_dim_idx // MXFP4_SF_VECTOR_SIZE)
+            )
         var token_scale = self.host_output_scales_bufs_list[dev_idx][
             scale_offset
         ]
 
-        var token_val = (
-            E2M1_TO_FLOAT32[
-                Int(
-                    (
-                        uint8_val
-                        >> Scalar[Self.fp4_dtype](((hid_dim_idx % 2) * 4))
+        var token_val: Float32
+        comptime if Self.is_fp4:
+            token_val = (
+                E2M1_TO_FLOAT32[
+                    Int(
+                        (
+                            quant_val
+                            >> Scalar[Self.quant_dtype](((hid_dim_idx % 2) * 4))
+                        )
+                        & 0x0F
                     )
-                    & 0x0F
-                )
-            ]
-            * token_scale.cast[.float32]()
-        )
+                ]
+                * token_scale.cast[.float32]()
+            )
+        else:
+            # MXFP8: one element per byte; dequantize is a plain cast times
+            # the block's E8M0 scale.
+            token_val = (
+                quant_val.cast[.float32]() * token_scale.cast[.float32]()
+            )
 
         assert_almost_equal(
             expected_val,
@@ -866,6 +911,7 @@ struct MXFP4DispatchTest[
 def test_dispatch_common[
     DispatchTestType: DispatchTestT,
     bench_e2e: Bool = False,
+    skewed: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime input_type = DType.bfloat16
     comptime hidden_size = DispatchTestType.hidden_size
@@ -964,6 +1010,26 @@ def test_dispatch_common[
         legalize_topk_ids[n_experts, top_k](
             host_topk_ids_list[dev_idx], n_slots * n_tokens_per_rank
         )
+
+        comptime if skewed:
+            # Pile the tokens onto three local experts per rank in a 5:2:1
+            # split, leaving the rest empty. Uniform routing gives every
+            # expert about the same count, so it never exercises the
+            # proportional SM schedule, its empty-expert ranges, or the
+            # concentration it exists to handle. A token's top_k walks the
+            # ranks, and each further lap shifts to the next triple of local
+            # experts, so its experts stay distinct however top_k compares to
+            # n_ranks.
+            comptime n_laps = ceildiv(top_k, n_ranks)
+            comptime assert 3 * n_laps <= n_local_experts
+            for t in range(n_slots * n_tokens_per_rank):
+                var phase = t % 8
+                var hot = 0 if phase < 5 else (1 if phase < 7 else 2)
+                for k in range(top_k):
+                    var r = (t + k) % n_ranks
+                    host_topk_ids_list[dev_idx][t * top_k + k] = Int32(
+                        r * n_local_experts + hot + 3 * (k // n_ranks)
+                    )
 
         randn(
             host_input_tokens_list[dev_idx],
@@ -1412,12 +1478,15 @@ def test_dispatch_bf16[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
+    skewed: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = BF16DispatchTest[
         hidden_size, top_k, n_experts, n_ranks, n_slots, n_tokens_per_rank
     ]
     test_dispatch_common[
-        DispatchTestType=dispatch_test_type, bench_e2e=bench_e2e
+        DispatchTestType=dispatch_test_type,
+        bench_e2e=bench_e2e,
+        skewed=skewed,
     ](list_of_ctx)
 
 
@@ -1429,6 +1498,7 @@ def test_dispatch_blockwise_fp8[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
+    skewed: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = BlockwiseFP8DispatchTest[
         fp8_dtype=DType.float8_e4m3fn,
@@ -1441,7 +1511,9 @@ def test_dispatch_blockwise_fp8[
         _n_tokens_per_rank=n_tokens_per_rank,
     ]
     test_dispatch_common[
-        DispatchTestType=dispatch_test_type, bench_e2e=bench_e2e
+        DispatchTestType=dispatch_test_type,
+        bench_e2e=bench_e2e,
+        skewed=skewed,
     ](list_of_ctx)
 
 
@@ -1453,6 +1525,7 @@ def test_dispatch_block_scaled_nv[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
+    skewed: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
         fp4_dtype=DType.uint8,
@@ -1465,7 +1538,9 @@ def test_dispatch_block_scaled_nv[
         _n_tokens_per_rank=n_tokens_per_rank,
     ]
     test_dispatch_common[
-        DispatchTestType=dispatch_test_type, bench_e2e=bench_e2e
+        DispatchTestType=dispatch_test_type,
+        bench_e2e=bench_e2e,
+        skewed=skewed,
     ](list_of_ctx)
 
 
@@ -1477,9 +1552,10 @@ def test_dispatch_mxfp4[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
+    skewed: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
-    comptime dispatch_test_type = MXFP4DispatchTest[
-        fp4_dtype=DType.uint8,
+    comptime dispatch_test_type = MXDispatchTest[
+        quant_dtype=DType.uint8,
         scales_dtype=DType.float8_e8m0fnu,
         _hidden_size=hidden_size,
         _top_k=top_k,
@@ -1487,9 +1563,47 @@ def test_dispatch_mxfp4[
         _n_ranks=n_ranks,
         _n_slots=n_slots,
         _n_tokens_per_rank=n_tokens_per_rank,
+        # The MX suites cover the fold only: it is what MiniMax-M3 runs
+        # on CDNA4, and these suites are already MI355X-gated.
+        _fuse_a_scale_preshuffle=True,
     ]
     test_dispatch_common[
-        DispatchTestType=dispatch_test_type, bench_e2e=bench_e2e
+        DispatchTestType=dispatch_test_type,
+        bench_e2e=bench_e2e,
+        skewed=skewed,
+    ](list_of_ctx)
+
+
+def test_dispatch_mxfp8[
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    n_slots: Int,
+    n_tokens_per_rank: Int,
+    bench_e2e: Bool = False,
+    skewed: Bool = False,
+](list_of_ctx: List[DeviceContext]) raises:
+    # OCP E4M3 (`float8_e4m3fn`) is the MXFP8 element encoding CDNA4's
+    # f8f6f4 MFMA consumes and the only FP8 flavor `MXFormat` names; the
+    # MI300-era `float8_e4m3fnuz` is not an MX wire format.
+    comptime dispatch_test_type = MXDispatchTest[
+        quant_dtype=DType.float8_e4m3fn,
+        scales_dtype=DType.float8_e8m0fnu,
+        _hidden_size=hidden_size,
+        _top_k=top_k,
+        _n_experts=n_experts,
+        _n_ranks=n_ranks,
+        _n_slots=n_slots,
+        _n_tokens_per_rank=n_tokens_per_rank,
+        # The MX suites cover the fold only: it is what MiniMax-M3 runs
+        # on CDNA4, and these suites are already MI355X-gated.
+        _fuse_a_scale_preshuffle=True,
+    ]
+    test_dispatch_common[
+        DispatchTestType=dispatch_test_type,
+        bench_e2e=bench_e2e,
+        skewed=skewed,
     ](list_of_ctx)
 
 
@@ -1563,6 +1677,49 @@ def main() raises:
                     n_slots=1,
                     n_tokens_per_rank=64,
                     bench_e2e=False,
+                ](ctx)
+
+                test_dispatch_mxfp8[
+                    hidden_size=7168,
+                    top_k=8,
+                    n_experts=num_gpus * n_local_experts,
+                    n_ranks=num_gpus,
+                    n_slots=1,
+                    n_tokens_per_rank=64,
+                    bench_e2e=False,
+                ](ctx)
+
+                # Production decode shape
+                test_dispatch_mxfp4[
+                    hidden_size=6144,
+                    top_k=4,
+                    n_experts=128,
+                    n_ranks=num_gpus,
+                    n_slots=2,
+                    n_tokens_per_rank=256,
+                    bench_e2e=False,
+                ](ctx)
+
+                test_dispatch_mxfp8[
+                    hidden_size=6144,
+                    top_k=4,
+                    n_experts=128,
+                    n_ranks=num_gpus,
+                    n_slots=2,
+                    n_tokens_per_rank=256,
+                    bench_e2e=False,
+                ](ctx)
+
+                # Same shape, routing piled onto three experts per rank.
+                test_dispatch_mxfp4[
+                    hidden_size=6144,
+                    top_k=4,
+                    n_experts=128,
+                    n_ranks=num_gpus,
+                    n_slots=2,
+                    n_tokens_per_rank=256,
+                    bench_e2e=False,
+                    skewed=True,
                 ](ctx)
 
         # More local experts than half the comm-SM count. `dispatch_wait`
