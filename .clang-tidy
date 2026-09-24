@@ -18,13 +18,6 @@ CheckOptions:
     value:           'json|mlir|clang|lsp|llvm|index|nb'
   - key:             readability-identifier-naming.LocalVariableCase
     value:           camelBack
-  # LLVM 23's clang-tidy started applying readability-identifier-naming to
-  # structured bindings, which flags idiomatic underscore names (ignore
-  # placeholders like `__`/`_1`, and shadow-avoiding suffixes like `id_`).
-  # Exempt any local containing an underscore to preserve the pre-LLVM-23
-  # behavior; camelBack is still enforced for all other locals.
-  - key:             readability-identifier-naming.LocalVariableIgnoredRegexp
-    value:           '.*_.*'
   - key:             modernize-use-using.IgnoreExternC
     value:           true
   - key:             bugprone-reserved-identifier.AllowedIdentifiers
