@@ -98,7 +98,7 @@ OPENBENCH_LOG: dict[str, Any] = {
             "epoch": 2,
             "output": {
                 "usage": {"output_tokens": 400},
-                "choices": [{"stop_reason": "length"}],
+                "choices": [{"stop_reason": "max_tokens"}],
             },
         },
     ],
@@ -132,6 +132,27 @@ def test_summary_reports_truncation_for_the_stop_ratio_floor() -> None:
     assert summary["finish_stop"] == 3
     assert summary["finish_length"] == 1
     assert summary["stop_ratio"] == 0.75
+
+
+def test_every_truncation_stop_reason_counts_against_stop_ratio() -> None:
+    # Regression: only "length" used to count, which inspect_ai never writes,
+    # so stop_ratio read 1.0 however much of a run was truncated.
+    log = {**OPENBENCH_LOG, "samples": []}
+    for stop_reason in ("max_tokens", "length", "model_length", "stop"):
+        log["samples"].append(
+            {
+                "id": 1,
+                "epoch": 1,
+                "output": {
+                    "usage": {"output_tokens": 300},
+                    "choices": [{"stop_reason": stop_reason}],
+                },
+            }
+        )
+    _, summary = exacto_report.parse_openbench_log(log)
+    assert summary["finish_stop"] == 1
+    assert summary["finish_length"] == 3
+    assert summary["stop_ratio"] == 1 / 4
 
 
 def test_summary_feeds_the_error_budget_guard() -> None:

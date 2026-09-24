@@ -46,6 +46,15 @@ DATASETS = ("gpqa_diamond", "taubench_airline")
 #: half means a model biased toward that letter scores well for free.
 MAX_TARGET_LETTER_SHARE = 0.5
 
+#: ``stop_reason`` values meaning the response was cut off by a length limit.
+#: The openbench harness normalizes the OpenAI finish_reason "length" onto
+#: inspect_ai's "max_tokens" enum value, so only the latter occurs in its logs
+#: (verified against inspect_ai 0.3.125); "length" is kept for a harness that
+#: does not normalize. inspect_ai records a ``context_length_exceeded`` error
+#: as "model_length", a response that never produced an answer, so it counts
+#: against `stop_ratio` too rather than passing as a normal finish.
+TRUNCATION_STOP_REASONS = frozenset({"length", "max_tokens", "model_length"})
+
 
 def target_letter_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     """Counts how often each letter is the correct answer.
@@ -160,8 +169,7 @@ def parse_openbench_log(
         if isinstance(tokens, int):
             output_tokens.append(tokens)
         for choice in output.get("choices") or []:
-            # Inspect normalizes the OpenAI finish_reason onto stop_reason.
-            if choice.get("stop_reason") == "length":
+            if choice.get("stop_reason") in TRUNCATION_STOP_REASONS:
                 finish_length += 1
             else:
                 finish_stop += 1
