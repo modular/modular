@@ -714,7 +714,13 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         The checkpoint runs before ``super().step`` so the copy reads a block
         the commit has not published and ``advance`` has not freed, and on the
         stream the forward wrote it on.
+
+        Checkpoints are skipped when prefix caching is off, since nothing
+        can publish them.
         """
+        if not self._enable_prefix_caching:
+            super().step(ctx)
+            return
         replica_idx = self._replica_of(ctx)
         for group in self._groups.values():
             self._fill_state(replica_idx, group.checkpoint(ctx, replica_idx))
@@ -801,7 +807,13 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
 
     @property
     def chunk_alignment_tokens(self) -> int:
-        """Returns the page size if any group needs the alignment, else zero."""
+        """Returns the page size if any group needs the alignment, else zero.
+
+        A recurrent checkpoint fires only on an exact page boundary. With
+        prefix caching off there are no checkpoints.
+        """
+        if not self.params.enable_prefix_caching:
+            return 0
         if any(
             group.group_id.is_recurrent() for group in self._groups.values()
         ):

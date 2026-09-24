@@ -1297,3 +1297,82 @@ class TestRuntimeInputComposition:
         state = create_state_params(create_kv_cache_params())
         with pytest.raises(ValueError, match="state/conv"):
             state.build_runtime_inputs([_assignment(staged={})], buffers=[])
+
+
+class TestRowAddressedBudget:
+    """Tests the per-request state term in the pool budget."""
+
+    BATCH = 16
+    SEQ = 4096
+    PAGE = 256
+    # Enough that the block cap binds, not memory.
+    PLENTY = 256 * 1024**3
+
+    def _sizes(self) -> tuple[int, int, int]:
+        attn = create_kv_cache_params(page_size=self.PAGE)
+        root = MultiKVCacheParams.from_params(
+            {"attn": attn, "state": create_state_params(attn)}
+        )
+        state_bytes = self.BATCH * root.per_request_row_bytes(
+            math.ceil(self.SEQ / self.PAGE)
+        )
+        return (
+            estimated_memory_size(
+                params=attn,
+                available_cache_memory=self.PLENTY,
+                max_batch_size=self.BATCH,
+                max_seq_len=self.SEQ,
+            ),
+            estimated_memory_size(
+                params=root,
+                available_cache_memory=self.PLENTY,
+                max_batch_size=self.BATCH,
+                max_seq_len=self.SEQ,
+            ),
+            state_bytes,
+        )
+
+    def test_the_budget_counts_the_state_leaves(self) -> None:
+        attn_only, hybrid, state_bytes = self._sizes()
+
+        assert state_bytes > 0, "the fixture declares no state leaf"
+        assert hybrid == attn_only + state_bytes
+
+    def test_an_attention_only_cache_is_unchanged(self) -> None:
+        """Checks a cache with no row-addressed leaf prices the term zero."""
+        attn = create_kv_cache_params(page_size=self.PAGE)
+
+        assert attn.per_request_row_bytes(16) == 0
+
+    def test_the_state_cost_scales_with_the_batch_not_the_length(self) -> None:
+        """Checks the term does not vary with the blocks a request spans."""
+        attn = create_kv_cache_params(page_size=self.PAGE)
+        root = MultiKVCacheParams.from_params(
+            {"attn": attn, "state": create_state_params(attn)}
+        )
+
+        short = root.per_request_row_bytes(1)
+        long = root.per_request_row_bytes(1024)
+
+        assert short == long > 0
+
+    def test_a_pool_too_small_for_the_state_allocates_no_blocks(self) -> None:
+        """Checks a budget the state exhausts raises.
+
+        The budget is exactly one block, the least attention alone accepts.
+        """
+        attn = create_kv_cache_params(page_size=self.PAGE)
+        root = MultiKVCacheParams.from_params(
+            {"attn": attn, "state": create_state_params(attn)}
+        )
+        assert (
+            root.per_request_row_bytes(math.ceil(self.SEQ / self.PAGE)) > 0
+        ), "the fixture declares no state leaf"
+
+        with pytest.raises(RuntimeError, match="Insufficient cache memory"):
+            estimated_memory_size(
+                params=root,
+                available_cache_memory=root.bytes_per_block,
+                max_batch_size=1,
+                max_seq_len=self.SEQ,
+            )

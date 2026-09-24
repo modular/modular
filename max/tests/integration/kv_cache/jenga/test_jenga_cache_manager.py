@@ -57,6 +57,9 @@ from max.pipelines.kv_cache.paged_kv_cache import (
 from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
     JengaKVCacheManager,
 )
+from max.pipelines.kv_cache.paged_kv_cache.recurrent_coordinator import (
+    RecurrentKVGroupCoordinator,
+)
 from max.pipelines.request.base import RequestID
 
 SLIDING = "sliding"
@@ -467,10 +470,16 @@ def make_recurrent_manager(
     max_batch_size: int = 4,
     page_size: int = 4,
     num_layers: int = 1,
+    *,
+    caching: bool = True,
 ) -> JengaKVCacheManager:
-    """An attention leaf beside a state, as a hybrid model declares it."""
+    """Returns a manager with an attention leaf beside a state.
+
+    ``caching`` is set on the attention leaf, which the pool reads its
+    configuration from.
+    """
     attn = make_leaf(n_kv_heads=1, page_size=page_size)
-    attn.enable_prefix_caching = True
+    attn.enable_prefix_caching = caching
     state = RecurrentStateParams(
         devices=attn.devices,
         data_parallel_degree=attn.data_parallel_degree,
@@ -747,3 +756,69 @@ def test_mixed_dp_tp_splits_budget_and_uses_per_device_pages() -> None:
         max_batch_size=8,
     )
     assert mgr._num_huge_blocks == 8
+
+
+def _state_blocks_held(
+    mgr: JengaKVCacheManager, ctx: TextContext
+) -> dict[str, int]:
+    """Returns the blocks each state leaf holds for this request."""
+    return {
+        group.leaf_id: sum(
+            1
+            for block in group.rows[ctx.request_id][group.leaf_id]
+            if not block.is_null
+        )
+        for group in mgr.groups.values()
+        if isinstance(group, RecurrentKVGroupCoordinator)
+    }
+
+
+def test_no_rotation_is_prepared_when_nothing_can_publish() -> None:
+    """Checks a request holds one block per state leaf with caching off."""
+    mgr = make_recurrent_manager(num_huge_blocks=400, caching=False)
+    ctx = make_ctx(4)
+    _run_until_committed(mgr, ctx, steps=12)
+
+    held = _state_blocks_held(mgr, ctx)
+    assert held, "the manager has no recurrent leaf"
+    assert not mgr.pools[0].prefix_caches[STATE_LEAF], (
+        "a checkpoint was published with prefix caching off"
+    )
+    assert held == dict.fromkeys(held, 1), (
+        f"a request holds more than one block per state leaf, got {held}"
+    )
+
+
+def test_a_rotation_is_still_prepared_when_caching_is_on() -> None:
+    """Checks the caching-on path still publishes a checkpoint."""
+    mgr = make_recurrent_manager(num_huge_blocks=400, caching=True)
+    ctx = make_ctx(4)
+    _run_until_committed(mgr, ctx, steps=12)
+
+    assert mgr.pools[0].prefix_caches[STATE_LEAF], (
+        "no checkpoint was published with prefix caching on"
+    )
+
+
+def test_an_unpublishable_boundary_needs_no_chunk_alignment() -> None:
+    """Checks the chunk alignment is asked for only with caching on."""
+    on = make_recurrent_manager(num_huge_blocks=400, page_size=4)
+    off = make_recurrent_manager(
+        num_huge_blocks=400, page_size=4, caching=False
+    )
+
+    assert on.chunk_alignment_tokens == 4
+    assert off.chunk_alignment_tokens == 0
+
+
+def test_an_attention_only_tree_asks_for_no_alignment_either_way() -> None:
+    """Checks an attention-only tree asks for no alignment either way."""
+    for caching in (True, False):
+        leaf = make_leaf(n_kv_heads=1, page_size=4)
+        leaf.enable_prefix_caching = caching
+        mgr = create_manager(
+            MultiKVCacheParams.from_params({"attn": leaf}),
+            num_huge_blocks=400,
+            max_batch_size=4,
+        )
+        assert mgr.chunk_alignment_tokens == 0
