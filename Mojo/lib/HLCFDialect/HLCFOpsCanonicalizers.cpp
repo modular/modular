@@ -775,12 +775,6 @@ void ForOp::getCanonicalizationPatterns(RewritePatternSet &results,
 //===----------------------------------------------------------------------===//
 
 LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
-  // Multi-arm comptime.if is not folded here; keep the existing binary-arm
-  // patterns only (do not synthesize elif regions).
-  if (!op.getElifRegions().empty())
-    return b.notifyMatchFailure(op.getLoc(),
-                                "multi-arm comptime.if is not canonicalized");
-
   Block &ifBranch = op->getRegion(0).front();
   Block &elseBranch = op->getRegion(1).front();
   Operation *ifTerm = ifBranch.getTerminator();

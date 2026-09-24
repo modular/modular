@@ -2161,8 +2161,6 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
   void checkIfOp(HLCF::IfOp op);
-  void checkMultiArmIf(Region &thenRegion, Region &elseRegion,
-                       MutableArrayRef<Region> elifRegions);
   void checkMatchOp(HLCF::MatchOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -3066,18 +3064,9 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::localControlFlowOp:
       checkLocalControlFlowOp(op);
       break;
-    case OverallOpValueEffect::ifLikeOp: {
-      if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(op)) {
-        if (!comptimeIf.getElifRegions().empty()) {
-          checkMultiArmIf(comptimeIf.getThenRegion(),
-                          comptimeIf.getElseRegion(),
-                          comptimeIf.getElifRegions());
-          break;
-        }
-      }
+    case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
-    }
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
@@ -3239,10 +3228,8 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   liveness.mergeWith(livenessCopy, valueSet.domInfo);
 }
 
-// This is used for the HLCF::IfOp and multi-arm HLCF::ComptimeIfOp.
-void UninitializedValueScan::checkMultiArmIf(
-    Region &thenRegion, Region &elseRegion,
-    MutableArrayRef<Region> elifRegions) {
+// This is used for the HLCF::IfOp.
+void UninitializedValueScan::checkIfOp(HLCF::IfOp op) {
   // Region layout: thenRegion, elseRegion, then additional (cond, then) pairs
   // in elifRegions. Live-out is the intersection of all then arms and else.
   auto thenLiveOutValues =
@@ -3251,20 +3238,21 @@ void UninitializedValueScan::checkMultiArmIf(
 
   // First then uses the live-in set of the elif (cond is an SSA operand).
   scratchSet = liveness;
-  scanBlock(thenRegion.front());
+  scanBlock(op.getThenRegion().front());
   thenLiveOutValues.mergeWith(liveness, valueSet.domInfo);
   std::swap(liveness, scratchSet);
 
-  assert((elifRegions.size() % 2) == 0 && "Must have pairs of regions");
-  for (size_t nextElIfRegion = 0, e = elifRegions.size(); nextElIfRegion != e;
+  MutableArrayRef<Region> ifRegions = op.getElifRegions();
+  assert((ifRegions.size() % 2) == 0 && "Must have pairs of regions");
+  for (size_t nextElIfRegion = 0, e = ifRegions.size(); nextElIfRegion != e;
        nextElIfRegion += 2) {
     // Check the next condition accumulating into liveness.
-    scanBlock(elifRegions[nextElIfRegion].front());
+    scanBlock(ifRegions[nextElIfRegion].front());
     // Save the live set after the condition but before the 'then' block.
     scratchSet = liveness;
 
     // Scan the "then" block for this condition.
-    scanBlock(elifRegions[nextElIfRegion + 1].front());
+    scanBlock(ifRegions[nextElIfRegion + 1].front());
     thenLiveOutValues.mergeWith(liveness, valueSet.domInfo);
 
     // Restore the live-in set to the set of things before the 'then' block.
@@ -3272,15 +3260,11 @@ void UninitializedValueScan::checkMultiArmIf(
   }
 
   // After each of the cases has been evaluated, check the 'else' block.
-  scanBlock(elseRegion.front());
+  scanBlock(op.getElseRegion().front());
 
   // The live out set of the whole 'elif' is the intersection of the output set
   // of the else as well as all the 'then' blocks.
   liveness.mergeWith(thenLiveOutValues, valueSet.domInfo);
-}
-
-void UninitializedValueScan::checkIfOp(HLCF::IfOp op) {
-  checkMultiArmIf(op.getThenRegion(), op.getElseRegion(), op.getElifRegions());
 }
 
 void UninitializedValueScan::checkMatchOp(HLCF::MatchOp op) {
@@ -4287,9 +4271,6 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op, SmallVector<ResultEffect> &resultEffects);
   void checkIfOp(HLCF::IfOp op, SmallVector<ResultEffect> &resultEffects);
-  void checkMultiArmIf(Operation &op, Region &thenRegion, Region &elseRegion,
-                       MutableArrayRef<Region> elifRegions,
-                       SmallVector<ResultEffect> &resultEffects);
   void checkMatchOp(HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -4448,18 +4429,9 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::localControlFlowOp:
       checkLocalControlFlowOp(op);
       break;
-    case OverallOpValueEffect::ifLikeOp: {
-      if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(op)) {
-        if (!comptimeIf.getElifRegions().empty()) {
-          checkMultiArmIf(op, comptimeIf.getThenRegion(),
-                          comptimeIf.getElseRegion(),
-                          comptimeIf.getElifRegions(), opEffects.results);
-          break;
-        }
-      }
+    case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op, opEffects.results);
       break;
-    }
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
@@ -4762,22 +4734,20 @@ void DestructorInsertion::checkIfLikeOp(
   consumedValues = std::move(merged);
 }
 
-// This is used for the HLCF::IfOp and multi-arm HLCF::ComptimeIfOp.
-void DestructorInsertion::checkMultiArmIf(
-    Operation &op, Region &thenRegion, Region &elseRegion,
-    MutableArrayRef<Region> elifRegions,
-    SmallVector<ResultEffect> &resultEffects) {
+// This is used for the HLCF::IfOp.
+void DestructorInsertion::checkIfOp(HLCF::IfOp op,
+                                    SmallVector<ResultEffect> &resultEffects) {
   // Handle owned register results of the elif the same way as if-like ops.
   if (!resultEffects.empty()) {
-    ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
-                                 std::next(Block::iterator(&op)));
+    ImplicitLocOpBuilder builder(op.getLoc(), op->getBlock(),
+                                 std::next(Block::iterator(op)));
     DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
     for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
       switch (effect) {
       case ResultEffect::ignore:
         continue;
       case ResultEffect::regDefine:
-        checkDef(result, op, /*isDeref=*/false, dtorInserter);
+        checkDef(result, *op, /*isDeref=*/false, dtorInserter);
         break;
       default:
         llvm_unreachable("unknown result effect for 'elif'");
@@ -4788,15 +4758,16 @@ void DestructorInsertion::checkMultiArmIf(
 
   // Region layout: thenRegion, elseRegion, then additional (cond, then) pairs.
   // Backward pass: else, then each additional pair, then the first thenRegion.
-  assert((elifRegions.size() % 2) == 0 && "Must have pairs of regions");
+  MutableArrayRef<Region> ifRegions = op.getElifRegions();
+  assert((ifRegions.size() % 2) == 0 && "Must have pairs of regions");
 
   BitVector thenExitConsumedValues = consumedValues;
-  Block *elseBlock = &elseRegion.front();
+  Block *elseBlock = &op.getElseRegion().front();
   scanBlock(*elseBlock);
 
-  for (size_t i = elifRegions.size(); i != 0; i -= 2) {
-    Block &condBlock = elifRegions[i - 2].front();
-    Block &thenBlock = elifRegions[i - 1].front();
+  for (size_t i = ifRegions.size(); i != 0; i -= 2) {
+    Block &condBlock = ifRegions[i - 2].front();
+    Block &thenBlock = ifRegions[i - 1].front();
 
     BitVector elseConsumeSet = std::move(consumedValues);
     consumedValues = thenExitConsumedValues;
@@ -4817,9 +4788,9 @@ void DestructorInsertion::checkMultiArmIf(
   }
 
   // Finally unify the first thenRegion with the remaining "else" path. The
-  // first condition is an attribute/SSA operand (no cond region to scan).
+  // first condition is an SSA operand (no cond region to scan).
   {
-    Block &thenBlock = thenRegion.front();
+    Block &thenBlock = op.getThenRegion().front();
     BitVector elseConsumeSet = std::move(consumedValues);
     consumedValues = thenExitConsumedValues;
     scanBlock(thenBlock);
@@ -4833,12 +4804,6 @@ void DestructorInsertion::checkMultiArmIf(
       consumedValues = std::move(merged);
     }
   }
-}
-
-void DestructorInsertion::checkIfOp(HLCF::IfOp op,
-                                    SmallVector<ResultEffect> &resultEffects) {
-  checkMultiArmIf(*op, op.getThenRegion(), op.getElseRegion(),
-                  op.getElifRegions(), resultEffects);
 }
 
 void DestructorInsertion::checkMatchOp(
