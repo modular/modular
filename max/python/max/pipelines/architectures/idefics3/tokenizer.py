@@ -98,18 +98,19 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         )
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
+        self,
+        encoded: npt.NDArray[np.integer[Any]] | Sequence[int] | int,
+        **kwargs,
     ) -> str:
         """Decode token array back into readable text, filtering out special tokens."""
-        # Log-probability responses decode one token id (a plain int) at a
-        # time; match the text tokenizer's handling.
-        if isinstance(encoded, int):
-            encoded = np.array(encoded)
+        # Log-probability responses decode one token id (a plain int) and the
+        # CLI passes a token list; normalize both to a rank-1 array.
+        token_ids = np.atleast_1d(np.asarray(encoded))
         # Force skip_special_tokens=True to filter out tokens like <end_of_utterance>
         kwargs_with_special_filter = kwargs.copy()
         kwargs_with_special_filter["skip_special_tokens"] = True
         return self.delegate.decode(
-            encoded.tolist(), **kwargs_with_special_filter
+            token_ids.tolist(), **kwargs_with_special_filter
         )
 
     def apply_chat_template(

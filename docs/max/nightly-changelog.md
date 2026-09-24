@@ -303,6 +303,9 @@ This version is still a work in progress.
   multi-context step overran them and the model worker crashed. The
   architectures pass it up now.
 
+- Fixed `max generate` crashing after the first token for Gemma 4 and
+  Idefics3 models, whose tokenizers rejected the CLI's token list on decode.
+
 - The functional kernel wrappers in `max.experimental.nn.common_layers` now
   open a realization context, so eager attention with a paged KV cache runs.
 

@@ -183,6 +183,31 @@ async def test_text_only_smoke(
 
 
 @pytest.mark.asyncio
+async def test_decode_accepts_token_list(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """``max generate`` hands ``TextGenerationOutput.tokens`` (a ``list[int]``)
+    straight to ``decode``; it must decode the same as the array form."""
+    delegate = _make_mock_delegate()
+    delegate.decode.side_effect = lambda ids, **_: "".join(
+        f"[tok_{t}]" for t in ids
+    )
+    _patch_tokenizer_deps(mocker, delegate)
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    tokens = [100, 200, 300]
+    from_list = await tokenizer.decode(tokens, skip_special_tokens=True)
+    from_array = await tokenizer.decode(
+        np.array(tokens, dtype=np.int64), skip_special_tokens=True
+    )
+    assert from_list == from_array == "[tok_100][tok_200][tok_300]"
+    assert await tokenizer.decode(tokens, skip_special_tokens=False) == (
+        "[tok_100][tok_200][tok_300]"
+    )
+
+
+@pytest.mark.asyncio
 async def test_response_format_without_json_schema_key(
     mocker: MockerFixture,
     mock_pipeline_config: MagicMock,

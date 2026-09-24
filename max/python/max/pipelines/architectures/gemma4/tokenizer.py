@@ -363,7 +363,9 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         return templated_message
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
+        self,
+        encoded: npt.NDArray[np.integer[Any]] | Sequence[int] | int,
+        **kwargs,
     ) -> str:
         """Decode tokens, preserving tool-related special tokens.
 
@@ -371,20 +373,19 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         to selectively preserve them when skip_special_tokens=True by filtering
         unwanted special tokens before decoding.
         """
-        # Log-probability responses decode one token id (a plain int) at a
-        # time; match the text tokenizer's handling.
-        if isinstance(encoded, int):
-            encoded = np.array(encoded)
+        # Log-probability responses decode one token id (a plain int) and the
+        # CLI passes a token list; normalize both to a rank-1 array.
+        token_ids = np.atleast_1d(np.asarray(encoded))
         skip_special_tokens = kwargs.get("skip_special_tokens", True)
 
         if not skip_special_tokens:
             # No filtering needed
-            return await super().decode(encoded, **kwargs)
+            return await super().decode(token_ids, **kwargs)
 
         # Filter out special tokens that should be skipped (all except tool tokens)
         filtered_ids = [
             token_id
-            for token_id in encoded.tolist()
+            for token_id in token_ids.tolist()
             if token_id not in self.skipped_special_token_ids
         ]
 
