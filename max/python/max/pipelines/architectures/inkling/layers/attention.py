@@ -29,11 +29,7 @@ from max.graph import (
     ops,
 )
 from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
-    flash_attention_ragged,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
-)
+from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
@@ -41,7 +37,11 @@ from max.nn.norm import RMSNorm
 from max.nn.stacked_linear import StackedLinear
 
 from ..model_config import InklingTextConfig
-from .short_convolution import ShortConvolution
+from .short_convolution import (
+    ShortConvolution,
+    fused_qk_rms_norm_short_conv_ragged,
+    short_conv_ring_commit_kv,
+)
 
 _TAU_DTYPE = DType.float32
 
@@ -55,10 +55,10 @@ def log_scaling_tau(
 
 
 class InklingAttention(Module, Shardable):
-    """One decoder layer's attention block, unfused.
+    """One decoder layer's attention block.
 
-    The K and V short convs read their history from a ring of past inputs
-    and commit the chunk's tail afterwards.
+    The prologue (K/V short conv, Q/K norms, KV-cache stores) is one fused
+    launch for any chunk length plus one launch committing the conv rings.
     """
 
     def __init__(
@@ -77,6 +77,7 @@ class InklingAttention(Module, Shardable):
         super().__init__()
         device = devices[0]
         self.text_config = text_config
+        self.commit_conv_state = commit_conv_state
         self.layer_idx = layer_idx
         self.kv_params = kv_params
         self.dtype = dtype
@@ -119,20 +120,23 @@ class InklingAttention(Module, Shardable):
                 kernel_size=text_config.sconv_kernel_size,
                 dtype=dtype,
                 device=device,
-                commit_conv_state=commit_conv_state,
             )
             self.v_sconv = ShortConvolution(
                 channels=kv_conv_dim,
                 kernel_size=text_config.sconv_kernel_size,
                 dtype=dtype,
                 device=device,
-                commit_conv_state=commit_conv_state,
             )
         self.q_norm = RMSNorm(
             self.head_dim, dtype, eps=text_config.rms_norm_eps
         )
         self.k_norm = RMSNorm(
             self.head_dim, dtype, eps=text_config.rms_norm_eps
+        )
+        # The fused prologue applies one norm config to both Q and K.
+        assert self.q_norm.eps == self.k_norm.eps
+        assert (
+            self.q_norm.multiply_before_cast == self.k_norm.multiply_before_cast
         )
         # A plain weight rather than a submodule so its name can carry the
         # checkpoint's own rel_logits_proj.proj spelling.
@@ -172,47 +176,46 @@ class InklingAttention(Module, Shardable):
         operand, not a folded constant, so every layer of one attention flavor
         can share a compiled subgraph.
         """
-        total_tokens = x.shape[0]
-        q_dim, k_dim, v_dim, r_dim = self.out_dims
+        q_dim, k_dim, v_dim, _ = self.out_dims
 
         qkvr = self.qkvr_proj(x)
-        q, k, v, r = ops.split(qkvr, [q_dim, k_dim, v_dim, r_dim], axis=-1)
-
-        k = self.k_sconv(
-            k,
+        r = qkvr[:, q_dim + k_dim + v_dim :]
+        q = fused_qk_rms_norm_short_conv_ragged(
+            self.kv_params,
+            qkvr,
+            input_row_offsets,
+            positions,
+            kv_collection,
+            self.q_norm.weight.cast(qkvr.dtype).to(qkvr.device),
+            self.k_norm.weight.cast(qkvr.dtype).to(qkvr.device),
+            self.k_sconv.taps,
+            self.v_sconv.taps,
             k_conv_ring,
-            k_conv_row,
-            input_row_offsets,
-            positions,
-        )
-        v = self.v_sconv(
-            v,
             v_conv_ring,
+            k_conv_row,
             v_conv_row,
-            input_row_offsets,
-            positions,
+            log_scaling,
+            self.q_norm.eps,
+            cache_layer_idx,
+            q_num_heads=self.num_heads,
+            apply_log_scaling=self.applies_log_scaling,
+            multiply_before_cast=self.q_norm.multiply_before_cast,
         )
-
-        q = self.q_norm(
-            q.reshape([total_tokens, self.num_heads, self.head_dim])
-        )
-        k = self.k_norm(
-            k.reshape([total_tokens, self.num_kv_heads, self.head_dim])
-        )
+        if self.commit_conv_state:
+            short_conv_ring_commit_kv(
+                qkvr,
+                k_conv_ring,
+                v_conv_ring,
+                input_row_offsets,
+                positions,
+                k_conv_row,
+                v_conv_row,
+                k_col=q_dim,
+            )
         bias = self._relative_bias(r)
         if self.applies_log_scaling:
-            q = _scale_rows(q, log_scaling)
             bias = _scale_rows(bias, log_scaling)
 
-        store_k_cache_ragged(
-            kv_collection, k, input_row_offsets, cache_layer_idx
-        )
-        store_v_cache_ragged(
-            kv_collection,
-            v.reshape([total_tokens, self.num_kv_heads, self.head_dim]),
-            input_row_offsets,
-            cache_layer_idx,
-        )
         mask_variant = (
             MHAMaskVariant.CAUSAL_MASK
             if self.local_window_size is None
@@ -231,7 +234,7 @@ class InklingAttention(Module, Shardable):
             ),
             rel_logits=bias,
         )
-        return self.wo_ud(attn_out.reshape([total_tokens, q_dim]))
+        return self.wo_ud(attn_out.reshape([x.shape[0], q_dim]))
 
     def _relative_bias(self, r: TensorValue) -> TensorValue:
         """Maps the head-major relative branch to
@@ -310,6 +313,7 @@ class InklingAttention(Module, Shardable):
                 tp_size=len(devices),
                 is_sharding=True,
                 is_local=self._is_local,
+                commit_conv_state=self.commit_conv_state,
             )
             for name, per_device in part_shards.items():
                 setattr(sharded, name, per_device[shard_idx])
