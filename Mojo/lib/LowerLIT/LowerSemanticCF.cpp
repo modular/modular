@@ -935,13 +935,27 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
     assert(isa<HLCF::ComptimeIfOp>(op) && "Unknown operation with regions");
 
     if (auto ifOp = dyn_cast<HLCF::ComptimeIfOp>(op)) {
-      if (auto cond = sugarDynCast<SIMDAttr>(ifOp.getCond())) {
-        Region *deadRegion =
-            &(cond.getAsBool() ? ifOp.getElseRegion() : ifOp.getThenRegion());
-        // Don't warn about "comptime if".
-        markRegionDeadDueToConstantCond(*deadRegion, /*message=*/nullptr,
-                                        op.getLoc());
+      // Mark constant-dead then arms / else. Don't warn — comptime if is
+      // intentionally used like an ifdef.
+      bool nextElseLive = true;
+      for (auto [idx, attr] : llvm::enumerate(ifOp.getCondAttrs())) {
+        if (auto cond = sugarDynCast<SIMDAttr>(cast<TypedAttr>(attr))) {
+          if (!cond.getAsBool()) {
+            markRegionDeadDueToConstantCond(ifOp.getThenRegions()[idx],
+                                            /*message=*/nullptr, op.getLoc());
+            continue;
+          }
+          nextElseLive = false;
+          // Later then arms are unreachable once a prior condition is true.
+          for (Region &later : ifOp.getThenRegions().drop_front(idx + 1))
+            markRegionDeadDueToConstantCond(later, /*message=*/nullptr,
+                                            op.getLoc());
+          break;
+        }
       }
+      if (!nextElseLive)
+        markRegionDeadDueToConstantCond(ifOp.getElseRegion(),
+                                        /*message=*/nullptr, op.getLoc());
     }
 
     bool ifOpFallsThrough = false;

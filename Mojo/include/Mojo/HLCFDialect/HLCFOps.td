@@ -915,44 +915,77 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
       "collectParameterUsesBelow"]>]>, NoParamDecls {
   let summary = "compile-time constant if";
   let description = [{
-    The `hlcf.comptime.if` op provides a compile-time guarantee that if `cond`
-    is false, only the `else` block will be elaborated, and if `cond` is true,
-    only the `then` block will be elaborated. Whichever block is elaborated
-    will be directly inlined into the scope. This op is fully removed
-    during elaboration.
+    The `hlcf.comptime.if` op provides a compile-time guarantee that only one
+    arm is elaborated: the first arm whose condition in `$conds` is true, or
+    the final else region when every condition is false. Whichever block is
+    elaborated is directly inlined into the enclosing scope. This op is fully
+    removed during elaboration.
 
-    The result parameter will be resolved by the parameter on the
-    `comptime.yield` in the branch that is actually elaborated.
+    `$conds` is a comma-separated list of compile-time `!kgen.scalar<bool>`
+    attributes. There is one then region per condition (the prefix of
+    `$regions`), followed by a single else region (the last element of
+    `$regions`). Unlike `hlcf.if`, additional conditions are attributes — not
+    dynamic condition regions.
+
+    All then / else regions are terminated by `hlcf.comptime.yield` (or
+    another function-level terminator such as `hlcf.return`).
+
+    Example (single if/else):
 
     ```mlir
     %0 = hlcf.comptime.if <condition> -> index {
       %i0 = index.constant 0
-      hlcf.comptime.yield %i0
+      hlcf.comptime.yield %i0 : index
     } else {
       %i1 = index.constant 1
-      hlcf.comptime.yield %i1
+      hlcf.comptime.yield %i1 : index
     }
+    ```
 
-    hlcf.comptime.if <condition -> result> {
-      hlcf.comptime.yield<1>
+    Example (if / elif / else):
+
+    ```mlir
+    %0 = hlcf.comptime.if <cond0, cond1> -> index {
+      hlcf.comptime.yield %arg0 : index
+    } {
+      hlcf.comptime.yield %arg1 : index
     } else {
-      hlcf.comptime.yield<0>
+      hlcf.comptime.yield %arg2 : index
     }
-    %0 = kgen.param.constant = <result> // == <condition ? 1 : 0>
     ```
   }];
 
   let arguments = (ins
-    AttrOfType<BoolScalar>:$cond,
+    ArrayAttr:$conds,
     UnitAttr:$thenIsolated,
     UnitAttr:$elseIsolated
   );
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
+  // One then region per condition, then a single else region.
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let extraClassDeclaration = [{
     bool isIsolatedFromAbove(unsigned regionNum);
     void notifyKnownIsolatedFromAbove(unsigned regionNum);
+
+    /// Conditions as typed bool attributes; size matches `getThenRegions()`.
+    ArrayRef<Attribute> getCondAttrs() { return getConds().getValue(); }
+
+    /// Convenience for the common single-condition form.
+    TypedAttr getCond() {
+      assert(getConds().size() == 1 && "expected a single condition");
+      return cast<TypedAttr>(getConds()[0]);
+    }
+
+    MutableArrayRef<Region> getThenRegions() {
+      assert(getNumRegions() >= 2);
+      return MutableArrayRef<Region>(getRegions()).drop_back();
+    }
+    Region &getThenRegion() { return getThenRegions().front(); }
+    Region &getElseRegion() {
+      assert(getNumRegions() >= 2);
+      return getRegion(getNumRegions() - 1);
+    }
 
     Block::OpListType &getThenOps() {
       return getThenRegion().front().getOperations();
@@ -966,14 +999,28 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
   }];
 
   let assemblyFormat = [{
-    ` ` `<` custom<ScalarBoolParamValue>($cond) `` `>`
-    (`->` type($results)^)?  $thenRegion `else` $elseRegion attr-dict
+    ` ` `<` custom<ComptimeIfConds>($conds) `>`
+    (`->` type($results)^)?
+    custom<ComptimeIf>($regions) attr-dict
   }];
 
-  let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
-    build($_builder, $_state, {}, cond, {});
-  }]>];
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$cond), [{
+      build($_builder, $_state, TypeRange(), $_builder.getArrayAttr(cond),
+            /*thenIsolated=*/{}, /*elseIsolated=*/{}, /*nRegions=*/2);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "TypedAttr":$cond), [{
+      build($_builder, $_state, results, $_builder.getArrayAttr(cond),
+            /*thenIsolated=*/{}, /*elseIsolated=*/{}, /*nRegions=*/2);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "ArrayAttr":$conds), [{
+      assert(conds.size() >= 1 && "comptime.if requires at least one condition");
+      build($_builder, $_state, results, conds, /*thenIsolated=*/{},
+            /*elseIsolated=*/{}, /*nRegions=*/conds.size() + 1);
+    }]>,
+  ];
 
+  let hasVerifier = 1;
   let hasCanonicalizeMethod = 1;
 }
 

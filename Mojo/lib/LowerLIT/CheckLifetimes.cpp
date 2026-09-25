@@ -2161,6 +2161,7 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
   void checkIfOp(HLCF::IfOp op);
+  void checkMultiArmComptimeIf(HLCF::ComptimeIfOp op);
   void checkMatchOp(HLCF::MatchOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -3064,9 +3065,16 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::localControlFlowOp:
       checkLocalControlFlowOp(op);
       break;
-    case OverallOpValueEffect::ifLikeOp:
+    case OverallOpValueEffect::ifLikeOp: {
+      if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(op)) {
+        if (comptimeIf.getThenRegions().size() > 1) {
+          checkMultiArmComptimeIf(comptimeIf);
+          break;
+        }
+      }
       checkIfLikeOp(op);
       break;
+    }
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
@@ -3226,6 +3234,24 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   livenessCopy.swap(liveness);
   scanBlock(op.getRegion(1).front());
   liveness.mergeWith(livenessCopy, valueSet.domInfo);
+}
+
+/// Multi-arm `hlcf.comptime.if`: live-out is the intersection of every then
+/// region and the else region (conditions are attributes, not regions).
+void UninitializedValueScan::checkMultiArmComptimeIf(HLCF::ComptimeIfOp op) {
+  auto thenLiveOutValues =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+  TrackedAndInteriorLiveness scratchSet = liveness;
+
+  for (Region &thenRegion : op.getThenRegions()) {
+    liveness = scratchSet;
+    scanBlock(thenRegion.front());
+    thenLiveOutValues.mergeWith(liveness, valueSet.domInfo);
+  }
+
+  liveness = scratchSet;
+  scanBlock(op.getElseRegion().front());
+  liveness.mergeWith(thenLiveOutValues, valueSet.domInfo);
 }
 
 // This is used for the HLCF::IfOp.
@@ -4271,6 +4297,8 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op, SmallVector<ResultEffect> &resultEffects);
   void checkIfOp(HLCF::IfOp op, SmallVector<ResultEffect> &resultEffects);
+  void checkMultiArmComptimeIf(HLCF::ComptimeIfOp op,
+                               SmallVector<ResultEffect> &resultEffects);
   void checkMatchOp(HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -4429,9 +4457,16 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::localControlFlowOp:
       checkLocalControlFlowOp(op);
       break;
-    case OverallOpValueEffect::ifLikeOp:
+    case OverallOpValueEffect::ifLikeOp: {
+      if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(op)) {
+        if (comptimeIf.getThenRegions().size() > 1) {
+          checkMultiArmComptimeIf(comptimeIf, opEffects.results);
+          break;
+        }
+      }
       checkIfLikeOp(op, opEffects.results);
       break;
+    }
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
@@ -4804,6 +4839,55 @@ void DestructorInsertion::checkIfOp(HLCF::IfOp op,
       consumedValues = std::move(merged);
     }
   }
+}
+
+/// Multi-arm `hlcf.comptime.if`: unify consume sets across every then region
+/// and the else region (conditions are attributes, not regions).
+void DestructorInsertion::checkMultiArmComptimeIf(
+    HLCF::ComptimeIfOp op, SmallVector<ResultEffect> &resultEffects) {
+  if (!resultEffects.empty()) {
+    ImplicitLocOpBuilder builder(op.getLoc(), op->getBlock(),
+                                 std::next(Block::iterator(op)));
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
+      switch (effect) {
+      case ResultEffect::ignore:
+        continue;
+      case ResultEffect::regDefine:
+        checkDef(result, *op, /*isDeref=*/false, dtorInserter);
+        break;
+      default:
+        llvm_unreachable("unknown result effect for comptime.if");
+      }
+    }
+    resultEffects.clear();
+  }
+
+  BitVector entryConsumedValues = consumedValues;
+  SmallVector<BitVector, 4> armConsumed;
+  SmallVector<Block *, 4> arms;
+
+  for (Region &thenRegion : op.getThenRegions()) {
+    consumedValues = entryConsumedValues;
+    scanBlock(thenRegion.front());
+    armConsumed.push_back(consumedValues);
+    arms.push_back(&thenRegion.front());
+  }
+
+  consumedValues = entryConsumedValues;
+  scanBlock(op.getElseRegion().front());
+  armConsumed.push_back(consumedValues);
+  arms.push_back(&op.getElseRegion().front());
+
+  BitVector unified = armConsumed.front();
+  for (const BitVector &arm : ArrayRef(armConsumed).drop_front())
+    unified = unifyConsumedSets(unified, arm);
+
+  if (!unified.empty()) {
+    for (auto [armSet, block] : llvm::zip(armConsumed, arms))
+      destroyValuesAtEntryIfNeeded(armSet, *block, unified, op.getLoc());
+  }
+  consumedValues = std::move(unified);
 }
 
 void DestructorInsertion::checkMatchOp(

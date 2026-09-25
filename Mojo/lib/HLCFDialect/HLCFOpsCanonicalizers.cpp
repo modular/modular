@@ -775,6 +775,12 @@ void ForOp::getCanonicalizationPatterns(RewritePatternSet &results,
 //===----------------------------------------------------------------------===//
 
 LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
+  // Multi-condition comptime.if is not folded here; keep the existing
+  // binary-arm patterns only.
+  if (op.getConds().size() != 1)
+    return b.notifyMatchFailure(
+        op.getLoc(), "multi-condition comptime.if is not canonicalized");
+
   Block &ifBranch = op->getRegion(0).front();
   Block &elseBranch = op->getRegion(1).front();
   Operation *ifTerm = ifBranch.getTerminator();

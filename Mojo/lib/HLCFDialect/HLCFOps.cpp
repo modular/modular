@@ -1099,27 +1099,94 @@ void ComptimeForGotoElseOp::getBranchTargets(
 // ComptimeIfOp
 //===----------------------------------------------------------------------===//
 
-bool ComptimeIfOp::isIsolatedFromAbove(unsigned regionNum) {
-  switch (regionNum) {
-  case 0:
-    return getThenIsolated();
-  case 1:
-    return getElseIsolated();
-  default:
-    llvm_unreachable("unknown region number");
+static ParseResult parseComptimeIfConds(AsmParser &parser, ArrayAttr &conds) {
+  SmallVector<Attribute> values;
+  auto parseOne = [&]() -> ParseResult {
+    TypedAttr value;
+    if (failed(KGEN::parseScalarBoolParamValue(parser, value)))
+      return failure();
+    values.push_back(value);
+    return success();
+  };
+  if (failed(parseOne()))
+    return failure();
+  while (succeeded(parser.parseOptionalComma())) {
+    if (failed(parseOne()))
+      return failure();
+  }
+  conds = parser.getBuilder().getArrayAttr(values);
+  return success();
+}
+
+static void printComptimeIfConds(AsmPrinter &printer, Operation *op,
+                                 ArrayAttr conds) {
+  llvm::interleaveComma(conds, printer, [&](Attribute attr) {
+    KGEN::printScalarBoolParamValue(printer, attr);
+  });
+}
+
+static ParseResult
+parseComptimeIf(OpAsmParser &parser,
+                SmallVectorImpl<std::unique_ptr<Region>> &regions) {
+  // One or more then regions, then `else` and the else region.
+  while (true) {
+    auto region = std::make_unique<Region>();
+    if (failed(parser.parseRegion(*region)))
+      return failure();
+    regions.push_back(std::move(region));
+    if (succeeded(parser.parseOptionalKeyword("else"))) {
+      if (failed(parser.parseRegion(
+              *regions.emplace_back(std::make_unique<Region>()))))
+        return failure();
+      return success();
+    }
   }
 }
 
+static void printComptimeIf(OpAsmPrinter &printer, Operation *op,
+                            MutableArrayRef<Region> regions) {
+  assert(regions.size() >= 2 && "comptime.if requires then + else regions");
+  for (Region &region : regions.drop_back())
+    printer.printRegion(region);
+  printer << " else ";
+  printer.printRegion(regions.back());
+}
+
+LogicalResult ComptimeIfOp::verify() {
+  if (getConds().empty())
+    return emitOpError("requires at least one condition");
+  if (getNumRegions() != getConds().size() + 1)
+    return emitOpError("expected ")
+           << (getConds().size() + 1) << " regions (one then per condition "
+           << "plus else), but got " << getNumRegions();
+  for (Attribute attr : getConds()) {
+    auto typed = dyn_cast<TypedAttr>(attr);
+    auto simdTy = typed ? dyn_cast<SIMDType>(typed.getType()) : SIMDType();
+    auto dtype = simdTy ? simdTy.getResolvedDType() : std::nullopt;
+    if (!dtype || !dtype->isBool())
+      return emitOpError(
+          "conditions must be !kgen.scalar<bool> typed attributes");
+  }
+  return success();
+}
+
+bool ComptimeIfOp::isIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return getThenIsolated();
+  if (regionNum + 1 == getNumRegions())
+    return getElseIsolated();
+  // Additional then regions do not carry isolation bits today.
+  return false;
+}
+
 void ComptimeIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
-  switch (regionNum) {
-  case 0:
+  if (regionNum == 0) {
     setThenIsolated(true);
-    break;
-  case 1:
+    return;
+  }
+  if (regionNum + 1 == getNumRegions()) {
     setElseIsolated(true);
-    break;
-  default:
-    llvm_unreachable("unknown region number");
+    return;
   }
 }
 
@@ -1127,15 +1194,28 @@ void ComptimeIfOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());
-  targets.emplace_back(0);
-  targets.emplace_back(1);
+  for (auto [idx, attr] : llvm::enumerate(getConds())) {
+    if (auto cond = sugarDynCast<SIMDAttr>(cast<TypedAttr>(attr))) {
+      if (cond.getAsBool()) {
+        targets.emplace_back(idx);
+        return;
+      }
+      continue;
+    }
+    // Non-constant condition: either this then or later arms may run.
+    targets.emplace_back(idx);
+    targets.emplace_back(getNumRegions() - 1);
+    return;
+  }
+  // Every condition was a constant false — take else.
+  targets.emplace_back(getNumRegions() - 1);
 }
 
 ValueRange ComptimeIfOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return getResults();
-  assert(*target == 0 || *target == 1);
-  return {};
+  assert(*target < getNumRegions());
+  return getRegion(*target).getArguments();
 }
 
 void ComptimeIfOp::walkDefinitions(
@@ -1328,20 +1408,22 @@ ErrorTreeOrSuccess ComptimeIfOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ComptimeIfOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
-  Attribute cond = state.getReboundAttribute(getCond());
-  unsigned regionId = 2;
-  if (auto result = sugarDynCast<SIMDAttr>(cond)) {
-    regionId = result.getAsBool() ? 0 : 1;
+  unsigned regionId = getNumRegions() - 1; // else by default
+  for (auto [idx, attr] : llvm::enumerate(getConds())) {
+    Attribute cond = state.getReboundAttribute(cast<TypedAttr>(attr));
+    auto result = sugarDynCast<SIMDAttr>(cond);
+    if (!result)
+      return ErrorTree(getLoc(), "wrong param if condition");
+    if (result.getAsBool()) {
+      regionId = idx;
+      break;
+    }
   }
 
-  if (regionId < 2) {
-    Region &target = getRegion(regionId);
-    state.pushParamValues({}, false);
-    state.pushEvalFrame(getOperation(), &target, {}, 6);
-    return state.transferControlFlowTo(target, {});
-  }
-
-  return ErrorTree(getLoc(), "wrong param if condition");
+  Region &target = getRegion(regionId);
+  state.pushParamValues({}, false);
+  state.pushEvalFrame(getOperation(), &target, {}, 6);
+  return state.transferControlFlowTo(target, {});
 }
 
 //===----------------------------------------------------------------------===//
