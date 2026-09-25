@@ -35,19 +35,20 @@ _THINK_END_TOKEN = "</think>"
 
 logger = logging.getLogger("max.serve")
 
-# GLM's chat template exposes a small ladder of thinking levels, and *which*
-# rungs exist varies by checkpoint:
+# Which thinking controls GLM's chat template exposes varies by checkpoint:
 #
-#   GLM-5.1 / 5.2  {%- set effective_reasoning_effort =
+#   GLM-5 / 5.1    ``enable_thinking`` only; ``reasoning_effort`` is never read
+#   GLM-5.2        {%- set effective_reasoning_effort =
 #                       'high' if reasoning_effort == 'high' else 'max' -%}
 #   GLM-5.3        {%- set effective_reasoning_effort = reasoning_effort
 #                       if reasoning_effort in ['low', 'high'] else 'max' -%}
 #
-# and GLM-5.3 dropped ``enable_thinking`` entirely, s
+# and GLM-5.3 dropped ``enable_thinking`` entirely, so it cannot stop reasoning.
 #
 # OpenAI's ladder is mapped onto whichever rungs the template actually offers:
 #   "none"           -> thinking off where the template supports it, otherwise
 #                       the floor rung (see ``normalize_glm_reasoning_effort``)
+#   "minimal"        -> the floor rung
 #   "low"            -> "low" when the template has that rung, else "high"
 #   "medium", "high" -> "high"
 #   "xhigh", "max"   -> "max"
@@ -75,8 +76,8 @@ _CANDIDATE_RUNGS: tuple[str, ...] = (_GLM_EFFORT_LOW, _GLM_EFFORT_HIGH)
 # control when probing.
 _UNRECOGNIZED_EFFORT = "__max_probe_unrecognized__"
 
-# The rung set assumed when a template cannot be probed. Matches GLM-5.1/5.2,
-# the behavior that shipped before probing existed.
+# The rung set assumed when a template cannot be probed. Matches GLM-5.2, the
+# behavior that shipped before probing existed.
 _FALLBACK_RUNGS = frozenset({_GLM_EFFORT_HIGH})
 
 
@@ -111,8 +112,9 @@ def _probe_template_rungs(
             returns the prompt. Any exception is treated as "cannot probe".
 
     Returns:
-        The capabilities detected, or the GLM-5.1/5.2 defaults if the template
-        could not be rendered.
+        The capabilities detected, or the GLM-5.2 defaults if the template
+        could not be rendered. A template that reads no effort, like GLM-5.1's,
+        has no rungs.
     """
     try:
         control = render(reasoning_effort=_UNRECOGNIZED_EFFORT)
@@ -127,16 +129,14 @@ def _probe_template_rungs(
     except Exception:
         logger.warning(
             "Could not render the GLM chat template to detect its reasoning "
-            "ladder; assuming the GLM-5.1/5.2 ladder (high, max) with a "
+            "ladder; assuming the GLM-5.2 ladder (high, max) with a "
             "thinking toggle."
         )
         return GlmTemplateCapabilities(
             _FALLBACK_RUNGS, honors_thinking_toggle=True
         )
 
-    return GlmTemplateCapabilities(
-        rungs or _FALLBACK_RUNGS, honors_thinking_toggle=honors_toggle
-    )
+    return GlmTemplateCapabilities(rungs, honors_thinking_toggle=honors_toggle)
 
 
 def _asks_for_no_reasoning(options: Mapping[str, Any]) -> bool:
@@ -183,7 +183,7 @@ def normalize_glm_reasoning_effort(
     Args:
         chat_template_options: Keyword arguments bound for the chat template.
         capabilities: The template's detected ladder. Defaults to the
-            GLM-5.1/5.2 ladder, which is what this function assumed before
+            GLM-5.2 ladder, which is what this function assumed before
             templates were probed.
 
     Returns:
@@ -217,6 +217,8 @@ def normalize_glm_reasoning_effort(
     normalized = effort.strip().lower()
     if normalized in _TOP_RUNG_ALIASES:
         options["reasoning_effort"] = _GLM_EFFORT_MAX
+    elif normalized == "minimal":
+        options["reasoning_effort"] = capabilities.floor_rung
     elif normalized in capabilities.rungs:
         options["reasoning_effort"] = normalized
     else:

@@ -14,7 +14,8 @@
 """Tests for GLM's reasoning-effort normalization.
 
 These mirror the one line of the chat template that consumes the value, which
-differs by checkpoint. GLM-5.1 and 5.2 offer two rungs::
+differs by checkpoint. GLM-5.1 has no such line and reads only
+``enable_thinking``. GLM-5.2 offers two rungs::
 
     {%- set effective_reasoning_effort =
         'high' if reasoning_effort is defined and reasoning_effort == 'high'
@@ -31,7 +32,7 @@ falls through to the higher one. GLM-5.3 offers three, and dropped
 Nothing in ``config.json`` separates the two -- GLM-5.3's config is
 byte-identical to GLM-5.2-FP8's apart from ``transformers_version`` -- so the
 ladder is detected by rendering the template. Tests that pass no capabilities
-exercise the GLM-5.1/5.2 default; the rest pin each ladder explicitly.
+exercise the GLM-5.2 default; the rest pin each ladder explicitly.
 """
 
 from __future__ import annotations
@@ -170,7 +171,7 @@ def test_low_reaches_the_floor_rung_when_the_template_has_one() -> None:
 
 
 def test_low_still_folds_into_high_without_that_rung() -> None:
-    """On GLM-5.1/5.2 ``low`` is not a template value; folding it up is right."""
+    """On GLM-5.2 ``low`` is not a template value; folding it up is right."""
     assert normalize_glm_reasoning_effort(
         {"reasoning_effort": "low"}, _TWO_RUNG
     ) == {"reasoning_effort": "high"}
@@ -189,9 +190,23 @@ def test_the_three_rungs_stay_ordered() -> None:
         normalize_glm_reasoning_effort(
             {"reasoning_effort": effort}, _THREE_RUNG_NO_OFF_SWITCH
         )["reasoning_effort"]
-        for effort in ("low", "high", "max")
+        for effort in ("minimal", "low", "medium", "high", "xhigh", "max")
     ]
-    assert rendered == ["low", "high", "max"]
+    assert rendered == ["low", "low", "high", "high", "max", "max"]
+
+
+@pytest.mark.parametrize(
+    "capabilities, floor",
+    [(_THREE_RUNG_NO_OFF_SWITCH, "low"), (_TWO_RUNG, "high")],
+)
+def test_minimal_reaches_the_floor_rung(
+    capabilities: GlmTemplateCapabilities, floor: str
+) -> None:
+    """``minimal`` sits below ``low`` on OpenAI's ladder, so it must never get
+    more reasoning than ``low`` does."""
+    assert normalize_glm_reasoning_effort(
+        {"reasoning_effort": "minimal"}, capabilities
+    ) == {"reasoning_effort": floor}
 
 
 def test_none_becomes_the_floor_rung_without_an_off_switch() -> None:
@@ -232,7 +247,7 @@ def test_a_bare_disabled_toggle_also_means_no_reasoning(toggle: str) -> None:
 def test_a_bare_disabled_toggle_disables_thinking_with_an_off_switch(
     toggle: str,
 ) -> None:
-    """The same request on GLM-5.1/5.2 is honored rather than demoted."""
+    """The same request on GLM-5.1 and 5.2 is honored rather than demoted."""
     result = normalize_glm_reasoning_effort({toggle: False}, _TWO_RUNG)
     assert result[toggle] is False
     assert "reasoning_effort" not in result
@@ -263,8 +278,8 @@ def test_floor_rung_falls_back_to_high() -> None:
 
 
 def test_probe_detects_a_two_rung_template_with_a_toggle() -> None:
-    """Stands in for GLM-5.1/5.2: only ``high`` is distinguished, and the
-    thinking toggle changes the prompt."""
+    """Stands in for GLM-5.2: only ``high`` is distinguished, and the thinking
+    toggle changes the prompt."""
 
     def render(**options: object) -> str:
         effort = "high" if options.get("reasoning_effort") == "high" else "max"
@@ -288,6 +303,19 @@ def test_probe_detects_a_three_rung_template_without_a_toggle() -> None:
     assert capabilities.rungs == frozenset({"low", "high"})
     assert capabilities.honors_thinking_toggle is False
     assert capabilities.floor_rung == "low"
+
+
+def test_probe_finds_no_rungs_in_a_switch_only_template() -> None:
+    """Stands in for GLM-5.1, which reads ``enable_thinking`` and never
+    ``reasoning_effort``, so it has no rungs to report."""
+
+    def render(**options: object) -> str:
+        return "thinking" if options.get("enable_thinking", True) else "off"
+
+    capabilities = _probe_template_rungs(render)
+    assert capabilities.rungs == frozenset()
+    assert capabilities.honors_thinking_toggle is True
+    assert capabilities.floor_rung == "high"
 
 
 def test_probe_falls_back_when_the_template_cannot_render() -> None:
