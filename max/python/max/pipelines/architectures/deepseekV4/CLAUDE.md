@@ -3,7 +3,8 @@
 DeepSeek-V4-Flash-0731. Prefill + decode numerically verified against a vLLM
 golden on the minimized 8-layer model (per-cell ≤ 2× the torch reference's own
 floor), running on MAX's paged KV cache (seven leaves, `layers/cache.py`).
-Not yet: native fp8/fp4 execution, the ragged serving graph, a fused
+The native checkpoint runs on MAX's fp8 / W4A8 kernels and the ragged
+serving graph (`DeepseekV4.serve`, under `max serve`); not yet: a fused
 attention kernel over the leaves. Full records:
 `max/docs/internal/dsv4-bringup/` (start at `OVERVIEW.md`; issue/decision
 numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
@@ -52,9 +53,10 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   `gather_nd` per layer -- a copy of the leaf per read; do not size a real
   deployment on them. The cache-less path (`cache=None`) keeps the
   gathered-table attention as the gates' reference.
-- **Dense MoE dispatch is minimized-model-only.** Every expert sees every
-  token; at 256 experts that is 42× the routed work. First thing to replace
-  for the real checkpoint (grouped W4A8 kernel exists — PROBE-B G3).
+- **Routed experts: grouped W4A8 for native weights, dense otherwise.**
+  Native fp4 experts run `DeepseekV4RoutedExperts` (tokens sorted by expert);
+  wide-dtype (dequantized) weights still take the dense every-expert path,
+  42× the routed work at 256 experts, so do not size a deployment on it.
 - RoPE: no mscale, and two schedules — compressed layers use
   `compress_rope_theta` + YaRN, window-only layers base theta, YaRN off.
   `apply_rope_tail` takes a `[seq, ...]` or `[batch, seq, ...]` table.

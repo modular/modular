@@ -37,6 +37,7 @@ modular_py_test(
         "//max/python/max/pipelines:graph_input_stager",
         "//max/python/max/pipelines:logging_utils",
         "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/glm5_1",
         "//max/python/max/pipelines/architectures/inkling",

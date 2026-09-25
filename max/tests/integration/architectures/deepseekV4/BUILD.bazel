@@ -1,0 +1,43 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_encoding",
+    srcs = ["test_encoding.py"],
+    data = ["//max/tests/integration/architectures/deepseekV4/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV4/testdata",
+    },
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    data = ["//max/tests/integration/architectures/deepseekV4/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV4/testdata",
+    },
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/lib",
+    ],
+)

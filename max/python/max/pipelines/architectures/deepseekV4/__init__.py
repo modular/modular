@@ -15,9 +15,15 @@
 from .arch import deepseekV4_arch
 from .model import DeepseekV4Model
 from .model_config import DeepseekV4Config
+from .reasoning import DeepseekV4ReasoningParser
+from .tokenizer import DeepseekV4Tokenizer
+from .tool_parser import DeepseekV4ToolParser
 
 __all__ = [
     "DeepseekV4Config",
     "DeepseekV4Model",
+    "DeepseekV4ReasoningParser",
+    "DeepseekV4Tokenizer",
+    "DeepseekV4ToolParser",
     "deepseekV4_arch",
 ]

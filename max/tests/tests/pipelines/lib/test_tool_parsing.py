@@ -16,6 +16,9 @@ from max.pipelines.architectures.deepseekV3.tool_parser import (
     DeepseekV3_1ToolParser,
     DeepseekV3ToolParser,
 )
+from max.pipelines.architectures.deepseekV4.tool_parser import (
+    DeepseekV4ToolParser,
+)
 from max.pipelines.architectures.gemma4.tool_parser import Gemma4ToolParser
 from max.pipelines.architectures.glm5_1.tool_parser import GlmToolParser
 from max.pipelines.architectures.inkling.tool_parser import InklingToolParser
@@ -78,6 +81,7 @@ STRUCTURAL_PARSERS: list[type[StructuralTagToolParser]] = [
     MinimaxM2ToolParser,
     DeepseekV3ToolParser,
     DeepseekV3_1ToolParser,
+    DeepseekV4ToolParser,
     Gemma4ToolParser,
     GlmToolParser,
     InklingToolParser,

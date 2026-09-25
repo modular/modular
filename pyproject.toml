@@ -48,6 +48,8 @@ extend-exclude = [
   "*max/python/max/_xgrammar/structural_tag.py",
   "*max/python/max/_xgrammar/builtin_structural_tag.py",
   "*max/python/max/_xgrammar/openai_tool_call_schema.py",
+  # Vendored verbatim from the DeepSeek-V4-Flash-0731 checkpoint; same reason.
+  "*max/python/max/pipelines/architectures/deepseekV4/encoding_dsv4.py",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
   "Mojo/tools/mblack/tests",
   "Faux/mojo_llm_from_scratch/**", # Experimental from-scratch LLM project

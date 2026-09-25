@@ -13,6 +13,15 @@ This version is still a work in progress.
 
 ## MAX models
 
+- DeepSeek-V4 (`DeepseekV4ForCausalLM`) now serves `/v1/chat/completions`.
+  The checkpoint ships no chat template, so prompts are rendered by its
+  reference encoder unless `--chat-template` is given. Thinking is on with
+  high reasoning effort by default; `thinking` / `enable_thinking` false or
+  `reasoning_effort` change that. The architecture defaults to the new
+  `deepseekv4` reasoning and tool parsers, which return `<think>` reasoning
+  separately from content and turn the model's `<｜DSML｜tool_calls>` blocks
+  into OpenAI tool calls, streaming or not.
+
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without
