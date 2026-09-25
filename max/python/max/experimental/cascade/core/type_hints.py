@@ -16,9 +16,56 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import AsyncIterable, Callable
-from typing import Any, TypeAlias, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Protocol,
+    TypeAlias,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import numpy as np
+
+
+class Result(Protocol):
+    """Scalar handle that can be passed as a :data:`CascadeValue`.
+
+    Concrete runtimes supply their own Result (e.g. the rust-backed
+    pyclass). The protocol is structural so this public module does not
+    import a runtime-private type. Awaiting is optional: some Results are
+    only consumed from Rust.
+    """
+
+    @property
+    def fd(self) -> int:
+        """Wake fd the consumer waits on until the value lands."""
+        ...
+
+
+class ResultIter(Protocol):
+    """Streaming handle that can be passed as a :data:`CascadeValue`.
+
+    Concrete runtimes supply their own ResultIter (e.g. the rust-backed
+    pyclass). The protocol is structural so this public module does not
+    import a runtime-private type. Async iteration is optional: some
+    ResultIters are only consumed from Rust.
+    """
+
+    @property
+    def fd(self) -> int:
+        """Wake fd the producer or consumer waits on."""
+        ...
+
+    def send_nowait(self, value: CascadeValue) -> bool:
+        """Push one item, or return False when the bounded channel is full."""
+        ...
+
+    def close(self) -> None:
+        """Drop the producer so the consumer sees end-of-stream."""
+        ...
+
 
 CascadeValue: TypeAlias = Union[
     "np.ndarray",
@@ -29,6 +76,8 @@ CascadeValue: TypeAlias = Union[
     int,
     dict[str, "CascadeValue"],
     list["CascadeValue"],
+    Result,
+    ResultIter,
     None,
 ]
 

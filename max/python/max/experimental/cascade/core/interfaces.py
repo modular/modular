@@ -151,6 +151,28 @@ class Runtime(AsyncExitStack, ABC):
         """
         ...
 
+    def make_result(
+        self, result_id: str, type_hint: object | None
+    ) -> Result[T]:
+        """Build the :py:class:`Result` a proxy returns for a call.
+
+        The default resolves through :py:meth:`get_result`. A runtime can
+        return a :py:class:`Result` subclass that waits on its own transport
+        instead; callers use it through the same interface.
+        """
+        return Result(result_id, self, type_hint)
+
+    def make_result_iter(
+        self, result_id: str, type_hint: object | None
+    ) -> ResultIter[T]:
+        """Build the :py:class:`ResultIter` a proxy returns for a stream.
+
+        The default iterates :py:meth:`stream_result`. A runtime can return
+        a :py:class:`ResultIter` subclass that reads its own transport
+        instead; callers use it through the same interface.
+        """
+        return ResultIter(result_id, self, type_hint)
+
     @abstractmethod
     async def get_metrics(self) -> str:
         """Return Prometheus metrics summary."""
@@ -204,7 +226,7 @@ class Proxy(Generic[T]):
             result_id = await context.enter_async_context(
                 runtime.call_method(worker_id, name, args, kwargs)
             )
-            return Result(result_id, runtime, ret_type)
+            return runtime.make_result(result_id, ret_type)
 
         return call
 
@@ -226,6 +248,6 @@ class Proxy(Generic[T]):
             result_id = await context.enter_async_context(
                 runtime.call_method(worker_id, name, args, kwargs)
             )
-            return ResultIter(result_id, runtime, elem_type)
+            return runtime.make_result_iter(result_id, elem_type)
 
         return call_stream
