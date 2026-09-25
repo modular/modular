@@ -139,6 +139,9 @@ modular_py_test(
     # transitively via //max/python/max/engine.
     ignore_unresolved_imports = ["max._core.mlrt.AsyncValue"],
     mojo_deps = _GRAPH_COMMON_MOJO_DEPS,
+    per_test_tags = {
+        "test_epilogue_fusion.py": ["postsubmit"],
+    },
     tags = [
         "gpu",
     ],
