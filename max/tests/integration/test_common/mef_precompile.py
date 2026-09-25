@@ -150,7 +150,9 @@ def mefs_from_env(rlocation_env_var: str) -> dict[str, Path]:
     return mefs
 
 
-def precompile_entrypoint(build_graph: Callable[[str], Graph]) -> None:
+def precompile_entrypoint(
+    build_graph: Callable[[str], Graph], device_count: int = 1
+) -> None:
     """Runs the CPU producer for one spec: compile ``build_graph(spec)`` to a MEF.
 
     Wires the standard producer command (``--target``, ``--cpu-target``,
@@ -170,6 +172,10 @@ def precompile_entrypoint(build_graph: Callable[[str], Graph]) -> None:
 
     Args:
         build_graph: Maps a spec name to the :class:`Graph` to compile.
+        device_count: The number of virtual accelerators to present and to
+            compile over. A graph that places values on ``DeviceRef.GPU(i)``
+            needs at least ``i + 1``, and the consumer's session must hold the
+            same devices. Defaults to ``1``.
     """
 
     @click.command()
@@ -185,9 +191,11 @@ def precompile_entrypoint(build_graph: Callable[[str], Graph]) -> None:
         target: str, cpu_target: str, spec_name: str, out_path: str
     ) -> None:
         # Set the virtual-device knobs before Accelerator() creates the device.
-        set_virtual_gpu(target, cpu_target)
+        set_virtual_gpu(target, cpu_target, device_count)
         compile_and_export_mef(
-            InferenceSession(devices=[Accelerator()]),
+            InferenceSession(
+                devices=[Accelerator(i) for i in range(device_count)]
+            ),
             build_graph(spec_name),
             out_path,
         )
