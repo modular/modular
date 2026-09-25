@@ -296,6 +296,13 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a regression where indexing a buffer -- loading it and then gathering
+  rows out of it, as a paged KV cache does -- allocated and copied the entire
+  source buffer on every execution instead of reading only the rows requested.
+  For a large buffer this inflated memory use and could fail with an
+  out-of-memory error. The load now folds into the gather so it reads the
+  buffer directly.
+
 - Fixed a prefill worker crash on `response_format` JSON schema requests under
   disaggregated serving. The decode worker admits the request and forwards it
   to prefill, but a prefill worker launched without `--enable-structured-output`
