@@ -34,7 +34,7 @@ from max.pipelines.modeling.config_enums import (
     supported_encoding_dtype,
 )
 from transformers import AutoConfig
-from typing_extensions import Self, override
+from typing_extensions import Self
 
 
 @dataclass
@@ -161,7 +161,6 @@ class OpenELMConfig(ArchConfigWithStoredKVParams):
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
-    @override
     @classmethod
     def initialize(
         cls,
