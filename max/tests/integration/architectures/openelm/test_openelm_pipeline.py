@@ -13,7 +13,10 @@
 """Structural tests for the OpenELM MAX pipeline."""
 
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from max.graph.weights import Weights
 
 
 class TestArchitectureRegistration:
@@ -245,7 +248,9 @@ class TestWeightAdapter:
             ),
         }
 
-        result = convert_safetensor_state_dict(mock_weights)
+        result = convert_safetensor_state_dict(
+            cast("dict[str, Weights]", mock_weights)
+        )
         assert len(result) == len(mock_weights), (
             f"Expected {len(mock_weights)} weights, got {len(result)}"
         )
@@ -262,7 +267,9 @@ class TestWeightAdapter:
             ),
         }
 
-        result = convert_safetensor_state_dict(mock_weights)
+        result = convert_safetensor_state_dict(
+            cast("dict[str, Weights]", mock_weights)
+        )
         assert "transformer.layers.0.attn.o_proj.weight" in result, (
             "Expected 'out_proj' to be renamed to 'o_proj' to match "
             "AttentionWithRope's attribute name"
@@ -284,7 +291,9 @@ class TestWeightAdapter:
             ),
         }
 
-        result = convert_safetensor_state_dict(mock_weights)
+        result = convert_safetensor_state_dict(
+            cast("dict[str, Weights]", mock_weights)
+        )
         for name in mock_weights:
             assert name in result, (
                 f"Weight '{name}' missing from adapter output"
@@ -298,7 +307,10 @@ class TestWeightAdapter:
 
         original = np.array([1.0, 2.0, 3.0], dtype=np.float32)
         result = convert_safetensor_state_dict(
-            {"transformer.norm.weight": _FakeWeights(original)}
+            cast(
+                "dict[str, Weights]",
+                {"transformer.norm.weight": _FakeWeights(original)},
+            )
         )
 
         assert "norm.weight" in result, (
@@ -320,7 +332,14 @@ class TestWeightAdapter:
 
         original = np.array([1.0, 2.0, 3.0], dtype=np.float32)
         result = convert_safetensor_state_dict(
-            {"transformer.layers.0.ffn_norm.weight": _FakeWeights(original)}
+            cast(
+                "dict[str, Weights]",
+                {
+                    "transformer.layers.0.ffn_norm.weight": _FakeWeights(
+                        original
+                    )
+                },
+            )
         )
 
         underlying = np.from_dlpack(

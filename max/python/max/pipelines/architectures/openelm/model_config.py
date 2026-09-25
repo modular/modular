@@ -72,8 +72,8 @@ def compute_layer_configs(hf_config: AutoConfig) -> list[OpenELMLayerConfig]:
 
     return [
         OpenELMLayerConfig(
-            num_query_heads=query_heads[i],
-            num_kv_heads=kv_heads[i],
+            num_query_heads=int(query_heads[i]),
+            num_kv_heads=int(kv_heads[i]),
             ffn_hidden_dim=make_divisible(ffn_mults[i] * model_dim, divisor),
             head_dim=head_dim,
         )
