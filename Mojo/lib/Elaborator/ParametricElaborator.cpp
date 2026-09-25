@@ -922,17 +922,21 @@ static void recursivelyEraseFromNestedScopes(PImplNode *node, Operation *op) {
 ElaborationState
 ParametricElaborator::processComptimeIfOp(PImplNode *parent,
                                           HLCF::ComptimeIfOp op) {
-  // Check the condition expression.
-  Attribute value;
-  HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
+  // Select the live arm: first true condition's then, else the final else.
+  size_t liveRegion = op.getNumRegions() - 1;
+  for (auto [idx, attr] : llvm::enumerate(op.getCondAttrs())) {
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), cast<TypedAttr>(attr));
+    if (cast<SIMDAttr>(value).getAsBool()) {
+      liveRegion = idx;
+      break;
+    }
+  }
 
-  // Take whichever branch the condition indicated, and simply inline those ops
-  // then elaborate them. We can do this by splicing the op list into the parent
-  // block. We splice it this way to avoid remapping the ops when we process
-  // them later.
-  bool resultBool = cast<SIMDAttr>(value).getAsBool();
-  // Get the appropriate region.
-  Region &toProcess = op->getRegion(!resultBool);
+  // Take the selected arm and simply inline those ops then elaborate them. We
+  // can do this by splicing the op list into the parent block. We splice it
+  // this way to avoid remapping the ops when we process them later.
+  Region &toProcess = op->getRegion(liveRegion);
 
   // Push a new node and skip over the current frame until it completes.
   PImplNode::WorkItem item{{}, nullptr, parent->getEvaluator()};
@@ -940,7 +944,7 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
+  item.onComplete = [liveRegion, debug = config.elaborateDebugInfo](
                         PImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
@@ -950,7 +954,7 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
     Block::iterator iter = op->getIterator();
-    Block &block = op->getRegion(!resultBool).front();
+    Block &block = op->getRegion(liveRegion).front();
 
     // First update the locations if necessary
     if (debug) {

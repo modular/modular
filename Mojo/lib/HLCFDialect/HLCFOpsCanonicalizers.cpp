@@ -774,39 +774,59 @@ void ForOp::getCanonicalizationPatterns(RewritePatternSet &results,
 // ComptimeIfOp
 //===----------------------------------------------------------------------===//
 
+// Look at this "comptime if". If all the blocks only contain a terminator,
+// and if the comptime if can be completely removed, return success, otherwise
+// return failure.
+static LogicalResult checkTrivialBlocks(ComptimeIfOp op) {
+  // Only result-less ops can be deleted wholesale: yields with operands would
+  // need to forward results, which this pattern does not handle.
+  if (op->getNumResults() != 0)
+    return failure();
+
+  bool allYield = true;
+  for (Region &thenElseRegion : op.getRegions()) {
+    Block &block = thenElseRegion.front();
+    Operation *term = block.getTerminator();
+
+    // The terminator must be the only op in the block. We also only support
+    // trivial breaks, not ones with operands.
+    if (term != &block.front() || term->getNumOperands() != 0)
+      return failure();
+
+    if (isa<ComptimeYieldOp>(term))
+      continue;
+    if (isa<HLCF::BreakOp>(term)) {
+      allYield = false;
+      continue;
+    }
+    return failure();
+  }
+
+  // If every arm is a bare yield, the comptime.if is a no-op.
+  if (allYield)
+    return success();
+
+  // If every arm is a bare yield or break, and the next op is already a break,
+  // the comptime.if cannot change control flow.
+  if (isa<HLCF::BreakOp>(op->getNextNode()))
+    return success();
+
+  return failure();
+}
+
 LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
+  // If the comptime if is trivial (only has terminator that allow us to
+  // eliminate it), remove it.
+  if (succeeded(checkTrivialBlocks(op))) {
+    b.eraseOp(op);
+    return success();
+  }
+
   // Multi-condition comptime.if is not folded here; keep the existing
   // binary-arm patterns only.
   if (op.getConds().size() != 1)
     return b.notifyMatchFailure(
         op.getLoc(), "multi-condition comptime.if is not canonicalized");
-
-  Block &ifBranch = op->getRegion(0).front();
-  Block &elseBranch = op->getRegion(1).front();
-  Operation *ifTerm = ifBranch.getTerminator();
-  Operation *elseTerm = elseBranch.getTerminator();
-
-  // Simple patterns to handle the case of branches containing just terminator
-  // ops.
-  if (ifTerm == &ifBranch.front() && elseTerm == &elseBranch.front() &&
-      op->getNumResults() == 0) {
-    // If both sides are yielding, we can delete the op.
-    if (isa<ComptimeYieldOp>(ifTerm) && isa<ComptimeYieldOp>(elseTerm)) {
-      b.eraseOp(op);
-      return success();
-    }
-
-    // If one branch yields and another breaks we can delete the op if the op is
-    // immediately preceding another break. The terminators can't have any
-    // returns.
-    if (ifTerm->getNumOperands() == 0 && elseTerm->getNumOperands() == 0 &&
-        isa<ComptimeYieldOp, HLCF::BreakOp>(ifTerm) &&
-        isa<ComptimeYieldOp, HLCF::BreakOp>(elseTerm) &&
-        isa<HLCF::BreakOp>(op->getNextNode())) {
-      b.eraseOp(op);
-      return success();
-    }
-  }
 
   auto condAttr = sugarDynCast<SIMDAttr>(op.getCond());
   if (!condAttr)

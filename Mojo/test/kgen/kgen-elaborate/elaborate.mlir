@@ -2408,3 +2408,44 @@ kgen.generator @identical_different() {
   kgen.call @identical_operands<:type i32, :type i64>() : () -> ()
   hlcf.return
 }
+
+// -----
+
+// Multi-condition hlcf.comptime.if: first false, second true — elaborator
+// inlines only the matching then region.
+// CHECK-LABEL: kgen.func @comptime_if_elif_second_arm
+// CHECK-NEXT: %[[V:.*]] = kgen.param.constant = <2>
+// CHECK-NEXT: hlcf.return %[[V]] : index
+kgen.generator @comptime_if_elif_second_arm() -> index {
+  %0 = hlcf.comptime.if false -> index {
+    %a = kgen.param.constant = <1>
+    hlcf.comptime.yield %a : index
+  } elif true {
+    %b = kgen.param.constant = <2>
+    hlcf.comptime.yield %b : index
+  } else {
+    %c = kgen.param.constant = <3>
+    hlcf.comptime.yield %c : index
+  }
+  hlcf.return %0 : index
+}
+
+// -----
+
+// Multi-condition hlcf.comptime.if: all conditions false — elaborator takes else.
+// CHECK-LABEL: kgen.func @comptime_if_elif_else_arm
+// CHECK-NEXT: %[[V:.*]] = kgen.param.constant = <3>
+// CHECK-NEXT: hlcf.return %[[V]] : index
+kgen.generator @comptime_if_elif_else_arm() -> index {
+  %0 = hlcf.comptime.if false -> index {
+    %a = kgen.param.constant = <1>
+    hlcf.comptime.yield %a : index
+  } elif false {
+    %b = kgen.param.constant = <2>
+    hlcf.comptime.yield %b : index
+  } else {
+    %c = kgen.param.constant = <3>
+    hlcf.comptime.yield %c : index
+  }
+  hlcf.return %0 : index
+}

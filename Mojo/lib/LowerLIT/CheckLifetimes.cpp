@@ -2161,7 +2161,6 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
   void checkIfOp(HLCF::IfOp op);
-  void checkMultiArmComptimeIf(HLCF::ComptimeIfOp op);
   void checkMatchOp(HLCF::MatchOp op);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -3065,16 +3064,9 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::localControlFlowOp:
       checkLocalControlFlowOp(op);
       break;
-    case OverallOpValueEffect::ifLikeOp: {
-      if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(op)) {
-        if (comptimeIf.getThenRegions().size() > 1) {
-          checkMultiArmComptimeIf(comptimeIf);
-          break;
-        }
-      }
+    case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
-    }
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
@@ -3220,38 +3212,26 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveness.markReachable(false);
 }
 
-/// This is HLCF::ComptimeIfOp, or a simple (no extra arms) HLCF::IfOp.
+/// This is HLCF::ComptimeIfOp (any number of then arms + else), or a simple
+/// (no extra arms) HLCF::IfOp. Live-out is the intersection of every arm.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
-  // the intersection of the live values produced by the then/else branches.
+  // the intersection of the live values produced by each arm.
   assert((isa<HLCF::ComptimeIfOp, HLCF::IfOp>(op)));
-  assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
-         op.getRegion(1).hasOneBlock() &&
-         "if-like op should have two single-block regions");
+  assert(op.getNumRegions() >= 2 &&
+         "if-like op should have at least then + else regions");
 
-  TrackedAndInteriorLiveness livenessCopy = liveness;
-  scanBlock(op.getRegion(0).front());
-  livenessCopy.swap(liveness);
-  scanBlock(op.getRegion(1).front());
-  liveness.mergeWith(livenessCopy, valueSet.domInfo);
-}
-
-/// Multi-arm `hlcf.comptime.if`: live-out is the intersection of every then
-/// region and the else region (conditions are attributes, not regions).
-void UninitializedValueScan::checkMultiArmComptimeIf(HLCF::ComptimeIfOp op) {
-  auto thenLiveOutValues =
+  TrackedAndInteriorLiveness entryLiveness = liveness;
+  auto armLiveOut =
       TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
-  TrackedAndInteriorLiveness scratchSet = liveness;
 
-  for (Region &thenRegion : op.getThenRegions()) {
-    liveness = scratchSet;
-    scanBlock(thenRegion.front());
-    thenLiveOutValues.mergeWith(liveness, valueSet.domInfo);
+  for (Region &region : op.getRegions()) {
+    assert(region.hasOneBlock() && "if-like arm should be a single block");
+    liveness = entryLiveness;
+    scanBlock(region.front());
+    armLiveOut.mergeWith(liveness, valueSet.domInfo);
   }
-
-  liveness = scratchSet;
-  scanBlock(op.getElseRegion().front());
-  liveness.mergeWith(thenLiveOutValues, valueSet.domInfo);
+  liveness = std::move(armLiveOut);
 }
 
 // This is used for the HLCF::IfOp.
@@ -4297,8 +4277,6 @@ private:
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op, SmallVector<ResultEffect> &resultEffects);
   void checkIfOp(HLCF::IfOp op, SmallVector<ResultEffect> &resultEffects);
-  void checkMultiArmComptimeIf(HLCF::ComptimeIfOp op,
-                               SmallVector<ResultEffect> &resultEffects);
   void checkMatchOp(HLCF::MatchOp op, SmallVector<ResultEffect> &resultEffects);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -4457,16 +4435,9 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::localControlFlowOp:
       checkLocalControlFlowOp(op);
       break;
-    case OverallOpValueEffect::ifLikeOp: {
-      if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(op)) {
-        if (comptimeIf.getThenRegions().size() > 1) {
-          checkMultiArmComptimeIf(comptimeIf, opEffects.results);
-          break;
-        }
-      }
+    case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op, opEffects.results);
       break;
-    }
     case OverallOpValueEffect::ifOp: {
       auto ifOp = cast<HLCF::IfOp>(op);
       // A single if/else shaped elif has the same region layout as
@@ -4708,7 +4679,8 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 
 /// 'if' operations propagate the consume sets into each branch, and use the
 /// resulting consume sets to make sure the upward propagated set of consumed
-/// values is consistent.
+/// values is consistent. Handles HLCF::ComptimeIfOp (any number of then arms +
+/// else) and simple (no-elif) HLCF::IfOp.
 void DestructorInsertion::checkIfLikeOp(
     Operation &ifElseOp, SmallVector<ResultEffect> &resultEffects) {
 
@@ -4739,34 +4711,40 @@ void DestructorInsertion::checkIfLikeOp(
     resultEffects.clear();
   }
 
-  // Given an 'if' like operation (normal 'if' statement or parameter if)
-  // perform dtor analysis for each side and insert destructors at the top of
-  // the blocks to form a common upward-projected consume set.
-  assert(ifElseOp.getNumRegions() == 2 && ifElseOp.getRegion(0).hasOneBlock() &&
-         ifElseOp.getRegion(1).hasOneBlock() &&
-         "if-like op should have two single-block regions");
-  BitVector thenConsumedValues = consumedValues;
-  scanBlock(ifElseOp.getRegion(0).front());
-  // Scan 'else' block.
-  thenConsumedValues.swap(consumedValues);
-  scanBlock(ifElseOp.getRegion(1).front());
+  assert((isa<HLCF::ComptimeIfOp, HLCF::IfOp>(ifElseOp)));
+  assert(ifElseOp.getNumRegions() >= 2 &&
+         "if-like op should have at least then + else regions");
 
-  BitVector merged = unifyConsumedSets(consumedValues, thenConsumedValues);
-  if (merged.empty()) // Common case, they are identical.
-    return;
+  BitVector entryConsumedValues = consumedValues;
+  SmallVector<BitVector, 4> armConsumed;
+  SmallVector<Block *, 4> arms;
 
-  // 'consumedValues' is the current set for the 'else' block, so insert those
-  // dtors if needed.
-  destroyValuesAtEntryIfNeeded(consumedValues, ifElseOp.getRegion(1).front(),
-                               merged, ifElseOp.getLoc());
+  for (Region &region : ifElseOp.getRegions()) {
+    assert(region.hasOneBlock() && "if-like arm should be a single block");
+    consumedValues = entryConsumedValues;
+    scanBlock(region.front());
+    armConsumed.push_back(std::move(consumedValues));
+    arms.push_back(&region.front());
+  }
 
-  // Insert destructors in the 'then' block.
-  destroyValuesAtEntryIfNeeded(thenConsumedValues,
-                               ifElseOp.getRegion(0).front(), merged,
-                               ifElseOp.getLoc());
+  // Unify consume sets across every arm. `unifyConsumedSets` returns an empty
+  // bitvector when its inputs already agree, so keep the prior unified set in
+  // that case rather than collapsing to empty.
+  BitVector unified = armConsumed.front();
+  bool needsDestroy = false;
+  for (const BitVector &arm : ArrayRef(armConsumed).drop_front()) {
+    BitVector merged = unifyConsumedSets(unified, arm);
+    if (!merged.empty()) {
+      unified = std::move(merged);
+      needsDestroy = true;
+    }
+  }
 
-  // The upward consume set is the union of both sides.
-  consumedValues = std::move(merged);
+  if (needsDestroy) {
+    for (auto [armSet, block] : llvm::zip(armConsumed, arms))
+      destroyValuesAtEntryIfNeeded(armSet, *block, unified, ifElseOp.getLoc());
+  }
+  consumedValues = std::move(unified);
 }
 
 // This is used for the HLCF::IfOp.
@@ -4839,55 +4817,6 @@ void DestructorInsertion::checkIfOp(HLCF::IfOp op,
       consumedValues = std::move(merged);
     }
   }
-}
-
-/// Multi-arm `hlcf.comptime.if`: unify consume sets across every then region
-/// and the else region (conditions are attributes, not regions).
-void DestructorInsertion::checkMultiArmComptimeIf(
-    HLCF::ComptimeIfOp op, SmallVector<ResultEffect> &resultEffects) {
-  if (!resultEffects.empty()) {
-    ImplicitLocOpBuilder builder(op.getLoc(), op->getBlock(),
-                                 std::next(Block::iterator(op)));
-    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
-    for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
-      switch (effect) {
-      case ResultEffect::ignore:
-        continue;
-      case ResultEffect::regDefine:
-        checkDef(result, *op, /*isDeref=*/false, dtorInserter);
-        break;
-      default:
-        llvm_unreachable("unknown result effect for comptime.if");
-      }
-    }
-    resultEffects.clear();
-  }
-
-  BitVector entryConsumedValues = consumedValues;
-  SmallVector<BitVector, 4> armConsumed;
-  SmallVector<Block *, 4> arms;
-
-  for (Region &thenRegion : op.getThenRegions()) {
-    consumedValues = entryConsumedValues;
-    scanBlock(thenRegion.front());
-    armConsumed.push_back(consumedValues);
-    arms.push_back(&thenRegion.front());
-  }
-
-  consumedValues = entryConsumedValues;
-  scanBlock(op.getElseRegion().front());
-  armConsumed.push_back(consumedValues);
-  arms.push_back(&op.getElseRegion().front());
-
-  BitVector unified = armConsumed.front();
-  for (const BitVector &arm : ArrayRef(armConsumed).drop_front())
-    unified = unifyConsumedSets(unified, arm);
-
-  if (!unified.empty()) {
-    for (auto [armSet, block] : llvm::zip(armConsumed, arms))
-      destroyValuesAtEntryIfNeeded(armSet, *block, unified, op.getLoc());
-  }
-  consumedValues = std::move(unified);
 }
 
 void DestructorInsertion::checkMatchOp(

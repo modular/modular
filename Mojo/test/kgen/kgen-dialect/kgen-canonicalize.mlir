@@ -531,6 +531,59 @@ kgen.generator @param_if_empty_yield<cond: scalar<bool>>(%arg0: !kgen.pointer<in
   hlcf.return
 }
 
+// Same as @param_if_empty_yield, but with an elif arm — every region is a bare
+// yield, so the whole multi-arm comptime.if folds away.
+// CHECK-LABEL: @param_if_empty_yield_elif
+kgen.generator @param_if_empty_yield_elif<
+    c0: scalar<bool>, c1: scalar<bool>>(%arg0: !kgen.pointer<index>) {
+  // CHECK-NEXT: hlcf.return
+  hlcf.comptime.if c0 {
+    hlcf.comptime.yield
+  } elif c1 {
+    hlcf.comptime.yield
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.return
+}
+
+// Multi-arm variant of @param_if_empty_before_break: mix of bare yields and a
+// bare break, immediately followed by another break.
+// CHECK-LABEL: @param_if_empty_before_break_elif
+kgen.generator @param_if_empty_before_break_elif<
+    c0: scalar<bool>, c1: scalar<bool>>(%arg0: !kgen.pointer<index>) {
+  // CHECK-NEXT: hlcf.return
+  hlcf.loop {
+    hlcf.comptime.if c0 {
+      hlcf.comptime.yield
+    } elif c1 {
+      hlcf.break
+    } else {
+      hlcf.comptime.yield
+    }
+    hlcf.break
+  }
+  hlcf.return
+}
+
+// Non-trivial body in one arm must keep the multi-arm comptime.if.
+// CHECK-LABEL: @param_if_elif_nontrivial_preserved
+kgen.generator @param_if_elif_nontrivial_preserved<
+    c0: scalar<bool>, c1: scalar<bool>>(
+    %arg0: !kgen.pointer<index>, %arg1: index) {
+  // CHECK: comptime.if c0
+  // CHECK: elif c1
+  hlcf.comptime.if c0 {
+    hlcf.comptime.yield
+  } elif c1 {
+    pop.store %arg1, %arg0 : !kgen.pointer<index>
+    hlcf.comptime.yield
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.return
+}
+
 // CHECK-LABEL: @trivial_struct_copy
 kgen.func @trivial_struct_copy(%arg0: !kgen.struct<(i1)>, %arg1: !kgen.struct<(i1, i1)>) -> (!kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>) {
   // CHECK: %struct = kgen.param.constant: struct<()>

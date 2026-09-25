@@ -36,11 +36,11 @@ def comptime_if_elif[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
     # CHECK: } else {
     # CHECK:     hlcf.comptime.if #lit.struct.extract<:!Bool b, "_mlir_value"> {
     elif b:
-        # CHECK:     lit.var.decl "inside_2" var
+        # CHECK: lit.var.decl "inside_2" var
         var inside_2: Int
-    # CHECK:     hlcf.comptime.yield
-    # CHECK:   }
-    # CHECK:   hlcf.comptime.yield
+    # CHECK: hlcf.comptime.yield
+    # CHECK: } else {
+    # CHECK: hlcf.comptime.yield
     # CHECK: }
 
 
@@ -71,11 +71,11 @@ def param_if[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
     # CHECK: } else {
     # CHECK:     hlcf.comptime.if #lit.struct.extract<:!Bool b, "_mlir_value"> {
     elif b:
-        # CHECK:     lit.var.decl "inside_2" var
+        # CHECK: lit.var.decl "inside_2" var
         var inside_2: Int
-    # CHECK:     hlcf.comptime.yield
-    # CHECK:   }
-    # CHECK:   hlcf.comptime.yield
+    # CHECK: hlcf.comptime.yield
+    # CHECK: } else {
+    # CHECK: hlcf.comptime.yield
     # CHECK: }
 
 
