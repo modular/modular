@@ -436,13 +436,13 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
 //===----------------------------------------------------------------------===//
 
 def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
-    ParentOneOf<["SwitchOp", "IfOp", "MatchOp", "ComptimeMatchOp"]>,
+    ParentOneOf<["SwitchOp", "IfOp", "MatchOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `hlcf.yield` operation is a control-flow terminator that transfers
-    control-flow to after the parent `hlcf.if`, `hlcf.switch`,
-    `hlcf.match`, or `hlcf.comptime.match` operation. For match ops, yield is
+    control-flow to after the parent `hlcf.if`, `hlcf.switch`, or
+    `hlcf.match` operation. For match ops, yield is
     only valid in the else region (case regions use `hlcf.match.next` /
     `hlcf.match.complete`). The operation expects its operand types to match
     the types of the results of that operation, if there are any.
@@ -650,7 +650,7 @@ def HLCF_MatchNextOp : HLCFTerminatorOp<"match.next", [
   let summary = "advance to the next match case";
   let description = [{
     The `hlcf.match.next` terminator indicates that the current case of the
-    nearest enclosing `hlcf.match` or `hlcf.comptime.match` did not match (or
+    nearest enclosing `hlcf.match` did not match (or
     its guard failed). It abandons the current case region and begins executing
     the next case region. If executed from the final case region, control
     transfers to the `else` region of that match.
@@ -686,7 +686,7 @@ def HLCF_MatchCompleteOp : HLCFTerminatorOp<"match.complete", [
   let summary = "finish a match after selecting a case";
   let description = [{
     The `hlcf.match.complete` terminator indicates that the current case of the
-    nearest enclosing `hlcf.match` or `hlcf.comptime.match` was selected and its
+    nearest enclosing `hlcf.match` was selected and its
     body completed normally. It exits that match and transfers control to the
     operation following it. Operand types must match the result types of the
     enclosing match, if any.
@@ -1018,76 +1018,6 @@ def HLCF_ComptimeYieldOp : HLCFTerminatorOp<"comptime.yield", [
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
 }
 
-
-//===----------------------------------------------------------------------===//
-// ComptimeMatchOp
-//===----------------------------------------------------------------------===//
-
-def HLCF_ComptimeMatchOp : HLCFParentOp<"comptime.match"> {
-  let summary = "compile-time match operation";
-  let description = [{
-    The `hlcf.comptime.match` operation is the compile-time counterpart of
-    `hlcf.match`. It has the same case / else region structure and the same
-    `hlcf.match.next` / `hlcf.match.complete` terminator rules, but the value
-    being matched is a parameter (`TypedAttr`) rather than an SSA value.
-
-    Example:
-
-    ```mlir
-    hlcf.comptime.match <subject> {
-      %matches = ...
-      hlcf.if %matches {
-        call @handle_zero()
-        hlcf.match.complete
-      } else {
-        hlcf.match.next
-      }
-      hlcf.unreachable
-    }
-    case {
-      call @handle_other()
-      hlcf.match.complete
-    }
-    else {
-      hlcf.unreachable
-    }
-    ```
-  }];
-
-  let arguments = (ins TypedAttrInterface:$subject);
-  let results = (outs Variadic<AnyType>:$results);
-  // `else` must come before the variadic case list (ODS constraint); the
-  // custom assembly format still prints cases first, then `else`.
-  let regions = (region SizedRegion<1>:$elseRegion,
-                        VariadicRegion<SizedRegion<1>>:$caseRegions);
-
-  let assemblyFormat = [{
-    ` ` `<` custom<ColonTypeParamValue>($subject) `>`
-    (`->` type($results)^)?
-    custom<Match>($caseRegions, $elseRegion) attr-dict
-  }];
-
-  let builders = [
-    OpBuilder<(ins "TypedAttr":$subject), [{
-      build($_builder, $_state, TypeRange(), subject, /*nCaseRegions=*/1);
-    }]>,
-    OpBuilder<(ins "TypeRange":$results, "TypedAttr":$subject), [{
-      build($_builder, $_state, results, subject, /*nCaseRegions=*/1);
-    }]>,
-  ];
-
-  let extraClassDeclaration = [{
-    /// Return true if `op` is nested under a case region of this match
-    /// (not the else region).
-    bool containsInCaseRegion(Operation *op);
-
-    /// Return the case-region index (0-based into `$caseRegions`) containing
-    /// `op`, or nullopt if `op` is not nested under a case of this match.
-    std::optional<unsigned> getCaseRegionIndexContaining(Operation *op);
-  }];
-
-  let hasVerifier = 1;
-}
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
