@@ -1099,55 +1099,61 @@ void ComptimeForGotoElseOp::getBranchTargets(
 // ComptimeIfOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseComptimeIfConds(AsmParser &parser, ArrayAttr &conds) {
-  SmallVector<Attribute> values;
-  auto parseOne = [&]() -> ParseResult {
+/// comptime-if ::= cond (`->` type-list)? then-region
+///                 (`elif` cond then-region)* `else` else-region
+static ParseResult
+parseComptimeIf(OpAsmParser &parser, ArrayAttr &conds,
+                SmallVectorImpl<Type> &resultTypes,
+                SmallVectorImpl<std::unique_ptr<Region>> &regions) {
+  SmallVector<Attribute> condValues;
+  auto parseCond = [&]() -> ParseResult {
     TypedAttr value;
     if (failed(KGEN::parseScalarBoolParamValue(parser, value)))
       return failure();
-    values.push_back(value);
+    condValues.push_back(value);
     return success();
   };
-  if (failed(parseOne()))
+
+  // First condition, optional result types, then region.
+  if (failed(parseCond()) ||
+      failed(parser.parseOptionalArrowTypeList(resultTypes)))
     return failure();
-  while (succeeded(parser.parseOptionalComma())) {
-    if (failed(parseOne()))
+  if (failed(parser.parseRegion(
+          *regions.emplace_back(std::make_unique<Region>()))))
+    return failure();
+
+  // Zero or more `elif cond { ... }` arms.
+  while (succeeded(parser.parseOptionalKeyword("elif"))) {
+    if (failed(parseCond()) || failed(parser.parseRegion(*regions.emplace_back(
+                                   std::make_unique<Region>()))))
       return failure();
   }
-  conds = parser.getBuilder().getArrayAttr(values);
+
+  // Required `else { ... }`.
+  if (failed(parser.parseKeyword("else")) ||
+      failed(parser.parseRegion(
+          *regions.emplace_back(std::make_unique<Region>()))))
+    return failure();
+
+  conds = parser.getBuilder().getArrayAttr(condValues);
   return success();
 }
 
-static void printComptimeIfConds(AsmPrinter &printer, Operation *op,
-                                 ArrayAttr conds) {
-  llvm::interleaveComma(conds, printer, [&](Attribute attr) {
-    KGEN::printScalarBoolParamValue(printer, attr);
-  });
-}
-
-static ParseResult
-parseComptimeIf(OpAsmParser &parser,
-                SmallVectorImpl<std::unique_ptr<Region>> &regions) {
-  // One or more then regions, then `else` and the else region.
-  while (true) {
-    auto region = std::make_unique<Region>();
-    if (failed(parser.parseRegion(*region)))
-      return failure();
-    regions.push_back(std::move(region));
-    if (succeeded(parser.parseOptionalKeyword("else"))) {
-      if (failed(parser.parseRegion(
-              *regions.emplace_back(std::make_unique<Region>()))))
-        return failure();
-      return success();
-    }
-  }
-}
-
 static void printComptimeIf(OpAsmPrinter &printer, Operation *op,
+                            ArrayAttr conds, TypeRange resultTypes,
                             MutableArrayRef<Region> regions) {
-  assert(regions.size() >= 2 && "comptime.if requires then + else regions");
-  for (Region &region : regions.drop_back())
-    printer.printRegion(region);
+  assert(conds.size() >= 1 && regions.size() == conds.size() + 1 &&
+         "comptime.if requires one then per condition plus else");
+  KGEN::printScalarBoolParamValue(printer, conds[0]);
+  printer.printOptionalArrowTypeList(resultTypes);
+  printer << ' ';
+  printer.printRegion(regions[0]);
+  for (unsigned i = 1, e = conds.size(); i != e; ++i) {
+    printer << " elif ";
+    KGEN::printScalarBoolParamValue(printer, conds[i]);
+    printer << ' ';
+    printer.printRegion(regions[i]);
+  }
   printer << " else ";
   printer.printRegion(regions.back());
 }

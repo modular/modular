@@ -430,10 +430,10 @@ kgen.generator @callee() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent() {
 kgen.generator @parent() {
-  // CHECK-NEXT: hlcf.comptime.if <true> {
+  // CHECK-NEXT: hlcf.comptime.if true {
   // CHECK-NEXT:   kgen.param.declare A0 = <0>
 
-  // CHECK:        hlcf.comptime.if <false> {
+  // CHECK:        hlcf.comptime.if false {
   // CHECK-NEXT:     hlcf.comptime.yield
   // CHECK-NEXT:   } else {
   // CHECK-NEXT:     kgen.param.declare A0 = <1>
@@ -446,11 +446,11 @@ kgen.generator @parent() {
 
 // CHECK: kgen.generator @callee
 kgen.generator @callee() always_inline {
-  hlcf.comptime.if <true> {
+  hlcf.comptime.if true {
     kgen.param.declare A = <0>
     hlcf.comptime.yield
   } else {
-    hlcf.comptime.if <false> {
+    hlcf.comptime.if false {
       hlcf.comptime.yield
     } else {
       kgen.param.declare A = <1>
@@ -468,12 +468,12 @@ kgen.generator @parent() {
   // CHECK-NEXT: kgen.param.declare A: i1 = <0>
   kgen.param.declare A: i1 = <0>
   // CHECK-NEXT: kgen.param.declare A1: scalar<bool> = <true>
-  // CHECK-NEXT: hlcf.comptime.if <A1> {
+  // CHECK-NEXT: hlcf.comptime.if A1 {
   // CHECK-NEXT:   kgen.param.declare A0 = <2>
   // CHECK-NEXT:   hlcf.comptime.yield
   // CHECK-NEXT: } else {
   // CHECK-NEXT:   kgen.param.declare A0: scalar<bool> = <A1>
-  // CHECK-NEXT:   hlcf.comptime.if <A0> {
+  // CHECK-NEXT:   hlcf.comptime.if A0 {
   // CHECK-NEXT:     kgen.param.declare B: scalar<bool> = <A1>
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee() : () -> ()
@@ -483,12 +483,12 @@ kgen.generator @parent() {
 // CHECK: kgen.generator @callee
 kgen.generator @callee() always_inline {
   kgen.param.declare A: scalar<bool> = <true>
-  hlcf.comptime.if <A> {
+  hlcf.comptime.if A {
     kgen.param.declare A0 = <2>
     hlcf.comptime.yield
   } else {
     kgen.param.declare A0: scalar<bool> = <A>
-    hlcf.comptime.if <A0> {
+    hlcf.comptime.if A0 {
       kgen.param.declare B: scalar<bool> = <A>
       hlcf.comptime.yield
     } else {
@@ -572,7 +572,7 @@ kgen.generator @callee() always_inline {
 // CHECK-LABEL: kgen.generator @inline_call_in_param_if
 kgen.generator @inline_call_in_param_if<cond: scalar<bool>>() {
   // CHECK-NEXT: hlcf.comptime.if
-  hlcf.comptime.if <cond> {
+  hlcf.comptime.if cond {
     // CHECK: inlined.a
     kgen.call @callee() : () -> ()
     hlcf.comptime.yield
@@ -689,7 +689,7 @@ kgen.generator @struct_extract(%arg0: !kgen.struct<(simd<2, f32>)>) {
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<size, type: dtype>(%arg0: !kgen.struct<(simd<size, type>)>) always_inline {
   kgen.param.declare cond: scalar<bool> = <true>
-  hlcf.comptime.if <cond> {
+  hlcf.comptime.if cond {
     %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(simd<size, type>)>
     hlcf.comptime.yield
   } else {
@@ -798,7 +798,7 @@ kgen.generator @passthrough<cond: scalar<bool>>() always_inline {
 }
 
 kgen.generator @recursive<cond: scalar<bool>>() always_inline {
-  hlcf.comptime.if <cond> {
+  hlcf.comptime.if cond {
     kgen.call @passthrough<:scalar<bool> false>() : () -> ()
     hlcf.comptime.yield
   } else {
@@ -820,41 +820,41 @@ kgen.generator @root() {
 // COM: https://github.com/modularml/modular/issues/10174
 
 kgen.generator @deeply_nested_paramif<value>() always_inline {
-  hlcf.comptime.if<eq(value, 0)> {
+  hlcf.comptime.if eq(value, 0) {
     hlcf.comptime.yield
   } else {
-    hlcf.comptime.if<eq(value, 1)> {
+    hlcf.comptime.if eq(value, 1) {
       hlcf.comptime.yield
     } else {
-      hlcf.comptime.if<eq(value, 2)> {
+      hlcf.comptime.if eq(value, 2) {
         hlcf.comptime.yield
       } else {
-        hlcf.comptime.if<eq(value, 3)> {
+        hlcf.comptime.if eq(value, 3) {
           hlcf.comptime.yield
         } else {
-          hlcf.comptime.if<eq(value, 4)> {
+          hlcf.comptime.if eq(value, 4) {
             hlcf.comptime.yield
           } else {
-            hlcf.comptime.if<eq(value, 5)> {
+            hlcf.comptime.if eq(value, 5) {
               hlcf.comptime.yield
             } else {
-              hlcf.comptime.if<eq(value, 6)> {
+              hlcf.comptime.if eq(value, 6) {
                 kgen.call @deeply_nested_paramif_0<1>() : () -> ()
                 hlcf.comptime.yield
               } else {
-                hlcf.comptime.if<eq(value, 7)> {
+                hlcf.comptime.if eq(value, 7) {
                   hlcf.comptime.yield
                 } else {
-                  hlcf.comptime.if<eq(value, 8)> {
+                  hlcf.comptime.if eq(value, 8) {
                     hlcf.comptime.yield
                   } else {
-                    hlcf.comptime.if<eq(value, 9)> {
+                    hlcf.comptime.if eq(value, 9) {
                       hlcf.comptime.yield
                     } else {
-                      hlcf.comptime.if<eq(value, 10)> {
+                      hlcf.comptime.if eq(value, 10) {
                         hlcf.comptime.yield
                       } else {
-                        hlcf.comptime.if<eq(value, 11)> {
+                        hlcf.comptime.if eq(value, 11) {
                           hlcf.comptime.yield
                         } else {
                           hlcf.comptime.yield
@@ -885,40 +885,40 @@ kgen.generator @deeply_nested_paramif<value>() always_inline {
 }
 
 kgen.generator @deeply_nested_paramif_0<value>() always_inline {
-  hlcf.comptime.if<eq(value, 0)> {
+  hlcf.comptime.if eq(value, 0) {
     hlcf.comptime.yield
   } else {
-    hlcf.comptime.if<eq(value, 1)> {
+    hlcf.comptime.if eq(value, 1) {
       hlcf.comptime.yield
     } else {
-      hlcf.comptime.if<eq(value, 2)> {
+      hlcf.comptime.if eq(value, 2) {
         hlcf.comptime.yield
       } else {
-        hlcf.comptime.if<eq(value, 3)> {
+        hlcf.comptime.if eq(value, 3) {
           hlcf.comptime.yield
         } else {
-          hlcf.comptime.if<eq(value, 4)> {
+          hlcf.comptime.if eq(value, 4) {
             hlcf.comptime.yield
           } else {
-            hlcf.comptime.if<eq(value, 5)> {
+            hlcf.comptime.if eq(value, 5) {
               hlcf.comptime.yield
             } else {
-              hlcf.comptime.if<eq(value, 6)> {
+              hlcf.comptime.if eq(value, 6) {
                 hlcf.comptime.yield
               } else {
-                hlcf.comptime.if<eq(value, 7)> {
+                hlcf.comptime.if eq(value, 7) {
                   hlcf.comptime.yield
                 } else {
-                  hlcf.comptime.if<eq(value, 8)> {
+                  hlcf.comptime.if eq(value, 8) {
                     hlcf.comptime.yield
                   } else {
-                    hlcf.comptime.if<eq(value, 9)> {
+                    hlcf.comptime.if eq(value, 9) {
                       hlcf.comptime.yield
                     } else {
-                      hlcf.comptime.if<eq(value, 10)> {
+                      hlcf.comptime.if eq(value, 10) {
                         hlcf.comptime.yield
                       } else {
-                        hlcf.comptime.if<eq(value, 11)> {
+                        hlcf.comptime.if eq(value, 11) {
                           hlcf.comptime.yield
                         } else {
                           hlcf.comptime.yield

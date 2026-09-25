@@ -597,7 +597,7 @@ kgen.func @break_dominated_by_break(%cond: !kgen.scalar<bool>) -> index {
 kgen.generator @none_hlcf_controlflownode_donot_crash() -> index {
   // COM: Conservatively mark all results as Unknown, but process the subregions.
   kgen.param.declare condition: scalar<bool> = <false>
-  %0 = hlcf.comptime.if <condition> -> index {
+  %0 = hlcf.comptime.if condition -> index {
     %i0 = index.constant 0
     hlcf.comptime.yield %i0: index
   } else {

@@ -921,11 +921,12 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
     elaborated is directly inlined into the enclosing scope. This op is fully
     removed during elaboration.
 
-    `$conds` is a comma-separated list of compile-time `!kgen.scalar<bool>`
-    attributes. There is one then region per condition (the prefix of
-    `$regions`), followed by a single else region (the last element of
-    `$regions`). Unlike `hlcf.if`, additional conditions are attributes — not
-    dynamic condition regions.
+    `$conds` is a list of compile-time `!kgen.scalar<bool>` attributes. There
+    is one then region per condition (the prefix of `$regions`), followed by
+    a single else region (the last element of `$regions`). Assembly syntax
+    prints each condition next to its arm (`if` / `elif` / `else`). Unlike
+    `hlcf.if`, additional conditions are attributes — not dynamic condition
+    regions.
 
     All then / else regions are terminated by `hlcf.comptime.yield` (or
     another function-level terminator such as `hlcf.return`).
@@ -933,7 +934,7 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
     Example (single if/else):
 
     ```mlir
-    %0 = hlcf.comptime.if <condition> -> index {
+    %0 = hlcf.comptime.if condition -> index {
       %i0 = index.constant 0
       hlcf.comptime.yield %i0 : index
     } else {
@@ -945,9 +946,9 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
     Example (if / elif / else):
 
     ```mlir
-    %0 = hlcf.comptime.if <cond0, cond1> -> index {
+    %0 = hlcf.comptime.if cond0 -> index {
       hlcf.comptime.yield %arg0 : index
-    } {
+    } elif cond1 {
       hlcf.comptime.yield %arg1 : index
     } else {
       hlcf.comptime.yield %arg2 : index
@@ -999,9 +1000,7 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
   }];
 
   let assemblyFormat = [{
-    ` ` `<` custom<ComptimeIfConds>($conds) `>`
-    (`->` type($results)^)?
-    custom<ComptimeIf>($regions) attr-dict
+    custom<ComptimeIf>($conds, type($results), $regions) attr-dict
   }];
 
   let builders = [
@@ -1045,7 +1044,7 @@ def HLCF_ComptimeYieldOp : HLCFTerminatorOp<"comptime.yield", [
     Example:
 
     ```mlir
-    %0 = hlcf.comptime.if <condition> -> index {
+    %0 = hlcf.comptime.if condition -> index {
       hlcf.comptime.yield %arg1 : index
     } else {
       hlcf.comptime.yield %arg2 : index

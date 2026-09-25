@@ -2,7 +2,7 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck %s
 
 kgen.generator @select_pred<*"cmp`2x": scalar<bool>>() -> !kgen.deferred {
-  hlcf.comptime.if <*"cmp`2x"> {
+  hlcf.comptime.if *"cmp`2x" {
     %0 = kgen.param.constant: !kgen.deferred = <#kgen<deferred #index.cmp_predicate<sle>>>
     hlcf.return %0 : !kgen.deferred
   } else {

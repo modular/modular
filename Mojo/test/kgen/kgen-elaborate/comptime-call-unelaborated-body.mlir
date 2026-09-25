@@ -22,7 +22,7 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
 kgen.generator @bad<x: index>() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
-  %0 = hlcf.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
+  %0 = hlcf.comptime.if apply(:() -> !kgen.scalar<bool> @dep) -> index {
     // A parameter declaration keeps this `comptime.if` from folding away.
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
@@ -58,7 +58,7 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
 kgen.generator @bad<x: index>() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
-  %0 = hlcf.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
+  %0 = hlcf.comptime.if apply(:() -> !kgen.scalar<bool> @dep) -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
     hlcf.comptime.yield %1 : index
@@ -99,7 +99,7 @@ kgen.generator @dep() -> !kgen.scalar<bool> {
 kgen.generator @bad<x: index>() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
-  %0 = hlcf.comptime.if <apply(:() -> !kgen.scalar<bool> @dep)> -> index {
+  %0 = hlcf.comptime.if apply(:() -> !kgen.scalar<bool> @dep) -> index {
     kgen.param.declare d: dtype = <si32>
     %1 = kgen.param.constant = <x>
     hlcf.comptime.yield %1 : index
@@ -134,7 +134,7 @@ kgen.generator @dep() -> index {
 
 // expected-note @below {{function instantiation failed}}
 kgen.generator @earlyExit<x: index>() -> index {
-  %0 = hlcf.comptime.if <true> -> index {
+  %0 = hlcf.comptime.if true -> index {
     // expected-note @below {{call expansion failed}}
     // expected-note @below {{recursively instantiated through here}}
     %d = kgen.call @dep() : () -> index
@@ -168,7 +168,7 @@ kgen.generator @dep() -> index {
 }
 
 kgen.generator @earlyExit<x: index>() -> index {
-  %0 = hlcf.comptime.if <true> -> index {
+  %0 = hlcf.comptime.if true -> index {
     %1 = kgen.param.constant = <x>
     hlcf.return %1 : index
   } else {

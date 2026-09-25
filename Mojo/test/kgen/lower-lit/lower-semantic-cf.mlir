@@ -852,7 +852,7 @@ lit.fn @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
 lit.fn @self_recursive_param<a: index, cond: scalar<bool>>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
   %0 = lit.call @self_recursive_param<a, :scalar<bool> cond>() : !lit.generator<() -> !kgen.none>
-  hlcf.comptime.if <cond> {
+  hlcf.comptime.if cond {
     // No warning.
     %1 = lit.call @self_recursive_param<a, :scalar<bool> cond>() : !lit.generator<() -> !kgen.none>
     hlcf.comptime.yield
@@ -1111,10 +1111,10 @@ lit.fn @containsEarlyReturn(%arg: !kgen.scalar<bool>) -> !kgen.none {
 
 // CHECK-LABEL: lit.fn @fallthrough
 lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs: index, %cond2 : !kgen.scalar<bool>) -> index {
-// CHECK: hlcf.comptime.if <cond0> {
+// CHECK: hlcf.comptime.if cond0 {
 // CHECK-NEXT:   hlcf.return %lhs : index
 // CHECK-NEXT: } else {
-// CHECK-NEXT: hlcf.comptime.if <cond1> {
+// CHECK-NEXT: hlcf.comptime.if cond1 {
 // CHECK-NEXT:   hlcf.return %rhs : index
 // CHECK-NEXT:  } else {
 // CHECK-NEXT:  hlcf.if %cond2 {
@@ -1128,11 +1128,11 @@ lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs:
 // CHECK-NEXT:  hlcf.unreachable
 // CHECK-NEXT: }
 // CHECK-NEXT: hlcf.unreachable
- hlcf.comptime.if <cond0> {
+ hlcf.comptime.if cond0 {
    lit.return %lhs : index
    hlcf.comptime.yield
  } else {
-   hlcf.comptime.if <cond1> {
+   hlcf.comptime.if cond1 {
      lit.return %rhs : index
      hlcf.comptime.yield
    } else {
@@ -1189,8 +1189,8 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
 
 // CHECK-LABEL: lit.fn @param_if_call_throws
 lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool> {
-  // CHECK: hlcf.comptime.if <paramb> {
-  hlcf.comptime.if <paramb> {
+  // CHECK: hlcf.comptime.if paramb {
+  hlcf.comptime.if paramb {
     %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
     %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
     // CHECK: lit.call @throwing_func
@@ -1199,7 +1199,7 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
     // CHECK: else
     // CHECK:   hlcf.yield
     lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
-    hlcf.comptime.if <paramb> {
+    hlcf.comptime.if paramb {
       // CHECK: %[[THEN_RETURN:.*]] = kgen.param.constant: scalar<bool> = <false>
       // CHECK: hlcf.return %[[THEN_RETURN]]
       %then_return = kgen.param.constant: scalar<bool> = <false>
@@ -1256,7 +1256,7 @@ lit.fn @crashing_try_warning(%cond: !kgen.scalar<bool>) -> !kgen.none {
 // the hlcf.if's doesFallThrough as its own doesFallThrough, and then that was
 // causing it to not replace the lit.end_fn with a hlcf.unreachable.
 lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
-  hlcf.comptime.if <parambool> {
+  hlcf.comptime.if parambool {
     lit.return %runbool : i1
     hlcf.comptime.yield
   } else {
@@ -1266,7 +1266,7 @@ lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
     } else {
       hlcf.yield
     }
-    hlcf.comptime.if <parambool> {
+    hlcf.comptime.if parambool {
       lit.return %runbool : i1
       hlcf.comptime.yield
     } else {

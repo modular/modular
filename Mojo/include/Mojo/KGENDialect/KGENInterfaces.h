@@ -67,7 +67,7 @@ using InlineResult = std::pair<Operation *, std::function<void(Operation *)>>;
 /// Example:
 ///
 /// ```mlir
-/// hlcf.comptime.if <lt(C, 1) -> output> {
+/// hlcf.comptime.if lt(C, 1) - output> {
 ///   hlcf.comptime.yield<A>
 /// } else {
 ///   hlcf.comptime.yield<B>

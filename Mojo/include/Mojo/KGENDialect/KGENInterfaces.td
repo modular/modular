@@ -347,7 +347,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       symbol reference `@foobar` to a single concrete function.
 
       ```mlir
-      hlcf.comptime.if <1> {
+      hlcf.comptime.if 1 {
         // ...
       } else {
         // ...
