@@ -138,7 +138,8 @@ class TestOutputConsistency:
 
         raw_state = {}
         with safe_open(f"{model_path}/model.safetensors", framework="pt") as f:
-            for key in f.keys():
+            key_names = f.keys()
+            for key in key_names:
                 arr = f.get_tensor(key).float().numpy()
                 raw_state[key] = _Weights(WeightData.from_numpy(arr, key))
         state_dict = convert_safetensor_state_dict(raw_state)
