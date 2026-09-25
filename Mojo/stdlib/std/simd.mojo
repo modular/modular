@@ -942,7 +942,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
     # TODO: should be "builtin" when constrained is replaced with 'requires'.
     @inline(.nodebug)
     @implicit
-    def __init__(out self, value: FloatLiteral, /):
+    def __init__(out self, value: FloatLiteral, /) where True:
         """Initializes the SIMD vector with a float.
 
         The value is splatted across all the elements of the SIMD
@@ -951,6 +951,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Args:
             value: The input value.
         """
+        # NOTE: the trivially true `where` clause only serves to distinguish
+        # this implicit overload from the explicit `FloatLiteral`
+        # constructor below; without it the two would have identical
+        # signatures. It does not constrain anything.
         _simd_construction_checks[Self.dtype, Self.length]()
         comptime assert (
             Self.dtype.is_floating_point()
@@ -959,6 +963,50 @@ struct SIMD[dtype: DType, length: SIMDLength](
             `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
         ]
         self = Self(mlir_value=res)
+
+    @inline(.nodebug)
+    def __init__(out self, value: FloatLiteral, /):
+        """Initializes the SIMD vector with a float literal.
+
+        The value is splatted across all the elements of the SIMD
+        vector.
+
+        For floating point dtypes this behaves the same as the implicit
+        constructor. For integral dtypes the literal is converted at compile
+        time, truncating towards zero like `FloatLiteral.__int__()` (e.g.
+        `Int(4.5) == 4` and `Int(-3.7) == -3`), and values outside the range
+        of the dtype wrap, matching the runtime `SIMD.cast` behavior (e.g.
+        `UInt(-3.7)` equals `UInt(Float64(-3.7))`).
+
+        This constructor is intentionally explicit for integral dtypes: float
+        literals do not implicitly convert to integral SIMD types.
+
+        Args:
+            value: The input value.
+        """
+        _simd_construction_checks[Self.dtype, Self.length]()
+        comptime if Self.dtype.is_floating_point():
+            var res = __mlir_attr[
+                `#pop<float_literal_convert<`,
+                value.value,
+                `>> : `,
+                Self._mlir_type,
+            ]
+            self = Self(mlir_value=res)
+        else:
+            comptime assert (
+                Self.dtype.is_integral()
+            ), "the SIMD type must be floating point or integral"
+            self._mlir_value = __mlir_attr[
+                `#pop.int_literal_convert<`,
+                __mlir_attr[
+                    `#pop<float_to_int_literal<`,
+                    value.value,
+                    `>> : !pop.int_literal`,
+                ],
+                `> : `,
+                Self._mlir_type,
+            ]
 
     @staticmethod
     def __init__[
