@@ -24,17 +24,21 @@ tensors, which the reference's ``convert.py`` step would otherwise do:
 * ``attn.wo_a`` is the exception: the checkpoint stores it fp8, but the
   reference declares it bf16 and uses the raw weight in a grouped einsum
   rather than through ``linear()``, so no activation quantization happens
-  there and the block scale has to be folded in on the host. Loading it fp8
-  and dropping the scale is what makes wo_a about 2400x too large.
+  there and the block scale has to be folded in on the host (to bf16, which
+  is exact). Loading it fp8 and dropping the scale is what makes wo_a about
+  2400x too large.
 * routed experts (``ffn.experts.<e>.w{1,2,3}``, e2m1 packed two per int8 byte,
   e8m0 scale per 32 elements) are stacked per layer into the two
   ``[E, N, K/2]`` uint8 tensors of :class:`DeepseekV4RoutedExperts`
   (``gate_up_proj`` = ``[w1; w3]`` along N, ``down_proj`` = ``w2``) with
   ``[E, N, K/32]`` e8m0 scales; the grouped W4A8 kernel reads both as is.
+* the compressors' ``wkv`` / ``wgate``, every norm weight and ``head`` are
+  stored bf16 but declared float32 by the reference, which upcasts them on
+  load; so does this adapter (exact).
 * everything else (bf16 / f32 / the int64 ``tid2eid`` tables) passes through.
 
-The adapter keys on the *stored* dtypes, so a dequantized (f32 / bf16) copy of
-the checkpoint passes through untouched and drives the dense f32 modules.
+The adapter keys on the *stored* dtypes, so a dequantized f32 copy of the
+checkpoint passes through untouched and drives the dense f32 modules.
 
 Note the scale rename is a suffix match on ``.scale`` and must stay one: the
 mHC mixing parameters (``hc_attn_scale``, ``hc_ffn_scale``, ``hc_head_scale``)
@@ -68,6 +72,16 @@ DOWN_PROJ = "down_proj"
 # Projections stored fp8 that the model runs dequantized (see the module
 # docstring): matched on the module name, so ``mtp.*`` stages come along.
 _HOST_DEQUANT_PROJECTIONS = (".attn.wo_a",)
+
+# bf16 in the checkpoint, float32 in the reference (and here), which upcasts
+# them on load: the compressor's raw projections (it pools in float32), every
+# norm weight (``*norm.weight``) and the head.
+_FLOAT32_WEIGHTS = (
+    ".compressor.wkv.weight",
+    ".compressor.wgate.weight",
+    "norm.weight",
+)
+_FLOAT32_HEAD = "head.weight"
 
 _FP8_WEIGHT_BLOCK = 128
 
@@ -114,13 +128,32 @@ def with_dtype(array: np.ndarray, dtype: DType, name: str) -> WeightData:
 def dequantize_fp8_blocks(
     weight: WeightData, scale: WeightData, name: str
 ) -> WeightData:
-    """An fp8 weight times its ``[N/128, K/128]`` e8m0 block scale, float32."""
+    """An fp8 weight times its ``[N/128, K/128]`` e8m0 block scale, bfloat16.
+
+    bf16 is what the reference declares for these projections, and it is
+    exact: an e4m3 value (3 mantissa bits) times a power of two fits bf16's
+    7 mantissa bits and f32's exponent range, so dropping the low 16 bits of
+    the float32 product loses nothing.
+    """
     values = _E4M3[as_uint8(weight.data)]
     blocks = e8m0_to_float32(as_uint8(scale.data))
     expanded = np.repeat(
         np.repeat(blocks, _FP8_WEIGHT_BLOCK, axis=0), _FP8_WEIGHT_BLOCK, axis=1
     )[: values.shape[0], : values.shape[1]]
-    return with_dtype(values * expanded, DType.float32, name)
+    product = np.ascontiguousarray(values * expanded, dtype=np.float32)
+    bf16_bits = (product.view(np.uint32) >> 16).astype(np.uint16)
+    return with_dtype(bf16_bits, DType.bfloat16, name)
+
+
+def bfloat16_to_float32(weight: WeightData, name: str) -> WeightData:
+    """A bf16 weight widened to float32 (exact: bf16 is f32's top 16 bits)."""
+    buffer = (
+        weight.data
+        if isinstance(weight.data, Buffer)
+        else Buffer.from_dlpack(weight.data)
+    )
+    bits = np.from_dlpack(buffer.view(DType.uint16)).astype(np.uint32) << 16
+    return with_dtype(bits, DType.float32, name)
 
 
 def stack_experts(
@@ -226,6 +259,12 @@ def convert_weight_data(
             if base.endswith(_HOST_DEQUANT_PROJECTIONS) and scale is not None:
                 new_state_dict[name] = dequantize_fp8_blocks(data, scale, name)
                 continue
+
+        if (
+            name.endswith(_FLOAT32_WEIGHTS) or name == _FLOAT32_HEAD
+        ) and data.dtype == DType.bfloat16:
+            new_state_dict[name] = bfloat16_to_float32(data, name)
+            continue
 
         new_state_dict[name] = data
 

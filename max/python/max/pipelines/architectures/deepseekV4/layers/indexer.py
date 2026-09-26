@@ -49,8 +49,16 @@ Causality is enforced twice, and the two are not the same rule:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    ops,
+)
 from max.nn.layer import Module
 from max.nn.linear import Linear
 
@@ -78,6 +86,10 @@ class DeepseekV4Indexer(Module):
         self.index_topk = config.index_topk
         # Note this is the *indexer's* head width, 128, not the block's 512.
         self.softmax_scale = self.head_dim**-0.5
+        # Both softmax scales the reference folds into the head weights. The
+        # head count is the full one even when this device scores only its
+        # share of the heads: the reference divides by ``args.index_n_heads``.
+        self.weights_scale = self.softmax_scale * self.n_heads**-0.5
 
         self.wq_b = linear_for(
             config, config.q_lora_rank, self.n_heads * self.head_dim, device
@@ -93,6 +105,43 @@ class DeepseekV4Indexer(Module):
             config, compress_ratio, self.head_dim, device, rotate=True
         )
 
+    def shard_heads(self, num_devices: int) -> None:
+        """Declares the reference's tensor-parallel split: ``wq_b`` and
+        ``weights_proj`` per head. The compressor is shared and stays whole.
+        """
+        if self.n_heads % num_devices:
+            raise ValueError(
+                f"{self.n_heads} indexer heads do not split across "
+                f"{num_devices} devices"
+            )
+        self.wq_b.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        self.weights_proj.sharding_strategy = ShardingStrategy.rowwise(
+            num_devices
+        )
+
+    def keep_local_heads(self, num_devices: int) -> None:
+        """Makes this replica score only its share of :meth:`shard_heads`."""
+        self.n_heads //= num_devices
+
+    @staticmethod
+    def select_tensor_parallel(
+        indexers: Sequence[DeepseekV4Indexer],
+        scores: Sequence[TensorValue],
+        valid: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """:meth:`select` on every device over the all-reduced scores.
+
+        Each device's :meth:`score` covers its share of the heads; the sum
+        over heads is completed before the top-k, so every device ranks the
+        same scores and picks the same entries.
+        """
+        reduced = ops.allreduce.sum(list(scores), signal_buffers)
+        return [
+            indexer.select(score, v)
+            for indexer, score, v in zip(indexers, reduced, valid, strict=True)
+        ]
+
     def __call__(
         self,
         x: TensorValue,
@@ -102,6 +151,8 @@ class DeepseekV4Indexer(Module):
         valid: TensorValue,
     ) -> TensorValue:
         """Select compressed entries for every query in a ragged batch.
+
+        :meth:`score` then :meth:`select`.
 
         Args:
             x: ``[T, hidden_size]``, the block input the main attention also
@@ -122,9 +173,20 @@ class DeepseekV4Indexer(Module):
             ``[T, k]`` int32 candidate numbers (rows of ``candidates``), with
             ``-1`` in unusable slots. ``k = min(index_topk, n)``.
         """
-        device = x.device
+        return self.select(self.score(x, qr, freqs_cis, candidates), valid)
+
+    def score(
+        self,
+        x: TensorValue,
+        qr: TensorValue,
+        freqs_cis: TensorValue,
+        candidates: TensorValue,
+    ) -> TensorValue:
+        """``[T, n]`` float32 scores, summed over this module's heads.
+
+        The arguments are :meth:`__call__`'s. Nothing is masked yet.
+        """
         t = x.shape[0]
-        n = int(candidates.shape[1])
 
         # ``apply_rope_tail`` wants the sequence on axis 1.
         q = ops.reshape(self.wq_b(qr), [1, t, self.n_heads, self.head_dim])
@@ -145,12 +207,22 @@ class DeepseekV4Indexer(Module):
 
         # One learned weight per head per query, folded with both softmax
         # scales the reference applies here rather than to the scores.
-        weights = ops.cast(self.weights_proj(x), DType.float32) * (
-            self.softmax_scale * self.n_heads**-0.5
+        weights = (
+            ops.cast(self.weights_proj(x), DType.float32) * self.weights_scale
         )
-        index_score = ops.squeeze(
+        return ops.squeeze(
             ops.sum(scores * ops.unsqueeze(weights, -1), axis=1), axis=1
         )
+
+    def select(
+        self, index_score: TensorValue, valid: TensorValue
+    ) -> TensorValue:
+        """The top-k of :meth:`score`'s ``[T, n]`` under ``valid``.
+
+        Returns what :meth:`__call__` returns.
+        """
+        device = index_score.device
+        n = int(index_score.shape[1])
 
         # Rule 1: an entry that had not closed by the query cannot be selected.
         index_score = ops.where(

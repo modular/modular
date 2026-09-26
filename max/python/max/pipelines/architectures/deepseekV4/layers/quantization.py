@@ -40,8 +40,8 @@ of two flips the ceiling and changes the scale by a factor of two.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, NoReturn
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
@@ -349,6 +349,22 @@ class DeepseekV4Fp8Linear(Linear):
             device,
             quant_config=quant_config,
             name=name,
+        )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> NoReturn:
+        """Refuses: :meth:`Linear.shard` would return plain ``Linear`` shards.
+
+        Their ``__call__`` is the stock ``amax / 448`` activation scale, so
+        the fp8 numerics would change without any error. A class-preserving
+        override cannot be typed against ``Linear.shard``'s ``list[Linear]``;
+        the multi-device model builds its replicas as this class instead
+        (``DeepseekV4.tensor_parallel_replicas``) and gives them only the
+        weight shards.
+        """
+        del devices
+        raise TypeError(
+            "DeepseekV4Fp8Linear cannot be sharded with Linear.shard, which "
+            "drops its e8m0 activation scales; shard its weights instead"
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:

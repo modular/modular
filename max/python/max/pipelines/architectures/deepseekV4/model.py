@@ -16,15 +16,19 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, cast
 
 from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -36,11 +40,13 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaRaggedBatchProcessor,
+    ragged_kv_symbolic_inputs,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .deepseekV4 import DeepseekV4
 from .layers import DeepseekV4Cache
+from .layers.quantization import fp8_block_quant_config
 from .model_config import DeepseekV4Config
 
 logger = logging.getLogger("max.pipelines")
@@ -59,6 +65,9 @@ class DeepseekV4Inputs(ModelInputs):
     return_n_logits: Buffer
     """Number of trailing logits to return."""
 
+    signal_buffers: list[Buffer] = field(default_factory=list)
+    """One per device when there is more than one, else empty."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
@@ -66,6 +75,7 @@ class DeepseekV4Inputs(ModelInputs):
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
+            *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
         )
 
@@ -74,6 +84,24 @@ class DeepseekV4BatchProcessor(
     SingleReplicaRaggedBatchProcessor[TextContext, DeepseekV4Inputs]
 ):
     """Ragged single-replica batching; the stock ragged KV input order."""
+
+    _include_signal_buffers: ClassVar[bool] = True
+
+    def get_symbolic_inputs(
+        self,
+        *,
+        kv_params: KVCacheParamInterface,
+        device_refs: list[DeviceRef],
+    ) -> list[TensorType | BufferType]:
+        # A single device keeps the signal-free signature, and with it the
+        # compiled graph, of the single-device bringup.
+        return ragged_kv_symbolic_inputs(
+            kv_params=kv_params,
+            device_refs=device_refs,
+            include_signal_buffers=(
+                self._include_signal_buffers and len(device_refs) > 1
+            ),
+        )
 
     def _make_inputs(
         self,
@@ -84,12 +112,12 @@ class DeepseekV4BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         signal_buffers: list[Buffer],
     ) -> DeepseekV4Inputs:
-        del signal_buffers
         return DeepseekV4Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
             return_n_logits=return_n_logits,
             kv_cache_inputs=kv_cache_inputs,
+            signal_buffers=signal_buffers,
         )
 
 
@@ -130,11 +158,6 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        if len(devices) != 1:
-            raise ValueError(
-                "DeepSeek-V4 bringup is single-device only; got "
-                f"{len(devices)} devices"
-            )
         self.model = self.load_model(session)
 
     def _create_model_config(
@@ -146,6 +169,25 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
         # ``norm.weight`` is the one norm every V4 checkpoint has, hash-routed
         # or not, so it is the safe probe for the norm storage dtype.
         model_config.norm_dtype = state_dict["norm.weight"].dtype
+        if model_config.quantization_encoding == "float8_e4m3fn":
+            # The encoding names the fp8 projections only. The activation
+            # dtype is the reference's default dtype, bf16, which is also
+            # what the checkpoint stores ``embed`` / ``ffn.gate`` /
+            # ``indexer.weights_proj`` / ``wo_a`` in and the reference declares
+            # them as; those follow ``config.dtype``. The weights the reference
+            # declares float32 (norms, head, compressor ``wkv`` / ``wgate``)
+            # are declared so by the modules and upcast by the adapter.
+            quant_config = fp8_block_quant_config(
+                getattr(self.huggingface_config, "quantization_config", None),
+                model_config.num_hidden_layers,
+            )
+            if quant_config is None:
+                raise ValueError(
+                    "quantization_encoding float8_e4m3fn needs a checkpoint "
+                    "that declares its fp8 quantization_config"
+                )
+            model_config.quant_config = quant_config
+            model_config.dtype = state_dict["embed.weight"].dtype
         # The adapter drops the ``mtp.*`` weights, so the stages are not built.
         model_config.dspark_stages = False
         return model_config
@@ -174,16 +216,43 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
                 graph.inputs
             )
             assert isinstance(self.kv_params, MultiKVCacheParams)
-            cache = DeepseekV4Cache.from_groups(
-                model_config,
-                self.kv_params.unflatten_basic_kv_tree(iter(variadic_args)),
-            )
-            outputs = nn_model.serve(
-                tokens.tensor,
-                input_row_offsets.tensor,
-                return_n_logits.tensor,
-                cache,
-            )
+            n_dev = len(self.device_refs)
+            if n_dev == 1:
+                cache = DeepseekV4Cache.from_groups(
+                    model_config,
+                    self.kv_params.unflatten_basic_kv_tree(iter(variadic_args)),
+                )
+                outputs = nn_model.serve(
+                    tokens.tensor,
+                    input_row_offsets.tensor,
+                    return_n_logits.tensor,
+                    cache,
+                )
+            else:
+                signal_buffers = [v.buffer for v in variadic_args[:n_dev]]
+                groups = self.kv_params.unflatten_basic_kv_tree(
+                    iter(variadic_args[n_dev:])
+                )
+                caches = [
+                    DeepseekV4Cache.from_groups(
+                        model_config, groups, device_idx=i
+                    )
+                    for i in range(n_dev)
+                ]
+                tokens_per_dev = ops.distributed_broadcast(
+                    tokens.tensor, signal_buffers
+                )
+                offsets_per_dev = ops.distributed_broadcast(
+                    input_row_offsets.tensor, signal_buffers
+                )
+                outputs = DeepseekV4.serve_tensor_parallel(
+                    nn_model.tensor_parallel_replicas(self.device_refs),
+                    tokens_per_dev,
+                    offsets_per_dev,
+                    return_n_logits.tensor,
+                    caches,
+                    signal_buffers,
+                )
             graph.output(*outputs)
         return graph, weights_registry
 

@@ -38,8 +38,17 @@ the thing this file is arranged to avoid.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    Weight,
+    ops,
+)
 from max.nn.embedding import Embedding
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
@@ -49,6 +58,7 @@ from max.nn.transformer import logits_postprocess
 from .layers import (
     DeepseekV4Attention,
     DeepseekV4Cache,
+    DeepseekV4Indexer,
     DeepseekV4MoE,
     DSparkAttention,
     DSparkConfidenceHead,
@@ -61,6 +71,32 @@ from .layers import (
     hc_pre,
 )
 from .model_config import DeepseekV4Config
+
+
+def _adopt_shards(
+    source: Module, replicas: Sequence[Module], devices: list[DeviceRef]
+) -> None:
+    """Point each replica's weights at the matching shard of ``source``'s.
+
+    ``replicas`` are structurally identical to ``source`` (built from the same
+    config), so they are walked in step. A weight with no strategy yet is
+    replicated; a ``Linear``'s goes through its setter, which is what shards a
+    block-scaled fp8 ``weight_scale`` along with the weight.
+    """
+    n = len(devices)
+    if isinstance(source, Linear) and source.sharding_strategy is None:
+        source.sharding_strategy = ShardingStrategy.replicate(n)
+    for name, value in list(vars(source).items()):
+        if not isinstance(value, Weight):
+            continue
+        if value.sharding_strategy is None:
+            value.sharding_strategy = ShardingStrategy.replicate(n)
+        for replica, shard in zip(replicas, value.shard(devices), strict=True):
+            setattr(replica, name, shard)
+    for name, child in source.sublayers.items():
+        _adopt_shards(
+            child, [replica.sublayers[name] for replica in replicas], devices
+        )
 
 
 def _hc_parameters(
@@ -112,11 +148,14 @@ class DeepseekV4Block(Module):
         super().__init__()
         self.attn = self.attention_cls(config, layer_idx, device, max_seq_len)
         self.ffn = DeepseekV4MoE(config, layer_idx, device)
+        # Every norm weight is float32, as the reference declares it (the
+        # checkpoint's bf16 is upcast on load); the norm still computes in
+        # the activation dtype.
         self.attn_norm = RMSNorm(
-            config.hidden_size, config.dtype, config.rms_norm_eps
+            config.hidden_size, DType.float32, config.rms_norm_eps
         )
         self.ffn_norm = RMSNorm(
-            config.hidden_size, config.dtype, config.rms_norm_eps
+            config.hidden_size, DType.float32, config.rms_norm_eps
         )
         self.hc_mult = config.hc_mult
         self.hc_eps = config.hc_eps
@@ -132,6 +171,84 @@ class DeepseekV4Block(Module):
             self.hc_ffn_base,
             self.hc_ffn_scale,
         ) = _hc_parameters(config, device, "ffn")
+
+    @staticmethod
+    def tensor_parallel(
+        blocks: Sequence[DeepseekV4Block],
+        xs: Sequence[TensorValue],
+        rows: Sequence[RaggedRows],
+        token_ids: Sequence[TensorValue],
+        caches: Sequence[DeepseekV4Cache],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """:meth:`__call__` on every device; ``blocks`` holds a replica each.
+
+        Each device's attention covers its share of the heads and returns a
+        partial sum of the output projection; the all-reduce completes it
+        before the mHC merge, which every device runs whole. The indexer's
+        heads are split the same way, so its scores are all-reduced before the
+        top-k. The MoE splits its routed experts across the devices and
+        all-reduces their sum (:meth:`DeepseekV4MoE.tensor_parallel`).
+        """
+        contracted = [
+            block._contract(
+                x, block.hc_attn_fn, block.hc_attn_scale, block.hc_attn_base
+            )
+            for block, x in zip(blocks, xs, strict=True)
+        ]
+        states = [
+            block.attn.begin(block.attn_norm(h), row, cache)
+            for block, (h, _, _), row, cache in zip(
+                blocks, contracted, rows, caches, strict=True
+            )
+        ]
+        if blocks[0].attn.indexer is not None:
+            indexers, scores, valid = [], [], []
+            for block, state in zip(blocks, states, strict=True):
+                assert block.attn.indexer is not None
+                assert state.index_score is not None
+                assert state.valid is not None
+                indexers.append(block.attn.indexer)
+                scores.append(state.index_score)
+                valid.append(state.valid)
+            selected = DeepseekV4Indexer.select_tensor_parallel(
+                indexers, scores, valid, signal_buffers
+            )
+            for state, candidates in zip(states, selected, strict=True):
+                state.candidates = candidates
+        partials = [
+            block.attn.end(state, row, cache)
+            for block, state, row, cache in zip(
+                blocks, states, rows, caches, strict=True
+            )
+        ]
+        attended = ops.allreduce.sum(partials, signal_buffers)
+        xs = [
+            hc_post(h, residual, post, comb)
+            for h, residual, (_, post, comb) in zip(
+                attended, xs, contracted, strict=True
+            )
+        ]
+
+        contracted = [
+            block._contract(
+                x, block.hc_ffn_fn, block.hc_ffn_scale, block.hc_ffn_base
+            )
+            for block, x in zip(blocks, xs, strict=True)
+        ]
+        moved = DeepseekV4MoE.tensor_parallel(
+            [block.ffn for block in blocks],
+            [
+                block.ffn_norm(h)
+                for block, (h, _, _) in zip(blocks, contracted, strict=True)
+            ],
+            token_ids,
+            signal_buffers,
+        )
+        return [
+            hc_post(h, x, post, comb)
+            for h, x, (_, post, comb) in zip(moved, xs, contracted, strict=True)
+        ]
 
     def _contract(
         self, x: TensorValue, fn: Weight, scale: Weight, base: Weight
@@ -374,10 +491,13 @@ class DSparkBlock(DeepseekV4Block):
 class DeepseekV4(Module):
     """The DeepSeek-V4-Flash language model."""
 
-    def __init__(self, config: DeepseekV4Config) -> None:
+    def __init__(
+        self, config: DeepseekV4Config, device: DeviceRef | None = None
+    ) -> None:
         super().__init__()
         self.config = config
-        device = config.devices[0]
+        if device is None:
+            device = config.devices[0]
 
         self.embed = Embedding(
             config.vocab_size,
@@ -392,7 +512,7 @@ class DeepseekV4(Module):
             ]
         )
         self.norm = RMSNorm(
-            config.hidden_size, config.dtype, config.rms_norm_eps
+            config.hidden_size, DType.float32, config.rms_norm_eps
         )
         # The final mHC contraction before the LM head. Unlike the per-block
         # sites this one has no Sinkhorn step -- the reference's ``hc_head``
@@ -416,8 +536,9 @@ class DeepseekV4(Module):
             shape=(1,),
             device=device,
         )
+        # float32, as the reference declares it; stored bf16, upcast on load.
         self.head = Linear(
-            config.hidden_size, config.vocab_size, config.dtype, device
+            config.hidden_size, config.vocab_size, DType.float32, device
         )
         self.mtp = LayerList(
             [
@@ -454,7 +575,7 @@ class DeepseekV4(Module):
         )
 
     def _lm_head(self, x: TensorValue) -> TensorValue:
-        """The reference's head: bf16 storage, float32 matmul."""
+        """The reference's head: a float32 matmul."""
         return ops.matmul(
             ops.cast(x, DType.float32),
             ops.transpose(ops.cast(self.head.weight, DType.float32), 0, 1),
@@ -559,6 +680,84 @@ class DeepseekV4(Module):
             lm_head=self._lm_head,
             return_logits=self.config.return_logits,
             return_hidden_states=self.config.return_hidden_states,
+        )
+
+    def tensor_parallel_replicas(
+        self, devices: Sequence[DeviceRef]
+    ) -> list[DeepseekV4]:
+        """One copy of the model per device, for the multi-device graph.
+
+        Every weight of a copy is a shard of this model's, so this model stays
+        the one the weights registry is built from while the copies are what
+        the graph runs. Attention, its indexer included, splits its heads
+        across the devices (:meth:`DeepseekV4Attention.shard_heads`) and the
+        MoE its routed experts (:meth:`DeepseekV4MoE.shard_experts`); every
+        other weight is replicated, and each device computes the rest of the
+        forward whole.
+        Call it once, after :meth:`load_state_dict`.
+        """
+        n = len(devices)
+        for layer in self.layers:
+            assert isinstance(layer, DeepseekV4Block)
+            layer.attn.shard_heads(n)
+            layer.ffn.shard_experts(n)
+        replicas = [DeepseekV4(self.config, device) for device in devices]
+        _adopt_shards(self, replicas, list(devices))
+        for rank, replica in enumerate(replicas):
+            for layer in replica.layers:
+                assert isinstance(layer, DeepseekV4Block)
+                layer.attn.keep_local_heads(n)
+                layer.ffn.keep_local_experts(n, rank)
+        return replicas
+
+    @staticmethod
+    def serve_tensor_parallel(
+        replicas: Sequence[DeepseekV4],
+        tokens: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        return_n_logits: TensorValue,
+        caches: Sequence[DeepseekV4Cache],
+        signal_buffers: Sequence[BufferValue],
+    ) -> tuple[TensorValue, ...]:
+        """:meth:`serve` over :meth:`tensor_parallel_replicas`, one per device.
+
+        ``tokens``, ``input_row_offsets`` and ``caches`` are per device; the
+        logits come from device 0, whose stream every device holds a copy of.
+        """
+        lead = replicas[0]
+        t = tokens[0].shape[0]
+        rows = [
+            RaggedRows.from_offsets(offsets, t, cache.cache_lengths)
+            for offsets, cache in zip(input_row_offsets, caches, strict=True)
+        ]
+        token_rows = [ops.reshape(tok, [1, t]) for tok in tokens]
+        hs = [
+            expand_copies(replica.embed(tok), lead.config.hc_mult)
+            for replica, tok in zip(replicas, token_rows, strict=True)
+        ]
+        for layer_idx in range(len(lead.layers)):
+            blocks = []
+            for replica in replicas:
+                block = replica.layers[layer_idx]
+                assert isinstance(block, DeepseekV4Block)
+                blocks.append(block)
+            hs = DeepseekV4Block.tensor_parallel(
+                blocks,
+                hs,
+                rows,
+                token_rows,
+                caches,
+                signal_buffers,
+            )
+        x = lead.contract_head(hs[0])
+        return logits_postprocess(
+            ops.reshape(x, [t, lead.config.hidden_size]),
+            input_row_offsets[0],
+            return_n_logits,
+            norm=lead.norm,
+            lm_head=lead._lm_head,
+            return_logits=lead.config.return_logits,
+            return_hidden_states=lead.config.return_hidden_states,
         )
 
     def fill_dspark_cache(

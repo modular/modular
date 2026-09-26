@@ -61,9 +61,11 @@ window's candidate entry]`` -- addressed by absolute row, or ``-1``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.kernels import latent_sparse_attention_ragged
 from max.nn.layer import Module
 from max.nn.linear import Linear
@@ -158,6 +160,23 @@ def window_table(
     return table, idxs
 
 
+@dataclass
+class PendingAttention:
+    """What :meth:`DeepseekV4Attention.begin` hands to ``end``.
+
+    ``index_score`` is set, and ``candidates`` not yet, on a layer with an
+    indexer; the caller sets ``candidates`` from the scores' top-k.
+    """
+
+    q: TensorValue
+    kv: TensorValue
+    freqs_cis: TensorValue
+    stream: CompressedStream | None
+    valid: TensorValue | None
+    index_score: TensorValue | None
+    candidates: TensorValue | None
+
+
 class DeepseekV4Attention(Module):
     """Shared-latent MQA with sliding window and optional CSA compression."""
 
@@ -200,13 +219,15 @@ class DeepseekV4Attention(Module):
             config, config.hidden_size, config.q_lora_rank, device
         )
         self.q_norm = RMSNorm(
-            config.q_lora_rank, config.dtype, config.rms_norm_eps
+            config.q_lora_rank, DType.float32, config.rms_norm_eps
         )
         self.wq_b = linear_for(
             config, config.q_lora_rank, self.n_heads * self.head_dim, device
         )
         self.wkv = linear_for(config, config.hidden_size, self.head_dim, device)
-        self.kv_norm = RMSNorm(self.head_dim, config.dtype, config.rms_norm_eps)
+        self.kv_norm = RMSNorm(
+            self.head_dim, DType.float32, config.rms_norm_eps
+        )
         # Not ``linear_for``: the checkpoint stores wo_a fp8, but the reference
         # declares it ``dtype=torch.bfloat16`` and consumes ``.weight`` raw in
         # the grouped einsum below, so it never runs the fp8 ``linear()`` path
@@ -222,7 +243,7 @@ class DeepseekV4Attention(Module):
             config, self.o_groups * self.o_lora_rank, config.hidden_size, device
         )
 
-        self.rope = rope_for_layer(config, layer_idx, max_seq_len)
+        self.rope = rope_for_layer(config, layer_idx, max_seq_len, device)
         self.compressor = (
             DeepseekV4Compressor(
                 config, self.compress_ratio, self.head_dim, device
@@ -237,6 +258,36 @@ class DeepseekV4Attention(Module):
             if self.compress_ratio == 4
             else None
         )
+
+    def shard_heads(self, num_devices: int) -> None:
+        """Declares the reference's tensor-parallel split on this layer's weights.
+
+        The query side is cut along heads: ``wq_b`` and ``attn_sink`` per
+        head, ``wo_a`` along its groups (a group is a run of whole heads), and
+        ``wo_b`` along its input, so each device's output is a partial sum the
+        block all-reduces. The latent side (``wq_a``, ``q_norm``, ``wkv``,
+        ``kv_norm``) is shared by every head and stays whole.
+        """
+        if self.n_heads % num_devices or self.o_groups % num_devices:
+            raise ValueError(
+                f"{self.n_heads} heads in {self.o_groups} groups do not split "
+                f"across {num_devices} devices"
+            )
+        self.wq_b.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        self.attn_sink.sharding_strategy = ShardingStrategy.axiswise(
+            0, num_devices
+        )
+        self.wo_a.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        self.wo_b.sharding_strategy = ShardingStrategy.columnwise(num_devices)
+        if self.indexer is not None:
+            self.indexer.shard_heads(num_devices)
+
+    def keep_local_heads(self, num_devices: int) -> None:
+        """Makes this replica compute only its share of :meth:`shard_heads`."""
+        self.n_heads //= num_devices
+        self.o_groups //= num_devices
+        if self.indexer is not None:
+            self.indexer.keep_local_heads(num_devices)
 
     def _output_projection(self, o: TensorValue) -> TensorValue:
         """``[b, s, heads, head_dim]`` -> ``[b, s, hidden_size]``.
@@ -302,6 +353,27 @@ class DeepseekV4Attention(Module):
                 ``None`` runs fresh sequences from position 0 without storing
                 anything (``rows.starts`` must then be zero).
         """
+        state = self.begin(x, rows, cache)
+        if state.index_score is not None:
+            assert self.indexer is not None
+            assert state.valid is not None
+            state.candidates = self.indexer.select(
+                state.index_score, state.valid
+            )
+        return self.end(state, rows, cache)
+
+    def begin(
+        self,
+        x: TensorValue,
+        rows: RaggedRows,
+        cache: DeepseekV4Cache | None = None,
+    ) -> PendingAttention:
+        """:meth:`__call__` up to the indexer's top-k.
+
+        With an indexer the result carries the indexer's scores and no
+        candidates yet: across devices the scores are partial sums over each
+        device's heads, completed before the top-k.
+        """
         t = rows.total
         device = x.device
         rd = self.rope_head_dim
@@ -326,6 +398,8 @@ class DeepseekV4Attention(Module):
 
         stream: CompressedStream | None = None
         candidates: TensorValue | None = None
+        valid: TensorValue | None = None
+        index_score: TensorValue | None = None
         if self.compressor is not None:
             ratio = self.compress_ratio
             x32 = ops.cast(ops.reshape(x, [t, x.shape[2]]), DType.float32)
@@ -357,12 +431,11 @@ class DeepseekV4Attention(Module):
                     cache.idx_comp if cache is not None else None,
                     self.zone_layer,
                 )
-                candidates = self.indexer(
+                index_score = self.indexer.score(
                     ops.reshape(x, [t, x.shape[2]]),
                     ops.reshape(qr, [t, qr.shape[2]]),
                     freqs_cis,
                     idx_stream.table,
-                    valid,
                 )
             else:
                 n_cand = stream.n_cand
@@ -371,12 +444,25 @@ class DeepseekV4Attention(Module):
                     ops.reshape(arange(n_cand, device), [1, n_cand]),
                     scalar(-1, device),
                 )
+        return PendingAttention(
+            q, kv, freqs_cis, stream, valid, index_score, candidates
+        )
 
+    def end(
+        self,
+        state: PendingAttention,
+        rows: RaggedRows,
+        cache: DeepseekV4Cache | None = None,
+    ) -> TensorValue:
+        """:meth:`__call__` from the candidates on; ``state`` has them set."""
+        stream, candidates = state.stream, state.candidates
         if cache is None:
-            o = self._attend_table(q, kv, rows, stream, candidates)
+            o = self._attend_table(state.q, state.kv, rows, stream, candidates)
         else:
-            o = self._attend_leaves(q, rows, cache, stream, candidates)
-        o = apply_rope_tail(o, freqs_cis, rd, inverse=True)
+            o = self._attend_leaves(state.q, rows, cache, stream, candidates)
+        o = apply_rope_tail(
+            o, state.freqs_cis, self.rope_head_dim, inverse=True
+        )
         return self._output_projection(o)
 
     def _attend_leaves(

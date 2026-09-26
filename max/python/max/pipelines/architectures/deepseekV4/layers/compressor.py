@@ -100,7 +100,8 @@ class DeepseekV4Compressor(Module):
         self.wgate = Linear(
             config.hidden_size, self.proj_dim, DType.float32, device
         )
-        self.norm = RMSNorm(head_dim, config.dtype, config.rms_norm_eps)
+        self.norm = RMSNorm(head_dim, DType.float32, config.rms_norm_eps)
+        self.activation_dtype = config.dtype
 
     def projections(self, x32: TensorValue) -> tuple[TensorValue, TensorValue]:
         """Raw ``wkv`` / ``wgate`` projections, ``[b, s, proj_dim]`` float32.
@@ -165,7 +166,9 @@ class DeepseekV4Compressor(Module):
         pooled = ops.squeeze(
             ops.sum(kv * ops.softmax(score, axis=2), axis=2), axis=2
         )
-        out = self.norm(ops.cast(pooled, self.norm.dtype))
+        # The reference's ``self.norm(kv.to(dtype))``: back to the activation
+        # dtype first, whatever the norm weight is declared as.
+        out = self.norm(ops.cast(pooled, self.activation_dtype))
         out = apply_rope_tail(out, freqs_cis, self.rope_head_dim)
         if self.rotate:
             # The indexer's variant. Note it quantizes the *whole* vector: the

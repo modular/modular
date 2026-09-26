@@ -91,7 +91,10 @@ class DeepseekV4RotaryEmbedding(YarnRotaryEmbedding):
 
 
 def rope_for_layer(
-    config: DeepseekV4Config, layer_idx: int, max_seq_len: int
+    config: DeepseekV4Config,
+    layer_idx: int,
+    max_seq_len: int,
+    device: DeviceRef,
 ) -> DeepseekV4RotaryEmbedding:
     """Build the rotary table this layer's attention, compressor and indexer share."""
     compressed = config.layer_compress_ratio(layer_idx) != 0
@@ -117,7 +120,7 @@ def rope_for_layer(
         if compressed
         else None,
     )
-    rope.device = config.devices[0] if config.devices else None
+    rope.device = device
     return rope
 
 

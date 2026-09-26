@@ -22,6 +22,14 @@ This version is still a work in progress.
   separately from content and turn the model's `<｜DSML｜tool_calls>` blocks
   into OpenAI tool calls, streaming or not.
 
+- DeepSeek-V4 (`DeepseekV4ForCausalLM`) now runs the released checkpoint
+  natively (fp8 linears, fp4 routed experts) and across multiple GPUs, for
+  example `max serve --devices gpu:0,1`. Attention and its indexer split by
+  head and the routed experts split across devices (expert parallelism);
+  the rest of the model is replicated. The routed experts no longer pad
+  every expert group to 128 activation rows, which cuts single-stream
+  decode latency. Device graph capture stays off for this architecture.
+
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without

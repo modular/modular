@@ -186,6 +186,9 @@ def build_kv_params(
             data_parallel_degree=data_parallel_degree,
             is_mla=spec.kv_dim == 1,
             num_q_heads=num_q_heads,
+            # The MHA-shaped state leaves have one head, which every TP rank
+            # needs whole.
+            allow_kv_head_replication=spec.kv_dim == 2,
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
             slots_per_page=spec.slots_per_page(page_size),
