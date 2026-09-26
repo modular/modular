@@ -3334,42 +3334,75 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
 ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
                                         size_t curIndent) {
-  // We will be moving the builder into sub-regions that are created, make sure
-  // we end up after it when this is done.
+  // Mirror parseElif: collect all arms first, create a flat hlcf.comptime.if
+  // attached to the enclosing function, then re-parse suites into its regions.
+  // Bodies must be parsed under an attached op so emitNormalReturn can walk
+  // from the insertion block up to the enclosing FnOp.
   llvm::SaveAndRestore builderSaver(builder);
-  ExprNode *condExp = nullptr;
-  if (parseExpression(condExp, curIndent, Precedence::kAssignExpr))
-    return failure();
 
-  // Each if/elif conditions could be dynamic or static, use some helpers to
-  // generate the right structure.
-  HLCF::ComptimeIfOp comptimeIfOp;
-  auto parseCondAndTerminateElifCondition = [&](Location loc) -> ParseResult {
-    // For a comptime if we emit the condition as a PValue
-    // without a builder.
+  struct ArmEntry {
+    ExprNode *condExpr;
+    LexerCursor bodyCursor;
+    Location keywordLoc;
+  };
+
+  SmallVector<ArmEntry, 4> arms;
+
+  ExprNode *firstCondExpr = nullptr;
+  if (parseExpression(firstCondExpr, curIndent, Precedence::kAssignExpr) ||
+      parseToken(Token::colon, "expected ':' after 'if' expression"))
+    return failure();
+  arms.push_back({firstCondExpr, getLexer().getCursor(), ifLoc});
+  skipUntilIndentation(curIndent);
+
+  while (getToken().is(Token::kw_elif) &&
+         isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
+    Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
+    ExprNode *condExpr = nullptr;
+    if (parseExpression(condExpr, curIndent, Precedence::kAssignExpr) ||
+        parseToken(Token::colon, "expected ':' after 'elif' expression"))
+      return failure();
+    arms.push_back({condExpr, getLexer().getCursor(), elifLoc});
+    skipUntilIndentation(curIndent);
+  }
+
+  std::optional<LexerCursor> elseBodyCursor;
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
+    if (parseToken(Token::colon, "expected ':' after else"))
+      return failure();
+    elseBodyCursor = getLexer().getCursor();
+    skipUntilIndentation(curIndent);
+  }
+  auto afterCursor = getLexer().getCursor();
+
+  auto emitComptimeCondAttr = [&](ExprNode *condExp) -> FailureOr<TypedAttr> {
     RValue condRVal = getParamEmitter(EC_ComptimeIfCondition)
                           .emitExprScalarBool(condExp, EC_ComptimeIfCondition);
     if (!condRVal)
       return failure();
     PValue condPVal = condRVal.getIfPValue();
-    if (!condPVal)
-      return emitError(
-                 condExp->getLoc(),
-                 "'comptime if' condition must be evaluable at compile-time")
-             << condExp->getRange();
-
-    comptimeIfOp = HLCF::ComptimeIfOp::create(builder, loc, condPVal.get());
-    return success();
+    if (!condPVal) {
+      emitError(condExp->getLoc(),
+                "'comptime if' condition must be evaluable at compile-time")
+          << condExp->getRange();
+      return failure();
+    }
+    return cast<TypedAttr>(condPVal.get());
   };
 
-  auto buildBranchAssumption = [&](Location loc,
-                                   bool invertCondition) -> ConstraintAttr {
-    return LIT::buildBranchAssumption(comptimeIfOp.getCond(), invertCondition,
-                                      loc);
-  };
+  SmallVector<Attribute, 4> conds;
+  conds.reserve(arms.size());
+  for (const ArmEntry &arm : arms) {
+    FailureOr<TypedAttr> attr = emitComptimeCondAttr(arm.condExpr);
+    if (failed(attr))
+      return failure();
+    conds.push_back(*attr);
+  }
 
-  // Parse a nested suite inside a param-if region. Inserts the branch
-  // assumptions before parsing the suite.
+  auto comptimeIfOp = HLCF::ComptimeIfOp::create(builder, ifLoc, TypeRange{},
+                                                 builder.getArrayAttr(conds));
+
   auto parseComptimeIfRegion =
       [&](ArrayRef<ConstraintAttr> assumptions) -> ParseResult {
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
@@ -3379,57 +3412,38 @@ ParseResult StmtParser::parseComptimeIf(Location ifLoc, LexerCursor startCursor,
     return parseSuite(curIndent);
   };
 
-  SmallVector<ConstraintAttr> accumulatedFalseAssumptions;
-  Location currentConditionLoc = ifLoc;
-
-  if (parseCondAndTerminateElifCondition(ifLoc) ||
-      parseToken(Token::colon, "expected ':' after 'if' expression"))
-    return failure();
-  builder.createBlock(&comptimeIfOp.getThenRegion());
-  ConstraintAttr currentTrueAssumption =
-      buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false);
-  if (failed(parseComptimeIfRegion({currentTrueAssumption})))
-    return failure();
-  HLCF::ComptimeYieldOp::create(builder, ifLoc);
-
-  while (getToken().is(Token::kw_elif) &&
-         isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
-    Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
-    accumulatedFalseAssumptions.push_back(
-        buildBranchAssumption(currentConditionLoc, /*invertCondition=*/true));
-    if (parseExpression(condExp, std::nullopt, Precedence::kAssignExpr))
+  auto emitArmBody = [&](Region &thenRegion, const ArmEntry &entry,
+                         ArrayRef<ConstraintAttr> assumptions) -> ParseResult {
+    builder.createBlock(&thenRegion);
+    entry.bodyCursor.restore(getLexer());
+    if (failed(parseComptimeIfRegion(assumptions)))
       return failure();
+    HLCF::ComptimeYieldOp::create(builder, entry.keywordLoc);
+    return success();
+  };
 
-    // Moves emission into "Condition" block if elif.
-    builder.createBlock(
-        &cast<HLCF::ComptimeIfOp>(comptimeIfOp).getElseRegion());
-
-    if (parseCondAndTerminateElifCondition(elifLoc) ||
-        parseToken(Token::colon, "expected ':' after 'elif' expression"))
+  SmallVector<ConstraintAttr, 4> falseAssumptions;
+  auto thenRegions = comptimeIfOp.getThenRegions();
+  for (auto [idx, entry] : llvm::enumerate(arms)) {
+    TypedAttr cond = cast<TypedAttr>(conds[idx]);
+    SmallVector<ConstraintAttr, 4> thenAssumptions(falseAssumptions);
+    thenAssumptions.push_back(LIT::buildBranchAssumption(
+        cond, /*invertCondition=*/false, entry.keywordLoc));
+    if (failed(emitArmBody(thenRegions[idx], entry, thenAssumptions)))
       return failure();
-    currentConditionLoc = elifLoc;
-
-    HLCF::ComptimeYieldOp::create(builder, elifLoc);
-    builder.createBlock(&comptimeIfOp.getThenRegion());
-    SmallVector<ConstraintAttr> thenAssumptions(accumulatedFalseAssumptions);
-    thenAssumptions.push_back(
-        buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false));
-    if (failed(parseComptimeIfRegion(thenAssumptions)))
-      return failure();
-    HLCF::ComptimeYieldOp::create(builder, elifLoc);
+    falseAssumptions.push_back(LIT::buildBranchAssumption(
+        cond, /*invertCondition=*/true, entry.keywordLoc));
   }
 
-  builder.createBlock(&cast<HLCF::ComptimeIfOp>(comptimeIfOp).getElseRegion());
-  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
-      consumeIf(Token::kw_else)) {
-    if (parseToken(Token::colon, "expected ':' after else"))
-      return failure();
-    accumulatedFalseAssumptions.push_back(
-        buildBranchAssumption(currentConditionLoc, /*invertCondition=*/true));
-    if (failed(parseComptimeIfRegion(accumulatedFalseAssumptions)))
+  builder.createBlock(&comptimeIfOp.getElseRegion());
+  if (elseBodyCursor) {
+    elseBodyCursor->restore(getLexer());
+    if (failed(parseComptimeIfRegion(falseAssumptions)))
       return failure();
   }
   HLCF::ComptimeYieldOp::create(builder, ifLoc);
+
+  afterCursor.restore(getLexer());
   return success();
 }
 

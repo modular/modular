@@ -972,12 +972,6 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
     /// Conditions as typed bool attributes; size matches `getThenRegions()`.
     ArrayRef<Attribute> getCondAttrs() { return getConds().getValue(); }
 
-    /// Convenience for the common single-condition form.
-    TypedAttr getCond() {
-      assert(getConds().size() == 1 && "expected a single condition");
-      return cast<TypedAttr>(getConds()[0]);
-    }
-
     MutableArrayRef<Region> getThenRegions() {
       assert(getNumRegions() >= 2);
       return MutableArrayRef<Region>(getRegions()).drop_back();

@@ -27,6 +27,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -235,8 +236,26 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
       b.setInsertionPoint(op);
     }
 
+    // Like `POC::Cond`, a multi-arm comptime.if only evaluates a later
+    // condition when all priors ones are false, so only the first condition
+    // may be lifted. The rest are detached before replacing because lifting
+    // creates the `kgen.param.apply` as a side effect.
+    auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(op);
+    ArrayRef<Attribute> laterConds;
+    if (comptimeIf) {
+      laterConds = comptimeIf.getCondAttrs().drop_front();
+      comptimeIf.setCondsAttr(
+          b.getArrayAttr(comptimeIf.getCondAttrs().take_front()));
+    }
+
     replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
                                /*replaceTypes=*/true);
+
+    if (comptimeIf) {
+      SmallVector<Attribute> conds(comptimeIf.getCondAttrs());
+      llvm::append_range(conds, laterConds);
+      comptimeIf.setCondsAttr(b.getArrayAttr(conds));
+    }
 
     // Walk over nested parameter scopes, since lifted apply operators with name
     // shadowing can cause collisions.

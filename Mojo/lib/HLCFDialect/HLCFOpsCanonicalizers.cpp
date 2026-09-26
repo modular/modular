@@ -828,7 +828,7 @@ LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
     return b.notifyMatchFailure(
         op.getLoc(), "multi-condition comptime.if is not canonicalized");
 
-  auto condAttr = sugarDynCast<SIMDAttr>(op.getCond());
+  auto condAttr = sugarDynCast<SIMDAttr>(cast<TypedAttr>(op.getConds()[0]));
   if (!condAttr)
     return b.notifyMatchFailure(op.getLoc(), "condition is not a constant");
   bool condValue = condAttr.getAsBool();

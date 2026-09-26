@@ -96,6 +96,32 @@ kgen.generator @nohoist_cond() {
   hlcf.return
 }
 
+kgen.generator @first_cond() -> !kgen.scalar<bool> {
+  hlcf.unreachable
+}
+
+kgen.generator @later_cond() -> !kgen.scalar<bool> {
+  hlcf.unreachable
+}
+
+// CHECK-LABEL: kgen.generator @comptime_if_lifts_only_first_cond
+kgen.generator @comptime_if_lifts_only_first_cond() {
+  // COM: A later comptime.if condition is only evaluated when the earlier
+  // COM: ones are false, so hoisting it would evaluate it unconditionally.
+  // CHECK-NEXT: apply *[[L0:.*]] = [{{.*}}@first_cond]()
+  // CHECK-NOT: kgen.param.apply
+  // CHECK: hlcf.comptime.if *[[L0]] {
+  // CHECK: } elif apply({{.*}}@later_cond) {
+  hlcf.comptime.if apply(:() -> !kgen.scalar<bool> @first_cond) {
+    hlcf.comptime.yield
+  } elif apply(:() -> !kgen.scalar<bool> @later_cond) {
+    hlcf.comptime.yield
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.return
+}
+
 // CHECK-LABEL: kgen.generator @hlcf_if_apply
 kgen.generator @hlcf_if_apply(%cond: !kgen.scalar<bool>) {
   // COM: make sure that the apply is being lifted to the beginning

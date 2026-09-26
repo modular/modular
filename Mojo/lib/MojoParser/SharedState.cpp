@@ -2843,25 +2843,31 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
-  // Handle hlcf.comptime.if: the condition is already a TypedAttr, so we just
-  // need to fold both branches and produce a POC::Cond param expression.
+  // Handle hlcf.comptime.if: conditions are TypedAttrs, so fold every arm and
+  // nest POC::Cond from the last then down to the first
+  // (cond(c0, t0, cond(c1, t1, else))).
   if (auto comptimeIfOp = dyn_cast<HLCF::ComptimeIfOp>(op)) {
-    // Substitute concrete parameter bindings, as ParamConstantOp does.
-    TypedAttr condVal = evaluator.getReboundAttribute(comptimeIfOp.getCond());
     auto isParamYield = [](Operation &op) {
       return isa<HLCF::ComptimeYieldOp>(op);
     };
-    auto trueVal =
-        foldBlock(comptimeIfOp.getThenRegion().front(), isParamYield);
-    if (failed(trueVal))
-      return trueVal;
-    auto falseVal =
-        foldBlock(comptimeIfOp.getElseRegion().front(), isParamYield);
-    if (failed(falseVal))
-      return falseVal;
 
-    return ParamOperatorAttr::get(POC::Cond, {condVal, *trueVal, *falseVal},
-                                  trueVal->getType());
+    auto result = foldBlock(comptimeIfOp.getElseRegion().front(), isParamYield);
+    if (failed(result))
+      return result;
+
+    TypedAttr nested = *result;
+    auto thenRegions = comptimeIfOp.getThenRegions();
+    ArrayRef<Attribute> conds = comptimeIfOp.getCondAttrs();
+    for (size_t i = thenRegions.size(); i != 0; --i) {
+      auto thenVal = foldBlock(thenRegions[i - 1].front(), isParamYield);
+      if (failed(thenVal))
+        return thenVal;
+      TypedAttr condVal =
+          evaluator.getReboundAttribute(cast<TypedAttr>(conds[i - 1]));
+      nested = ParamOperatorAttr::get(POC::Cond, {condVal, *thenVal, nested},
+                                      thenVal->getType());
+    }
+    return nested;
   }
 
   // FIXME(MOCO-2839): We silently ignore 'kgen.param.assert' ops when folding

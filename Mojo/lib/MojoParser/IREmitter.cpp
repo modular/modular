@@ -1549,7 +1549,8 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
   };
   auto recreateWithoutResult = [&]() -> Operation * {
     if (auto comptimeIf = dyn_cast<HLCF::ComptimeIfOp>(ifLikeOp))
-      return HLCF::ComptimeIfOp::create(*builder, loc, comptimeIf.getCond());
+      return HLCF::ComptimeIfOp::create(*builder, loc, TypeRange{},
+                                        comptimeIf.getConds());
     return HLCF::IfOp::create(*builder, loc, TypeRange{},
                               cast<HLCF::IfOp>(ifLikeOp).getCond());
   };
@@ -1678,8 +1679,9 @@ AnyValue IREmitter::mergeCValuesAcrossIfLikeOp(
 
   builder->setInsertionPointAfter(ifLikeOp);
   Operation *newOp = recreateWithoutResult();
-  newOp->getRegion(0).takeBody(ifLikeOp->getRegion(0));
-  newOp->getRegion(1).takeBody(ifLikeOp->getRegion(1));
+  assert(newOp->getNumRegions() == ifLikeOp->getNumRegions());
+  for (auto [dst, src] : llvm::zip(newOp->getRegions(), ifLikeOp->getRegions()))
+    dst.takeBody(src);
   ifLikeOp->erase();
 
   return emitCResult(MRValue(destBuffer), resultExpr, dest);
@@ -1950,8 +1952,8 @@ void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
   // to have a local vardecl that can be mutated, and is loaded implicitly
   // when a "return" with no expression is used.
   if (!value) {
-    auto func = getBlockParentOfType<FnOp>(builder->getInsertionBlock());
-    if (func.getNamedResultAttr() &&
+    if (auto func = getBlockParentOfType<FnOp>(builder->getInsertionBlock());
+        func && func.getNamedResultAttr() &&
         !func.getFuncTypeGenerator().hasMemoryOnlyResult()) {
       auto *funcDecl = declScope.getNearestDeclOfType<FnOp>();
       assert(funcDecl && "must be in a function");
