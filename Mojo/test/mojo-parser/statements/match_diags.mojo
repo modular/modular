@@ -263,7 +263,13 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
 
-def match_exhaustivity_diags(flag: Bool, opt: Optional[Int]):
+@fieldwise_init
+struct BoolPair:
+    var a: Bool
+    var b: Bool
+
+
+def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
     # Bool is EnumLike: True/False must both be covered (or a catch-all used).
     __match flag: # expected-warning {{'__match' is not exhaustive; missing case for 'False'}}
     case True: pass
@@ -286,13 +292,34 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int]):
         # expected-error @+1 {{use of unknown declaration 'not_a_real_name'}}
         _ = not_a_real_name
 
-    # More complex cases.
-    # TODO: Support tuples.
+    # Exhaustive Bool×Bool via correlated wildcards.
     __match flag, flag:
     case True, True:  pass
     case False, True: pass
     case _, False: pass
-    # xpected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Non-exhaustive product: (False, False) is missing.
+    __match flag, flag: # expected-warning {{'__match' is not exhaustive; missing case for 'False, False'}}
+    case True, True: pass
+    case False, True: pass
+    case True, False: pass
+
+    # Parenthesized tuple subject is the same product space of course.
+    __match (flag, ((((flag))))):
+    case (True, _): pass
+    case (False, True): pass
+    case (False, False): pass
+
+    # Struct of EnumLike fields: same flattened product; omitted fields are
+    # wildcards (`b=False` covers both values of `a`).
+    __match pair:
+    case BoolPair(a=True, b=True): pass
+    case BoolPair(a=False, b=True): pass
+    case BoolPair(b=False): pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         pass
 

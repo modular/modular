@@ -1069,18 +1069,37 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
 
 namespace {
 
-/// Lazy covering model for one `match` (v1: root FiniteCtors / Opaque only).
-/// Bump-allocated so nested payload / product spaces can share the builder's
-/// arena without owning heap storage.
-struct MatchCoveringSpace {
-  enum class Kind : uint8_t { Opaque, FiniteCtors, Closed };
-  Kind kind = Kind::Opaque;
+/// Cap on flattened product cells. Larger products stay Opaque (no proof).
+constexpr size_t kMaxProductCells = 1024;
+
+/// One EnumLike dimension in a flattened FiniteCtors product (tuple leaves).
+struct MatchCoveringDim {
+  const PatternPath *path = nullptr;
   size_t numCtors = 0;
-  /// For FiniteCtors: `remaining[i] == true` means constructor `i` is still
-  /// open. Bump-allocated; size is `numCtors`.
-  bool *remaining = nullptr;
-  /// `_enum_case_names` entries (StringAttr), for witness diagnostics.
   ArrayRef<TypedAttr> caseNames;
+};
+
+/// Lazy covering model for one `match`.
+/// Bump-allocated so nested / product spaces can share the builder's arena.
+///
+/// Product of EnumLike leaves is flattened into a cell bitset so correlated
+/// patterns (`True, True` / `_, False`) cover the right combinations —
+/// independent per-field bitsets would wrongly treat `True,True` +
+/// `False,False` as total. Applies to tuples and structs of EnumLike fields.
+struct MatchCoveringSpace {
+  enum class Kind : uint8_t { Opaque, FiniteCtors, Product, Closed };
+  Kind kind = Kind::Opaque;
+
+  // FiniteCtors (EnumLike root):
+  size_t numCtors = 0;
+  bool *remaining = nullptr;
+  ArrayRef<TypedAttr> caseNames;
+
+  // Product (tuple/struct of EnumLike leaves, flattened):
+  size_t numDims = 0;
+  MatchCoveringDim *dims = nullptr;
+  size_t numCells = 0;
+  bool *cells = nullptr; ///< `true` = that combination is still open.
 
   bool hasOpenCtor() const {
     if (kind != Kind::FiniteCtors || !remaining)
@@ -1091,9 +1110,19 @@ struct MatchCoveringSpace {
     return false;
   }
 
+  bool hasOpenCell() const {
+    if (kind != Kind::Product || !cells)
+      return false;
+    for (size_t i = 0; i < numCells; ++i)
+      if (cells[i])
+        return true;
+    return false;
+  }
+
   bool isFullyCovered() const {
     return kind == Kind::Closed ||
-           (kind == Kind::FiniteCtors && !hasOpenCtor());
+           (kind == Kind::FiniteCtors && !hasOpenCtor()) ||
+           (kind == Kind::Product && !hasOpenCell());
   }
 
   void closeAll() { kind = Kind::Closed; }
@@ -1109,6 +1138,8 @@ struct MatchCoveringSpace {
   }
 };
 
+/// Look up `spelling` in an EnumLike `_enum_case_names` list (e.g. `"True"` →
+/// index of that ctor). Used for Bool-style `Equal` patterns and witnesses.
 static std::optional<size_t> findCaseNameIndex(ArrayRef<TypedAttr> names,
                                                StringRef spelling) {
   if (spelling.empty())
@@ -1121,29 +1152,124 @@ static std::optional<size_t> findCaseNameIndex(ArrayRef<TypedAttr> names,
   return std::nullopt;
 }
 
-/// Build the initial covering space for `rootPath->type`. EnumLike subjects
-/// become FiniteCtors; everything else is Opaque (no exhaustivity proof yet).
+/// Spelling for ctor `index` in diagnostics (`"False"`, `"Some"`, ...).
+static StringRef caseNameSpelling(ArrayRef<TypedAttr> names, size_t index) {
+  if (index < names.size())
+    if (auto str = dyn_cast<StringAttr>(names[index]))
+      return str.getValue();
+  return "?";
+}
+
+/// True when `type` is the builtin `Tuple` (ignoring element parameters).
+static bool isTupleType(PatternMatchBuilder &builder, ASTType type, SMLoc loc) {
+  ASTType tupleType =
+      builder.shared.lookupBuiltinType("Tuple", builder.declScope, loc);
+  if (!tupleType)
+    return false;
+  return tupleType.isEqualCanon(type.getWithoutParameters(builder.shared));
+}
+
+/// Append EnumLike leaf dimensions under `path`. Returns false if any leaf is
+/// not a known FiniteCtors type (caller falls back to Opaque).
+///
+/// Walks `Tuple` elements and struct stored fields; the Product covering logic
+/// is path-kind agnostic (`TupleElement` vs `StructField`).
+static bool collectFiniteDims(PatternMatchBuilder &builder,
+                              const PatternPath *path, SMLoc loc,
+                              SmallVectorImpl<MatchCoveringDim> &dims) {
+  ASTType type = path->type;
+  if (type.provenConformsToBuiltinTrait(
+          "EnumLike", loc, builder.shared,
+          ASTDecl::getAssumptionsFromScope(&builder.declScope))) {
+    IREmitter emitter = builder.getParamEmitter();
+    auto names = getEnumCaseNames(emitter, type, loc);
+    if (!names || names->empty())
+      return false;
+    dims.push_back({path, names->size(), *names});
+    return true;
+  }
+
+  if (isTupleType(builder, type, loc)) {
+    assert(type.getParamBindings().size() == 2 && "Tuple has two parameters");
+    auto vaAttr = sugarCast<ParamListAttr>(type.getParamBindings()[0]);
+    for (unsigned i = 0, e = vaAttr.getValues().size(); i != e; ++i) {
+      ASTType eltType = ASTType(vaAttr.getValues()[i]);
+      const PatternPath *eltPath = builder.getTupleElement(path, i, eltType);
+      if (!collectFiniteDims(builder, eltPath, loc, dims))
+        return false;
+    }
+    return true;
+  }
+
+  // Struct of EnumLike (or nested tuple/struct) fields — same product model.
+  auto structType = dyn_cast<LIT::StructType>(SugarAttr::strip(type.mlirType));
+  ASTDecl *typeDecl = type.getDecl(builder.shared);
+  if (!structType || !typeDecl)
+    return false;
+  auto structDeclOp =
+      dyn_cast_or_null<LIT::StructDeclOp>(typeDecl->getIfOperation());
+  if (!structDeclOp)
+    return false;
+
+  for (LIT::StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
+    ASTType fieldType = fieldOp.getReboundType(
+        structType, &builder.shared.getEvaluationContext());
+    const PatternPath *fieldPath =
+        builder.getStructField(path, fieldOp.getNameAttr(), fieldType);
+    if (!collectFiniteDims(builder, fieldPath, loc, dims))
+      return false;
+  }
+  return true;
+}
+
+/// Build the initial covering space for `rootPath->type`.
 static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
                                                    const PatternPath *rootPath,
                                                    SMLoc matchLoc) {
   auto *space = builder.create<MatchCoveringSpace>();
   ASTType subjectType = rootPath->type;
-  if (!subjectType.provenConformsToBuiltinTrait(
+
+  // EnumLike root → FiniteCtors.
+  if (subjectType.provenConformsToBuiltinTrait(
           "EnumLike", matchLoc, builder.shared,
-          ASTDecl::getAssumptionsFromScope(&builder.declScope)))
-    return space; // Opaque
+          ASTDecl::getAssumptionsFromScope(&builder.declScope))) {
+    IREmitter emitter = builder.getParamEmitter();
+    auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
+    if (!names || names->empty())
+      return space; // Opaque — incomplete reflection metadata
 
-  IREmitter emitter = builder.getParamEmitter();
-  auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
-  if (!names || names->empty())
-    return space; // Opaque — incomplete reflection metadata
+    space->kind = MatchCoveringSpace::Kind::FiniteCtors;
+    space->numCtors = names->size();
+    space->caseNames = *names;
+    space->remaining = builder.allocator.Allocate<bool>(space->numCtors);
+    std::fill(space->remaining, space->remaining + space->numCtors, true);
+    return space;
+  }
 
-  space->kind = MatchCoveringSpace::Kind::FiniteCtors;
-  space->numCtors = names->size();
-  space->caseNames = *names;
-  space->remaining = builder.allocator.Allocate<bool>(space->numCtors);
-  std::fill(space->remaining, space->remaining + space->numCtors, true);
-  return space;
+  // Tuple / struct of EnumLike leaves → flattened Product cell bitset.
+  SmallVector<MatchCoveringDim, 4> dims;
+  if (collectFiniteDims(builder, rootPath, matchLoc, dims) && !dims.empty()) {
+    size_t numCells = 1;
+    for (const MatchCoveringDim &dim : dims) {
+      if (dim.numCtors == 0 || numCells > kMaxProductCells / dim.numCtors)
+        return space; // Too large — Opaque
+      numCells *= dim.numCtors;
+    }
+    if (numCells > kMaxProductCells)
+      return space;
+
+    space->kind = MatchCoveringSpace::Kind::Product;
+    space->numDims = dims.size();
+    space->dims = builder.allocator.Allocate<MatchCoveringDim>(dims.size());
+    for (size_t i = 0; i < dims.size(); ++i)
+      space->dims[i] = dims[i];
+    space->numCells = numCells;
+    space->cells = builder.allocator.Allocate<bool>(numCells);
+    std::fill(space->cells, space->cells + numCells, true);
+    return space;
+  }
+
+  return space; // Opaque
 }
 
 /// If this case covers exactly one root constructor (EnumTag / Bool-style
@@ -1164,9 +1290,8 @@ getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
       return std::nullopt;
     if (cmd->kind == PatternCommand::Bind)
       continue;
-    // Nested path tests (tuple/struct/payload residuals that aren't binds)
-    // mean we cannot credit a full root constructor yet.
-    // TODO: Support tuples.
+    // Nested path tests (payload residuals that aren't binds) mean we cannot
+    // credit a full root constructor yet.
     if (cmd->path != rootPath)
       return std::nullopt;
 
@@ -1189,11 +1314,172 @@ getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
   return ctor;
 }
 
-static StringRef caseNameSpelling(ArrayRef<TypedAttr> names, size_t index) {
-  if (index < names.size())
-    if (auto str = dyn_cast<StringAttr>(names[index]))
-      return str.getValue();
-  return "?";
+/// True if `ancestor` is `path` or any parent of `path` in the PatternPath
+/// tree. Used when classifying a command relative to product dimensions:
+///   - Bind on an ancestor of several dims → those dims stay wildcards
+///   - Equal/EnumTag under a dim (payload) → cannot credit the whole ctor yet
+static bool isAncestorOrEqual(const PatternPath *ancestor,
+                              const PatternPath *path) {
+  for (const PatternPath *p = path; p; p = p->parent)
+    if (p == ancestor)
+      return true;
+  return false;
+}
+
+/// If `path` is exactly one flattened product dimension (an EnumLike leaf
+/// under the match root), return its index in `space.dims`. Commands that
+/// `Equal`/`EnumTag`/`Bind` that leaf constrain or wildcard that dimension.
+static std::optional<size_t> findDimIndex(const MatchCoveringSpace &space,
+                                          const PatternPath *path) {
+  for (size_t i = 0; i < space.numDims; ++i)
+    if (space.dims[i].path == path)
+      return i;
+  return std::nullopt;
+}
+
+/// Map an Equal / EnumTag command to a ctor index on `dim` (via enum case
+/// index or literal spelling like `"True"`).
+static std::optional<size_t> ctorIndexForCommand(const PatternCommand *cmd,
+                                                 const MatchCoveringDim &dim) {
+  if (cmd->kind == PatternCommand::EnumTag)
+    return cmd->enumCaseIndex;
+  if (cmd->kind == PatternCommand::Equal) {
+    assert(cmd->expr);
+    return findCaseNameIndex(dim.caseNames, cmd->expr->getLiteralSpelling());
+  }
+  return std::nullopt;
+}
+
+/// Unpack a flat cell id into per-dimension ctor indices. Layout is row-major
+/// with the last dimension varying fastest: for Bool×Bool (False=0, True=1),
+/// cell 2 -> `(True, False)`.
+static void decodeCell(const MatchCoveringSpace &space, size_t cell,
+                       SmallVectorImpl<size_t> &out) {
+  out.resize(space.numDims);
+  size_t rest = cell;
+  for (size_t i = space.numDims; i > 0; --i) {
+    size_t dim = i - 1;
+    size_t n = space.dims[dim].numCtors;
+    out[dim] = rest % n;
+    rest /= n;
+  }
+}
+
+/// Inverse of `decodeCell`: pack per-dimension ctor indices into a cell id.
+static size_t encodeCell(const MatchCoveringSpace &space,
+                         ArrayRef<size_t> indices) {
+  size_t cell = 0;
+  for (size_t i = 0; i < space.numDims; ++i)
+    cell = cell * space.dims[i].numCtors + indices[i];
+  return cell;
+}
+
+/// Render an open cell as a user-facing witness pattern, e.g. `"True, False"`.
+static std::string formatProductWitness(const MatchCoveringSpace &space,
+                                        size_t cell) {
+  SmallVector<size_t, 4> indices;
+  decodeCell(space, cell, indices);
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  for (size_t i = 0; i < space.numDims; ++i) {
+    if (i)
+      os << ", ";
+    os << caseNameSpelling(space.dims[i].caseNames, indices[i]);
+  }
+  return result;
+}
+
+/// Cover cells matched by this case's product pattern. Returns:
+///   true  — pattern was interpretable; `hitOpen` says whether any open cell
+///           was cleared (false ⇒ already covered / unreachable).
+///   false — cannot credit this case (Or / unknown path / bad literal).
+static bool coverProductCase(MatchCoveringSpace &space,
+                             const MatchCaseEntry &entry, bool &hitOpen) {
+  hitOpen = false;
+  assert(space.kind == MatchCoveringSpace::Kind::Product);
+
+  // Per-dimension constraint: nullopt = wildcard, else required ctor index.
+  SmallVector<std::optional<size_t>, 4> constraints(space.numDims,
+                                                    std::nullopt);
+
+  for (const PatternCommand *cmd : entry.commandList) {
+    if (cmd->kind == PatternCommand::Or)
+      return false; // TODO: Support "or" patterns.
+
+    if (cmd->kind == PatternCommand::Bind) {
+      // Bind on a dim path (or ancestor of dims) is a wildcard — already
+      // represented by nullopt. Bind on a payload under a dim is ignored.
+      if (auto dim = findDimIndex(space, cmd->path))
+        continue;
+      bool underSomeDim = false;
+      for (size_t i = 0; i < space.numDims; ++i) {
+        if (isAncestorOrEqual(space.dims[i].path, cmd->path) &&
+            cmd->path != space.dims[i].path) {
+          underSomeDim = true;
+          break;
+        }
+      }
+      if (underSomeDim)
+        continue;
+      // Bind on an intermediate tuple path that owns several dims: those dims
+      // stay wildcards (nullopt). Any dim whose path is under cmd->path is OK.
+      bool coversDims = false;
+      for (size_t i = 0; i < space.numDims; ++i) {
+        if (isAncestorOrEqual(cmd->path, space.dims[i].path)) {
+          coversDims = true;
+          break;
+        }
+      }
+      if (coversDims)
+        continue;
+      return false;
+    }
+
+    if (auto dim = findDimIndex(space, cmd->path)) {
+      auto ctor = ctorIndexForCommand(cmd, space.dims[*dim]);
+      if (!ctor || constraints[*dim])
+        return false;
+      constraints[*dim] = *ctor;
+      continue;
+    }
+
+    // Equal/EnumTag under a dim (payload refine) — no full-ctor credit yet.
+    for (size_t i = 0; i < space.numDims; ++i) {
+      if (isAncestorOrEqual(space.dims[i].path, cmd->path) &&
+          cmd->path != space.dims[i].path)
+        return false;
+    }
+    return false;
+  }
+
+  // Walk matching cells. For small products a full scan is fine.
+  SmallVector<size_t, 4> indices(space.numDims, 0);
+  // Initialize wildcards to 0; fixed constraints to their value.
+  for (size_t d = 0; d < space.numDims; ++d)
+    if (constraints[d])
+      indices[d] = *constraints[d];
+
+  while (true) {
+    size_t cell = encodeCell(space, indices);
+    if (space.cells[cell]) {
+      space.cells[cell] = false;
+      hitOpen = true;
+    }
+
+    // Increment the first wildcard dimension (odometer over free dims).
+    size_t d = 0;
+    for (; d < space.numDims; ++d) {
+      if (constraints[d])
+        continue;
+      ++indices[d];
+      if (indices[d] < space.dims[d].numCtors)
+        break;
+      indices[d] = 0;
+    }
+    if (d == space.numDims)
+      break;
+  }
+  return true;
 }
 
 } // namespace
@@ -1201,14 +1487,13 @@ static StringRef caseNameSpelling(ArrayRef<TypedAttr> names, size_t index) {
 void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     MutableArrayRef<MatchCaseEntry> caseEntries, const PatternPath *rootPath,
     SMLoc matchLoc) {
-  // v1 covering model (see MatchCoveringSpace):
-  //   - EnumLike root → FiniteCtors bitset; else Opaque.
+  // Covering model (see MatchCoveringSpace):
+  //   - EnumLike root → FiniteCtors bitset.
+  //   - Tuple of EnumLike leaves → flattened Product cell bitset.
+  //   - Else Opaque (no exhaustivity proof yet).
   //   - Irrefutable unguarded cases close the space.
-  //   - Simple root EnumTag / Equal(+known case name) with only Bind residuals
-  //     clear one ctor bit. Or / guards / nested tests contribute nothing.
-  //   - Unreachable: space already closed, or a simple root ctor already clear.
-  //   - Exhaustivity warning only for FiniteCtors with open bits left (Opaque
-  //     subjects are not diagnosed yet — need Product / catch-all policy).
+  //   - Simple root EnumTag / Equal clear one ctor; product patterns clear the
+  //     cartesian cells they match (including `_` wildcards per position).
   MatchCoveringSpace *space =
       createRootCoveringSpace(*this, rootPath, matchLoc);
 
@@ -1234,35 +1519,57 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     if (entry.guardExpr)
       continue;
 
-    if (space->kind != MatchCoveringSpace::Kind::FiniteCtors)
-      continue;
+    if (space->kind == MatchCoveringSpace::Kind::FiniteCtors) {
+      std::optional<size_t> ctor =
+          getSimpleRootCtorCoverage(entry, rootPath, space->caseNames);
+      if (!ctor)
+        continue;
 
-    std::optional<size_t> ctor =
-        getSimpleRootCtorCoverage(entry, rootPath, space->caseNames);
-    if (!ctor)
-      continue;
-
-    if (!space->isCtorOpen(*ctor)) {
-      entry.isUnreachable = true;
-      emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
-          << "'" << caseNameSpelling(space->caseNames, *ctor)
-          << "' is already covered by a previous case"
-          << entry.patternExpr->getRange();
+      if (!space->isCtorOpen(*ctor)) {
+        entry.isUnreachable = true;
+        emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
+            << "'" << caseNameSpelling(space->caseNames, *ctor)
+            << "' is already covered by a previous case"
+            << entry.patternExpr->getRange();
+        continue;
+      }
+      space->coverCtor(*ctor);
+      if (space->isFullyCovered())
+        entry.isConcluding = true;
       continue;
     }
-    space->coverCtor(*ctor);
-    if (space->isFullyCovered())
-      entry.isConcluding = true;
+
+    if (space->kind == MatchCoveringSpace::Kind::Product) {
+      bool hitOpen = false;
+      if (!coverProductCase(*space, entry, hitOpen))
+        continue;
+      if (!hitOpen) {
+        entry.isUnreachable = true;
+        emitWarning(entry.patternExpr->getLoc(),
+                    "case is unreachable; previous cases cover every "
+                    "value of the match subject")
+            << entry.patternExpr->getRange();
+      } else if (space->isFullyCovered()) {
+        entry.isConcluding = true;
+      }
+    }
   }
 
   if (space->kind == MatchCoveringSpace::Kind::FiniteCtors &&
       space->hasOpenCtor()) {
-    // Pick one witness constructor for the diagnostic.
     size_t witness = 0;
     while (witness < space->numCtors && !space->remaining[witness])
       ++witness;
     assert(witness < space->numCtors);
     emitWarning(matchLoc, "'__match' is not exhaustive; missing case for ")
         << "'" << caseNameSpelling(space->caseNames, witness) << "'";
+  } else if (space->kind == MatchCoveringSpace::Kind::Product &&
+             space->hasOpenCell()) {
+    size_t witness = 0;
+    while (witness < space->numCells && !space->cells[witness])
+      ++witness;
+    assert(witness < space->numCells);
+    emitWarning(matchLoc, "'__match' is not exhaustive; missing case for ")
+        << "'" << formatProductWitness(*space, witness) << "'";
   }
 }
