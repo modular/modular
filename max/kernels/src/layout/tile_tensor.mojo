@@ -115,7 +115,6 @@ struct _IndexOrSlice[static: Int = -1](
     """The wrapped index (`Int` or `ComptimeInt`) or subrange
     (`ContiguousSlice`)."""
 
-    comptime _enum_case_length = 3
     comptime _enum_case_names = ParameterList.of[
         "index".value, "static".value, "slice".value
     ].values

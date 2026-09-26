@@ -477,6 +477,18 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
 // EnumLike Matching.
 //===----------------------------------------------------------------------===//
 
+/// Read `SubjectType._enum_case_names` as a concrete ParamListAttr value list.
+static std::optional<ArrayRef<TypedAttr>>
+getEnumCaseNames(IREmitter &emitter, ASTType subjectType, SMLoc loc) {
+  SyntheticNode typeNode(loc, PValue(subjectType));
+  AttributeRefNode namesRef(&typeNode, loc, "_enum_case_names");
+  TypedAttr namesAttr = emitter.emitExprPValue(&namesRef, EC_AttributeRefBase);
+  if (auto namesList =
+          dyn_cast_or_null<ParamListAttr>(getCanonicalAttr(namesAttr)))
+    return namesList.getValues();
+  return std::nullopt;
+}
+
 /// When processing `Type.Case` patterns, require them to be the subject's
 /// nominal type.  Allow unbound types like `Optional` to match `Optional[Int]`.
 /// Return failure if we emit an error.
@@ -503,20 +515,15 @@ static std::optional<size_t> lookupEnumCaseIndex(IREmitter &emitter,
                                                  ASTType subjectType,
                                                  StringRef caseName,
                                                  const ExprNode *expr) {
-  SyntheticNode typeNode(expr->getLoc(), PValue(subjectType));
-  AttributeRefNode namesRef(&typeNode, expr->getLoc(), "_enum_case_names");
-  PValue namesPV = emitter.emitExprPValue(&namesRef, EC_AttributeRefBase);
-  if (!namesPV)
-    return std::nullopt;
-
-  auto namesList = dyn_cast<ParamListAttr>(getCanonicalAttr(namesPV.get()));
-  if (!namesList) {
+  std::optional<ArrayRef<TypedAttr>> caseNames =
+      getEnumCaseNames(emitter, subjectType, expr->getLoc());
+  if (!caseNames) {
     emitter.emitError(expr->getLoc(), "cannot match on a parametric enum type")
         << expr->getRange();
     return std::nullopt;
   }
 
-  for (auto [idx, nameAttr] : llvm::enumerate(namesList.getValues())) {
+  for (auto [idx, nameAttr] : llvm::enumerate(*caseNames)) {
     auto nameStr = dyn_cast<StringAttr>(nameAttr);
     if (nameStr && nameStr.getValue() == caseName)
       return idx;
@@ -1064,7 +1071,8 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
 namespace {
 
 /// Lazy covering model for one `match` (v1: root FiniteCtors / Opaque only).
-/// Allocated on `PatternMatchBuilder`'s bump allocator.
+/// Bump-allocated so nested payload / product spaces can share the builder's
+/// arena without owning heap storage.
 struct MatchCoveringSpace {
   enum class Kind : uint8_t { Opaque, FiniteCtors, Closed };
   Kind kind = Kind::Opaque;
@@ -1102,68 +1110,6 @@ struct MatchCoveringSpace {
   }
 };
 
-/// Coerce a concrete integer-like TypedAttr to a size_t when possible.
-static std::optional<size_t> coerceAttrToSizeT(TypedAttr attr,
-                                               SharedState &shared, SMLoc loc) {
-  attr = getCanonicalAttr(attr);
-
-  // Unwrap `Int` (`._value._mlir_value`) and direct `._mlir_value` wrappers.
-  if (auto inner = ASTType::extractStructField(attr, "_value", loc, shared)) {
-    if (auto mlirVal = ASTType::extractStructField(stripIdentityWrappers(inner),
-                                                   "_mlir_value", loc, shared))
-      attr = getCanonicalAttr(mlirVal);
-  } else if (auto mlirVal = ASTType::extractStructField(attr, "_mlir_value",
-                                                        loc, shared)) {
-    attr = getCanonicalAttr(mlirVal);
-  }
-
-  // Modular ErrorOr: bool true means error.
-  if (ErrorOr<int64_t> index = getScalarIndexValue(attr); !index)
-    return size_t(*index);
-  if (auto simdAttr = dyn_cast<SIMDAttr>(attr);
-      simdAttr && simdAttr.getValues().size() == 1 &&
-      simdAttr.getValues().front().getDType().isIntLike())
-    return size_t(simdAttr.getValues().front().getIntVal().getZExtValue());
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
-    return size_t(intAttr.getValue().getZExtValue());
-
-  // `IntLiteral[n]()` stores `n` in the struct type's parameter list.
-  if (auto structType = sugarDynCast<LIT::StructType>(attr.getType())) {
-    ArrayRef<TypedAttr> params = structType.getParamValues();
-    if (params.size() == 1) {
-      TypedAttr param = getCanonicalAttr(params.front());
-      if (auto intLit = dyn_cast<POP::IntLiteralAttr>(param))
-        return size_t(intLit.getValue().getAPInt().getZExtValue());
-    }
-  }
-  return std::nullopt;
-}
-
-/// Read `SubjectType._enum_case_length` as a concrete size.
-static std::optional<size_t> getEnumCaseLength(IREmitter &emitter,
-                                               ASTType subjectType, SMLoc loc) {
-  SyntheticNode typeNode(loc, PValue(subjectType));
-  AttributeRefNode lengthRef(&typeNode, loc, "_enum_case_length");
-  PValue lengthPV = emitter.emitExprPValue(&lengthRef, EC_AttributeRefBase);
-  if (!lengthPV)
-    return std::nullopt;
-  return coerceAttrToSizeT(lengthPV.get(), emitter.shared, loc);
-}
-
-/// Read `SubjectType._enum_case_names` as a concrete ParamListAttr value list.
-static std::optional<ArrayRef<TypedAttr>>
-getEnumCaseNames(IREmitter &emitter, ASTType subjectType, SMLoc loc) {
-  SyntheticNode typeNode(loc, PValue(subjectType));
-  AttributeRefNode namesRef(&typeNode, loc, "_enum_case_names");
-  PValue namesPV = emitter.emitExprPValue(&namesRef, EC_AttributeRefBase);
-  if (!namesPV)
-    return std::nullopt;
-  auto namesList = dyn_cast<ParamListAttr>(getCanonicalAttr(namesPV.get()));
-  if (!namesList)
-    return std::nullopt;
-  return namesList.getValues();
-}
-
 static std::optional<size_t> findCaseNameIndex(ArrayRef<TypedAttr> names,
                                                StringRef spelling) {
   if (spelling.empty())
@@ -1189,17 +1135,15 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
     return space; // Opaque
 
   IREmitter emitter = builder.getParamEmitter();
-  auto length = getEnumCaseLength(emitter, subjectType, matchLoc);
   auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
-  if (!length || !names || *length == 0 || names->size() != *length)
+  if (!names || names->empty())
     return space; // Opaque — incomplete reflection metadata
 
   space->kind = MatchCoveringSpace::Kind::FiniteCtors;
-  space->numCtors = *length;
+  space->numCtors = names->size();
   space->caseNames = *names;
-  space->remaining = builder.allocator.Allocate<bool>(*length);
-  for (size_t i = 0; i < *length; ++i)
-    space->remaining[i] = true;
+  space->remaining = builder.allocator.Allocate<bool>(space->numCtors);
+  std::fill(space->remaining, space->remaining + space->numCtors, true);
   return space;
 }
 
@@ -1216,12 +1160,14 @@ getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
   std::optional<size_t> ctor;
   for (const PatternCommand *cmd : entry.commandList) {
     // Or patterns are ignored for coverage in this pass.
+    // TODO: Support "or" patterns.
     if (cmd->kind == PatternCommand::Or)
       return std::nullopt;
     if (cmd->kind == PatternCommand::Bind)
       continue;
     // Nested path tests (tuple/struct/payload residuals that aren't binds)
     // mean we cannot credit a full root constructor yet.
+    // TODO: Support tuples.
     if (cmd->path != rootPath)
       return std::nullopt;
 
@@ -1232,8 +1178,7 @@ getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
       continue;
     }
     if (cmd->kind == PatternCommand::Equal) {
-      if (!cmd->expr)
-        return std::nullopt;
+      assert(cmd->expr);
       auto idx = findCaseNameIndex(caseNames, cmd->expr->getLiteralSpelling());
       if (!idx || ctor)
         return std::nullopt;
@@ -1246,10 +1191,9 @@ getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
 }
 
 static StringRef caseNameSpelling(ArrayRef<TypedAttr> names, size_t index) {
-  if (index >= names.size())
-    return "?";
-  if (auto str = dyn_cast<StringAttr>(names[index]))
-    return str.getValue();
+  if (index < names.size())
+    if (auto str = dyn_cast<StringAttr>(names[index]))
+      return str.getValue();
   return "?";
 }
 

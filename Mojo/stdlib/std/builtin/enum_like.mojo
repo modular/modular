@@ -29,9 +29,6 @@ trait EnumLike:
     Payload type `NoneType` means the case has no associated value.
     """
 
-    comptime _enum_case_length: Int
-    """The number of cases."""
-
     comptime _enum_case_names: _MLIR.KGENParamListType[KGENString]
     """Case names in discriminant order."""
 

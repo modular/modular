@@ -312,7 +312,6 @@ def match_bool(x: Bool):
 
 # EnumLike Color with inferred-member patterns (e.g. `case .red`).
 struct Color(ImplicitlyCopyable, EnumLike):
-    comptime _enum_case_length = 3
     comptime _enum_case_names = ParameterList.of[
         "red".value, "green".value, "blue".value
     ].values

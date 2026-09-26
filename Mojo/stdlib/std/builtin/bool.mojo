@@ -101,7 +101,6 @@ struct Bool(
     # EnumLike
     # ===-------------------------------------------------------------------===#
 
-    comptime _enum_case_length = 2
     comptime _enum_case_names = ParameterList.of[
         "False".value, "True".value
     ].values

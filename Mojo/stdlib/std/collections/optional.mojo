@@ -618,7 +618,6 @@ struct Optional[T: AnyType](
     # EnumLike
     # ===-------------------------------------------------------------------===#
 
-    comptime _enum_case_length = 2
     comptime _enum_case_names = ParameterList.of[
         "None".value, "Some".value
     ].values

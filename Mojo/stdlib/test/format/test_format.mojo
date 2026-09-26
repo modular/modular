@@ -54,7 +54,6 @@ def test_format_string() raises:
 
 # FIXME: Use `enum` syntax once it synthesizes `EnumLike`.
 struct Shape(EnumLike, Writable):
-    comptime _enum_case_length = 3
     comptime _enum_case_names = ParameterList.of[
         "empty".value, "circle".value, "label".value
     ].values

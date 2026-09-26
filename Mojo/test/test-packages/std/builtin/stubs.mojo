@@ -630,7 +630,6 @@ struct Bool(EnumLike, TrivialRegisterPassable):
     var _mlir_value: __mlir_type.`!kgen.scalar<bool>`
 
     # Enable pattern matching on Bool.
-    comptime _enum_case_length = 2
     comptime _enum_case_names = ParameterList.of[
         "False".value, "True".value
     ].values
@@ -928,7 +927,6 @@ comptime KGENString = __mlir_type.`!kgen.string`
 
 
 trait EnumLike:
-    comptime _enum_case_length: Int
     comptime _enum_case_names: _MLIR.KGENParamListType[KGENString]
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType]
 
@@ -1696,7 +1694,6 @@ struct Optional[T: Movable](Copyable, EnumLike):
             pass
 
     # Enable pattern matching on Optional.
-    comptime _enum_case_length = 2
     comptime _enum_case_names = ParameterList.of[
         "None".value, "Some".value
     ].values

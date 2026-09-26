@@ -30,7 +30,6 @@ struct Token(Copyable, Deinitable, EnumLike, Movable):
     """A tiny lexer token with EnumLike cases for pattern matching."""
 
     # Should all be synthesized by the compiler.
-    comptime _enum_case_length = 3
     comptime _enum_case_names = ParameterList.of[
         "eof".value, "identifier".value, "integer".value
     ].values

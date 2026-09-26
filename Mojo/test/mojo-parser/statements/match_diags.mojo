@@ -277,6 +277,7 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int]):
         pass
 
     # More complex cases.
+    # TODO: Support tuples.
     __match flag, flag:
     case True, True:  pass
     case False, True: pass
