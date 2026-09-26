@@ -1234,6 +1234,24 @@ void ComptimeIfOp::collectParameterUsesBelow(
     function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
 }
 
+ComptimeIfOp ComptimeIfOp::create(OpBuilder &builder, Location loc,
+                                  TypeRange resultTypes, TypedAttr cond,
+                                  function_ref<LogicalResult()> emitThen,
+                                  function_ref<LogicalResult()> emitElse) {
+  ComptimeIfOp ifOp = ComptimeIfOp::create(builder, loc, resultTypes, cond);
+
+  builder.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
+  if (failed(emitThen()))
+    return {};
+
+  builder.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
+  if (failed(emitElse()))
+    return {};
+
+  builder.setInsertionPointAfter(ifOp);
+  return ifOp;
+}
+
 //===----------------------------------------------------------------------===//
 // ComptimeYieldOp
 //===----------------------------------------------------------------------===//

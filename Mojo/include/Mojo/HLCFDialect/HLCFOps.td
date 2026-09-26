@@ -966,6 +966,14 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let extraClassDeclaration = [{
+    /// Create a binary comptime.if, run `emitThen` / `emitElse` at the start
+    /// of each region (they must terminate the blocks), and leave the
+    /// insertion point after the op. Returns null if either callback fails.
+    static ComptimeIfOp create(OpBuilder &builder, Location loc,
+                               TypeRange resultTypes, TypedAttr cond,
+                               function_ref<LogicalResult()> emitThen,
+                               function_ref<LogicalResult()> emitElse);
+
     bool isIsolatedFromAbove(unsigned regionNum);
     void notifyKnownIsolatedFromAbove(unsigned regionNum);
 

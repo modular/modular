@@ -907,19 +907,6 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       continue;
     }
 
-    // Process a HLCF::IfOp / HLCF::ComptimeIfOp with a known-constant
-    // condition: mark the unreachable arm(s) so we don't consider them live.
-    if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
-      if (lowerIfOp(ifOp, effects)) {
-        // If the elif does not fall through, cut off the code after it.
-        auto b = handleSemanticTerminatorOp(
-            op, "if statement with then/else that do not fall through");
-        UnreachableOp::create(b, op.getLoc());
-        return;
-      }
-      continue;
-    }
-
     // Process a HLCF::MatchOp: pass through cases and else.
     if (auto matchOp = dyn_cast<HLCF::MatchOp>(op)) {
       if (lowerMatchOp(matchOp, effects)) {
@@ -931,9 +918,21 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
       continue;
     }
 
+    // Process a HLCF::IfOp with a known-constant condition: mark the
+    // unreachable arm(s) so we don't consider them live.
+    if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
+      if (lowerIfOp(ifOp, effects)) {
+        // If the elif does not fall through, cut off the code after it.
+        auto b = handleSemanticTerminatorOp(
+            op, "if statement with then/else that do not fall through");
+        UnreachableOp::create(b, op.getLoc());
+        return;
+      }
+      continue;
+    }
+
     // Otherwise we must have a comptime if.
     assert(isa<HLCF::ComptimeIfOp>(op) && "Unknown operation with regions");
-
     if (auto ifOp = dyn_cast<HLCF::ComptimeIfOp>(op)) {
       // Mark constant-dead then arms / else. Don't warn — comptime if is
       // intentionally used like an ifdef.

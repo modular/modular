@@ -2524,50 +2524,47 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
   if (!hasNextBool)
     return failure();
   assert(hasNextBool.getIfPValue() && "expected PValue in param context");
-  auto comptimeIf = HLCF::ComptimeIfOp::create(builder, forLocation,
-                                               hasNextBool.getIfPValue());
 
-  // Keep going if we have more elements.
-  builder.createBlock(&comptimeIf.getThenRegion());
+  // Then binds the induction variable and runs the suite; else exits the loop
+  // when the iterator is exhausted.
+  auto comptimeIf = HLCF::ComptimeIfOp::create(
+      builder, forLocation, TypeRange{}, hasNextBool.getIfPValue(),
+      [&]() -> LogicalResult {
+        // Extract the next element and bind it to the target.
+        auto nextValue = emitter.emitIndirectCall(
+            getNextValue, CallOperands(CallSyntax::kDirectCall, seqExpr,
+                                       EC_ForIterator, {{iterValue, seqExpr}}));
+        if (!nextValue)
+          return failure();
+        assert(nextValue.getIfPValue() && "expected PValue in param context");
 
-  // If not, go to the else block.
-  builder.createBlock(&comptimeIf.getElseRegion());
-  HLCF::ComptimeForGotoElseOp::create(builder, forLocation);
-  // Keep inserting after this operation.
-  builder.setInsertionPointAfter(comptimeIf);
+        // Everything resolved, so we'll be able to parse the body, don't skip
+        // it.
+        skipBodyOnFailure.release();
+
+        // Create a scope for the induction variable bindings.
+        DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+        llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+        pushChildScope(scopeGuard, keepDecl);
+
+        IREmitter thenEmitter = getParamEmitter(EC_ForIterator);
+        if (failed(thenEmitter.emitDestructuringPValue(nextValue.getIfPValue(),
+                                                       targetExpr)))
+          return failure();
+
+        if (parseSuite(curIndent))
+          return failure();
+        HLCF::ComptimeForContinueOp::create(builder, forLocation);
+        return success();
+      },
+      [&]() -> LogicalResult {
+        HLCF::ComptimeForGotoElseOp::create(builder, forLocation);
+        return success();
+      });
+  if (!comptimeIf)
+    return failure();
   // We always continue or goto-else from the arms of the comptime.if.
   UnreachableOp::create(builder, forLocation);
-
-  // After the check for too-few elements, we extract the next element and bind
-  // to the target by calling the paramfor_next_iter "next_value" function.
-  auto nextValue = emitter.emitIndirectCall(
-      getNextValue, CallOperands(CallSyntax::kDirectCall, seqExpr,
-                                 EC_ForIterator, {{iterValue, seqExpr}}));
-  if (!nextValue)
-    return failure();
-  assert(nextValue.getIfPValue() && "expected PValue in param context");
-
-  // Everything resolved, so we'll be able to parse the body, don't skip it.
-  skipBodyOnFailure.release();
-
-  { // Create a scope for the induction variable bindings.
-    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-    // Push a new local variable scope for the subsequent suite.
-    pushChildScope(scopeGuard, keepDecl);
-
-    IREmitter emitter = getParamEmitter(EC_ForIterator);
-    if (failed(emitter.emitDestructuringPValue(nextValue.getIfPValue(),
-                                               targetExpr)))
-      return failure();
-
-    //  Parse into the 'then' region of the parameter if.
-    builder.setInsertionPointToStart(&comptimeIf.getThenRegion().front());
-    // Parse the body.
-    if (parseSuite(curIndent))
-      return failure();
-    HLCF::ComptimeForContinueOp::create(builder, forLocation);
-  }
 
   // Parse the else region if present.
   builder.createBlock(&paramFor.getElseRegion());

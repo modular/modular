@@ -4490,19 +4490,26 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     // result type is fixed after emitting both branches. For the memory-only
     // path the op is recreated without a result at the end (same pattern as
     // the hlcf.if memory-only path below).
+    AnyValue trueRawVal, falseRawVal;
     auto comptimeIfOp = HLCF::ComptimeIfOp::create(
         *emitter.builder, ifLoc, TypeRange{condPVal.get().getType()},
-        condPVal.get());
-
-    emitter.builder->createBlock(&comptimeIfOp.getThenRegion());
-    AnyValue trueRawVal = emitBranchUnderAssumption(
-        trueExpr, buildBranchAssumption(condPVal.get(),
-                                        /*invertCondition=*/false, ifLoc));
-
-    emitter.builder->createBlock(&comptimeIfOp.getElseRegion());
-    AnyValue falseRawVal = emitBranchUnderAssumption(
-        falseExpr,
-        buildBranchAssumption(condPVal.get(), /*invertCondition=*/true, ifLoc));
+        condPVal.get(),
+        [&]() -> LogicalResult {
+          trueRawVal = emitBranchUnderAssumption(
+              trueExpr,
+              buildBranchAssumption(condPVal.get(),
+                                    /*invertCondition=*/false, ifLoc));
+          return success();
+        },
+        [&]() -> LogicalResult {
+          falseRawVal = emitBranchUnderAssumption(
+              falseExpr,
+              buildBranchAssumption(condPVal.get(),
+                                    /*invertCondition=*/true, ifLoc));
+          return success();
+        });
+    if (!comptimeIfOp)
+      return {};
 
     CValue falseVal =
         emitToCValueInferringType({falseRawVal, falseExpr}, trueRawVal);
