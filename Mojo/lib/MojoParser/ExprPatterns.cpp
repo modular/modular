@@ -1087,7 +1087,15 @@ struct MatchCoveringDim {
 /// independent per-field bitsets would wrongly treat `True,True` +
 /// `False,False` as total. Applies to tuples and structs of EnumLike fields.
 struct MatchCoveringSpace {
-  enum class Kind : uint8_t { Opaque, FiniteCtors, Product, Closed };
+  enum class Kind : uint8_t {
+    Opaque,
+    FiniteCtors,
+    Product,
+    /// Tuple/struct of EnumLike leaves whose flattened cell count exceeds
+    /// `kMaxProductCells`. Not tracked cell-by-cell; requires a catch-all.
+    TooComplex,
+    Closed
+  };
   Kind kind = Kind::Opaque;
 
   // FiniteCtors (EnumLike root):
@@ -1250,13 +1258,18 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   SmallVector<MatchCoveringDim, 4> dims;
   if (collectFiniteDims(builder, rootPath, matchLoc, dims) && !dims.empty()) {
     size_t numCells = 1;
+    bool tooLarge = false;
     for (const MatchCoveringDim &dim : dims) {
-      if (dim.numCtors == 0 || numCells > kMaxProductCells / dim.numCtors)
-        return space; // Too large — Opaque
+      if (dim.numCtors == 0 || numCells > kMaxProductCells / dim.numCtors) {
+        tooLarge = true;
+        break;
+      }
       numCells *= dim.numCtors;
     }
-    if (numCells > kMaxProductCells)
+    if (tooLarge || numCells > kMaxProductCells) {
+      space->kind = MatchCoveringSpace::Kind::TooComplex;
       return space;
+    }
 
     space->kind = MatchCoveringSpace::Kind::Product;
     space->numDims = dims.size();
@@ -1272,28 +1285,39 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   return space; // Opaque
 }
 
-/// If this case covers exactly one root constructor (EnumTag / Bool-style
-/// Equal) with only Bind residuals — and no Or / nested tests / guard —
-/// return that constructor index. Otherwise nullopt (no FiniteCtors credit).
+/// True if `ancestor` is `path` or any parent of `path` in the PatternPath
+/// tree. Used when classifying a command relative to product dimensions:
+///   - Bind on an ancestor of several dims → those dims stay wildcards
+///   - Commands under a dim / root ctor (payload refine) are ignored for
+///     tag-level FiniteCtors / product covering
+static bool isAncestorOrEqual(const PatternPath *ancestor,
+                              const PatternPath *path) {
+  for (const PatternPath *p = path; p; p = p->parent)
+    if (p == ancestor)
+      return true;
+  return false;
+}
+
+/// If these Or-free commands cover exactly one root constructor (EnumTag /
+/// Bool-style Equal), return that index. Payload refinements under that ctor
+/// (binds or nested tests) are ignored for tag-level credit — v1 treats the
+/// EnumLike tag set as the universe. Otherwise nullopt.
 static std::optional<size_t>
-getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
+getSimpleRootCtorCoverage(PatternCommandList commands,
                           const PatternPath *rootPath,
                           ArrayRef<TypedAttr> caseNames) {
-  if (entry.guardExpr)
-    return std::nullopt;
-
   std::optional<size_t> ctor;
-  for (const PatternCommand *cmd : entry.commandList) {
-    // Or patterns are ignored for coverage in this pass.
-    // TODO: Support "or" patterns.
-    if (cmd->kind == PatternCommand::Or)
-      return std::nullopt;
+  for (const PatternCommand *cmd : commands) {
+    assert(cmd->kind != PatternCommand::Or && "expand Or before covering");
     if (cmd->kind == PatternCommand::Bind)
       continue;
-    // Nested path tests (payload residuals that aren't binds) mean we cannot
-    // credit a full root constructor yet.
-    if (cmd->path != rootPath)
+    // Payload / nested refinements under the matched root ctor: ignore for
+    // tag-level FiniteCtors credit (`Some(0)` still covers `Some`).
+    if (cmd->path != rootPath) {
+      if (isAncestorOrEqual(rootPath, cmd->path))
+        continue;
       return std::nullopt;
+    }
 
     if (cmd->kind == PatternCommand::EnumTag) {
       if (ctor)
@@ -1314,16 +1338,27 @@ getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
   return ctor;
 }
 
-/// True if `ancestor` is `path` or any parent of `path` in the PatternPath
-/// tree. Used when classifying a command relative to product dimensions:
-///   - Bind on an ancestor of several dims → those dims stay wildcards
-///   - Equal/EnumTag under a dim (payload) → cannot credit the whole ctor yet
-static bool isAncestorOrEqual(const PatternPath *ancestor,
-                              const PatternPath *path) {
-  for (const PatternPath *p = path; p; p = p->parent)
-    if (p == ancestor)
-      return true;
-  return false;
+/// Expand `Or` commands into a disjunction of Or-free command lists. Each
+/// alternative is covered independently (union). Nested / multiple Ors are
+/// flattened by substituting one Or at a time.
+static void
+expandOrCommands(PatternCommandList commands,
+                 SmallVectorImpl<SmallVector<const PatternCommand *, 8>> &out) {
+  for (size_t i = 0, e = commands.size(); i != e; ++i) {
+    if (commands[i]->kind != PatternCommand::Or)
+      continue;
+
+    for (PatternCommandList alt : commands[i]->orAlternatives) {
+      SmallVector<const PatternCommand *, 8> combined;
+      combined.reserve(i + alt.size() + (e - i - 1));
+      combined.append(commands.begin(), commands.begin() + i);
+      combined.append(alt.begin(), alt.end());
+      combined.append(commands.begin() + i + 1, commands.end());
+      expandOrCommands(combined, out);
+    }
+    return;
+  }
+  out.emplace_back(commands.begin(), commands.end());
 }
 
 /// If `path` is exactly one flattened product dimension (an EnumLike leaf
@@ -1352,7 +1387,7 @@ static std::optional<size_t> ctorIndexForCommand(const PatternCommand *cmd,
 
 /// Unpack a flat cell id into per-dimension ctor indices. Layout is row-major
 /// with the last dimension varying fastest: for Bool×Bool (False=0, True=1),
-/// cell 2 -> `(True, False)`.
+/// cell 2 → `(True, False)`.
 static void decodeCell(const MatchCoveringSpace &space, size_t cell,
                        SmallVectorImpl<size_t> &out) {
   out.resize(space.numDims);
@@ -1389,12 +1424,46 @@ static std::string formatProductWitness(const MatchCoveringSpace &space,
   return result;
 }
 
-/// Cover cells matched by this case's product pattern. Returns:
+/// Cover FiniteCtors with an Or-free command list. Returns false if the
+/// pattern cannot be credited; `hitOpen` if a still-open ctor was cleared.
+static bool coverFiniteCtorsCommands(MatchCoveringSpace &space,
+                                     PatternCommandList commands,
+                                     const PatternPath *rootPath,
+                                     bool &hitOpen) {
+  hitOpen = false;
+  assert(space.kind == MatchCoveringSpace::Kind::FiniteCtors);
+
+  // Irrefutable alternative (`_` / bind-only, including empty): closes every
+  // remaining ctor. Needed for `case True | _:` where `_` is an Or arm.
+  if (llvm::all_of(commands, [](const PatternCommand *cmd) {
+        return cmd->kind == PatternCommand::Bind;
+      })) {
+    for (size_t i = 0; i < space.numCtors; ++i) {
+      if (space.remaining[i]) {
+        space.remaining[i] = false;
+        hitOpen = true;
+      }
+    }
+    return true;
+  }
+
+  std::optional<size_t> ctor =
+      getSimpleRootCtorCoverage(commands, rootPath, space.caseNames);
+  if (!ctor)
+    return false;
+  if (space.isCtorOpen(*ctor)) {
+    space.coverCtor(*ctor);
+    hitOpen = true;
+  }
+  return true;
+}
+
+/// Cover product cells matched by an Or-free command list. Returns:
 ///   true  — pattern was interpretable; `hitOpen` says whether any open cell
-///           was cleared (false ⇒ already covered / unreachable).
-///   false — cannot credit this case (Or / unknown path / bad literal).
-static bool coverProductCase(MatchCoveringSpace &space,
-                             const MatchCaseEntry &entry, bool &hitOpen) {
+///           was cleared (false ⇒ already covered for this alternative).
+///   false — cannot credit this alternative (unknown path / bad literal).
+static bool coverProductCommands(MatchCoveringSpace &space,
+                                 PatternCommandList commands, bool &hitOpen) {
   hitOpen = false;
   assert(space.kind == MatchCoveringSpace::Kind::Product);
 
@@ -1402,9 +1471,8 @@ static bool coverProductCase(MatchCoveringSpace &space,
   SmallVector<std::optional<size_t>, 4> constraints(space.numDims,
                                                     std::nullopt);
 
-  for (const PatternCommand *cmd : entry.commandList) {
-    if (cmd->kind == PatternCommand::Or)
-      return false; // TODO: Support "or" patterns.
+  for (const PatternCommand *cmd : commands) {
+    assert(cmd->kind != PatternCommand::Or && "expand Or before covering");
 
     if (cmd->kind == PatternCommand::Bind) {
       // Bind on a dim path (or ancestor of dims) is a wildcard — already
@@ -1443,12 +1511,19 @@ static bool coverProductCase(MatchCoveringSpace &space,
       continue;
     }
 
-    // Equal/EnumTag under a dim (payload refine) — no full-ctor credit yet.
+    // Payload refinements under a dim (`Some(0)` on an Optional leaf): ignore
+    // for tag-level product covering — the dim constraint already recorded the
+    // enum ctor.
+    bool underSomeDim = false;
     for (size_t i = 0; i < space.numDims; ++i) {
       if (isAncestorOrEqual(space.dims[i].path, cmd->path) &&
-          cmd->path != space.dims[i].path)
-        return false;
+          cmd->path != space.dims[i].path) {
+        underSomeDim = true;
+        break;
+      }
     }
+    if (underSomeDim)
+      continue;
     return false;
   }
 
@@ -1482,6 +1557,45 @@ static bool coverProductCase(MatchCoveringSpace &space,
   return true;
 }
 
+/// Cover `commands` against `space`, expanding Or into a union of alternatives.
+/// Sets `hitOpen` if any alternative cleared still-open coverage. Returns false
+/// only when every alternative is uninterpretable (no credit at all).
+///
+/// Unreachability: when every alternative is interpretable and none hit open
+/// space, the whole Or (or Or-free pattern) is redundant. If any alternative
+/// cannot be credited, we still cover the ones we can but do not treat the
+/// case as unreachable — a complex alt might still match at runtime.
+static bool coverCommands(MatchCoveringSpace &space,
+                          PatternCommandList commands,
+                          const PatternPath *rootPath, bool &hitOpen,
+                          bool &allAltsInterpreted) {
+  hitOpen = false;
+  allAltsInterpreted = true;
+
+  SmallVector<SmallVector<const PatternCommand *, 8>, 4> alts;
+  expandOrCommands(commands, alts);
+
+  bool anyInterpreted = false;
+  for (ArrayRef<const PatternCommand *> alt : alts) {
+    bool altHit = false;
+    bool ok = false;
+    if (space.kind == MatchCoveringSpace::Kind::FiniteCtors)
+      ok = coverFiniteCtorsCommands(space, alt, rootPath, altHit);
+    else if (space.kind == MatchCoveringSpace::Kind::Product)
+      ok = coverProductCommands(space, alt, altHit);
+    else
+      return false;
+
+    if (!ok) {
+      allAltsInterpreted = false;
+      continue;
+    }
+    anyInterpreted = true;
+    hitOpen |= altHit;
+  }
+  return anyInterpreted;
+}
+
 } // namespace
 
 void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
@@ -1489,11 +1603,12 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     SMLoc matchLoc) {
   // Covering model (see MatchCoveringSpace):
   //   - EnumLike root → FiniteCtors bitset.
-  //   - Tuple of EnumLike leaves → flattened Product cell bitset.
+  //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
+  //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
   //   - Else Opaque (no exhaustivity proof yet).
   //   - Irrefutable unguarded cases close the space.
-  //   - Simple root EnumTag / Equal clear one ctor; product patterns clear the
-  //     cartesian cells they match (including `_` wildcards per position).
+  //   - Or patterns expand to a union of alternatives; each is covered
+  //     independently (guards never shrink the remaining space).
   MatchCoveringSpace *space =
       createRootCoveringSpace(*this, rootPath, matchLoc);
 
@@ -1519,39 +1634,40 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     if (entry.guardExpr)
       continue;
 
-    if (space->kind == MatchCoveringSpace::Kind::FiniteCtors) {
-      std::optional<size_t> ctor =
-          getSimpleRootCtorCoverage(entry, rootPath, space->caseNames);
-      if (!ctor)
-        continue;
-
-      if (!space->isCtorOpen(*ctor)) {
-        entry.isUnreachable = true;
-        emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
-            << "'" << caseNameSpelling(space->caseNames, *ctor)
-            << "' is already covered by a previous case"
-            << entry.patternExpr->getRange();
-        continue;
-      }
-      space->coverCtor(*ctor);
-      if (space->isFullyCovered())
-        entry.isConcluding = true;
+    if (space->kind != MatchCoveringSpace::Kind::FiniteCtors &&
+        space->kind != MatchCoveringSpace::Kind::Product)
       continue;
-    }
 
-    if (space->kind == MatchCoveringSpace::Kind::Product) {
-      bool hitOpen = false;
-      if (!coverProductCase(*space, entry, hitOpen))
-        continue;
-      if (!hitOpen) {
-        entry.isUnreachable = true;
-        emitWarning(entry.patternExpr->getLoc(),
-                    "case is unreachable; previous cases cover every "
-                    "value of the match subject")
-            << entry.patternExpr->getRange();
-      } else if (space->isFullyCovered()) {
-        entry.isConcluding = true;
+    bool hitOpen = false;
+    bool allAltsInterpreted = false;
+    if (!coverCommands(*space, entry.commandList, rootPath, hitOpen,
+                       allAltsInterpreted))
+      continue;
+
+    if (!hitOpen && allAltsInterpreted) {
+      entry.isUnreachable = true;
+      // Prefer a ctor-specific message for simple root EnumTag/Equal patterns
+      // (with optional Bind residuals), but not for Or.
+      bool hasOr =
+          llvm::any_of(entry.commandList, [](const PatternCommand *cmd) {
+            return cmd->kind == PatternCommand::Or;
+          });
+      if (!hasOr && space->kind == MatchCoveringSpace::Kind::FiniteCtors) {
+        if (auto ctor = getSimpleRootCtorCoverage(entry.commandList, rootPath,
+                                                  space->caseNames)) {
+          emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
+              << "'" << caseNameSpelling(space->caseNames, *ctor)
+              << "' is already covered by a previous case"
+              << entry.patternExpr->getRange();
+          continue;
+        }
       }
+      emitWarning(entry.patternExpr->getLoc(),
+                  "case is unreachable; previous cases cover every "
+                  "value of the match subject")
+          << entry.patternExpr->getRange();
+    } else if (hitOpen && space->isFullyCovered()) {
+      entry.isConcluding = true;
     }
   }
 
@@ -1571,5 +1687,9 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     assert(witness < space->numCells);
     emitWarning(matchLoc, "'__match' is not exhaustive; missing case for ")
         << "'" << formatProductWitness(*space, witness) << "'";
+  } else if (space->kind == MatchCoveringSpace::Kind::TooComplex) {
+    // A catch-all would have closed the space via alwaysMatches().
+    emitWarning(matchLoc, "'__match' is too complex to check for exhaustivity; "
+                          "add a '_' case");
   }
 }

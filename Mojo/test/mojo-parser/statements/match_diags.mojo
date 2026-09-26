@@ -323,6 +323,41 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
     case _:
         pass
 
+    # Or of root constructors covers each alternative (union).
+    __match flag:
+    case True | False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Or that only covers one ctor is not exhaustive.
+    __match flag: # expected-warning {{'__match' is not exhaustive; missing case for 'False'}}
+    case True | True: pass
+
+    # Or in a product: each alternative covers its cells.
+    __match flag, flag:
+    case (True, _) | (False, False): pass
+    case (False, True): pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Or with a catch-all arm closes the space.
+    __match flag:
+    case True | _: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case False:
+        pass
+
+    # Redundant Or after the subject is already covered.
+    __match flag:
+    case True: pass
+    case False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case True | False:
+        pass
+
+    # Various enum cases.
     __match opt: # expected-warning {{'__match' is not exhaustive; missing case for 'None'}}
     case Optional.Some(_):
         pass
@@ -339,4 +374,89 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
     case Optional.Some(x):
         _ = x
     case Optional.None:
+        pass
+
+    # Payload refinements still credit the enum tag: `Some(0)` covers `Some`.
+    __match opt:
+    case Optional.Some(0):
+        pass
+    case Optional.None:
+        pass
+
+    # After a refined `Some` arm, a later `Some(_)` is unreachable at tag level.
+    __match opt:
+    case Optional.Some(0):
+        pass
+    # expected-warning @+1 {{'Some' is already covered by a previous case}}
+    case Optional.Some(_):
+        pass
+    case Optional.None:
+        pass
+
+    # Products larger than kMaxProductCells (1024) cannot be tracked cell-by-cell
+    # (Bool^11 == 2048); require a catch-all instead of silent Opaque.
+    # expected-warning @+1 {{'__match' is too complex to check for exhaustivity; add a '_' case}}
+    __match (
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+    ):
+    case True, True, True, True, True, True, True, True, True, True, True:
+        pass
+
+    # A catch-all satisfies the TooComplex requirement.
+    __match (
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+    ):
+    case True, True, True, True, True, True, True, True, True, True, True:
+        pass
+    case _:
+        pass
+
+def match_exhaustivity_opaque_subjects(n: Int, s: String):
+    # TODO: Opaque subjects (`Int`, `String`, …) should require a catch-all or
+    # diagnose non-exhaustivity. Today they stay `Opaque` and produce no warning.
+    # Intended once implemented: warn that the match is not exhaustive / needs
+    # a `_` case (or a similar catch-all diagnostic).
+    __match n:
+    case 0:
+        pass
+    case 1:
+        pass
+
+    __match s:
+    case "a":
+        pass
+    case "b":
+        pass
+
+    __match s:
+    case "a":
+        pass
+    case "a":  # TODO: Should warn about unreachable case.
+        pass
+
+    # TODO: Finite literal clusters on opaque types (e.g. `0 | 1 | 2` on `Int`)
+    # are not modeled as a closed universe. Covering `0 | 1 | 2` should either
+    # prove exhaustivity for that set or still require `_` with a tailored note.
+    __match n:
+    case 0 | 1 | 2:
         pass
