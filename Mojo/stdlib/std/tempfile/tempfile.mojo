@@ -28,9 +28,12 @@ from std.tempfile import gettempdir
 
 import std.os
 from std.format._utils import _FlushingWriteBuffer
+from std.io.file import O_WRONLY, O_CREAT, O_EXCL, O_CLOEXEC
 from std.pathlib import Path
 from std.sys import CompilationTarget
-from std.random import random_ui64
+from std.random._rng import _PhiloxWrapper
+from std.ffi import _Global, c_int, external_call
+from std.time import perf_counter_ns
 
 from std.collections import Span
 
@@ -38,12 +41,41 @@ comptime TMP_MAX = 10_000
 """Maximum number of attempts when generating unique temporary file names."""
 
 
+struct _TempRngState(Copyable):
+    var _generator: _PhiloxWrapper
+
+    def __init__(out self):
+        var t = UInt64(perf_counter_ns())
+        var pid = UInt64(external_call["getpid", c_int]())
+        self._generator = _PhiloxWrapper(t ^ (pid << 32))
+
+    def next_index(mut self, upper: UInt64) -> UInt64:
+        return self._generator.next_uint64() % (upper + 1)
+
+
+def _init_temp_rng() -> _TempRngState:
+    return _TempRngState()
+
+
+def _get_temp_rng(out result: Pointer[_TempRngState, MutUntrackedOrigin]):
+    from std.os import abort
+
+    try:
+        result = _temp_rng_global.get_or_create_ptr()
+    except:
+        abort("Failed to initialize tempfile RNG")
+
+
+comptime _temp_rng_global = _Global["tempfile_rng", _init_temp_rng]
+
+
 def _get_random_name(size: Int = 8) -> String:
     comptime characters = StaticString("abcdefghijklmnopqrstuvwxyz0123456789_")
+    var rng = _get_temp_rng()
     var name = String(capacity_bytes=size)
     for _ in range(size):
         var rand_index = Int(
-            random_ui64(0, UInt64(characters.byte_length() - 1))
+            rng[].next_index(UInt64(characters.byte_length() - 1))
         )
         name += characters[byte=rand_index]
     return name^
@@ -98,25 +130,21 @@ def _try_to_create_file(dir: StringSlice) -> Bool:
     for _ in range(TMP_MAX):
         var name = _get_random_name()
         # TODO use os.join when it exists
-        var filename = Path(dir) / name
+        var filename = String(Path(dir) / name)
 
-        # prevent overwriting existing file
-        if std.os.path.exists(filename):
+        var flags = O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC
+        var fd = external_call["open", c_int, num_fixed_args=2](
+            filename.as_c_string_span(), c_int(flags), c_int(0o600)
+        )
+        if fd < 0:
             continue
 
-        # verify that we have writing access in the target directory
+        _ = external_call["close", c_int](fd)
         try:
-            with FileHandle(String(filename), "w"):
-                pass
             std.os.remove(filename)
-            return True
         except:
-            if std.os.path.exists(filename):
-                try:
-                    std.os.remove(filename)
-                except:
-                    pass
-            return False
+            pass
+        return True
 
     return False
 
@@ -400,7 +428,14 @@ struct NamedTemporaryFile(Movable):
                     + _get_random_name()
                     + suffix
                 )
-                if not std.os.path.exists(potential_name):
+                var flags = O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC
+                var fd = external_call["open", c_int, num_fixed_args=2](
+                    potential_name.as_c_string_span(),
+                    c_int(flags),
+                    c_int(0o600),
+                )
+                if fd >= 0:
+                    _ = external_call["close", c_int](fd)
                     self.name = potential_name
                     break
         try:
