@@ -84,9 +84,8 @@ void PatternPath::print(raw_ostream &os) const {
   SmallVector<const PatternPath *, 4> chain;
   for (const PatternPath *p = this; p; p = p->parent)
     chain.push_back(p);
-  std::reverse(chain.begin(), chain.end());
 
-  for (const PatternPath *p : chain) {
+  for (const PatternPath *p : llvm::reverse(chain)) {
     switch (p->kind) {
     case Root:
       os << "$";
@@ -1227,6 +1226,7 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     // Irrefutable unguarded pattern (`_`, bare bind): closes everything.
     if (entry.alwaysMatches()) {
       space->closeAll();
+      entry.isConcluding = true;
       continue;
     }
 
@@ -1251,6 +1251,8 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
       continue;
     }
     space->coverCtor(*ctor);
+    if (space->isFullyCovered())
+      entry.isConcluding = true;
   }
 
   if (space->kind == MatchCoveringSpace::Kind::FiniteCtors &&

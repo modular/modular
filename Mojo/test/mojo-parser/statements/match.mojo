@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 
 # A function we can call with minimal IR gruff but still verify the right
 # code is put out in the right place.
@@ -283,7 +283,8 @@ def match_string(x: String):
 
 
 # CHECK-LABEL: lit.fn @"match_bool
-# `False` then `True` (sorted by spelling); trailing `_` is the elif else.
+# `False` then `True` (sorted by spelling); trailing `_` is unreachable once
+# both Bool constructors are covered, so the elif else is `hlcf.unreachable`.
 # CHECK:       lit.call {{.*}}@"__eq__(
 # CHECK:       lit.call {{.*}}@"__mlir_bool__(::Bool)"
 # CHECK:       hlcf.if %{{.*}} {
@@ -297,8 +298,7 @@ def match_string(x: String):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.yield
 # CHECK:       } else {
-# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
-# CHECK:         hlcf.yield
+# CHECK:         hlcf.unreachable
 # CHECK:       }
 def match_bool(x: Bool):
     __match x:
@@ -306,6 +306,7 @@ def match_bool(x: Bool):
         case_callee[0]()
     case False:
         case_callee[1]()
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         case_callee[2]()
 
@@ -334,7 +335,8 @@ struct Color(ImplicitlyCopyable, EnumLike):
 
 
 # CHECK-LABEL: lit.fn @"match_color
-# The three color tags share one discriminant; trailing `_` is the elif else.
+# The three color tags share one discriminant; trailing `_` is unreachable
+# after red/green/blue, so the elif else is `hlcf.unreachable`.
 # CHECK:       [[DISC:%.*]] = lit.call {{.*}}@"_get_enum_discriminant{{.*}}
 # CHECK:       [[TAG0:%.*]] = kgen.rebind [[DISC]]
 # CHECK:       lit.call {{.*}}@"__eq__({{.*}}([[TAG0]],
@@ -359,8 +361,7 @@ struct Color(ImplicitlyCopyable, EnumLike):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
 # CHECK:         hlcf.yield
 # CHECK:       } else {
-# CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 3
-# CHECK:         hlcf.yield
+# CHECK:         hlcf.unreachable
 # CHECK:       }
 def match_color(c: Color):
     __match c:
@@ -370,6 +371,7 @@ def match_color(c: Color):
         case_callee[1]()
     case .blue:     # inferred case.
         case_callee[2]()
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         case_callee[3]()
 
@@ -761,6 +763,7 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
         case_callee[0]()
     case ((.None)):  # Extra parens are fine of course.
         case_callee[1]()
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case .Some:  # just check the tag, don't bind the value.
         case_callee[2]()
 
@@ -782,7 +785,7 @@ def testLValueMutableMatch(var a: Optional[Int]):
     # CHECK:       [[VALUE:%.*]] = lit.var.decl "value" ref
     # CHECK:       lit.ref.store {{.*}}, [[VALUE]]
     # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}[mut *"a`
-    __match a:
+    __match a: # expected-warning {{'__match' is not exhaustive; missing case for 'None'}}
     case .Some(ref value):
         value += 1
 
@@ -802,7 +805,7 @@ def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:         hlcf.yield
     # CHECK:       } else {
-    # CHECK:         hlcf.yield
+    # CHECK:         hlcf.unreachable
     # CHECK:       }
     __match x:
     case True:
@@ -811,16 +814,23 @@ def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
         case_callee[1]()
 
     # `(True, _)` is decided by y[0]; `(_, y_elt)` is the exclusive else.
+    # The catch-all is concluding, so the nested match else is unreachable.
     # CHECK:       lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
     # CHECK:       lit.call {{.*}}@"__eq__(::Bool,::Bool)"(
     # CHECK:       hlcf.if %{{.*}} {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:         hlcf.yield
     # CHECK:       } else {
-    # CHECK:         lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
-    # CHECK:         [[Y_ELT:%.*]] = lit.var.decl "y_elt" ref
-    # CHECK:         lit.ref.store {{.*}}, [[Y_ELT]]
-    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:         hlcf.match {
+    # CHECK:           lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
+    # CHECK:           [[Y_ELT:%.*]] = lit.var.decl "y_elt" ref
+    # CHECK:           lit.ref.store {{.*}}, [[Y_ELT]]
+    # CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:           hlcf.match.complete
+    # CHECK:         } else {
+    # CHECK:           hlcf.unreachable
+    # CHECK:         }
+    # CHECK:         hlcf.yield
     # CHECK:       }
     __match y:
     case (True, _):

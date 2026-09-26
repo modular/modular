@@ -103,8 +103,6 @@ def describe_optional(opt: Optional[Int]) -> String:
         return String("some:", value)
     case .None:
         return "none"
-    # FIXME: Shouldn't be needed.
-    return "unreachable"
 
 
 def describe_token(tok: Token) -> String:
@@ -115,8 +113,6 @@ def describe_token(tok: Token) -> String:
         return String("id:", name)
     case .integer(value):
         return String("int:", value)
-    # FIXME: Shouldn't be needed.
-    return "unreachable"
 
 
 def classify_int(x: Int) -> String:

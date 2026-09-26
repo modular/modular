@@ -1683,8 +1683,7 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     // Okay, we successfully parsed a case block. Remember it for later.
     caseEntries.push_back({patternExpr, guardExpr, getLexer().getCursor(),
                            caseIndent,
-                           checkListBuilder.internCommandList(commands),
-                           /*isUnreachable=*/false});
+                           checkListBuilder.internCommandList(commands)});
     skipUntilIndentation(caseIndent);
   }
 
@@ -1823,6 +1822,11 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   assert(caseEntries.size() > 1 &&
          "emitCaseCluster requires at least two cases");
 
+  bool matchIsConcluding =
+      llvm::any_of(caseEntries, [](const MatchCaseEntry &entry) {
+        return entry.isConcluding;
+      });
+
   // A trailing always-matching case (`_` or bind-only) is the exclusive
   // complement of the tested leading values (e.g. `case False: ...; case _:
   // ...` is `False` then everything else). findClusterSize only includes it
@@ -1937,8 +1941,10 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
     auto caseEmissionState = emissionState;
     emitCases(residuals, caseEmissionState, /*inMatchCase*/ inMatchCase);
 
-    // Emit cases will emit a terminator if inMatchCase is true.
-    if (!inMatchCase)
+    // Emit cases will emit a terminator if inMatchCase is true but unreachable
+    // arm may already have terminated this block with `hlcf.unreachable`. Only
+    // insert the yield if needed.
+    if (!builder.getInsertionBlock()->mightHaveTerminator())
       HLCF::YieldOp::create(builder, loc);
 
     i = groupEnd;
@@ -1946,22 +1952,29 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   assert(arm == numClusters && "arm count must match numClusters");
 
   // Else is the trailing `_` (exclusive complement) when present; otherwise
-  // fall through / match.next.
+  // fall through / match.next — or unreachable when coverage already concluded.
   builder.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
   if (trailingWildcard) {
     auto caseEmissionState = emissionState;
     emitCases(*trailingWildcard, caseEmissionState,
               /*inMatchCase*/ inMatchCase);
-    if (!inMatchCase)
+    if (!builder.getInsertionBlock()->mightHaveTerminator())
       HLCF::YieldOp::create(builder, loc);
+  } else if (matchIsConcluding) {
+    HLCF::UnreachableOp::create(builder, loc);
   } else {
     HLCF::YieldOp::create(builder, loc);
   }
   builder.setInsertionPointAfter(ifOp);
   // Elif is not a terminator: even when every arm MatchCompletes (including a
-  // trailing catch-all else), the enclosing match case still needs one.
-  if (inMatchCase)
-    HLCF::MatchNextOp::create(builder, loc);
+  // trailing catch-all else), the enclosing match case still needs one —
+  // unless this cluster already concluded the subject.
+  if (inMatchCase) {
+    if (matchIsConcluding)
+      HLCF::UnreachableOp::create(builder, loc);
+    else
+      HLCF::MatchNextOp::create(builder, loc);
+  }
 }
 
 /// Emit a non-empty list of match case entries as a nested tree of matches,
@@ -1977,14 +1990,25 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
                            PatternEmitState &emissionState, bool inMatchCase) {
   assert(!caseEntries.empty() && "emitCases requires a non-empty list");
 
+  // If any case completes subject coverage, the match has no live fallthrough.
+  bool matchIsConcluding =
+      llvm::any_of(caseEntries, [](const MatchCaseEntry &entry) {
+        return entry.isConcluding;
+      });
+
   // This emits a case body at the current insertion point, handling the case
   // guard (if present).  Any bindings must be installed and any preconditions
   // checked.  If `inMatchCase` is true, we are emitting the body of a match
   // case, otherwise we are emitting at top level.  If `needsScope` is true,
   // open a fresh child scope for the body (and any pattern bindings already
   // installed by the caller should set this false so they stay visible).
+  //
+  // Unreachable cases still parse/emit their body so errors inside it are
+  // diagnosed, then the whole region is replaced with `hlcf.unreachable`.
   auto emitCaseBody = [&](const MatchCaseEntry &caseEntry, bool inMatchCase,
                           bool needsScope = true) {
+    Region *caseRegion = builder.getInsertionBlock()->getParent();
+
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     if (needsScope)
@@ -2001,6 +2025,7 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     // If a guard is present: `if guard { yield } else { match.next }` so
     // a failing guard advances to the next case and a passing one
     // continues into the case body below.
+    bool bodyEmittedIntoGuardThen = false;
     if (caseEntry.guardExpr) {
       IREmitter emitter = getEmitter();
       RValue guardRVal =
@@ -2028,17 +2053,28 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
               return success();
             });
       }
-      // If we're at top level, we emitted the body into the 'then' block,
-      if (!inMatchCase)
-        return;
+      // At top level the body was emitted into the guard's then block.
+      bodyEmittedIntoGuardThen = !inMatchCase;
     }
 
-    emitBody();
+    if (!bodyEmittedIntoGuardThen) {
+      emitBody();
 
-    // Signal completion if in a match case.
-    if (inMatchCase) {
+      // Signal completion if in a match case.
+      if (inMatchCase) {
+        auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
+        HLCF::MatchCompleteOp::create(builder, caseLoc);
+      }
+    }
+
+    // Prior cases cover every subject value: drop the IR we just built (kept
+    // only long enough to diagnose the body) and terminate with unreachable.
+    if (caseEntry.isUnreachable) {
       auto caseLoc = translateLocation(caseEntry.patternExpr->getLoc());
-      HLCF::MatchCompleteOp::create(builder, caseLoc);
+      Block &block = caseRegion->front();
+      block.clear();
+      builder.setInsertionPointToStart(&block);
+      HLCF::UnreachableOp::create(builder, caseLoc);
     }
   };
 
@@ -2140,16 +2176,23 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     emitCaseBody(caseEntry, /*inMatchCase*/ true, /*needsScope=*/false);
   }
 
-  // The match else is a no-op fallthrough. TODO: Mark unreachable when there
-  // is an irrefutable pattern so we don't get dead-code errors.
+  // The match else is fallthrough when the cases are incomplete; when a
+  // concluding case covers every subject value, nothing can reach the else.
   builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
-  HLCF::YieldOp::create(builder, emissionState.matchLocation);
+  if (matchIsConcluding)
+    HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
+  else
+    HLCF::YieldOp::create(builder, emissionState.matchLocation);
   builder.setInsertionPointAfter(matchOp);
 
   // If in a nested hlcf.match.case, failure to match is a failure of the case
-  // that encloses us.
-  if (inMatchCase)
-    HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
+  // that encloses us — unless this nested match already concluded.
+  if (inMatchCase) {
+    if (matchIsConcluding)
+      HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
+    else
+      HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
+  }
 }
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite

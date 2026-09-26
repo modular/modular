@@ -104,6 +104,12 @@ struct MatchCaseEntry {
   /// dynamically unreachable because previous cases cover it.
   bool isUnreachable = false;
 
+  /// True when this case completes coverage of the match subject (an
+  /// irrefutable pattern, or the last remaining EnumLike constructor). Later
+  /// cases are unreachable, and IR emission should not fall through past this
+  /// case — there is no remaining value that could miss every arm.
+  bool isConcluding = false;
+
   /// True when every command is irrefutable (`Bind`), including the empty `_`
   /// pattern, and there is no guard. Such a case cannot fail once control
   /// reaches it.
@@ -253,7 +259,8 @@ public:
   }
 
   /// Diagnose non-exhaustive and unreachable `__match` cases; set
-  /// `MatchCaseEntry::isUnreachable` for arms covered by earlier cases.
+  /// `MatchCaseEntry::isUnreachable` / `isConcluding` for covered and
+  /// coverage-completing arms.
   void checkCaseExhaustivityAndUnreachability(
       MutableArrayRef<MatchCaseEntry> caseEntries, const PatternPath *rootPath,
       SMLoc matchLoc);

@@ -307,15 +307,13 @@ def _slice_start[
 ]() -> Int:
     """Returns the first element of `axis` that the view selects: a slice's
     start, or the index a rank-reducing (`Int`) argument fixes the axis to."""
-    var start = 0
     __match slices[axis]:
     case .slice:
-        start = slices[axis].unsafe_get_slice().start.or_else(0)
+        return slices[axis].unsafe_get_slice().start.or_else(0)
     case .index:
-        start = slices[axis].unsafe_get_index()
+        return slices[axis].unsafe_get_index()
     case .static:
-        start = slices[axis].unsafe_get_index()
-    return start
+        return slices[axis].unsafe_get_index()
 
 
 @inline(.nodebug)

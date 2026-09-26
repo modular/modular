@@ -276,6 +276,16 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int]):
     case _:
         pass
 
+    # Unreachable arms are still type-checked (body IR is emitted, then
+    # discarded and replaced with `hlcf.unreachable`).
+    __match flag:
+    case True: pass
+    case False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        # expected-error @+1 {{use of unknown declaration 'not_a_real_name'}}
+        _ = not_a_real_name
+
     # More complex cases.
     # TODO: Support tuples.
     __match flag, flag:
