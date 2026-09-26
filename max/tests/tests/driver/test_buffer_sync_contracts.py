@@ -10,13 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Conformance tests pinning driver-buffer synchronization contracts (DRIV-311).
+"""Conformance tests pinning driver-buffer synchronization contracts.
 
-MAX relies on two host-read APIs synchronizing pending device work before they
-return, but nothing asserted it: ``__dlpack__``/``to_numpy`` on a non-pinned
-device buffer (``Buffer.cpp`` ``dlPack``) and ``item()`` (``Buffer.cpp``, whose
-reads bypass the stream chain so an explicit sync is inserted). Both funnel
-through ``DeviceBuffer::synchronize`` -> ``DeviceContext::synchronize``.
+MAX relies on ``to_numpy``, ``item()`` and ``__dlpack__`` observing pending
+device work, but nothing asserted it. Tracked staging buffers wait on their own
+hazard record instead and are covered by ``test_hazard_gpu.py``.
 
 Each test gates the device's default stream with a host-signalled
 ``CompletionFlag``: ``wait_for_host_value`` stalls the stream until the host
@@ -28,16 +26,18 @@ and every worker thread is joined with a timeout so a contract regression fails
 the assertion instead of hanging CI.
 
 These are the conformance tests both the AsyncRT DeviceContext and the neo
-Driver must keep passing before any DRIV-211 semantic change flips behavior.
+Driver must keep passing before any semantic change flips behavior.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 
 import numpy as np
 import pytest
+import torch
 from max.driver import (
     Accelerator,
     Buffer,
@@ -52,6 +52,9 @@ from max.dtype import DType
 _GATE_HOLD_SECONDS = 2.0
 # Generous upper bound for the released read to finish; only reached on failure.
 _JOIN_TIMEOUT_SECONDS = 60.0
+# An unordered four-element clone finishes well within this, so a consumer
+# stream still pending afterwards is waiting on the gate.
+_CONSUMER_SETTLE_SECONDS = 0.5
 
 
 @pytest.fixture
@@ -114,11 +117,12 @@ def _run_gated_read(
     return completed_while_gated, box["value"]
 
 
-def test_dlpack_export_synchronizes(gpu: Accelerator) -> None:
-    """``to_numpy``/``__dlpack__`` on a non-pinned device buffer synchronizes.
+def test_to_numpy_observes_a_pending_write(gpu: Accelerator) -> None:
+    """``to_numpy`` on a non-staging device buffer observes a pending write.
 
-    DRIV-311 contract 1: a fill enqueued behind the gate must be observed, so
-    the read blocks until release instead of returning the pre-write zeros.
+    A fill enqueued behind the gate must be observed, so the read blocks
+    until release instead of returning the pre-write zeros.
+    The block comes from the device-to-host copy, not the DLPack export.
     """
     filled = np.arange(1, 5, dtype=np.int32)
     buf = Buffer.from_numpy(np.zeros(4, dtype=np.int32)).to(gpu)
@@ -131,8 +135,7 @@ def test_dlpack_export_synchronizes(gpu: Accelerator) -> None:
     )
 
     assert not completed_while_gated, (
-        "to_numpy()/__dlpack__ returned before the gated write completed;"
-        " the DLPack export did not synchronize"
+        "to_numpy() returned before the gated write completed"
     )
     assert isinstance(value, np.ndarray)
     np.testing.assert_array_equal(value, filled)
@@ -141,8 +144,8 @@ def test_dlpack_export_synchronizes(gpu: Accelerator) -> None:
 def test_item_synchronizes(gpu: Accelerator) -> None:
     """``item()`` observes previously enqueued work.
 
-    DRIV-311 contract 2: ``item()`` reads host-mapped memory directly, bypassing
-    the stream chain, so it must insert an explicit sync to see the gated fill.
+    ``item()`` reads host-mapped memory directly, bypassing the stream chain,
+    so it must insert an explicit sync to see the gated fill.
     """
     pinned = DevicePinnedBuffer.zeros(shape=[1], dtype=DType.int32, device=gpu)
     src = Buffer.from_numpy(np.array([7], dtype=np.int32)).to(gpu)
@@ -158,3 +161,64 @@ def test_item_synchronizes(gpu: Accelerator) -> None:
         " synchronize the pending device work"
     )
     assert value == 7
+
+
+def test_dlpack_export_orders_the_consumer_stream(gpu: Accelerator) -> None:
+    """``__dlpack__`` orders the consumer stream without blocking the host.
+
+    Torch passes its current stream to ``__dlpack__``, and work it enqueues
+    there must not run ahead of the gated write.
+    """
+    filled = np.arange(1, 5, dtype=np.int32)
+    buf = Buffer.from_numpy(np.zeros(4, dtype=np.int32)).to(gpu)
+    src = Buffer.from_numpy(filled)
+    consumer = torch.cuda.Stream(device=f"cuda:{gpu.id}")
+
+    flag = CompletionFlag(gpu)
+    exported = threading.Event()
+    box: dict[str, object] = {}
+
+    def worker() -> None:
+        try:
+            with torch.cuda.stream(consumer):
+                box["copy"] = torch.from_dlpack(buf).clone()
+        except BaseException as exc:
+            box["error"] = exc
+        finally:
+            exported.set()
+
+    worker_thread = threading.Thread(target=worker, daemon=True)
+    gpu.default_queue.wait_for_host_value(flag, 1)
+    exported_while_gated = False
+    consumer_ran_while_gated = False
+    try:
+        buf.inplace_copy_from(src)
+        worker_thread.start()
+        exported_while_gated = exported.wait(timeout=_GATE_HOLD_SECONDS)
+        deadline = time.monotonic() + _CONSUMER_SETTLE_SECONDS
+        while not consumer.query() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        consumer_ran_while_gated = consumer.query()
+    finally:
+        flag.signal(1)
+        if worker_thread.ident is not None:
+            worker_thread.join(timeout=_JOIN_TIMEOUT_SECONDS)
+
+    assert not worker_thread.is_alive(), (
+        "export thread did not finish within"
+        f" {_JOIN_TIMEOUT_SECONDS}s after the gate released"
+    )
+    if "error" in box:
+        error = box["error"]
+        assert isinstance(error, BaseException)
+        raise AssertionError("export raised on the worker thread") from error
+    assert exported_while_gated, (
+        "__dlpack__ with a consumer stream blocked the host on the gated write"
+    )
+    assert not consumer_ran_while_gated, (
+        "the consumer stream ran ahead of the gated write"
+    )
+    consumer.synchronize()
+    copy = box["copy"]
+    assert isinstance(copy, torch.Tensor)
+    np.testing.assert_array_equal(copy.cpu().numpy(), filled)

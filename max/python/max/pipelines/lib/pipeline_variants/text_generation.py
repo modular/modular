@@ -634,9 +634,6 @@ class TextGenerationPipeline(
                 usage=Usage.STAGING,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
-            # Staging buffers do not synchronize on host reads, so the copy
-            # above is still in flight here.
-            sampler_device.synchronize()
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         res = update_context_and_prepare_responses(
