@@ -19,7 +19,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Usage,
+)
 from max.dtype import DType
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
@@ -144,15 +147,21 @@ class DeepseekV3BatchProcessorBase(Llama3EpBatchProcessorBase[InputsT]):
 
         if len(context_batch) == 0:
             if pinned:
-                tokens = DevicePinnedBuffer(
-                    shape=[0], dtype=DType.int64, device=device0
+                tokens = Buffer(
+                    shape=[0],
+                    dtype=DType.int64,
+                    device=device0,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 )
             else:
                 tokens = Buffer(shape=[0], dtype=DType.int64, device=device0)
             host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
             if pinned:
-                pinned_offsets: Buffer = DevicePinnedBuffer.zeros(
-                    shape=[1], dtype=DType.uint32, device=device0
+                pinned_offsets: Buffer = Buffer.zeros(
+                    shape=[1],
+                    dtype=DType.uint32,
+                    device=device0,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 )
             else:
                 pinned_offsets = Buffer.zeros(
@@ -162,8 +171,11 @@ class DeepseekV3BatchProcessorBase(Llama3EpBatchProcessorBase[InputsT]):
         else:
             num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
             if pinned:
-                tokens_host: Buffer = DevicePinnedBuffer(
-                    shape=(num_tokens,), dtype=DType.int64, device=device0
+                tokens_host: Buffer = Buffer(
+                    shape=(num_tokens,),
+                    dtype=DType.int64,
+                    device=device0,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 )
             else:
                 tokens_host = Buffer(
@@ -189,10 +201,11 @@ class DeepseekV3BatchProcessorBase(Llama3EpBatchProcessorBase[InputsT]):
             host_input_row_offsets.to_numpy()[:] = input_row_offsets_np[:]
 
             if pinned:
-                pinned_offsets = DevicePinnedBuffer(
+                pinned_offsets = Buffer(
                     shape=(len(context_batch) + 1,),
                     dtype=DType.uint32,
                     device=device0,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 )
             else:
                 pinned_offsets = Buffer(

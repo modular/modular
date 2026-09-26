@@ -27,7 +27,11 @@ from multiprocessing.synchronize import Event
 from typing import Any, Protocol, runtime_checkable
 
 import uvloop
-from max.driver import Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    Usage,
+)
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
@@ -114,7 +118,12 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
     """
     if device.is_host:
         return
-    pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
+    pinned = Buffer(
+        shape=(bytes,),
+        dtype=DType.int8,
+        device=device,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
     del pinned
 
 
@@ -285,7 +294,7 @@ class ModelWorker:
             exit_stack.enter_context(detect_and_wrap_ooms())
 
             # Prime the pinned memory cache in the model worker process.
-            # The first DevicePinnedBuffer allocation per GPU triggers
+            # The first staging Buffer allocation per GPU triggers
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.

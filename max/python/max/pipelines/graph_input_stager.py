@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from max.driver import (
     Buffer,
     Device,
-    DevicePinnedBuffer,
+    Usage,
     copy_pinned_to_destinations,
 )
 from max.dtype import DType
@@ -132,11 +132,16 @@ class GraphInputStaging:
         # Pinned staging makes the H2D async; a host device cannot pin, and
         # has no transfer to make asynchronous either.
         staging_device = declaration.descriptor.destinations[0]
-        buffer_cls = Buffer if staging_device.is_host else DevicePinnedBuffer
-        host = buffer_cls(
+        usage = (
+            Usage.DEFAULT
+            if staging_device.is_host
+            else Usage.STAGING | Usage.UNTRACKED
+        )
+        host = Buffer(
             shape=shape,
             dtype=declaration.descriptor.dtype,
             device=staging_device,
+            usage=usage,
         )
         self._staged[name] = (host, destinations)
         return host, destinations

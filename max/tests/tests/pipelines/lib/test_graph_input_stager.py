@@ -225,7 +225,7 @@ def test_one_name_staged_at_two_shapes_in_a_scope_raises(
 def test_a_host_device_gets_pageable_staging() -> None:
     """Callers do not choose: a host device cannot pin, so the stager does.
 
-    An accelerator gets ``DevicePinnedBuffer`` so its H2D is async. There is
+    An accelerator gets untracked staging memory so its H2D is async. There is
     no accelerator here to assert that half on.
     """
     stager = GraphInputStager([describe(TOKENS)])

@@ -36,7 +36,6 @@ Buffers
    :template: autosummary/class.rst
 
    Buffer
-   DevicePinnedBuffer
    DLPackArray
    HostHazardError
    Usage

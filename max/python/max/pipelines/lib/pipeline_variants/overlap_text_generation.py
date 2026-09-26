@@ -83,7 +83,7 @@ from max.driver import (
     Buffer,
     Device,
     DeviceEvent,
-    DevicePinnedBuffer,
+    Usage,
     is_virtual_device_mode,
     load_devices,
 )
@@ -503,7 +503,7 @@ class SpecDecodeState:
     batch_metrics: _SpeculativeDecodingMetrics | None = None
     """Per-batch metrics for the most recently completed batch."""
 
-    persistent_bonus_tokens_pinned: DevicePinnedBuffer | None = None
+    persistent_bonus_tokens_pinned: Buffer | None = None
     """Pinned memory for async callback: bonus tokens (next_tokens) per request.
 
     Shape: [total_max_batch]. DType int64. Reused across iterations; the
@@ -512,21 +512,21 @@ class SpecDecodeState:
     None when structured output is disabled globally.
     """
 
-    persistent_num_accepted_pinned: DevicePinnedBuffer | None = None
+    persistent_num_accepted_pinned: Buffer | None = None
     """Pinned memory for async callback: accepted draft token counts.
 
     Shape: [total_max_batch]. DType int64 (from ops.argmax).
     None when structured output is disabled globally.
     """
 
-    persistent_next_draft_tokens_pinned: DevicePinnedBuffer | None = None
+    persistent_next_draft_tokens_pinned: Buffer | None = None
     """Pinned memory for async callback: next-batch draft tokens.
 
     Shape: [total_max_batch, num_speculative_tokens]. DType int64.
     None when structured output is disabled globally.
     """
 
-    accepted_token_pinned: DevicePinnedBuffer | None = None
+    accepted_token_pinned: Buffer | None = None
     """Pinned mirror of the accepted draft tokens.
 
     The GPU acceptance sampler writes the verified accepted tokens back into
@@ -670,30 +670,34 @@ class SpecDecodeState:
         # below). The callback writes the packed bitmask there directly and the
         # GPU acceptance sampler unpacks and applies it, so no separate staging
         # buffer is needed.
-        persistent_bonus_tokens_pinned: DevicePinnedBuffer | None = None
-        persistent_num_accepted_pinned: DevicePinnedBuffer | None = None
-        persistent_next_draft_tokens_pinned: DevicePinnedBuffer | None = None
-        accepted_token_pinned: DevicePinnedBuffer | None = None
+        persistent_bonus_tokens_pinned: Buffer | None = None
+        persistent_num_accepted_pinned: Buffer | None = None
+        persistent_next_draft_tokens_pinned: Buffer | None = None
+        accepted_token_pinned: Buffer | None = None
         if vocab_size is not None and not is_virtual_device_mode():
-            persistent_bonus_tokens_pinned = DevicePinnedBuffer(
+            persistent_bonus_tokens_pinned = Buffer(
                 dtype=DType.int64,
                 shape=(total_max_batch,),
                 device=model.devices[0],
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
-            persistent_num_accepted_pinned = DevicePinnedBuffer(
+            persistent_num_accepted_pinned = Buffer(
                 dtype=DType.int64,
                 shape=(total_max_batch,),
                 device=model.devices[0],
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
-            persistent_next_draft_tokens_pinned = DevicePinnedBuffer(
+            persistent_next_draft_tokens_pinned = Buffer(
                 dtype=DType.int64,
                 shape=(total_max_batch, num_speculative_tokens),
                 device=model.devices[0],
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
-            accepted_token_pinned = DevicePinnedBuffer(
+            accepted_token_pinned = Buffer(
                 dtype=DType.int64,
                 shape=(total_max_batch, num_speculative_tokens),
                 device=model.devices[0],
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
         persistent_in_thinking_phase = Buffer(
             dtype=DType.bool,
@@ -1482,7 +1486,7 @@ class RealizeFutureTokenProcessor:
         self,
         prev_batch: AsyncBatch[TextGenerationContextType],
         inputs: TextGenerationInputs[TextGenerationContextType],
-    ) -> tuple[DevicePinnedBuffer, DevicePinnedBuffer] | None:
+    ) -> tuple[Buffer, Buffer] | None:
         """Computes scatter indices mapping previous-batch tokens to current slots.
 
         Returns None if all indices are out-of-bounds (no overlap between
@@ -1497,18 +1501,20 @@ class RealizeFutureTokenProcessor:
 
         # Prepare the scatter indices.
         prev_batch_size = prev_generated_tokens.shape[0]
-        prev_to_curr_map_host = DevicePinnedBuffer(
+        prev_to_curr_map_host = Buffer(
             shape=(prev_batch_size,),
             dtype=DType.int64,
             device=device,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         prev_to_curr_map = prev_to_curr_map_host.to_numpy()
 
         curr_batch_size = len(inputs.flat_batch)
-        curr_to_prev_map_host = DevicePinnedBuffer(
+        curr_to_prev_map_host = Buffer(
             shape=(curr_batch_size,),
             dtype=DType.int64,
             device=device,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         curr_to_prev_map = curr_to_prev_map_host.to_numpy()
 
@@ -1736,9 +1742,9 @@ class _AsyncSpecDecodeHostBuffers:
     and are safe to read on a later iteration's sync path.
     """
 
-    num_accepted_draft_tokens_host: DevicePinnedBuffer
-    next_tokens_host: DevicePinnedBuffer
-    next_draft_tokens_host: DevicePinnedBuffer
+    num_accepted_draft_tokens_host: Buffer
+    next_tokens_host: Buffer
+    next_draft_tokens_host: Buffer
 
 
 @final
@@ -2047,10 +2053,11 @@ class OverlapTextGenerationPipeline(
             and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            self._pinned_new_tokens = DevicePinnedBuffer(
+            self._pinned_new_tokens = Buffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
                 device=self._sampler_device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         # Persistent pinned host buffer for the per-step generated-token D2H in
@@ -2580,20 +2587,32 @@ class OverlapTextGenerationPipeline(
             count=batch_size,
         )
 
-        temperature_pinned = DevicePinnedBuffer(
-            shape=(batch_size,), dtype=DType.float32, device=device0
+        temperature_pinned = Buffer(
+            shape=(batch_size,),
+            dtype=DType.float32,
+            device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         temperature_pinned.to_numpy()[:] = temperature_np
-        top_k_pinned = DevicePinnedBuffer(
-            shape=(batch_size,), dtype=DType.int64, device=device0
+        top_k_pinned = Buffer(
+            shape=(batch_size,),
+            dtype=DType.int64,
+            device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         top_k_pinned.to_numpy()[:] = top_k_np
-        top_p_pinned = DevicePinnedBuffer(
-            shape=(batch_size,), dtype=DType.float32, device=device0
+        top_p_pinned = Buffer(
+            shape=(batch_size,),
+            dtype=DType.float32,
+            device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         top_p_pinned.to_numpy()[:] = top_p_np
-        in_thinking_phase_pinned = DevicePinnedBuffer(
-            shape=(batch_size,), dtype=DType.bool, device=device0
+        in_thinking_phase_pinned = Buffer(
+            shape=(batch_size,),
+            dtype=DType.bool,
+            device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         in_thinking_phase_pinned.to_numpy()[:] = in_thinking_phase_np
 
@@ -2626,8 +2645,11 @@ class OverlapTextGenerationPipeline(
             dtype=np.uint64,
             count=batch_size,
         )
-        seed_pinned = DevicePinnedBuffer(
-            shape=(batch_size,), dtype=DType.uint64, device=device0
+        seed_pinned = Buffer(
+            shape=(batch_size,),
+            dtype=DType.uint64,
+            device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         seed_pinned.to_numpy()[:] = seed_np
         seed_view = self._spec_decode_state.persistent_seed[:batch_size]
@@ -3101,10 +3123,11 @@ class OverlapTextGenerationPipeline(
                     or int(pinned.shape[0]) < d2h_batch
                     or pinned.dtype != generated_tokens_device.dtype
                 ):
-                    pinned = DevicePinnedBuffer(
+                    pinned = Buffer(
                         shape=(max(self._max_batch_size, d2h_batch),),
                         dtype=generated_tokens_device.dtype,
                         device=device0,
+                        usage=Usage.STAGING | Usage.UNTRACKED,
                     )
                     self._pinned_generated_tokens_host = pinned
                 generated_tokens_host = pinned[:d2h_batch]
@@ -3247,7 +3270,7 @@ class OverlapTextGenerationPipeline(
         SpecDecodeState / StructuredOutputOverlapState (or plain copies for
         CPU-only data). Views are safe because the owning state objects
         outlive every callback invocation, so freeing a DLPack view inside
-        the CUDA host callback never drives the owning DevicePinnedBuffer's
+        the CUDA host callback never drives the owning staging Buffer's
         refcount to zero, and cuMemFreeHost is never called from within the
         callback.
 
@@ -3451,8 +3474,8 @@ class OverlapTextGenerationPipeline(
         curr_batch_size = len(curr_context_batch)
 
         # Capture BEFORE enqueue: capture numpy views into the persistent pinned
-        # buffers so the closure binds live data. Use DevicePinnedBuffer.to_numpy()
-        # not Buffer.to_numpy() — the latter may synchronize on a view/slice.
+        # buffers so the closure binds live data. They are untracked staging
+        # memory, so to_numpy() on them or on a view/slice never synchronizes.
         with Tracer("convert_buffers_to_np_views"):
             assert spec_state.persistent_bonus_tokens_pinned is not None
             assert spec_state.persistent_num_accepted_pinned is not None
@@ -3492,7 +3515,7 @@ class OverlapTextGenerationPipeline(
         # batch on this path). The captured graph reads the whole rectangle,
         # gated on the worker's release-store of the flag. Same lifetime
         # guarantees as the other captured views: the underlying
-        # DevicePinnedBuffer outlives every callback invocation.
+        # staging Buffer outlives every callback invocation.
         overlap_pinned_np = overlap_state.pinned_for(num_positions).to_numpy()[
             :curr_batch_size, :num_positions, :
         ]
@@ -3538,11 +3561,11 @@ class OverlapTextGenerationPipeline(
 
         1. Persistent pinned buffers on SpecDecodeState (read by the async
            bitmask callback). Views into persistent memory are safe to release
-           on the CUDA driver thread because the owning DevicePinnedBuffers
+           on the CUDA driver thread because the owning staging Buffers
            live for the pipeline's lifetime, so DLPack teardown never calls
            `cuMemFreeHost` from a host callback.
 
-        2. Fresh per-batch DevicePinnedBuffers (read by the sync path on the
+        2. Fresh per-batch staging Buffers (read by the sync path on the
            next iteration). The persistent buffers cannot be reused for the
            sync path because `_execute_spec_decode(N+1)` queues N+1's D2H
            into them BEFORE this iteration's sync path runs — by the time
@@ -3572,9 +3595,8 @@ class OverlapTextGenerationPipeline(
             and spec_state.accepted_token_pinned is not None
         ):
             # D2H into persistent pinned buffers. The callback reads numpy
-            # views from these directly (via DevicePinnedBuffer.to_numpy()),
-            # which avoids the stream sync that Buffer.to_numpy() on a
-            # view/slice can trigger.
+            # views from these directly; untracked staging memory makes
+            # to_numpy() skip the stream sync, including on a view/slice.
             _contiguous_prefix_2d(
                 spec_state.persistent_num_accepted_pinned,
                 batch_size,
@@ -3605,24 +3627,27 @@ class OverlapTextGenerationPipeline(
 
         # Fresh per-batch allocations for the sync path — immune to the next
         # batch's writes into the persistent buffers above.
-        num_accepted_draft_tokens_host = DevicePinnedBuffer(
+        num_accepted_draft_tokens_host = Buffer(
             shape=num_accepted_draft_tokens_device.shape,
             dtype=num_accepted_draft_tokens_device.dtype,
             device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         num_accepted_draft_tokens_host.inplace_copy_from(
             num_accepted_draft_tokens_device
         )
-        next_tokens_host = DevicePinnedBuffer(
+        next_tokens_host = Buffer(
             shape=next_tokens_device.shape,
             dtype=next_tokens_device.dtype,
             device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         next_tokens_host.inplace_copy_from(next_tokens_device)
-        next_draft_tokens_host = DevicePinnedBuffer(
+        next_draft_tokens_host = Buffer(
             shape=next_draft_tokens_device.shape,
             dtype=next_draft_tokens_device.dtype,
             device=device0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
 

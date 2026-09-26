@@ -21,7 +21,11 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    Usage,
+)
 from max.dtype import DType
 from max.graph.buffer_utils import cast_tensor_to
 from max.pipelines.context import ImageMetadata
@@ -108,8 +112,11 @@ def _pinned_to_devices(
     dev0 = devices[0]
     host: Buffer
     if not dev0.is_host:
-        host = DevicePinnedBuffer(
-            dtype=dtype, shape=np_array.shape, device=dev0
+        host = Buffer(
+            dtype=dtype,
+            shape=np_array.shape,
+            device=dev0,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
     else:
         host = Buffer(shape=np_array.shape, dtype=dtype, device=dev0)

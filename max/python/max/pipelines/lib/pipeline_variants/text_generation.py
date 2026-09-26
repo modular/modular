@@ -28,7 +28,6 @@ from max.driver import (
     CPU,
     Buffer,
     Device,
-    DevicePinnedBuffer,
     Usage,
     is_virtual_device_mode,
     load_devices,
@@ -305,10 +304,11 @@ class TextGenerationPipeline(
             and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            self._pinned_new_tokens = DevicePinnedBuffer(
+            self._pinned_new_tokens = Buffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
                 device=self._sampler_device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         self._identity_logit_offsets = (
@@ -626,7 +626,7 @@ class TextGenerationPipeline(
         with Tracer("d2h_generated_tokens"):
             generated_tokens_device = sampling_processor.generated_tokens
             # Staging memory keeps the d2h transfer async on accelerators.
-            # Note that we do not want to use `DevicePinnedBuffer` here.
+            # Left tracked (no UNTRACKED) so to_numpy() waits for the copy.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,

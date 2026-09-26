@@ -105,6 +105,7 @@ modular_py_test(
             "test_msa_mxfp8_attention_gpu.py",
             "test_dual_qk_fp8_kv_store_gpu.py",
             "test_chunked_staging_region_gpu.py",
+            "test_kv_cache_buffer_pinned_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -143,6 +144,21 @@ modular_py_test(
         "gpu",
     ],
     deps = ["//max/python/max/driver"],
+)
+
+# No kernels in the path, so this runs on Apple GPUs too.
+modular_py_test(
+    name = "test_kv_cache_buffer_pinned_gpu",
+    srcs = ["test_kv_cache_buffer_pinned_gpu.py"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+    ],
 )
 
 # Dedicated target for the FP8 KV store round-trip test

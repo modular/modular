@@ -16,7 +16,7 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
-    DevicePinnedBuffer,
+    Usage,
     batch_inplace_copy,
 )
 from max.dtype import DType
@@ -80,10 +80,11 @@ def _test_pinned_device_copy(
     cpu_device = CPU()
 
     # Create pinned memory on specified GPU
-    pinned_cpu_tensor = DevicePinnedBuffer(
+    pinned_cpu_tensor = Buffer(
         dtype=DType.int8,
         shape=(tensor_size,),
         device=gpus[pinned_gpu_id],
+        usage=Usage.STAGING,
     )
 
     # Fill with pattern_before

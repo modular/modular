@@ -23,7 +23,7 @@ second thread, required to stay blocked -- so a gate that stopped engaging
 fails the test rather than making it vacuous. What no test here can show is a
 wait that resolves against nothing, since the producer completes either way;
 that is answered by the staging case of
-``test_staging_dlpack_does_not_synchronize`` in the device-pinned suite.
+``test_staging_dlpack_does_not_synchronize`` in ``test_buffer_staging.py``.
 """
 
 from __future__ import annotations
@@ -41,7 +41,6 @@ from max.driver import (
     Accelerator,
     Buffer,
     CompletionFlag,
-    DevicePinnedBuffer,
     Usage,
     accelerator_count,
 )
@@ -144,8 +143,8 @@ def test_read_not_blocked_by_unrelated_gated_work(gpu: Accelerator) -> None:
     """A host read waits for the copy that filled the buffer, and no further.
 
     This cannot distinguish a read that waits for nothing, since the producer
-    completes either way; ``test_staging_dlpack_does_not_synchronize`` in the
-    device-pinned suite rules that out.
+    completes either way; ``test_staging_dlpack_does_not_synchronize`` in
+    ``test_buffer_staging.py`` rules that out.
     """
     staging = Buffer(
         dtype=DType.int32, shape=[4], device=gpu, usage=Usage.STAGING
@@ -195,7 +194,12 @@ def test_a_borrowed_handle_inherits_its_parents_history(
 def test_stamps_skip_untracked_buffers(gpu: Accelerator) -> None:
     """Nothing is written to an untracked buffer's slot, in either direction."""
     completion = HostHazardCompletion.record_on(gpu.default_queue)
-    pinned = DevicePinnedBuffer(dtype=DType.int32, shape=[4], device=gpu)
+    pinned = Buffer(
+        dtype=DType.int32,
+        shape=[4],
+        device=gpu,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
 
     pinned._stamp_write(completion)
     pinned._stamp_read(completion)
@@ -327,7 +331,12 @@ def test_a_host_write_waits_for_a_pending_device_read(gpu: Accelerator) -> None:
 
 def test_an_untracked_host_write_takes_no_wait(gpu: Accelerator) -> None:
     """Control: the gate stalls the queue, not the host."""
-    pinned = DevicePinnedBuffer(dtype=DType.int32, shape=[4], device=gpu)
+    pinned = Buffer(
+        dtype=DType.int32,
+        shape=[4],
+        device=gpu,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
     assert not pinned._host_hazard_tracked
 
     assert _write_behind_a_gated_read(gpu, pinned), (

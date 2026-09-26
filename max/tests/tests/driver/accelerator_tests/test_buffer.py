@@ -18,7 +18,6 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
-    DevicePinnedBuffer,
     DeviceQueue,
     Usage,
     accelerator_api,
@@ -168,7 +167,9 @@ def test_dlpack_device() -> None:
 def test_dlpack_device_pinned() -> None:
     gpu_device = Accelerator()
 
-    pinned_tensor = DevicePinnedBuffer(DType.int32, (3, 3), device=gpu_device)
+    pinned_tensor = Buffer(
+        DType.int32, (3, 3), device=gpu_device, usage=Usage.STAGING
+    )
     device_tuple = pinned_tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
@@ -192,7 +193,9 @@ def test_scalar() -> None:
 
 
 def test_pinned_zeros() -> None:
-    tensor = DevicePinnedBuffer.zeros((2, 1), DType.int32, device=Accelerator())
+    tensor = Buffer.zeros(
+        (2, 1), DType.int32, device=Accelerator(), usage=Usage.STAGING
+    )
     assert tensor.pinned
     assert tensor[0, 0].item() == 0
     assert tensor[1, 0].item() == 0
@@ -242,8 +245,11 @@ def test_d2h_inplace_copy_from_tensor_view() -> None:
 def test_to_numpy_inplace(is_pinned: bool) -> None:
     tensor: Buffer
     if is_pinned:
-        tensor = DevicePinnedBuffer(
-            shape=(4,), dtype=DType.int32, device=Accelerator()
+        tensor = Buffer(
+            shape=(4,),
+            dtype=DType.int32,
+            device=Accelerator(),
+            usage=Usage.STAGING,
         )
     else:
         tensor = Buffer(shape=(4,), dtype=DType.int32, device=CPU())
@@ -273,8 +279,11 @@ def test_pinned_concatenate() -> None:
         np.full((5,), 33, dtype=np.int32),
     ]
 
-    pinned = DevicePinnedBuffer(
-        shape=(15,), dtype=DType.int32, device=Accelerator()
+    pinned = Buffer(
+        shape=(15,),
+        dtype=DType.int32,
+        device=Accelerator(),
+        usage=Usage.STAGING,
     )
 
     pinned_np = pinned.to_numpy()
@@ -434,7 +443,7 @@ def test_batch_inplace_copy_skips_identity_on_accelerator() -> None:
 
 
 def test_batch_inplace_copy_pinned_poison_pill_parity() -> None:
-    """Mostly DtoD plus DevicePinnedBuffer pairs: value parity vs per-copy loop.
+    """Mostly DtoD plus staging Buffer pairs: value parity vs per-copy loop.
 
     Matches the production device-0 preface poison-pill shape: several pure
     device→device pairs plus pinned src→device and pinned→pinned. Pinned
@@ -445,8 +454,10 @@ def test_batch_inplace_copy_pinned_poison_pill_parity() -> None:
     gpu = Accelerator()
     n_dtod = 4
 
-    def _fill_pinned(value: float) -> DevicePinnedBuffer:
-        pinned = DevicePinnedBuffer(dtype=DType.float32, shape=(8,), device=gpu)
+    def _fill_pinned(value: float) -> Buffer:
+        pinned = Buffer(
+            dtype=DType.float32, shape=(8,), device=gpu, usage=Usage.STAGING
+        )
         pinned.inplace_copy_from(
             Buffer.from_numpy(np.full((8,), value, dtype=np.float32))
         )
@@ -471,12 +482,16 @@ def test_batch_inplace_copy_pinned_poison_pill_parity() -> None:
     batch_dsts: list[Buffer] = [
         *[Buffer(DType.float32, (8,), device=gpu) for _ in range(n_dtod)],
         Buffer(DType.float32, (8,), device=gpu),
-        DevicePinnedBuffer(dtype=DType.float32, shape=(8,), device=gpu),
+        Buffer(
+            dtype=DType.float32, shape=(8,), device=gpu, usage=Usage.STAGING
+        ),
     ]
     loop_dsts: list[Buffer] = [
         *[Buffer(DType.float32, (8,), device=gpu) for _ in range(n_dtod)],
         Buffer(DType.float32, (8,), device=gpu),
-        DevicePinnedBuffer(dtype=DType.float32, shape=(8,), device=gpu),
+        Buffer(
+            dtype=DType.float32, shape=(8,), device=gpu, usage=Usage.STAGING
+        ),
     ]
     assert batch_dsts[-1].pinned and loop_dsts[-1].pinned
 

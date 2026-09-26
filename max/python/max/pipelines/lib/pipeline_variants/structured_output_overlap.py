@@ -53,7 +53,7 @@ from max.driver import (
     Buffer,
     CompletionFlag,
     Device,
-    DevicePinnedBuffer,
+    Usage,
 )
 from max.dtype import DType
 from max.support.math import ceildiv
@@ -141,10 +141,11 @@ class StructuredOutputOverlapState:
         # pairing and avoids a per-iteration pageable HtoD copy through
         # this 16-byte buffer. Written once here; the buffer is reused
         # across every iteration's wait.
-        self.wait_payload: DevicePinnedBuffer = DevicePinnedBuffer(
+        self.wait_payload: Buffer = Buffer(
             dtype=DType.int64,
             shape=(2,),
             device=device,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         """A CPU-resident ``int64[2]`` buffer holding ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload consumed by the in-graph ``mo.wait_host_value_with_dep`` op. Allocated once; contents written once at construction."""
         payload_np = self.wait_payload.to_numpy()
@@ -153,12 +154,15 @@ class StructuredOutputOverlapState:
 
         # One buffer pair per width. Sharing a single deepest buffer is what
         # would force a single verify width.
-        self._buffers: dict[int, tuple[DevicePinnedBuffer, Buffer]] = {}
+        self._buffers: dict[int, tuple[Buffer, Buffer]] = {}
         for width in widths:
             shape = (max_batch_size, width, self.packed_vocab_size)
             self._buffers[width] = (
-                DevicePinnedBuffer(
-                    dtype=DType.int32, shape=shape, device=device
+                Buffer(
+                    dtype=DType.int32,
+                    shape=shape,
+                    device=device,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 ),
                 Buffer(dtype=DType.int32, shape=shape, device=device),
             )
@@ -196,7 +200,7 @@ class StructuredOutputOverlapState:
             self.packed_vocab_size,
         )
 
-    def pinned_for(self, num_positions: int) -> DevicePinnedBuffer:
+    def pinned_for(self, num_positions: int) -> Buffer:
         """Returns the pinned buffer the given width binds.
 
         The async bitmask callback writes the *next* step's rows, so it must
@@ -214,7 +218,7 @@ class StructuredOutputOverlapState:
         return pair[0]
 
     @property
-    def pinned_bitmask(self) -> DevicePinnedBuffer:
+    def pinned_bitmask(self) -> Buffer:
         """Persistent packed ``int32[max_batch_size, num_positions, packed_vocab_size]`` pinned buffer at the deepest width (1 bit per token, 32 tokens per word)."""
         return self._buffers[self.num_positions][0]
 
@@ -350,7 +354,7 @@ class StructuredOutputOverlapState:
             )
 
         pinned_view = self._buffers[num_positions][0].to_numpy()
-        # DevicePinnedBuffer.to_numpy() returns a writable view that
+        # A staging Buffer's to_numpy() returns a writable view that
         # aliases the pinned host backing store. Copy in place so the
         # caller's source array can be freed.
         pinned_view[:batch, :num_positions, :] = bitmask

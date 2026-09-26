@@ -294,6 +294,13 @@ This version is still a work in progress.
   `dkv_peer_load_failures`, and `dkv_hints_rejected`. They are zero unless the
   external KV-cache connector is in use.
 
+- `max.driver.DevicePinnedBuffer` is removed. Allocate
+  `Buffer(dtype, shape, device=gpu, usage=Usage.STAGING | Usage.UNTRACKED)`
+  instead; `UNTRACKED` keeps the old behavior, where reads never wait on
+  device copies. Replace `isinstance(b, DevicePinnedBuffer)` with `b.pinned`
+  to check for page-locked memory, or `Usage.UNTRACKED in b.usage` to check
+  whether reads skip the hazard wait.
+
 ## Fixes
 
 - Fixed a regression where indexing a buffer -- loading it and then gathering

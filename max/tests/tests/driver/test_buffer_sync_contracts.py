@@ -42,7 +42,7 @@ from max.driver import (
     Accelerator,
     Buffer,
     CompletionFlag,
-    DevicePinnedBuffer,
+    Usage,
     accelerator_count,
 )
 from max.dtype import DType
@@ -147,7 +147,12 @@ def test_item_synchronizes(gpu: Accelerator) -> None:
     ``item()`` reads host-mapped memory directly, bypassing the stream chain,
     so it must insert an explicit sync to see the gated fill.
     """
-    pinned = DevicePinnedBuffer.zeros(shape=[1], dtype=DType.int32, device=gpu)
+    pinned = Buffer.zeros(
+        shape=[1],
+        dtype=DType.int32,
+        device=gpu,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
     src = Buffer.from_numpy(np.array([7], dtype=np.int32)).to(gpu)
 
     completed_while_gated, value = _run_gated_read(

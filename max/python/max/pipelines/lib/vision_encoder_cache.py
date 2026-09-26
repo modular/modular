@@ -36,7 +36,7 @@ import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
-    DevicePinnedBuffer,
+    Usage,
     batch_inplace_copy,
     copy_pinned_to_destinations,
 )
@@ -1321,10 +1321,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
         """
         dev = devices[0]
         n = len(scatter_np)
-        host_buffer_cls = DevicePinnedBuffer if not dev.is_host else Buffer
-        host: Buffer = host_buffer_cls(
-            dtype=DType.int32, shape=(n,), device=dev
+        usage = (
+            Usage.DEFAULT if dev.is_host else Usage.STAGING | Usage.UNTRACKED
         )
+        host = Buffer(dtype=DType.int32, shape=(n,), device=dev, usage=usage)
 
         device_bufs = self._scatter_buffers.get(n)
         if device_bufs is None:

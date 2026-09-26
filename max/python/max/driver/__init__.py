@@ -39,7 +39,6 @@ from max._core_types.driver import DLPackArray
 
 from .buffer import (
     Buffer,
-    DevicePinnedBuffer,
     _ChunkedStagingRegion,
     batch_inplace_copy,
     copy_pinned_to_destinations,
@@ -102,7 +101,6 @@ __all__ = [
     "DLPackArray",
     "Device",
     "DeviceEvent",
-    "DevicePinnedBuffer",
     "DeviceQueue",
     "DeviceSpec",
     "HostHazardError",

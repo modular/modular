@@ -16,7 +16,7 @@ modular_py_test(
         exclude = [
             "test_buffer_sync_contracts.py",
             "test_device_event.py",
-            "test_buffer_device_pinned.py",
+            "test_buffer_staging.py",
             "test_hazard_gpu.py",
             "test_host_func.py",
             "test_launch_trace.py",
@@ -42,7 +42,7 @@ modular_py_test(
     srcs = [
         "accelerator_tests/test_buffer.py",
         "accelerator_tests/test_device.py",
-        "test_buffer_device_pinned.py",
+        "test_buffer_staging.py",
         "test_buffer_sync_contracts.py",
         "test_device_event.py",
         "test_hazard_gpu.py",

@@ -35,7 +35,12 @@ import pytest
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
 from max import driver
-from max.driver import CPU, Accelerator, Buffer, DevicePinnedBuffer
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    Usage,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, ops
@@ -88,14 +93,17 @@ def test_structured_output_pipeline_e2e() -> None:
     matcher = LLMatcher(ll_tokenizer, grammar)
 
     # Pinned host buffers for the cross-device transfers. Backed by
-    # `DevicePinnedBuffer` (page-locked host memory tied to the GPU)
+    # `Usage.STAGING` (page-locked host memory tied to the GPU)
     # so D2H/H2D copies can be properly asynchronous and `to_numpy()`
     # exposes a zero-copy host view.
-    token_pinned = DevicePinnedBuffer(
-        dtype=DType.int64, shape=[1], device=accelerator
+    token_pinned = Buffer(
+        dtype=DType.int64, shape=[1], device=accelerator, usage=Usage.STAGING
     )
-    mask_pinned = DevicePinnedBuffer(
-        dtype=DType.float32, shape=[_VOCAB_SIZE], device=accelerator
+    mask_pinned = Buffer(
+        dtype=DType.float32,
+        shape=[_VOCAB_SIZE],
+        device=accelerator,
+        usage=Usage.STAGING,
     )
     token_pinned_view = token_pinned.to_numpy()
     mask_pinned_view = mask_pinned.to_numpy()

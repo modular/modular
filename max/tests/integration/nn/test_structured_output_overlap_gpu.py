@@ -169,7 +169,7 @@ def test_payload_shape_matches_wait_host_value(
     payload = state.wait_payload
     assert payload.dtype == DType.int64
     assert tuple(payload.shape) == (2,)
-    # Read via the pinned numpy view -- ``DevicePinnedBuffer`` is what
+    # Read via the pinned numpy view -- staging memory is what
     # backs ``wait_payload`` (so that input bindings stay pinned -> CPU
     # graph input and avoid pageable HtoD copies).
     payload_np = payload.to_numpy()
@@ -193,7 +193,7 @@ def _build_overlap_smoke_graph(
 
     The pinned input is declared on the CPU per the engine's input
     binding rule ("Pinned tensors can only be used in place of CPU
-    graph inputs"), even though the runtime ``DevicePinnedBuffer``'s
+    graph inputs"), even though the runtime staging ``Buffer``'s
     ``.device`` is the accelerator.
 
     Both pinned and scratch use int32 because the bitmask is packed:
@@ -233,7 +233,7 @@ def test_in_graph_h2d_preserves_pinned_row_layout(
     asserts the device scratch matches the pinned source byte-for-byte.
 
     Catches:
-      - DevicePinnedBuffer / graph-input device mismatch (would make
+      - Staging buffer / graph-input device mismatch (would make
         inplace_memcpy lower as the wrong direction and produce
         uninitialized device contents).
       - Row reordering between pinned and device.

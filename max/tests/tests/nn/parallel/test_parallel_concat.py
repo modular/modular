@@ -51,7 +51,7 @@ def test_parallel_concat_single_array(
     use_accelerator: bool,
 ) -> None:
     """Single-array (n==1) concat. Exercises the n==1 fast path across
-    both branches: ``Buffer.from_numpy`` on CPU and ``DevicePinnedBuffer``
+    both branches: ``Buffer.from_numpy`` on CPU and a staging ``Buffer``
     + ``np.copyto`` on an accelerator."""
     accelerator: Device | None = shared_accelerator if use_accelerator else None
     parallel_ops = ParallelArrayOps(accelerator=accelerator)

@@ -18,7 +18,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Usage,
+)
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
@@ -106,14 +109,18 @@ class UnifiedMTPGemma4BatchProcessor(
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
 
-        buffer_type = DevicePinnedBuffer if pinned else Buffer
-        host_tokens = buffer_type(
-            dtype=DType.int64, shape=(total_seq_len,), device=device0
+        usage = Usage.STAGING | Usage.UNTRACKED if pinned else Usage.DEFAULT
+        host_tokens = Buffer(
+            dtype=DType.int64,
+            shape=(total_seq_len,),
+            device=device0,
+            usage=usage,
         )
-        host_row_offsets = buffer_type(
+        host_row_offsets = Buffer(
             dtype=DType.uint32,
             shape=(batch_size + 1,),
             device=device0,
+            usage=usage,
         )
 
         np.concatenate(

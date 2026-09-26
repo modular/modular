@@ -28,7 +28,7 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
-    DevicePinnedBuffer,
+    Usage,
     accelerator_count,
 )
 from max.dtype import DType
@@ -711,8 +711,8 @@ class TestFusedSamplingProcessorAsyncCopyGPU:
     def test_gpu_device_uses_pinned_buffer(self) -> None:
         """On GPU device, processor uses provided pinned buffer."""
         device = Accelerator()
-        pinned_new_tokens = DevicePinnedBuffer(
-            shape=(1,), dtype=DType.int64, device=device
+        pinned_new_tokens = Buffer(
+            shape=(1,), dtype=DType.int64, device=device, usage=Usage.STAGING
         )
 
         # Processor should use the provided pinned buffer
@@ -723,8 +723,11 @@ class TestFusedSamplingProcessorAsyncCopyGPU:
         """Full async copy round-trip: GPU buffer -> pinned -> numpy."""
 
         device = Accelerator()
-        pinned_new_tokens = DevicePinnedBuffer(
-            shape=(1,), dtype=DType.int64, device=device
+        pinned_new_tokens = Buffer(
+            shape=(1,),
+            dtype=DType.int64,
+            device=device,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         processor = self._create_processor(device, pinned_new_tokens)
 
@@ -747,8 +750,11 @@ class TestFusedSamplingProcessorAsyncCopyGPU:
         """Multiple async copy cycles work correctly."""
 
         device = Accelerator()
-        pinned_new_tokens = DevicePinnedBuffer(
-            shape=(1,), dtype=DType.int64, device=device
+        pinned_new_tokens = Buffer(
+            shape=(1,),
+            dtype=DType.int64,
+            device=device,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
         processor = self._create_processor(device, pinned_new_tokens)
 

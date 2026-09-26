@@ -25,7 +25,6 @@ from max.config import ConfigFileModel
 from max.driver import (
     Accelerator,
     Buffer,
-    DevicePinnedBuffer,
     DeviceSpec,
     Usage,
 )
@@ -320,28 +319,31 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         )
         active_lengths = [ctx.tokens.active_length for ctx in batch]
         total_seq_len = sum(active_lengths)
-        tokens = DevicePinnedBuffer(
+        tokens = Buffer(
             shape=[total_seq_len],
             dtype=DType.int64,
             device=self.device,
+            usage=Usage.STAGING,
         )
         np.concatenate(
             [ctx.tokens.active for ctx in batch], out=tokens.to_numpy()
         )
-        input_row_offsets = DevicePinnedBuffer(
+        input_row_offsets = Buffer(
             shape=[len(batch) + 1],
             dtype=DType.uint32,
             device=self.device,
+            usage=Usage.STAGING,
         )
         np.cumsum(
             [0] + active_lengths,
             dtype=np.int64,
             out=input_row_offsets.to_numpy(),
         )
-        arange = DevicePinnedBuffer(
+        arange = Buffer(
             dtype=DType.int64,
             shape=[batch_size],
             device=self.device,
+            usage=Usage.STAGING,
         )
         arange.to_numpy()[:] = np.arange(
             start=0, stop=batch_size, dtype=np.int64

@@ -31,7 +31,11 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    Usage,
+)
 from max.dtype import DType
 from max.pipelines.modeling.types import RequestID
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -115,12 +119,15 @@ class NemotronHStateCache:
         # fall back to a plain Buffer on CPU (host) devices where pinned
         # memory is unavailable but also unnecessary.
         if device.is_host:
-            self._pinned_slot_idx: Buffer | DevicePinnedBuffer = Buffer.zeros(
+            self._pinned_slot_idx: Buffer = Buffer.zeros(
                 [max_slots], DType.uint32, device
             )
         else:
-            self._pinned_slot_idx = DevicePinnedBuffer(
-                shape=(max_slots,), dtype=DType.uint32, device=device
+            self._pinned_slot_idx = Buffer(
+                shape=(max_slots,),
+                dtype=DType.uint32,
+                device=device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         conv_bytes = (

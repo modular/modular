@@ -35,7 +35,7 @@ from max._kv_cache_ops import (
     mha_decode_num_partitions,
     mla_dispatch_args_scalar,
 )
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.experimental.sharding import TensorLayout
 from max.graph import (
@@ -771,9 +771,7 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if len(unique_shapes) > 1:
             raise ValueError("All values must have the same shape")
 
-        unique_is_pinned = {
-            isinstance(b, DevicePinnedBuffer) for b in all_buffers
-        }
+        unique_is_pinned = {b.pinned for b in all_buffers}
         if len(unique_is_pinned) > 1:
             raise ValueError(
                 "All values (and scales if present) must be either all pinned "

@@ -26,7 +26,7 @@ from max.driver import (
     Buffer,
     Device,
     DeviceEvent,
-    DevicePinnedBuffer,
+    Usage,
     is_virtual_device_mode,
 )
 from max.dtype import DType
@@ -82,10 +82,11 @@ def _to_pinned_host_buffer(
             device=device,
         )
     else:
-        buffer = DevicePinnedBuffer(
+        buffer = Buffer(
             shape=(len(values),),
             dtype=dtype,
             device=device,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
 
     buffer_np = buffer.to_numpy()
@@ -172,10 +173,11 @@ class FusedSamplingProcessor:
                 )
             else:
                 # GPU - allocate pinned memory for faster H2D transfer
-                self._pinned_bitmask = DevicePinnedBuffer(
+                self._pinned_bitmask = Buffer(
                     shape=self.bitmask.shape,
                     dtype=DType.int32,
                     device=device,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 )
             self._pinned_bitmask.to_numpy()[:] = self.bitmask
             self.tensor_bitmask = self._pinned_bitmask.to(self.device)
@@ -194,10 +196,11 @@ class FusedSamplingProcessor:
                 device=device,
             )
         else:
-            self.generated_tokens = DevicePinnedBuffer(
+            self.generated_tokens = Buffer(
                 shape=(batch_size, 0),
                 dtype=DType.int64,
                 device=device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         self.sampler_inputs = SamplerInputs.create(context_batch, device)
