@@ -539,8 +539,16 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         freq_row_ids: list[TensorValue] | None = None
         if position_ids is not None:
             assert isinstance(self.rope, Qwen3_5TextRotaryEmbedding)
-            table = self.rope.freqs_cis_position_ids(position_ids)
-            freqs_cis = [table.to(device) for device in self.devices]
+            # Unlike the static table, this one depends on the step's
+            # positions and cannot be hoisted to init. Copying it GPU to GPU
+            # joins the per-device capture sequences, which device graph
+            # capture rejects, so each device builds its own from a broadcast.
+            freqs_cis = [
+                self.rope.freqs_cis_position_ids(device_position_ids)
+                for device_position_ids in ops.distributed_broadcast(
+                    position_ids, signal_buffers
+                )
+            ]
             freq_row_ids = [
                 ops.unsqueeze(
                     ops.range(

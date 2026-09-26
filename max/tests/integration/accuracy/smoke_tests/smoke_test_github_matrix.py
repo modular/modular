@@ -80,7 +80,7 @@ HF_MODELS: Mapping[str, set[str]] = {
     "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": _1xB200 | _2xB200,  # MI355: no FP8
     "Qwen/Qwen3.5-9B": _1xB200,
     "Qwen/Qwen3.6-27B": _1xB200,
-    "Qwen/Qwen3.8-27B": _1xB200 | _1xMI355,
+    "Qwen/Qwen3.8-27B": _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
     # TODO(MODELS-1021)
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
