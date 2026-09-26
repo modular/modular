@@ -63,6 +63,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/olmo2_modulev3",
     "//max/python/max/pipelines/architectures/olmo3",
     "//max/python/max/pipelines/architectures/olmo_modulev3",
+    "//max/python/max/pipelines/architectures/openelm",
     "//max/python/max/pipelines/architectures/phi3",
     "//max/python/max/pipelines/architectures/phi3_modulev3",
     "//max/python/max/pipelines/architectures/pixtral",
