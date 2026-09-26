@@ -238,5 +238,18 @@ def test_named_temporary_file_write() raises:
     std.os.remove(file_name)
 
 
+def test_named_temporary_file_unique_names() raises:
+    """Test that NamedTemporaryFile generates unique names."""
+    var names = List[String]()
+    for _ in range(20):
+        with NamedTemporaryFile() as f:
+            for existing in names:
+                assert_true(
+                    existing != f.name,
+                    "Duplicate temp file name: " + f.name,
+                )
+            names.append(f.name)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
