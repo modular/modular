@@ -94,6 +94,7 @@ class LayerTestRunner(Generic[StaticParamsT, DynamicParamsT, ContextT]):
         if self._bundle is not None:
             return self._bundle
 
+        torch.manual_seed(42)
         if self._init_model is None:
             self._bundle = self.harness.build_and_compile()
         else:
@@ -228,6 +229,7 @@ class LayerTestRunner(Generic[StaticParamsT, DynamicParamsT, ContextT]):
         """
         # Compile first so harness can store weights for the torch reference.
         bundle = self._ensure_compiled()
+        torch.manual_seed(42)
 
         torch_module = self.harness.torch_reference_layer()
         results = []
