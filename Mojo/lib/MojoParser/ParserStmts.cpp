@@ -236,39 +236,6 @@ private:
   ErrorKind error = ErrorKind::none;
 };
 
-/// Parsed `case` arm for `__match`: pattern, optional guard, suite cursor, and
-/// the preprocessed command list for the pattern.
-struct MatchCaseEntry {
-  ExprNode *patternExpr;
-  ExprNode *guardExpr;
-  LexerCursor caseCursor;
-  size_t caseIndent;
-  PatternCommandList commandList;
-
-  /// True when every command is irrefutable (`Bind`), including the empty `_`
-  /// pattern, and there is no guard. Such a case cannot fail once control
-  /// reaches it.
-  ///
-  /// When `skipFirstCommand` is set, the leading test is ignored and only the
-  /// residual is checked — used to decide whether a trailing `_` is the
-  /// exclusive complement of a leading-value cluster.
-  bool alwaysMatches(bool skipFirstCommand = false) const {
-    // Cases with a guard expression can always fail.
-    if (guardExpr)
-      return false;
-    ArrayRef<const PatternCommand *> commands = commandList;
-    if (skipFirstCommand) {
-      assert(!commands.empty() &&
-             "skipFirstCommand requires a leading command");
-      commands = commands.drop_front();
-    }
-    // Name bindings always succeed, so we can ignore them.
-    return llvm::all_of(commands, [](const PatternCommand *command) {
-      return command->kind == PatternCommand::Bind;
-    });
-  }
-};
-
 /// This class provides the implementation details of the concrete Lightning
 /// grammar.
 namespace {
@@ -1716,7 +1683,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     // Okay, we successfully parsed a case block. Remember it for later.
     caseEntries.push_back({patternExpr, guardExpr, getLexer().getCursor(),
                            caseIndent,
-                           checkListBuilder.internCommandList(commands)});
+                           checkListBuilder.internCommandList(commands),
+                           /*isUnreachable=*/false});
     skipUntilIndentation(caseIndent);
   }
 
@@ -1728,6 +1696,12 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
                              "'case' block";
     return success();
   }
+
+  // Now that we have all the cases together, diagnose whether enum cases are
+  // exhaustively covering the subject.  While here, diagnose unreachable cases,
+  // and mark them as such.
+  checkListBuilder.checkCaseExhaustivityAndUnreachability(caseEntries, rootPath,
+                                                          matchLoc);
 
   auto afterCaseCursor = getLexer().getCursor();
 

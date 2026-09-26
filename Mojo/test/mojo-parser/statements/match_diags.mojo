@@ -69,6 +69,7 @@ def various_match_issues(a: Int, point: Tuple[Int, Int], value: String):
     # expected-note @+1 {{previous definition here}}
     case (var x, var x):
         pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         pass
 
@@ -77,11 +78,11 @@ def various_match_issues(a: Int, point: Tuple[Int, Int], value: String):
     # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
     case var ref x:
         _ = x.byte_length()
-    # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
+
+    __match value:
+    # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant}}
     case ref var y:
         _ = y.byte_length()
-    case _:
-        pass
 
     __match a:
     # expected-error @+1 {{expected a name after 'as'}}
@@ -259,4 +260,45 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
     # Can only pattern match on concrete types.
     __match someEnum:
     case .What: # expected-error {{cannot match on a parametric enum type}}
+        pass
+
+
+def match_exhaustivity_diags(flag: Bool, opt: Optional[Int]):
+    # Bool is EnumLike: True/False must both be covered (or a catch-all used).
+    __match flag: # expected-warning {{'__match' is not exhaustive; missing case for 'False'}}
+    case True: pass
+
+    # Duplicate Bool case after the type is fully covered.
+    __match flag:
+    case True: pass
+    case False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # More complex cases.
+    __match flag, flag:
+    case True, True:  pass
+    case False, True: pass
+    case _, False: pass
+    # xpected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    __match opt: # expected-warning {{'__match' is not exhaustive; missing case for 'None'}}
+    case Optional.Some(_):
+        pass
+
+    __match opt: # expected-warning {{'__match' is not exhaustive; missing case for 'Some'}}
+    case Optional.None:
+        pass
+
+    # Duplicate Optional case while another constructor is still open.
+    __match opt:
+    case Optional.Some(_):
+        pass
+    # expected-warning @+1 {{'Some' is already covered by a previous case}}
+    case Optional.Some(x):
+        _ = x
+    case Optional.None:
         pass

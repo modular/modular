@@ -22,9 +22,11 @@
 #include "IREmitter.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/CallOperands.h"
 #include "Mojo/MojoParser/DeclResolver.h"
+#include "Mojo/POPDialect/POPAttrs.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 
@@ -162,6 +164,7 @@ void PatternCommand::print(raw_ostream &os, unsigned indent) const {
 }
 
 void PatternCommand::dump() const { print(llvm::errs()); }
+
 //===----------------------------------------------------------------------===//
 // Per-ExprNode Support for Matching.
 //===----------------------------------------------------------------------===//
@@ -1052,4 +1055,268 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
     bindings.push_back({bn.name, resultBinding, bn.bindingKind});
   }
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Match exhaustivity / unreachability
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+/// Lazy covering model for one `match` (v1: root FiniteCtors / Opaque only).
+/// Allocated on `PatternMatchBuilder`'s bump allocator.
+struct MatchCoveringSpace {
+  enum class Kind : uint8_t { Opaque, FiniteCtors, Closed };
+  Kind kind = Kind::Opaque;
+  size_t numCtors = 0;
+  /// For FiniteCtors: `remaining[i] == true` means constructor `i` is still
+  /// open. Bump-allocated; size is `numCtors`.
+  bool *remaining = nullptr;
+  /// `_enum_case_names` entries (StringAttr), for witness diagnostics.
+  ArrayRef<TypedAttr> caseNames;
+
+  bool hasOpenCtor() const {
+    if (kind != Kind::FiniteCtors || !remaining)
+      return false;
+    for (size_t i = 0; i < numCtors; ++i)
+      if (remaining[i])
+        return true;
+    return false;
+  }
+
+  bool isFullyCovered() const {
+    return kind == Kind::Closed ||
+           (kind == Kind::FiniteCtors && !hasOpenCtor());
+  }
+
+  void closeAll() { kind = Kind::Closed; }
+
+  void coverCtor(size_t index) {
+    assert(kind == Kind::FiniteCtors && remaining && index < numCtors);
+    remaining[index] = false;
+  }
+
+  bool isCtorOpen(size_t index) const {
+    return kind == Kind::FiniteCtors && remaining && index < numCtors &&
+           remaining[index];
+  }
+};
+
+/// Coerce a concrete integer-like TypedAttr to a size_t when possible.
+static std::optional<size_t> coerceAttrToSizeT(TypedAttr attr,
+                                               SharedState &shared, SMLoc loc) {
+  attr = getCanonicalAttr(attr);
+
+  // Unwrap `Int` (`._value._mlir_value`) and direct `._mlir_value` wrappers.
+  if (auto inner = ASTType::extractStructField(attr, "_value", loc, shared)) {
+    if (auto mlirVal = ASTType::extractStructField(stripIdentityWrappers(inner),
+                                                   "_mlir_value", loc, shared))
+      attr = getCanonicalAttr(mlirVal);
+  } else if (auto mlirVal = ASTType::extractStructField(attr, "_mlir_value",
+                                                        loc, shared)) {
+    attr = getCanonicalAttr(mlirVal);
+  }
+
+  // Modular ErrorOr: bool true means error.
+  if (ErrorOr<int64_t> index = getScalarIndexValue(attr); !index)
+    return size_t(*index);
+  if (auto simdAttr = dyn_cast<SIMDAttr>(attr);
+      simdAttr && simdAttr.getValues().size() == 1 &&
+      simdAttr.getValues().front().getDType().isIntLike())
+    return size_t(simdAttr.getValues().front().getIntVal().getZExtValue());
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+    return size_t(intAttr.getValue().getZExtValue());
+
+  // `IntLiteral[n]()` stores `n` in the struct type's parameter list.
+  if (auto structType = sugarDynCast<LIT::StructType>(attr.getType())) {
+    ArrayRef<TypedAttr> params = structType.getParamValues();
+    if (params.size() == 1) {
+      TypedAttr param = getCanonicalAttr(params.front());
+      if (auto intLit = dyn_cast<POP::IntLiteralAttr>(param))
+        return size_t(intLit.getValue().getAPInt().getZExtValue());
+    }
+  }
+  return std::nullopt;
+}
+
+/// Read `SubjectType._enum_case_length` as a concrete size.
+static std::optional<size_t> getEnumCaseLength(IREmitter &emitter,
+                                               ASTType subjectType, SMLoc loc) {
+  SyntheticNode typeNode(loc, PValue(subjectType));
+  AttributeRefNode lengthRef(&typeNode, loc, "_enum_case_length");
+  PValue lengthPV = emitter.emitExprPValue(&lengthRef, EC_AttributeRefBase);
+  if (!lengthPV)
+    return std::nullopt;
+  return coerceAttrToSizeT(lengthPV.get(), emitter.shared, loc);
+}
+
+/// Read `SubjectType._enum_case_names` as a concrete ParamListAttr value list.
+static std::optional<ArrayRef<TypedAttr>>
+getEnumCaseNames(IREmitter &emitter, ASTType subjectType, SMLoc loc) {
+  SyntheticNode typeNode(loc, PValue(subjectType));
+  AttributeRefNode namesRef(&typeNode, loc, "_enum_case_names");
+  PValue namesPV = emitter.emitExprPValue(&namesRef, EC_AttributeRefBase);
+  if (!namesPV)
+    return std::nullopt;
+  auto namesList = dyn_cast<ParamListAttr>(getCanonicalAttr(namesPV.get()));
+  if (!namesList)
+    return std::nullopt;
+  return namesList.getValues();
+}
+
+static std::optional<size_t> findCaseNameIndex(ArrayRef<TypedAttr> names,
+                                               StringRef spelling) {
+  if (spelling.empty())
+    return std::nullopt;
+  for (auto [idx, nameAttr] : llvm::enumerate(names)) {
+    auto nameStr = dyn_cast<StringAttr>(nameAttr);
+    if (nameStr && nameStr.getValue() == spelling)
+      return idx;
+  }
+  return std::nullopt;
+}
+
+/// Build the initial covering space for `rootPath->type`. EnumLike subjects
+/// become FiniteCtors; everything else is Opaque (no exhaustivity proof yet).
+static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
+                                                   const PatternPath *rootPath,
+                                                   SMLoc matchLoc) {
+  auto *space = builder.create<MatchCoveringSpace>();
+  ASTType subjectType = rootPath->type;
+  if (!subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", matchLoc, builder.shared,
+          ASTDecl::getAssumptionsFromScope(&builder.declScope)))
+    return space; // Opaque
+
+  IREmitter emitter = builder.getParamEmitter();
+  auto length = getEnumCaseLength(emitter, subjectType, matchLoc);
+  auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
+  if (!length || !names || *length == 0 || names->size() != *length)
+    return space; // Opaque — incomplete reflection metadata
+
+  space->kind = MatchCoveringSpace::Kind::FiniteCtors;
+  space->numCtors = *length;
+  space->caseNames = *names;
+  space->remaining = builder.allocator.Allocate<bool>(*length);
+  for (size_t i = 0; i < *length; ++i)
+    space->remaining[i] = true;
+  return space;
+}
+
+/// If this case covers exactly one root constructor (EnumTag / Bool-style
+/// Equal) with only Bind residuals — and no Or / nested tests / guard —
+/// return that constructor index. Otherwise nullopt (no FiniteCtors credit).
+static std::optional<size_t>
+getSimpleRootCtorCoverage(const MatchCaseEntry &entry,
+                          const PatternPath *rootPath,
+                          ArrayRef<TypedAttr> caseNames) {
+  if (entry.guardExpr)
+    return std::nullopt;
+
+  std::optional<size_t> ctor;
+  for (const PatternCommand *cmd : entry.commandList) {
+    // Or patterns are ignored for coverage in this pass.
+    if (cmd->kind == PatternCommand::Or)
+      return std::nullopt;
+    if (cmd->kind == PatternCommand::Bind)
+      continue;
+    // Nested path tests (tuple/struct/payload residuals that aren't binds)
+    // mean we cannot credit a full root constructor yet.
+    if (cmd->path != rootPath)
+      return std::nullopt;
+
+    if (cmd->kind == PatternCommand::EnumTag) {
+      if (ctor)
+        return std::nullopt;
+      ctor = cmd->enumCaseIndex;
+      continue;
+    }
+    if (cmd->kind == PatternCommand::Equal) {
+      if (!cmd->expr)
+        return std::nullopt;
+      auto idx = findCaseNameIndex(caseNames, cmd->expr->getLiteralSpelling());
+      if (!idx || ctor)
+        return std::nullopt;
+      ctor = *idx;
+      continue;
+    }
+    return std::nullopt;
+  }
+  return ctor;
+}
+
+static StringRef caseNameSpelling(ArrayRef<TypedAttr> names, size_t index) {
+  if (index >= names.size())
+    return "?";
+  if (auto str = dyn_cast<StringAttr>(names[index]))
+    return str.getValue();
+  return "?";
+}
+
+} // namespace
+
+void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
+    MutableArrayRef<MatchCaseEntry> caseEntries, const PatternPath *rootPath,
+    SMLoc matchLoc) {
+  // v1 covering model (see MatchCoveringSpace):
+  //   - EnumLike root → FiniteCtors bitset; else Opaque.
+  //   - Irrefutable unguarded cases close the space.
+  //   - Simple root EnumTag / Equal(+known case name) with only Bind residuals
+  //     clear one ctor bit. Or / guards / nested tests contribute nothing.
+  //   - Unreachable: space already closed, or a simple root ctor already clear.
+  //   - Exhaustivity warning only for FiniteCtors with open bits left (Opaque
+  //     subjects are not diagnosed yet — need Product / catch-all policy).
+  MatchCoveringSpace *space =
+      createRootCoveringSpace(*this, rootPath, matchLoc);
+
+  for (MatchCaseEntry &entry : caseEntries) {
+    // Already fully covered → every subsequent case is unreachable.
+    if (space->isFullyCovered()) {
+      entry.isUnreachable = true;
+      emitWarning(entry.patternExpr->getLoc(),
+                  "case is unreachable; previous cases cover every "
+                  "value of the match subject")
+          << entry.patternExpr->getRange();
+      continue;
+    }
+
+    // Irrefutable unguarded pattern (`_`, bare bind): closes everything.
+    if (entry.alwaysMatches()) {
+      space->closeAll();
+      continue;
+    }
+
+    // Guards never shrink the remaining space.
+    if (entry.guardExpr)
+      continue;
+
+    if (space->kind != MatchCoveringSpace::Kind::FiniteCtors)
+      continue;
+
+    std::optional<size_t> ctor =
+        getSimpleRootCtorCoverage(entry, rootPath, space->caseNames);
+    if (!ctor)
+      continue;
+
+    if (!space->isCtorOpen(*ctor)) {
+      entry.isUnreachable = true;
+      emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
+          << "'" << caseNameSpelling(space->caseNames, *ctor)
+          << "' is already covered by a previous case"
+          << entry.patternExpr->getRange();
+      continue;
+    }
+    space->coverCtor(*ctor);
+  }
+
+  if (space->kind == MatchCoveringSpace::Kind::FiniteCtors &&
+      space->hasOpenCtor()) {
+    // Pick one witness constructor for the diagnostic.
+    size_t witness = 0;
+    while (witness < space->numCtors && !space->remaining[witness])
+      ++witness;
+    assert(witness < space->numCtors);
+    emitWarning(matchLoc, "'__match' is not exhaustive; missing case for ")
+        << "'" << caseNameSpelling(space->caseNames, witness) << "'";
+  }
 }

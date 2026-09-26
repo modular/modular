@@ -21,6 +21,7 @@
 #define KGEN_MOJOPARSER_PATTERNMATCHIR_H
 
 #include "Mojo/MojoParser/ExprDest.h"
+#include "Mojo/MojoParser/Lexer.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Hashing.h"
@@ -87,6 +88,44 @@ struct PatternBoundName {
   StringRef name;
   CValue value;
   PatternDeclKind bindingKind;
+};
+
+/// Parsed `case` arm for `match`: pattern, optional guard, suite cursor, and
+/// the preprocessed command list for the pattern.  This is used for reasoning
+/// about entire cases and sets thereof.
+struct MatchCaseEntry {
+  ExprNode *patternExpr;
+  ExprNode *guardExpr;
+  LexerCursor caseCursor;
+  size_t caseIndent;
+  PatternCommandList commandList;
+
+  /// This is set to true if exclusivity checking finds that the case is
+  /// dynamically unreachable because previous cases cover it.
+  bool isUnreachable = false;
+
+  /// True when every command is irrefutable (`Bind`), including the empty `_`
+  /// pattern, and there is no guard. Such a case cannot fail once control
+  /// reaches it.
+  ///
+  /// When `skipFirstCommand` is set, the leading test is ignored and only the
+  /// residual is checked — used to decide whether a trailing `_` is the
+  /// exclusive complement of a leading-value cluster.
+  bool alwaysMatches(bool skipFirstCommand = false) const {
+    // Cases with a guard expression can always fail.
+    if (guardExpr)
+      return false;
+    ArrayRef<const PatternCommand *> commands = commandList;
+    if (skipFirstCommand) {
+      assert(!commands.empty() &&
+             "skipFirstCommand requires a leading command");
+      commands = commands.drop_front();
+    }
+    // Name bindings always succeed, so we can ignore them.
+    return llvm::all_of(commands, [](const PatternCommand *command) {
+      return command->kind == PatternCommand::Bind;
+    });
+  }
 };
 
 /// Emit state for one command-list walk: path→value memoization + CF emission.
@@ -212,6 +251,12 @@ public:
   PatternCommandList internCommandList(ArrayRef<const PatternCommand *> cmds) {
     return {internArray(cmds)};
   }
+
+  /// Diagnose non-exhaustive and unreachable `__match` cases; set
+  /// `MatchCaseEntry::isUnreachable` for arms covered by earlier cases.
+  void checkCaseExhaustivityAndUnreachability(
+      MutableArrayRef<MatchCaseEntry> caseEntries, const PatternPath *rootPath,
+      SMLoc matchLoc);
 
 private:
   struct PathKey {
