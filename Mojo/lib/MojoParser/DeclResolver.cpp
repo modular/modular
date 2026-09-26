@@ -2033,6 +2033,14 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // Process a main returning none.
   if (userResultType.isNoneType()) {
     if (userMainSignature.isThrows()) {
+      ASTType errorType = shared.lookupBuiltinType("Error", funcDecl, loc);
+      if (errorType.isTypeCheckErrorType())
+        return;
+      if (!isEqualCanon(userMainSignature.getUserThrownType(), errorType)) {
+        shared.emitError(loc, "'main()' can only raise 'Error'; "
+                              "remove the explicit error type");
+        return;
+      }
       mainKind = kRaisingNoneMain;
       // Drop the error from the argument list.
       argTypes = argTypes.drop_front(2);
