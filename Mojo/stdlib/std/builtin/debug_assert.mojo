@@ -93,22 +93,6 @@ def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         return ASSERT_MODE == assert_mode
 
 
-@inline(.never)
-def _debug_assert_fail_format[
-    *Ts: Writable
-](location: SourceLocation, *messages: *Ts):
-    var message = _FixedWriteBuffer()
-
-    comptime for i in range(messages.__len__()):
-        messages[i].write_to(message)
-
-    var cstr = message.nul_terminate()
-    var bytes_with_nul = cstr.as_bytes_with_nul()
-    _debug_assert_msg(
-        bytes_with_nul.unsafe_ptr(), len(bytes_with_nul), location
-    )
-
-
 @inline(.always)
 def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
     """Reports a failed assertion, formatting the message if there is one."""
@@ -118,7 +102,16 @@ def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
             _NO_MESSAGE.ptr(), _NO_MESSAGE.byte_length() + 1, location
         )
     else:
-        _debug_assert_fail_format(location, *messages)
+        var message = _FixedWriteBuffer()
+
+        comptime for i in range(messages.__len__()):
+            messages[i].write_to(message)
+
+        var cstr = message.nul_terminate()
+        var bytes_with_nul = cstr.as_bytes_with_nul()
+        _debug_assert_msg(
+            bytes_with_nul.unsafe_ptr(), len(bytes_with_nul), location
+        )
 
 
 @inline(.always)
