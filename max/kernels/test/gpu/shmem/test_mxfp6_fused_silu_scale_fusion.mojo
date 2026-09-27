@@ -77,8 +77,7 @@ def _decode_fp6_e2m3(code: UInt8) -> Float32:
 
 def _unpack_fp6_code(bytes: HostBuffer[.uint8], base: Int, idx: Int) -> UInt8:
     """Reads code `idx` from a 4-codes-per-3-bytes packed run at `base`."""
-    var group = idx // 4
-    var lane = idx % 4
+    var group, lane = divmod(idx, 4)
     var b0 = Int(bytes[base + group * 3 + 0])
     var b1 = Int(bytes[base + group * 3 + 1])
     var b2 = Int(bytes[base + group * 3 + 2])

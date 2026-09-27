@@ -257,10 +257,8 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
                     nonzero_seen += 1
                 if v227_f32 != ref_f32:
                     if mismatches < 8:
-                        var lid = idx // _PER_LANE
-                        var rem = idx % _PER_LANE
-                        var frag = rem // _FRAG_ELTS
-                        var f = rem % _FRAG_ELTS
+                        var lid, rem = divmod(idx, _PER_LANE)
+                        var frag, f = divmod(rem, _FRAG_ELTS)
                         print(
                             "  MISMATCH lid=",
                             lid,

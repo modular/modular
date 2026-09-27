@@ -212,8 +212,7 @@ struct KBufferRDNA[
         if Int(tid) >= num_busy:
             return
 
-        var tr = Int(tid) // Self._thread_cols
-        var tc = Int(tid) % Self._thread_cols
+        var tr, tc = divmod(Int(tid), Self._thread_cols)
 
         var src = self.load_tile.tile[Self._per_stage_rows, Self.simd_width](
             tile_id, 0

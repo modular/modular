@@ -241,8 +241,7 @@ def run_one_case(
         var band = num_blocks[b] * BN
         for tok in range(band):
             var global_tok = batch_tok_base[b] + tok
-            var lb = tok // PAGE_SIZE
-            var off = tok % PAGE_SIZE
+            var lb, off = divmod(tok, PAGE_SIZE)
             var page = lut[b * max_pages + lb]
             var is_tail = tok > cl  # logical position past the valid prefix
             for d in range(head_dim):
@@ -510,8 +509,7 @@ def run_one_case(
                 var acc = Float64(0)
                 for i in range(ncols):
                     var w = exp(logits[i] - mx) / sm
-                    var bl = slot_lin[i] // BN
-                    var c = slot_lin[i] % BN
+                    var bl, c = divmod(slot_lin[i], BN)
                     acc += w * v_f64[kv_off(b, bl, c) + d]
                 var got = o_host[q_base + d].cast[.float64]()
                 var ae = abs(got - acc)

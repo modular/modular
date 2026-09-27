@@ -407,8 +407,7 @@ struct MLAPrefillSparseFP8[
 
         var i = tid
         while i < UInt32(K_SCALES_SIZE):
-            var row = i // UInt32(scales_per_token)
-            var block = i % UInt32(scales_per_token)
+            var row, block = divmod(i, UInt32(scales_per_token))
             var raw = indices.load[width=1](Coord(topk_base + row)).cast[
                 DType.int32
             ]()
@@ -460,8 +459,7 @@ struct MLAPrefillSparseFP8[
         ]()
 
         var lane = UInt32(thread_idx.x) & UInt32(0x7F)
-        var group_idx = lane // UInt32(GROUP_SIZE)
-        var idx_in_group = lane % UInt32(GROUP_SIZE)
+        var group_idx, idx_in_group = divmod(lane, UInt32(GROUP_SIZE))
 
         # 2 rows per thread covering all TOPK_PER_CTA=64 rows:
         #   row_0 (0..31), row_1 (32..63)
@@ -687,8 +685,7 @@ struct MLAPrefillSparseFP8[
 
         var i = tid
         while i < UInt32(V_SCALES_SIZE):
-            var row = i // UInt32(scales_per_token)
-            var block = i % UInt32(scales_per_token)
+            var row, block = divmod(i, UInt32(scales_per_token))
             var raw = indices.load[width=1](Coord(topk_base + row)).cast[
                 DType.int32
             ]()
@@ -748,8 +745,7 @@ struct MLAPrefillSparseFP8[
         ]()
 
         var lane = UInt32(thread_idx.x) & UInt32(0x7F)
-        var group_idx = lane // UInt32(GROUP_SIZE)
-        var idx_in_group = lane % UInt32(GROUP_SIZE)
+        var group_idx, idx_in_group = divmod(lane, UInt32(GROUP_SIZE))
         var col_bf16 = idx_in_group * UInt32(16)
 
         var src_u8 = v_smem_fp8_ptr.bitcast[UInt8]()

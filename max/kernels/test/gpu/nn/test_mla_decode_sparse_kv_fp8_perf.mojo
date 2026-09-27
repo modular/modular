@@ -188,8 +188,7 @@ def bench_sparse_kv_fp8[
                     t = i % num_keys
                 else:
                     t = (i * mult + 1 + s) % num_keys
-                var page_idx = t // PAGE_SIZE
-                var tok_in_page = t % PAGE_SIZE
+                var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
                 var block_id = Int(
                     lookup_table_host[bi * max_pages_per_batch + page_idx]
                 )

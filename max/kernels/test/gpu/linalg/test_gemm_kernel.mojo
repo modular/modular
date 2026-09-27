@@ -85,8 +85,7 @@ def gemm_kernel[
     var num_warps = NUM_THREADS // WARP_SIZE
     var n_warp_n = BN // WN
     var n_warp_m = BM // WM
-    var warp_m = warp_id() // n_warp_n
-    var warp_n = warp_id() % n_warp_n
+    var warp_m, warp_n = divmod(warp_id(), n_warp_n)
 
     # Allocate register tiles.
     var a_reg = LayoutTensor[

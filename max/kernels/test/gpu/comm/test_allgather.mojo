@@ -119,8 +119,7 @@ def all_gather_test[
     )
 
     def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
-        var device_idx = i // ngpus
-        var input_idx = i % ngpus
+        var device_idx, input_idx = divmod(i, ngpus)
         return TileTensor(
             out_bufs_list[device_idx][input_idx],
             row_major(lengths[input_idx]),
@@ -288,8 +287,7 @@ def grouped_all_gather_test[
     )
 
     def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
-        var device_idx = i // group_size
-        var local_idx = i % group_size
+        var device_idx, local_idx = divmod(i, group_size)
         var group_start = ualign_down(device_idx, group_size)
         var input_idx = group_start + local_idx
         return TileTensor(
@@ -429,8 +427,7 @@ def relay_all_gather_test[
     )
 
     def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
-        var device_idx = i // group_size
-        var local_idx = i % group_size
+        var device_idx, local_idx = divmod(i, group_size)
         var group_start = ualign_down(device_idx, group_size)
         return TileTensor(
             out_bufs_list[device_idx][local_idx],

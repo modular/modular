@@ -172,8 +172,7 @@ def test_mxfp4_dequant[
         max_err = max(max_err, err)
         if err > tol:
             if num_mismatches < 5:
-                var row = i // num_cols
-                var col = i % num_cols
+                var row, col = divmod(i, num_cols)
                 print(
                     "    MISMATCH [",
                     row,

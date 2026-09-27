@@ -251,8 +251,7 @@ def _run_arm[
             var g = bi * q_len + s
             for i in range(topk):
                 var t = (i * mult + 1 + s) % num_keys
-                var page_idx = t // page_size
-                var tok_in_page = t % page_size
+                var page_idx, tok_in_page = divmod(t, page_size)
                 var block_id = Int(
                     lookup_table_host[bi * max_pages_per_batch + page_idx]
                 )

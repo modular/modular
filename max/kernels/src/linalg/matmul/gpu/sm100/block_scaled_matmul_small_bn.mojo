@@ -1237,8 +1237,7 @@ def _sfb_cpasync_produce_tile_warpwide[
     )
 
     # Map lane_id to (k_atom, position) across the full warp.
-    var my_k_atom = lane_id() // MMA_N
-    var my_pos = lane_id() % MMA_N
+    var my_k_atom, my_pos = divmod(lane_id(), MMA_N)
     var active = lane_id() < MMA_N * num_sf_k_tiles
 
     # Per-lane absolute N position; compute n_group/outer per-lane so that

@@ -514,8 +514,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                             var nk = cache_lens[b] + seq_lens[b]
                             for _ in range(seq_lens[b]):
                                 for key in range(nk):
-                                    var page = key // page_size
-                                    var off = key % page_size
+                                    var page, off = divmod(key, page_size)
                                     var blk = Int(
                                         lut_host[b * pages_per_seq + page]
                                     )

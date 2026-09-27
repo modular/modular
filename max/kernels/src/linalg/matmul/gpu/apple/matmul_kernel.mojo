@@ -341,10 +341,8 @@ struct Im2colALoader[
             comptime mi = ri // 2
             comptime half = ri % 2
             var m = row_base + Int32(mi * 16 + half * 8) + rb
-            var batch = m // HW_out
-            var spatial = m % HW_out
-            var h_out = spatial // conv.W_out
-            var w_out = spatial % conv.W_out
+            var batch, spatial = divmod(m, HW_out)
+            var h_out, w_out = divmod(spatial, conv.W_out)
             self.h_base[ri] = h_out * conv.stride_h - conv.pad_h
             self.w_base[ri] = w_out * conv.stride_w - conv.pad_w
             self.batch_base[ri] = batch * hwc
@@ -800,8 +798,7 @@ struct AppleM5MatMul[
         var grid_n = ceildiv(n_i32, BN_i32)
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // NUM_SG_N_i32
-        var sg_n_idx = sg_id % NUM_SG_N_i32
+        var sg_m_idx, sg_n_idx = divmod(sg_id, NUM_SG_N_i32)
 
         var flat_idx = UInt32(block_idx.x)
 
@@ -1558,8 +1555,7 @@ struct AppleM5MatMul[
         var has_tail = (span % BK_i32) != 0
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // NUM_SG_N_i32
-        var sg_n_idx = sg_id % NUM_SG_N_i32
+        var sg_m_idx, sg_n_idx = divmod(sg_id, NUM_SG_N_i32)
 
         var mma_op = Mma()
         var accum = Mma.zero_accum()

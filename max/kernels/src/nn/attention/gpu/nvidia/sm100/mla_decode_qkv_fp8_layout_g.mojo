@@ -614,8 +614,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # li is a sum of exp2(s - p_ref).
             var p_ref = mi - p_bias
             comptime if Self.fold_q:
-                var q_local = row // Self.config.num_q_heads
-                var head_local = row % Self.config.num_q_heads
+                var q_local, head_local = divmod(row, Self.config.num_q_heads)
                 if warp_in_wg == 0 and row < (
                     Self.q_len_fold * Self.config.num_q_heads
                 ):

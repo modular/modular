@@ -91,8 +91,7 @@ def gemm_kernel[
     ](row_major[BK, BN]())
 
     var n_warp_n = BN // WN
-    var warp_m = warp_id() // n_warp_n
-    var warp_n = warp_id() % n_warp_n
+    var warp_m, warp_n = divmod(warp_id(), n_warp_n)
 
     # Allocate register tiles.
     var a_reg = stack_allocation[

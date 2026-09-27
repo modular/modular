@@ -4722,8 +4722,7 @@ struct EPCombineKernel[
                                 atomic_counter.store(
                                     Self.pair_done_offset + pr, Int32(0)
                                 )
-                                var e_l = pr // Self.n_ranks
-                                var d_r = pr % Self.n_ranks
+                                var e_l, d_r = divmod(pr, Self.n_ranks)
                                 ep_signal_completion[
                                     Self.use_shmem,
                                     n_experts_per_device=Self.n_local_experts,
@@ -6008,8 +6007,7 @@ def fused_silu_kernel[
             Int(num_elem // UInt32(simd_width)),
             num_threads * num_sms,
         ):
-            var m = (i * simd_width) // output_dim
-            var k = (i * simd_width) % output_dim
+            var m, k = divmod((i * simd_width), output_dim)
 
             var gate_proj = input_tensor.load[width=simd_width]((m, k)).cast[
                 accum_dtype
@@ -6125,8 +6123,7 @@ def fused_silu_fp8_kernel[
             Int(num_elem // UInt32(simd_width)),
             num_threads * num_sms,
         ):
-            var m = (i * simd_width) // output_dim
-            var k = (i * simd_width) % output_dim
+            var m, k = divmod((i * simd_width), output_dim)
 
             var gate_proj = input_tensor.load[width=simd_width]((m, k)).cast[
                 accum_dtype
@@ -6644,8 +6641,7 @@ def fused_silu_mx_kernel[
             Int(num_elem // UInt32(src_width)),
             num_threads * num_sms,
         ):
-            var m = (i * src_width) // hidden_size
-            var k = (i * src_width) % hidden_size
+            var m, k = divmod((i * src_width), hidden_size)
 
             var gate_proj = input_tensor.load[width=src_width]((m, k)).cast[
                 accum_dtype
@@ -7053,8 +7049,7 @@ def fused_silu_mxfp6_kernel[
             Int(num_elem // UInt32(blk)),
             num_threads * num_sms,
         ):
-            var m = (i * blk) // hidden_size
-            var k = (i * blk) % hidden_size
+            var m, k = divmod((i * blk), hidden_size)
 
             var gate_proj = input_tensor.load[width=blk]((m, k)).cast[
                 accum_dtype

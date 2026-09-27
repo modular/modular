@@ -81,8 +81,7 @@ def _smallm_preshuffle_b_kernel[
     var col = vec // vecs_per_row
     var k = (vec % vecs_per_row) * 8
 
-    var warp = k // k_per_warp
-    var k_in = k % k_per_warp
+    var warp, k_in = divmod(k, k_per_warp)
     var i = k_in // _MFMA_K
     var g = (k_in // 8) % 4
     var l = g * _TILE_N + col % _TILE_N
@@ -131,8 +130,7 @@ def _smallm_shuffle_a_kernel[
     var row = vec // vecs_per_row
     var k = (vec % vecs_per_row) * 8
 
-    var warp = k // k_per_warp
-    var k_in = k % k_per_warp
+    var warp, k_in = divmod(k, k_per_warp)
     var i = k_in // _MFMA_K
     var g = (k_in // 8) % 4
     var l = g * _TILE_N + row % _TILE_N

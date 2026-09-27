@@ -1865,8 +1865,7 @@ struct _MmaCpAsyncGmemLoaderA[
                     self.local_tid * Self.VEC_ELEMS
                     + v * Self.LOAD_THREADS * Self.VEC_ELEMS
                 )
-                var m_idx = linear // Self.tile_k
-                var k_idx = linear % Self.tile_k
+                var m_idx, k_idx = divmod(linear, Self.tile_k)
                 var gmem_k = self._k_project(k_idx) + gmem_a_off
                 if self.preds[v]:
                     var offset = self.act._linear_offset(
@@ -2006,8 +2005,7 @@ struct _MmaCpAsyncGmemLoaderB[
                     self.local_tid * Self.VEC_ELEMS
                     + v * Self.LOAD_THREADS * Self.VEC_ELEMS
                 )
-                var n_idx = linear // Self.tile_k
-                var k_idx = linear % Self.tile_k
+                var n_idx, k_idx = divmod(linear, Self.tile_k)
                 var gmem_k = self._k_project(k_idx) + gmem_b_off
                 if self.preds[v]:
                     var offset = self.weight._linear_offset(

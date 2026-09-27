@@ -131,8 +131,7 @@ def _run_paged_mha[
     for i in range(kv_block_size):
         kv_host[i] = Scalar[dtype](0)
     for tok in range(phys_tokens):
-        var page = tok // PAGE_SIZE
-        var off = tok % PAGE_SIZE
+        var page, off = divmod(tok, PAGE_SIZE)
         var is_valid = tok < total_keys
         for kh in range(head_kv):
             for d in range(head_dim):

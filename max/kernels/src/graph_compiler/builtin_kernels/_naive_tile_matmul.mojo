@@ -238,8 +238,7 @@ struct _NaiveMatmulTileAdapter[
         var tile_row = Int(block_idx.y)
         var tile_col = Int(block_idx.x)
         var tid = Int(thread_idx.x)
-        var i = tid // TN
-        var j = tid % TN
+        var i, j = divmod(tid, TN)
         var row = tile_row * TM + i
         var col = tile_col * TN + j
 

@@ -340,8 +340,7 @@ def _run_paged_gather4_test[
     for i in range(topk):
         var seq_idx = i % batch_size
         var tok_idx = (i * 3 + 7) % tokens_per_seq
-        var page_within_seq = tok_idx // page_size
-        var offset_in_page = tok_idx % page_size
+        var page_within_seq, offset_in_page = divmod(tok_idx, page_size)
         var phys_block = Int(lut_ptr[seq_idx * num_blocks + page_within_seq])
         var phys_row = phys_block * paged_stride + offset_in_page
         h_indices[i] = Int32(phys_row)
@@ -760,8 +759,7 @@ def gather4_kernel[
             # Output is laid out as [tile_idx * 4 rows, tile_width].
             var out_tile_base = Int(tile_idx) * 4 * tile_width
             for i in range(tid, 4 * box_width, num_threads):
-                var row_in_tile = i // box_width
-                var col_in_group = i % box_width
+                var row_in_tile, col_in_group = divmod(i, box_width)
                 var out_idx = (
                     out_tile_base
                     + row_in_tile * tile_width
@@ -953,8 +951,7 @@ def test_wide_gather4_paged_kv[
     for i in range(topk):
         var seq_idx = i % batch_size
         var tok_idx = (i * 3 + 7) % tokens_per_seq
-        var page_within_seq = tok_idx // page_size
-        var offset_in_page = tok_idx % page_size
+        var page_within_seq, offset_in_page = divmod(tok_idx, page_size)
         var phys_block = Int(lut_ptr[seq_idx * num_blocks + page_within_seq])
         var phys_row = phys_block * paged_stride + offset_in_page
         h_indices[i] = Int32(phys_row)
@@ -1236,8 +1233,7 @@ def test_wide_gather4_mha_operand[
     for i in range(topk):
         var seq_idx = i % batch_size
         var tok_idx = (i * 3 + 7) % tokens_per_seq
-        var page_within_seq = tok_idx // page_size
-        var offset_in_page = tok_idx % page_size
+        var page_within_seq, offset_in_page = divmod(tok_idx, page_size)
         var phys_block = Int(lut_ptr[seq_idx * num_blocks + page_within_seq])
         var phys_row = phys_block * paged_stride + offset_in_page
         h_indices[i] = Int32(phys_row)
@@ -1706,8 +1702,7 @@ def test_gather4_tile_api_paged[
     var h_indices = ctx.enqueue_create_host_buffer[.int32](topk)
     for i in range(topk):
         var tok_idx = (i * 37 + 13) % tokens_per_seq
-        var page_within_seq = tok_idx // page_size
-        var offset_in_page = tok_idx % page_size
+        var page_within_seq, offset_in_page = divmod(tok_idx, page_size)
         var phys_block = Int(lut_ptr[0 * num_blocks + page_within_seq])
         var phys_row = phys_block * paged_stride + offset_in_page
         h_indices[i] = Int32(phys_row)

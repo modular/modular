@@ -264,8 +264,7 @@ struct AppleM5Fp4MatMul[
 
         var tid = Int32(thread_idx.x)
         var sg_id = tid // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // NUM_SG_N_i32
-        var sg_n_idx = sg_id % NUM_SG_N_i32
+        var sg_m_idx, sg_n_idx = divmod(sg_id, NUM_SG_N_i32)
 
         var tile_mn = Self._Sched.morton_decode_2d_rect(
             UInt32(block_idx.x), log2_grid_m, log2_grid_n
@@ -389,8 +388,7 @@ struct AppleM5Fp4MatMul[
         @__parameter
         def _stage_dequant[bounded: Bool](k0: Int32, k_valid: Int32, buf: Int):
             var t = Int(tid)
-            var nrow = t // THREADS_PER_ROW
-            var col_in_row = t % THREADS_PER_ROW
+            var nrow, col_in_row = divmod(t, THREADS_PER_ROW)
             var col0 = col_in_row * COLS_PER_THREAD  # first bf16 col in strip
             var n_abs = Int(tg_col) + nrow
 
@@ -476,8 +474,7 @@ struct AppleM5Fp4MatMul[
             comptime NSCALE = BN * NBLK
             var t = Int(tid)
             if t < NSCALE:
-                var srow = t // NBLK
-                var sblk = t % NBLK
+                var srow, sblk = divmod(t, NBLK)
                 s_smem_view.store[width=1](
                     Coord(buf, srow, sblk),
                     Float32(

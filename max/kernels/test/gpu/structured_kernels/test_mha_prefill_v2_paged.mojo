@@ -132,8 +132,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         for i in range(SIZE_KV_BLOCK):
             host_kv[i] = BFloat16(0)
         for k in range(NUM_KEYS):
-            var block_idx = k // PAGE_SIZE
-            var tok_in_page = k % PAGE_SIZE
+            var block_idx, tok_in_page = divmod(k, PAGE_SIZE)
             var page = _LUT_PERM[block_idx]
             var v_val = Float32(k + 1) / Float32(512)
             for m in range(depth):

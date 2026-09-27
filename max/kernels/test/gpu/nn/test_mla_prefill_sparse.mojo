@@ -385,8 +385,7 @@ def run_test_prefill_sparse[
     )
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
-            var page_idx = t // PAGE_SIZE
-            var tok_in_page = t % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
             var block_id = Int(
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
@@ -505,8 +504,7 @@ def run_test_prefill_sparse[
             for i in range(topk):
                 if i < valid_topk:
                     var t = selected_tokens[bs * topk + i]
-                    var page_idx = t // PAGE_SIZE
-                    var tok_in_page = t % PAGE_SIZE
+                    var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
                     var block_id = Int(
                         lookup_table_host[bi * max_pages_per_batch + page_idx]
                     )

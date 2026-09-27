@@ -2684,8 +2684,7 @@ struct PagedKVCache[
         (in rows) between consecutive physical blocks in the flattened
         memory view.
         """
-        var phys_block = encoded_index // Int32(Self.page_size)
-        var offset = encoded_index % Int32(Self.page_size)
+        var phys_block, offset = divmod(encoded_index, Int32(Self.page_size))
         var stride = Int32(self._stride())
         return phys_block * stride + offset
 

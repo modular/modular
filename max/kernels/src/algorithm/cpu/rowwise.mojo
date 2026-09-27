@@ -627,8 +627,7 @@ def launch[
                 var body,
                 imm,
             }:
-                var row_idx = w // num_splits
-                var split_idx = w % num_splits
+                var row_idx, split_idx = divmod(w, num_splits)
                 var row_coords = _get_nd_indices_from_flat_index(
                     row_idx, shape_il, axis
                 )

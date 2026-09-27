@@ -343,8 +343,7 @@ def bench_allgather_rmsnorm[
         )
         for j in range(cb_shards[i].alloc_size()):
             var local = j % shard_len
-            var lr = local // num_cols
-            var c = local % num_cols
+            var lr, c = divmod(local, num_cols)
             h[j] = _gathered_value[in_dtype](start_i + lr, c)
         list_of_ctx[i].enqueue_copy(cb_shards[i].device_buffer(), h)
         _ = h^

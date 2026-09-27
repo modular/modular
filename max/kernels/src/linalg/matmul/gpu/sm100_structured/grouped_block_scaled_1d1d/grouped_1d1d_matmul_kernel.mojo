@@ -630,8 +630,7 @@ struct RealSwiGLUOutput[
         var total_writes = pad_total * Self.sf_dim1
         var ptr_u32 = self.c_swiglu_scales_ptr.bitcast[UInt32]()
         for i in range(tid, total_writes, stride):
-            var pad_idx = i // Self.sf_dim1
-            var i1 = i % Self.sf_dim1
+            var pad_idx, i1 = divmod(i, Self.sf_dim1)
             var m = tokens_e + pad_idx + sf_block_base
             var i0 = m // SF_MN_GROUP_SIZE
             var i2 = m % SF_ATOM_M[0]
@@ -3952,8 +3951,9 @@ struct Grouped1D1DMatmulKernel[
             comptime for it in range(iters_per_stage):
                 var linear_var = Int(tid_within_epi) + it * total_threads
                 var in_bounds = linear_var < work_per_stage
-                var token_idx = UInt32(linear_var // n_threads_per_token)
-                var hid_idx = UInt32(linear_var % n_threads_per_token)
+                var token_idx, hid_idx = divmod(
+                    UInt32(linear_var), UInt32(n_threads_per_token)
+                )
                 var m_global = stage_m_offset + token_idx
                 var k_post = hid_idx * UInt32(src_width)
                 var k_raw = 2 * k_post

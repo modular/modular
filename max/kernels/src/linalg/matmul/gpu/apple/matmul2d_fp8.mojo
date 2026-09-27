@@ -179,8 +179,7 @@ struct Matmul2dFp8[
         var tile_n = Int(block_idx.x)
 
         var sg_id = Int(thread_idx.x) // WARP_SIZE
-        var sg_m_idx = sg_id // Self.NUM_SG_N
-        var sg_n_idx = sg_id % Self.NUM_SG_N
+        var sg_m_idx, sg_n_idx = divmod(sg_id, Self.NUM_SG_N)
 
         var row_base = tile_m * BM + sg_m_idx * SG_M
         var col_base = tile_n * BN + sg_n_idx * SG_N

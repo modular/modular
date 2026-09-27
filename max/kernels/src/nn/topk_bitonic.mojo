@@ -2826,8 +2826,7 @@ def _split_partial_kernel(
 
     var tid = thread_idx.x
     var block = block_idx.x
-    var row = block // S
-    var slce = block % S
+    var row, slce = divmod(block, S)
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
@@ -2976,8 +2975,7 @@ def _reduce_partials_kernel(
 
     var tid = thread_idx.x
     var block = block_idx.x
-    var row = block // count_out
-    var grp = block % count_out
+    var row, grp = divmod(block, count_out)
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).

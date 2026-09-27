@@ -773,8 +773,7 @@ struct AppleM5Int8MatMul[
             return
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // Int32(Self.NUM_SG_N)
-        var sg_n_idx = sg_id % Int32(Self.NUM_SG_N)
+        var sg_m_idx, sg_n_idx = divmod(sg_id, Int32(Self.NUM_SG_N))
 
         var row_base = tile_m * BM_i + sg_m_idx * SG_M_i
         var col_base = tile_n * BN_i + sg_n_idx * SG_N_i

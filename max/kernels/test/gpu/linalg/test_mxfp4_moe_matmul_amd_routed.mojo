@@ -223,8 +223,7 @@ def build_routing_metadata(
                 var sti_offset = (blk_idx + blk) * sort_block_m + r
                 var local_idx = blk * sort_block_m + r
                 if local_idx < n:
-                    var t = pair_idx // topk
-                    var s = pair_idx % topk
+                    var t, s = divmod(pair_idx, topk)
                     sti_out[sti_offset] = UInt32(t) | (UInt32(s) << 24)
                     pair_idx += 1
                 else:

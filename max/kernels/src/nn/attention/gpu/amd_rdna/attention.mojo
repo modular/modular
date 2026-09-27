@@ -733,8 +733,7 @@ struct AttentionRDNA[
 
         var reg_tile = self.out_reg_buffer.get_reg_tile()
         var lane = lane_id()
-        var row_group = lane // 16
-        var col_within_mma = lane % 16
+        var row_group, col_within_mma = divmod(lane, 16)
 
         # Decode rows = heads in GQA group (stride=output_depth).
         # Prefill rows = seq positions (stride=num_heads*output_depth).

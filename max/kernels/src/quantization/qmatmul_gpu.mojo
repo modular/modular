@@ -922,8 +922,7 @@ def multistage_qgemm_kernel[
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
             comptime alignment = align_of[SIMD[c_type, src_simd_width_y]]()
-            var m = (Int(thread_offset) + dst_idx) // N
-            var n = (Int(thread_offset) + dst_idx) % N
+            var m, n = divmod((Int(thread_offset) + dst_idx), N)
             if m < M and n < N:
                 var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
@@ -1004,8 +1003,7 @@ def multistage_qgemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // N
-                var n = (Int(thread_offset) + dst_idx) % N
+                var m, n = divmod((Int(thread_offset) + dst_idx), N)
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](

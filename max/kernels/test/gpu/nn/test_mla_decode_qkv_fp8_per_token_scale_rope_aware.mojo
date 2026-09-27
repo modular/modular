@@ -595,8 +595,7 @@ def run_test[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var dst_offset = tok * KV_NUM_HEADS * LOGICAL_DEPTH
@@ -1269,8 +1268,7 @@ def run_test_with_scales[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             # Get sigma_KV[t] for this token from the scales host array.

@@ -539,8 +539,7 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         else:
             for i in range(n_out):
                 if out_host[i] != ref_out[i]:
-                    var row = i // k
-                    var pos = i % k
+                    var row, pos = divmod(i, k)
                     print(
                         "FUZZ_NUMERIC_FAIL kind=width_nondeterminism width=",
                         bd,

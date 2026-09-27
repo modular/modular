@@ -387,8 +387,7 @@ def run_test_paged_prefill_per_token_scale[
     for b in range(batch_size):
         for j in range(num_keys):
             var ks = k_scale_ptr[b * num_keys + j].cast[.bfloat16]()
-            var page_in_batch = j // page_size
-            var slot_in_page = j % page_size
+            var page_in_batch, slot_in_page = divmod(j, page_size)
             # Uniform LUT: each batch's pages are contiguous in the
             # global block array.
             var global_page = b * num_pages_per_batch + page_in_batch

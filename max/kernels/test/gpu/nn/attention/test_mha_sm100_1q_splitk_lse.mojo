@@ -182,8 +182,7 @@ def execute_combine_test[
     # Front-loaded balanced split (matches `splitk_window`); diagnostic only
     # here -- the combine writer emits the FULL O, so the oracle is full-range.
     var T = ceildiv(num_keys, BN)
-    var q_tiles = T // P
-    var r_tiles = T % P
+    var q_tiles, r_tiles = divmod(T, P)
     var cb = W * q_tiles + min(W, r_tiles)
     var ce = (W + 1) * q_tiles + min(W + 1, r_tiles)
     var win_begin = cb * BN

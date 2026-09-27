@@ -163,8 +163,7 @@ def bc_frag_coord(lane: Int, i: Int) -> IndexList[2]:
         i: B/C-fragment element index in `[0, 16)`; selects which of this
             lane's 16 held B/C elements to map to `(row, col)`.
     """
-    var half = i // 8
-    var sub = i % 8
+    var half, sub = divmod(i, 8)
     return IndexList[2](
         frag_row_base(lane) + (sub >> 2) * 8,
         frag_col_base(lane) + (sub % 4) + half * 16,
@@ -191,8 +190,7 @@ def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
         i: B-fragment element index in `[0, 16)`; selects which of this lane's
             16 held B elements to map to `(n, k)` under `transpose_right=1`.
     """
-    var half = i // 8
-    var sub = i % 8
+    var half, sub = divmod(i, 8)
     return IndexList[2](
         frag_row_base(lane) + (sub >> 2) * 8 + half * 16,  # n (0..31)
         frag_col_base(lane) + (sub % 4),  # k (0..15, contiguous)
@@ -656,8 +654,7 @@ struct Matmul2dFp4[
         var K = Int(K_arg)
         var lane = Int(lane_id())
         var sg_id = Int(thread_idx.x) // WARP_SIZE
-        var sg_m = sg_id // Self.num_sg_n
-        var sg_n = sg_id % Self.num_sg_n
+        var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
         var sg_row0 = (Int(block_idx.y) * Self.num_sg_m + sg_m) * (
             Self.MMA_M * Self.tm
@@ -828,8 +825,7 @@ struct Matmul2dFp4[
         var lane = Int(lane_id())
         var tid = Int(thread_idx.x)
         var sg_id = tid // WARP_SIZE
-        var sg_m = sg_id // Self.num_sg_n
-        var sg_n = sg_id % Self.num_sg_n
+        var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
         var tg_col = Int(block_idx.x) * BN  # N-origin of this threadgroup tile
         var sg_row0 = (Int(block_idx.y) * Self.num_sg_m + sg_m) * (
@@ -877,8 +873,7 @@ struct Matmul2dFp4[
         var accs = Array[_, Self.tm * Self.tn](fill=SIMD[.float32, 16](0))
 
         # This thread's cooperative-decode slot: N-row + contiguous byte-run.
-        var dec_nrow = tid // THREADS_PER_ROW
-        var dec_col_in_row = tid % THREADS_PER_ROW
+        var dec_nrow, dec_col_in_row = divmod(tid, THREADS_PER_ROW)
         var dec_col0 = dec_col_in_row * COLS_PER_THREAD  # first bf16 col
         var dec_n_abs = tg_col + dec_nrow
 

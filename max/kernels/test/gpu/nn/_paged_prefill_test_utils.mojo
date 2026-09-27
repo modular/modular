@@ -246,8 +246,7 @@ def extract_k_rope_for_batch[
     var tstride = token_stride(head_size)
 
     for tok in range(num_keys):
-        var page_idx = tok // page_size
-        var tok_in_page = tok % page_size
+        var page_idx, tok_in_page = divmod(tok, page_size)
         var physical_page = page_base + page_idx
 
         var src_offset = (
@@ -990,8 +989,7 @@ def extract_dequantized_k_rope_for_batch[
     var ststride = scale_token_stride(head_dim_gran)
 
     for tok in range(num_keys):
-        var page_idx = tok // page_size
-        var tok_in_page = tok % page_size
+        var page_idx, tok_in_page = divmod(tok, page_size)
         var physical_page = page_base + page_idx
 
         var src_offset = (

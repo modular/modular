@@ -2394,8 +2394,7 @@ def _preshuffle_a_scale_4d_kernel[
     var total = Int(padded_M) * K_SCALES
     if idx >= total:
         return
-    var mn = idx // K_SCALES
-    var k_scale = idx % K_SCALES
+    var mn, k_scale = divmod(idx, K_SCALES)
     var byte_off = Shuffler[1].scale_4d_byte_off[K_SCALES=K_SCALES](mn, k_scale)
     var value = src.raw_load[width=1](mn * K_SCALES + k_scale) if mn < Int(
         M

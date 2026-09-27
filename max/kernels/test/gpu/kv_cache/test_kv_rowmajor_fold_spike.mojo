@@ -491,16 +491,14 @@ def run_spike[
         # failure characterizes WHICH axis is wrong, not just THAT it is.
         var off = Int(first)
         var per_page = atom_rows_per_page * num_chunks * CM * gran
-        var page = off // per_page
-        var rem = off % per_page
+        var page, rem = divmod(off, per_page)
         var per_atomrow = num_chunks * CM * gran
         var atom_row = rem // per_atomrow
         rem = rem % per_atomrow
         var per_chunk = CM * gran
         var chunk = rem // per_chunk
         rem = rem % per_chunk
-        var rr = rem // gran
-        var g = rem % gran
+        var rr, g = divmod(rem, gran)
         print(
             "  first-mismatch decode (chunk-inner): page=",
             page,

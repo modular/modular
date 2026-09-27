@@ -1596,8 +1596,7 @@ def _softmax_split_partial_kernel[
     var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
 
     for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
-        var row_idx = pair_idx // num_splits
-        var split = pair_idx % num_splits
+        var row_idx, split = divmod(pair_idx, num_splits)
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
 
         # Every block owning this row must read the same temperature.
@@ -1702,8 +1701,7 @@ def _softmax_split_combine_kernel[
     var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
 
     for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
-        var row_idx = pair_idx // num_splits
-        var split = pair_idx % num_splits
+        var row_idx, split = divmod(pair_idx, num_splits)
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
 
         var temp = temperature.cast[accum_type]()

@@ -479,8 +479,7 @@ def _fp8_index_body[
             q_mbar[q_next].expect_bytes(Int32(q_bytes))
             q_tma.async_copy_3d(q_dst, q_mbar[q_next], (0, 0, q_row0))
 
-        var qs_tok = Int(tid) // num_heads
-        var qs_head = Int(tid) % num_heads
+        var qs_tok, qs_head = divmod(Int(tid), num_heads)
         var qs_next: Float32 = 0.0
         if has_next:
             var qs_local = tok0 + N_TOKENS + qs_tok

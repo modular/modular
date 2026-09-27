@@ -396,8 +396,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     # Move data from register tile to DRAM.
     comptime thread_shape_m = thread_layout.shape[0].value()
     comptime thread_shape_n = thread_layout.shape[1].value()
-    var thread_m = Int(thread_idx.x) // thread_shape_n
-    var thread_n = Int(thread_idx.x) % thread_shape_n
+    var thread_m, thread_n = divmod(Int(thread_idx.x), thread_shape_n)
     for m in range(dst_register_tile.shape[0]()):
         for n in range(dst_register_tile.shape[1]()):
             dst_tile[

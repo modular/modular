@@ -934,8 +934,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
             var lid = Int(lane_id())
             var lane_in_row = lid % 16
-            var pair_idx = lane_in_row // 2
-            var is_odd = lane_in_row % 2
+            var pair_idx, is_odd = divmod(lane_in_row, 2)
             var row_in_warp = lid // 16
             var is_hw1 = lid // 32
             var rel_key = (pair_idx % 4) + (pair_idx // 4) * 8
@@ -1030,15 +1029,13 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _row_offset = i * _MMA_K_
                     comptime _depth_offset = j * _MMA_M_
                     var depth_in_v = _depth_offset + lane_row
-                    var sub_col = depth_in_v // _V_SUB_COLS_
-                    var col_in_sub = depth_in_v % _V_SUB_COLS_
+                    var sub_col, col_in_sub = divmod(depth_in_v, _V_SUB_COLS_)
                     var key_start = _row_offset + lane_k_group * 32
 
                     var vals = SIMD[Self.T, Self.FRAG_ELTS]()
                     for f in range(Self.FRAG_ELTS):
                         var key_idx = key_start + f
-                        var sub_row = key_idx // _V_SUB_ROWS_
-                        var row_in_sub = key_idx % _V_SUB_ROWS_
+                        var sub_row, row_in_sub = divmod(key_idx, _V_SUB_ROWS_)
                         var sub_id = sub_row * _subtiles_per_row + sub_col
                         var slot_row = sub_id * _V_SUB_ROWS_ + row_in_sub
                         var byte_offset = slot_row * _V_SUB_COLS_ + col_in_sub
@@ -1545,8 +1542,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
 
         var lid = Int(lane_id())
         var lane_in_row = lid % 16
-        var pair_idx = lane_in_row // 2
-        var is_odd = lane_in_row % 2
+        var pair_idx, is_odd = divmod(lane_in_row, 2)
         var row_in_warp = lid // 16
         var is_hw1 = lid // 32
         var rel_key = (pair_idx % 4) + (pair_idx // 4) * 8

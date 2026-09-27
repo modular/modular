@@ -298,8 +298,7 @@ struct MXFP4MoERoutedMatmul[
         comptime load_layout = row_major[load_thread_rows, load_thread_cols]()
 
         var thread_idx_x = Int(thread_idx.x)
-        var row_thread = thread_idx_x // load_thread_cols
-        var col_thread = thread_idx_x % load_thread_cols
+        var row_thread, col_thread = divmod(thread_idx_x, load_thread_cols)
 
         # Decode (t, s) per row this thread will load. Cached across K-iters.
         # TOKEN_ID:   A_row = t        (stage1; multiple slots share the same A row)

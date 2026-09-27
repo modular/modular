@@ -386,8 +386,7 @@ def run_test_paged_variable[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -829,8 +828,7 @@ def run_test_paged_variable_multiq[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -1320,8 +1318,7 @@ def run_test_paged_variable_ragged_q[
             page_base_b += ceildiv(cache_lengths[bi] + seq_lens[bi], PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -2082,8 +2079,7 @@ def run_test_paged_variable_native_fp8[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (
@@ -2559,8 +2555,7 @@ def run_test_paged_variable_ragged_q_native_fp8[
             page_base_b += ceildiv(cache_lengths[bi] + seq_lens[bi], PAGE_SIZE)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // PAGE_SIZE
-            var tok_in_page = tok % PAGE_SIZE
+            var page_idx, tok_in_page = divmod(tok, PAGE_SIZE)
             var physical_page = page_base_b + page_idx
 
             var src_offset = (

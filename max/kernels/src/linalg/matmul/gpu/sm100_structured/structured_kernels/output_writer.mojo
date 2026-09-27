@@ -2737,8 +2737,7 @@ struct TileWriter[
                 comptime if Self.transpose_c:
                     # N position: lanes 0-7 → N, lanes 8-15 → N+8
                     var n_pos = local_row + UInt32(lane & 8)
-                    var ldm_tidx = n_pos // UInt32(sub_tile_n)
-                    var ldm_nloc = n_pos % UInt32(sub_tile_n)
+                    var ldm_tidx, ldm_nloc = divmod(n_pos, UInt32(sub_tile_n))
                     var ldm_tile_base = ldm_tidx * UInt32(sub_tile_elems)
 
                     var ldm_m_row = local_col + UInt32(inc) + UInt32(lane & 7)
@@ -2766,8 +2765,9 @@ struct TileWriter[
 
                 else:
                     var col_base = local_col + UInt32(inc)
-                    var ldm_tidx = col_base // UInt32(sub_tile_n)
-                    var ldm_nloc = col_base % UInt32(sub_tile_n)
+                    var ldm_tidx, ldm_nloc = divmod(
+                        col_base, UInt32(sub_tile_n)
+                    )
                     var ldm_tile_base = ldm_tidx * UInt32(sub_tile_elems)
 
                     # Rows 0-15 via ldmatrix .x2
@@ -2800,8 +2800,9 @@ struct TileWriter[
                     comptime if Self.transpose_c:
                         # N position: lanes 0-7 → N+16, lanes 8-15 → N+24
                         var n_pos_l = local_row + 16 + UInt32(lane & 8)
-                        var ldm_tidx_l = n_pos_l // UInt32(sub_tile_n)
-                        var ldm_nloc_l = n_pos_l % UInt32(sub_tile_n)
+                        var ldm_tidx_l, ldm_nloc_l = divmod(
+                            n_pos_l, UInt32(sub_tile_n)
+                        )
                         var ldm_tile_base_l = ldm_tidx_l * UInt32(
                             sub_tile_elems
                         )
@@ -2832,8 +2833,9 @@ struct TileWriter[
                         ].cast[Self.epilogue_dtype]()
                     else:
                         var col_base_l = local_col + UInt32(inc)
-                        var ldm_tidx_l = col_base_l // UInt32(sub_tile_n)
-                        var ldm_nloc_l = col_base_l % UInt32(sub_tile_n)
+                        var ldm_tidx_l, ldm_nloc_l = divmod(
+                            col_base_l, UInt32(sub_tile_n)
+                        )
                         var ldm_tile_base_l = ldm_tidx_l * UInt32(
                             sub_tile_elems
                         )

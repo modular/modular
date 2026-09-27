@@ -246,8 +246,7 @@ def gated_delta_recurrence_fwd_gpu[
     var block = Int(block_idx.x)
 
     # ── block -> (batch_item, value_head) ───────────────────────────────────
-    var batch_item_idx = block // _num_value_heads
-    var value_head_idx = block % _num_value_heads
+    var batch_item_idx, value_head_idx = divmod(block, _num_value_heads)
     if batch_item_idx >= _batch_size:
         return
 

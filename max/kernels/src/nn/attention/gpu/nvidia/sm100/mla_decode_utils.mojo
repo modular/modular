@@ -4308,8 +4308,7 @@ struct MLA_SM100_Decode_Common[
             # for those slots, unlike the non-fold path where ragged CTAs
             # take pdl_early_exit and never reach Softmax).
             comptime if fold_q:
-                var q_local = row // Self.config.num_q_heads
-                var head_local = row % Self.config.num_q_heads
+                var q_local, head_local = divmod(row, Self.config.num_q_heads)
                 if half_idx == 0 and row < (
                     q_len_fold * Self.config.num_q_heads
                 ):

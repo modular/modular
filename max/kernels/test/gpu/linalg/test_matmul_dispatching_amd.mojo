@@ -237,8 +237,7 @@ def test_oob_diagnostic[
         if val != sentinel:
             oob_writes += 1
             if oob_writes <= 5:
-                var row = i // N
-                var col = i % N
+                var row, col = divmod(i, N)
                 print(
                     "  OOB WRITE [",
                     row,
@@ -274,8 +273,7 @@ def test_oob_diagnostic[
         if abs_err > atol and rel_err > rtol:
             accuracy_errors += 1
             if accuracy_errors <= 5:
-                var row = i // N
-                var col = i % N
+                var row, col = divmod(i, N)
                 print(
                     "  ACCURACY [",
                     row,

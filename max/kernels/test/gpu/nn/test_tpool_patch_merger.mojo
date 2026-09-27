@@ -47,12 +47,9 @@ def cpu_reference_one_video[
     var new_W = w // kW
     var n_pat = new_H * new_W * kH * kW
     for pat_idx in range(n_pat):
-        var sp_idx = pat_idx // (kH * kW)
-        var ker_idx = pat_idx % (kH * kW)
-        var nh = sp_idx // new_W
-        var nw = sp_idx % new_W
-        var ph = ker_idx // kW
-        var pw = ker_idx % kW
+        var sp_idx, ker_idx = divmod(pat_idx, (kH * kW))
+        var nh, nw = divmod(sp_idx, new_W)
+        var ph, pw = divmod(ker_idx, kW)
         var h_src = nh * kH + ph
         var w_src = nw * kW + pw
         var spatial_flat = h_src * w + w_src

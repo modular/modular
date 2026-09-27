@@ -324,8 +324,7 @@ def _test_silu_mxfp8[
             first_bad_sf,
         )
         if first_bad_out >= 0:
-            var m_bad = first_bad_out // H
-            var k_bad = first_bad_out % H
+            var m_bad, k_bad = divmod(first_bad_out, H)
             var ref_byte = bitcast[.uint8, 1](
                 SIMD[fp8_dtype, 1](out_ref_host_ptr[first_bad_out])
             )[0]

@@ -1264,8 +1264,7 @@ def test_sparse_paged_mma_ws_ts[
     var h_indices = ctx.enqueue_create_host_buffer[.int32](topk)
     for i in range(topk):
         var tok_idx = (i * 37 + 13) % total_tokens
-        var page_within_seq = tok_idx // page_size
-        var offset_in_page = tok_idx % page_size
+        var page_within_seq, offset_in_page = divmod(tok_idx, page_size)
         var phys_block = Int(lut_ptr[0 * num_blocks + page_within_seq])
         var phys_row = phys_block * paged_stride + offset_in_page
         h_indices[i] = Int32(phys_row)

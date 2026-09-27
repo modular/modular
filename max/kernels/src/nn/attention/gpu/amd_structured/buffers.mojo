@@ -993,8 +993,9 @@ struct PRegisterBuffer[
                 "P SMEM block size must equal"
                 " num_m_mmas*warps_per_block*num_n_mmas*64*16B."
             )
-            var block_idx = warp_col // Int(warps_per_block)
-            var n_mma_in_block = warp_col % Int(warps_per_block)
+            var block_idx, n_mma_in_block = divmod(
+                warp_col, Int(warps_per_block)
+            )
             var block_base = self.smem_tile.tile[Self.BM, Self.BK](
                 block_idx, 0
             ).ptr
@@ -1028,8 +1029,9 @@ struct PRegisterBuffer[
         comptime if Self.WN < Self.BK:
             # WN < BK: multiple warps fill each [BM, BK] SMEM block.
             comptime warps_per_block = Self.BK // Self.WN
-            var block_idx = warp_col // Int(warps_per_block)
-            var n_mma_in_block = warp_col % Int(warps_per_block)
+            var block_idx, n_mma_in_block = divmod(
+                warp_col, Int(warps_per_block)
+            )
             var smem_offset = block_idx * Self.BM * Self.BK
             var warp_offset = smem_offset + warp_row * Self.WM * Self.BK
 

@@ -54,8 +54,7 @@ def _unpack_code(packed: HostBuffer[.uint8], base: Int, i: Int) -> UInt8:
     covering four elements, so a group -- not a byte -- is the smallest
     addressable unit.
     """
-    var group = i // 4
-    var within = i % 4
+    var group, within = divmod(i, 4)
     var b0 = UInt32(Int(packed[base + group * 3 + 0]))
     var b1 = UInt32(Int(packed[base + group * 3 + 1]))
     var b2 = UInt32(Int(packed[base + group * 3 + 2]))

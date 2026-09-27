@@ -154,8 +154,9 @@ struct PreShuffledBGroupedGEMM[
         # on `xcd_stripe` alone — see the dispatcher callers' per-band notes.
         var xcd_idx = linear_idx % Self.num_xcd
         var xcd_linear_idx = linear_idx // Self.num_xcd
-        var superblock_id = xcd_linear_idx // Self.effective_xcd_stripe
-        var within_block = xcd_linear_idx % Self.effective_xcd_stripe
+        var superblock_id, within_block = divmod(
+            xcd_linear_idx, Self.effective_xcd_stripe
+        )
         return (
             superblock_id * (Self.num_xcd * Self.effective_xcd_stripe)
             + xcd_idx * Self.effective_xcd_stripe

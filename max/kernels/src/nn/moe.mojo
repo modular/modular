@@ -1791,8 +1791,7 @@ def eplb_remap_kernel[
         barrier()
 
         # Per element remap, One thread = one (n,k)
-        var token_in_block = tid // K
-        var k = tid % K
+        var token_in_block, k = divmod(tid, K)
         var n = Int(block_idx.x) * tile_tokens + token_in_block
         var N = Int(phy_idx.dim(0))
 

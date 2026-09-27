@@ -48,8 +48,7 @@ def _code_at(
 ) -> Int:
     """Reads element `col` from a packed FP6 row as a raw 6-bit code."""
     var bit_offset = col * 6
-    var byte_index = bit_offset // 8
-    var shift = bit_offset % 8
+    var byte_index, shift = divmod(bit_offset, 8)
     var low = UInt32(stream[unsafe_offset=row_base + byte_index]) >> UInt32(
         shift
     )
