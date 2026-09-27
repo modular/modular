@@ -2466,7 +2466,8 @@ static LogicalResult outlineAndPromoteOrigins(
   for (StructDefFieldAttr &fieldDecl : fieldDecls) {
     auto newTypeValue =
         cast<TypedAttr>(originReplacer.replace(fieldDecl.getTypeValue()));
-    fieldDecl = StructDefFieldAttr::get(fieldDecl.getName(), newTypeValue);
+    fieldDecl = StructDefFieldAttr::get(fieldDecl.getName(), newTypeValue,
+                                        fieldDecl.getAnnotations());
   }
   for (Type &fieldType : deviceCaptureFieldTypes)
     fieldType = cast<Type>(originReplacer.replace(fieldType));

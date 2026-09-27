@@ -67,34 +67,7 @@ trait AnnotatedTraitMember:
 comptime annotated_alias = 3
 
 
-# A reader has to be able to move a value out of the annotation list and
-# destroy it, so every value must be `Movable & Deinitable`.
-@explicit_destroy("must be consumed")
-struct Linear(Deinitable where False):
-    var x: Int
-
-    def __init__(out self, x: Int):
-        self.x = x
-
-    def consume(deinit self):
-        pass
-
-
-# expected-error @+1 {{@__annotation value of type 'Linear' does not conform to 'Deinitable'}}
-@__annotation(Linear(1))
-struct NotDeinitable:
-    var value: Int
-
-
 # expected-error @+1 {{@__annotation value must be a value, not a type}}
 @__annotation(Int)
 struct TypeValued:
-    var value: Int
-
-
-# A trait bound has to provide `Deinitable` for a value of that type to be
-# stored; `Copyable` alone does not.
-struct UnboundedTraitValue[T: Copyable, v: T]:
-    # expected-error @+1 {{@__annotation value of type 'T' does not conform to 'Deinitable'}}
-    @__annotation(Self.v)
     var value: Int

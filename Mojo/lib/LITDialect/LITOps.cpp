@@ -1376,32 +1376,14 @@ void StructDeclOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
     types.push_back(TypeParamAttr::get(field.getType(), metaType));
 }
 
-/// The annotations selected by `fieldIndex`: the struct's own when negative,
-/// otherwise those on the field at that index.
-ParameterExprArrayAttr
-StructDeclOp::getSelectedAnnotations(int64_t fieldIndex) {
-  if (fieldIndex < 0)
+FailureOr<ArrayAttr> StructDeclOp::getAnnotations(std::optional<int> fieldIdx) {
+  if (!fieldIdx.has_value())
     return getAnnotationsAttr();
-  int64_t index = 0;
-  for (StructFieldOp field : getFieldDecls())
-    if (index++ == fieldIndex)
+
+  for (auto [idx, field] : llvm::enumerate(getFieldDecls()))
+    if (static_cast<int>(idx) == *fieldIdx)
       return field.getAnnotationsAttr();
-  return {};
-}
-
-void StructDeclOp::getAnnotationValues(SmallVectorImpl<TypedAttr> &values,
-                                       int64_t fieldIndex) {
-  if (ParameterExprArrayAttr annotations = getSelectedAnnotations(fieldIndex))
-    llvm::append_range(values, annotations.getValue());
-}
-
-void StructDeclOp::getAnnotationTypes(SmallVectorImpl<TypedAttr> &types,
-                                      Type metaType, int64_t fieldIndex) {
-  // Nothing has been lowered yet here, so each value still carries its
-  // nominal type.
-  if (ParameterExprArrayAttr annotations = getSelectedAnnotations(fieldIndex))
-    for (TypedAttr value : annotations.getValue())
-      types.push_back(TypeParamAttr::get(value.getType(), metaType));
+  return failure();
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.

@@ -1870,6 +1870,39 @@ ParseResult KGEN::parseMinAlignment(AsmParser &p, TypedAttr &minAlignment) {
   return success();
 }
 
+ParseResult KGEN::parseStructDefField(AsmParser &p, StringAttr &name,
+                                      TypedAttr &typeValue,
+                                      ArrayAttr &annotations) {
+  if (parseParamName(p, name) || p.parseColon() ||
+      parseTypeParamValue(p, typeValue))
+    return failure();
+
+  SmallVector<Attribute> parsed;
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&]() {
+        if (p.parseAttribute(parsed.emplace_back()))
+          return failure();
+        return mlir::success();
+      }))
+    return failure();
+
+  annotations = ArrayAttr::get(p.getContext(), parsed);
+  return success();
+}
+
+void KGEN::printStructDefField(AsmPrinter &p, StringAttr name,
+                               TypedAttr typeValue, ArrayAttr annotations) {
+  printParamName(p, name);
+  p << ": ";
+  printTypeParamValue(p, typeValue);
+  if (!annotations.empty()) {
+    p << "[";
+    llvm::interleaveComma(annotations, p, [&](Attribute a) {
+      p.printAttribute(cast<AnnotationAttr>(a));
+    });
+    p << "]";
+  }
+}
+
 ParseResult
 KGEN::parseStructDefFields(AsmParser &p,
                            SmallVector<StructDefFieldAttr> &fields) {
@@ -1877,10 +1910,11 @@ KGEN::parseStructDefFields(AsmParser &p,
   return p.parseCommaSeparatedList([&]() {
     StringAttr name;
     TypedAttr typeValue;
-    if (parseParamName(p, name) || p.parseColon() ||
-        parseTypeParamValue(p, typeValue))
+    ArrayAttr annotations;
+    if (parseStructDefField(p, name, typeValue, annotations))
       return failure();
-    fields.push_back(StructDefFieldAttr::get(ctx, name, typeValue));
+    fields.push_back(
+        StructDefFieldAttr::get(ctx, name, typeValue, annotations));
     return mlir::success();
   });
 }
@@ -1888,9 +1922,8 @@ KGEN::parseStructDefFields(AsmParser &p,
 void KGEN::printStructDefFields(AsmPrinter &p,
                                 ArrayRef<StructDefFieldAttr> fields) {
   llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
-    printParamName(p, field.getName());
-    p << ": ";
-    printTypeParamValue(p, field.getTypeValue());
+    printStructDefField(p, field.getName(), field.getTypeValue(),
+                        field.getAnnotations());
   });
 }
 

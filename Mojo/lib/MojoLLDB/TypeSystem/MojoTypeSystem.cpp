@@ -1216,7 +1216,7 @@ MojoTypeSystem::addFieldToStruct(MojoASTDeclRef structDecl, StringRef fieldName,
       builder, getSharedState().translateLocation(structDecl->getLoc()), name,
       mlir::Type::getFromOpaquePointer(type), LIT::DocStringAttr(),
       /*isDocHidden=*/false, /*allowLegacyAnyOrigin=*/false,
-      /*annotations=*/KGEN::ParameterExprArrayAttr());
+      /*annotations=*/ArrayAttr());
   auto fieldDecl = MojoASTDeclRef(&getSharedState().declResolver->addDecl(
       newField, structDecl->getLoc(), name, &*structDecl, {}, {}, -1));
   impl->dataLayoutContext->invalidateCache(structDecl.getType());

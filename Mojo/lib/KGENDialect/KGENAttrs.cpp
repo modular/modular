@@ -1014,63 +1014,32 @@ bool StructFieldTypesAttr::isConstant() const { return false; }
 bool StructFieldNamesAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
-// StructAnnotationTypesAttr
+// Annotation-related attrs.
 //===----------------------------------------------------------------------===//
 
-bool StructAnnotationTypesAttr::isConstant() const { return false; }
-
-//===----------------------------------------------------------------------===//
-// StructAnnotationAttr
-//===----------------------------------------------------------------------===//
-
-bool StructAnnotationAttr::isConstant() const { return false; }
-
-/// An annotation's type is the matching element of the struct's annotation
-/// type list. The builder stores the result so that rebinding the attribute
-/// reduces this expression alongside every other type; see the attribute's
-/// description in `KGENAttrs.td`.
-Type StructAnnotationAttr::deriveType(TypedAttr typeValue, TypedAttr fieldIndex,
-                                      TypedAttr index,
-                                      ParamListType annotationListType) {
-  auto types = StructAnnotationTypesAttr::get(typeValue.getContext(), typeValue,
-                                              fieldIndex, annotationListType);
-  return ParamType::get(ParamListGetAttr::get(types, index));
+LogicalResult
+AnnotationAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr value, TypedAttr typeValue) {
+  if (!isEqualCanon(value.getType(), ParamType::get(typeValue)))
+    return emitError() << "annotation value has type " << value.getType()
+                       << " but its type value describes "
+                       << ParamType::get(typeValue);
+  return success();
 }
 
-Attribute StructAnnotationAttr::parse(AsmParser &p, Type type) {
-  TypedAttr typeValue, fieldIndex, index;
-  ParamListType annotationListType;
-  if (p.parseLess() || parseTypeParamValue(p, typeValue) || p.parseComma() ||
-      parseColonTypeParamValue(p, fieldIndex) || p.parseComma() ||
-      parseColonTypeParamValue(p, index) || p.parseComma() ||
-      p.parseCustomTypeWithFallback(annotationListType) || p.parseGreater())
-    return {};
-
-  // The type is never spelled, so an explicit one would have to agree with
-  // what the operands derive; reject it rather than store a second answer.
-  Type derived = deriveType(typeValue, fieldIndex, index, annotationListType);
-  if (type && type != derived) {
-    p.emitError(p.getNameLoc())
-        << "struct_annotation type must be derived from its operands, "
-           "expected: "
-        << derived << ", got: " << type;
-    return {};
-  }
-  return StructAnnotationAttr::get(typeValue, fieldIndex, index,
-                                   annotationListType);
+Type GetNumAnnotationsAttr::getType() const {
+  return SIMDType::get(getContext(), 1, KGENDType(KGENDType::index));
 }
 
-void StructAnnotationAttr::print(AsmPrinter &p) const {
-  p << "<";
-  printTypeParamValue(p, getTypeValue());
-  p << ", ";
-  printColonTypeParamValue(p, getFieldIndex());
-  p << ", ";
-  printColonTypeParamValue(p, getIndex());
-  p << ", ";
-  p.printStrippedAttrOrType(getAnnotationListType());
-  p << ">";
+Type GetAnnotationValueAttr::getType() const {
+  return ParamType::get(GetAnnotationTypeAttr::get(
+      getContext(), getMetaType(), getStructTypeValue(), getIndex(),
+      getFieldIndex()));
 }
+
+bool GetNumAnnotationsAttr::isConstant() const { return false; }
+bool GetAnnotationTypeAttr::isConstant() const { return false; }
+bool GetAnnotationValueAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
 // StructFieldIndexByNameAttr

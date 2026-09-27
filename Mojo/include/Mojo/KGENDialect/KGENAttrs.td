@@ -1314,106 +1314,147 @@ def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
 }
 
 //===----------------------------------------------------------------------===//
-// StructAnnotationTypesAttr
+// AnnotationAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_StructAnnotationTypesAttr : KGEN_ExprAttr<"StructAnnotationTypes",
-    "struct_annotation_types",
-    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
-                                 ["evaluateWithContext"]>]> {
-  let summary = "Get the types of a struct's `@__annotation` values.";
+def KGEN_AnnotationAttr : KGENAttr<"Annotation", "annotation"> {
+  let summary = "A `@__annotation` value paired with its type.";
   let description = [{
-    The `#kgen.struct_annotation_types` attribute returns the types of the
-    values attached to a struct with `@__annotation` as a param_list. A
-    negative `fieldIndex` selects the struct's own annotations, otherwise it
-    selects the annotations on the field at that index.
+    The `#kgen.annotation` attribute records one value attached with
+    `@__annotation`, together with the type value of that value.
+
+    The type value is kept alongside the value so that the nominal type
+    information will be preserved.
 
     Example:
 
     ```mlir
-    #kgen.struct_annotation_types<#MyStruct, -1> : !kgen.param_list<!kgen.type>
+    #kgen.annotation<#kgen<simd 1> : !kgen.scalar<index>, #IntTypeValue>
     ```
   }];
 
   let parameters = (ins
-    "TypedAttr":$typeValue,
-    "TypedAttr":$fieldIndex,
-    AttributeSelfTypeParameter<"", "ParamListType">:$type
+    "TypedAttr":$value,
+    "TypedAttr":$typeValue
   );
 
-  let assemblyFormat = [{
-    `<` custom<TypeParamValue>($typeValue) `,`
-    custom<ColonTypeParamValue>($fieldIndex) `>`
-  }];
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value, "TypedAttr":$typeValue), [{
+      return $_get(value.getContext(), value, typeValue);
+    }]>
+  ];
+
+  let assemblyFormat = "`<` $value `,` custom<TypeParamValue>($typeValue) `>`";
+  let genVerifyDecl = 1;
 }
 
-//===----------------------------------------------------------------------===//
-// StructAnnotationAttr
-//===----------------------------------------------------------------------===//
+def KGEN_GetNumAnnotations : KGEN_ExprAttr<"GetNumAnnotations",
+    "get_num_annotations",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Get the number of a struct's `@__annotation` values.";
+  let description = [{
+    The `#kgen.get_num_annotations` attribute evaluates to the number of
+    `@__annotation` to the struct/struct fields resolved by `structTypeValue`.
 
-def KGEN_StructAnnotationAttr : KGEN_ExprAttr<"StructAnnotation",
-    "struct_annotation",
+
+    Example:
+
+    ```mlir
+    // Annotations on the struct itself.
+    #kgen.get_num_annotations<#MyStruct>
+    // Annotations on field 0.
+    #kgen.get_num_annotations<#MyStruct, #kgen<simd 0> : !kgen.scalar<index>>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$structTypeValue,
+    OptionalParameter<"TypedAttr">:$fieldIndex
+  );
+
+  let extraClassDeclaration = [{
+    // Always a scalar<int> type.
+    Type getType() const;
+  }];
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($structTypeValue) (`,` $fieldIndex^)? `>`";
+}
+
+def KGEN_GetAnnotationValue : KGEN_ExprAttr<"GetAnnotationValue",
+    "get_annotation_value",
     [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                  ["evaluateWithContext"]>]> {
   let summary = "Get one of a struct's `@__annotation` values.";
   let description = [{
-    The `#kgen.struct_annotation` attribute returns the value at `index` of
-    the list attached to a struct with `@__annotation`. A negative
-    `fieldIndex` selects the struct's own annotations, otherwise it selects
-    the annotations on the field at that index.
+    The `#kgen.get_annotation_value` attribute evaluates to the value at
+    `index` among the values attached with `@__annotation` to the struct
+    named by `structTypeValue`. Without `fieldIndex` it reads the struct's
+    own annotations; with it, it reads the annotations on the field at that
+    index.
 
-    The attribute's own type is the `index`th element of
-    `#kgen.struct_annotation_types` for the same struct and field. It is
-    computed from the other operands rather than spelled, so it does not
-    appear in the syntax: only `annotationListType` has to be written, because
-    the element trait it carries names Mojo traits, which KGEN cannot look up
-    itself. Writing it this way lets the whole reader be expressed as an
-    `__mlir_attr` in the standard library, with no dedicated parser node.
-
-    The type is *stored* rather than recomputed on demand, so that rebinding
-    this attribute reduces the type expression through the same evaluator pass
-    as every other type. Deriving it in `getType()` instead rebuilt it from
-    unreduced operands on every call, which left it a fold behind the
-    generator type computed from the same bindings -- a disagreement
-    `BindParamsAttr::get` treats as malformed IR.
+    The attribute's type is dependent on `#kgen.get_annotation_type<...>`
 
     Example:
 
     ```mlir
-    #kgen.struct_annotation<#MyStruct, -1, 0, !kgen.param_list<!AnyType>>
+    // Annotation 0 on the struct itself.
+    #kgen.get_annotation_value<#MyStruct, !AnyType,
+                               #kgen<simd 0> : !kgen.scalar<index>>
+    // Annotation 1 on field 2.
+    #kgen.get_annotation_value<#MyStruct, !AnyType,
+                               #kgen<simd 1> : !kgen.scalar<index>,
+                               #kgen<simd 2> : !kgen.scalar<index>>
     ```
   }];
 
   let parameters = (ins
-    "TypedAttr":$typeValue,
-    "TypedAttr":$fieldIndex,
+    "TypedAttr":$structTypeValue,
+    // The meta type of the attribute, `AnyType` during parsing time, lowered to
+    // !kgen.type after lower-lit, we don't have a good way to create a trait
+    // type in KGEN dialect due to build dependencies, so this has to be passed
+    // from elsewhere during the construction.
+    "Type": $metaType,
     "TypedAttr":$index,
-    "ParamListType":$annotationListType,
-    AttributeSelfTypeParameter<"", "Type">:$type
+    OptionalParameter<"TypedAttr">:$fieldIndex
   );
 
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
-        "TypedAttr":$fieldIndex, "TypedAttr":$index,
-        "ParamListType":$annotationListType), [{
-      return $_get(typeValue.getContext(), typeValue, fieldIndex, index,
-                   annotationListType,
-                   deriveType(typeValue, fieldIndex, index,
-                              annotationListType));
-    }]>
-  ];
-
-  let hasCustomAssemblyFormat = 1;
-
   let extraClassDeclaration = [{
-    /// Compute the type an annotation read has, given its operands: the
-    /// `index`th element of the struct's annotation type list.
-    ///
-    /// Defined out-of-line in `KGENAttrs.cpp` because it builds a
-    /// `ParamType`, which is generated in a separate header.
-    static Type deriveType(TypedAttr typeValue, TypedAttr fieldIndex,
-                           TypedAttr index, ParamListType annotationListType);
+    Type getType() const;
   }];
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($structTypeValue) `,` $metaType `,` $index (`,` $fieldIndex^)? `>`";
+}
+
+def KGEN_GetAnnotationType : KGEN_ExprAttr<"GetAnnotationType",
+    "get_annotation_type",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Get the type of one of a struct's `@__annotation` values.";
+  let description = [{
+    The `#kgen.get_annotation_type` attribute evaluates to the type value of
+    the annotation that `#kgen.get_annotation_value` with the same
+    `structTypeValue`, `index`, and `fieldIndex` reads.
+
+    The attribute's own type is the metatype of the result: AnyType at parsing
+    time, and then lowered to `kgen.type` after lower-lit
+
+    Example:
+
+    ```mlir
+    #kgen.get_annotation_type<#MyStruct, #kgen<simd 0> : !kgen.scalar<index>>
+        : !AnyType
+    ```
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$structTypeValue,
+    "TypedAttr":$index,
+    OptionalParameter<"TypedAttr">:$fieldIndex
+  );
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($structTypeValue) `,` $index (`,` $fieldIndex^)? `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -2151,22 +2192,31 @@ def KGEN_StructDefFieldAttr : KGENAttr<"StructDefField", "struct_def.field"> {
   let summary = "A single source struct field declaration.";
   let description = [{
     The `#kgen.struct_def.field` attribute represents a field declared in a
-    mojo struct. It keeps track of the name and type of the field.
+    mojo struct. It keeps track of the name and type of the field, and of the
+    `#kgen.annotation`s attached to it with `@__annotation`, if any.
 
     Example:
 
     ```mlir
-    #kgen.struct_def.field<"num" : Int>
+    #kgen.struct_def.field<num: index>
+    #kgen.struct_def.field<num: index[#kgen.annotation<...>]>
     ```
   }];
 
-  let parameters = (ins "StringAttr":$name, "TypedAttr":$typeValue);
-  let assemblyFormat = " `<` $name `:` $typeValue `>` ";
+  let parameters = (ins "StringAttr":$name,
+                        "TypedAttr":$typeValue,
+                        "ArrayAttr":$annotations);
+  let assemblyFormat = [{
+    `<` custom<StructDefField>($name, $typeValue, $annotations) `>`
+  }];
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "TypedAttr":$typeValue), [{
-      return get(name.getContext(), name, typeValue);
+                                        "TypedAttr":$typeValue,
+                                        CArg<"ArrayAttr", "{}">:$annotations), [{
+      if (!annotations)
+        annotations = ArrayAttr::get(name.getContext(), {});
+      return get(name.getContext(), name, typeValue, annotations);
     }]>,
   ];
 }

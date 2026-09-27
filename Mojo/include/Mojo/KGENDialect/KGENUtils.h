@@ -134,6 +134,13 @@ ParseResult parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly);
 void printMinAlignment(AsmPrinter &p, TypedAttr minAlignment);
 ParseResult parseMinAlignment(AsmParser &p, TypedAttr &minAlignment);
 
+/// Parser & printer for a single simplified StructDefFieldAttr, spelled
+/// `name: type` with an optional trailing `[annotations...]`.
+ParseResult parseStructDefField(AsmParser &p, StringAttr &name,
+                                TypedAttr &typeValue, ArrayAttr &annotations);
+void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
+                         ArrayAttr annotations);
+
 /// Parser & printer for array of simplified StructDefFieldAttrs.
 ParseResult parseStructDefFields(AsmParser &p,
                                  SmallVector<StructDefFieldAttr> &fields);

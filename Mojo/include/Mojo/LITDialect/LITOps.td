@@ -489,9 +489,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // is register-passable for a given instantiation.
     OptionalAttr<KGEN_ConstraintAttr>:$registerPassableConstraint,
     // Comptime values attached with `@__annotation(...)`, in source order.
-    // Read back through `#kgen.struct_annotation`, which the reflection
+    // Read back through `#kgen.get_annotation_value`, which the reflection
     // library wraps as `reflect[T].annotation[index]`.
-    OptionalAttr<KGEN_ParameterExprArrayAttr>:$annotations
+    DefaultValuedAttr<ArrayAttr, "{}">:$annotations
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -527,7 +527,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     StringAttr getDeclName() { return getSymNameAttr(); }
 
     /// Return the `@__annotation` values selected by `fieldIndex`.
-    KGEN::ParameterExprArrayAttr getSelectedAnnotations(int64_t fieldIndex);
+    ArrayAttr getSelectedAnnotations(int64_t fieldIndex);
 
     /// Get a bound reference to the struct type.
     StructType bindReference(ArrayRef<TypedAttr> paramValues = {});
@@ -574,9 +574,9 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     // Set if the field allows legacy AnyOrigin usage.
     UnitAttr:$allowLegacyAnyOrigin,
     // Comptime values attached with `@__annotation(...)`, in source order.
-    // Read back through `#kgen.struct_annotation`, which the reflection
+    // Read back through `#kgen.get_annotation_value`, which the reflection
     // library wraps as `reflect[T].field_annotation[field, index]`.
-    OptionalAttr<KGEN_ParameterExprArrayAttr>:$annotations
+    DefaultValuedAttr<ArrayAttr, "{}">:$annotations
   );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 

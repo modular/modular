@@ -23,22 +23,23 @@
 #
 # A literal is stored in its materialized form, so `1` is an `Int` struct value
 # rather than a bare `scalar<index>`. That is what makes `type_of` report `Int`
-# on the way back out. Each entry's trailing type is what pins that down: a
-# `StringLiteral` still appears inside the third entry, as the argument the
-# `String` initializer converts away, so the payload text alone does not
-# distinguish a materialized value from an unmaterialized one.
+# on the way back out. Each `#kgen.annotation` pairs the value with its type,
+# upcast to `AnyType`, and that type is what pins this down: a `StringLiteral`
+# still appears inside the third entry, as the argument the `String`
+# initializer converts away, so the payload text alone does not distinguish a
+# materialized value from an unmaterialized one.
 #
 # CHECK:      lit.struct.decl @Target
-# CHECK-SAME:   annotations = #kgen<exprs[
-# CHECK-SAME:     _mlir_value: scalar<index> = 1}> : !Int
-# CHECK-SAME:     _mlir_value: scalar<index> = 2}> : !Int
+# CHECK-SAME:   annotations = [#kgen.annotation<
+# CHECK-SAME:     _mlir_value: scalar<index> = 1}> : !Int, :!AnyType !Int>
+# CHECK-SAME:     _mlir_value: scalar<index> = 2}> : !Int, :!AnyType !Int>
 # CHECK-SAME:     @String::@"__init__
 # CHECK-SAME:     <:string "tag">
-# CHECK-SAME:     : !String]
+# CHECK-SAME:     : !String, :!AnyType !String>]
 @__annotation(1)
 @__annotation(2, "tag")
 struct Target:
-    # CHECK: lit.struct.field first {annotations = #kgen<exprs[
+    # CHECK: lit.struct.field first {annotations = [#kgen.annotation<
     # CHECK-SAME: _mlir_value: scalar<index> = 3}> : !Int
     @__annotation(3)
     var first: Int
@@ -53,12 +54,12 @@ struct Target:
 # name the struct's parameters and stays unevaluated until the struct is bound.
 #
 # CHECK:      lit.struct.decl @Generic
-# CHECK-SAME:   annotations = #kgen<exprs[
+# CHECK-SAME:   annotations = [#kgen.annotation<
 # CHECK-SAME:     #kgen.param.decl.ref<"N">
 #
 # A field's annotations are emitted in the struct's scope too.
 #
-# CHECK:      lit.struct.field value {annotations = #kgen<exprs[
+# CHECK:      lit.struct.field value {annotations = [#kgen.annotation<
 # CHECK-SAME:     #kgen.param.decl.ref<"N">
 @__annotation(Self.N)
 struct Generic[N: Int]:
@@ -77,7 +78,7 @@ trait Tagged:
 
 
 # CHECK:      lit.struct.decl @UsesAliases
-# CHECK:      lit.struct.field value {annotations = #kgen<exprs[
+# CHECK:      lit.struct.field value {annotations = [#kgen.annotation<
 # CHECK-SAME:     _mlir_value: scalar<index> = 7}> : !Int
 # CHECK-SAME:     _mlir_value: scalar<index> = 5}> : !Int
 struct UsesAliases:
@@ -88,7 +89,7 @@ struct UsesAliases:
 
 
 # CHECK:      lit.struct.decl @ForwardAlias
-# CHECK:      lit.struct.field value {annotations = #kgen<exprs[
+# CHECK:      lit.struct.field value {annotations = [#kgen.annotation<
 # CHECK-SAME:     _mlir_value: scalar<index> = 9}> : !Int
 struct ForwardAlias:
     @__annotation(Self.later_tag)
@@ -98,7 +99,7 @@ struct ForwardAlias:
 
 
 # CHECK:      lit.struct.decl @TraitBoundValue
-# CHECK:      lit.struct.field value {annotations = #kgen<exprs[
+# CHECK:      lit.struct.field value {annotations = [#kgen.annotation<
 # CHECK-SAME:     #kgen.param.decl.ref<"v">
 struct TraitBoundValue[T: Copyable & Deinitable, v: T]:
     @__annotation(Self.v)
@@ -106,7 +107,7 @@ struct TraitBoundValue[T: Copyable & Deinitable, v: T]:
 
 
 # CHECK:      lit.struct.decl @TraitAlias
-# CHECK:      lit.struct.field value {annotations = #kgen<exprs[
+# CHECK:      lit.struct.field value {annotations = [#kgen.annotation<
 # CHECK-SAME:     #kgen.get_witness<{{.*}}@Tagged, "tag">
 struct TraitAlias[T: Tagged]:
     @__annotation(Self.T.tag)

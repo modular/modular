@@ -125,24 +125,10 @@ def StructDeclInterface : OpInterface<"StructDeclInterface"> {
       "ArrayRef<ParamDeclAttr>", "getInputParams"
     >,
     InterfaceMethod<[{
-      Get the comptime values attached with `@__annotation`. A negative
-      `fieldIndex` selects the struct's own annotations, otherwise those on
-      the field at that index. Values are written in terms of the struct's own
-      parameters, so callers rebind them against the queried instantiation.
-    }], "void", "getAnnotationValues",
-      (ins "SmallVectorImpl<TypedAttr> &":$values, "int64_t":$fieldIndex),
-      [{}], [{ return; }]
-    >,
-    InterfaceMethod<[{
-      Get the source-level type of each `@__annotation` value as a type value,
-      selected the same way as `getAnnotationValues`. This is not simply the
-      type of each value: lowering flattens a value to its storage form, so
-      an `Int` annotation would read back as a bare `scalar<index>`, while
-      reflection must report the nominal type the source wrote.
-    }], "void", "getAnnotationTypes",
-      (ins "SmallVectorImpl<TypedAttr> &":$types, "Type":$metaType,
-           "int64_t":$fieldIndex),
-      [{}], [{ return; }]
+      Get the array of annotations, when `fieldIndex` is nullopt, return the
+      annotation on struct, else, returns the annotation of the specified field.
+    }], "FailureOr<ArrayAttr>", "getAnnotations",
+      (ins "std::optional<int>":$fieldIndex)
     >,
     InterfaceMethod< [{
       Lookup a conformance by trait symbol, when returning non-null, the type

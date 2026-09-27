@@ -343,9 +343,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [SymbolName, SymbolVisibility, Symbol, SymbolTable, DeclInterface, SingleBlock,
     NoTerminator, KGEN_GeneratorOpInterface,
     DeclareOpInterfaceMethods<ExportInterface>,
-    DeclareOpInterfaceMethods<StructDeclInterface,
-                              ["getAnnotationValues",
-                               "getAnnotationTypes"]>]> {
+    DeclareOpInterfaceMethods<StructDeclInterface>]> {
   let summary = "Struct generator definition.";
   let description = [{
     The `kgen.struct.generator` operation defines a type-value generator. It is
@@ -367,21 +365,8 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [SymbolName, SymbolVisib
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        TypeAttr:$valueDomainType,
                        TypeAttr:$metaType,
-                       // `@__annotation` values carried over from
-                       // `lit.struct.decl`, lowered along with the rest of
-                       // the generator.
-                       OptionalAttr<KGEN_ParameterExprArrayAttr>:$annotations,
-                       // The type of each annotation value, held as a type
-                       // value so it lowers the way struct field types do and
-                       // keeps its nominal identity. Lowering the values
-                       // themselves flattens them to their storage form -- an
-                       // `Int` becomes a bare `scalar<index>` -- which loses
-                       // the type reflection reports and witness lookup needs.
-                       OptionalAttr<KGEN_ParameterExprArrayAttr>:$annotationTypes,
-                       // The same pair per field, each parallel with the
-                       // struct's fields.
-                       OptionalAttr<ArrayAttr>:$fieldAnnotations,
-                       OptionalAttr<ArrayAttr>:$fieldAnnotationTypes);
+                       // `@__annotation` on the struct decl.
+                       OptionalAttr<ArrayAttr>:$annotations);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{

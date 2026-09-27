@@ -1,43 +1,37 @@
 // RUN: kgen-opt -verify-parameters -lower-lit -split-input-file %s | FileCheck %s
 
-// `@__annotation` values ride along with the struct as it lowers, and each
-// value's type is captured beside it. Lowering flattens a value to its storage
-// form -- a single-field register-passable struct becomes its element type --
-// so the type has to be recorded as a type value while it still names the
-// nominal type.
+// `@__annotation` values ride along with the struct as it lowers. Each one is a
+// `#kgen.annotation` that pairs the value with its type value, and both halves
+// are lowered.
 
 // CHECK-LABEL: kgen.struct.generator @StructLevel
-// CHECK-SAME:  annotationTypes = #kgen<exprs[#kgen.type<index> : !kgen.type, #kgen.type<string> : !kgen.type]>
-// CHECK-SAME:  annotations = #kgen<exprs[7 : index, "tag" : !kgen.string]>
+// CHECK-SAME:  annotations = [#kgen.annotation<7 : index, index>, #kgen.annotation<"tag" : !kgen.string, string>]
 lit.struct.decl @StructLevel register_passable attributes {
-  annotations = #kgen<exprs[7 : index, "tag" : !kgen.string]>
+  annotations = [#kgen.annotation<7 : index, index>, #kgen.annotation<"tag" : !kgen.string, !kgen.string>]
 } {
   lit.struct.field value : index
 }
 
 // -----
 
-// A struct with no annotations gets no annotation attributes at all, rather
-// than empty ones.
+// A struct with no annotations gets an empty list.
 
 // CHECK-LABEL: kgen.struct.generator @Plain
-// CHECK-NOT: annotations
-// CHECK-NOT: annotationTypes
+// CHECK-SAME:  (value: index)>
+// CHECK-SAME:  annotations = []
 lit.struct.decl @Plain register_passable {
   lit.struct.field value : index
 }
 
 // -----
 
-// Field annotations are parallel with the fields, so an unannotated field
-// holds an empty list rather than nothing: a null element would make the
-// attribute walker and its replacement disagree on the element count.
+// Field annotations are carried on the field in the struct instance type. An
+// unannotated field prints no annotation list.
 
 // CHECK-LABEL: kgen.struct.generator @FieldLevel
-// CHECK-SAME:  fieldAnnotationTypes = [#kgen<exprs[#kgen.type<index> : !kgen.type]>, #kgen<exprs[]>]
-// CHECK-SAME:  fieldAnnotations = [#kgen<exprs[1 : index]>, #kgen<exprs[]>]
+// CHECK-SAME:  (first: index[#kgen.annotation<1 : index, index>], second: i32)
 lit.struct.decl @FieldLevel {
-  lit.struct.field first {annotations = #kgen<exprs[1 : index]>} : index
+  lit.struct.field first {annotations = [#kgen.annotation<1 : index, index>]} : index
   lit.struct.field second : i32
 }
 
@@ -47,9 +41,9 @@ lit.struct.decl @FieldLevel {
 // parameters. They lower unevaluated, to be rebound per instantiation.
 
 // CHECK-LABEL: kgen.struct.generator @Parametric
-// CHECK-SAME:  annotations = #kgen<exprs[#kgen.param.decl.ref<"N"> : index]>
-lit.struct.decl @Parametric<N, T: type> register_passable attributes {
-  annotations = #kgen<exprs[#kgen.param.decl.ref<"N"> : index]>
+// CHECK-SAME:  annotations = [#kgen.annotation<#kgen.param.decl.ref<"N"> : index, index>]
+lit.struct.decl @Parametric<N: index, T: type> register_passable attributes {
+  annotations = [#kgen.annotation<#kgen.param.decl.ref<"N"> : index, index>]
 } {
   lit.struct.field value : index
 }

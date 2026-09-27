@@ -337,7 +337,8 @@ def ExportKindAttr : DialectAttribute<(attr
 
 def StructDefFieldAttr : DialectAttribute<(attr
   StringAttr:$name,
-  TypedAttr:$typeValue
+  TypedAttr:$typeValue,
+  ConcreteAttribute<"ArrayAttr">:$annotations
 )>;
 
 def StructAttr : DialectAttribute<(attr
@@ -510,18 +511,28 @@ def StructFieldNamesAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type
 )>;
 
-def StructAnnotationTypesAttr : DialectAttribute<(attr
-  TypedAttr:$typeValue,
-  TypedAttr:$fieldIndex,
-  ConcreteType<"ParamListType">:$type
+def AnnotationAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  TypedAttr:$typeValue
 )>;
 
-def StructAnnotationAttr : DialectAttribute<(attr
-  TypedAttr:$typeValue,
-  TypedAttr:$fieldIndex,
+def GetNumAnnotationsAttr : DialectAttribute<(attr
+  TypedAttr:$structTypeValue,
+  OptionalAttribute<"TypedAttr">:$fieldIndex
+)>;
+
+def GetAnnotationValueAttr : DialectAttribute<(attr
+  TypedAttr:$structTypeValue,
+  Type:$metaType,
   TypedAttr:$index,
-  ConcreteType<"ParamListType">:$annotationListType,
-  Type:$type
+  OptionalAttribute<"TypedAttr">:$fieldIndex
+)>;
+
+def GetAnnotationTypeAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$structTypeValue,
+  TypedAttr:$index,
+  OptionalAttribute<"TypedAttr">:$fieldIndex
 )>;
 
 def StructFieldIndexByNameAttr : DialectAttribute<(attr
@@ -680,8 +691,10 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     FnMetadataAttr,
     TraitSymbolAttr,
     TraitSymbolArrayAttr,
-    StructAnnotationTypesAttr,
-    StructAnnotationAttr
+    AnnotationAttr,
+    GetNumAnnotationsAttr,
+    GetAnnotationValueAttr,
+    GetAnnotationTypeAttr
   ];
 }
 

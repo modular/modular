@@ -521,9 +521,10 @@ void Decorators::applySignatureDecorators(
 // Struct decorators
 //
 // `@__annotation(value, ...)` attaches comptime values to a struct or one of
-// its fields. The values are evaluated here and stored verbatim in the decl's
-// `annotations` attribute; `#kgen.struct_annotation` reads one back by index,
-// which the reflection library wraps as `reflect[T].annotation[index]`.
+// its fields. The values are evaluated here and stored, each paired with its
+// type as a `#kgen.annotation`, in the decl's `annotations` attribute;
+// `#kgen.get_annotation_value` reads one back by index, which the reflection
+// library wraps as `reflect[T].annotation[index]`.
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -601,11 +602,7 @@ void StructDecorators::applyAnnotationDecorator(const CallNode *callNode,
   }
 
   IREmitter emitter(structDecl, EC_Decorator);
-  // Owned: getAssumptionsFromScope returns by value, and the same scope backs
-  // every operand.
-  SmallVector<ConstraintAttr> assumptions =
-      ASTDecl::getAssumptionsFromScope(&structDecl);
-  SmallVector<TypedAttr> values;
+  SmallVector<Attribute> annotations;
   for (const Operand &operand : callNode->operands) {
     if (!operand.isPositional()) {
       // `*args` and `**kwargs` are not keyword arguments, and expanding one
@@ -621,42 +618,31 @@ void StructDecorators::applyAnnotationDecorator(const CallNode *callNode,
     if (!value)
       return; // Error already emitted.
 
-    // Store the materialized form, so an annotation written as `9` or `"x"`
-    // reads back as an `Int` or `String` rather than as the literal type that
-    // only exists to be converted away. An emission with no contextual type
-    // stops at the literal type, so the target has to be asked for.
+    // Store the materialized form.
     if (ASTType target = value.getType().getNonmaterializableTarget(shared)) {
       value = emitter.emitExprPValue(operand.expr, EC_Decorator, target);
       if (!value)
         return; // Error already emitted.
     }
 
-    // Every annotation value is `Movable & Deinitable`, so a reader can move
-    // one out and destroy it. A type value satisfies neither -- its metatype
-    // is not a value at all.
-    if (value.getIfTypeValue()) {
+    TypedAttr annotationValue = getCanonicalAttr(value.get());
+    TraitType anyTypeTrait = emitter.shared.lookupBuiltinTraitType(
+        "AnyType", operand.expr->getLoc());
+    // Upcast to AnyType, this is shared metatype for all annotation attr.
+    FailureOr<PValue> annotationType = emitter.emitTypeValueUpCastToTrait(
+        {PValue(annotationValue.getType()), operand.expr}, anyTypeTrait);
+    if (failed(annotationType)) {
       emitError(operand.expr->getLoc(),
                 "@__annotation value must be a value, not a type")
           << operand.expr->getRange();
       return;
     }
-    ASTType valueType = value.getType();
-    for (StringRef traitName : {"Movable", "Deinitable"}) {
-      if (valueType.provenConformsToBuiltinTrait(
-              traitName, operand.expr->getLoc(), shared, assumptions))
-        continue;
-      emitError(operand.expr->getLoc())
-          << "@__annotation value of type " << valueType
-          << " does not conform to '" << traitName << "'"
-          << operand.expr->getRange();
-      return;
-    }
-    values.push_back(value.get());
+    annotations.push_back(
+        AnnotationAttr::get(annotationValue, *annotationType));
   }
 
-  if (ParameterExprArrayAttr existing = op.getAnnotationsAttr())
-    llvm::append_range(values, existing.getValue());
-  op.setAnnotationsAttr(ParameterExprArrayAttr::get(op.getContext(), values));
+  llvm::append_range(annotations, op.getAnnotations());
+  op.setAnnotationsAttr(ArrayAttr::get(op.getContext(), annotations));
 }
 
 LogicalResult StructDecorators::processFieldDecorator(ExprNode *decorator,
