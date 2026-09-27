@@ -164,9 +164,12 @@ struct PatternEmitState {
                           CValue value);
 
   /// AND together Equal/EnumTag tests in `commands` into one compile-time
-  /// bool attribute. Diagnoses Bind/Or (not implemented for comptime match).
+  /// bool attribute. Or alternatives are OR'd with `getLogicalOr` (same as
+  /// comptime `or`). Bind commands append to `bindings` (like `emitCommands`)
+  /// without contributing to the condition.
   FailureOr<TypedAttr>
-  emitComptimeCondition(ArrayRef<const PatternCommand *> commands);
+  emitComptimeCondition(ArrayRef<const PatternCommand *> commands,
+                        SmallVectorImpl<PatternBoundName> &bindings);
 };
 
 /// Bump storage, path uniquing, and binding-mode state for one `match`.

@@ -840,7 +840,7 @@ def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
 
 
 # ===----------------------------------------------------------------------=== #
-# comptime __match
+# comptime match
 # ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.fn @"comptime_match_wildcard
@@ -889,4 +889,101 @@ def comptime_match_bool[flag: Bool]():
     case True:
         case_callee[0]()
     case False:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_or
+def comptime_match_or[x: Int]():
+    # Or-pattern lowers to cond(eq0, eq0, eq1) — same as comptime `or`.
+    # CHECK:      hlcf.comptime.if cond({{.*}}identical{{.*}}x{{.*}}0{{.*}}, {{.*}}identical{{.*}}x{{.*}}0{{.*}}, {{.*}}identical{{.*}}x{{.*}}1{{.*}}) {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      }
+    comptime __match x:
+    case 0 | 1:
+        case_callee[0]()
+    case _:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_or_binding
+def comptime_match_or_binding[x: Tuple[Int, Int]]():
+    # Binding values are Cond-selected with the same cond as the or:
+    #   or(c0, c1) = cond(c0, c0, c1)
+    #   y          = cond(c0, y0, y1)  (different paths → Cond does not fold)
+    # CHECK:      hlcf.comptime.if cond({{.*}}identical{{.*}}0{{.*}}, {{.*}}identical{{.*}}0{{.*}}, {{.*}}identical{{.*}}1{{.*}}) {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}cond(
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      }
+    comptime __match x:
+    case (0, y) | (y, 1):
+        case_callee[y]()
+    case _:
+        case_callee[0]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_binding
+def comptime_match_binding[x: Int]():
+    # Bare binding is irrefutable: no comptime.if; `y` is a PValue alias of `x`.
+    # CHECK-NOT: hlcf.comptime.if
+    # CHECK:     lit.call {{.*}}@"case_callee{{.*}}<:!Int x>
+    comptime __match x:
+    case y:
+        case_callee[y]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_binding_guard
+def comptime_match_binding_guard[x: Int]():
+    # Binding is visible to the guard; bind-only pattern + guard → just guard.
+    # CHECK:      hlcf.comptime.if {{.*}}__gt__{{.*}}x{{.*}}0{{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<:!Int x>
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      }
+    comptime __match x:
+    case y if y > 0:
+        case_callee[y]()
+    case _:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_literal_guard
+def comptime_match_literal_guard[x: Int, flag: Bool]():
+    # Value test AND guard.
+    # CHECK:      hlcf.comptime.if cond({{.*}}identical{{.*}}x{{.*}}0{{.*}}, {{.*}}flag{{.*}}, {{.*}}identical{{.*}}x{{.*}}0{{.*}}) {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      }
+    comptime __match x:
+    case 0 if flag:
+        case_callee[0]()
+    case _:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_literal_binding
+def comptime_match_literal_binding[x: Int]():
+    # `as` binding after a value test; binding aliases the subject in the body.
+    # CHECK:      hlcf.comptime.if {{.*}}identical{{.*}}x{{.*}}0{{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<:!Int x>
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      }
+    comptime __match x:
+    case 0 as y:
+        case_callee[y]()
+    case _:
         case_callee[1]()

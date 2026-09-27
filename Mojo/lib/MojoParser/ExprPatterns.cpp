@@ -821,50 +821,171 @@ CValue PatternEmitState::emitTestableValue(IREmitter &emitter,
   return emitGetEnumDiscriminant(emitter, subject, command->expr);
 }
 
+/// Emit a comptime `Or` pattern: OR alternative conditions and Cond-select
+/// each binding value with the same condition shape as the or:
+///   or(c0, c1) = cond(c0, c0, c1)
+///   val        = cond(c0, v0, v1)
+/// Appends the merged bindings to `bindings`.
+static FailureOr<TypedAttr>
+emitComptimeOrCondition(PatternEmitState &state, const PatternCommand &cmd,
+                        SmallVectorImpl<PatternBoundName> &bindings) {
+  assert(cmd.kind == PatternCommand::Or && "expected Or command");
+  assert(!cmd.orAlternatives.empty() && "or-pattern needs alternatives");
+
+  struct AltResult {
+    TypedAttr cond;
+    SmallVector<PatternBoundName, 4> bindings;
+  };
+  SmallVector<AltResult, 2> alts;
+  alts.reserve(cmd.orAlternatives.size());
+  for (PatternCommandList alt : cmd.orAlternatives) {
+    SmallVector<PatternBoundName, 4> altBindings;
+    FailureOr<TypedAttr> altCond =
+        state.emitComptimeCondition(alt, altBindings);
+    if (failed(altCond))
+      return failure();
+    alts.push_back({*altCond, std::move(altBindings)});
+  }
+
+  // Agree on names/kinds/types across alternatives (same rules as runtime).
+  SharedState &shared = state.curDeclScope.getShared();
+  SMLoc orLoc = cmd.expr->getLoc();
+  ArrayRef<PatternBoundName> firstBindings = alts.front().bindings;
+  for (const AltResult &alt : llvm::drop_begin(alts)) {
+    llvm::StringMap<const PatternBoundName *> byName;
+    for (const PatternBoundName &bn : alt.bindings)
+      byName[bn.name] = &bn;
+    for (const PatternBoundName &bn : firstBindings) {
+      auto it = byName.find(bn.name);
+      if (it == byName.end()) {
+        shared.emitError(orLoc,
+                         "or-pattern alternatives must bind the same names")
+            << "; '" << bn.name
+            << "' is bound in one alternative but not the other";
+        return failure();
+      }
+      const PatternBoundName &other = *it->second;
+      if (bn.bindingKind != other.bindingKind) {
+        shared.emitError(orLoc, "or-pattern binding '")
+            << bn.name
+            << "' must use the same 'var'/'ref' kind in each alternative";
+        return failure();
+      }
+      if (!bn.value.getRValueType().isEqualCanon(other.value.getRValueType())) {
+        auto diag = shared.emitError(orLoc, "or-pattern binding '")
+                    << bn.name
+                    << "' has incompatible types across alternatives";
+        diag.attachNote(orLoc)
+            << "first alternative has type " << bn.value.getRValueType()
+            << ", this alternative has type " << other.value.getRValueType();
+        return failure();
+      }
+      byName.erase(it);
+    }
+    if (!byName.empty()) {
+      shared.emitError(orLoc,
+                       "or-pattern alternatives must bind the same names")
+          << "; '" << byName.begin()->first()
+          << "' is bound in one alternative but not the other";
+      return failure();
+    }
+  }
+
+  // Left-fold: Cond-select values with the pre-Or condition, then Or.
+  TypedAttr combinedCond = alts.front().cond;
+  SmallVector<PatternBoundName, 4> merged = alts.front().bindings;
+  for (const AltResult &alt : llvm::drop_begin(alts)) {
+    for (PatternBoundName &bn : merged) {
+      const PatternBoundName *other = nullptr;
+      for (const PatternBoundName &obn : alt.bindings) {
+        if (obn.name == bn.name) {
+          other = &obn;
+          break;
+        }
+      }
+      assert(other && "binding agreement checked above");
+      PValue prevPV = bn.value.getIfPValue();
+      PValue nextPV = other->value.getIfPValue();
+      if (!prevPV || !nextPV) {
+        IREmitter emitter(state.curDeclScope, EC_MatchSubject);
+        emitter.emitError(orLoc)
+            << "variable binding '" << bn.name
+            << "' in 'comptime match' must be a compile-time value"
+            << cmd.expr->getRange();
+        return failure();
+      }
+      bn.value =
+          ParamOperatorAttr::get(POC::Cond, {combinedCond, prevPV, nextPV});
+    }
+    combinedCond = ParamOperatorAttr::getLogicalOr(combinedCond, alt.cond);
+  }
+  bindings.append(merged.begin(), merged.end());
+  return combinedCond;
+}
+
+/// AND together Equal/EnumTag tests in `commands` into one compile-time
+/// bool attribute. Or alternatives are OR'd with `getLogicalOr` (same as
+/// comptime `or`). Bind commands append to `bindings` (like `emitCommands`)
+/// without contributing to the condition.
 FailureOr<TypedAttr> PatternEmitState::emitComptimeCondition(
-    ArrayRef<const PatternCommand *> commands) {
+    ArrayRef<const PatternCommand *> commands,
+    SmallVectorImpl<PatternBoundName> &bindings) {
+  // Use a parameter emitter so everything is comptime.
   IREmitter emitter(curDeclScope, EC_MatchSubject);
+
+  // Empty command list is irrefutable (`_`).
+  if (commands.empty())
+    return TypedAttr(SIMDAttr::getScalarBool(emitter.getContext(), true));
+
   TypedAttr combined;
   for (const PatternCommand *cmd : commands) {
     assert(cmd && "null pattern command");
+    TypedAttr newTest; // The new test to merge in
     switch (cmd->kind) {
-    case PatternCommand::Bind:
-      emitter.emitError(cmd->expr->getLoc())
-          << "variable bindings in 'comptime match' are not implemented yet"
-          << cmd->expr->getRange();
-      return failure();
-    case PatternCommand::Or:
-      emitter.emitError(cmd->expr->getLoc())
-          << "or-patterns in 'comptime match' are not implemented yet"
-          << cmd->expr->getRange();
-      return failure();
+    case PatternCommand::Bind: {
+      CValue subject = getPathValue(emitter, cmd->path, cmd->expr);
+      if (!subject)
+        return failure();
+      bindings.push_back({cmd->bindName, subject, cmd->declKind});
+      continue;
+    }
+    case PatternCommand::Or: {
+      FailureOr<TypedAttr> orCond =
+          emitComptimeOrCondition(*this, *cmd, bindings);
+      if (failed(orCond))
+        return failure();
+      newTest = *orCond;
+      break;
+    }
     case PatternCommand::Equal:
     case PatternCommand::EnumTag: {
       CValue value = emitTestableValue(emitter, cmd);
       if (!value)
         return failure();
       RValue matches = emitTestForValue(emitter, cmd, value);
-      PValue matchPV = matches.getIfPValue();
-      if (!matchPV) {
+      if (!matches)
+        return failure();
+      newTest = matches.getIfPValue();
+      if (!newTest) {
         emitter.emitError(cmd->expr->getLoc())
             << "'comptime match' case condition must be evaluable at "
                "compile-time"
             << cmd->expr->getRange();
         return failure();
       }
-      TypedAttr attr = cast<TypedAttr>(matchPV.get());
-      if (!combined) {
-        combined = attr;
-      } else {
-        // AND: cond(prev, next, prev) — if prev then next else prev.
-        combined = ParamOperatorAttr::get(
-            POC::Cond, {PValue(combined), PValue(attr), PValue(combined)});
-      }
       break;
     }
     }
+
+    assert(newTest && "Should have produced a new test to merge in");
+    if (combined)
+      combined = ParamOperatorAttr::getLogicalAnd(combined, newTest);
+    else
+      combined = newTest;
   }
-  assert(combined && "emitComptimeCondition requires at least one test");
+  // Bind-only patterns are irrefutable: no tests, just names to materialize.
+  if (!combined)
+    return TypedAttr(SIMDAttr::getScalarBool(emitter.getContext(), true));
   return combined;
 }
 

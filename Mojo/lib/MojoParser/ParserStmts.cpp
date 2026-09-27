@@ -310,8 +310,9 @@ struct StmtParser : public ParserBase {
                        PatternEmitState &emissionState, bool inMatchCase);
 
   /// Emit `comptime __match` as an `hlcf.comptime.if` elif chain: each case's
-  /// pattern tests become a PValue bool condition; bodies fill then/else
-  /// regions. Guards and variable bindings are not supported yet.
+  /// pattern tests (and optional guard, AND'd in) become a PValue bool
+  /// condition; bodies fill then/else regions. Pattern bindings are installed
+  /// as PValues before the guard is evaluated and remain visible in the body.
   void emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
                          PatternEmitState &emissionState, size_t curIndent);
 
@@ -1742,80 +1743,127 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
 
 /// Emit `comptime __match` as a flat `hlcf.comptime.if` / elif / else chain.
 /// Each tested case contributes one condition attribute; a trailing
-/// always-matching case (`_`) becomes the else arm.
+/// always-matching case (`_` / bare binding) becomes the else arm. Pattern
+/// bindings are PValues installed before any guard runs and kept for the body;
+/// guards are AND'd into the case condition.
 void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
                                    PatternEmitState &emissionState,
                                    size_t curIndent) {
   assert(!caseEntries.empty() && "emitComptimeCases requires a non-empty list");
   llvm::SaveAndRestore builderSaver(builder);
 
-  // Single always-matching case (typically `case _:`): emit the body inline.
-  if (caseEntries.size() == 1 && caseEntries.front().alwaysMatches()) {
-    const MatchCaseEntry &entry = caseEntries.front();
-    if (entry.guardExpr) {
-      emitError(entry.guardExpr->getLoc())
-          << "case guards in 'comptime match' are not implemented yet"
-          << entry.guardExpr->getRange();
-      return;
+  // Install pattern bindings as PValues in `curDeclScope` (caller opens the
+  // scope). Guards and the case body both resolve names against this scope.
+  auto installBindings = [&](ArrayRef<PatternBoundName> bindings,
+                             SMLoc diagLoc) -> LogicalResult {
+    IREmitter emitter = getParamEmitter(EC_MatchSubject);
+    for (const PatternBoundName &bn : bindings) {
+      PValue pv = bn.value.getIfPValue();
+      if (!pv) {
+        emitError(diagLoc) << "variable binding '" << bn.name
+                           << "' in 'comptime match' must be a compile-time "
+                              "value";
+        return failure();
+      }
+      DeclRefNode nameNode(bn.name);
+      if (failed(emitter.emitDestructuringPValue(pv, &nameNode)))
+        return failure();
     }
-    // Reject name bindings even on an otherwise irrefutable pattern.
-    if (!entry.commandList.empty()) {
-      emitError(entry.patternExpr->getLoc())
-          << "variable bindings in 'comptime match' are not implemented yet"
-          << entry.patternExpr->getRange();
-      return;
-    }
+    return success();
+  };
+
+  // Evaluate `guard` with `bindings` visible, returning `patternCond and
+  // guard`.
+  auto andGuard =
+      [&](TypedAttr patternCond, const MatchCaseEntry &entry,
+          ArrayRef<PatternBoundName> bindings) -> FailureOr<TypedAttr> {
+    if (!entry.guardExpr)
+      return patternCond;
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     pushChildScope(scopeGuard, keepDecl);
+    if (failed(installBindings(bindings, entry.patternExpr->getLoc())))
+      return failure();
+    RValue guardRVal =
+        getParamEmitter(EC_ComptimeIfCondition)
+            .emitExprScalarBool(entry.guardExpr, EC_ComptimeIfCondition);
+    if (!guardRVal)
+      return failure();
+    PValue guardPV = guardRVal.getIfPValue();
+    if (!guardPV) {
+      emitError(entry.guardExpr->getLoc(),
+                "case guard in 'comptime match' must be evaluable at "
+                "compile-time")
+          << entry.guardExpr->getRange();
+      return failure();
+    }
+    // Bind-only / `_` patterns contribute literal true; the guard alone is
+    // the case condition.
+    TypedAttr trueAttr =
+        SIMDAttr::getScalarBool(patternCond.getContext(), true);
+    if (patternCond == trueAttr)
+      return TypedAttr(guardPV);
+    return ParamOperatorAttr::getLogicalAnd(patternCond, guardPV);
+  };
+
+  auto emitInlineBody = [&](const MatchCaseEntry &entry,
+                            ArrayRef<PatternBoundName> bindings,
+                            ArrayRef<ConstraintAttr> assumptions = {}) {
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+    if (failed(installBindings(bindings, entry.patternExpr->getLoc())))
+      return;
+    curDeclScope->insertKnownAssumptions(assumptions);
     entry.caseCursor.restore(getLexer());
     (void)parseSuite(entry.caseIndent);
+  };
+
+  // Single always-matching case (typically `case _:` / `case x:`): emit the
+  // body inline with no comptime.if.
+  if (caseEntries.size() == 1 && caseEntries.front().alwaysMatches()) {
+    const MatchCaseEntry &entry = caseEntries.front();
+    SmallVector<PatternBoundName, 4> bindings;
+    if (failed(
+            emissionState.emitComptimeCondition(entry.commandList, bindings)))
+      return;
+    emitInlineBody(entry, bindings);
     return;
   }
 
   struct Arm {
     TypedAttr cond;
     const MatchCaseEntry *entry;
+    SmallVector<PatternBoundName, 4> bindings;
   };
   SmallVector<Arm, 4> arms;
   const MatchCaseEntry *elseEntry = nullptr;
+  SmallVector<PatternBoundName, 4> elseBindings;
 
   for (const MatchCaseEntry &entry : caseEntries) {
     if (entry.isUnreachable)
       continue;
-    if (entry.guardExpr) {
-      emitError(entry.guardExpr->getLoc())
-          << "case guards in 'comptime match' are not implemented yet"
-          << entry.guardExpr->getRange();
-      return;
-    }
-    if (entry.alwaysMatches()) {
-      // Irrefutable arm: only `case _:` (empty command list) is supported.
-      if (!entry.commandList.empty()) {
-        emitError(entry.patternExpr->getLoc())
-            << "variable bindings in 'comptime match' are not implemented yet"
-            << entry.patternExpr->getRange();
-        return;
-      }
-      elseEntry = &entry;
-      break;
-    }
+    SmallVector<PatternBoundName, 4> bindings;
     FailureOr<TypedAttr> cond =
-        emissionState.emitComptimeCondition(entry.commandList);
+        emissionState.emitComptimeCondition(entry.commandList, bindings);
     if (failed(cond))
       return;
-    arms.push_back({*cond, &entry});
+    FailureOr<TypedAttr> withGuard = andGuard(*cond, entry, bindings);
+    if (failed(withGuard))
+      return;
+    // Irrefutable pattern with no guard: else arm (bindings still apply).
+    if (entry.alwaysMatches()) {
+      elseEntry = &entry;
+      elseBindings = std::move(bindings);
+      break;
+    }
+    arms.push_back({*withGuard, &entry, std::move(bindings)});
   }
 
   // No live tested arms: either only unreachable cases, or only an else.
   if (arms.empty()) {
-    if (elseEntry) {
-      DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-      llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-      pushChildScope(scopeGuard, keepDecl);
-      elseEntry->caseCursor.restore(getLexer());
-      (void)parseSuite(elseEntry->caseIndent);
-    }
+    if (elseEntry)
+      emitInlineBody(*elseEntry, elseBindings);
     return;
   }
 
@@ -1828,16 +1876,18 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
       HLCF::ComptimeIfOp::create(builder, emissionState.matchLocation,
                                  TypeRange{}, builder.getArrayAttr(conds));
 
-  auto emitArmBody = [&](Region &region, const MatchCaseEntry &entry,
+  auto emitArmBody = [&](Region &region, const Arm &arm,
                          ArrayRef<ConstraintAttr> assumptions) {
     builder.createBlock(&region);
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     pushChildScope(scopeGuard, keepDecl);
+    if (failed(installBindings(arm.bindings, arm.entry->patternExpr->getLoc())))
+      return;
     curDeclScope->insertKnownAssumptions(assumptions);
-    entry.caseCursor.restore(getLexer());
-    (void)parseSuite(entry.caseIndent);
-    auto caseLoc = translateLocation(entry.patternExpr->getLoc());
+    arm.entry->caseCursor.restore(getLexer());
+    (void)parseSuite(arm.entry->caseIndent);
+    auto caseLoc = translateLocation(arm.entry->patternExpr->getLoc());
     HLCF::ComptimeYieldOp::create(builder, caseLoc);
   };
 
@@ -1847,20 +1897,14 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
     SmallVector<ConstraintAttr, 4> thenAssumptions(falseAssumptions);
     thenAssumptions.push_back(LIT::buildBranchAssumption(
         arm.cond, /*invertCondition=*/false, emissionState.matchLocation));
-    emitArmBody(thenRegions[idx], *arm.entry, thenAssumptions);
+    emitArmBody(thenRegions[idx], arm, thenAssumptions);
     falseAssumptions.push_back(LIT::buildBranchAssumption(
         arm.cond, /*invertCondition=*/true, emissionState.matchLocation));
   }
 
   builder.createBlock(&comptimeIfOp.getElseRegion());
-  if (elseEntry) {
-    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-    pushChildScope(scopeGuard, keepDecl);
-    curDeclScope->insertKnownAssumptions(falseAssumptions);
-    elseEntry->caseCursor.restore(getLexer());
-    (void)parseSuite(elseEntry->caseIndent);
-  }
+  if (elseEntry)
+    emitInlineBody(*elseEntry, elseBindings, falseAssumptions);
   HLCF::ComptimeYieldOp::create(builder, emissionState.matchLocation);
 }
 

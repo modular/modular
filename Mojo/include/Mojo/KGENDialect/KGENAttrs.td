@@ -2469,6 +2469,18 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     /// must have type `i1`.
     static TypedAttr getNot(TypedAttr operand);
 
+    /// Return logical AND of two `!kgen.scalar<bool>` attrs, matching comptime
+    /// `and` lowering: `cond(a, b, a)`.
+    static TypedAttr getLogicalAnd(TypedAttr lhs, TypedAttr rhs) {
+      return get(POC::Cond, {lhs, rhs, lhs});
+    }
+
+    /// Return logical OR of two `!kgen.scalar<bool>` attrs, matching comptime
+    /// `or` lowering: `cond(a, a, b)`.
+    static TypedAttr getLogicalOr(TypedAttr lhs, TypedAttr rhs) {
+      return get(POC::Cond, {lhs, lhs, rhs});
+    }
+
     /// Return (neg x) which is the same as (mul x, -1).  The `operand` value
     /// must have `index` type.
     static TypedAttr getNeg(TypedAttr operand);

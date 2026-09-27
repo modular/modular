@@ -486,13 +486,15 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
         pass
 
 
-def comptime_match_bindings_nyi[x: Int]():
+def comptime_match_or_binding_name_mismatch[x: Tuple[Int, Int]]():
     comptime __match x:
-    case var y: # expected-error {{variable bindings in 'comptime match' are not implemented yet}}
+    # expected-error @+1 {{or-pattern alternatives must bind the same names; 'y' is bound in one alternative but not the other}}
+    case (0, y) | (1, 2):
         pass
 
 
-def comptime_match_guard_nyi[x: Int]():
+def comptime_match_or_binding_kind_mismatch[x: Tuple[Int, Int]]():
     comptime __match x:
-    case _ if True: # expected-error {{case guards in 'comptime match' are not implemented yet}}
+    # expected-error @+1 {{or-pattern binding 'y' must use the same 'var'/'ref' kind in each alternative}}
+    case (0, var y) | (1, y):
         pass
