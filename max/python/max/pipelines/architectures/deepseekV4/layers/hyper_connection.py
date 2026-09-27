@@ -51,6 +51,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
+from max.nn.kernels import mhc_split_sinkhorn
 
 
 def hc_mix_width(hc_mult: int) -> int:
@@ -94,25 +95,26 @@ def hc_split_sinkhorn(
     Each part gets its own scalar from ``scale``, and ``post`` carries a factor
     of two the others do not -- a copy may be amplified up to 2x by the
     sublayer's contribution while ``pre`` stays inside ``(0, 1) + eps``.
+
+    The combination is row-softmaxed, then alternately column/row normalized;
+    the first column pass follows the softmax directly, so there are
+    ``sinkhorn_iters - 1`` row passes. As graph ops that chain is ~80 serial
+    4x4 kernels per site, so it runs as one fused kernel instead.
     """
-    hc = hc_mult
-    pre = ops.sigmoid(mixes[..., :hc] * scale[0:1] + base[:hc]) + eps
-    post = 2.0 * ops.sigmoid(
-        mixes[..., hc : 2 * hc] * scale[1:2] + base[hc : 2 * hc]
+    b, s = mixes.shape[0], mixes.shape[1]
+    pre, post, comb = mhc_split_sinkhorn(
+        ops.reshape(mixes, [-1, hc_mix_width(hc_mult)]),
+        scale,
+        base,
+        hc_mult=hc_mult,
+        sinkhorn_iters=sinkhorn_iters,
+        eps=eps,
     )
-
-    comb = mixes[..., 2 * hc :] * scale[2:3] + base[2 * hc :]
-    comb = ops.reshape(comb, [comb.shape[0], comb.shape[1], hc, hc])
-
-    # Row softmax, then alternating column/row normalization. The first column
-    # pass is outside the loop because the softmax already normalized the rows,
-    # so the loop runs one fewer time than ``sinkhorn_iters`` suggests.
-    comb = ops.softmax(comb, axis=-1) + eps
-    comb = comb / (ops.sum(comb, axis=-2) + eps)
-    for _ in range(sinkhorn_iters - 1):
-        comb = comb / (ops.sum(comb, axis=-1) + eps)
-        comb = comb / (ops.sum(comb, axis=-2) + eps)
-    return pre, post, comb
+    return (
+        ops.reshape(pre, [b, s, hc_mult]),
+        ops.reshape(post, [b, s, hc_mult]),
+        ops.reshape(comb, [b, s, hc_mult, hc_mult]),
+    )
 
 
 def hc_pre(

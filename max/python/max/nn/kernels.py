@@ -11458,3 +11458,77 @@ def latent_sparse_attention_ragged(
         out_types=[TensorType(q.dtype, q.shape, q.device)],
         parameters={"window": window},
     )[0].tensor
+
+
+def mhc_split_sinkhorn(
+    mixes: TensorValue,
+    scale: TensorValue,
+    base: TensorValue,
+    *,
+    hc_mult: int,
+    sinkhorn_iters: int,
+    eps: float,
+    post_mult: float = 2.0,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Splits mHC mixing logits and Sinkhorn-projects the combination block.
+
+    ``mixes[t]`` holds ``(2 + hc) * hc`` logits: ``hc`` pre, ``hc`` post, then
+    an ``hc x hc`` combination in row-major order. Each part is scaled by its
+    entry of ``scale`` and offset by ``base``; ``pre`` is
+    ``sigmoid(.) + eps``, ``post`` is ``post_mult * sigmoid(.)``, and the
+    combination is row-softmaxed plus ``eps``, column-normalized, then
+    ``sinkhorn_iters - 1`` times row- and column-normalized, every normalizer
+    being ``sum + eps``. One kernel launch computes all of it.
+
+    Args:
+        mixes: ``[tokens, (2 + hc_mult) * hc_mult]`` float32 logits.
+        scale: ``[3]`` float32 per-part scales.
+        base: ``[(2 + hc_mult) * hc_mult]`` float32 bias.
+        hc_mult: The number of residual copies ``hc``.
+        sinkhorn_iters: Sinkhorn rounds, at least one.
+        eps: Floor added to ``pre``, the softmax and every normalizer.
+        post_mult: Multiplier on the ``post`` sigmoid.
+
+    Returns:
+        ``pre`` ``[tokens, hc]``, ``post`` ``[tokens, hc]`` and ``comb``
+        ``[tokens, hc, hc]``, all float32.
+    """
+    _check_rank(2, mixes=mixes)
+    _check_rank(1, scale=scale, base=base)
+    _check_dtype(DType.float32, mixes=mixes, scale=scale, base=base)
+    width = (2 + hc_mult) * hc_mult
+    if int(mixes.shape[1]) != width or int(base.shape[0]) != width:
+        raise ValueError(
+            f"expected mixes/base width {width} for hc_mult={hc_mult}, got"
+            f" {mixes.shape[1]} / {base.shape[0]}"
+        )
+    if int(scale.shape[0]) != 3:
+        raise ValueError(
+            f"expected scale to have 3 entries, got {scale.shape[0]}"
+        )
+    if sinkhorn_iters < 1:
+        raise ValueError(f"sinkhorn_iters must be >= 1, got {sinkhorn_iters}")
+
+    tokens = mixes.shape[0]
+    device = mixes.device
+    pre, post, comb = ops.custom(
+        "mo.mhc.split_sinkhorn",
+        device=device,
+        values=[mixes, scale, base],
+        out_types=[
+            TensorType(DType.float32, [tokens, hc_mult], device),
+            TensorType(DType.float32, [tokens, hc_mult], device),
+            TensorType(DType.float32, [tokens, hc_mult * hc_mult], device),
+        ],
+        parameters={
+            "hc_mult": hc_mult,
+            "sinkhorn_iters": sinkhorn_iters,
+            "eps": repr(float(eps)),
+            "post_mult": repr(float(post_mult)),
+        },
+    )
+    return (
+        pre.tensor,
+        post.tensor,
+        ops.reshape(comb.tensor, [tokens, hc_mult, hc_mult]),
+    )
