@@ -641,6 +641,9 @@ def test_conv2d_epilogue_lambda[
         rtol=rtol,
     )
     print("  PASSED\n")
+    # `bias_tensor` reaches the kernel only through the epilogue closure's
+    # capture, which does not extend `bias_device`'s lifetime.
+    _ = bias_device^
 
 
 def test_conv2d_bias_fusion[
