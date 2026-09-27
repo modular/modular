@@ -1069,7 +1069,7 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
 
 namespace {
 
-/// Cap on flattened product cells. Larger products stay Opaque (no proof).
+/// Cap on flattened product cells. Larger products become TooComplex.
 constexpr size_t kMaxProductCells = 1024;
 
 /// One EnumLike dimension in a flattened FiniteCtors product (tuple leaves).
@@ -1079,6 +1079,12 @@ struct MatchCoveringDim {
   ArrayRef<TypedAttr> caseNames;
 };
 
+/// One covered Equal-literal spelling in a LiteralSet space (bump-linked).
+struct CoveredLiteralNode {
+  StringRef spelling;
+  CoveredLiteralNode *next = nullptr;
+};
+
 /// Lazy covering model for one `match`.
 /// Bump-allocated so nested / product spaces can share the builder's arena.
 ///
@@ -1086,6 +1092,10 @@ struct MatchCoveringDim {
 /// patterns (`True, True` / `_, False`) cover the right combinations —
 /// independent per-field bitsets would wrongly treat `True,True` +
 /// `False,False` as total. Applies to tuples and structs of EnumLike fields.
+///
+/// LiteralSet tracks root Equal spellings (`4`, `"foo"`) for duplicate /
+/// unreachability only — the domain is open, so covering literals never
+/// proves exhaustivity (only a catch-all closes the space).
 struct MatchCoveringSpace {
   enum class Kind : uint8_t {
     Opaque,
@@ -1094,6 +1104,8 @@ struct MatchCoveringSpace {
     /// Tuple/struct of EnumLike leaves whose flattened cell count exceeds
     /// `kMaxProductCells`. Not tracked cell-by-cell; requires a catch-all.
     TooComplex,
+    /// Open universe of root Equal literals (Int, String, …).
+    LiteralSet,
     Closed
   };
   Kind kind = Kind::Opaque;
@@ -1108,6 +1120,10 @@ struct MatchCoveringSpace {
   MatchCoveringDim *dims = nullptr;
   size_t numCells = 0;
   bool *cells = nullptr; ///< `true` = that combination is still open.
+
+  // LiteralSet (open Equal-literal universe):
+  CoveredLiteralNode *coveredLiterals = nullptr;
+  llvm::BumpPtrAllocator *allocator = nullptr;
 
   bool hasOpenCtor() const {
     if (kind != Kind::FiniteCtors || !remaining)
@@ -1143,6 +1159,20 @@ struct MatchCoveringSpace {
   bool isCtorOpen(size_t index) const {
     return kind == Kind::FiniteCtors && remaining && index < numCtors &&
            remaining[index];
+  }
+
+  bool isLiteralCovered(StringRef spelling) const {
+    for (auto *node = coveredLiterals; node; node = node->next)
+      if (node->spelling == spelling)
+        return true;
+    return false;
+  }
+
+  void coverLiteral(StringRef spelling) {
+    assert(kind == Kind::LiteralSet && allocator);
+    void *mem = allocator->Allocate(sizeof(CoveredLiteralNode),
+                                    alignof(CoveredLiteralNode));
+    coveredLiterals = new (mem) CoveredLiteralNode{spelling, coveredLiterals};
   }
 };
 
@@ -1282,7 +1312,11 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
     return space;
   }
 
-  return space; // Opaque
+  // Everything else: open Equal-literal universe (Int, String, …). Track
+  // covered spellings for duplicate / unreachability; never prove exhaustivity.
+  space->kind = MatchCoveringSpace::Kind::LiteralSet;
+  space->allocator = &builder.allocator;
+  return space;
 }
 
 /// True if `ancestor` is `path` or any parent of `path` in the PatternPath
@@ -1422,6 +1456,57 @@ static std::string formatProductWitness(const MatchCoveringSpace &space,
     os << caseNameSpelling(space.dims[i].caseNames, indices[i]);
   }
   return result;
+}
+
+/// If these Or-free commands are exactly one root Equal with a known literal
+/// spelling (plus optional Binds), return that spelling. Used for LiteralSet
+/// covering (`case 4:`, `case "foo":`).
+static std::optional<StringRef>
+getSimpleRootLiteralCoverage(PatternCommandList commands,
+                             const PatternPath *rootPath) {
+  std::optional<StringRef> literal;
+  for (const PatternCommand *cmd : commands) {
+    assert(cmd->kind != PatternCommand::Or && "expand Or before covering");
+    if (cmd->kind == PatternCommand::Bind)
+      continue;
+    if (cmd->path != rootPath || cmd->kind != PatternCommand::Equal ||
+        !cmd->expr)
+      return std::nullopt;
+    StringRef spelling = cmd->expr->getLiteralSpelling();
+    if (spelling.empty() || literal)
+      return std::nullopt;
+    literal = spelling;
+  }
+  return literal;
+}
+
+/// Cover LiteralSet with an Or-free command list. Returns false if the pattern
+/// cannot be credited; `hitOpen` if a new spelling was recorded or the space
+/// was closed by a bind-only alternative.
+static bool coverLiteralCommands(MatchCoveringSpace &space,
+                                 PatternCommandList commands,
+                                 const PatternPath *rootPath, bool &hitOpen) {
+  hitOpen = false;
+  assert(space.kind == MatchCoveringSpace::Kind::LiteralSet);
+
+  // Irrefutable alternative (`_` / bind-only): closes the open universe.
+  if (llvm::all_of(commands, [](const PatternCommand *cmd) {
+        return cmd->kind == PatternCommand::Bind;
+      })) {
+    space.closeAll();
+    hitOpen = true;
+    return true;
+  }
+
+  std::optional<StringRef> literal =
+      getSimpleRootLiteralCoverage(commands, rootPath);
+  if (!literal)
+    return false;
+  if (space.isLiteralCovered(*literal))
+    return true;
+  space.coverLiteral(*literal);
+  hitOpen = true;
+  return true;
 }
 
 /// Cover FiniteCtors with an Or-free command list. Returns false if the
@@ -1583,6 +1668,8 @@ static bool coverCommands(MatchCoveringSpace &space,
       ok = coverFiniteCtorsCommands(space, alt, rootPath, altHit);
     else if (space.kind == MatchCoveringSpace::Kind::Product)
       ok = coverProductCommands(space, alt, altHit);
+    else if (space.kind == MatchCoveringSpace::Kind::LiteralSet)
+      ok = coverLiteralCommands(space, alt, rootPath, altHit);
     else
       return false;
 
@@ -1605,7 +1692,8 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
   //   - EnumLike root → FiniteCtors bitset.
   //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
   //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
-  //   - Else Opaque (no exhaustivity proof yet).
+  //   - Else LiteralSet: track root Equal spellings for duplicates only
+  //     (no exhaustivity — Int/String/… are open universes).
   //   - Irrefutable unguarded cases close the space.
   //   - Or patterns expand to a union of alternatives; each is covered
   //     independently (guards never shrink the remaining space).
@@ -1635,7 +1723,8 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
       continue;
 
     if (space->kind != MatchCoveringSpace::Kind::FiniteCtors &&
-        space->kind != MatchCoveringSpace::Kind::Product)
+        space->kind != MatchCoveringSpace::Kind::Product &&
+        space->kind != MatchCoveringSpace::Kind::LiteralSet)
       continue;
 
     bool hitOpen = false;
@@ -1646,7 +1735,7 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
 
     if (!hitOpen && allAltsInterpreted) {
       entry.isUnreachable = true;
-      // Prefer a ctor-specific message for simple root EnumTag/Equal patterns
+      // Prefer a ctor/literal-specific message for simple root patterns
       // (with optional Bind residuals), but not for Or.
       bool hasOr =
           llvm::any_of(entry.commandList, [](const PatternCommand *cmd) {
@@ -1658,6 +1747,15 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
           emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
               << "'" << caseNameSpelling(space->caseNames, *ctor)
               << "' is already covered by a previous case"
+              << entry.patternExpr->getRange();
+          continue;
+        }
+      }
+      if (!hasOr && space->kind == MatchCoveringSpace::Kind::LiteralSet) {
+        if (auto literal =
+                getSimpleRootLiteralCoverage(entry.commandList, rootPath)) {
+          emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
+              << "'" << *literal << "' is already covered by a previous case"
               << entry.patternExpr->getRange();
           continue;
         }

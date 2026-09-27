@@ -146,20 +146,24 @@ def match_or_pattern_binding_diags(var point: Tuple[Int, Int],
         pass
 
     # Different number of bindings. Leading literals keep both arms live so
-    # the or does not constant-fold away the RHS.
+    # the or does not constant-fold away the RHS. The RHS is irrefutable, so
+    # the trailing `_` is unreachable.
     __match point:
     # expected-error @+1 {{or-pattern alternatives must bind the same names}}
     case (0, var x) | (var x, var y):
         pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         pass
 
     # Same name and kind, but incompatible types (String vs Int).
+    # `(var x, _)` is irrefutable, so the trailing `_` is unreachable.
     __match mixed:
     # expected-error @+2 {{or-pattern binding 'x' has incompatible types across alternatives}}
     # expected-note @+1 {{first alternative has type 'String', this alternative has type 'Int'}}
     case (0, var x) | (var x, _):
         pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         pass
 
@@ -431,11 +435,9 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
     case _:
         pass
 
-def match_exhaustivity_opaque_subjects(n: Int, s: String):
-    # TODO: Opaque subjects (`Int`, `String`, …) should require a catch-all or
-    # diagnose non-exhaustivity. Today they stay `Opaque` and produce no warning.
-    # Intended once implemented: warn that the match is not exhaustive / needs
-    # a `_` case (or a similar catch-all diagnostic).
+def match_exhaustivity_literal_subjects(n: Int, s: String):
+    # Int/String are open universes: covering literals never proves exhaustivity,
+    # but duplicate / already-covered literal cases are diagnosed.
     __match n:
     case 0:
         pass
@@ -451,12 +453,34 @@ def match_exhaustivity_opaque_subjects(n: Int, s: String):
     __match s:
     case "a":
         pass
-    case "a":  # TODO: Should warn about unreachable case.
+    # expected-warning @+1 {{case is unreachable; '"a"' is already covered by a previous case}}
+    case "a":
         pass
 
-    # TODO: Finite literal clusters on opaque types (e.g. `0 | 1 | 2` on `Int`)
-    # are not modeled as a closed universe. Covering `0 | 1 | 2` should either
-    # prove exhaustivity for that set or still require `_` with a tailored note.
+    __match n:
+    case 0:
+        pass
+    # expected-warning @+1 {{case is unreachable; '0' is already covered by a previous case}}
+    case 0:
+        pass
+    case 1:
+        pass
+
+    # Or of literals covers each alternative; a later duplicate is unreachable.
     __match n:
     case 0 | 1 | 2:
+        pass
+    # expected-warning @+1 {{case is unreachable; '1' is already covered by a previous case}}
+    case 1:
+        pass
+
+    # After a catch-all, everything else is unreachable (still no exhaustivity
+    # warning when only literals are present).
+    __match n:
+    case 0:
+        pass
+    case _:
+        pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case 1:
         pass
