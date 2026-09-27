@@ -421,70 +421,55 @@ resolveAnnotationArray(ResolvedStructHandle resolved, TypedAttr fieldIdx,
   return resolved.decl.getAnnotations(idx);
 }
 
-FailureOr<TypedAttr> GetAnnotationTypeAttr::evaluateWithContext(
-    ParameterEvaluationContext &context) const {
+/// Evaluates the `index`-th annotation of the struct (or of one of its fields)
+/// and rebinds the part of it selected by `getPart`.
+template <typename AttrT>
+static FailureOr<TypedAttr>
+evaluateAnnotationPart(AttrT attr, ParameterEvaluationContext &context) {
+  static_assert(std::is_same_v<AttrT, GetAnnotationTypeAttr> ||
+                std::is_same_v<AttrT, GetAnnotationValueAttr>);
 
   FailureOr<ResolvedStructHandle> resolvedOr =
-      context.resolveStructOp(getStructTypeValue(), /*acceptAsync=*/false);
+      context.resolveStructOp(attr.getStructTypeValue(),
+                              /*acceptAsync=*/false);
   if (failed(resolvedOr)) {
-    context.emitMaterializationError(
-        "get_annotation_type requires a struct type");
+    context.emitMaterializationError(AttrT::getMnemonic() +
+                                     " requires a struct type");
     return failure();
   }
-
   auto annotationsOr =
-      resolveAnnotationArray(*resolvedOr, getFieldIndex(), context);
-
+      resolveAnnotationArray(*resolvedOr, attr.getFieldIndex(), context);
   if (failed(annotationsOr))
     return failure();
 
-  if (auto concreteIdx = dyn_cast<SIMDAttr>(getIndex())) {
-    size_t idx = concreteIdx.getValues().front().getIntVal().getSExtValue();
-    if (idx < annotationsOr->size() &&
-        isa<AnnotationAttr>(annotationsOr->getValue()[idx])) {
-      auto attr = cast<AnnotationAttr>(annotationsOr->getValue()[idx]);
-      FailureOr<TypedAttr> result = failure();
-      context.withEvaluator(
-          resolvedOr->decl.getInputParams(), resolvedOr->paramValues,
-          [&](ParameterEvaluator &evaluator) {
-            result = evaluator.getReboundAttribute(attr.getTypeValue());
-          });
-      return result;
-    }
-  }
+  auto concreteIdx = dyn_cast<SIMDAttr>(attr.getIndex());
+  if (!concreteIdx)
+    return failure();
+  size_t idx = concreteIdx.getValues().front().getIndexVal();
+  if (idx >= annotationsOr->size())
+    return failure();
 
-  return failure();
+  auto annotation = cast<AnnotationAttr>(annotationsOr->getValue()[idx]);
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(
+      resolvedOr->decl.getInputParams(), resolvedOr->paramValues,
+      [&](ParameterEvaluator &evaluator) {
+        if constexpr (std::is_same_v<AttrT, GetAnnotationTypeAttr>)
+          result = evaluator.getReboundAttribute(annotation.getTypeValue());
+        else
+          result = evaluator.getReboundAttribute(annotation.getValue());
+      });
+  return result;
+}
+
+FailureOr<TypedAttr> GetAnnotationTypeAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  return evaluateAnnotationPart(*this, context);
 }
 
 FailureOr<TypedAttr> GetAnnotationValueAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
-  FailureOr<ResolvedStructHandle> resolvedOr =
-      context.resolveStructOp(getStructTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr)) {
-    context.emitMaterializationError(
-        "get_annotation_value requires a struct type");
-    return failure();
-  }
-  auto annotationsOr =
-      resolveAnnotationArray(*resolvedOr, getFieldIndex(), context);
-  if (failed(annotationsOr))
-    return failure();
-
-  if (auto concreteIdx = dyn_cast<SIMDAttr>(getIndex())) {
-    size_t idx = concreteIdx.getValues().front().getIntVal().getSExtValue();
-    if (idx < annotationsOr->size() &&
-        isa<AnnotationAttr>(annotationsOr->getValue()[idx])) {
-      FailureOr<TypedAttr> result = failure();
-      auto attr = cast<AnnotationAttr>(annotationsOr->getValue()[idx]);
-      context.withEvaluator(
-          resolvedOr->decl.getInputParams(), resolvedOr->paramValues,
-          [&](ParameterEvaluator &evaluator) {
-            result = evaluator.getReboundAttribute(attr.getValue());
-          });
-      return result;
-    }
-  }
-  return failure();
+  return evaluateAnnotationPart(*this, context);
 }
 
 FailureOr<TypedAttr> GetNumAnnotationsAttr::evaluateWithContext(
