@@ -124,6 +124,53 @@ kgen.func @hoist_cond_return_else(%cond: !kgen.scalar<bool>, %arg1: index, %arg2
   hlcf.return %r: index
 }
 
+// Multi-arm: then/elif return, else yields — move trailing code into the
+// single yield arm and hoist one return after the if.
+// CHECK-LABEL: @hoist_cond_return_multiarms
+kgen.func @hoist_cond_return_multiarms(%cond1: !kgen.scalar<bool>, %cond2: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[IF_RES:.*]] = hlcf.if
+  // CHECK-NEXT:   hlcf.yield %arg2
+  // CHECK-NEXT: else
+  // CHECK-NEXT:   hlcf.if.elifcond.yield
+  // CHECK-NEXT: then
+  // CHECK-NEXT:   hlcf.yield %arg2
+  // CHECK-NEXT: else
+  // CHECK-NEXT:   %[[ELSE_VAL:.*]] = index.add
+  // CHECK-NEXT:   hlcf.yield %[[ELSE_VAL]]
+  // CHECK-NOT:  index.add
+  // CHECK:      return %[[IF_RES]]
+  %a, %b = hlcf.if %cond1 -> index, index {
+    hlcf.return %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %cond2
+  } then {
+    hlcf.return %arg1: index
+  } else {
+    hlcf.yield %arg2, %arg3: index, index
+  }
+  %r = index.add %a, %b
+  hlcf.return %r: index
+}
+
+// Two yield arms: do not hoist (would require cloning the trailing code).
+// CHECK-LABEL: @dont_hoist_cond_return_two_yields
+kgen.func @dont_hoist_cond_return_two_yields(%cond1: !kgen.scalar<bool>, %cond2: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[RES:.*]]:2 = hlcf.if
+  // CHECK:      %[[R:.*]] = index.add %[[RES]]#0, %[[RES]]#1
+  // CHECK:      return %[[R]]
+  %a, %b = hlcf.if %cond1 -> index, index {
+    hlcf.return %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %cond2
+  } then {
+    hlcf.yield %arg2, %arg3: index, index
+  } else {
+    hlcf.yield %arg2, %arg3: index, index
+  }
+  %r = index.add %a, %b
+  hlcf.return %r: index
+}
+
 // CHECK-LABEL: @hoist_cond_break
 kgen.func @hoist_cond_break(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
   // CHECK:      %[[LOOP_RES:.*]] = hlcf.loop

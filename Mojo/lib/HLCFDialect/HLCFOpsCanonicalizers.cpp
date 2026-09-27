@@ -15,11 +15,9 @@
 #include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
-#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "hlcf-canonicalize"
 
@@ -315,10 +313,11 @@ struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
   }
 };
 
-/// If one arm of a 2-arm if exits with Return/Break and the other Yields, pull
-/// the code after the if into the yield arm and hoist a single exit after the
-/// if. Multi-arm elif is not handled here (reverted from the elif-generalized
-/// version that was a compile-time hotspot).
+/// If some body arms exit with Return/Break and exactly one arm Yields, pull
+/// the code after the if into that yield arm by *moving* it (not cloning) and
+/// hoist a single exit after the if. Multiple yield arms are rejected: each
+/// would need its own copy of the trailing code, which previously caused
+/// catastrophic worklist / IR blow-up under canonicalize.
 ///
 /// Before:                    After:
 /// {                          {
@@ -339,48 +338,50 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
-    // TODO: Generalize to multi-arm elif (one arm exits, others yield).
-    if (!op.getElifRegions().empty())
-      return failure();
+    SmallVector<Region *, 4> bodies;
+    getIfBodyRegions(op, bodies);
 
-    Operation *parentBlockTerm = op->getParentRegion()->front().getTerminator();
-    Operation *thenTerm = op.getThenTerminator();
-    Operation *elseTerm = op.getElseTerminator();
+    SmallVector<Operation *, 4> yieldTerms;
+    SmallVector<Operation *, 4> exitTerms;
+    for (Region *body : bodies) {
+      Operation *term = body->front().getTerminator();
+      if (isa<YieldOp>(term))
+        yieldTerms.push_back(term);
+      else if (isa<HLCF::ReturnOp, BreakOp>(term)) {
+        exitTerms.push_back(term);
 
-    // If neither arm exits, nothing to do.
-    if (!isa<HLCF::ReturnOp, BreakOp>(thenTerm) &&
-        !isa<HLCF::ReturnOp, BreakOp>(elseTerm))
-      return rewriter.notifyMatchFailure(
-          op, "None of the branches ends with Return/Break");
+        // Make sure we have consistent terminators.
+        if (!exitTerms.empty()) {
+          Operation *sampleExit = exitTerms.front();
+          if (sampleExit->getName() != term->getName())
+            return rewriter.notifyMatchFailure(
+                op, "Exiting arms have mismatched terminators");
 
-    // One arm exits; the other must yield.
-    if (!isa<YieldOp>(thenTerm) && !isa<YieldOp>(elseTerm))
-      return rewriter.notifyMatchFailure(
-          op, "None of the branches ends with Yield");
-
-    Operation *yieldTerm = nullptr, *returnTerm = nullptr;
-    if (isa<YieldOp>(thenTerm)) {
-      yieldTerm = thenTerm;
-      returnTerm = elseTerm;
-    } else {
-      assert(isa<YieldOp>(elseTerm));
-      yieldTerm = elseTerm;
-      returnTerm = thenTerm;
+          if (auto br = dyn_cast<BreakOp>(sampleExit)) {
+            if (cast<BreakOp>(term).getLabelAttr() != br.getLabelAttr())
+              return rewriter.notifyMatchFailure(
+                  op, "Break arms target different loops");
+          }
+        }
+      } else
+        return rewriter.notifyMatchFailure(
+            op, "Body arm does not end with Yield/Return/Break");
     }
 
+    if (exitTerms.empty())
+      return rewriter.notifyMatchFailure(
+          op, "None of the branches ends with Return/Break");
+    // Exactly one yield arm so we can move the trailing code into it. Cloning
+    // into every yield arm was a compile-time hotspot.
+    if (yieldTerms.size() != 1)
+      return rewriter.notifyMatchFailure(
+          op, "expected exactly one yield arm for move-based hoist");
+
+    Operation *yieldTerm = yieldTerms.front();
+    Operation *sampleExit = exitTerms.front();
+
     // Walk out through nested 2-arm if yields to find the enclosing
-    // return/break that the yield arm ultimately feeds. Example:
-    //   %4 = hlcf.if %3 -> i1 {
-    //     hlcf.yield %1 : i1
-    //   } else {
-    //     hlcf.if %6 {
-    //       hlcf.return %0 : i1
-    //     } else {
-    //       hlcf.yield
-    //     }
-    //     hlcf.yield %1 : i1
-    //   }
-    //   hlcf.return %4 : i1
+    // return/break that the yield arm ultimately feeds.
     SmallVector<Value> parentBlockTermOperands;
     Operation *actualParentTermOp = nullptr;
     std::function<void(Operation *)> findParentTermOp;
@@ -393,9 +394,12 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
 
       auto yield = dyn_cast<YieldOp>(parentTerm);
       auto parentIf = yield ? dyn_cast<IfOp>(yield->getParentOp()) : IfOp();
-      if (!yield || !parentIf || !parentIf.getElifRegions().empty())
+      if (!yield || !parentIf)
         return;
-      // Don't skip over ops between the nested if and the parent terminator.
+      // Allow climbing out of the if we're rewriting (which may be multi-arm).
+      // Intermediate nested ifs must stay 2-arm — we don't remap through elif.
+      if (!parentIf.getElifRegions().empty() && parentTerm != yieldTerm)
+        return;
       Operation &termAfterIf = *std::next(Block::iterator(parentIf));
       Operation *blockTerm = parentIf->getBlock()->getTerminator();
       if (!isa<HLCF::ReturnOp, BreakOp, YieldOp>(termAfterIf) &&
@@ -405,8 +409,6 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
       if (!actualParentTermOp)
         return;
 
-      // Remap parent terminator operands that are results of the nested if
-      // through the yield operands (%4 → %1 in the example above).
       for (auto &retVal : parentBlockTermOperands) {
         OpResult retRes = dyn_cast<OpResult>(retVal);
         if (!retRes || retRes.getOwner() != parentIf)
@@ -425,23 +427,23 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
           op, "Parent block doesn't end with Return/Break");
 
     if (isa<HLCF::ReturnOp>(actualParentTermOp)) {
-      if (!isa<HLCF::ReturnOp>(returnTerm))
+      if (!isa<HLCF::ReturnOp>(sampleExit))
         return rewriter.notifyMatchFailure(
             op, "Parent block is Return, but exiting terminator is Break");
     } else {
       assert(isa<BreakOp>(actualParentTermOp));
-      if (!isa<BreakOp>(returnTerm))
+      if (!isa<BreakOp>(sampleExit))
         return rewriter.notifyMatchFailure(
             op, "Parent block is Break, but exiting terminator is Return");
       if (cast<BreakOp>(actualParentTermOp).getLabelAttr() !=
-          cast<BreakOp>(returnTerm).getLabelAttr())
+          cast<BreakOp>(sampleExit).getLabelAttr())
         return rewriter.notifyMatchFailure(
             op, "Break in the parent block's target is different from exiting "
                 "terminator break's target");
     }
 
-    if (returnTerm->getNumOperands() != actualParentTermOp->getNumOperands() ||
-        !llvm::equal(returnTerm->getOperandTypes(),
+    if (sampleExit->getNumOperands() != actualParentTermOp->getNumOperands() ||
+        !llvm::equal(sampleExit->getOperandTypes(),
                      actualParentTermOp->getOperandTypes()))
       return rewriter.notifyMatchFailure(
           op, "Exiting terminator and parent return/break have different "
@@ -449,45 +451,66 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     if (yieldTerm->getNumOperands() != op.getNumResults())
       return rewriter.notifyMatchFailure(
           op, "Yield operand count doesn't match if results");
-    if (parentBlockTermOperands.size() != returnTerm->getNumOperands())
+    if (parentBlockTermOperands.size() != sampleExit->getNumOperands())
       return rewriter.notifyMatchFailure(
           op, "Remapped parent terminator operands don't match exiting "
               "terminator");
 
-    auto newOp =
-        IfOp::create(rewriter, op.getLoc(),
-                     actualParentTermOp->getOperandTypes(), op.getCond());
+    // Terminator of the block containing `op` — after the move below this is
+    // the op that lands in the yield arm (may differ from actualParentTermOp
+    // when we climbed through nested if yields).
+    Operation *parentBlockTerm = op->getBlock()->getTerminator();
 
-    rewriter.inlineRegionBefore(op.getThenRegion(), newOp.getThenRegion(),
-                                newOp.getThenRegion().begin());
-    rewriter.inlineRegionBefore(op.getElseRegion(), newOp.getElseRegion(),
-                                newOp.getElseRegion().begin());
+    auto newOp = IfOp::create(rewriter, op.getLoc(),
+                              actualParentTermOp->getOperandTypes(),
+                              op.getCond(), op.getElifRegions().size());
+    moveIfRegions(rewriter, op, newOp);
 
-    // Move ops after the original if into the yield arm.
+    // Terminators moved with their regions; re-find on the new op.
+    SmallVector<Operation *, 4> newExitTerms;
+    bodies.clear();
+    getIfBodyRegions(newOp, bodies);
+    yieldTerm = nullptr;
+    for (Region *body : bodies) {
+      Operation *term = body->front().getTerminator();
+      if (isa<YieldOp>(term))
+        yieldTerm = term;
+      else
+        newExitTerms.push_back(term);
+    }
+    assert(yieldTerm && newExitTerms.size() == exitTerms.size());
+
+    SmallVector<Value> yieldOperands(yieldTerm->operand_begin(),
+                                     yieldTerm->operand_end());
+
+    // Move (do not clone) ops after the original if into the yield arm.
     Block *remainderBlock =
         rewriter.splitBlock(op->getBlock(), op->getNextNode()->getIterator());
     rewriter.inlineBlockBefore(remainderBlock, yieldTerm->getBlock(),
                                yieldTerm->getBlock()->end());
 
     for (auto [idx, val] : llvm::enumerate(op->getResults()))
-      rewriter.replaceAllUsesWith(val, yieldTerm->getOperand(idx));
+      rewriter.replaceAllUsesWith(val, yieldOperands[idx]);
     rewriter.eraseOp(yieldTerm);
 
     rewriter.setInsertionPointAfter(newOp);
-    if (auto br = dyn_cast<BreakOp>(returnTerm)) {
+    if (auto br = dyn_cast<BreakOp>(sampleExit)) {
       BreakOp::create(rewriter, op.getLoc(), newOp->getResults(),
                       br.getLabelAttr());
     } else {
       HLCF::ReturnOp::create(rewriter, op.getLoc(), newOp->getResults());
     }
 
-    // Parent terminator was sucked into the if; replace it (and the exiting
-    // arm terminator) with yields.
+    // Parent-block terminator was sucked into the yield arm; replace it (and
+    // each exiting arm terminator) with yields. Use the remapped operands from
+    // the nested-yield climb so `return %if` becomes `yield %yielded`.
     rewriter.setInsertionPoint(parentBlockTerm);
     rewriter.replaceOpWithNewOp<YieldOp>(parentBlockTerm,
                                          parentBlockTermOperands);
-    rewriter.setInsertionPoint(returnTerm);
-    rewriter.replaceOpWithNewOp<YieldOp>(returnTerm, returnTerm->getOperands());
+    for (Operation *exitTerm : newExitTerms) {
+      rewriter.setInsertionPoint(exitTerm);
+      rewriter.replaceOpWithNewOp<YieldOp>(exitTerm, exitTerm->getOperands());
+    }
 
     rewriter.eraseOp(op);
     return success();
