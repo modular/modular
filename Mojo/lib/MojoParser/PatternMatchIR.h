@@ -136,7 +136,7 @@ struct MatchCaseEntry {
 
 /// Emit state for one command-list walk: path→value memoization + CF emission.
 /// `curDeclScope` is the scope new emitters are built against; each emit method
-/// takes the `OpBuilder` to insert into.
+/// takes an `IREmitter` (dynamic with a builder, or param-only for comptime).
 struct PatternEmitState {
   ASTDecl &curDeclScope;
   CValue rootSubject;
@@ -144,8 +144,9 @@ struct PatternEmitState {
   Location matchLocation;
   DenseMap<const PatternPath *, CValue> pathValues;
 
-  CValue getPathValue(OpBuilder &builder, const PatternPath *path,
+  CValue getPathValue(IREmitter &emitter, const PatternPath *path,
                       const ExprNode *expr);
+
   LogicalResult emitCommands(OpBuilder &builder,
                              ArrayRef<const PatternCommand *> commands,
                              SmallVectorImpl<PatternBoundName> &bindings);
@@ -154,13 +155,18 @@ struct PatternEmitState {
 
   /// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
   /// the discriminant.
-  CValue emitTestableValue(OpBuilder &builder, const PatternCommand *command);
+  CValue emitTestableValue(IREmitter &emitter, const PatternCommand *command);
 
   /// Emit `__eq__` of `value` against the literal or enum tag in `command`,
-  /// as a scalar bool. `value` is the subject for `Equal` and the discriminant
-  /// for `EnumTag` (what `emitTestableValue` returns).
-  SRValue emitTestForValue(OpBuilder &builder, const PatternCommand *command,
-                           CValue value);
+  /// as a scalar bool (PValue in param context). `value` is the subject for
+  /// `Equal` and the discriminant for `EnumTag`.
+  RValue emitTestForValue(IREmitter &emitter, const PatternCommand *command,
+                          CValue value);
+
+  /// AND together Equal/EnumTag tests in `commands` into one compile-time
+  /// bool attribute. Diagnoses Bind/Or (not implemented for comptime match).
+  FailureOr<TypedAttr>
+  emitComptimeCondition(ArrayRef<const PatternCommand *> commands);
 };
 
 /// Bump storage, path uniquing, and binding-mode state for one `match`.

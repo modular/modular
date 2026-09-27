@@ -309,6 +309,12 @@ struct StmtParser : public ParserBase {
   void emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
                        PatternEmitState &emissionState, bool inMatchCase);
 
+  /// Emit `comptime __match` as an `hlcf.comptime.if` elif chain: each case's
+  /// pattern tests become a PValue bool condition; bodies fill then/else
+  /// regions. Guards and variable bindings are not supported yet.
+  void emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
+                         PatternEmitState &emissionState, size_t curIndent);
+
   // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
   // closure on success when in the scope of the loop, and the specified
   // 'errorFn' if there is a semantic error with the sequence expression or
@@ -1588,7 +1594,15 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
   Location matchLocation = translateLocation(matchLoc);
 
   // Evaluate the subject once; match IR will consume this later.
-  CValue subject = getEmitter().emitExprCValue(subjectExpr, EC_MatchSubject);
+  // Comptime match requires a PValue subject; dynamic match borrows as BValue.
+  CValue subject;
+  if (isComptime) {
+    PValue subjectPV = getParamEmitter(EC_MatchSubject)
+                           .emitExprPValue(subjectExpr, EC_MatchSubject);
+    subject = subjectPV;
+  } else {
+    subject = getEmitter().emitExprCValue(subjectExpr, EC_MatchSubject);
+  }
   if (!subject) {
     // If we failed to emit the subject expression, skip over the body of the
     // match statement entirely. We do this by skipping any same-indent `case`
@@ -1608,8 +1622,8 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
   // Because we don't know whether a case is allowed to consume an RValue, we
   // convert the subject to a BValue before building patterns, so none of the
   // later pattern emission can consume the RValue.  For example, any "var"
-  // bindings will have to do a copy.
-  if (subject.getIfRValue()) {
+  // bindings will have to do a copy. Comptime subjects stay as PValues.
+  if (!isComptime && subject.getIfRValue()) {
     // TODO: maintain RValueness for as long as we can.
     subject = getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
     if (!subject)
@@ -1711,22 +1725,143 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
 
   auto afterCaseCursor = getLexer().getCursor();
 
-  // Comptime match: For now, just emit an error.
-  if (isComptime) {
-    emitError(matchLoc) << "'comptime match' is not implemented yet";
-    return success();
-  }
-
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns
   // are emitted.  For now, we simply emit each linearly.
   PatternEmitState emissionState{*curDeclScope, subject, rootPath,
                                  matchLocation,
                                  DenseMap<const PatternPath *, CValue>()};
-  emitCases(caseEntries, emissionState, /*inMatchCase=*/false);
+  if (isComptime)
+    emitComptimeCases(caseEntries, emissionState, curIndent);
+  else
+    emitCases(caseEntries, emissionState, /*inMatchCase=*/false);
 
   afterCaseCursor.restore(getLexer());
   return success();
+}
+
+/// Emit `comptime __match` as a flat `hlcf.comptime.if` / elif / else chain.
+/// Each tested case contributes one condition attribute; a trailing
+/// always-matching case (`_`) becomes the else arm.
+void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
+                                   PatternEmitState &emissionState,
+                                   size_t curIndent) {
+  assert(!caseEntries.empty() && "emitComptimeCases requires a non-empty list");
+  llvm::SaveAndRestore builderSaver(builder);
+
+  // Single always-matching case (typically `case _:`): emit the body inline.
+  if (caseEntries.size() == 1 && caseEntries.front().alwaysMatches()) {
+    const MatchCaseEntry &entry = caseEntries.front();
+    if (entry.guardExpr) {
+      emitError(entry.guardExpr->getLoc())
+          << "case guards in 'comptime match' are not implemented yet"
+          << entry.guardExpr->getRange();
+      return;
+    }
+    // Reject name bindings even on an otherwise irrefutable pattern.
+    if (!entry.commandList.empty()) {
+      emitError(entry.patternExpr->getLoc())
+          << "variable bindings in 'comptime match' are not implemented yet"
+          << entry.patternExpr->getRange();
+      return;
+    }
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+    entry.caseCursor.restore(getLexer());
+    (void)parseSuite(entry.caseIndent);
+    return;
+  }
+
+  struct Arm {
+    TypedAttr cond;
+    const MatchCaseEntry *entry;
+  };
+  SmallVector<Arm, 4> arms;
+  const MatchCaseEntry *elseEntry = nullptr;
+
+  for (const MatchCaseEntry &entry : caseEntries) {
+    if (entry.isUnreachable)
+      continue;
+    if (entry.guardExpr) {
+      emitError(entry.guardExpr->getLoc())
+          << "case guards in 'comptime match' are not implemented yet"
+          << entry.guardExpr->getRange();
+      return;
+    }
+    if (entry.alwaysMatches()) {
+      // Irrefutable arm: only `case _:` (empty command list) is supported.
+      if (!entry.commandList.empty()) {
+        emitError(entry.patternExpr->getLoc())
+            << "variable bindings in 'comptime match' are not implemented yet"
+            << entry.patternExpr->getRange();
+        return;
+      }
+      elseEntry = &entry;
+      break;
+    }
+    FailureOr<TypedAttr> cond =
+        emissionState.emitComptimeCondition(entry.commandList);
+    if (failed(cond))
+      return;
+    arms.push_back({*cond, &entry});
+  }
+
+  // No live tested arms: either only unreachable cases, or only an else.
+  if (arms.empty()) {
+    if (elseEntry) {
+      DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+      llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+      pushChildScope(scopeGuard, keepDecl);
+      elseEntry->caseCursor.restore(getLexer());
+      (void)parseSuite(elseEntry->caseIndent);
+    }
+    return;
+  }
+
+  SmallVector<Attribute, 4> conds;
+  conds.reserve(arms.size());
+  for (const Arm &arm : arms)
+    conds.push_back(arm.cond);
+
+  auto comptimeIfOp =
+      HLCF::ComptimeIfOp::create(builder, emissionState.matchLocation,
+                                 TypeRange{}, builder.getArrayAttr(conds));
+
+  auto emitArmBody = [&](Region &region, const MatchCaseEntry &entry,
+                         ArrayRef<ConstraintAttr> assumptions) {
+    builder.createBlock(&region);
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+    curDeclScope->insertKnownAssumptions(assumptions);
+    entry.caseCursor.restore(getLexer());
+    (void)parseSuite(entry.caseIndent);
+    auto caseLoc = translateLocation(entry.patternExpr->getLoc());
+    HLCF::ComptimeYieldOp::create(builder, caseLoc);
+  };
+
+  SmallVector<ConstraintAttr, 4> falseAssumptions;
+  auto thenRegions = comptimeIfOp.getThenRegions();
+  for (auto [idx, arm] : llvm::enumerate(arms)) {
+    SmallVector<ConstraintAttr, 4> thenAssumptions(falseAssumptions);
+    thenAssumptions.push_back(LIT::buildBranchAssumption(
+        arm.cond, /*invertCondition=*/false, emissionState.matchLocation));
+    emitArmBody(thenRegions[idx], *arm.entry, thenAssumptions);
+    falseAssumptions.push_back(LIT::buildBranchAssumption(
+        arm.cond, /*invertCondition=*/true, emissionState.matchLocation));
+  }
+
+  builder.createBlock(&comptimeIfOp.getElseRegion());
+  if (elseEntry) {
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+    curDeclScope->insertKnownAssumptions(falseAssumptions);
+    elseEntry->caseCursor.restore(getLexer());
+    (void)parseSuite(elseEntry->caseIndent);
+  }
+  HLCF::ComptimeYieldOp::create(builder, emissionState.matchLocation);
 }
 
 /// Determine if some number of the specified cases can be emitted as a cluster
@@ -1863,10 +1998,13 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   // This is either an enum tag test or a literal equality test.  Either way,
   // materialize the subject expression, and if this is an enum test,
   // materialize the tag value.
+  IREmitter testEmitter(*curDeclScope, builder);
   const PatternCommand *command = testedEntries.front().commandList.front();
-  auto value = emissionState.emitTestableValue(builder, command);
+  auto value = emissionState.emitTestableValue(testEmitter, command);
   if (!value)
     return;
+  if (testEmitter.builder)
+    builder = *testEmitter.builder;
 
   // We have some collection of cases that share a leading test.  We may have
   // multiple entries for the same cluster, and they may not be next to each
@@ -1897,8 +2035,14 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
 
   // `__eq__` of the shared subject or discriminant against this case's expected
   // value, as an i1 for `hlcf.if`.
-  auto emitEqCond = [&](const PatternCommand *command) -> Value {
-    return emissionState.emitTestForValue(builder, command, value);
+  auto emitEqCond = [&](const PatternCommand *command) -> SRValue {
+    IREmitter emitter(*curDeclScope, builder);
+    RValue matchesR = emissionState.emitTestForValue(emitter, command, value);
+    SRValue matches = emitter.emitSRValue({AnyValue(matchesR), command->expr},
+                                          EC_BoolCondition);
+    if (emitter.builder)
+      builder = *emitter.builder;
+    return matches;
   };
 
   Value firstCond = emitEqCond(orderedCases.front().second.commandList.front());

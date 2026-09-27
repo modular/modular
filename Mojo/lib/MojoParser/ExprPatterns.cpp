@@ -577,13 +577,18 @@ static bool isEnumCaseWithoutPayload(IREmitter &emitter, ASTType payloadType,
 /// Given a value of EnumLike type, extract the discriminant from it.
 static CValue emitGetEnumDiscriminant(IREmitter &emitter, CValue subject,
                                       const ExprNode *expr) {
-  BValue subjectBVal = emitter.emitBValue({subject, expr}, EC_MatchSubject);
-  if (!subjectBVal)
-    return {};
-  return emitter.emitNamedMethodCall(
-      "_get_enum_discriminant",
-      CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_MatchSubject),
-                   {{AnyValue(subjectBVal), expr}}));
+  // Parametric subjects stay as PValues; dynamic ones borrow as BValues.
+  AnyValue selfArg = subject;
+  if (!subject.getIfPValue()) {
+    BValue subjectBVal = emitter.emitBValue({subject, expr}, EC_MatchSubject);
+    if (!subjectBVal)
+      return {};
+    selfArg = subjectBVal;
+  }
+  return emitter.emitNamedMethodCall("_get_enum_discriminant",
+                                     CallOperands(CallSyntax::kMethodCall, expr,
+                                                  ExprDest(EC_MatchSubject),
+                                                  {{selfArg, expr}}));
 }
 
 LogicalResult CallNode::buildEnumCheckList(
@@ -697,7 +702,7 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
 // PatternCommandList emission
 //===----------------------------------------------------------------------===//
 
-CValue PatternEmitState::getPathValue(OpBuilder &builder,
+CValue PatternEmitState::getPathValue(IREmitter &emitter,
                                       const PatternPath *path,
                                       const ExprNode *expr) {
   assert(path && "null pattern path");
@@ -709,11 +714,9 @@ CValue PatternEmitState::getPathValue(OpBuilder &builder,
     return pathValues[path] = rootSubject;
   }
 
-  CValue parent = getPathValue(builder, path->parent, expr);
+  CValue parent = getPathValue(emitter, path->parent, expr);
   if (!parent)
     return {};
-
-  IREmitter emitter(curDeclScope, builder);
 
   switch (path->kind) {
   case PatternPath::Root:
@@ -774,12 +777,11 @@ CValue PatternEmitState::getPathValue(OpBuilder &builder,
 /// Emit `__eq__` of `value` against the literal or enum tag in `command`, as a
 /// scalar bool. `value` is the subject for `Equal` and the discriminant for
 /// `EnumTag`.
-SRValue PatternEmitState::emitTestForValue(OpBuilder &builder,
-                                           const PatternCommand *command,
-                                           CValue value) {
+RValue PatternEmitState::emitTestForValue(IREmitter &emitter,
+                                          const PatternCommand *command,
+                                          CValue value) {
   assert(command->kind == PatternCommand::Equal ||
          command->kind == PatternCommand::EnumTag);
-  IREmitter emitter(curDeclScope, builder);
   const ExprNode *expr = command->expr;
   AnyValue rhs;
   if (command->kind == PatternCommand::EnumTag) {
@@ -801,43 +803,87 @@ SRValue PatternEmitState::emitTestForValue(OpBuilder &builder,
       "__eq__",
       CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
                    {{AnyValue(value), expr}, {rhs, expr}}));
-  auto resultSB = emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
-  auto result = emitter.emitSRValue({resultSB, expr}, EC_BoolCondition);
-
-  // The emitter may have moved the insertion point, keep the caller up to date.
-  builder = *emitter.builder;
-  return result;
+  return emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
 }
 
 /// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
 /// the discriminant.
-CValue PatternEmitState::emitTestableValue(OpBuilder &builder,
+CValue PatternEmitState::emitTestableValue(IREmitter &emitter,
                                            const PatternCommand *command) {
   assert(command->kind == PatternCommand::Equal ||
          command->kind == PatternCommand::EnumTag);
   // Emit the subject for equals and enum tests both.
-  CValue subject = getPathValue(builder, command->path, command->expr);
+  CValue subject = getPathValue(emitter, command->path, command->expr);
   if (!subject || command->kind == PatternCommand::Equal)
     return subject;
 
   // Enum tests need the discriminant of the enum, not the whole value.
-  IREmitter emitter(curDeclScope, builder);
   return emitGetEnumDiscriminant(emitter, subject, command->expr);
+}
+
+FailureOr<TypedAttr> PatternEmitState::emitComptimeCondition(
+    ArrayRef<const PatternCommand *> commands) {
+  IREmitter emitter(curDeclScope, EC_MatchSubject);
+  TypedAttr combined;
+  for (const PatternCommand *cmd : commands) {
+    assert(cmd && "null pattern command");
+    switch (cmd->kind) {
+    case PatternCommand::Bind:
+      emitter.emitError(cmd->expr->getLoc())
+          << "variable bindings in 'comptime match' are not implemented yet"
+          << cmd->expr->getRange();
+      return failure();
+    case PatternCommand::Or:
+      emitter.emitError(cmd->expr->getLoc())
+          << "or-patterns in 'comptime match' are not implemented yet"
+          << cmd->expr->getRange();
+      return failure();
+    case PatternCommand::Equal:
+    case PatternCommand::EnumTag: {
+      CValue value = emitTestableValue(emitter, cmd);
+      if (!value)
+        return failure();
+      RValue matches = emitTestForValue(emitter, cmd, value);
+      PValue matchPV = matches.getIfPValue();
+      if (!matchPV) {
+        emitter.emitError(cmd->expr->getLoc())
+            << "'comptime match' case condition must be evaluable at "
+               "compile-time"
+            << cmd->expr->getRange();
+        return failure();
+      }
+      TypedAttr attr = cast<TypedAttr>(matchPV.get());
+      if (!combined) {
+        combined = attr;
+      } else {
+        // AND: cond(prev, next, prev) — if prev then next else prev.
+        combined = ParamOperatorAttr::get(
+            POC::Cond, {PValue(combined), PValue(attr), PValue(combined)});
+      }
+      break;
+    }
+    }
+  }
+  assert(combined && "emitComptimeCondition requires at least one test");
+  return combined;
 }
 
 LogicalResult
 PatternEmitState::emitCommands(OpBuilder &builder,
                                ArrayRef<const PatternCommand *> commands,
                                SmallVectorImpl<PatternBoundName> &bindings) {
+  IREmitter emitter(curDeclScope, builder);
   for (const PatternCommand *cmd : commands) {
     assert(cmd && "null pattern command");
     switch (cmd->kind) {
     case PatternCommand::Equal:
     case PatternCommand::EnumTag: {
-      CValue value = emitTestableValue(builder, cmd);
+      CValue value = emitTestableValue(emitter, cmd);
       if (!value)
         return failure();
-      SRValue matches = emitTestForValue(builder, cmd, value);
+      RValue matchesR = emitTestForValue(emitter, cmd, value);
+      SRValue matches = emitter.emitSRValue({AnyValue(matchesR), cmd->expr},
+                                            EC_BoolCondition);
       if (!matches)
         return failure();
 
@@ -850,30 +896,35 @@ PatternEmitState::emitCommands(OpBuilder &builder,
       Location loc =
           curDeclScope.getShared().translateLocation(cmd->expr->getLoc());
       HLCF::IfOp::create(
-          builder, loc, TypeRange(), matches,
+          *emitter.builder, loc, TypeRange(), matches,
           [&]() -> LogicalResult {
-            HLCF::YieldOp::create(builder, loc);
+            HLCF::YieldOp::create(*emitter.builder, loc);
             return success();
           },
           [&]() -> LogicalResult {
-            HLCF::MatchNextOp::create(builder, loc);
+            HLCF::MatchNextOp::create(*emitter.builder, loc);
             return success();
           });
       break;
     }
     case PatternCommand::Bind: {
-      CValue subject = getPathValue(builder, cmd->path, cmd->expr);
+      CValue subject = getPathValue(emitter, cmd->path, cmd->expr);
       if (!subject)
         return failure();
       bindings.push_back({cmd->bindName, subject, cmd->declKind});
       break;
     }
     case PatternCommand::Or:
+      if (emitter.builder)
+        builder = *emitter.builder;
       if (failed(emitOr(builder, *cmd, bindings)))
         return failure();
+      emitter.builder = builder;
       break;
     }
   }
+  if (emitter.builder)
+    builder = *emitter.builder;
   return success();
 }
 

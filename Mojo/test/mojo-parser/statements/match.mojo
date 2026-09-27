@@ -837,3 +837,56 @@ def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
         case_callee[0]()
     case (_, y_elt):
         case_callee[1]()
+
+
+# ===----------------------------------------------------------------------=== #
+# comptime __match
+# ===----------------------------------------------------------------------=== #
+
+# CHECK-LABEL: lit.fn @"comptime_match_wildcard
+def comptime_match_wildcard[x: Int]():
+    # Irrefutable `case _` emits the body with no comptime.if.
+    # CHECK-NOT: hlcf.comptime.if
+    # CHECK:     lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    comptime __match x:
+    case _:
+        case_callee[0]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_literals
+def comptime_match_literals[x: Int]():
+    # CHECK:      hlcf.comptime.if {{.*}}identical{{.*}}#lit.struct.extract<:!Int x, "_mlir_value">{{.*}}0{{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } elif {{.*}}identical{{.*}}#lit.struct.extract<:!Int x, "_mlir_value">{{.*}}1{{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 2
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      }
+    comptime __match x:
+    case 0:
+        case_callee[0]()
+    case 1:
+        case_callee[1]()
+    case _:
+        case_callee[2]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_bool
+def comptime_match_bool[flag: Bool]():
+    # CHECK:      hlcf.comptime.if {{.*}}__eq__{{.*}}flag{{.*}}{:scalar<bool> true}{{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } elif {{.*}}__eq__{{.*}}flag{{.*}}{:scalar<bool> false}{{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      }
+    comptime __match flag:
+    case True:
+        case_callee[0]()
+    case False:
+        case_callee[1]()

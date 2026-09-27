@@ -486,9 +486,13 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
         pass
 
 
-def comptime_match_not_implemented(x: Int):
-    # Syntax is accepted; lowering is not implemented yet.
-    # expected-error @+1 {{'comptime match' is not implemented yet}}
+def comptime_match_bindings_nyi[x: Int]():
     comptime __match x:
-    case _:
+    case var y: # expected-error {{variable bindings in 'comptime match' are not implemented yet}}
+        pass
+
+
+def comptime_match_guard_nyi[x: Int]():
+    comptime __match x:
+    case _ if True: # expected-error {{case guards in 'comptime match' are not implemented yet}}
         pass
