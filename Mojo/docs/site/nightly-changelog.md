@@ -31,9 +31,10 @@ This version is still a work in progress.
           return "unreachable"
   ```
 
-  Exhaustiveness is not checked yet for enums or `Bool`, so you may still need
-  a redundant `case _` even when the other cases appear complete. The spelling
-  remains `__match` while the feature is experimental.
+  `__match` warns on non-exhaustive `EnumLike` subjects (including `Bool`
+  and tuples/structs of such types) and on unreachable or duplicate cases. Open
+  subjects such as `Int` and `String` diagnose duplicate literal cases but are
+  not required to be exhaustive.
 
 - The message on a `where` clause can now be written
   `where <condition> else "<message>"`, as the preferred alternative to the

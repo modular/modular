@@ -785,7 +785,7 @@ def testLValueMutableMatch(var a: Optional[Int]):
     # CHECK:       [[VALUE:%.*]] = lit.var.decl "value" ref
     # CHECK:       lit.ref.store {{.*}}, [[VALUE]]
     # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}[mut *"a`
-    __match a: # expected-warning {{'__match' is not exhaustive; missing case for 'None'}}
+    __match a: # expected-warning {{'match' is not exhaustive; missing case for 'None'}}
     case .Some(ref value):
         value += 1
 

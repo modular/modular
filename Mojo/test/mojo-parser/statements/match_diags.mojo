@@ -37,7 +37,7 @@ def match_bad_subject_skips_indented_cases():
 
 
 def match_missing_cases(x: Int):
-    # expected-error @+1 {{'__match' statement must have at least one 'case' block}}
+    # expected-error @+1 {{'match' statement must have at least one 'case' block}}
     __match x:
 
     __match x:
@@ -275,7 +275,7 @@ struct BoolPair:
 
 def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
     # Bool is EnumLike: True/False must both be covered (or a catch-all used).
-    __match flag: # expected-warning {{'__match' is not exhaustive; missing case for 'False'}}
+    __match flag: # expected-warning {{'match' is not exhaustive; missing case for 'False'}}
     case True: pass
 
     # Duplicate Bool case after the type is fully covered.
@@ -306,7 +306,7 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
         pass
 
     # Non-exhaustive product: (False, False) is missing.
-    __match flag, flag: # expected-warning {{'__match' is not exhaustive; missing case for 'False, False'}}
+    __match flag, flag: # expected-warning {{'match' is not exhaustive; missing case for 'False, False'}}
     case True, True: pass
     case False, True: pass
     case True, False: pass
@@ -335,7 +335,7 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
         pass
 
     # Or that only covers one ctor is not exhaustive.
-    __match flag: # expected-warning {{'__match' is not exhaustive; missing case for 'False'}}
+    __match flag: # expected-warning {{'match' is not exhaustive; missing case for 'False'}}
     case True | True: pass
 
     # Or in a product: each alternative covers its cells.
@@ -362,11 +362,11 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
         pass
 
     # Various enum cases.
-    __match opt: # expected-warning {{'__match' is not exhaustive; missing case for 'None'}}
+    __match opt: # expected-warning {{'match' is not exhaustive; missing case for 'None'}}
     case Optional.Some(_):
         pass
 
-    __match opt: # expected-warning {{'__match' is not exhaustive; missing case for 'Some'}}
+    __match opt: # expected-warning {{'match' is not exhaustive; missing case for 'Some'}}
     case Optional.None:
         pass
 
@@ -399,7 +399,7 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
 
     # Products larger than kMaxProductCells (1024) cannot be tracked cell-by-cell
     # (Bool^11 == 2048); require a catch-all instead of silent Opaque.
-    # expected-warning @+1 {{'__match' is too complex to check for exhaustivity; add a '_' case}}
+    # expected-warning @+1 {{'match' is too complex to check for exhaustivity; add a '_' case}}
     __match (
         flag,
         flag,

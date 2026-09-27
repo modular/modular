@@ -1691,7 +1691,7 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
     // Pattern-type failures still count as a case being present; only diagnose
     // a missing case when no `case` header parsed successfully.
     if (!hadError)
-      emitError(matchLoc) << "'__match' statement must have at least one "
+      emitError(matchLoc) << "'match' statement must have at least one "
                              "'case' block";
     return success();
   }

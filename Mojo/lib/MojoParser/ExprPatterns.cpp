@@ -1775,7 +1775,7 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     while (witness < space->numCtors && !space->remaining[witness])
       ++witness;
     assert(witness < space->numCtors);
-    emitWarning(matchLoc, "'__match' is not exhaustive; missing case for ")
+    emitWarning(matchLoc, "'match' is not exhaustive; missing case for ")
         << "'" << caseNameSpelling(space->caseNames, witness) << "'";
   } else if (space->kind == MatchCoveringSpace::Kind::Product &&
              space->hasOpenCell()) {
@@ -1783,11 +1783,11 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     while (witness < space->numCells && !space->cells[witness])
       ++witness;
     assert(witness < space->numCells);
-    emitWarning(matchLoc, "'__match' is not exhaustive; missing case for ")
+    emitWarning(matchLoc, "'match' is not exhaustive; missing case for ")
         << "'" << formatProductWitness(*space, witness) << "'";
   } else if (space->kind == MatchCoveringSpace::Kind::TooComplex) {
     // A catch-all would have closed the space via alwaysMatches().
-    emitWarning(matchLoc, "'__match' is too complex to check for exhaustivity; "
+    emitWarning(matchLoc, "'match' is too complex to check for exhaustivity; "
                           "add a '_' case");
   }
 }

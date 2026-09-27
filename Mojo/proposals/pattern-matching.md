@@ -1,8 +1,8 @@
 # Mojo Pattern Matching
 
-**Status**: Prototype implementation underway.
+**Status**: Implementation underway.
 
-Date: Aug 29, 2026
+Date: Aug 29, 2026; Updated Sep 26, 2026.
 
 This is a set of notes to braindump thoughts on adding pattern matching to Mojo.
 It’s not meant to be canonical or a set of strongly held opinions; it is meant
@@ -274,35 +274,107 @@ code.
 While not described here, Mojo should also support a `comptime match`
 statement when the match subject is a parameter expression.
 
-### Exhaustiveness
+### Exhaustiveness and unreachability
 
-One question is whether a `match` statement must cover every possible input
-value, either because the compiler can prove its cases exhaustive or because a
-final irrefutable pattern such as `_` is present:
+`match` still evaluates the subject once and tries cases in source order. On
+top of that, the implementation performs a **covering analysis** that:
+
+- Warns when a `match` on a finite subject is not exhaustive.
+- Warns when a later case is unreachable because earlier cases already cover
+  every value it could match.
+- Marks covered / concluding cases so lowering can cut false fallthrough off.
+
+Cases with `if` guards never contribute to coverage: a guarded case may fail at
+runtime, so it does not shrink the remaining space. Coverage is driven by the
+subject's type and the pattern command list for each case:
+
+1. **`EnumLike` roots (finite constructors).** The open set is the enum's
+   constructor tags (for example `True`/`False`, `Optional.Some`/`None`). Simple
+   root tag / Bool-style equal patterns clear one constructor. A match that
+   leaves any constructor open is non-exhaustive; repeating an already-cleared
+   constructor is unreachable.
+
+2. **Products of `EnumLike` leaves.** Tuples and structs whose leaves are all
+   `EnumLike` are flattened into a cartesian cell bitset so correlated patterns
+   cover the right combinations. Independent per-field bitsets would wrongly
+   treat `True, True` plus `False, False` as total for a `Bool × Bool` subject;
+   the cell model does not. Omitted struct fields and `_` in a position are
+   wildcards over that dimension.
+
+3. **OR patterns.** An `a | b` case expands to a union of alternatives. Each
+   alternative is covered independently; the case is credited with the union.
+   An irrefutable alternative (for example `_` or bind-only) closes the whole
+   space.
+
+4. **Enum payload refinements.** Nested tests under a matched constructor
+   (for example `Optional.Some(0)`) still credit the **tag** only. v1 treats
+   the `EnumLike` tag set as the universe, not the payload domain: `Some(0)`
+   plus `None` is exhaustive for `Optional`, and a later `Some(_)` is
+   unreachable at tag level.
+
+5. **Oversized products.** If the flattened cell count exceeds a fixed cap
+   (currently 1024), the subject is **too complex** to track cell-by-cell. The
+   compiler does not silently give up: it warns that exhaustivity cannot be
+   checked and requires a catch-all `_` (or other irrefutable case).
+
+6. **Open literal subjects (`Int`, `String`, …).** These are an open universe.
+   The analysis tracks root equal-literal spellings (`4`, `"foo"`, …) so
+   duplicate / already-covered literal cases warn, but covering literals never
+   proves exhaustivity and never requires `_` by itself. A trailing irrefutable
+   case still closes the space for unreachability of later arms.
+
+Irrefutable unguarded patterns (`_`, bare bind) always close the remaining
+space. After the space is closed, every subsequent case is unreachable.
 
 ```mojo
-match values:
-case []:
+# Finite EnumLike: both ctors required (or a catch-all).
+match flag:  # warning: not exhaustive; missing case for 'False'
+case True:
     ...
-case [x]:
+
+# Product of EnumLike: correlated wildcards can finish the space.
+match flag, flag:
+case True, True:
     ...
-case _:
+case False, True:
+    ...
+case _, False:
+    ...
+case _:  # warning: unreachable; previous cases cover every value
+    ...
+
+# Open literals: duplicates warn; no exhaustivity requirement.
+match n:
+case 0:
+    ...
+case 0:  # warning: '0' is already covered by a previous case
+    ...
+case 1:
     ...
 ```
 
-Exhaustiveness is straightforward for some pattern forms but difficult to decide
-in full generality. Mojo could initially use conservative analysis: when the
-compiler cannot prove that the cases cover every possible value, require a final
-irrefutable case. Alternatively, we could not require exhaustiveness and
-instead warn about unreachable cases after an irrefutable pattern.
+#### Intentional Limitations
 
-More sophisticated exhaustiveness and redundancy analysis can be layered on as
-the pattern language becomes richer.
+These are the main limitations that people may ask about:
 
-The important point is that `match` itself remains simple: evaluate the subject
-once, try patterns in order, and execute the first case whose pattern succeeds.
-The richness comes from the pattern language, whose forms recursively compose
-and can be extended independently over time.
+- **Guards do not count.** `case True if cond:` does not cover `True` for
+  exhaustivity, because the parser cannot reason about conditions (even if
+  comptime expressions) at parser time.
+- **Payload domains are not refined.** Tag-level credit means
+  `Some(0) | Some(1)` does not prove anything about other `Some` payloads, and
+  conversely `Some(0)` is treated as covering all of `Some` for exhaustivity.
+- **Nested / product literals on open types are not tracked.** A subject such
+  as `Tuple[Int, Int]` is not a finite `EnumLike` product, so it falls into the
+  open-literal model, which only records **root** equal spellings. Duplicate
+  `case (0, 1):` arms are not diagnosed today.
+- **Literal identity is spelling-based.** `4` and `0x4` are different keys;
+  concatenated string literals without a single stable spelling are not
+  tracked. This could be addressed with increased implementation, but would be
+  very niche.
+- **Generic `EnumLike` types** case analysis is done by the Mojo parser, so
+  matching over a generic `EnumLike` won't work.
+- **Sequence, dict, and other future pattern forms** are outside this
+  covering model until those patterns land.
 
 ## Pattern Forms to Add
 
@@ -492,92 +564,32 @@ while var [item, 0] = get_next():
 This gives Mojo the ergonomics of `if let` and `while let` while reusing the
 normal `if` / `while` syntax and the same match-pattern language used by `case`.
 
-## Looking Ahead
+## Implementation status
 
-Although this proposal describes a fairly broad pattern-matching system, it does
-**not** need to be implemented as one large monolithic project. Most of the
-pieces are orthogonal and can land independently as relatively small
-subprojects.
+The nightlies include a prototype (currently hidden under the experimental
+`__match` keyword). It supports literal and value patterns, tuple and struct
+patterns, `EnumLike` case patterns, OR patterns, `as` patterns, `var` / `ref` /
+`_` bindings, match guards, and basic exhaustivity / unreachability checking.
 
-The key implementation investment is a recursive representation for **match
-patterns that may succeed or fail**, together with a lowering model that can
-apply such a pattern to a value and either produce its bindings or report
-failure.
+Still missing relative to this proposal:
 
-A very small starting point is a literal value pattern composed with Mojo's
-existing tuple decomposition:
+- **Sequence patterns** — fixed-length forms such as `case [x, y]:` and
+  variable-length forms such as `case [first, *rest]:`, plus the shared trait /
+  protocol that should back both match patterns and failable sequence
+  destructuring (`var [a, b, c] = get_list()`).
+- **Mapping patterns** — for example `case {"name": name, "age": age}:`.
+- **`comptime match`** — matching when the subject is a parameter expression.
+- **Conditional pattern bindings in `if` / `while`** — the `if pattern =
+  expression` / `while pattern = expression` form described above (Mojo's
+  analogue of `if let` / `while let`).
 
-```mojo
-match get_tuple_pair():
-case (var x, 0):
-    use(x)
-case _:
-    ...
-```
+These are still on the TODO list.
 
-Mojo already understands tuple decomposition and `var x`; the new operation is
-simply testing the second element against `0` with `==` semantics. This
-exercises the core matching machinery:
+## Looking ahead
 
-- representing refutable patterns;
-- evaluating the matched value once;
-- recursively composing binding and value patterns;
-- producing bindings only when the complete pattern succeeds;
-- and transferring control to the next `case` when it fails.
-
-From there, the rest of the language can grow incrementally.
-
-A closely related project is **failable sequence destructuring**:
-
-```mojo
-var [a, b, c] = get_list()
-```
-
-This belongs to ordinary destructuring rather than the full match-pattern
-grammar, but it can share the same underlying decomposition infrastructure.
-Sequence support should not be hard-coded to `List`; we should define a trait
-that sequence-like types conform to, exposing the operations necessary to
-inspect runtime shape and project elements with the appropriate ownership
-semantics.
-
-The same protocol can then support sequence match patterns:
-
-```mojo
-match values:
-case var [a, b, 0]:
-    ...
-case _:
-    ...
-```
-
-and later variable-length forms:
-
-```mojo
-case var [first, *rest]:
-case var [first, *middle, last]:
-```
-
-Other pieces likewise decompose naturally into relatively independent projects:
-
-- **Conditional matching in `if` and `while`** interprets pattern failure as a
-  false condition.
-- **OR patterns** compose several existing patterns.
-- **AS patterns** retain the complete matched value while recursively applying
-  another pattern.
-- **Struct patterns** add an extensible mechanism for decomposing struct-like
-  values.
-- **Mapping patterns** introduce another independently implementable structural
-  protocol.
-- **Match guards** add boolean filtering after a pattern has successfully
-  matched.
-- The separate enum/`EnumLike` proposal adds another family of patterns using
-  the same infrastructure.
-- Exhaustiveness and redundancy analysis can become progressively more
-  sophisticated as additional pattern forms land.
-
-The important architectural point is that these features should compose through
-common pattern and decomposition infrastructure without requiring one
-coordinated implementation effort.
+This section captures possible future directions, making them explicitly
+"non-goals" for the initial implementation. Once we have more experience using
+a completed feature, we can evaluate whether these make sense to add.
 
 ### Future Direction: Arbitrary Value Matching
 
