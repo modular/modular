@@ -50,6 +50,7 @@ from nn.kv_cache import (
     rms_norm_kv_cache_ragged_paged,
     rms_norm_value_cache_ragged_paged,
 )
+from nn.kv_cache_gather import kv_cache_gather_rows_ragged
 from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
@@ -135,6 +136,59 @@ struct Struct_kv_cache_store_paged:
             cache,
             inputs.shape(),
             input_row_offsets.to_layout_tensor(),
+            context,
+        )
+
+
+@extensibility.register("mo.kv_cache.gather_rows.ragged.paged")
+struct Struct_kv_cache_gather_rows_ragged_paged:
+    """Registers the `mo.kv_cache.gather_rows.ragged.paged` graph op with the graph compiler.
+
+    Copies the key or value rows a per-row slot list names out of one layer
+    of a paged cache, one head per slot. See `nn.kv_cache_gather`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        kv_type: DType,
+        //,
+        key_or_value: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=kv_type, rank=3, ...],
+        slots: InputTensor[dtype=.int32, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        context: DeviceContext,
+    ) raises:
+        var paged_kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
+
+        comptime if key_or_value == 0:
+            cache = paged_kv_collection.get_key_cache(Int(layer_idx))
+        else:
+            cache = paged_kv_collection.get_value_cache(Int(layer_idx))
+
+        kv_cache_gather_rows_ragged[target=target](
+            output.to_layout_tensor(),
+            slots.to_layout_tensor(),
+            row_offsets.to_layout_tensor(),
+            cache,
             context,
         )
 

@@ -2495,6 +2495,71 @@ def store_v_cache_ragged(
     )
 
 
+def kv_cache_gather_rows_ragged(
+    kv_collection: PagedCacheValues,
+    slots: TensorValue,
+    row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    *,
+    key_or_value: int,
+) -> TensorValue:
+    """Gathers key or value rows out of a paged cache by slot.
+
+    Row ``r`` of ``slots`` addresses the request ``b`` with ``row_offsets[b]
+    <= r < row_offsets[b + 1]``, and ``slots[r, j]`` is a slot of that request,
+    resolved through its lookup table the way the store op resolves a token.
+    A leaf with ``slots_per_page < page_size`` is paged by ``slots_per_page``,
+    so its slots are entry indices. The copy is exact, in the cache's dtype.
+
+    Args:
+        kv_collection: The paged cache leaf to read (one head per slot).
+        slots: ``[rows, n]`` int32 slot indices. Every slot must be
+            non-negative and inside its request's allocated pages.
+        row_offsets: ``[batch + 1]`` uint32 ragged offsets of the rows of
+            ``slots``.
+        layer_idx: uint32 scalar, the layer to read.
+        key_or_value: Whether to read the key or the value cache.
+
+    Returns:
+        ``[rows, n, head_dim]`` in the cache's dtype.
+    """
+    _check_rank(2, slots=slots)
+    _check_rank(1, row_offsets=row_offsets)
+    _check_dtype(DType.int32, slots=slots)
+    _check_dtype(DType.uint32, row_offsets=row_offsets)
+    _validate_kv_cache_store_common(kv_collection, layer_idx, key_or_value)
+    kv_blocks = kv_collection.kv_blocks
+    if kv_blocks.shape[4] != 1:
+        raise ValueError(
+            "kv_cache_gather_rows_ragged reads caches with one head per slot,"
+            f" got {kv_blocks.shape[4]}"
+        )
+
+    return ops.inplace_custom(
+        "mo.kv_cache.gather_rows.ragged.paged",
+        device=slots.device,
+        values=[
+            slots,
+            row_offsets,
+            kv_blocks,
+            kv_collection.page_stride,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            kv_collection.max_prompt_length,
+            kv_collection.max_cache_length,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                kv_blocks.dtype,
+                [slots.shape[0], slots.shape[1], kv_blocks.shape[5]],
+                slots.device,
+            )
+        ],
+        parameters={"key_or_value": key_or_value},
+    )[0].tensor
+
+
 def kv_cache_store_paged_padded(
     kv_collection: PagedCacheValues,
     x_cache: TensorValue,
