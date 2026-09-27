@@ -1,8 +1,12 @@
-# Struct Annotations
+# Struct annotations
 
-**Status**: Concept proposal.
+**Status**: Experimental implementation landed. The `@__annotation` decorator
+and the `reflect[T].annotations()` / `reflect[T].field_annotations[i]()`
+readers are in the compiler and stdlib behind a double-underscore spelling,
+and carry no stability guarantees. The final syntax is still open.
 
-Date: September 10, 2026
+Date: September 10, 2026. Updated September 27, 2026 to match the landed
+implementation.
 
 ## Motivation
 
@@ -17,28 +21,99 @@ languages is with **annotations**.
 
 ## TL/DR
 
-Annotations are Mojo compile-time values that are syntactically attached to Mojo
-decls (structs, functions, methods etc.) and can be introspected through a
-comptime reflection API. Ignore the syntax but see the meaning:
+Annotations are Mojo compile-time values that are syntactically attached to a
+struct or to one of its fields and read back as a tuple through the `reflect`
+API:
 
-```jsx
-# This defines a function (or any other comptime value)
-def myfunc(Int x)->Int:
-    return x
+```mojo
+@fieldwise_init
+struct Tag(Deinitable, Movable):
+    var name: StaticString
 
-# This attaches that value to `target`
-@__annotation(myfunc(1))
-@__annotation(myfunc(2), myfunc(3))
+# Any comptime value works, including the result of a call.
+def tag(name: StaticString) -> Tag:
+    return Tag(name)
+
+# This attaches values to `Target` and to its `value` field.
+@__annotation(tag("a"))
+@__annotation(tag("b"), 2)
 struct Target:
-  @__annotation(myfunc(4))
-  var value: String
+    @__annotation(tag("c"))
+    var value: String
 
-# This reads the annotation value via metaprogramming
-...
-comptime x: Tuple[Int, Int, Int] = reflect[Target].attributes()
-comptime assert x == (myfunc(1), myfunc(2), myfunc(3))
-comptime y: Tuple[Int] = reflect[Target].field_attributes[0]()
-comptime assert y == (myfunc(4),)
+def main():
+    # This reads them back as ordinary tuples, in source order.
+    var attrs = reflect[Target].annotations()      # Tuple[Tag, Tag, Int]
+    print(len(attrs), attrs[0].name, attrs[2])     # 3 a 2
+    comptime assert type_of(attrs).Ts[2] == Int
+
+    var field_attrs = reflect[Target].field_annotations[0]()  # Tuple[Tag]
+    print(field_attrs[0].name)                                # c
+```
+
+## What landed
+
+The implementation is split between the parser, which stores the values, and
+the reflection library, which reads them.
+
+### The decorator
+
+`@__annotation(value, ...)` takes one or more positional comptime values.
+Keyword arguments, unpacked arguments (`*pack`, `**pack`), and types
+(`@__annotation(Int)`) are rejected with a diagnostic. Repeated decorators
+accumulate into one list, top to bottom and left to right within a decorator.
+
+The decorator is only accepted on structs and struct fields. Functions,
+methods, traits, trait members and `comptime` aliases reject it. Extending it
+to those declarations is possible later but is not part of this design.
+
+Values are written in the decorated struct's own scope and stored unevaluated.
+A value can therefore name the struct's parameters (`Self.N`), a `comptime`
+alias declared anywhere in the struct (including after the field), a module
+level alias, or a value taken from a trait bound (`Self.T.tag`). Each
+instantiation of a parametric struct reads back its own values:
+
+```mojo
+@__annotation(Self.N, Self.N + 1)
+struct Param[N: Int]:
+    @__annotation(Self.N * 2)
+    var value: Int
+
+def main():
+    print(reflect[Param[3]].annotations()[1])          # 4
+    print(reflect[Param[5]].field_annotations[0]()[0]) # 10
+```
+
+A literal is stored in its materialized form, so `@__annotation(9)` reads back
+as an `Int` and `@__annotation("x")` as a `String`. A constructor call such as
+`Tag("x")` reads back as a `Tag`.
+
+### The readers
+
+`reflect[T]` has two static methods:
+
+- `annotations()` returns the struct's values as a `Tuple`.
+- `field_annotations[field_index]()` returns the values on the field at
+  `field_index` as a `Tuple`.
+
+The tuple carries everything else. Its `Ts` parameter is the list of
+annotation types, `len()` is the count, and indexing reads one value. A struct
+or field with no annotations yields an empty tuple rather than an error. Each
+value is materialized from its compile-time form, so the result is an ordinary
+runtime tuple.
+
+Every annotation type must conform to `Movable & Deinitable`. Storage erases
+each type to `AnyType`, and the reader downcasts to that bound so the value can
+be materialized into a `Tuple` element and destroyed with the tuple.
+
+In generic code the element types depend on `T`, so a caller dispatches on
+`type_of(...).Ts[i]` and names the concrete type with `rebind`:
+
+```mojo
+def first_int_annotation[T: AnyType]() -> Int:
+    var attrs = reflect[T].annotations()
+    comptime assert type_of(attrs).Ts[0] == Int
+    return rebind[Int](attrs[0])
 ```
 
 ## Examples
@@ -48,14 +123,9 @@ itself, as well as any field. Annotations are **compile time values** associated
 with a struct itself or any of its fields. This concept is easier to explain
 with examples, so we will start with motivating code samples below.
 
-<aside>
-💡
-
-For the purposes of this document I will use `@annotation` as the spelling for
-this feature. I don’t like the name, and at some point we should have a bike
-shed conversation about the final syntax to specify annotations.
-
-</aside>
+The examples use the current `@__annotation` spelling. The double underscore
+marks it as experimental; see the design decisions for the open bikeshed on
+the final syntax.
 
 **CLI Argparse**
 
@@ -64,14 +134,14 @@ example (from which these examples are adapted).
 
 With annotations, it would simply be:
 
-```python
+```mojo
 struct Args:
-    @annotation(clap.help("Name of the person to greet"))
-    @annotation(clap.short, clap.long)
+    @__annotation(clap.help("Name of the person to greet"))
+    @__annotation(clap.short, clap.long)
     var name: String
 
-    @annotation(clap.help("Number of times to greet"))
-    @annotation(clap.short, clap.long)
+    @__annotation(clap.help("Number of times to greet"))
+    @__annotation(clap.short, clap.long)
     var count: Int
 
 def main() raises:
@@ -80,21 +150,21 @@ def main() raises:
         print("Hello", args.name, "!")
 ```
 
-And the clap implementation code would be this (see 2 bolded lines for the
-metaprogramming queries):
+And the clap implementation code would be this (the metaprogramming queries
+are the `field_annotations` read and the `comptime for` over its `Ts`):
 
-```python
+```mojo
 from std.collections import List
 from std.utils import Variant
 from std.sys import argv
 from std.reflection import reflect
 
 @fieldwise_init
-struct Help(ImplicitlyCopyable, Movable):
+struct Help(Deinitable, ImplicitlyCopyable, Movable):
     var text: StaticString
 
 @fieldwise_init
-struct ShortArg(ImplicitlyCopyable, Movable):
+struct ShortArg(Deinitable, ImplicitlyCopyable, Movable):
     var value: Optional[UInt8]
 
     def __call__(self, c: UInt8) -> ShortArg:
@@ -105,7 +175,7 @@ struct ShortArg(ImplicitlyCopyable, Movable):
         return ShortArg(None)
 
 @fieldwise_init
-struct LongArg(ImplicitlyCopyable, Movable):
+struct LongArg(Deinitable, ImplicitlyCopyable, Movable):
     var enabled: Bool
 
 def help(text: StaticString) -> Help:
@@ -140,11 +210,15 @@ struct Option(ImplicitlyCopyable, Movable):
         self.long_name = long_name
         self.help_text = ""
 
-    def apply_annotation[T: ImplicitlyCopyable, //, attr: T, field_name: StaticString](mut self):
+    # The annotation arrives as a runtime tuple element whose type is known
+    # at compile time, so dispatch happens on `T` and the value is rebound.
+    def apply_annotation[
+        T: Movable & Deinitable, //, field_name: StaticString
+    ](mut self, attr: T):
         comptime if T == Help:
-            self.help_text = comptime(rebind[Help](attr).text)
+            self.help_text = String(rebind[Help](attr).text)
         elif T == ShortArg:
-            comptime s = rebind[ShortArg](attr)
+            var s = rebind[ShortArg](attr)
             if s.value is not None:
                 self.short_flag = Optional[String](
                     _char_string(s.value.value())
@@ -154,8 +228,8 @@ struct Option(ImplicitlyCopyable, Movable):
                     _char_string(_first_codepoint(String(field_name)))
                 )
         elif T == LongArg:
-            if comptime (rebind[LongArg](attr)).enabled:
-                self.long_name = field_name
+            if rebind[LongArg](attr).enabled:
+                self.long_name = String(field_name)
 
 def _match_value(
     input: Span[StaticString, ImmStaticOrigin],
@@ -195,7 +269,9 @@ def _match_value(
 
     return Optional[String]()
 
-def parse[Args: Movable](input: Span[StaticString, ImmStaticOrigin]) raises -> Args:
+def parse[
+    Args: Movable
+](input: Span[StaticString, ImmStaticOrigin]) raises -> Args:
     var result = Args()
 
     comptime count = reflect[Args].field_count()
@@ -204,12 +280,12 @@ def parse[Args: Movable](input: Span[StaticString, ImmStaticOrigin]) raises -> A
 
     comptime for idx in range(count):
 
-        var opt = Option(long_name=names[idx])
-        # This is the new part
-        # we can get a tuple of the annotation values.
-        comptime attrs: Tuple[...] = reflect[Args].field_attributes[idx]()
-        comptime for i in range(attrs.length):
-            opt.apply_annotation[attrs[i], names[idx]]()
+        var opt = Option(long_name=String(names[idx]))
+        # This is the new part: the field's annotations come back as a tuple,
+        # and its `Ts` parameter drives the dispatch.
+        var attrs = reflect[Args].field_annotations[idx]()
+        comptime for i in range(type_of(attrs).Ts.length):
+            opt.apply_annotation[names[idx]](attrs[i])
 
         var maybe_value = _match_value(input, opt)
         comptime FieldType = types[idx]
@@ -241,25 +317,19 @@ the annotations associated with fields to a dictionary of attributes.
 For an example our users are also concerned with, consider serialization and
 deserialization, right now one might write:
 
-```python
-from serde import (
-    Serialize,
-    to_json,
-    Attribute,
-    rename_all_camel,
-    rename_field,
-    skip_if_none,
-)
+```mojo
+import serde
+from serde import to_json
 from std.collections import List
 
-@annotation(serde.rename_all_camel)
+@__annotation(serde.rename_all_camel)
 @fieldwise_init
 struct User:
-    @field: serde.rename("identifier")   # explicit per-field rename
+    @__annotation(serde.rename_field("identifier"))  # explicit per-field rename
     var id: Int
     var first_name: String               # -> "firstName" via rename_all
     var last_name: String                # -> "lastName"
-    @field: serde.skip_if_none           # omit the key when None
+    @__annotation(serde.skip_if_none)    # omit the key when None
     var middle_name: Optional[String]
     var age: Int                         # -> "age"
     var active: Bool                     # -> "active"
@@ -289,13 +359,13 @@ def main() raises:
 
 where `serde.mojo` looks like:
 
-```python
+```mojo
 from std.reflection import reflect
 from std.collections import List
 from std.utils import Variant
 
 @fieldwise_init
-struct RenameCase(Equatable, ImplicitlyCopyable, Movable):
+struct RenameCase(Deinitable, Equatable, ImplicitlyCopyable, Movable):
     var mode: UInt8
     comptime camel = Self(0)
     comptime pascal = Self(1)
@@ -303,11 +373,11 @@ struct RenameCase(Equatable, ImplicitlyCopyable, Movable):
     comptime kebab = Self(3)
 
 @fieldwise_init
-struct RenameField(ImplicitlyCopyable, Movable):
-    var to: String
+struct RenameField(Deinitable, ImplicitlyCopyable, Movable):
+    var to: StaticString
 
 @fieldwise_init
-struct SkipIfNone(ImplicitlyCopyable, Movable):
+struct SkipIfNone(Deinitable, ImplicitlyCopyable, Movable):
     pass
 
 comptime rename_all_camel = RenameCase.camel
@@ -316,7 +386,7 @@ comptime rename_all_snake = RenameCase.snake
 comptime rename_all_kebab = RenameCase.kebab
 comptime skip_if_none = SkipIfNone()
 
-def rename_field(to: String) -> RenameField:
+def rename_field(to: StaticString) -> RenameField:
     return RenameField(to)
 
 def _ascii_up(cp: Codepoint) -> Codepoint:
@@ -413,34 +483,36 @@ def render[T: AnyType](v: T) raises -> String:
     else:
         return '"?<unsupported>?"'
 
-def to_json[T: Serialize](value: T) raises -> String:
+def to_json[T: AnyType](value: T) raises -> String:
     comptime names = reflect[T].field_names()
     comptime types = reflect[T].field_types()
     comptime count = reflect[T].field_count()
 
-    # Resolve the struct-level `rename_all`, if any.
-    comptime attrs = reflect[T].attributes()
+    # Resolve the struct-level `rename_all`, if any. The tuple's `Ts` lists
+    # the annotation types, so the match is a compile-time type comparison.
+    var attrs = reflect[T].annotations()
+    comptime AttrTypes = type_of(attrs).Ts
     var type_case = Optional[RenameCase]()
-    comptime for i in range(attrs.size):
-        if type_of(attrs[i]) == RenameCase:
-            type_case = rebind[RenameCase](attrs[i])
+    comptime for i in range(AttrTypes.length):
+        comptime if AttrTypes[i] == RenameCase:
+            type_case = Optional[RenameCase](rebind[RenameCase](attrs[i]))
 
     var parts = List[String]()
     comptime for idx in range(count):
         comptime FieldType = types[idx]
-        var field_name = String(comptime (names[idx]))
+        var field_name = String(names[idx])
 
         var key = field_name
         if type_case is not None:
             key = _apply_case(type_case.value(), field_name)
 
         var skip_if_none_field = False
-        comptime field_attrs = reflect[T].field_attributes[idx]()
-        comptime for field_idx in range(field_attrs.size):
-            comptime attr = field_attrs[field_idx]
-            if type_of(attr) == RenameField:
-                key = comptime(rebind[RenameField](attr).to)
-            elif type_of(attr) == SkipIfNone:
+        var field_attrs = reflect[T].field_annotations[idx]()
+        comptime FieldAttrTypes = type_of(field_attrs).Ts
+        comptime for j in range(FieldAttrTypes.length):
+            comptime if FieldAttrTypes[j] == RenameField:
+                key = String(rebind[RenameField](field_attrs[j]).to)
+            elif FieldAttrTypes[j] == SkipIfNone:
                 skip_if_none_field = True
 
         ref fld = reflect[T].field_ref[idx](value)
@@ -459,22 +531,30 @@ def to_json[T: Serialize](value: T) raises -> String:
 
 ```
 
-## Design Decisions
+## Design decisions
 
-### Are annotations tuples of values (recommended) or dictionaries?
+### Annotations are tuples of values, not dictionaries
 
-One difference from a language such as Rust is that annotations are not
-arbitrary dictionaries, one can think of the annotations as tuples of values (in
-fact this might be the return type of `field_metadata`), or possibly a tuple of
-pairs (”annotation_name”, value). This behavior aligns with how C++ handles
-annotations and reflection. The main benefit of this approach is that we do not
-have to design with the fear of namespace collisions, and we can scope an
-annotated type by the module it originates from.
+This is decided and is what shipped. An annotation list is a positional tuple
+of values: `annotations()` and `field_annotations[i]()` return `Tuple[*Ts]`,
+where `Ts` is the list of annotation types in source order. The parser rejects
+keyword arguments, so there is no name to key on; the type of each value is the
+discriminator, as the clap and serde examples show. This behavior aligns with
+how C++ handles annotations and reflection. The main benefit of this approach
+is that we do not have to design with the fear of namespace collisions, and an
+annotation is scoped by the module that defines its type.
+
+A consequence worth naming: two annotations of the same type on one field are
+both kept, and the reader makes no attempt to deduplicate or to pick one. A
+library that wants "the `Rename` on this field" walks the tuple and decides
+for itself what a repeat means.
 
 ### What is the syntax for annotating a field or structure?
 
-One bikeshed highlighted above is that we need a syntax for annotations. Here
-are a couple of samples of syntax
+The current spelling is `@__annotation(...)`. The double underscore is
+deliberate: it marks the decorator as experimental and keeps the eventual
+user-facing name free. Here are a couple of samples of syntax from other
+languages:
 
 ```text
 struct User { #[serde(rename="firstName")] fist_name: String } - Rust
@@ -482,13 +562,29 @@ struct User { [[=serde::rename("firstName")]] std::string first_name } - C++
 type User struct { FirstName string `json:"firstName"`} - Golang
 ```
 
-I think users probably prefer something shorter than `@annotation`. Should this
-use the decorator syntax? Should it use something else? Maybe just `@(...)`?
+Users probably prefer something shorter than `@annotation`. Should this use
+the decorator syntax? Should it use something else? Maybe just `@(...)`? This
+remains open.
+
+Placement is also narrower than the original sketch, which mentioned
+functions and methods. Only structs and struct fields accept the decorator
+today; the parser has nowhere to store a value on the other declarations.
 
 ### Should we support linear types?
 
 On the one hand, supporting arbitrary metadata could be useful, but on the other
 hand, everything that exists in an annotation is logically a `comptime`
 expression. Will users actually understand this nuance? This matters for whether
-the `__annotations_of(T)` returns a `Tuple[*Movable]` or a
-`Tuple[*Movable & Deinitable]`.
+`annotations()` returns a `Tuple[*Movable]` or a
+`Tuple[*Movable & Deinitable]`. The readers that landed require
+`Movable & Deinitable` today, but the question stays open.
+
+### Open questions
+
+- The final spelling of the decorator, per the bikeshed above.
+- Whether to accept the decorator on functions, methods and parameters.
+- Whether the reflection API should grow helpers over the tuple, such as
+  "the first annotation of type `X`" or "does this field carry an `X`", or
+  whether the `comptime for` over `Ts` in the examples is enough.
+- Whether a reader that returns comptime values, without materializing them,
+  is wanted alongside the tuple readers.
