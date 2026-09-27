@@ -382,6 +382,19 @@ def _top_k_cpu[
                     idxs[i]
                 )
 
+            # A row asking for fewer than the output width gets the padding
+            # the GPU kernels write, not whatever the buffer held.
+            var out_k = coord_to_index_list(out_idxs.layout.shape_coord())[axis]
+            for i in range(k_val, out_k):
+                indices[axis] = i
+                out_vals.raw_store(
+                    out_vals.layout(Coord(indices)),
+                    _topk_dead_val[dtype, largest](),
+                )
+                out_idxs.ptr[out_idxs.layout(Coord(indices))] = Scalar[
+                    out_idx_type
+                ](-1)
+
     parallelize_over_rows(
         process_rows, shape, axis, parallelism_grain_size, ctx
     )

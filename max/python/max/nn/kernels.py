@@ -9684,6 +9684,45 @@ def scatter_nd_skip_oob_indices(
     )[0].tensor
 
 
+def top_k_per_row(
+    input: TensorValue, k: TensorValue, max_k: int
+) -> tuple[TensorValue, TensorValue]:
+    """:func:`~max.graph.ops.top_k` over the last axis, with a count per row.
+
+    Row ``r`` gets the first ``k[r]`` picks ``ops.top_k(input, max_k)`` makes
+    for it, in the same order; the rest of its ``max_k`` slots hold the lowest
+    value of the dtype (``-inf`` for floats) and index ``-1``. The kernel stops
+    after a row's count, so its cost follows the counts rather than ``max_k``.
+
+    Args:
+        input: ``[rows, n]`` values to select from.
+        k: ``[rows]`` int64 picks per row on ``input``'s device, each in
+            ``[0, max_k]``.
+        max_k: The output width, at most ``n``.
+
+    Returns:
+        ``[rows, max_k]`` values in ``input``'s dtype and their int64 column
+        indices.
+    """
+    _check_rank(2, input=input)
+    _check_rank(1, k=k)
+    _check_dtype(DType.int64, k=k)
+    if not 0 <= max_k <= int(input.shape[1]):
+        raise ValueError(f"max_k must be in [0, {input.shape[1]}], got {max_k}")
+    rows = input.shape[0]
+    values, indices = ops.custom(
+        "mo.top_k.per_row",
+        device=input.device,
+        values=[input, ops.rebind(k, [rows])],
+        out_types=[
+            TensorType(input.dtype, [rows, max_k], input.device),
+            TensorType(DType.int64, [rows, max_k], input.device),
+        ],
+        parameters={"max_k": max_k},
+    )
+    return values.tensor, indices.tensor
+
+
 def topk_fused_sampling(
     logits: TensorValue,
     top_k: TensorValueLike,

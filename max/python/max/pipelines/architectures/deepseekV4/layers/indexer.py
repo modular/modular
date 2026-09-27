@@ -40,11 +40,11 @@ Causality is enforced twice, and the two are not the same rule:
 
 1. Before the top-k, entries that had not closed yet are ``-inf``'d so they
    cannot be selected.
-2. After the top-k, any index that still points at a not-yet-closed entry
-   becomes ``-1``. This fires when fewer than ``k`` entries are available: the
-   top-k has to return ``k`` indices, so it pads out of the ``-inf`` region, and
-   those picks are dropped here instead. ``-1`` is what ``sparse_attention``
-   reads as "no such position".
+2. After the top-k, any slot without a finite score becomes ``-1``. The
+   top-k asks each query for no more picks than it has closed entries and
+   pads the rest of its ``k`` slots with ``-1`` itself, so this only drops a
+   pick whose score was not finite. ``-1`` is what ``sparse_attention`` reads
+   as "no such position".
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn.kernels import top_k_per_row
 from max.nn.layer import Module
 from max.nn.linear import Linear
 
@@ -232,11 +233,17 @@ class DeepseekV4Indexer(Module):
         )
 
         k = min(self.index_topk, n)
-        topk_scores, topk_idxs = ops.top_k(index_score, k, axis=-1)
+        # Until more than ``k`` entries have closed a query selects all of
+        # them, so it asks for no more picks than it has candidates: the
+        # same picks in the same order, without the kernel's padding rounds.
+        live = ops.squeeze(
+            ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
+        )
+        picks = ops.min(live, ops.constant(k, DType.int64, device))
+        topk_scores, topk_idxs = top_k_per_row(index_score, picks, k)
         topk_idxs = ops.cast(topk_idxs, DType.int32)
 
-        # Rule 2: drop the padding picks the top-k had to make out of the -inf
-        # region.
+        # Rule 2: drop any pick whose score was not finite.
         return ops.where(
             topk_scores > ops.constant(float("-inf"), DType.float32, device),
             topk_idxs,

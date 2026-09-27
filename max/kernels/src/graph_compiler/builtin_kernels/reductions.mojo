@@ -36,7 +36,7 @@ from algorithm.reductions import (
 from algorithm.rowwise_types import RowCoord
 
 from max.gpu.host import DeviceContext, get_gpu_target
-from max.gpu.host.info import is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from nn import arg_nonzero
 from nn.argsort import argsort
 from nn.cumsum import cumsum
@@ -53,7 +53,7 @@ from nn.normalization import (
     row_mean_of_squares,
 )
 from nn.softmax import softmax
-from nn.topk import top_k, top_k_shape_impl
+from nn.topk import _top_k_cpu, top_k, top_k_shape_impl, topk_gpu
 from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
     rms_norm_fused_residual,
@@ -2118,6 +2118,73 @@ def top_k_shape(
             Int(axis),
         )
     )
+
+
+@extensibility.register("mo.top_k.per_row")
+struct TopKPerRow:
+    """Registers the `mo.top_k.per_row` graph op with the graph compiler.
+
+    `mo.top_k` over the last axis of a `[rows, n]` input, with a count per
+    row: row `r` keeps the first `k[r]` picks `mo.top_k` with `max_k` makes
+    for it, in the same order, and pads the rest of its `max_k` slots with
+    the dead value and index `-1`. The kernel stops after `k[r]` picks, so
+    its cost follows the counts rather than `max_k`.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        max_k: Int,
+        target: StaticString,
+    ](
+        values: OutputTensor[dtype=dtype, rank=2, ...],
+        indices: OutputTensor[dtype=.int64, rank=2, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        k: InputTensor[dtype=.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        """Executes the `mo.top_k.per_row` graph op.
+
+        Parameters:
+            dtype: Element type of the input and values.
+            max_k: Output width, the largest count any row may ask for.
+            target: Compilation target string.
+
+        Args:
+            values: `[rows, max_k]` selected values.
+            indices: `[rows, max_k]` their column indices.
+            input: `[rows, n]` values to select from.
+            k: `[rows]` picks per row, each in `[0, max_k]`.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the operation parameters are invalid.
+        """
+        # `top_k` fixes the layout of its `k`; the kernels it forwards to
+        # infer it, the way `sampler.fused_token_sampling` calls them.
+        var k_tt = k.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm()
+        comptime if is_cpu[target]():
+            _top_k_cpu[largest=True](
+                input.to_tile_tensor[.int64](),
+                max_k,
+                1,
+                values.to_tile_tensor[.int64](),
+                indices.to_tile_tensor[.int64](),
+                1000,
+                sorted=True,
+                ctx=Optional[DeviceContext](ctx),
+                k=k_tt,
+            )
+        else:
+            topk_gpu[sampling=False, largest=True](
+                ctx,
+                max_k,
+                input.to_tile_tensor[.int64](),
+                values.to_tile_tensor[.int64](),
+                indices.to_tile_tensor[.int64](),
+                k=k_tt,
+            )
 
 
 @extensibility.register("mo.reduce.softmax")

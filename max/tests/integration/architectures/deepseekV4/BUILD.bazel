@@ -43,6 +43,28 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_top_k_per_row_gpu",
+    srcs = ["test_top_k_per_row_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)
+
+modular_py_test(
     name = "test_tensor_parallel_shards",
     srcs = ["test_tensor_parallel_shards.py"],
     deps = [
