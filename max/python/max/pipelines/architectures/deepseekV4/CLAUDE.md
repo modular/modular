@@ -30,6 +30,13 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   (`> 0`, `s > 1`) and decode (`s == 1`). Every position-derived index is
   computed in-graph from `cache_lengths`; nothing is host-fed. Do not add a
   second "decode" entry point.
+- **Nothing is read back from the device inside a forward.** Device graph
+  capture records the decode step, and a device-to-host copy cannot be
+  captured (it also closed a 2-GPU collective deadlock, DRIV-462). The one
+  size a ragged batch derives from its lengths, the per-ratio window count,
+  arrives as the length of a host input (`layers/ragged.py`
+  `window_count`). Ops without a GPU kernel (`ops.cumsum`, `ops.scatter`,
+  `ops.tile`) round-trip through the host implicitly; keep them out.
 - **A compressed zone is a `slots_per_page = page_size // ratio` leaf written
   by the stock ragged store with `cache_lengths // ratio`** (the kernel takes
   the page size from the buffer's static slot dim). Each chunk stores

@@ -27,6 +27,12 @@ two tables built here:
   the chunk, a state-leaf slot when it is before it. Chunk and window counts
   differ per request, so both axes are ragged and their lengths symbolic.
 
+The window count ``W`` sizes an axis, so it has to reach the host. It depends
+on the chunk lengths alone, which the host batched, so it comes in as the
+length of a graph input (:func:`window_count`) rather than being read back
+from the device: a read-back would sync every forward and rule out device
+graph capture.
+
 There is no ``cumsum`` or ``repeat_interleave`` on the GPU (KERN-1095), so
 prefix sums and segment ids are written as compare-and-reduce over ``[n, b]``
 masks, which for serving batch sizes is nothing.
@@ -34,7 +40,8 @@ masks, which for serving batch sizes is nothing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
 from max.dtype import DType
@@ -43,16 +50,13 @@ from max.graph import DeviceRef, Dim, DimLike, StaticDim, TensorValue, ops
 from .cache import arange, idiv, row_offsets, scalar
 
 
-def host_scalar(value: TensorValue | DimLike) -> TensorValue:
+def host_scalar(value: DimLike) -> TensorValue:
     """``value`` as an int32 scalar on the host, as ``ops.range`` reads bounds.
 
-    A device-resident tensor is transferred (a scalar per call); a symbolic
-    dim is read off the shape; a static one is a constant.
+    Only shapes: a symbolic dim is read off the shape and a static one is a
+    constant. A bound held in a device tensor would be read back to the host
+    every forward, which no device graph capture can record.
     """
-    if isinstance(value, TensorValue):
-        if not value.device.is_cpu():
-            value = ops.transfer_to(value, DeviceRef.CPU())
-        return ops.cast(value, DType.int32)
     if isinstance(value, str):
         raise TypeError(f"a dim name ({value!r}) has no value; pass the count")
     if isinstance(value, StaticDim):
@@ -64,8 +68,13 @@ def host_scalar(value: TensorValue | DimLike) -> TensorValue:
     return ops.constant(int(value), DType.int32, DeviceRef.CPU())
 
 
+def window_count(lengths: Sequence[int] | np.ndarray, ratio: int) -> int:
+    """``W`` of :class:`WindowRows` for chunks of ``lengths`` tokens."""
+    return int(sum(-(-int(n) // ratio) for n in lengths))
+
+
 def arange_to(
-    stop: TensorValue | DimLike, out_dim: DimLike, device: DeviceRef
+    stop: DimLike, out_dim: DimLike, device: DeviceRef
 ) -> TensorValue:
     """``[0, stop)`` int32 on ``device`` with length ``out_dim``."""
     return ops.range(
@@ -93,19 +102,16 @@ def segment_ids(
     offsets: TensorValue,
     total: DimLike,
     device: DeviceRef,
-    stop: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Which segment each of ``total`` rows falls in, and the row numbers.
 
     Args:
         offsets: ``[b + 1]`` int32 segment boundaries; row ``r`` belongs to
             segment ``i`` when ``offsets[i] <= r < offsets[i + 1]``.
-        total: The row count ``offsets[b]`` as a graph dim, or the name of
-            the symbolic dim to give it when it is only known at run time.
-        stop: The row count as a tensor when ``total`` is a name.
+        total: The row count ``offsets[b]`` as a graph dim.
     """
     b = offsets.shape[0] - 1
-    idx = arange_to(total if stop is None else stop, total, device)
+    idx = arange_to(total, total, device)
     ends = ops.reshape(
         ops.gather(offsets, arange_to(b, b, device) + 1, axis=0), [1, b]
     )
@@ -140,6 +146,8 @@ class RaggedRows:
     total: Dim
     """``T``."""
     device: DeviceRef
+    windows: Mapping[int, DimLike] = field(default_factory=dict)
+    """Per compression ratio, the batch's window count ``W``."""
 
     @property
     def batch(self) -> Dim:
@@ -160,12 +168,14 @@ class RaggedRows:
         offsets: TensorValue,
         total: DimLike,
         starts: TensorValue | None = None,
+        windows: Mapping[int, DimLike] | None = None,
     ) -> RaggedRows:
         """Build from the graph's ``input_row_offsets`` and ``cache_lengths``.
 
         ``starts`` carries the manager's symbolic batch dim; it is rebound to
         the offsets' so the two can be combined. ``None`` is a fresh batch at
-        position 0.
+        position 0. ``windows`` is :func:`window_count` of the offsets per
+        compression ratio the batch's attention uses.
         """
         device = offsets.device
         off = ops.cast(offsets, DType.int32)
@@ -190,6 +200,7 @@ class RaggedRows:
             positions=positions,
             total=total_dim,
             device=device,
+            windows=dict(windows or {}),
         )
 
     @classmethod
@@ -199,10 +210,14 @@ class RaggedRows:
         seq_len: int,
         device: DeviceRef,
         starts: TensorValue | None = None,
+        ratios: Sequence[int] = (),
     ) -> RaggedRows:
         """A padded ``[batch, seq_len]`` chunk, flattened row-major."""
         return cls.from_offsets(
-            row_offsets(batch, seq_len, device), batch * seq_len, starts
+            row_offsets(batch, seq_len, device),
+            batch * seq_len,
+            starts,
+            {r: window_count([seq_len] * batch, r) for r in ratios},
         )
 
 
@@ -250,12 +265,9 @@ class WindowRows:
         aligned = base * ratio
         n_new = idiv(rows.lengths + scalar(ratio - 1, device), ratio)
         woff = count_offsets(n_new)
-        bid, wid = segment_ids(
-            woff,
-            f"windows_r{ratio}",
-            device,
-            stop=ops.reshape(ops.max(woff), []),
-        )
+        if ratio not in rows.windows:
+            raise ValueError(f"the batch carries no window count for {ratio=}")
+        bid, wid = segment_ids(woff, rows.windows[ratio], device)
         total = wid.shape[0]
         start = ops.gather(aligned, bid, axis=0) + (
             wid - ops.gather(woff, bid, axis=0)

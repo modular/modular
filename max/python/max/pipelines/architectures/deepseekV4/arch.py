@@ -30,9 +30,6 @@ deepseekV4_arch = SupportedArchitecture(
     default_encoding=DeepseekV4Config.DEFAULT_ENCODING,
     supported_encodings=DeepseekV4Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
-    # The trunk moves ragged bookkeeping to the host (layers/ragged.py), which
-    # a capture cannot contain.
-    supports_device_graph_capture=False,
     pipeline_model=DeepseekV4Model,
     tokenizer=DeepseekV4Tokenizer,
     context_type=TextContext,

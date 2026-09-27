@@ -391,6 +391,11 @@ class DeepseekV4Config(ArchConfigWithKVCache):
     def layer_compress_ratio(self, layer_idx: int) -> int:
         return self.compress_ratios[layer_idx]
 
+    @property
+    def window_ratios(self) -> list[int]:
+        """The compression ratios the trunk's attention layers use."""
+        return sorted(set(self.compress_ratios[: self.num_hidden_layers]) - {0})
+
     def layer_has_indexer(self, layer_idx: int) -> bool:
         return self.compress_ratios[layer_idx] == 4
 

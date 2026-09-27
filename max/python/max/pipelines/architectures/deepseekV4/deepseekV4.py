@@ -40,12 +40,13 @@ the thing this file is arranged to avoid.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Dim,
     ShardingStrategy,
     TensorValue,
     Weight,
@@ -679,6 +680,7 @@ class DeepseekV4(Module):
             seq_len,
             tokens.device,
             cache.cache_lengths if cache is not None else None,
+            ratios=self.config.window_ratios,
         )
         x, main_hidden = self.trunk(
             ops.reshape(tokens, [1, batch * seq_len]), rows, cache
@@ -694,6 +696,7 @@ class DeepseekV4(Module):
         tokens: TensorValue,
         input_row_offsets: TensorValue,
         return_n_logits: TensorValue,
+        windows: Mapping[int, Dim],
         cache: DeepseekV4Cache,
     ) -> tuple[TensorValue, ...]:
         """The serving graph body: ragged tokens in, the pipeline's logits out.
@@ -702,6 +705,8 @@ class DeepseekV4(Module):
             tokens: ``[T]`` token ids of the whole batch.
             input_row_offsets: ``[batch + 1]`` uint32 row offsets.
             return_n_logits: ``[1]`` int64, trailing logits per request.
+            windows: Per compression ratio, the batch's window count
+                (:func:`~.layers.ragged.window_count`).
             cache: The paged leaves.
 
         Returns:
@@ -710,7 +715,7 @@ class DeepseekV4(Module):
         """
         t = tokens.shape[0]
         rows = RaggedRows.from_offsets(
-            input_row_offsets, t, cache.cache_lengths
+            input_row_offsets, t, cache.cache_lengths, windows
         )
         x, _ = self.trunk(ops.reshape(tokens, [1, t]), rows, cache)
         return logits_postprocess(
@@ -760,6 +765,7 @@ class DeepseekV4(Module):
         tokens: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         return_n_logits: TensorValue,
+        windows: Mapping[int, Dim],
         caches: Sequence[DeepseekV4Cache],
         signal_buffers: Sequence[BufferValue],
     ) -> tuple[TensorValue, ...]:
@@ -771,7 +777,7 @@ class DeepseekV4(Module):
         lead = replicas[0]
         t = tokens[0].shape[0]
         rows = [
-            RaggedRows.from_offsets(offsets, t, cache.cache_lengths)
+            RaggedRows.from_offsets(offsets, t, cache.cache_lengths, windows)
             for offsets, cache in zip(input_row_offsets, caches, strict=True)
         ]
         x, _ = DeepseekV4.trunk_tensor_parallel(
