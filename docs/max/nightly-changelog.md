@@ -30,6 +30,12 @@ This version is still a work in progress.
   every expert group to 128 activation rows, which cuts single-stream
   decode latency. Device graph capture stays off for this architecture.
 
+- DeepSeek-V4 (`DeepseekV4ForCausalLM`) now computes each hyper-connection
+  mixing step (the split into read/write weights and the 20-round Sinkhorn
+  normalization, run before every attention and feed-forward sublayer) in one
+  fused kernel instead of a chain of small graph ops. This roughly halves the
+  kernels launched per decode step and cuts single-stream decode latency.
+
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without
