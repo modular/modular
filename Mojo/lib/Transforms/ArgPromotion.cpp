@@ -260,6 +260,13 @@ void Graph::doRewrite(const Node *node) {
   SmallVector<ArgConvention> convs;
   ImplicitLocOpBuilder b{func.getLoc(), OpBuilder::atBlockBegin(body)};
   SmallVector<mlir::TypedValue<PointerType>> outArgs;
+  // A promoted 'out' leaves no argument behind, so its entry goes too.
+  ArrayRef<Attribute> oldFnArgAttrs = func.getFnArgAttrs().getValue();
+  SmallVector<Attribute> fnArgAttrs;
+  auto keepFnArgAttr = [&](size_t i) {
+    if (i < oldFnArgAttrs.size())
+      fnArgAttrs.push_back(oldFnArgAttrs[i]);
+  };
   for (auto [i, conv, state] :
        llvm::enumerate(signature.getArgConventions(), node->argStates)) {
     BlockArgument arg = func.getArgument(i);
@@ -269,6 +276,7 @@ void Graph::doRewrite(const Node *node) {
       BlockArgument newArg = body->addArgument(arg.getType(), arg.getLoc());
       arg.replaceAllUsesWith(newArg);
       convs.push_back(conv);
+      keepFnArgAttr(i);
       continue;
     }
 
@@ -287,6 +295,7 @@ void Graph::doRewrite(const Node *node) {
           body->addArgument(type.getElementType(), arg.getLoc());
       StoreOp::create(b, byval, alloc);
       convs.push_back(getByValueConvention(conv));
+      keepFnArgAttr(i);
     }
 
     // For 'out' arguments, we need to add a new SSA result to the function and
@@ -326,6 +335,9 @@ void Graph::doRewrite(const Node *node) {
   signature = FuncType::get(functionType, convs, signature.getFnEffects());
   func.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, signature));
+  if (!oldFnArgAttrs.empty()) {
+    func.setFnArgAttrsAttr(mlir::ArrayAttr::get(func.getContext(), fnArgAttrs));
+  }
 
   // For the second part of the rewrite, we perform the corresponding rewrite of
   // calls in this function.

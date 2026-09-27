@@ -229,6 +229,7 @@ public:
 private:
   void applyOneToOneTransform(unsigned operandIndex, Type newType,
                               llvm::function_ref<Value(Location, Value)> apply);
+  void eraseFnArgAttr(unsigned operandIndex);
 };
 } // namespace
 
@@ -356,6 +357,7 @@ void FuncTransform::performResultTransform(unsigned operandIndex,
                                               argVal.getType());
   argVal.replaceAllUsesWith(alloc);
   block.eraseArgument(operandIndex);
+  eraseFnArgAttr(operandIndex);
   if (convention == ArgConvention::ByRefError)
     newErrPtr = alloc;
   else if (convention == ArgConvention::ByRefResult)
@@ -365,6 +367,12 @@ void FuncTransform::performResultTransform(unsigned operandIndex,
 void FuncTransform::performThrowNeverElimination(unsigned operandIndex) {
   replaceUsesWithDummy(block.getArgument(operandIndex), b);
   block.eraseArgument(operandIndex);
+  eraseFnArgAttr(operandIndex);
+}
+
+void FuncTransform::eraseFnArgAttr(unsigned operandIndex) {
+  if (operandIndex < fnArgAttrs.size())
+    fnArgAttrs.erase(fnArgAttrs.begin() + operandIndex);
 }
 
 void FuncTransform::applyOneToOneTransform(

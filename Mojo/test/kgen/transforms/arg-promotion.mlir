@@ -259,4 +259,21 @@ kgen.func @recursion(%arg0: !kgen.pointer<index> mut) {
   hlcf.return
 }
 
+// A promoted 'out' leaves no argument behind, so its entry goes too.
+// CHECK-LABEL: kgen.func @arg_metadata_follows_promoted_args
+// CHECK-SAME: (%arg0: index, %arg1: !kgen.pointer<index> imm_mem) -> index
+// CHECK-SAME: fnArgAttrs = [{nvvm.grid_constant}, {llvm.noalias}]
+kgen.func @arg_metadata_follows_promoted_args(
+    %arg0: !kgen.pointer<index> imm_mem,
+    %arg1: !kgen.pointer<index> imm_mem,
+    %arg2: !kgen.pointer<index> byref_result) attributes {
+  fnArgAttrs = [{nvvm.grid_constant = unit}, {llvm.noalias = unit}, {}]
+} {
+  %0 = pop.load %arg0 : !kgen.pointer<index>
+  pop.store %0, %arg2 : !kgen.pointer<index>
+  %1 = pop.stack_allocation 1 x pointer<index>
+  pop.store %arg1, %1 : !kgen.pointer<pointer<index>>
+  hlcf.return
+}
+
 }

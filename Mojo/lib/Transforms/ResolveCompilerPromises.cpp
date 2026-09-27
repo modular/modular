@@ -287,13 +287,13 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
       /*inputParamTypes=*/{},
       FuncType::get(fnType, convs, sig.getFnEffects())));
 
-  // Extend LLVM argument attributes.
-  if (ArrayRef<Attribute> oldLLVMArgAttrs = func.getFnArgAttrs().getValue();
-      !oldLLVMArgAttrs.empty()) {
-    SmallVector<Attribute> llvmArgAttrs(oldLLVMArgAttrs);
-    llvmArgAttrs.insert(llvmArgAttrs.end(), newTypes.size(),
-                        DictionaryAttr::get(func.getContext()));
-    func.setFnArgAttrsAttr(ArrayAttr::get(func->getContext(), llvmArgAttrs));
+  // Captures land before the result slots, and the verifier only checks length.
+  if (ArrayRef<Attribute> oldFnArgAttrs = func.getFnArgAttrs().getValue();
+      !oldFnArgAttrs.empty()) {
+    SmallVector<Attribute> fnArgAttrs(oldFnArgAttrs);
+    fnArgAttrs.insert(std::prev(fnArgAttrs.end(), numResultArgs),
+                      newTypes.size(), DictionaryAttr::get(func.getContext()));
+    func.setFnArgAttrsAttr(ArrayAttr::get(func->getContext(), fnArgAttrs));
   }
 
   // If captures went up to an exported function, propagate them through

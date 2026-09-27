@@ -338,3 +338,28 @@ kgen.func export @cross_device() capturing {
   %1 = pop.compiler.global_load "y" : i64
   hlcf.return
 }
+
+// -----
+
+// COM: Captures land before the result slots, so appending permutes entries.
+// CHECK-LABEL: kgen.func @entry
+kgen.func @entry(%arg0: index, %arg1: i32) {
+  %0 = pop.stack_allocation 1 x i64
+  pop.compiler.global_store "x", %arg1 : i32
+  // CHECK: call @capture_before_result_slot(%arg0, %arg1, %0)
+  kgen.call @capture_before_result_slot(%arg0, %0) : (index, !kgen.pointer<i64> byref_result) capturing -> ()
+  hlcf.return
+}
+
+// CHECK-LABEL: kgen.func @capture_before_result_slot
+// CHECK-SAME: (%arg0: index, %arg1: i32, %arg2: !kgen.pointer<i64> byref_result)
+// CHECK-SAME: fnArgAttrs = [{nvvm.grid_constant}, {}, {llvm.noalias}]
+kgen.func @capture_before_result_slot(
+  %arg1: index,
+  %res: !kgen.pointer<i64> byref_result
+) capturing attributes {
+  fnArgAttrs = [{nvvm.grid_constant = unit}, {llvm.noalias = unit}]
+} {
+  %0 = pop.compiler.global_load "x" : i32
+  hlcf.return
+}
