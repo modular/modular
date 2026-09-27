@@ -136,7 +136,7 @@ alias_stmt_body: alias_target_list [metaparams] (
     (where_clause)* '=' (yield_expr|testlist_star_expr)
 )
 comptime_assert_stmt_body: 'assert' test [',' test]
-comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt)
+comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt | match_stmt)
 
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt | comptime_stmt

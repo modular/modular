@@ -351,7 +351,7 @@ class LineGenerator(Visitor[Line]):
             yield from self.line()
 
     def visit_comptime_stmt(self, node: Node) -> Iterator[Line]:
-        """Visit `comptime if`, `comptime for`, `comptime assert`, `comptime x = ...`."""
+        """Visit `comptime if/for/match`, `comptime assert`, `comptime x = ...`."""
         yield from self.line()
 
         children = iter(node.children)
@@ -362,10 +362,21 @@ class LineGenerator(Visitor[Line]):
                 break
 
         internal_stmt = next(children)
-        if internal_stmt.type in (syms.if_stmt, syms.for_stmt):
+        if internal_stmt.type in (syms.if_stmt, syms.for_stmt, syms.match_stmt):
             # Visit child statement's children directly to avoid the
-            # initial line break that visit_if_stmt/visit_for_stmt add.
+            # initial line break that visit_if_stmt/for_stmt/match_stmt add.
+            # For match, also skip Mojo-mode INDENT/DEDENT wrappers around cases.
             for child in internal_stmt.children:
+                if (
+                    internal_stmt.type == syms.match_stmt
+                    and self.mode.is_mojo
+                    and isinstance(child, Leaf)
+                    and child.type in (token.INDENT, token.DEDENT)
+                ):
+                    if child.type == token.DEDENT and child.prefix:
+                        yield from self.line()
+                        yield from self.visit_default(child)
+                    continue
                 yield from self.visit(child)
         else:
             # Simple case (alias_stmt_body, comptime_assert_stmt_body):

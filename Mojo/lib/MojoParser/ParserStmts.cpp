@@ -293,7 +293,7 @@ struct StmtParser : public ParserBase {
   ParseResult parseComptimeIf(Location ifLoc, LexerCursor startCursor,
                               size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
-  ParseResult parseMatchStmt(size_t curIndent);
+  ParseResult parseMatchStmt(size_t curIndent, bool isComptime);
 
   /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
   /// entry's command list is tested in its own case region; the match else is
@@ -756,7 +756,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     rejectSimpleStmt(); // Not a simple_stmt.
     if (rejectInNonFunctionScope())
       return success();
-    return parseMatchStmt(stmtIndent);
+    return parseMatchStmt(stmtIndent, /*isComptime=*/false);
   case Token::kw_try:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
@@ -955,6 +955,11 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
     if (rejectInNonFunctionScope("for"))
       return success();
     return parseComptimeForStmt(startCursor, curIndent);
+  case Token::kw___match:
+    rejectDecorator();
+    if (rejectInNonFunctionScope("match"))
+      return success();
+    return parseMatchStmt(curIndent, /*isComptime=*/true);
   default:
     break;
   }
@@ -1570,15 +1575,17 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
 /// `case True, False:` form tuples without requiring parentheses.  Case
 /// patterns stop before `if`/`as` so guards and `as` bindings stay statement
 /// suffixes rather than ternary/`as`-pattern operators.
-ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
+///
+ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
   SMLoc matchLoc = consumeToken(Token::kw___match).getLoc();
-  Location matchLocation = translateLocation(matchLoc);
 
   // Parse the match subject as an expression_list (commas form a tuple).
   ExprNode *subjectExpr = nullptr;
   if (parseExpressionList(subjectExpr, curIndent, Token::colon) ||
       parseToken(Token::colon, "expected ':' after match subject"))
     return failure();
+
+  Location matchLocation = translateLocation(matchLoc);
 
   // Evaluate the subject once; match IR will consume this later.
   CValue subject = getEmitter().emitExprCValue(subjectExpr, EC_MatchSubject);
@@ -1703,6 +1710,12 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent) {
                                                           matchLoc);
 
   auto afterCaseCursor = getLexer().getCursor();
+
+  // Comptime match: For now, just emit an error.
+  if (isComptime) {
+    emitError(matchLoc) << "'comptime match' is not implemented yet";
+    return success();
+  }
 
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns

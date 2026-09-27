@@ -212,4 +212,20 @@ def test_comptime_assert():
         '    comptime assert True, "msg"\n'
     )
     assert_mojo_format(source, expected)
-    
+
+
+def test_comptime_match():
+    """comptime match formats like match, with cases at the match indent."""
+    source = (
+        "def foo[T: AnyType]():\n"
+        "    comptime   match   T:\n"
+        "      case _:\n"
+        "            pass\n"
+    )
+    expected = (
+        "def foo[T: AnyType]():\n"
+        "    comptime match T:\n"
+        "    case _:\n"
+        "        pass\n"
+    )
+    assert_mojo_format(source, expected)

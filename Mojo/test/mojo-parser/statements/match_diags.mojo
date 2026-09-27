@@ -484,3 +484,11 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case 1:
         pass
+
+
+def comptime_match_not_implemented(x: Int):
+    # Syntax is accepted; lowering is not implemented yet.
+    # expected-error @+1 {{'comptime match' is not implemented yet}}
+    comptime __match x:
+    case _:
+        pass
