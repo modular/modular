@@ -18,7 +18,6 @@ from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .dspark import (
     DSparkAttention,
-    DSparkConfidenceHead,
     DSparkMarkovHead,
 )
 from .hadamard import hadamard_rotate
@@ -46,7 +45,6 @@ __all__ = [
     "CacheLeaf",
     "CompressedStream",
     "DSparkAttention",
-    "DSparkConfidenceHead",
     "DSparkMarkovHead",
     "DeepseekV4Attention",
     "DeepseekV4Cache",

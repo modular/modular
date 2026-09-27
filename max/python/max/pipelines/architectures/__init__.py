@@ -341,6 +341,12 @@ def register_all_models() -> None:
             "unified_dflash_llama3_arch",
         ),
         _LazyArch(
+            "UnifiedDSparkDeepseekV4ForCausalLM",
+            ".unified_dspark_deepseekV4",
+            "unified_dspark_deepseekV4_speculator",
+            speculates_on="DeepseekV4ForCausalLM",
+        ),
+        _LazyArch(
             "UnifiedDSparkGemma4_12BForCausalLM",
             ".unified_dspark_gemma4_12b",
             "unified_dspark_gemma4_12b_arch",

@@ -84,6 +84,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/unified_dflash_gemma4_31b",
     "//max/python/max/pipelines/architectures/unified_dflash_kimi_k25",
     "//max/python/max/pipelines/architectures/unified_dflash_llama3",
+    "//max/python/max/pipelines/architectures/unified_dspark_deepseekV4",
     "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
     "//max/python/max/pipelines/architectures/unified_dspark_gemma4_31b",
     "//max/python/max/pipelines/architectures/unified_eagle_llama3",

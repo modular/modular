@@ -73,6 +73,7 @@ SPEC_DECODE_VARIANT_BASE_ARCH: dict[str, str] = {
     "UnifiedDflashGemma4_31BForCausalLM": "Gemma4ForConditionalGeneration",
     "UnifiedDflashKimiK25ForCausalLM": "KimiK25ForConditionalGeneration",
     "UnifiedDflashLlama3ForCausalLM": "LlamaForCausalLM",
+    "UnifiedDSparkDeepseekV4ForCausalLM": "DeepseekV4ForCausalLM",
     "UnifiedDSparkGemma4_12BForCausalLM": "Gemma4UnifiedForConditionalGeneration",
     "UnifiedDSparkGemma4_31BForCausalLM": "Gemma4ForConditionalGeneration",
     "UnifiedMTPDeepseekV3ForCausalLM": "DeepseekV3ForCausalLM",

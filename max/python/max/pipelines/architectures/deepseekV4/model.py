@@ -188,7 +188,7 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
                 )
             model_config.quant_config = quant_config
             model_config.dtype = state_dict["embed.weight"].dtype
-        # The adapter drops the ``mtp.*`` weights, so the stages are not built.
+        # Not a speculative graph: the adapter drops the ``mtp.*`` weights.
         model_config.dspark_stages = False
         return model_config
 

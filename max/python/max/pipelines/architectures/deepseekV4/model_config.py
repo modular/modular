@@ -38,9 +38,35 @@ from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
-from max.pipelines.speculative.config import SpeculativeMethod
+from max.pipelines.speculative.config import (
+    SpeculativeConfig,
+    SpeculativeMethod,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+
+def dspark_draft_width(
+    speculative: SpeculativeConfig,
+    target_huggingface_config: Any,
+    draft_huggingface_config: Any,
+) -> int:
+    """The DSpark block width: the checkpoint's ``dspark_block_size``.
+
+    Every block position drafts a token, so the width is the block size. The
+    stages unroll the Markov chain over the block, so a different
+    ``--num-speculative-tokens`` is rejected rather than silently overridden.
+    """
+    del draft_huggingface_config
+    block_size = int(target_huggingface_config.dspark_block_size)
+    requested = speculative.num_speculative_tokens
+    if requested is not None and requested != block_size:
+        # TODO(dsv4-dspark W4): take the block width at run time.
+        raise ValueError(
+            f"DeepSeek-V4 DSpark drafts dspark_block_size={block_size} tokens;"
+            f" --num-speculative-tokens={requested} is not supported yet"
+        )
+    return block_size
 
 
 @dataclass(frozen=True)
@@ -310,9 +336,8 @@ class DeepseekV4Config(ArchConfigWithKVCache):
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
-    # Whether to build the DSpark draft stages (``mtp.*``). Serving leaves them
-    # out: the checkpoint adapter drops their weights and their decode path is
-    # unverified (ISSUES.md Issue 28).
+    # Whether to build the DSpark draft stages (``mtp.*``). The non-speculative
+    # serving graph leaves them out and its adapter drops their weights.
     dspark_stages: bool = True
 
     def __post_init__(self) -> None:

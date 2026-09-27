@@ -73,6 +73,7 @@ family.
    pipelines.architectures.unified_dflash_gemma4_31b
    pipelines.architectures.unified_dflash_kimi_k25
    pipelines.architectures.unified_dflash_llama3
+   pipelines.architectures.unified_dspark_deepseekV4
    pipelines.architectures.unified_dspark_gemma4_12b
    pipelines.architectures.unified_dspark_gemma4_31b
    pipelines.architectures.unified_eagle_llama3
@@ -136,6 +137,7 @@ Text generation
    ~max.pipelines.architectures.unified_dflash_gemma4_31b
    ~max.pipelines.architectures.unified_dflash_kimi_k25
    ~max.pipelines.architectures.unified_dflash_llama3
+   ~max.pipelines.architectures.unified_dspark_deepseekV4
    ~max.pipelines.architectures.unified_dspark_gemma4_12b
    ~max.pipelines.architectures.unified_dspark_gemma4_31b
    ~max.pipelines.architectures.unified_eagle_llama3

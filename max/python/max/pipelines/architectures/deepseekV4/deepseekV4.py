@@ -26,9 +26,11 @@ is the padded ``[batch, seq_len]`` form the gates drive, expressed as the
 uniform-offsets case of the same path. Without a cache it is a plain prefill
 from position 0.
 
-DSpark is decode-only by construction and so contributes nothing to a
-prefill; :meth:`DeepseekV4.fill_dspark_cache` writes the stages' windows after
-a prefill and :meth:`DSparkBlock.decode` runs a draft block.
+DSpark contributes nothing to the trunk's logits. After a trunk forward,
+:meth:`DeepseekV4.fill_dspark_cache` writes the stages' windows from the
+trunk states :meth:`DeepseekV4.trunk` collects, and
+:meth:`DeepseekV4.dspark_block` / :meth:`DeepseekV4.dspark_head` draft a block
+per request (``layers/dspark.py``).
 
 The mHC weights are declared flat on the block (``hc_attn_fn``, not
 ``hc_attn.fn``) because that is how the checkpoint names them. Grouping them
@@ -61,7 +63,6 @@ from .layers import (
     DeepseekV4Indexer,
     DeepseekV4MoE,
     DSparkAttention,
-    DSparkConfidenceHead,
     DSparkMarkovHead,
     RaggedRows,
     expand_copies,
@@ -70,6 +71,7 @@ from .layers import (
     hc_post,
     hc_pre,
 )
+from .layers.quantization import linear_for
 from .model_config import DeepseekV4Config
 
 
@@ -326,17 +328,19 @@ class DSparkBlock(DeepseekV4Block):
             )
         self.stage_id = stage_id
         self.block_size = config.dspark_block_size
-        self.noise_token_id = config.dspark_noise_token_id
         self.hc_mult = config.hc_mult
 
         self.is_first = stage_id == 0
         self.is_last = stage_id == len(config.dspark_target_layer_ids) - 1
 
         if self.is_first:
-            self.main_proj = Linear(
+            # fp8 in both the real and the minimized checkpoint, with a
+            # 128x128 block scale, so it takes the same native path as the
+            # attention projections.
+            self.main_proj = linear_for(
+                config,
                 config.hidden_size * len(config.dspark_target_layer_ids),
                 config.hidden_size,
-                config.dtype,
                 device,
             )
             self.main_norm = RMSNorm(
@@ -347,7 +351,6 @@ class DSparkBlock(DeepseekV4Block):
                 config.hidden_size, config.dtype, config.rms_norm_eps
             )
             self.markov_head = DSparkMarkovHead(config, device)
-            self.confidence_head = DSparkConfidenceHead(config, device)
             self.hc_head_fn = Weight(
                 name="hc_head_fn",
                 dtype=DType.float32,
@@ -368,91 +371,131 @@ class DSparkBlock(DeepseekV4Block):
             )
 
     def project_main(self, main_hidden: TensorValue) -> TensorValue:
-        """The trunk state the stages attend to, ``[b, s, d]``. ``mtp.0`` only."""
+        """The trunk state the stages attend to, ``[1, T, d]``. ``mtp.0`` only."""
         return self.main_norm(self.main_proj(main_hidden))
-
-    def forward_embed(
-        self,
-        main_hidden: TensorValue,
-        token_ids: TensorValue,
-        embed: Embedding,
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        """Start a draft block. ``mtp.0`` only.
-
-        Args:
-            main_hidden: ``[b, s, d * len(target_layer_ids)]`` -- the trunk's
-                hidden at each target layer, each one **mean-reduced over the
-                hc axis first**, then concatenated. That mean is why the width
-                is ``3 * 4096`` and not ``3 * 4 * 4096``.
-            token_ids: ``[b]``, the token the trunk just produced.
-            embed: The trunk's embedding, shared not copied.
-
-        Returns:
-            The draft stream ``[b, block_size, hc, d]``, the projected trunk
-            state ``[b, s, d]``, and the draft token ids ``[b, block_size]``.
-        """
-        main_x = self.project_main(main_hidden)
-        noise = ops.broadcast_to(
-            ops.constant(
-                self.noise_token_id, token_ids.dtype, token_ids.device
-            ),
-            [token_ids.shape[0], self.block_size - 1],
-        )
-        # Position 0 is the real token; the rest are a literal noise token that
-        # goes through the embedding like any other, not a mask or a pad.
-        draft_ids = ops.concat([ops.unsqueeze(token_ids, -1), noise], axis=1)
-        return expand_copies(embed(draft_ids), self.hc_mult), main_x, draft_ids
 
     def decode(
         self,
         x: TensorValue,
-        main_x: TensorValue,
+        rows: RaggedRows,
         cache: DeepseekV4Cache,
-        draft_ids: TensorValue,
+        block_ids: TensorValue,
     ) -> TensorValue:
-        """One stage of a draft block, decode only.
+        """One stage over a ragged batch of draft blocks.
 
-        Not ``__call__``: a stage takes the trunk's state, which a trunk block
-        has no equivalent of, so it is a different entry point rather than an
-        override.
+        Not ``__call__``: a stage reads its window below each block rather
+        than appending the block to it, so it is a different entry point
+        rather than an override.
 
-        At ``start_pos == 0`` the reference runs nothing but the attention's
-        cache fill and returns its input, so there is no prefill path here;
-        :meth:`DeepseekV4.fill_dspark_cache` is that fill.
+        Args:
+            x: ``[1, b * K, hc, d]`` the draft stream.
+            rows: The blocks' bookkeeping (:meth:`DSparkAttention.decode`).
+            cache: The paged leaves, windows already materialized.
+            block_ids: ``[1, b * K]`` the block's token ids.
         """
         residual = x
         h, post, comb = self._contract(
             x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base
         )
         assert isinstance(self.attn, DSparkAttention)
-        h = self.attn.decode(self.attn_norm(h), main_x, cache)
+        h = self.attn.decode(self.attn_norm(h), rows, cache, self.block_size)
         x = hc_post(h, residual, post, comb)
 
         residual = x
         h, post, comb = self._contract(
             x, self.hc_ffn_fn, self.hc_ffn_scale, self.hc_ffn_base
         )
-        # The gate on an MTP stage is score-routed, so draft_ids goes unread;
-        # the reference passes the trunk's input_ids here, whose length does
-        # not even match, for the same reason.
-        h = self.ffn(self.ffn_norm(h), draft_ids)
+        # The gate on an MTP stage is score-routed, so block_ids goes unread.
+        h = self.ffn(self.ffn_norm(h), block_ids)
         return hc_post(h, residual, post, comb)
+
+    @staticmethod
+    def decode_tensor_parallel(
+        stages: Sequence[DSparkBlock],
+        xs: Sequence[TensorValue],
+        rows: Sequence[RaggedRows],
+        caches: Sequence[DeepseekV4Cache],
+        block_ids: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """:meth:`decode` on every device; ``stages`` holds a replica each.
+
+        Split as :meth:`DeepseekV4Block.tensor_parallel`: the attention's
+        output projection is a partial sum over this device's heads, the MoE
+        sums this device's experts, and each is all-reduced before its mHC
+        merge.
+        """
+        contracted = [
+            stage._contract(
+                x, stage.hc_attn_fn, stage.hc_attn_scale, stage.hc_attn_base
+            )
+            for stage, x in zip(stages, xs, strict=True)
+        ]
+        partials = []
+        for stage, (h, _, _), row, cache in zip(
+            stages, contracted, rows, caches, strict=True
+        ):
+            assert isinstance(stage.attn, DSparkAttention)
+            partials.append(
+                stage.attn.decode(
+                    stage.attn_norm(h), row, cache, stage.block_size
+                )
+            )
+        attended = ops.allreduce.sum(partials, signal_buffers)
+        xs = [
+            hc_post(h, residual, post, comb)
+            for h, residual, (_, post, comb) in zip(
+                attended, xs, contracted, strict=True
+            )
+        ]
+
+        contracted = [
+            stage._contract(
+                x, stage.hc_ffn_fn, stage.hc_ffn_scale, stage.hc_ffn_base
+            )
+            for stage, x in zip(stages, xs, strict=True)
+        ]
+        moved = DeepseekV4MoE.tensor_parallel(
+            [stage.ffn for stage in stages],
+            [
+                stage.ffn_norm(h)
+                for stage, (h, _, _) in zip(stages, contracted, strict=True)
+            ],
+            block_ids,
+            signal_buffers,
+        )
+        return [
+            hc_post(h, x, post, comb)
+            for h, x, (_, post, comb) in zip(moved, xs, contracted, strict=True)
+        ]
 
     def forward_head(
         self,
         x: TensorValue,
-        token_ids: TensorValue,
+        anchor_ids: TensorValue,
         head: Linear,
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        """Draft tokens, logits and confidence out of the last stage.
+    ) -> tuple[TensorValue, TensorValue]:
+        """Draft tokens and their logits out of the last stage.
 
-        The Markov loop is serial and cannot be batched: step ``i``'s logit
-        bias is keyed on the token sampled at step ``i``, which does not exist
-        until step ``i`` has run. ``block_size`` is static, so it unrolls.
+        Every block position predicts one token, the anchor's included, so a
+        block of ``K`` drafts ``K``. The Markov loop is serial and cannot be
+        batched: step ``i``'s logit bias is keyed on the token sampled at step
+        ``i - 1`` (the anchor at step 0), which does not exist until that step
+        has run. ``K`` is static, so it unrolls.
 
         Sampling is greedy -- ``sample()`` short-circuits to ``argmax`` at
-        temperature 0, which is what the golden was generated at.
+        temperature 0.
+
+        Args:
+            x: ``[1, b * K, hc, d]`` the last stage's output stream.
+            anchor_ids: ``[b]`` the token each block starts with.
+            head: The trunk's LM head, shared not copied.
+
+        Returns:
+            ``[b, K]`` draft token ids and ``[b, K, vocab]`` float32 biased
+            logits.
         """
+        k = self.block_size
         contracted = hc_head(
             x,
             self.hc_head_fn,
@@ -462,30 +505,28 @@ class DSparkBlock(DeepseekV4Block):
             self.norm_eps,
             self.hc_eps,
         )
+        vocab = int(head.weight.shape[0])
         logits = ops.matmul(
             ops.cast(self.norm(contracted), DType.float32),
             ops.transpose(ops.cast(head.weight, DType.float32), 0, 1),
         )
+        batch = anchor_ids.shape[0]
+        logits = ops.reshape(
+            ops.rebind(ops.reshape(logits, [-1, vocab]), [batch * k, vocab]),
+            [batch, k, vocab],
+        )
 
-        current = token_ids
-        out_ids = [token_ids]
+        projection = self.markov_head.projection()
+        current = anchor_ids
+        out_ids = []
         biased = []
-        embeds = []
-        for i in range(self.block_size):
-            bias, embed = self.markov_head(current)
-            step = logits[:, i] + bias
+        for i in range(k):
+            step = logits[:, i] + self.markov_head(current, projection)
             biased.append(step)
-            embeds.append(embed)
-            current = ops.cast(ops.argmax(step, axis=-1), token_ids.dtype)
+            current = ops.cast(ops.argmax(step, axis=-1), anchor_ids.dtype)
             current = ops.squeeze(current, axis=-1)
             out_ids.append(current)
-
-        confidence = self.confidence_head(contracted, ops.stack(embeds, axis=1))
-        return (
-            ops.stack(out_ids, axis=1),
-            ops.stack(biased, axis=1),
-            confidence,
-        )
+        return ops.stack(out_ids, axis=1), ops.stack(biased, axis=1)
 
 
 class DeepseekV4(Module):
@@ -691,20 +732,23 @@ class DeepseekV4(Module):
         the one the weights registry is built from while the copies are what
         the graph runs. Attention, its indexer included, splits its heads
         across the devices (:meth:`DeepseekV4Attention.shard_heads`) and the
-        MoE its routed experts (:meth:`DeepseekV4MoE.shard_experts`); every
-        other weight is replicated, and each device computes the rest of the
-        forward whole.
+        MoE its routed experts (:meth:`DeepseekV4MoE.shard_experts`), the
+        DSpark stages included; every other weight is replicated, and each
+        device computes the rest of the forward whole. That covers the Markov
+        head: sharding ``markov_w1`` by vocab as the reference's
+        ``ParallelEmbedding`` does gives the same numbers (the all-reduce adds
+        zeros), only with one collective per draft position.
         Call it once, after :meth:`load_state_dict`.
         """
         n = len(devices)
-        for layer in self.layers:
+        for layer in [*self.layers, *self.mtp]:
             assert isinstance(layer, DeepseekV4Block)
             layer.attn.shard_heads(n)
             layer.ffn.shard_experts(n)
         replicas = [DeepseekV4(self.config, device) for device in devices]
         _adopt_shards(self, replicas, list(devices))
         for rank, replica in enumerate(replicas):
-            for layer in replica.layers:
+            for layer in [*replica.layers, *replica.mtp]:
                 assert isinstance(layer, DeepseekV4Block)
                 layer.attn.keep_local_heads(n)
                 layer.ffn.keep_local_experts(n, rank)
@@ -730,26 +774,14 @@ class DeepseekV4(Module):
             RaggedRows.from_offsets(offsets, t, cache.cache_lengths)
             for offsets, cache in zip(input_row_offsets, caches, strict=True)
         ]
-        token_rows = [ops.reshape(tok, [1, t]) for tok in tokens]
-        hs = [
-            expand_copies(replica.embed(tok), lead.config.hc_mult)
-            for replica, tok in zip(replicas, token_rows, strict=True)
-        ]
-        for layer_idx in range(len(lead.layers)):
-            blocks = []
-            for replica in replicas:
-                block = replica.layers[layer_idx]
-                assert isinstance(block, DeepseekV4Block)
-                blocks.append(block)
-            hs = DeepseekV4Block.tensor_parallel(
-                blocks,
-                hs,
-                rows,
-                token_rows,
-                caches,
-                signal_buffers,
-            )
-        x = lead.contract_head(hs[0])
+        x, _ = DeepseekV4.trunk_tensor_parallel(
+            replicas,
+            [ops.reshape(tok, [1, t]) for tok in tokens],
+            rows,
+            caches,
+            signal_buffers,
+            collect_main_hidden=False,
+        )
         return logits_postprocess(
             ops.reshape(x, [t, lead.config.hidden_size]),
             input_row_offsets[0],
@@ -760,16 +792,70 @@ class DeepseekV4(Module):
             return_hidden_states=lead.config.return_hidden_states,
         )
 
+    @staticmethod
+    def trunk_tensor_parallel(
+        replicas: Sequence[DeepseekV4],
+        tokens: Sequence[TensorValue],
+        rows: Sequence[RaggedRows],
+        caches: Sequence[DeepseekV4Cache],
+        signal_buffers: Sequence[BufferValue],
+        *,
+        collect_main_hidden: bool = True,
+    ) -> tuple[TensorValue, list[TensorValue]]:
+        """:meth:`trunk` over :meth:`tensor_parallel_replicas`.
+
+        Args:
+            replicas: One copy of the model per device.
+            tokens: ``[1, T]`` token ids, on each device.
+            rows: The batch's token bookkeeping, per device.
+            caches: The paged leaves, per device.
+            signal_buffers: One per device.
+            collect_main_hidden: Whether to collect the DSpark states.
+
+        Returns:
+            Device 0's ``[1, T, hidden]`` contracted stream -- every device
+            holds the same one -- and, per device, the ``[1, T, hidden *
+            n_targets]`` trunk state DSpark reads (empty when not collected).
+        """
+        lead = replicas[0]
+        targets = set(lead.config.dspark_target_layer_ids)
+        hs = [
+            expand_copies(replica.embed(tok), lead.config.hc_mult)
+            for replica, tok in zip(replicas, tokens, strict=True)
+        ]
+        collected: list[list[TensorValue]] = [[] for _ in replicas]
+        for layer_idx in range(len(lead.layers)):
+            blocks = []
+            for replica in replicas:
+                block = replica.layers[layer_idx]
+                assert isinstance(block, DeepseekV4Block)
+                blocks.append(block)
+            hs = DeepseekV4Block.tensor_parallel(
+                blocks, hs, rows, tokens, caches, signal_buffers
+            )
+            if collect_main_hidden and layer_idx in targets:
+                for per_dev, h in zip(collected, hs, strict=True):
+                    per_dev.append(h)
+        main_hidden = (
+            [lead.collect_main_hidden(per_dev) for per_dev in collected]
+            if collect_main_hidden
+            else []
+        )
+        return lead.contract_head(hs[0]), main_hidden
+
     def fill_dspark_cache(
         self,
         main_hidden: TensorValue,
-        seq_len: int,
+        rows: RaggedRows,
         cache: DeepseekV4Cache,
     ) -> None:
-        """What ``forward_spec`` does at ``start_pos == 0``: each stage's
-        attention writes the trunk's projected state into its window and
-        nothing else runs. Call it after the trunk forward that produced
-        ``main_hidden``, before ``cache_lengths`` advances.
+        """Materialize the stages' windows after a trunk forward.
+
+        Each stage's attention writes the trunk's projected state for every
+        token of the forward into its window; nothing else runs. Call it in
+        the graph of the trunk forward that produced ``main_hidden``
+        (``[1, T, d * n_targets]``, :meth:`trunk`'s second output) with that
+        forward's ``rows``, before ``cache_lengths`` advances.
         """
         first = self.mtp[0]
         assert isinstance(first, DSparkBlock)
@@ -777,4 +863,67 @@ class DeepseekV4(Module):
         for stage in self.mtp:
             assert isinstance(stage, DSparkBlock)
             assert isinstance(stage.attn, DSparkAttention)
-            stage.attn.prefill_cache(main_x, seq_len, cache)
+            stage.attn.prefill_cache(main_x, rows, cache)
+
+    def dspark_block(
+        self,
+        block_ids: TensorValue,
+        rows: RaggedRows,
+        cache: DeepseekV4Cache,
+    ) -> TensorValue:
+        """Run ``b`` draft blocks through the three stages.
+
+        Args:
+            block_ids: ``[1, b * K]`` each request's anchor followed by
+                ``K - 1`` ``dspark_noise_token_id``; the noise token goes
+                through the embedding like any other, it is not a mask.
+            rows: The blocks' bookkeeping, ``K`` rows per request starting at
+                one past its last committed token.
+            cache: The paged leaves, windows already materialized.
+
+        Returns:
+            ``[1, b * K, hc, d]``, the last stage's output stream.
+        """
+        x = expand_copies(self.embed(block_ids), self.config.hc_mult)
+        for stage in self.mtp:
+            assert isinstance(stage, DSparkBlock)
+            x = stage.decode(x, rows, cache, block_ids)
+        return x
+
+    @staticmethod
+    def dspark_block_tensor_parallel(
+        replicas: Sequence[DeepseekV4],
+        block_ids: Sequence[TensorValue],
+        rows: Sequence[RaggedRows],
+        caches: Sequence[DeepseekV4Cache],
+        signal_buffers: Sequence[BufferValue],
+    ) -> TensorValue:
+        """:meth:`dspark_block` over :meth:`tensor_parallel_replicas`.
+
+        ``block_ids``, ``rows`` and ``caches`` are per device. Returns device
+        0's last-stage stream, which every device holds a copy of.
+        """
+        lead = replicas[0]
+        xs = [
+            expand_copies(replica.embed(ids), lead.config.hc_mult)
+            for replica, ids in zip(replicas, block_ids, strict=True)
+        ]
+        for stage_idx in range(len(lead.mtp)):
+            stages = []
+            for replica in replicas:
+                stage = replica.mtp[stage_idx]
+                assert isinstance(stage, DSparkBlock)
+                stages.append(stage)
+            xs = DSparkBlock.decode_tensor_parallel(
+                stages, xs, rows, caches, block_ids, signal_buffers
+            )
+        return xs[0]
+
+    def dspark_head(
+        self, x: TensorValue, anchor_ids: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        """``[b, K]`` draft ids and ``[b, K, vocab]`` logits off
+        :meth:`dspark_block`'s output (:meth:`DSparkBlock.forward_head`)."""
+        last = self.mtp[-1]
+        assert isinstance(last, DSparkBlock)
+        return last.forward_head(x, anchor_ids, self.head)

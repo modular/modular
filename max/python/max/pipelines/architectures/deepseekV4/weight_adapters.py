@@ -273,17 +273,48 @@ def convert_weight_data(
     return new_state_dict
 
 
+_DSPARK_PREFIX = "mtp."
+# Read only by adaptive verification, which the draft does not run.
+_UNUSED_DSPARK = (".confidence_head.",)
+
+
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
     **unused_kwargs,
 ) -> dict[str, WeightData]:
-    loaded: dict[str, WeightData] = {}
-    for name, value in state_dict.items():
-        # TODO: Support DSpark (commit 8). The ``mtp.*`` stages are dropped for
-        # now, mirroring what the DeepSeek-V3 checkpoint converter does with its
-        # own MTP layer.
-        if name.startswith("mtp."):
-            continue
-        loaded[name] = value.data()
-    return convert_weight_data(loaded)
+    """The trunk's weights; the DSpark stages (``mtp.*``) are dropped.
+
+    For the non-speculative graph, which does not build the stages.
+    """
+    return convert_weight_data(
+        {
+            name: value.data()
+            for name, value in state_dict.items()
+            if not name.startswith(_DSPARK_PREFIX)
+        }
+    )
+
+
+def convert_dspark_safetensor_state_dict(
+    state_dict: dict[str, Weights],
+    huggingface_config: PretrainedConfig,
+    **unused_kwargs,
+) -> dict[str, WeightData]:
+    """The trunk's weights and the DSpark stages', under the same rules.
+
+    The stages' projections need no rule of their own: their ``attn.wo_a``
+    is host-dequantized by the trunk's suffix match, and ``mtp.0.main_proj``
+    is an fp8 weight with a 128x128 block scale like the attention
+    projections, in the minimized checkpoint as in the real one.
+    """
+    return convert_weight_data(
+        {
+            name: value.data()
+            for name, value in state_dict.items()
+            if not (
+                name.startswith(_DSPARK_PREFIX)
+                and any(part in name for part in _UNUSED_DSPARK)
+            )
+        }
+    )

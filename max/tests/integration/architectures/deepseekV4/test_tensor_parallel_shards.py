@@ -29,6 +29,7 @@ from max.nn import Linear
 from max.pipelines.architectures.deepseekV4.deepseekV4 import (
     DeepseekV4,
     DeepseekV4Block,
+    DSparkBlock,
 )
 from max.pipelines.architectures.deepseekV4.layers.moe import (
     DeepseekV4RoutedExperts,
@@ -48,8 +49,11 @@ _INDEX_HEADS = 4
 _EXPERTS = 4
 _HIDDEN = 256
 _HEAD_DIM = 128
-# Layer 0 is window-only, layer 1 has the compressor and indexer (ratio 4).
-_COMPRESS_RATIOS = [0, 4]
+# Layer 0 is window-only, layer 1 has the compressor and indexer (ratio 4);
+# the two DSpark stages after them are window-only.
+_COMPRESS_RATIOS = [0, 4, 0, 0]
+_TRUNK_LAYERS = 2
+_DSPARK_TARGETS = [0, 1]
 
 
 def _config() -> DeepseekV4Config:
@@ -61,7 +65,7 @@ def _config() -> DeepseekV4Config:
             "scale_fmt": "ue8m0",
             "weight_block_size": [128, 128],
         },
-        len(_COMPRESS_RATIOS),
+        _TRUNK_LAYERS,
     )
     return DeepseekV4Config(
         dtype=DType.bfloat16,
@@ -71,7 +75,7 @@ def _config() -> DeepseekV4Config:
         max_seq_len=256,
         vocab_size=256,
         hidden_size=_HIDDEN,
-        num_hidden_layers=len(_COMPRESS_RATIOS),
+        num_hidden_layers=_TRUNK_LAYERS,
         num_attention_heads=_HEADS,
         head_dim=_HEAD_DIM,
         qk_rope_head_dim=64,
@@ -95,7 +99,9 @@ def _config() -> DeepseekV4Config:
         num_hash_layers=0,
         hc_mult=2,
         quant_config=quant_config,
-        dspark_stages=False,
+        dspark_target_layer_ids=_DSPARK_TARGETS,
+        dspark_markov_rank=128,
+        dspark_stages=True,
     )
 
 
@@ -118,8 +124,9 @@ def models() -> Iterator[tuple[DeepseekV4, list[DeepseekV4]]]:
 
 
 def _blocks(model: DeepseekV4) -> list[DeepseekV4Block]:
+    """The trunk's blocks, then the DSpark stages, which split the same way."""
     blocks = []
-    for layer in model.layers:
+    for layer in [*model.layers, *model.mtp]:
         assert isinstance(layer, DeepseekV4Block)
         blocks.append(layer)
     return blocks
@@ -205,6 +212,29 @@ def test_fp8_linears_keep_their_class(
                 )
             # ``wo_a`` is bf16 in the reference and host-dequantized.
             assert type(rep.attn.wo_a) is Linear
+
+
+def test_dspark_ends_are_replicated(
+    models: tuple[DeepseekV4, list[DeepseekV4]],
+) -> None:
+    source, replicas = models
+    first, last = source.mtp[0], source.mtp[-1]
+    assert isinstance(first, DSparkBlock) and isinstance(last, DSparkBlock)
+    for rank, replica in enumerate(replicas):
+        rep_first, rep_last = replica.mtp[0], replica.mtp[-1]
+        assert isinstance(rep_first, DSparkBlock)
+        assert isinstance(rep_last, DSparkBlock)
+        assert isinstance(rep_first.main_proj, DeepseekV4Fp8Linear)
+        assert _shape(rep_first.main_proj.weight) == _shape(
+            first.main_proj.weight
+        )
+        # The Markov head is whole on every device: a vocab split would give
+        # the same numbers at one collective per draft position.
+        for name in ("markov_w1", "markov_w2"):
+            src_w = getattr(last.markov_head, name).weight
+            rep_w = getattr(rep_last.markov_head, name).weight
+            assert _shape(rep_w) == _shape(src_w)
+            assert rep_w.device == DeviceRef.GPU(rank)
 
 
 def test_fp8_linear_refuses_linear_shard() -> None:

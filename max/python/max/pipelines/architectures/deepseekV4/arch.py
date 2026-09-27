@@ -18,7 +18,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .model import DeepseekV4Model
-from .model_config import DeepseekV4Config
+from .model_config import DeepseekV4Config, dspark_draft_width
 from .tokenizer import DeepseekV4Tokenizer
 
 deepseekV4_arch = SupportedArchitecture(
@@ -41,6 +41,8 @@ deepseekV4_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=DeepseekV4Config,
+    # Read only by the DSpark speculator, which inherits it.
+    checkpoint_draft_width=dspark_draft_width,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv4",
 )

@@ -74,7 +74,6 @@ from max.nn.norm.rms_norm import RMSNorm
 from ..model_config import DeepseekV4Config
 from .cache import (
     KEY,
-    CacheLeaf,
     DeepseekV4Cache,
     arange,
     idiv,
@@ -99,65 +98,6 @@ def weightless_rms_normalize(x: TensorValue, eps: float) -> TensorValue:
     x32 = ops.cast(x, DType.float32)
     scale = ops.rsqrt(ops.mean(x32 * x32, axis=-1) + eps)
     return ops.cast(x32 * scale, x.dtype)
-
-
-def chunk_positions(
-    cache_lengths: TensorValue | None,
-    batch: int,
-    seq_len: int,
-    device: DeviceRef,
-) -> TensorValue:
-    """``[batch, seq_len]`` int32 absolute positions of a chunk's tokens."""
-    if cache_lengths is None:
-        start = ops.broadcast_to(scalar(0, device), [batch])
-    else:
-        # The runtime input carries a symbolic batch dim; the graph is built
-        # for a static one.
-        start = ops.rebind(cache_lengths, [batch])
-    return ops.reshape(start, [batch, 1]) + ops.reshape(
-        arange(seq_len, device), [1, seq_len]
-    )
-
-
-def window_table(
-    leaf: CacheLeaf | None,
-    layer: int,
-    fresh: TensorValue,
-    positions: TensorValue,
-    window: int,
-) -> tuple[TensorValue, TensorValue]:
-    """The sliding-window rows a chunk attends to, and each query's indices.
-
-    Returns the table ``[b, window - 1 + s, head_dim]`` -- the ``window - 1``
-    positions before the chunk read from ``leaf`` (garbage where they do not
-    exist), then the chunk's own rows -- and ``[b, s, window]`` int32 indices
-    into it: query ``i`` sees rows ``i .. i + window - 1``, i.e. positions
-    ``P + i - window + 1 .. P + i``, with ``-1`` below position 0.
-    """
-    b, s = int(fresh.shape[0]), int(fresh.shape[1])
-    head_dim = int(fresh.shape[2])
-    device = fresh.device
-    p = ops.reshape(positions[:, 0], [b, 1])
-    back = ops.reshape(
-        arange(window - 1, device) - (window - 1), [1, window - 1]
-    )
-    if leaf is not None:
-        cached = leaf.gather(layer, KEY, ops.max(p + back, scalar(0, device)))
-    else:
-        cached = ops.broadcast_to(
-            ops.constant(0.0, fresh.dtype, device), [b, window - 1, head_dim]
-        )
-    table = ops.concat([cached, fresh], axis=1)
-    rows = ops.reshape(arange(s, device), [s, 1]) + ops.reshape(
-        arange(window, device), [1, window]
-    )
-    attended = ops.reshape(p, [b, 1, 1]) + ops.unsqueeze(rows - (window - 1), 0)
-    idxs = ops.where(
-        attended >= scalar(0, device),
-        ops.broadcast_to(ops.unsqueeze(rows, 0), [b, s, window]),
-        scalar(-1, device),
-    )
-    return table, idxs
 
 
 @dataclass
