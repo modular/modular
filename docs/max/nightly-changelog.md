@@ -256,6 +256,9 @@ This version is still a work in progress.
   runs eagerly or inside a `Graph`. Output dims may be symbolic,
   parameterized, or left to the kernel's shape function to determine at run
   time.
+- `max.experimental.custom.declare` now raises `ValueError` if the op's own
+  `custom_extensions` (or the process-wide defaults) don't register the
+  kernel.
 
 ### C API
 
