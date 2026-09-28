@@ -374,6 +374,7 @@ struct KdaChunk:
         gate_mode: StaticString = "original",
         beta_mode: StaticString = "logits",
         state_layout: StaticString = "K_FIRST",
+        use_computebound: Bool = False,
     ](
         output: OutputTensor[dtype=output_dtype, rank=4, ...],
         q: InputTensor[dtype=qkv_dtype, rank=4, ...],
@@ -509,7 +510,14 @@ struct KdaChunk:
             comptime kVD = head_dims[1]
             if key_head_dim == kKD and value_head_dim == kVD:
                 dispatched = True
-                kda_chunk_launch[kKD, kVD, gate_mode, beta_mode, state_layout](
+                kda_chunk_launch[
+                    kKD,
+                    kVD,
+                    gate_mode,
+                    beta_mode,
+                    state_layout,
+                    use_computebound,
+                ](
                     num_key_heads,
                     num_value_heads,
                     batch_size,

@@ -261,6 +261,15 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- Added `max.nn.state_space.kda_chunk`, the chunk-blocked form of the KDA /
+  gated-DeltaNet recurrence, alongside the existing `kda_decode`. Its launcher
+  can now reach the fused Blackwell kernel instead of only the three-stage scan
+  pipeline: the selection guard asked `std.sys.info` whether the compile target
+  was an SM100 GPU, which is false in a host-side launcher, so the fused branch
+  had been compiling as dead code. At Qwen3.5 geometry the launcher runs 1024
+  tokens in 0.315 ms against the pipeline's 1.853 ms. The fused path is opt-in
+  through a compile-time parameter and off by default.
+
 - `TileTensor` gained `as_span()`, returning a `Span` over the tensor's
   elements.
 

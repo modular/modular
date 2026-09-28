@@ -53,6 +53,7 @@ _GPU_MEMORY = {
     "test_gated_delta.mojo": "8",
     "test_gated_delta_conv1d.mojo": "8",
     "test_varlen_causal_conv1d.mojo": "8",
+    "bench_gated_delta_recurrence.mojo": "8",
 }
 
 [
