@@ -183,7 +183,9 @@ design's non-gating → gating rollout:
 - **Presubmit (gating, fast, deterministic):** build the fuzz targets, then run
   the corpus-replay gate. Same seed/spec → same verdict, so it never flakes; it
   fails only when a verdict drifts (a regression, a fixed bug whose corpus entry
-  needs updating, or a broken oracle).
+  needs updating, or a broken oracle). Entries for closed-source kernels, whose
+  targets live in `//Kernels/test/fuzz`, are skipped where that package is
+  absent; in the internal repo, add `//Kernels/test/fuzz:all` to the build.
 
   ```bash
   ./bazelw build //max/kernels/test/gpu/fuzz:all

@@ -5,6 +5,7 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 package(default_visibility = ["//max:consumers"])
 
 exports_files([
+    "_fuzz.mojo",
     "run_nightly_fuzz.sh",
 ])
 
@@ -20,7 +21,6 @@ build_test(
     name = "fuzz_build_test",
     tags = ["gpu"],
     targets = [
-        ":fuzz_attn_res_mix.mojo.test",
         ":fuzz_block_scaled_fp4.mojo.test",
         ":fuzz_block_scaled_mxfp8.mojo.test",
         ":fuzz_ep_combine.mojo.test",
@@ -36,14 +36,11 @@ build_test(
         ":fuzz_grouped_matmul_sm100_w4a8.mojo.test",
         ":fuzz_layer_norm.mojo.test",
         ":fuzz_matmul.mojo.test",
-        ":fuzz_mega_ffn.mojo.test",
         ":fuzz_mha_causal.mojo.test",
         ":fuzz_mha_nullmask.mojo.test",
         ":fuzz_mla_decode.mojo.test",
         ":fuzz_moe_indices.mojo.test",
         ":fuzz_moe_router.mojo.test",
-        ":fuzz_msa_decode.mojo.test",
-        ":fuzz_msa_prefill.mojo.test",
         ":fuzz_mxfp8_quantize.mojo.test",
         ":fuzz_numeric_canary.mojo.test",
         ":fuzz_oob_canary.mojo.test",
@@ -51,8 +48,6 @@ build_test(
         ":fuzz_rms_norm.mojo.test",
         ":fuzz_softmax.mojo.test",
         ":fuzz_sparse_indexer.mojo.test",
-        ":fuzz_sparse_indexer_decode.mojo.test",
-        ":fuzz_sparse_indexer_prefill.mojo.test",
         ":fuzz_topk_sampling.mojo.test",
         ":fuzz_topk_topp_masked_probs.mojo.test",
         ":fuzz_topk_topp_sampling_dist.mojo.test",
@@ -589,34 +584,6 @@ mojo_test(
     ],
 )
 
-# Target: attn_res_mix (K3's fused attention-residual softmax mixture). Fuzzes
-# hidden against both the grid-stride and warp moduli, the candidate count
-# across the op's whole comptime dispatch ladder, and the PDL producer
-# handshake at every shape.
-mojo_test(
-    name = "fuzz_attn_res_mix.mojo.test",
-    size = "large",
-    srcs = [
-        "_fuzz.mojo",
-        "fuzz_attn_res_mix.mojo",
-    ],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    main = "fuzz_attn_res_mix.mojo",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:has_gpu"],
-    deps = [
-        "//Kernels/lib/attn_res",
-        "//max:nn",
-        "@mojo//:std",
-    ],
-)
-
 # Target: block-scaled FP4 SM100 matmul small_bn (thin wrapper over the testbed).
 # B200-only. memcheck+pool-off surfaces a small_bn scale-factor over-read across
 # fuzzed M.
@@ -754,57 +721,6 @@ mojo_test(
         "//max:linalg",
         "//max:max_mojo",
         "//max:nn",
-        "//max:structured_kernels",
-        "@mojo//:std",
-    ],
-)
-
-# Target: the single-launch MXFP8 MegaFFN (`mega_ffn_mxfp8_dispatch`) plus the
-# EP-combine peer send fused into its L2 epilogue. Ragged per-expert token
-# counts and the per-(expert, rank) split are the runtime fuzz axis, drawn from
-# named shape families (tile-boundary triples for every `mma_bn` the `avg_m`
-# cascade can pick, primes, scale-group boundaries, skew, empty). `ref`
-# (--check) is a three-way compare: fused vs the two-launch grouped chain
-# byte-exact, and both against a host FP64 recompute of the whole chain.
-# `determinism` (--rerun) and `batch_invariance` (--batch-invariance) hold a
-# probe token fixed inside one `avg_m` regime. FFN geometry and the EP
-# fan-out are compile-time (`-D mff_N1=.. -D mff_K1=.. -D mff_N2=..
-# -D mff_num_experts=.. -D ep_n_ranks=.. -D ep_top_k=..`); the fused send is
-# selected by this target's own copts. B200-only.
-mojo_test(
-    name = "fuzz_mega_ffn.mojo.test",
-    size = "large",
-    srcs = [
-        "_fuzz.mojo",
-        "fuzz_mega_ffn.mojo",
-    ],
-    # The fused leg is the point of this target, and the target selects it:
-    # without these the send is comptime-eliminated and the run exercises only
-    # the unfused legs while still reporting a pass.
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
-        "-D",
-        "P5_DIRECT_SCATTER=true",
-        "-D",
-        "P5_ROW_CACHE=true",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "8",
-    },
-    main = "fuzz_mega_ffn.mojo",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
-    deps = [
-        "//Kernels/src/mega_ffn",
-        "//max:internal_utils",
-        "//max:linalg",
-        "//max:nn",
-        "//max:shmem",
         "//max:structured_kernels",
         "@mojo//:std",
     ],
@@ -953,93 +869,6 @@ mojo_test(
         "//max:linalg",
         "//max:nn",
         "//max:shmem",
-        "//max:structured_kernels",
-        "@mojo//:std",
-    ],
-)
-
-# Target: MiniMax-M3 block-sparse decode ATTENTION (`msa_sm100_decode`, in
-# //Kernels/lib/msa) -- the kernel that attends the indexer-selected blocks
-# (QK.softmax.V), distinct from the indexer (fuzzed by sparse_indexer_decode).
-# Fuzzes batch + per-batch cache_length (biased non-BN-aligned) + topk; the
-# last selected block is a PARTIAL local block whose tail (logical position >
-# cache_length) is a 1e4 poison sentinel. `ref` (--check) is an f64 block-max
-# softmax masking k_logical > cache_length -- a leaked tail blows O ~1e4 out of
-# band (the CENG-639 long-context decode runaway). head_dim/group compile-time
-# (`-D`, default 128/8). Dual-arch (B200 tensor-core + MI355 cooperative path),
-# via msa_amd_decode_dispatch on AMD.
-mojo_test(
-    name = "fuzz_msa_decode.mojo.test",
-    size = "large",
-    srcs = [
-        "_fuzz.mojo",
-        "fuzz_msa_decode.mojo",
-    ],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    exec_properties = {
-        "test.resources:gpu-memory": "8",
-    },
-    main = "fuzz_msa_decode.mojo",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//:mi355_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//Kernels/lib/msa",
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:structured_kernels",
-        "@mojo//:std",
-    ],
-)
-
-# Target: MiniMax-M3 block-sparse PREFILL ATTENTION (`msa_sm100_prefill_plan` +
-# `msa_sm100_prefill_run`, in //Kernels/lib/msa) -- the chunked-prefill kernel
-# that attends the indexer-selected blocks over a ragged Q batch via an
-# on-device reverse-CSR + block-major fwd + combine. Distinct from MSA decode
-# (single-token) and the indexer (block selection). Fuzzes the ragged shape
-# (batch, per-batch seqlen_q / seqlen_k driving the CSR work decomposition +
-# q-chunking) + the q2k block selection (incl. the C==0 empty-split edge);
-# topk/num_q_heads/group/causal/dtype are compile-time (`-D msap_topk=..
-# msap_num_q_heads=.. msap_group=.. msap_causal=.. msap_fp8=..`, default
-# 8/1/1/0/0); `msap_fp8=1` fuzzes FP8 e4m3 Q/K/V -> BF16 O; head_dim fixed at 128.
-# memory-safety primary (device CSR build + block-major scatter); `ref` (--check,
-# default) is the f64 block-sparse oracle from the kernel's authority test. Dual-arch
-# (B200 tensor-core + MI355 cooperative path), via msa_amd_prefill_run on AMD.
-mojo_test(
-    name = "fuzz_msa_prefill.mojo.test",
-    size = "large",
-    srcs = [
-        "_fuzz.mojo",
-        "fuzz_msa_prefill.mojo",
-    ],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    exec_properties = {
-        "test.resources:gpu-memory": "8",
-    },
-    main = "fuzz_msa_prefill.mojo",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//:mi355_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//Kernels/lib/msa",
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
         "//max:structured_kernels",
         "@mojo//:std",
     ],
@@ -1195,85 +1024,6 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:internal_utils",
-        "//max:nn",
-        "@mojo//:std",
-    ],
-)
-
-# Target: MiniMax-M3 MSA indexer DECODE path (`sparse_indexer_decode_score` +
-# `sparse_indexer_decode_topk`, in //Kernels/lib/msa). Block-max QK scoring with
-# split-K over the KV-block dim, init/local forcing, partial-final-block handling,
-# then block_select_topk. num_index_heads / idx_head_dim / block_size are
-# compile-time (`-D sidx_num_heads=.. sidx_head_dim=.. sidx_block_size=..`,
-# default the M3 config 4/128/128); the ragged shape (batch, per-batch seq lens)
-# is the runtime fuzz axis. `ref` (--check) is an f32 host block-max + forcing
-# oracle; an always-on validity contract guards the top-k output; `schedule`
-# re-runs the scorer for split-K nondeterminism. Dual-arch (B200 tensor-core +
-# MI355 cooperative path), matching the kernel's own test.
-mojo_test(
-    name = "fuzz_sparse_indexer_decode.mojo.test",
-    size = "large",
-    srcs = [
-        "_fuzz.mojo",
-        "fuzz_sparse_indexer_decode.mojo",
-    ],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    main = "fuzz_sparse_indexer_decode.mojo",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//:mi355_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//Kernels/lib/msa",
-        "//max:internal_utils",
-        "//max:linalg",
-        "//max:nn",
-        "@mojo//:std",
-    ],
-)
-
-# Target: MiniMax-M3 MSA indexer PREFILL path (`sparse_indexer_prefill_score` +
-# `sparse_indexer_prefill_topk`, in //Kernels/lib/msa). Per ragged query token,
-# block-max QK scoring up to the token's causal boundary, init/local forcing,
-# then block_select_topk. On B200 the scorer is the SM100 tensor-core (SS-UMMA)
-# kernel with TMA-staged software-pipelined K; on MI355 the cooperative path.
-# `ref` (--check) is an f32 per-token causal block-max + forcing oracle (with a
-# planted-key causality probe); an always-on validity contract guards the top-k
-# output; `schedule` re-runs the scorer for query-tile/split-K nondeterminism.
-# Compile-time config via -D (default M3 4/128/128). Dual-arch (B200 + MI355).
-mojo_test(
-    name = "fuzz_sparse_indexer_prefill.mojo.test",
-    size = "large",
-    srcs = [
-        "_fuzz.mojo",
-        "fuzz_sparse_indexer_prefill.mojo",
-    ],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    exec_properties = {
-        "test.resources:gpu-memory": "8",
-    },
-    main = "fuzz_sparse_indexer_prefill.mojo",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//:mi355_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//Kernels/lib/msa",
-        "//max:internal_utils",
-        "//max:linalg",
         "//max:nn",
         "@mojo//:std",
     ],
