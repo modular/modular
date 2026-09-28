@@ -292,6 +292,40 @@ struct DeviceGraphCache(Movable):
         """
         return Self._make_key(build, inputs)
 
+    @staticmethod
+    def make_key[
+        *Ts: DeviceGraphInput
+    ](*inputs: *Ts,) -> String:
+        """Derives the input-only cache key for a graph.
+
+        The returned key covers only the inputs; the caller is responsible for
+        combining it with any closure/work-function identity. This is useful
+        when the closure identity is handled separately, e.g. by
+        `DeviceGraph.create_collective`.
+
+        Parameters:
+            Ts: Types of the device graph inputs.
+
+        Args:
+            inputs: The inputs whose contributions distinguish this graph.
+
+        Returns:
+            The cache key.
+        """
+        var key = String()
+
+        comptime for i in range(len(Ts)):
+            if i > 0:
+                key.write("|")
+            inputs[i].write_graph_key(key)
+
+        return key^
+
+    @staticmethod
+    def _closure_key(func: Some[AnyType]) -> String:
+        comptime name = reflect[type_of(func)].name()
+        return String(name)
+
     # Takes the pack itself so a variadic caller can forward its own inputs,
     # which the variadic spelling above cannot express.
     @staticmethod
@@ -304,7 +338,7 @@ struct DeviceGraphCache(Movable):
         ],
         ctx: Optional[DeviceContext] = None,
     ) -> String:
-        var key = String(reflect[type_of(build)].name())
+        var key = Self._closure_key(build)
 
         if ctx:
             try:
@@ -650,7 +684,9 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
 
         comptime for i in range(N):
             var ctx = ctxs[i]
-            var key = String(t"Device({ctx.id()})|") + key_for[i]()
+            var key = DeviceGraphCache._closure_key(build_for)
+            key.write(t"|Device({ctx.id()})|")
+            key.write(key_for[i]())
 
             def build(mut b: DeviceGraphBuilder[_]) raises {imm}:
                 build_for[i](b)
