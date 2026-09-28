@@ -70,6 +70,14 @@ This version is still a work in progress.
   `MODULAR_DEBUG=ir-output-dir=<dir>,pre-jit max warm-cache ...` is a quick
   way to get the Mojo a model compiles to.
 
+- Added the `uninitialized-read-mode` debug option
+  (`MODULAR_DEBUG=uninitialized-read-mode=report`,
+  `[max-debug] uninitialized-read-mode`, or
+  `InferenceSession.debug.uninitialized_read_mode`). With
+  `uninitialized-read-check` on, `report` prints each poisoned read and keeps
+  running, so one run lists every offending load instead of stopping at the
+  first. The default, `abort`, is unchanged. On Apple GPUs, `report`
+  currently aborts without printing.
 - `max serve` gained a `--cascade` flag that routes the request to the
   experimental Cascade server (`max.experimental.cascade.serve.main.serve`)
   instead of the standard API server + model worker. The resolved `PipelineArgs`

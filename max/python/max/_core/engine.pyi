@@ -418,6 +418,14 @@ class DebugConfig:
     @uninitialized_read_check.setter
     def uninitialized_read_check(self, arg: bool, /) -> None: ...
     @property
+    def uninitialized_read_mode(self) -> str:
+        r"""
+        A string that sets what :attr:`uninitialized_read_check` does on a match. One of ``\'\'``, ``'abort'``, ``'report'``. ``\'\'`` (unset) behaves as ``'abort'``, which stops at the first match. ``'report'`` prints each match and keeps running so a single run enumerates every offending load, with no bound on its output. On Apple GPUs, ``'report'`` currently aborts at the first match without printing. Ignored unless :attr:`uninitialized_read_check` is set. Takes effect at model build time.
+        """
+
+    @uninitialized_read_mode.setter
+    def uninitialized_read_mode(self, arg: str, /) -> None: ...
+    @property
     def device_sync_mode(self) -> bool:
         """
         A boolean that, when ``True``, triggers MAX to force synchronous GPU execution so every device operation waits for completion. This surfaces async errors at their call site but serializes the pipeline. Takes effect at run time.

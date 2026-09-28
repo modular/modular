@@ -649,6 +649,17 @@ class InferenceSession:
         # Read the uninit-read check from the max-debug.uninitialized-read-check
         # Config key.
         if _InferenceSession.debug.uninitialized_read_check:
+            # The mode picks what a match does: "abort" stops at the first
+            # one, "report" prints it and keeps running so a single run
+            # enumerates every offending load, which matters when a run is
+            # expensive enough that iterating one site at a time is not
+            # affordable.
+            mode = _InferenceSession.debug.uninitialized_read_mode or "abort"
+            if mode not in ("abort", "report"):
+                raise ValueError(
+                    f"Invalid uninitialized read mode ({mode}). Please use one"
+                    " of: abort, report"
+                )
             # Enable debug allocator poison
             existing = os.environ.get("MODULAR_DEBUG_DEVICE_ALLOCATOR", "")
             if existing:
@@ -661,7 +672,10 @@ class InferenceSession:
                     "uninitialized-poison"
                 )
             # Enable compile-time checks
-            self._set_mojo_define("MOJO_STDLIB_SIMD_UNINIT_CHECK", "true")
+            self._set_mojo_define(
+                "MOJO_STDLIB_SIMD_UNINIT_CHECK",
+                "report" if mode == "report" else "true",
+            )
 
     def __repr__(self) -> str:
         if self.num_threads:
