@@ -32,6 +32,10 @@ Coverage:
   `copy_sram_to_dram`.
 - SHARED (swizzled) -> GENERIC via `copy_sram_to_dram` on vectorized tiles,
   where each thread owns a single vector.
+- SHARED -> GENERIC via the `copy_sram_to_dram` overload that takes a worker
+  index and bounds, with the copying threads starting past thread 0, only the
+  leading rows and columns written, and a destination row stride narrower
+  than the tile (so out-of-bounds columns alias the next row).
 """
 
 from max.gpu import thread_idx
@@ -42,8 +46,9 @@ from max.gpu.memory import (
     async_copy_wait_all,
 )
 
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from layout.swizzle import Swizzle
+from layout.tile_layout import Layout
 from layout.tile_io import (
     copy_dram_to_local,
     copy_dram_to_sram,
@@ -69,6 +74,15 @@ comptime _BLOCK_DIM = 4
 comptime _V_ROWS = 8
 comptime _V_COLS = 16
 comptime _V_WIDTH = 4
+
+# Threads [0, _W_OFFSET) sit out; the rest copy. The destination is a
+# _V_ROWS x _V_COLS view with a row stride of _W_DST_STRIDE, and only its
+# first _W_VALID_ROWS rows and _W_VALID_COLS columns may be written.
+comptime _W_OFFSET = 32
+comptime _W_VALID_ROWS = 5
+comptime _W_VALID_COLS = 12
+comptime _W_DST_STRIDE = 12
+comptime _W_DST_SIZE = (_V_ROWS - 1) * _W_DST_STRIDE + _V_COLS
 
 
 def dram_to_sram_to_dram_kernel(
@@ -197,6 +211,46 @@ def swizzled_vectorized_sram_to_dram_kernel(
     )
 
 
+def offset_worker_bounded_sram_to_dram_kernel[
+    swizzle: Optional[Swizzle]
+](
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+):
+    """SHARED -> GENERIC with vectorized tiles, where the copying threads
+    start at thread `_W_OFFSET` and only a `_W_VALID_ROWS` x `_W_VALID_COLS`
+    corner of the destination is written.
+    """
+    comptime thread_layout = row_major(Idx[_V_ROWS], Idx[_V_COLS // _V_WIDTH])
+
+    var dst = TileTensor(
+        dst_ptr,
+        Layout(
+            Coord(Idx[_V_ROWS], Idx[_V_COLS]),
+            Coord(Idx[_W_DST_STRIDE], Idx[1]),
+        ),
+    )
+    var smem = stack_allocation[dtype=DType.float32, address_space=.SHARED](
+        row_major[_V_ROWS, _V_COLS]()
+    )
+
+    if thread_idx.x == 0:
+        for i in range(_V_ROWS * _V_COLS):
+            comptime if swizzle:
+                smem.ptr[swizzle.value()(i)] = src_ptr[i]
+            else:
+                smem.ptr[i] = src_ptr[i]
+    barrier()
+    if thread_idx.x >= _W_OFFSET:
+        copy_sram_to_dram[thread_layout, swizzle=swizzle](
+            dst.vectorize[1, _V_WIDTH](),
+            smem.vectorize[1, _V_WIDTH](),
+            Int(thread_idx.x) - _W_OFFSET,
+            _W_VALID_ROWS,
+            _W_VALID_COLS,
+        )
+
+
 def async_dram_to_sram_to_dram_kernel(
     src_ptr: MutPointer[Float32, MutAnyOrigin],
     dst_ptr: MutPointer[Float32, MutAnyOrigin],
@@ -253,6 +307,42 @@ def _run_roundtrip[
         assert_equal(dst_host[i], src_host[i])
 
 
+def _run_offset_worker_bounded[
+    swizzle: Optional[Swizzle]
+](name: String, ctx: DeviceContext) raises:
+    print("==", name)
+    comptime num_elements = _V_ROWS * _V_COLS
+
+    var src_host = ctx.enqueue_create_host_buffer[.float32](num_elements)
+    var dst_host = ctx.enqueue_create_host_buffer[.float32](_W_DST_SIZE)
+    for i in range(num_elements):
+        src_host[i] = Float32(i + 1)
+    for i in range(_W_DST_SIZE):
+        dst_host[i] = -1.0
+
+    var src_dev = ctx.enqueue_create_buffer[.float32](num_elements)
+    var dst_dev = ctx.enqueue_create_buffer[.float32](_W_DST_SIZE)
+    ctx.enqueue_copy(src_dev, src_host)
+    ctx.enqueue_copy(dst_dev, dst_host)
+
+    ctx.enqueue_function[offset_worker_bounded_sram_to_dram_kernel[swizzle]](
+        src_dev,
+        dst_dev,
+        grid_dim=(1),
+        block_dim=(_W_OFFSET + num_elements // _V_WIDTH),
+    )
+
+    ctx.enqueue_copy(dst_host, dst_dev)
+    ctx.synchronize()
+
+    for i in range(_W_DST_SIZE):
+        var row, col = divmod(i, _W_DST_STRIDE)
+        if row < _W_VALID_ROWS and col < _W_VALID_COLS:
+            assert_equal(dst_host[i], src_host[row * _V_COLS + col])
+        else:
+            assert_equal(dst_host[i], -1.0)
+
+
 def test_dram_to_sram_to_dram(ctx: DeviceContext) raises:
     _run_roundtrip[dram_to_sram_to_dram_kernel](
         "test_dram_to_sram_to_dram", ctx
@@ -285,6 +375,15 @@ def test_swizzled_vectorized_sram_to_dram(ctx: DeviceContext) raises:
     ]("test_swizzled_vectorized_sram_to_dram", ctx)
 
 
+def test_offset_worker_bounded_sram_to_dram(ctx: DeviceContext) raises:
+    _run_offset_worker_bounded[Swizzle(1, 2, 3)](
+        "test_offset_worker_bounded_sram_to_dram_swizzled", ctx
+    )
+    _run_offset_worker_bounded[None](
+        "test_offset_worker_bounded_sram_to_dram_unswizzled", ctx
+    )
+
+
 def test_async_dram_to_sram_to_dram(ctx: DeviceContext) raises:
     _run_roundtrip[async_dram_to_sram_to_dram_kernel](
         "test_async_dram_to_sram_to_dram", ctx
@@ -298,4 +397,5 @@ def main() raises:
         test_sram_local_sram_roundtrip(ctx)
         test_swizzled_local_to_shared(ctx)
         test_swizzled_vectorized_sram_to_dram(ctx)
+        test_offset_worker_bounded_sram_to_dram(ctx)
         test_async_dram_to_sram_to_dram(ctx)
