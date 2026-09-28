@@ -21,7 +21,11 @@ architecture (their sole consumer) to keep ``max.nn`` from depending on
 
 from .gated_delta import gated_delta_conv1d_fwd, gated_delta_recurrence_fwd
 from .gated_group_rmsnorm import gated_group_rmsnorm
-from .kimi_delta import kda_decode
+from .kimi_delta import (
+    kda_chunk,
+    kda_chunk_supports_head_dims,
+    kda_decode,
+)
 from .mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
@@ -34,6 +38,8 @@ __all__ = [
     "gated_delta_conv1d_fwd",
     "gated_delta_recurrence_fwd",
     "gated_group_rmsnorm",
+    "kda_chunk",
+    "kda_chunk_supports_head_dims",
     "kda_decode",
     "mamba2_ssd_chunk_scan_varlen_fwd",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",

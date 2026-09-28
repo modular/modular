@@ -53,11 +53,14 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import NamedTuple
 
+import numpy as np
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Weight,
     ops,
@@ -71,6 +74,8 @@ from max.nn.stacked_linear import StackedLinear
 from max.nn.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,
+    kda_chunk,
+    kda_chunk_supports_head_dims,
 )
 
 
@@ -511,8 +516,10 @@ class GatedDeltaNet(Module, Shardable):
         # (typically bf16); the kernels cast on read/write so the per-token
         # working tensors stay at fp32.
         offsets_uint32 = ops.cast(input_row_offsets, DType.uint32)
+        offsets_int32 = ops.cast(input_row_offsets, DType.int32)
         conv_slot_uint32 = ops.cast(conv_row_id, DType.uint32)
         rec_slot_uint32 = ops.cast(recurrent_row_id, DType.uint32)
+        rec_slot_int32 = ops.cast(recurrent_row_id, DType.int32)
 
         if replay_capture is not None:
             replay_capture.append(
@@ -533,14 +540,120 @@ class GatedDeltaNet(Module, Shardable):
         )
         conv_output_ragged = ops.silu(conv_output_ragged)
 
-        recurrence_output_flat = gated_delta_recurrence_fwd(
-            qkv_conv_output=conv_output_ragged,
-            decay_per_token=decay,
-            beta_per_token=beta,
-            recurrent_state=recurrent_pool,
-            slot_idx=rec_slot_uint32,
-            input_row_offsets=offsets_uint32,
+        def _prefill_recurrence() -> TensorValue:
+            # Split the fused conv output into separate bf16 q/k/v so the KDA
+            # chunk op has explicit head dimensions.
+            q_f32, k_f32, v_f32 = ops.split(
+                conv_output_ragged,
+                [self.key_dim, self.key_dim, self.value_dim],
+                axis=-1,
+            )
+            q = ops.cast(
+                ops.reshape(q_f32, [-1, self.num_key_heads, self.key_head_dim]),
+                DType.bfloat16,
+            )
+            k = ops.cast(
+                ops.reshape(k_f32, [-1, self.num_key_heads, self.key_head_dim]),
+                DType.bfloat16,
+            )
+            v = ops.cast(
+                ops.reshape(v_f32, [-1, nv, vd]),
+                DType.bfloat16,
+            )
+
+            # KDA carries a per-CHANNEL gate, qwen a per-head scalar, so the
+            # scalar is spread along K -- 25 MB per layer at a 1024-token chunk.
+            # The kernel reads this through a TMA descriptor over a flat
+            # [token, HV*K] view, so the elements have to be really there.
+            # `ops.broadcast_to` lowers to MO_BroadcastToOp, which carries
+            # MO_ViewLike (MOOps.td:2900) and so may stay a stride-0 view whose
+            # buffer is 1/K of what the descriptor reads; the elementwise
+            # multiply below is MO_MulOp, which is not view-like and
+            # materializes on device.
+            ones_k = ops.constant(
+                np.ones((1, 1, self.key_head_dim), dtype=np.float32),
+                DType.float32,
+                device=device,
+            )
+            raw_gate = ops.reshape(a_float, [-1, nv, 1]) * ones_k
+            dt_bias_2d = ops.reshape(dt_bias, [nv, 1]) * ops.constant(
+                np.ones((1, self.key_head_dim), dtype=np.float32),
+                DType.float32,
+                device=device,
+            )
+
+            recurrence_output = kda_chunk(
+                q=q,
+                k=k,
+                v=v,
+                raw_gate=raw_gate,
+                beta_logits=beta,
+                a_log=A_log,
+                dt_bias=dt_bias_2d,
+                cu_seqlens=offsets_int32,
+                state_pool=recurrent_pool,
+                state_indices=rec_slot_int32,
+                output_dtype=DType.float32,
+                gate_mode="original",
+                beta_mode="probability",
+                state_layout="K_FIRST",
+                use_computebound=True,
+            )
+            return ops.reshape(recurrence_output, [-1, self.value_dim])
+
+        def _decode_recurrence() -> TensorValue:
+            return gated_delta_recurrence_fwd(
+                qkv_conv_output=conv_output_ragged,
+                decay_per_token=decay,
+                beta_per_token=beta,
+                recurrent_state=recurrent_pool,
+                slot_idx=rec_slot_uint32,
+                input_row_offsets=offsets_uint32,
+            )
+
+        # Decode is when every sequence in the ragged batch has length 1.
+        # A batched decode has total_tokens == batch_size, so compare against
+        # the row-offset count rather than using a nonzero total token count.
+        #
+        # This predicate is read at runtime, which matters because the prefill
+        # branch builds its chunk map with a synchronous D2H and this
+        # architecture asks for device graph capture. `ops.cond` lowers to
+        # `mo.if_`, whose branches are separate MLIR regions, so a capture only
+        # records the launches of the region that actually ran. A decode batch
+        # has total_tokens == batch_size by definition, so the captured decode
+        # graph never contains the prefill region and the readback stays out of
+        # it. A mixed batch takes the prefill side and is not what gets
+        # captured; replaying a decode capture against one would disagree on
+        # total_tokens and fail on shape rather than quietly compute the wrong
+        # thing.
+        # The chunk op's kernels are written for NVIDIA GPUs: on any other
+        # accelerator even the scan fallback fails to instantiate, so the
+        # decision has to happen here rather than inside the launcher.
+        chunk_servable = (
+            accelerator_api() == "cuda"
+            and kda_chunk_supports_head_dims(
+                self.key_head_dim, self.value_head_dim
+            )
         )
+        if chunk_servable:
+            total_tokens_t = ops.shape_to_tensor(x.shape)[0]
+            batch_size_t = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+            is_prefill = total_tokens_t > batch_size_t
+            recurrence_output_flat = ops.cond(
+                is_prefill,
+                [
+                    TensorType(
+                        DType.float32, [x.shape[0], self.value_dim], device
+                    )
+                ],
+                _prefill_recurrence,
+                _decode_recurrence,
+            )[0]
+        else:
+            # Everything else runs the sequential recurrence for prefill too,
+            # which is what every configuration did before the fused path
+            # existed.
+            recurrence_output_flat = _decode_recurrence()
 
         output_flat = ops.rebind(
             recurrence_output_flat,
