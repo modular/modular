@@ -226,6 +226,16 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "generate-metrics-table",
+    srcs = ["generate-metrics-table.py"],
+    visibility = [
+        "//:__pkg__",
+        "//bazel/lint:__pkg__",
+    ],
+    deps = ["//max/python/max/serve/telemetry"],
+)
+
+modular_py_binary(
     name = "generate-arch-docs",
     srcs = ["generate-arch-docs.py"],
     visibility = [
