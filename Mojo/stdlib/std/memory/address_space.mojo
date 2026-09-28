@@ -136,19 +136,20 @@ struct AddressSpace(
         Args:
             writer: The object to write to.
         """
-        if self == .GENERIC:
+        __match self:
+        case .GENERIC:
             writer.write("AddressSpace.GENERIC")
-        elif self == .GLOBAL:
+        case .GLOBAL:
             writer.write("AddressSpace.GLOBAL")
-        elif self == .SHARED:
+        case .SHARED:
             writer.write("AddressSpace.SHARED")
-        elif self == .CONSTANT:
+        case .CONSTANT:
             writer.write("AddressSpace.CONSTANT")
-        elif self == .LOCAL:
+        case .LOCAL:
             writer.write("AddressSpace.LOCAL")
-        elif self == .SHARED_CLUSTER:
+        case .SHARED_CLUSTER:
             writer.write("AddressSpace.SHARED_CLUSTER")
-        else:
+        case _:
             writer.write("AddressSpace(", Int(self.value()), ")")
 
     def write_repr_to(self, mut writer: Some[Writer]):

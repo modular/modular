@@ -268,13 +268,14 @@ struct Unit:
 
     @staticmethod
     def _divisor(unit: String) -> Int:
-        if unit == Unit.ns:
+        __match unit:
+        case Unit.ns:
             return 1
-        elif unit == Unit.us:
+        case Unit.us:
             return 1_000
-        elif unit == Unit.ms:
+        case Unit.ms:
             return 1_000_000
-        else:
+        case _:
             return 1_000_000_000
 
 

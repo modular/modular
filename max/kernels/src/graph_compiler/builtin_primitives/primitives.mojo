@@ -1090,21 +1090,22 @@ def mgp_buffer_memset[
     """
     # `cast` to the matching-width unsigned int truncates to the low N bits,
     # which is exactly the little-endian low-byte pattern.
-    if elem_size == 1:
+    __match elem_size:
+    case 1:
         _memset_buffer[.uint8, bDevice](
             buffer, value_bits.cast[.uint8](), dev_context
         )
-    elif elem_size == 2:
+    case 2:
         _memset_buffer[.uint16, bDevice](
             buffer, value_bits.cast[.uint16](), dev_context
         )
-    elif elem_size == 4:
+    case 4:
         _memset_buffer[.uint32, bDevice](
             buffer, value_bits.cast[.uint32](), dev_context
         )
-    elif elem_size == 8:
+    case 8:
         _memset_buffer[.uint64, bDevice](buffer, value_bits, dev_context)
-    else:
+    case _:
         raise Error("mgp.buffer.memset: elem_size must be one of {1, 2, 4, 8}")
 
 

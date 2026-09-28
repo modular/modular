@@ -1984,6 +1984,13 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
       firstCommand->kind != PatternCommand::Kind::EnumTag)
     return 1;
 
+  // Member patterns (`.float16`, `Self.HOST`) are equality tests with no
+  // literal spelling. Clustering would assert in getLeadingTest; emit each
+  // one as its own case instead.
+  if (firstCommand->kind == PatternCommand::Kind::Equal &&
+      firstCommand->expr->getLiteralSpelling().empty())
+    return 1;
+
   // Great, now we check to see how big of a cluster we can make.  Absorb as
   // many cases as we can that share the same leading test. A trailing `_` (or
   // other always-matching case) is included only while every prior case is

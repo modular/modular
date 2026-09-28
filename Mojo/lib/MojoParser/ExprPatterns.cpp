@@ -793,8 +793,7 @@ RValue PatternEmitState::emitTestForValue(IREmitter &emitter,
       return {};
     rhs = caseIdxInt;
   } else {
-    ExprDest litDest(value.getRValueType(), EC_MatchSubject);
-    rhs = emitter.emitExpr(expr, litDest);
+    rhs = emitter.emitExpr(expr, EC_MatchSubject);
     if (!rhs)
       return {};
   }

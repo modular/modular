@@ -222,31 +222,32 @@ struct AMDScheduleBarrierMask(
         Args:
             writer: The object to write to.
         """
-        if self == Self.NONE:
+        __match self:
+        case .NONE:
             return writer.write_string("NONE")
-        elif self == Self.ALL_ALU:
+        case .ALL_ALU:
             return writer.write_string("ALL_ALU")
-        elif self == Self.VALU:
+        case .VALU:
             return writer.write_string("VALU")
-        elif self == Self.SALU:
+        case .SALU:
             return writer.write_string("SALU")
-        elif self == Self.MFMA:
+        case .MFMA:
             return writer.write_string("MFMA")
-        elif self == Self.ALL_VMEM:
+        case .ALL_VMEM:
             return writer.write_string("ALL_VMEM")
-        elif self == Self.VMEM_READ:
+        case .VMEM_READ:
             return writer.write_string("VMEM_READ")
-        elif self == Self.VMEM_WRITE:
+        case .VMEM_WRITE:
             return writer.write_string("VMEM_WRITE")
-        elif self == Self.ALL_DS:
+        case .ALL_DS:
             return writer.write_string("ALL_DS")
-        elif self == Self.DS_READ:
+        case .DS_READ:
             return writer.write_string("DS_READ")
-        elif self == Self.DS_WRITE:
+        case .DS_WRITE:
             return writer.write_string("DS_WRITE")
-        elif self == Self.TRANS:
+        case .TRANS:
             return writer.write_string("TRANS")
-        else:
+        case _:
             abort("invalid AMDScheduleBarrierMask value")
 
     def __int__(self) -> Int:

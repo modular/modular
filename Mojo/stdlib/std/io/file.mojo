@@ -96,18 +96,19 @@ def _open_file(path: String, mode: String) raises -> Int:
     var flags: Int
     var create_dirs = False
 
-    if mode == "r":
+    __match mode:
+    case "r":
         flags = O_RDONLY | O_CLOEXEC
-    elif mode == "w":
+    case "w":
         flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
         create_dirs = True
-    elif mode == "rw":
+    case "rw":
         flags = O_RDWR | O_CREAT | O_CLOEXEC
         create_dirs = True
-    elif mode == "a":
+    case "a":
         flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
         create_dirs = True
-    else:
+    case _:
         raise Error(
             'invalid mode: "'
             + mode

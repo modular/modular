@@ -1167,13 +1167,14 @@ def fa_prefill_apple[
             def _dispatch[sg: Int]() raises:
                 _enqueue[sg]()
 
-            if sg_env == "4":
+            __match sg_env:
+            case "4":
                 _dispatch[4]()
-            elif sg_env == "8":
+            case "8":
                 _dispatch[8]()
-            elif sg_env == "16":
+            case "16":
                 _dispatch[16]()
-            elif sg_env == "32":
+            case "32":
                 _dispatch[32]()
-            else:
+            case _:
                 _dispatch[num_simdgroups]()

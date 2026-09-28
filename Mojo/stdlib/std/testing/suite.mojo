@@ -112,11 +112,12 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
         Args:
             writer: The writer to output the result code to.
         """
-        if self == Self.PASS:
+        __match self:
+        case .PASS:
             writer.write(Text[Color.GREEN]("PASS"))
-        elif self == Self.FAIL:
+        case .FAIL:
             writer.write(Text[Color.RED]("FAIL"))
-        elif self == Self.SKIP:
+        case .SKIP:
             writer.write(Text[Color.YELLOW]("SKIP"))
 
     @inline(.never)
@@ -127,11 +128,12 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer: The writer to output to.
         """
         writer.write_string("TestResult.")
-        if self == Self.PASS:
+        __match self:
+        case .PASS:
             writer.write_string("PASS")
-        elif self == Self.FAIL:
+        case .FAIL:
             writer.write_string("FAIL")
-        elif self == Self.SKIP:
+        case .SKIP:
             writer.write_string("SKIP")
 
 

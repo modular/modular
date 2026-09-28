@@ -172,19 +172,20 @@ struct Level(
         Args:
             writer: The writer to write to.
         """
-        if self == Self.NOTSET:
+        __match self:
+        case .NOTSET:
             writer.write("NOTSET")
-        elif self == Self.TRACE:
+        case .TRACE:
             writer.write("TRACE")
-        elif self == Self.DEBUG:
+        case .DEBUG:
             writer.write("DEBUG")
-        elif self == Self.INFO:
+        case .INFO:
             writer.write("INFO")
-        elif self == Self.WARNING:
+        case .WARNING:
             writer.write("WARNING")
-        elif self == Self.ERROR:
+        case .ERROR:
             writer.write("ERROR")
-        elif self == Self.CRITICAL:
+        case .CRITICAL:
             writer.write("CRITICAL")
 
 

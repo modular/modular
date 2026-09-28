@@ -262,18 +262,19 @@ struct SM100MHADepth512[
         # ---- Initialization (per-CTA, then cluster sync) ----------------
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        if warp_idx == 0:
+        __match warp_idx:
+        case 0:
             # Initialize all barriers.
             Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](
                 smem.mbar_base()
             ).init(lane_idx=Int32(thread_idx.x))
-        elif warp_idx == 1:
+        case 1:
             # TMEM allocation (pair-CTA cooperative).
             tcgen05_alloc[Int32(Self.cta_group)](
                 smem.tmem_addr_ptr(),
                 UInt32(Self.config.sm100_tmem_cols),
             )
-        elif warp_idx == 2:
+        case 2:
             var e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()

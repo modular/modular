@@ -78,15 +78,16 @@ def default_op_name(tag: Int) -> StaticString:
 
 
 def _koff_name(k: KOffsetKind) -> StaticString:
-    if k == KOffsetKind.K0:
+    __match k:
+    case .K0:
         return "K0   "
-    elif k == KOffsetKind.K1:
+    case .K1:
         return "K1   "
-    elif k == KOffsetKind.K_NEXT:
+    case .K_NEXT:
         return "KNEXT"
-    elif k == KOffsetKind.K_PREV:
+    case .K_PREV:
         return "KPREV"
-    else:
+    case _:
         return "-    "
 
 
@@ -212,15 +213,16 @@ def update_wait_counts(mut counts: WaitCounts, e: ScheduleEntry, next_tag: Int):
             vm+lgkm pairs. Pass `_Ops.NONE.value` for the last entry.
     """
     var t = e.op.tag
-    if t == _Ops.WAIT_VM.value:
+    __match t:
+    case _Ops.WAIT_VM.value:
         counts.n_vm += 1
         if next_tag == _Ops.WAIT_LGKM.value:
             counts.n_combined += 1
-    elif t == _Ops.WAIT_LGKM.value:
+    case _Ops.WAIT_LGKM.value:
         counts.n_lgkm += 1
-    elif t == _Ops.BARRIER.value:
+    case _Ops.BARRIER.value:
         counts.n_barrier += 1
-    elif t == _Ops.SCHEDULE_BARRIER.value:
+    case _Ops.SCHEDULE_BARRIER.value:
         counts.n_sched_barrier += 1
 
 

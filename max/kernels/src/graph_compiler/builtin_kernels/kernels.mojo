@@ -4032,22 +4032,24 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
             )
 
         comptime if is_cpu[target]():
-            if dstate == 256:
+            __match dstate:
+            case 256:
                 launch_cpu[256]()
-            elif dstate == 128:
+            case 128:
                 launch_cpu[128]()
-            elif dstate == 64:
+            case 64:
                 launch_cpu[64]()
-            else:
+            case _:
                 launch_cpu[16]()
         elif is_gpu[target]():
-            if dstate == 256:
+            __match dstate:
+            case 256:
                 launch_gpu[256]()
-            elif dstate == 128:
+            case 128:
                 launch_gpu[128]()
-            elif dstate == 64:
+            case 64:
                 launch_gpu[64]()
-            else:
+            case _:
                 launch_gpu[16]()
         else:
             raise Error("Unsupported target device")
@@ -4503,22 +4505,24 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 )
 
         comptime if is_cpu[target]():
-            if dstate == 256:
+            __match dstate:
+            case 256:
                 launch_cpu[256]()
-            elif dstate == 128:
+            case 128:
                 launch_cpu[128]()
-            elif dstate == 64:
+            case 64:
                 launch_cpu[64]()
-            else:
+            case _:
                 launch_cpu[16]()
         elif is_gpu[target]():
-            if dstate == 256:
+            __match dstate:
+            case 256:
                 launch_gpu[256]()
-            elif dstate == 128:
+            case 128:
                 launch_gpu[128]()
-            elif dstate == 64:
+            case 64:
                 launch_gpu[64]()
-            else:
+            case _:
                 launch_gpu[16]()
         else:
             raise Error("Unsupported target device")
@@ -4896,15 +4900,16 @@ struct CausalConv1DVarlenFwd[
                     block_dim=(BLOCK_DIM, BLOCK_SEQ),
                 )
 
-            if width == 1:
+            __match width:
+            case 1:
                 launch_gpu[1]()
-            elif width == 2:
+            case 2:
                 launch_gpu[2]()
-            elif width == 3:
+            case 3:
                 launch_gpu[3]()
-            elif width == 4:
+            case 4:
                 launch_gpu[4]()
-            else:
+            case _:
                 raise Error(
                     "Unsupported kernel width: only widths 1, 2, 3, 4 are"
                     " supported"

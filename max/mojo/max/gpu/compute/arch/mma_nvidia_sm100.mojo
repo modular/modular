@@ -98,21 +98,22 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         Args:
             writer: The writer to write the UMMA kind to.
         """
-        if self == Self.KIND_TF32:
+        __match self:
+        case .KIND_TF32:
             writer.write("kind::tf32")
-        elif self == Self.KIND_F16:
+        case .KIND_F16:
             writer.write("kind::f16")
-        elif self == Self.KIND_F8F6F4:
+        case .KIND_F8F6F4:
             writer.write("kind::f8f6f4")
-        elif self == Self.KIND_MXF8F6F4:
+        case .KIND_MXF8F6F4:
             writer.write("kind::mxf8f6f4")
-        elif self == Self.KIND_I8:
+        case .KIND_I8:
             writer.write("kind::i8")
-        elif self == Self.KIND_MXF4:
+        case .KIND_MXF4:
             writer.write("kind::mxf4")
-        elif self == Self.KIND_MXF4NVF4:
+        case .KIND_MXF4NVF4:
             writer.write("kind::mxf4nvf4")
-        else:
+        case _:
             writer.write("kind::unknown")
 
 

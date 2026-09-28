@@ -149,23 +149,24 @@ struct Color(Intable, TrivialRegisterPassable):
         Args:
             colorname: The name of the color to use.
         """
-        if colorname == "modular_purple":
+        __match colorname:
+        case "modular_purple":
             self = Color.MODULAR_PURPLE
-        elif colorname == "blue":
+        case "blue":
             self = Color.BLUE
-        elif colorname == "green":
+        case "green":
             self = Color.GREEN
-        elif colorname == "orange":
+        case "orange":
             self = Color.ORANGE
-        elif colorname == "purple":
+        case "purple":
             self = Color.PURPLE
-        elif colorname == "red":
+        case "red":
             self = Color.RED
-        elif colorname == "white":
+        case "white":
             self = Color.WHITE
-        elif colorname == "yellow":
+        case "yellow":
             self = Color.YELLOW
-        else:
+        case _:
             # Default to MODULAR_PURPLE for unknown color names
             self = Color.MODULAR_PURPLE
 

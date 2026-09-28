@@ -58,17 +58,18 @@ struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
 
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.GLOBAL_MEM:
+        __match self:
+        case .GLOBAL_MEM:
             writer.write("GLOBAL_MEM")
-        elif self == Self.LDS:
+        case .LDS:
             writer.write("LDS")
-        elif self == Self.MMA_UNIT:
+        case .MMA_UNIT:
             writer.write("MMA_UNIT")
-        elif self == Self.VALU:
+        case .VALU:
             writer.write("VALU")
-        elif self == Self.SCALAR:
+        case .SCALAR:
             writer.write("SCALAR")
-        else:
+        case _:
             writer.write("NONE")
 
 

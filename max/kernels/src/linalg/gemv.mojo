@@ -129,21 +129,22 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.GEMV_KERNEL:
+        __match self:
+        case .GEMV_KERNEL:
             writer.write("GEMV")
-        elif self == Self.GEMV_KERNEL_VECTOR:
+        case .GEMV_KERNEL_VECTOR:
             writer.write("GEMV_KERNEL_VECTOR")
-        elif self == Self.GEMV_SPLIT_K:
+        case .GEMV_SPLIT_K:
             writer.write("GEMV_SPLIT_K")
-        elif self == Self.GEVM_KERNEL_VECTOR:
+        case .GEVM_KERNEL_VECTOR:
             writer.write("GEVM_KERNEL_VECTOR")
-        elif self == Self.GEVM_KERNEL:
+        case .GEVM_KERNEL:
             writer.write("GEVM_KERNEL")
-        elif self == Self.MATMUL_NAIVE:
+        case .MATMUL_NAIVE:
             writer.write("MATMUL_NAIVE")
-        elif self == Self.GEMM_MMA_CPASYNC:
+        case .GEMM_MMA_CPASYNC:
             writer.write("GEMM_MMA_CPASYNC")
-        else:
+        case _:
             writer.write("UNKNOWN")
 
 

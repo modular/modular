@@ -160,15 +160,16 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
 
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
-        if self._value == 0:
+        __match self._value:
+        case 0:
             writer.write("naive-attention")
-        elif self._value == 1:
+        case 1:
             writer.write("flash-attention-1")
-        elif self._value == 2:
+        case 2:
             writer.write("flash-attention-2")
-        elif self._value == 3:
+        case 3:
             writer.write("flash-attention-3")
-        else:
+        case _:
             writer.write("invalid algorithm")
 
 

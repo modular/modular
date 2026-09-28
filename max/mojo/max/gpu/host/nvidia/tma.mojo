@@ -226,15 +226,16 @@ struct TensorMapSwizzle(
         Args:
             writer: The writer to write to.
         """
-        if self._value == 1:
+        __match self._value:
+        case 1:
             writer.write("32B swizzle")
-        elif self._value == 2:
+        case 2:
             writer.write("64B swizzle")
-        elif self._value == 3:
+        case 3:
             writer.write("128B swizzle")
-        elif self._value == 0:
+        case 0:
             writer.write("no swizzle")
-        else:
+        case _:
             writer.write("invalid swizzle")
 
 

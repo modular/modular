@@ -108,29 +108,31 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         Args:
             writer: The writer to write the GEMM kind to.
         """
-        if self == Self.GEMM:
+        __match self:
+        case .GEMM:
             writer.write("kind::gemm")
-        elif self == Self.BMM:
+        case .BMM:
             writer.write("kind::bmm")
-        elif self == Self.GMM:
+        case .GMM:
             writer.write("kind::gmm")
-        elif self == Self.BLOCK_SCALED_1D2D_FP8:
+        case .BLOCK_SCALED_1D2D_FP8:
             writer.write("kind::block_scaled_1d2d_fp8")
-        else:
+        case _:
             writer.write("kind::unknown")
 
     @inline(.always)
     def __str__(self) -> String:
         """Convert GEMM kind to a string."""
-        if self == Self.GEMM:
+        __match self:
+        case .GEMM:
             return "gemm"
-        elif self == Self.BMM:
+        case .BMM:
             return "bmm"
-        elif self == Self.GMM:
+        case .GMM:
             return "gmm"
-        elif self == Self.BLOCK_SCALED_1D2D_FP8:
+        case .BLOCK_SCALED_1D2D_FP8:
             return "block_scaled_1d2d_fp8"
-        else:
+        case _:
             return "unknown"
 
 
@@ -251,11 +253,12 @@ def _compute_swizzle_modes(
             # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
             var elem_size = 2 if c_type == DType.bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
-            if row_bytes == 128:
+            __match row_bytes:
+            case 128:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-            elif row_bytes == 64:
+            case 64:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-            elif row_bytes == 32:
+            case 32:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
@@ -440,13 +443,14 @@ def _write_common_config[
 
 
 def _get_dtype_name(dtype: DType) -> String:
-    if dtype == .bfloat16:
+    __match dtype:
+    case .bfloat16:
         return "bf16"
-    elif dtype == .float8_e4m3fn:
+    case .float8_e4m3fn:
         return "e4m3"
-    elif dtype == .uint8:
+    case .uint8:
         return "e2m1"
-    else:
+    case _:
         return String(dtype)
 
 

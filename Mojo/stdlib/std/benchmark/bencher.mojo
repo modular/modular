@@ -248,14 +248,14 @@ struct Format(ImplicitlyCopyable, Writable):
         Args:
             value: The format to print results.
         """
-        if value == Format.csv.value:
+        __match value:
+        case Format.csv.value:
             self.value = Format.csv.value
-        elif value == Format.tabular.value:
+        case Format.tabular.value:
             self.value = Format.tabular.value
-        elif value == Format.table.value:
+        case Format.table.value:
             self.value = Format.table.value
-        else:
-            self.value = ""
+        case _:
             var valid_formats = String(
                 " valid formats: ",
                 Format.csv,
@@ -401,29 +401,30 @@ struct BenchConfig(Copyable):
             var args = argv()
             var i = 1
             while i < len(args):
-                if args[i] == "-o":
+                __match args[i]:
+                case "-o":
                     if i + 1 >= len(args):
                         raise Error("Missing value for -o option")
                     self.out_file = Path(args[i + 1])
                     i += 2
-                elif args[i] == "-r":
+                case "-r":
                     if i + 1 >= len(args):
                         raise Error("Missing value for -r option")
                     self.num_repetitions = Int(args[i + 1])
                     i += 2
-                elif args[i] == "--format":
+                case "--format":
                     if i + 1 >= len(args):
                         raise Error("Missing value for --format option")
                     self.format = Format(args[i + 1])
                     i += 2
-                elif args[i] == "--no-progress":
+                case "--no-progress":
                     self.show_progress = False
                     i += 1
-                elif args[i] == "--verbose":
+                case "--verbose":
                     self.verbose_timing = True
                     i += 1
                 # TODO: add an arg for bench batchsize
-                else:
+                case _:
                     i += 1
 
             # KBENCH_OUTFILE overrides -o (used by kbench driver mode).

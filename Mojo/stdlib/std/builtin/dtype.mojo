@@ -351,70 +351,65 @@ struct DType(
         """
         if str.startswith("DType."):
             return Self._from_str(str.removeprefix("DType."))
-        elif str == "bool":
+
+        __match str:
+        case "bool":
             return DType.bool
-        elif str == "int":
+        case "int":
             return DType.int
-        elif str == "uint":
+        case "uint":
             return DType.uint
-
-        elif str == "uint8":
+        case "uint8":
             return DType.uint8
-        elif str == "int8":
+        case "int8":
             return DType.int8
-        elif str == "uint16":
+        case "uint16":
             return DType.uint16
-        elif str == "int16":
+        case "int16":
             return DType.int16
-        elif str == "uint32":
+        case "uint32":
             return DType.uint32
-        elif str == "int32":
+        case "int32":
             return DType.int32
-        elif str == "uint64":
+        case "uint64":
             return DType.uint64
-        elif str == "int64":
+        case "int64":
             return DType.int64
-        elif str == "uint128":
+        case "uint128":
             return DType.uint128
-        elif str == "int128":
+        case "int128":
             return DType.int128
-        elif str == "uint256":
+        case "uint256":
             return DType.uint256
-        elif str == "int256":
+        case "int256":
             return DType.int256
-
-        elif str == "float4_e2m1fn":
+        case "float4_e2m1fn":
             return DType.float4_e2m1fn
-        elif str == "float6_e2m3fn":
+        case "float6_e2m3fn":
             return DType.float6_e2m3fn
-        elif str == "float6_e3m2fn":
+        case "float6_e3m2fn":
             return DType.float6_e3m2fn
-
-        elif str == "float8_e3m4":
+        case "float8_e3m4":
             return DType.float8_e3m4
-        elif str == "float8_e4m3fn":
+        case "float8_e4m3fn":
             return DType.float8_e4m3fn
-        elif str == "float8_e4m3fnuz":
+        case "float8_e4m3fnuz":
             return DType.float8_e4m3fnuz
-        elif str == "float8_e8m0fnu":
+        case "float8_e8m0fnu":
             return DType.float8_e8m0fnu
-        elif str == "float8_e5m2":
+        case "float8_e5m2":
             return DType.float8_e5m2
-        elif str == "float8_e5m2fnuz":
+        case "float8_e5m2fnuz":
             return DType.float8_e5m2fnuz
-
-        elif str == "bfloat16":
+        case "bfloat16":
             return DType.bfloat16
-        elif str == "float16":
+        case "float16":
             return DType.float16
-
-        elif str == "float32":
+        case "float32":
             return DType.float32
-
-        elif str == "float64":
+        case "float64":
             return DType.float64
-
-        else:
+        case _:
             return None
 
     @inline(.never)
@@ -433,67 +428,68 @@ struct DType(
         # `write_string` rather than `write`: `write` promotes each literal to a
         # `String`, so all 27 arms would carry a stack slot, a small-string
         # branch and a refcounted teardown.
-        if self == DType.bool:
+        __match self:
+        case .bool:
             return writer.write_string("bool")
-        elif self == DType.int:
+        case .int:
             return writer.write_string("int")
-        elif self == DType.uint:
+        case .uint:
             return writer.write_string("uint")
 
-        elif self == DType.uint8:
+        case .uint8:
             return writer.write_string("uint8")
-        elif self == DType.int8:
+        case .int8:
             return writer.write_string("int8")
-        elif self == DType.uint16:
+        case .uint16:
             return writer.write_string("uint16")
-        elif self == DType.int16:
+        case .int16:
             return writer.write_string("int16")
-        elif self == DType.uint32:
+        case .uint32:
             return writer.write_string("uint32")
-        elif self == DType.int32:
+        case .int32:
             return writer.write_string("int32")
-        elif self == DType.uint64:
+        case .uint64:
             return writer.write_string("uint64")
-        elif self == DType.int64:
+        case .int64:
             return writer.write_string("int64")
-        elif self == DType.uint128:
+        case .uint128:
             return writer.write_string("uint128")
-        elif self == DType.int128:
+        case .int128:
             return writer.write_string("int128")
-        elif self == DType.uint256:
+        case .uint256:
             return writer.write_string("uint256")
-        elif self == DType.int256:
+        case .int256:
             return writer.write_string("int256")
 
-        elif self == DType.float4_e2m1fn:
+        case .float4_e2m1fn:
             return writer.write_string("float4_e2m1fn")
-        elif self == DType.float6_e2m3fn:
+        case .float6_e2m3fn:
             return writer.write_string("float6_e2m3fn")
-        elif self == DType.float6_e3m2fn:
+        case .float6_e3m2fn:
             return writer.write_string("float6_e3m2fn")
 
-        elif self == DType.float8_e3m4:
+        case .float8_e3m4:
             return writer.write_string("float8_e3m4")
-        elif self == DType.float8_e4m3fn:
+        case .float8_e4m3fn:
             return writer.write_string("float8_e4m3fn")
-        elif self == DType.float8_e4m3fnuz:
+        case .float8_e4m3fnuz:
             return writer.write_string("float8_e4m3fnuz")
-        elif self == DType.float8_e8m0fnu:
+        case .float8_e8m0fnu:
             return writer.write_string("float8_e8m0fnu")
-        elif self == DType.float8_e5m2:
+        case .float8_e5m2:
             return writer.write_string("float8_e5m2")
-        elif self == DType.float8_e5m2fnuz:
+        case .float8_e5m2fnuz:
             return writer.write_string("float8_e5m2fnuz")
 
-        elif self == DType.bfloat16:
+        case .bfloat16:
             return writer.write_string("bfloat16")
-        elif self == DType.float16:
+        case .float16:
             return writer.write_string("float16")
 
-        elif self == DType.float32:
+        case .float32:
             return writer.write_string("float32")
 
-        elif self == DType.float64:
+        case .float64:
             return writer.write_string("float64")
 
         return writer.write_string("<<unknown>>")
