@@ -42,6 +42,7 @@
 /bazel/public-patches/xgrammar.patch @modular/max-serve
 /AsyncRT/ @modular/runtime
 /docs/ @modular/mojo-docs
+/docs/max/nightly-changelog.md @modular/public-repo-maintainers
 /AI_TOOL_POLICY.md @modular/mojo-docs
 /max/CONTRIBUTING.md @modular/mojo-docs
 /max/docs/development.md @modular/mojo-docs @modular/max-serve
@@ -50,6 +51,7 @@
 /Mojo/CONTRIBUTING.md @modular/stdlib
 /Mojo/README.md @modular/stdlib
 /Mojo/docs/site/ @modular/mojo-docs
+/Mojo/docs/site/nightly-changelog.md @modular/public-repo-maintainers
 /Mojo/docs/compiler/ @modular/mojo-lang
 /Mojo/docs/stdlib/ @modular/stdlib
 /Mojo/docs/contributing/ @alisterburt @JoeLoser @dgurchenkov
