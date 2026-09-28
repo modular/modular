@@ -1602,11 +1602,11 @@ struct GroupedBlockScaledMatmulKernel[
                 producer.drain()
 
         # ===== SCHEDULER WARP =====
-        # For grouped GEMM, no CLC scheduling is needed (num_clc_pipeline_stages=0).
-        # The scheduler warp just returns immediately, matching working kernel pattern.
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            # No CLC for grouped GEMM - just return
-            return
+        # For grouped GEMM, no CLC scheduling is needed (num_clc_pipeline_stages=0),
+        # so the scheduler warp has nothing to do here. KERN-3311: it used to
+        # `return` immediately, which would have skipped the cluster exit
+        # barrier at the end of this function, leaving it divergent
+        # (undefined behavior). Just fall through instead.
 
         # ===== MMA WARP =====
         if WarpRole.is_mma():
@@ -1734,6 +1734,20 @@ struct GroupedBlockScaledMatmulKernel[
                             group_m,
                             group_n,
                         )
+
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` only orders mbarrier initialization. Gated on
+        # cta_group == 2, the only config with that cross-CTA arrive -- this
+        # entry point (run()) is only launched with cta_group == 1, so the
+        # gate never fires here, but it is kept for parity with run_2sm() and
+        # in case this entry is ever reused with cta_group == 2.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
     # ========== Load Input Tiles ==========
 
@@ -2440,6 +2454,17 @@ struct GroupedBlockScaledMatmulKernel[
                             group_m,
                             group_n,
                         )
+
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` in init_barriers_2sm only orders mbarrier
+        # initialization. run_2sm() is only launched with cta_group == 2, so
+        # unlike run() this barrier is unconditional.
+        cluster_sync()
 
     @staticmethod
     @inline(.always)

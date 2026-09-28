@@ -2700,6 +2700,20 @@ struct Grouped1D1DMatmulKernel[
                                 break
                             it += 1
 
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` after mbarrier init only orders initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is
+        # the cluster-mapped arrive in signal_peer(), which only exists for
+        # cta_group == 2. A cta_group=1 config with a multicast cluster has
+        # no cross-CTA arrive and must not pay for this barrier.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
+
     # ========== SFB Load to TMEM (MMA_N < 64) ==========
 
     @staticmethod

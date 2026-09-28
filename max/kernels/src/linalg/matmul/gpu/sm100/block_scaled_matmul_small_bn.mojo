@@ -29,6 +29,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
     cluster_wait,
     cluster_arrive_relaxed,
+    cluster_sync,
 )
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -2061,12 +2062,15 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
                 work_info = next_work_info
 
-    if WarpRole.is_scheduler() and is_first_cta_in_cluster:
-        # Implies each SM will only process initial work, there is no
-        # more work to schedule.
-        comptime if config.num_clc_pipeline_stages == 0:
-            return
-
+    # KERN-3311: see the matching block in block_scaled_matmul.mojo. Fold the
+    # no-CLC case into the condition rather than `return`ing, so every thread
+    # reaches the cluster exit barrier.
+    comptime has_clc_scheduling = config.num_clc_pipeline_stages != 0
+    if (
+        has_clc_scheduling
+        and WarpRole.is_scheduler()
+        and is_first_cta_in_cluster
+    ):
         with MatmulProfilerType[1](workspace, 0):
             var required_clc_query = True
 
@@ -2195,6 +2199,15 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
 
+            # KERN-3311: the cta_group=2 peer never issues MMA; wait on the
+            # accumulator barrier before the TMEM dealloc handshake. See
+            # block_scaled_matmul.mojo.
+            comptime if (
+                config.cta_group == 2 and config.num_clc_pipeline_stages == 0
+            ):
+                if not elect_one_cta:
+                    mma_output_pipeline.wait_producer()
+
             tcgen05_release_allocation_lock[Int32(config.cta_group)]()
 
             # wait for epilogue to finish
@@ -2248,6 +2261,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         comptime if config.cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
+
+    # KERN-3311: keep the peer resident for the `arrive_cluster` above. See
+    # block_scaled_matmul.mojo.
+    comptime if config.cta_group == 2:
+        cluster_sync()
 
 
 # =============================================================================

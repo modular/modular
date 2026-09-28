@@ -25,6 +25,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
     cluster_wait,
     cluster_arrive_relaxed,
+    cluster_sync,
 )
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -1533,12 +1534,16 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 load_mma_pipeline.wait_consumer()
                 load_mma_pipeline.producer_step()
 
-    if WarpRole.is_scheduler() and is_first_cta_in_cluster:
-        # Implies each SM will only process initial work, there is no
-        # more work to schedule.
-        comptime if config.num_clc_pipeline_stages == 0:
-            return
-
+    # With no CLC pipeline stages each SM only processes its initial work, so
+    # there is nothing to schedule. KERN-3311: fold that into the condition
+    # rather than `return`ing -- a return would skip the cluster exit barrier
+    # at the end of this kernel, leaving it divergent (undefined behavior).
+    comptime has_clc_scheduling = config.num_clc_pipeline_stages != 0
+    if (
+        has_clc_scheduling
+        and WarpRole.is_scheduler()
+        and is_first_cta_in_cluster
+    ):
         with MatmulProfilerType[1](workspace, 0):
             var required_clc_query = True
 
@@ -1654,6 +1659,18 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
 
+            # KERN-3311: with cta_group=2 the peer CTA never issues MMA -- the
+            # leader's multicast commit lands in both CTAs' TMEM -- so this warp
+            # would reach the TMEM dealloc handshake without a hardware-backed
+            # signal that the leader's MMA finished. Wait on the accumulator
+            # barrier the epilogue waits on. Gated to no CLC stages, where each
+            # cluster launch produces exactly one tile (stage 0).
+            comptime if (
+                config.cta_group == 2 and config.num_clc_pipeline_stages == 0
+            ):
+                if not elect_one_cta:
+                    mma_output_pipeline.wait_producer()
+
             tcgen05_release_allocation_lock[Int32(config.cta_group)]()
 
             # wait for epilogue to finish
@@ -1707,6 +1724,16 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         comptime if config.cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
+
+    # KERN-3311: hold the cluster together until every CTA is finished. The
+    # epilogue's cluster-mapped `arrive_cluster` above needs the peer CTA to
+    # still be resident; if the peer retires first the arrive targets a departed
+    # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then freed
+    # for a pair that no longer jointly owns it. The setup-time cluster barrier
+    # only orders mbarrier initialization. Gated on cta_group == 2, the only
+    # config with that cross-CTA arrive.
+    comptime if config.cta_group == 2:
+        cluster_sync()
 
 
 # =============================================================================
