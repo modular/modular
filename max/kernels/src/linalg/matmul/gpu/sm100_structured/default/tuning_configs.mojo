@@ -2574,5 +2574,20 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             tile_k=256,
             swapAB=False,
         ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [6]
+        TuningConfigSmallMNGemms(
+            M=2,
+            M_end=65,
+            N=264,
+            K=4096,
+            tile_m=16,
+            tile_n=8,
+            num_threads=256,
+            kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
+            unroll_factor=1,
+            tile_k=256,
+            swapAB=False,
+        ),
         # ----------------END-TUNING-LIST-SM100-SMALL-MN-BF16----------------
     ]
