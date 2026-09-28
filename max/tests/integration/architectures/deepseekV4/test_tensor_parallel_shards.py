@@ -225,6 +225,9 @@ def test_dspark_ends_are_replicated(
         assert isinstance(rep_first, DSparkBlock)
         assert isinstance(rep_last, DSparkBlock)
         assert isinstance(rep_first.main_proj, DeepseekV4Fp8Linear)
+        # float32 like every norm weight, which the adapter upcasts to.
+        assert rep_first.main_norm.weight.dtype == DType.float32
+        assert rep_last.norm.weight.dtype == DType.float32
         assert _shape(rep_first.main_proj.weight) == _shape(
             first.main_proj.weight
         )

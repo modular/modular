@@ -15,11 +15,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
-from max.graph import DeviceRef, TensorValue
+from max.dtype import DType
+from max.graph import BufferType, DeviceRef, Dim, TensorType, TensorValue, Value
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.speculative.block_driver import BlockDriver
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
+from typing_extensions import override
 
 from ..deepseekV4.deepseekV4 import DeepseekV4
 from ..deepseekV4.model_config import DeepseekV4Config
@@ -69,8 +73,37 @@ class UnifiedDSparkDeepseekV4(BlockDriver[TrunkHidden, TensorValue]):
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,
         )
+        self.config = config
         self._verifier = verifier
         self._drafter = drafter
+
+    @override
+    @property
+    def has_trailing_inputs(self) -> bool:
+        return True
+
+    @override
+    def input_types(
+        self, kv_params: KVCacheParamInterface | None = None
+    ) -> tuple[TensorType | BufferType, ...]:
+        """The canonical signature, then one host ``uint8[windows_r{ratio}]``
+        per compression ratio whose length is the verify forward's window
+        count (:func:`~..deepseekV4.layers.ragged.window_count` of the merged
+        lengths)."""
+        return (
+            *super().input_types(kv_params),
+            *(
+                TensorType(DType.uint8, [f"windows_r{r}"], DeviceRef.CPU())
+                for r in self.config.window_ratios
+            ),
+        )
+
+    def verify_windows(self, trailing: Sequence[Value[Any]]) -> dict[int, Dim]:
+        """The window counts :meth:`input_types` appended, per ratio."""
+        return {
+            r: v.tensor.shape[0]
+            for r, v in zip(self.config.window_ratios, trailing, strict=True)
+        }
 
     def shard(self, devices: Sequence[DeviceRef]) -> None:
         """Runs both roles on per-device copies of :attr:`target`.

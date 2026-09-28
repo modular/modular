@@ -344,12 +344,14 @@ class DSparkBlock(DeepseekV4Block):
                 config.hidden_size,
                 device,
             )
+            # float32 like every V4 norm weight; the adapter upcasts the
+            # checkpoint's bf16.
             self.main_norm = RMSNorm(
-                config.hidden_size, config.dtype, config.rms_norm_eps
+                config.hidden_size, DType.float32, config.rms_norm_eps
             )
         if self.is_last:
             self.norm = RMSNorm(
-                config.hidden_size, config.dtype, config.rms_norm_eps
+                config.hidden_size, DType.float32, config.rms_norm_eps
             )
             self.markov_head = DSparkMarkovHead(config, device)
             self.hc_head_fn = Weight(

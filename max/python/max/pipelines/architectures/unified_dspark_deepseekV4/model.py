@@ -14,12 +14,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.lib.interfaces.batch_processor import BatchProcessor
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -27,7 +28,8 @@ from typing_extensions import override
 
 from ..deepseekV4.model import DeepseekV4Model
 from ..deepseekV4.model_config import DeepseekV4Config
-from .spec_adapters import WINDOW_LEAF
+from .batch_processor import UnifiedDSparkDeepseekV4BatchProcessor
+from .spec_adapters import VERIFY_WINDOWS, WINDOW_LEAF
 from .unified_dspark_deepseekV4 import UnifiedDSparkDeepseekV4
 
 __all__ = ["UnifiedDSparkDeepseekV4Model"]
@@ -41,6 +43,12 @@ class UnifiedDSparkDeepseekV4Model(
     The KV tree is the trunk's own: the stages' windows are already layers of
     its window leaf, so there is no separate draft cache to size or feed.
     """
+
+    # Declared rather than left to the arch's ``batching=`` binding: under
+    # ``max serve`` the model worker ran the inherited base batch processor.
+    batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = (
+        UnifiedDSparkDeepseekV4BatchProcessor
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         # The accept reads the target's logits at every merged position.
@@ -108,6 +116,9 @@ class UnifiedDSparkDeepseekV4Model(
                 pinned_bitmask=inputs.pinned_bitmask,
                 wait_payload=inputs.wait_payload,
                 device_bitmask_scratch=inputs.device_bitmask_scratch,
+                extra={
+                    VERIFY_WINDOWS: nn_model.verify_windows(inputs.trailing)
+                },
             )
             graph.output(*outputs)
         return graph, weights_registry

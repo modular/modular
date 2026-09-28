@@ -31,4 +31,7 @@ unified_dspark_deepseekV4_speculator = Speculator(
         WeightsFormat.safetensors: weight_adapters.convert_dspark_safetensor_state_dict,
     },
     opt_out_cascade=True,
+    # The base captures its decode step; the spec-decode graph has not been
+    # validated under capture yet.
+    supports_device_graph_capture=False,
 )

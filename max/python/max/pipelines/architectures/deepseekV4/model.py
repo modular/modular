@@ -42,6 +42,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces.batch_processor import (
+    BatchProcessor,
     RaggableContext,
     SingleReplicaRaggedBatchProcessor,
     build_single_replica_ragged_token_arrays,
@@ -160,7 +161,8 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
     """A DeepSeek-V4-Flash pipeline model for text generation."""
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV4Config
-    batch_processor_cls: ClassVar[type[DeepseekV4BatchProcessor]] = (
+    # As wide as the base's, so a subclass can bring its own processor.
+    batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = (
         DeepseekV4BatchProcessor
     )
 
