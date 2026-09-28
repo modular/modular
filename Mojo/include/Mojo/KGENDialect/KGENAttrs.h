@@ -76,13 +76,12 @@ public:
   /// Raw data constructor.
   DTypeValue(APInt data, KGENDType dtype);
 
-  /// Compare two dtype values.
-  /// NOTE: We use APInt::isSameValue to compare the data because
-  /// APInt::operator== asserts when comparing APInts with different bit widths.
-  /// This can happen when the same logical value is stored with different bit
-  /// widths (e.g., index types on 32-bit vs 64-bit targets).
+  /// Compare two dtype values. Uses APSInt::isSameValue to handle differing
+  /// bit widths across targets. Address is unsigned like uindex.
   bool operator==(const DTypeValue &rhs) const {
-    return dtype == rhs.dtype && APInt::isSameValue(data, rhs.data);
+    return dtype == rhs.dtype &&
+           APSInt::isSameValue(APSInt(data, !dtype.isSInt()),
+                               APSInt(rhs.data, !rhs.dtype.isSInt()));
   }
 
   /// Get the underlying data.
