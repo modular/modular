@@ -47,6 +47,7 @@ from max.nn.kv_cache.cache_params import (
     SpeculativeMethod,
 )
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.utils import padded_lut_cols
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.config import KVConnectorConfig
@@ -525,6 +526,52 @@ def test_a_batch_past_the_staged_capacity_is_refused() -> None:
 
     with pytest.raises(ValueError, match="exceeds preallocated"):
         mgr.runtime_inputs([batch])
+
+
+ROW_LEAF = "ring/scratch"
+
+
+def make_small_row_page_manager(
+    num_huge_blocks: int = 4, max_batch_size: int = 4
+) -> JengaKVCacheManager:
+    """Returns a manager with a wide attention page beside a two-byte
+    row-addressed page."""
+    attn = make_leaf(n_kv_heads=32, page_size=16)
+    scratch = RecurrentStateParams(
+        devices=attn.devices,
+        data_parallel_degree=attn.data_parallel_degree,
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=ROW_LEAF,
+                num_layers=1,
+                row_shape=(1,),
+                dtype=DType.bfloat16,
+                scratch=True,
+            ),
+        ),
+    )
+    params = MultiKVCacheParams.from_params({"attn": attn, "row": scratch})
+    return create_manager(params, num_huge_blocks, max_batch_size)
+
+
+def test_a_small_row_addressed_page_does_not_widen_the_paged_table() -> None:
+    """Checks the page table is sized from the paged leaf's page count."""
+    max_batch_size = 4
+    mgr = make_small_row_page_manager(max_batch_size=max_batch_size)
+    attn_id = next(
+        leaf_id for leaf_id in mgr.params.leaves() if leaf_id != ROW_LEAF
+    )
+
+    paged_blocks = mgr._leaf_infos[attn_id].ratio * mgr._num_huge_blocks
+    row_blocks = mgr._leaf_infos[ROW_LEAF].ratio * mgr._num_huge_blocks
+    assert row_blocks > paged_blocks
+
+    # Replica 0's staged page table, as the stager declares it.
+    declared = mgr._stager._declared[f"0/{attn_id}"].descriptor
+    assert declared.max_shape == (
+        max_batch_size,
+        padded_lut_cols(paged_blocks),
+    )
 
 
 def test_a_connector_keeps_the_sliding_window_group(

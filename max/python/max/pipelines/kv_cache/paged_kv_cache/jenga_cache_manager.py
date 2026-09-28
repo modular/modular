@@ -33,6 +33,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
+    PagedKVLeafRegion,
     spec_decode_cache_slack,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
@@ -301,9 +302,12 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         self._devices_per_replica = devices_per_replica
 
         leaves = params.leaves()
+        # Only paged leaves read `num_blocks`. Row-addressed leaves can have
+        # much smaller pages, and so many more of them.
         max_num_blocks = max(
-            leaf_info.ratio * self._num_huge_blocks
-            for leaf_info in leaf_infos.values()
+            leaf_infos[leaf_id].ratio * self._num_huge_blocks
+            for leaf_id, leaf in leaves.items()
+            if isinstance(leaf, PagedKVLeafRegion)
         )
         # One instance across every leaf, shard and replica. Leaf ids are
         # already unique, a replica's shards are the destinations of one
