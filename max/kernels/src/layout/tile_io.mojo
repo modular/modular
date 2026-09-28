@@ -18,7 +18,7 @@ from max.gpu.memory import CacheEviction, Fill
 from std.math.uutils import umod
 from std.sys import align_of
 
-from layout import Idx
+from layout import Coord, Idx
 from .layout_tensor import ThreadScope
 from .swizzle import Swizzle
 from .tile_layout import Layout
@@ -231,11 +231,25 @@ struct SharedToGenericTileCopier[
             dst: Destination tile in generic memory.
             src: Source tile in shared memory.
         """
+        self._copy[check_bounds=False](
+            dst, src, _get_worker_idx[ThreadScope.BLOCK](), 0, 0
+        )
+
+    @inline(.nodebug)
+    def _copy[
+        check_bounds: Bool
+    ](
+        self,
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
+        worker_idx: Int,
+        dst_rows: Int,
+        dst_cols: Int,
+    ):
         comptime assert dst.dtype == src.dtype, "src and dst dtype must match."
         comptime assert src.element_size == dst.element_size
 
         comptime num_busy_threads = Self.thread_layout.size()
-        var worker_idx = _get_worker_idx[ThreadScope.BLOCK]()
 
         comptime if Self.num_threads > num_busy_threads:
             if worker_idx >= num_busy_threads:
@@ -244,7 +258,7 @@ struct SharedToGenericTileCopier[
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
-        comptime if not Self.swizzle:
+        comptime if not Self.swizzle and not check_bounds:
             dst_fragments.copy_from(
                 src_fragments.bitcast[dst_fragments.dtype]()
             )
@@ -252,7 +266,6 @@ struct SharedToGenericTileCopier[
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
-            comptime swizzle_fn = Self.swizzle.value()
 
             var src_frag_offset = Scalar[src.linear_idx_type](
                 src_fragments._distance(src)
@@ -261,24 +274,68 @@ struct SharedToGenericTileCopier[
                 src_fragments.LayoutType.static_product
             )
 
+            var thread_row = 0
+            var thread_col = 0
+            comptime if check_bounds:
+                comptime assert dst.rank == 2, "a bounded copy needs a 2D dst"
+                var thread_coords = dst.distribute_with_offset[
+                    Self.thread_layout
+                ](worker_idx)[1]
+                thread_row = thread_coords[0]
+                thread_col = thread_coords[1]
+
             comptime for i in range(num_stores_per_thread):
-                var src_idx = src_fragments.layout[
-                    linear_idx_type=src.linear_idx_type
-                ](Idx[i])
-                var dst_idx = dst_fragments.layout(Idx[i])
-                var src_idx_base = umod(
-                    src_idx,
-                    Scalar[src.linear_idx_type](swizzle_fn.size()),
-                )
-                var src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle_fn(
-                    src_frag_offset + src_idx_base
-                ) + Scalar[src.linear_idx_type](src_idx_diff)
+                var src_idx: Scalar[src.linear_idx_type]
+                var dst_idx: Scalar[DType.int64]
+                comptime if check_bounds:
+                    comptime frag_cols = type_of(dst_fragments).static_shape[1]
+                    comptime frag_crd = Coord(
+                        Idx[i // frag_cols], Idx[i % frag_cols]
+                    )
+                    src_idx = src_fragments.layout[
+                        linear_idx_type=src.linear_idx_type
+                    ](frag_crd)
+                    dst_idx = dst_fragments.layout(frag_crd)
+                else:
+                    src_idx = src_fragments.layout[
+                        linear_idx_type=src.linear_idx_type
+                    ](Idx[i])
+                    dst_idx = dst_fragments.layout(Idx[i])
+                var src_offset = src_frag_offset + src_idx
+
+                comptime if Self.swizzle:
+                    comptime swizzle_fn = Self.swizzle.value()
+                    var src_idx_base = umod(
+                        src_idx,
+                        Scalar[src.linear_idx_type](swizzle_fn.size()),
+                    )
+                    var src_idx_diff = src_idx - src_idx_base
+                    src_offset = swizzle_fn(
+                        src_frag_offset + src_idx_base
+                    ) + Scalar[src.linear_idx_type](src_idx_diff)
 
                 var src_vec = src.raw_load[
                     width=simd_size, alignment=src_align
-                ](swizzled_idx).cast[dst.dtype]()
-                dst_fragments.raw_store[alignment=dst_align](dst_idx, src_vec)
+                ](src_offset).cast[dst.dtype]()
+
+                comptime if check_bounds:
+                    comptime frag_cols = type_of(dst_fragments).static_shape[1]
+                    var row = (
+                        thread_row
+                        + (i // frag_cols) * Self.thread_layout.static_shape[0]
+                    )
+                    var col = (
+                        thread_col
+                        + (i % frag_cols) * Self.thread_layout.static_shape[1]
+                    ) * simd_size
+                    if row < dst_rows and col < dst_cols:
+                        dst_fragments.raw_store[alignment=dst_align](
+                            dst_idx, src_vec
+                        )
+                else:
+                    dst_fragments.raw_store[alignment=dst_align](
+                        dst_idx, src_vec
+                    )
 
 
 @fieldwise_init
@@ -763,6 +820,26 @@ def copy_sram_to_dram[
         swizzle=swizzle,
         num_threads=num_threads,
     ]().copy(dst, src)
+
+
+@inline(.nodebug)
+def copy_sram_to_dram[
+    thread_layout: Layout,
+    *,
+    swizzle: Optional[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
+](
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[address_space=.SHARED, ...],
+    worker_idx: Int,
+    dst_rows: Int,
+    dst_cols: Int,
+):
+    SharedToGenericTileCopier[
+        thread_layout,
+        swizzle=swizzle,
+        num_threads=num_threads,
+    ]()._copy[check_bounds=True](dst, src, worker_idx, dst_rows, dst_cols)
 
 
 @inline(.nodebug)
