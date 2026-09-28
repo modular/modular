@@ -1869,6 +1869,70 @@ def test_constrained_split_reaches_the_flat_result_dict() -> None:
     assert d["constrained_request_rate"] == 0.5
 
 
+def test_conformance_rate_counts_only_judged_constrained_requests() -> None:
+    """A constrained request that was never judged must not be counted as a
+    failure; an unconstrained run reports no rate at all."""
+    conforming = RequestFuncOutput(
+        success=True,
+        latency=1.1,
+        ttft=0.3,
+        prompt_len=10,
+        generated_text="five tokens here now",
+        response_format_constrained=True,
+        response_format_conformed=True,
+    )
+    failing = RequestFuncOutput(
+        success=True,
+        latency=1.1,
+        ttft=0.3,
+        prompt_len=10,
+        generated_text="five tokens here now",
+        response_format_constrained=True,
+        response_format_conformed=False,
+    )
+    unjudged = RequestFuncOutput(
+        success=True,
+        latency=1.1,
+        ttft=0.3,
+        prompt_len=10,
+        generated_text="five tokens here now",
+        response_format_constrained=True,
+    )
+    text = _calculate_for([conforming, failing, unjudged]).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    # 1 of the 2 judged, not 1 of the 3 constrained.
+    assert text.constrained_conformance_rate == 0.5
+    assert text.constrained_request_rate == 1.0
+
+
+def test_no_conformance_rate_without_constrained_requests() -> None:
+    outputs = [
+        o
+        for o in _constrained_split_outputs()
+        if not o.response_format_constrained
+    ]
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.constrained_conformance_rate is None
+
+
+def test_conformance_rate_reaches_the_summary_group() -> None:
+    metrics = _calculate_for(
+        [
+            RequestFuncOutput(
+                success=True,
+                latency=1.1,
+                ttft=0.3,
+                prompt_len=10,
+                generated_text="five tokens here now",
+                response_format_constrained=True,
+                response_format_conformed=False,
+            )
+        ]
+    )
+    assert metrics.result_groups.summary.constrained_conformance_rate == 0.0  # type: ignore[attr-defined]
+
+
 def test_aggregate_gpu_stats_disabled_or_empty() -> None:
     """Collection off, no snapshots, or all-empty snapshots yield nothing."""
     assert _aggregate_gpu_stats(collect_gpu_stats=False, gpu_metrics=[]) == (

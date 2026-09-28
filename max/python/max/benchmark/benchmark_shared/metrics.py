@@ -623,6 +623,12 @@ class TextGenAggregates(_CompletedRunBase):
     # Share of the measured requests that carried a ``response_format``, over
     # the same window as ``ttft_ms`` and the other aggregates.
     constrained_request_rate: float | None = None
+    # Share of constrained requests whose content satisfied the schema, judged
+    # client-side. ``None`` when nothing was constrained, or when nothing
+    # constrained could be judged. Read against ``constrained_request_rate``: a
+    # high request rate with a collapsed rate here is a backend that took
+    # ``response_format`` and did nothing with it.
+    constrained_conformance_rate: float | None = None
 
     max_input: int
     max_output: int
@@ -714,6 +720,10 @@ class TextGenAggregates(_CompletedRunBase):
                 d.update(pm.confidence_to_flat_dict(name))
         if self.constrained_request_rate is not None:
             d["constrained_request_rate"] = self.constrained_request_rate
+        if self.constrained_conformance_rate is not None:
+            d["constrained_conformance_rate"] = (
+                self.constrained_conformance_rate
+            )
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
@@ -1210,6 +1220,9 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         ),
         constrained_request_rate=(
             text_data.constrained_request_rate if text_data else None
+        ),
+        constrained_conformance_rate=(
+            text_data.constrained_conformance_rate if text_data else None
         ),
     )
 

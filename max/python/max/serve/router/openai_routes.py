@@ -85,6 +85,10 @@ from max.pipelines.modeling.types import (
 from max.pipelines.request import OpenResponsesRequestBody
 from max.pipelines.request.open_responses import OutputAudioContent
 from max.profiler import Tracer, traced
+from max.serve._tool_call_validation import (
+    check_response_format_conformance,
+    check_tool_call_conformance,
+)
 from max.serve.config import Settings
 from max.serve.media import WAV_MEDIA_TYPE, encode_wav_bytes
 from max.serve.parser import (
@@ -96,10 +100,6 @@ from max.serve.parser import (
 from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
     normalize_response_format_schema,
-)
-from max.serve.parser.tool_call_validation import (
-    check_response_format_conformance,
-    check_tool_call_conformance,
 )
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (

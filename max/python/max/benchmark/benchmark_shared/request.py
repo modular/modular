@@ -35,9 +35,13 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import aiohttp
+from max.serve._tool_call_validation import (
+    check_response_format_conformance,
+    response_format_schema_is_checkable,
+)
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel
@@ -240,6 +244,51 @@ class BaseRequestFuncOutput:
         return self.request_submit_time + self.latency
 
 
+def tag_response_format_outcome(
+    output: BaseRequestFuncOutput, request_func_input: BaseRequestFuncInput
+) -> None:
+    """Record whether *output* was constrained, and whether it conformed.
+
+    Conformance is judged client-side, from the response text alone, so it
+    reports on any backend rather than only on one that exposes a metrics
+    endpoint.
+
+    The check is the same one the server runs for its own conformance log, so
+    the two numbers mean the same thing and can be compared. Failures here are
+    a property of the response, never of the benchmark: the checker is
+    documented as never raising.
+
+    A schema that does not compile leaves the request unjudged rather than
+    scoring it. The checker itself fails open, which is right for the server's
+    log but would be backwards here -- an unusable schema would report a
+    perfect conformance rate, and the metric reads healthiest exactly where it
+    measured nothing.
+    """
+    if not isinstance(output, RequestFuncOutput) or not isinstance(
+        request_func_input, RequestFuncInput
+    ):
+        return
+    response_format = request_func_input.response_format
+    output.response_format_constrained = response_format is not None
+    if response_format is None:
+        return
+    schema = cast(dict[str, Any], response_format).get("json_schema")
+    # json_object asks for any well-formed JSON object, which the permissive
+    # schema below expresses; a bare "text" format constrains nothing at all.
+    if isinstance(schema, dict):
+        schema = schema.get("schema")
+    elif cast(dict[str, Any], response_format).get("type") == "json_object":
+        schema = {"type": "object"}
+    else:
+        return
+    if not isinstance(schema, dict):
+        return
+    if not response_format_schema_is_checkable(schema):
+        return
+    result = check_response_format_conformance(output.generated_text, schema)
+    output.response_format_conformed = result.outcome == "valid"
+
+
 def mark_cancelled_if_past_deadline(
     output: BaseRequestFuncOutput, end_time_ns: int | None
 ) -> BaseRequestFuncOutput:
@@ -333,6 +382,9 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     # is the last place holding both the input and the output -- metrics see
     # only the outputs.
     response_format_constrained: bool = False
+    # Whether the generated text satisfied that response_format. ``None`` when
+    # the request was unconstrained or produced nothing to judge.
+    response_format_conformed: bool | None = None
 
 
 @dataclass

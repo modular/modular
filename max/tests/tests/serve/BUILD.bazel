@@ -101,6 +101,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/serve:tool_call_validation",
         "//max/python/max/serve/parser",
         "//max/python/max/serve/router",
         "//max/python/max/serve/schemas",

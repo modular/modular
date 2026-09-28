@@ -2,6 +2,19 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+# Lives outside ``parser`` so the benchmark client can run the same
+# conformance check the server reports. Importing any submodule of
+# ``max.serve.parser`` executes that package's ``__init__``, which pulls in the
+# model runtime and its compiled extensions -- unavailable in the source-only
+# benchmark image.
+modular_py_library(
+    name = "tool_call_validation",
+    srcs = ["_tool_call_validation.py"],
+    deps = [
+        requirement("jsonschema"),
+    ],
+)
+
 modular_py_library(
     name = "config",
     srcs = ["config.py"],
@@ -45,6 +58,7 @@ modular_py_library(
         ["*.py"],
         exclude = [
             "process_control.py",
+            "_tool_call_validation.py",
             "config.py",
             "debug.py",
             "_exceptions.py",

@@ -49,6 +49,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncOutput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
+    tag_response_format_outcome,
 )
 from max.benchmark.benchmark_shared.utils import (
     deadline_passed,
@@ -250,9 +251,7 @@ async def chat_session_driver(
             # compare each measured turn against the previous one in-session.
             response.session_id = str(chat_session.id)
             response.turn_index = len(session_outputs)
-            response.response_format_constrained = (
-                turn_response_format is not None
-            )
+            tag_response_format_outcome(response, request_func_input)
             session_outputs.append(response)
 
         if not response.success:

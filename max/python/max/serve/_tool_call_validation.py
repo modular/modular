@@ -186,6 +186,26 @@ def check_tool_call_conformance(
     return results
 
 
+def response_format_schema_is_checkable(schema: Mapping[str, Any]) -> bool:
+    """Reports whether *schema* compiles into a usable validator.
+
+    ``check_response_format_conformance`` fails open, so an uncompilable schema
+    scores ``valid``. That is right for the server, which is logging and must
+    not blame a model for a bad schema. A caller that is *measuring*
+    conformance needs "nothing was checked" kept apart from "nothing was
+    wrong", or a typo in a schema reports as a perfect score.
+
+    Covers a schema that cannot be compiled, which is what a malformed or
+    unsupported one yields. A schema that compiles but fails while running
+    still scores ``valid``; that path is rare enough to leave to the fail-open.
+    """
+    try:
+        schema_key = json.dumps(schema, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return False
+    return _build_validator(schema_key) is not None
+
+
 def check_response_format_conformance(
     content: str,
     schema: Mapping[str, Any],

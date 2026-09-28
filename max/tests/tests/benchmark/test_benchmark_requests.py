@@ -55,6 +55,7 @@ from max.benchmark.benchmark_shared.request import (
     async_request_lora_unload,
     get_request_driver_class,
     mark_cancelled_if_past_deadline,
+    tag_response_format_outcome,
 )
 from pytest_mock import MockerFixture
 from tqdm.asyncio import tqdm
@@ -1636,3 +1637,97 @@ def test_attach_images_without_user_message_is_a_noop() -> None:
     ]
     _attach_images_to_first_user_message(messages, [img])
     assert messages[0]["content"] == [{"type": "text", "text": "sys"}]
+
+
+def _chat_input(response_format: object) -> RequestFuncInput:
+    return RequestFuncInput(
+        model="m",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt="hi",
+        images=[],
+        api_url="http://localhost:8000/v1/chat/completions",
+        prompt_len=1,
+        max_tokens=16,
+        ignore_eos=False,
+        response_format=response_format,  # type: ignore[arg-type]
+    )
+
+
+_PERSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "person",
+        "schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("text", "conformed"),
+    [
+        ('{"name": "ada"}', True),
+        # Well-formed JSON that the schema rejects.
+        ('{"name": 7}', False),
+        # A backend that ignored response_format and answered in prose. This
+        # is the case the metric exists to catch.
+        ("Sure! The name is Ada.", False),
+        ("", False),
+    ],
+)
+def test_tag_response_format_outcome_judges_the_response(
+    text: str, conformed: bool
+) -> None:
+    output = RequestFuncOutput(success=True, generated_text=text)
+    tag_response_format_outcome(output, _chat_input(_PERSON_SCHEMA))
+    assert output.response_format_constrained
+    assert output.response_format_conformed is conformed
+
+
+def test_tag_response_format_outcome_leaves_unconstrained_unjudged() -> None:
+    output = RequestFuncOutput(success=True, generated_text="anything at all")
+    tag_response_format_outcome(output, _chat_input(None))
+    assert not output.response_format_constrained
+    assert output.response_format_conformed is None
+
+
+@pytest.mark.parametrize(
+    ("text", "conformed"), [('{"any": 1}', True), ("[1, 2]", False)]
+)
+def test_tag_response_format_outcome_holds_json_object_to_an_object(
+    text: str, conformed: bool
+) -> None:
+    """json_object means any JSON *object*, which is what the server's
+    permissive schema encodes -- a bare array does not satisfy it."""
+    output = RequestFuncOutput(success=True, generated_text=text)
+    tag_response_format_outcome(output, _chat_input({"type": "json_object"}))
+    assert output.response_format_conformed is conformed
+
+
+def test_tag_response_format_outcome_leaves_an_unusable_schema_unjudged() -> (
+    None
+):
+    """The conformance checker fails open, so an uncompilable schema scores
+    ``valid``. Counting that as conforming would report a perfect rate for a
+    schema that was never enforced, so it has to stay unjudged."""
+    broken = {
+        "type": "json_schema",
+        "json_schema": {"name": "broken", "schema": {"type": "not-a-type"}},
+    }
+    output = RequestFuncOutput(success=True, generated_text="prose, not json")
+    tag_response_format_outcome(output, _chat_input(broken))
+    assert output.response_format_constrained
+    assert output.response_format_conformed is None
+
+
+def test_tag_response_format_outcome_ignores_a_text_format() -> None:
+    """``text`` constrains nothing, so there is no schema to judge against."""
+    output = RequestFuncOutput(success=True, generated_text="prose")
+    tag_response_format_outcome(output, _chat_input({"type": "text"}))
+    assert output.response_format_constrained
+    assert output.response_format_conformed is None

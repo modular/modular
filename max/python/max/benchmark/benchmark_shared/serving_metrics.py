@@ -268,6 +268,8 @@ def calculate_metrics(
     constrained_tpots: list[float] = []
     unconstrained_tpots: list[float] = []
     constrained_requests = 0
+    conforming_constrained_requests = 0
+    judged_constrained_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -347,6 +349,10 @@ def calculate_metrics(
         ttfts.append(o.ttft)
         if o.response_format_constrained:
             constrained_requests += 1
+            if o.response_format_conformed is not None:
+                judged_constrained_requests += 1
+                if o.response_format_conformed:
+                    conforming_constrained_requests += 1
             constrained_ttfts.append(o.ttft)
             if tpot is not None:
                 constrained_tpots.append(tpot)
@@ -555,6 +561,11 @@ def calculate_metrics(
         else None,
         constrained_request_rate=(
             constrained_requests / len(measured) if measured else None
+        ),
+        constrained_conformance_rate=(
+            conforming_constrained_requests / judged_constrained_requests
+            if judged_constrained_requests
+            else None
         ),
         step_tpot_ms=StandardPercentileMetrics(
             step_tpots, scale_factor=1000.0, unit="ms"

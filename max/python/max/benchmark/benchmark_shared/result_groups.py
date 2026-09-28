@@ -64,6 +64,7 @@ class SummaryGroup(BaseModel):
     mean_itl_ms: float | None = None
     total_generated_outputs: int | None = None
     constrained_request_rate: float | None = None
+    constrained_conformance_rate: float | None = None
 
 
 class GpuStatsGroup(BaseModel):
