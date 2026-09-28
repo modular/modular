@@ -24,7 +24,14 @@ import pytest
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from max.driver import CPU, Accelerator, Buffer, Usage, accelerator_count
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    Usage,
+    accelerator_count,
+    batch_inplace_copy,
+)
 from max.dtype import DType
 
 
@@ -1434,6 +1441,24 @@ def test_inplace_copy_from_still_copies_between_distinct_buffers() -> None:
     destination.inplace_copy_from(source)
 
     np.testing.assert_array_equal(destination.to_numpy(), [0, 1, 2, 3])
+
+
+def test_batch_inplace_copy_skips_a_zero_byte_pair() -> None:
+    """A zero-byte pair is skipped, and the copy beside it still lands."""
+    backing = Buffer.from_numpy(np.array([42, 7], dtype=np.int64))
+    empty_dst = backing[:0].view(DType.int64, (1, 0))
+    empty_src = Buffer(dtype=DType.int64, shape=(1, 0), device=CPU())
+    other_src = Buffer.from_numpy(np.array([99], dtype=np.int64))
+    other_dst = Buffer.from_numpy(np.zeros(1, dtype=np.int64))
+
+    assert empty_dst.shape == (1, 0)
+    assert empty_src.shape == (1, 0)
+    assert empty_dst._data_ptr() != empty_src._data_ptr()
+
+    batch_inplace_copy([empty_dst, other_dst], [empty_src, other_src])
+
+    np.testing.assert_array_equal(backing.to_numpy(), [42, 7])
+    np.testing.assert_array_equal(other_dst.to_numpy(), [99])
 
 
 def test_inplace_copy_from_still_copies_an_offset_view() -> None:

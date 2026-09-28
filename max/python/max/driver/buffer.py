@@ -293,7 +293,7 @@ def batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
     """Copies ``srcs[i]`` into ``dsts[i]`` in as few driver submissions as possible.
 
     Sources may be host, pinned, same-device or peer memory in any mix.
-    Identity pairs (``dst is src``) are skipped.
+    Identity pairs (``dst is src``) and zero-byte pairs are skipped.
 
     One submission is one stream, and a stream only orders the writes it
     performs, so destinations are grouped by device and each device's group is
