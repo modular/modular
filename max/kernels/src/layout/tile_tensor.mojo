@@ -918,10 +918,26 @@ struct TileTensor[
         comptime assert (
             name == "ptr"
         ), "TileTensor.__getattr_param__ only support 'ptr'"
-        try:
-            result = Self.Engine.unsafe_ptr(self._storage)
-        except e:
-            abort(t"TileTensor.ptr access not possible: {e}")
+        result = self.unsafe_ptr()
+
+    @inline(.always)
+    def unsafe_ptr(
+        self,
+    ) -> Pointer[
+        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
+    ]:
+        """Returns a raw scalar pointer to the base of the tensor's storage.
+
+        Delegates to the engine's `unsafe_ptr`, so the pointer refers to the
+        first scalar element the engine exposes; a vectorized engine
+        (`element_size > 1`) still yields the scalar base. The pointer borrows
+        the tensor's storage and does not extend its lifetime. Element loads
+        and stores on the tensor go through this pointer.
+
+        Returns:
+            A `Pointer` to `Scalar[dtype]` at the base of the storage.
+        """
+        return Self.Engine.unsafe_ptr(self._storage)
 
     @inline(.nodebug)
     def _unsafe_storage_cast[
@@ -955,29 +971,27 @@ struct TileTensor[
         invariant: Bool = False,
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
-        """Loads `width` elements from `self`'s storage handle at `offset` via
-        the engine."""
-        return Self.Engine.load[
+        """Loads `width` elements at `offset` through the engine's raw
+        pointer."""
+        return self.ptr.load[
             width=width,
             alignment=alignment,
             invariant=invariant,
             non_temporal=non_temporal,
-        ](
-            self._unsafe_storage_cast[to_mut=False](),
-            offset,
-        )
+        ](offset)
 
     @inline(.nodebug)
     def _store_storage[
         alignment: Int,
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer], value: SIMD[Self.dtype, _]) where Self.mut:
-        """Stores `value` into `self`'s storage handle at `offset` via the
-        engine."""
-        Self.Engine.store[
-            alignment=alignment,
-            non_temporal=non_temporal,
-        ](self._unsafe_storage_cast[to_mut=True](), offset, value)
+        """Stores `value` at `offset` through the engine's raw pointer."""
+        # `where Self.mut` does not narrow `Self.origin`'s mutability
+        # parameter to `True`, so cast to the mutable pointer type `store`
+        # requires.
+        self.ptr.unsafe_mut_cast[True]().store[
+            alignment=alignment, non_temporal=non_temporal
+        ](offset, value)
 
     @inline(.nodebug)
     def __getitem__(self, i0: Some[CoordLike]) -> Self.ElementType:
@@ -3894,10 +3908,7 @@ struct NullableTileTensor[
         if not self._storage:
             result = None
             return
-        try:
-            result = Self.Engine.unsafe_ptr(self._storage.unsafe_value())
-        except e:
-            abort(t"NullableTileTensor.ptr access not possible: {e}")
+        result = Self.Engine.unsafe_ptr(self._storage.unsafe_value())
 
     @inline(.nodebug)
     def _unsafe_storage_cast[

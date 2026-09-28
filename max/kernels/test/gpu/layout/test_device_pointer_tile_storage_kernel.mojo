@@ -38,8 +38,8 @@ through that storage. Together those two accesses close the loop on the
   the `layout` field.)
 - The kernel reads the extents with `tile.dim[i]()` (a load from the `layout`
   field) and writes through `tile.raw_store(...)` (the device pointer).
-  `DevicePointerEngine.store` reinterprets the handle's first bytes as a bare
-  device pointer — the cast pattern the lower-level probe validated in
+  `DevicePointerEngine.unsafe_ptr` reinterprets the handle's first bytes as a
+  bare device pointer — the cast pattern the lower-level probe validated in
   isolation. The two together prove the `layout` field decoded at the right
   device offset and the encoded pointer is the real device address. (We store
   at linear indices via `raw_store` rather than via `tile[r, c]`: the variadic

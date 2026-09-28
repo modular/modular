@@ -273,6 +273,10 @@ This version is still a work in progress.
 - `TileTensor` gained `as_span()`, returning a `Span` over the tensor's
   elements.
 
+- `TileTensor` gained `unsafe_ptr()`, returning the raw scalar `Pointer` its
+  engine exposes for the tensor's storage. Element loads and stores on the
+  tensor go through that pointer.
+
 - Added `max.nn.kernels.keyed_uniform`, which draws one uniform value in
   `[0, 1)` per row of a seed tensor. Every row is its own Philox key, so a
   row's value is a function of its seed alone, not of the row's position or of
@@ -307,6 +311,13 @@ This version is still a work in progress.
   returns the same immutable view and matches the naming of `Pointer.as_imm()`.
 
 ## Breaking changes
+
+- `TensorEngine` drops its `load` and `store` requirements, along with the
+  `DefaultEngine`, `DevicePointerEngine`, and `StaticOffsetEngine`
+  implementations. Loads and stores go through the raw pointer `unsafe_ptr`
+  returns: `Engine.load[width=w, alignment=a](storage, offset)` becomes
+  `Engine.unsafe_ptr(storage).load[width=w, alignment=a](offset)`, and
+  `TileTensor.unsafe_ptr()` exposes the same pointer at the tensor level.
 
 - `TileTensor`'s two runtime slicing methods are replaced by subscript
   syntax, and the `All` marker they used is removed along with them.
