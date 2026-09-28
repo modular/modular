@@ -352,6 +352,14 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     return create_model(name, __config__=_FORBID_EXTRA, **fields)
 
 
+# The OpenAI SDK literal stops at ``xhigh``; GLM and MiniMax-M3.1 name the rung
+# above it ``max``. Matches sglang's ``ReasoningEffortTier``, so a value the
+# reference stack rejects is rejected here too.
+ReasoningEffortLevel = Literal[
+    "none", "minimal", "low", "medium", "high", "xhigh", "max"
+]
+
+
 class ReasoningConfig(BaseModel):
     """OpenRouter's ``reasoning`` object (OpenAI only has ``reasoning_effort``).
 
@@ -362,7 +370,7 @@ class ReasoningConfig(BaseModel):
     model_config = _FORBID_EXTRA
 
     enabled: bool | None = None
-    effort: str | None = None
+    effort: ReasoningEffortLevel | None = None
     max_tokens: int | None = None
     exclude: bool | None = None
 
@@ -465,6 +473,9 @@ class CreateChatCompletionRequest(
     # ``stream`` lives on the OpenAI streaming/non-streaming subclasses, not
     # on ``CompletionCreateParamsBase`` - declare it explicitly here.
     stream: bool | None = False
+
+    # Re-typed from the SDK literal to accept ``max``.
+    reasoning_effort: ReasoningEffortLevel | None = None
 
     # MAX-only chat-template extension.
     chat_template_kwargs: dict[str, Any] | None = None

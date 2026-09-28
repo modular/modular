@@ -1233,12 +1233,14 @@ components:
             `max_completion_tokens` takes precedence (no error is raised).
         reasoning_effort:
           type: string
+          enum: [none, minimal, low, medium, high, xhigh, max]
           description: |
             Controls how much effort the model spends on reasoning. Set to
-            `none` to disable thinking, or `low`, `medium`, or `high` to
-            control the trade-off between speed and reasoning depth. If the
-            request also includes `reasoning.effort`, this field takes
-            precedence.
+            `none` to disable thinking, or `minimal`, `low`, `medium`,
+            `high`, `xhigh`, or `max` to control the trade-off between speed
+            and reasoning depth. How a level is applied depends on the
+            model's chat template. If the request also includes
+            `reasoning.effort`, this field takes precedence.
         thinking:
           type: object
           required:
@@ -1265,11 +1267,12 @@ components:
               description: Whether to enable reasoning.
             effort:
               type: string
+              enum: [none, minimal, low, medium, high, xhigh, max]
               description: |
                 Controls reasoning effort when `reasoning.enabled` is not set.
-                Set to `none` to disable thinking, or `low`, `medium`, or
-                `high` to enable reasoning at the specified level. Ignored
-                when `enabled` is explicitly set.
+                Set to `none` to disable thinking, or `minimal`, `low`,
+                `medium`, `high`, `xhigh`, or `max` to enable reasoning at the
+                specified level. Ignored when `enabled` is explicitly set.
             max_tokens:
               type: integer
               description: Accepted for client compatibility. Not used by MAX Serve.

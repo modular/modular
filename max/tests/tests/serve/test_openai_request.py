@@ -27,6 +27,10 @@ Explicitly importing //max/python/max/serve/schemas in the test's BUILD file has
 from typing import Any, cast
 
 import pytest
+from max.pipelines.request.open_responses import (
+    ReasoningEffortEnum,
+    ReasoningParam,
+)
 from max.serve.schemas.openai import CreateChatCompletionRequest
 from pydantic import AnyUrl, ValidationError
 
@@ -917,6 +921,81 @@ async def test_openai_root_role_accepted_and_passed_through() -> None:
     assert messages[0].role == "root"
     assert messages[0].content == "You are MiniMax."
     assert messages[1].role == "system"
+
+
+@pytest.mark.parametrize(
+    "effort", ["minimal", "low", "medium", "high", "xhigh", "max"]
+)
+def test_reasoning_effort_reaches_the_template_unchanged(effort: str) -> None:
+    """Every rung, including ``max`` above ``xhigh``, turns thinking on and is
+    handed to the chat template as the client spelled it."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning_effort": effort,
+        }
+    )
+    assert request.resolved_chat_template_kwargs == {
+        "enable_thinking": True,
+        "thinking": True,
+        "reasoning_effort": effort,
+    }
+
+
+def test_reasoning_effort_none_turns_thinking_off() -> None:
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning_effort": "none",
+        }
+    )
+    kwargs = request.resolved_chat_template_kwargs
+    assert kwargs is not None
+    assert kwargs["enable_thinking"] is False
+    assert kwargs["thinking"] is False
+
+
+def test_reasoning_effort_rejects_an_unknown_level() -> None:
+    """A typo fails validation rather than reaching the template verbatim."""
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning_effort": "hgih",
+            }
+        )
+
+
+def test_reasoning_object_effort_rejects_an_unknown_level() -> None:
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning": {"effort": "hgih"},
+            }
+        )
+
+
+def test_reasoning_object_effort_accepts_max() -> None:
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning": {"effort": "max"},
+        }
+    )
+    kwargs = request.resolved_chat_template_kwargs
+    assert kwargs is not None
+    assert kwargs["reasoning_effort"] == "max"
+
+
+def test_responses_reasoning_effort_accepts_max() -> None:
+    param = ReasoningParam.model_validate({"effort": "max"})
+    assert param.effort == ReasoningEffortEnum.max
 
 
 def test_thinking_translates_to_standard_reasoning_flags() -> None:
