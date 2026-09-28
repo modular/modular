@@ -420,6 +420,94 @@ def trace_arg(name: String, shape: Coord, dtype: DType) -> String:
 
 
 @fieldwise_init
+struct _BridgeState(TrivialRegisterPassable):
+    """Which runtime-gated tracing bridges `_enter_bridges` engaged."""
+
+    var range_opened: Bool
+    var tool_pushed: Bool
+    var tracy_enabled: Bool
+    var tracy_ctx: UInt64
+
+
+def _check_single_tracing_system[level: TraceLevel]():
+    var enabled_systems = _get_enabled_tracing_systems[level]()
+    debug_assert(
+        len(enabled_systems) <= 1,
+        "only one tracing system should be enabled at a time, got: ",
+        StaticString(", ").join(enabled_systems),
+    )
+
+
+def _enter_bridges(
+    name: StringSlice, color: UInt32, *, record_range: Bool, push_tool: Bool
+) -> _BridgeState:
+    """Engages the runtime-gated tracing bridges for a span named `name`.
+
+    `Trace.__enter__` is inlined into every `with Trace[...]` site, so the
+    backend calls that do not depend on the trace parameters live here and
+    are emitted once. The order matters and matches the profiler contracts
+    documented on `Trace.__enter__`: the MAX profiler range and the
+    external profiler annotation are additive, while an enabled Tracy zone
+    is exclusive and the caller stops after it.
+
+    Args:
+        name: The span name; the bridges copy what they need during the call.
+        color: The span color, or 0 when unspecified.
+        record_range: Whether the MAX profiler range bridge applies at this
+            trace level.
+        push_tool: Whether the external profiler annotation bridge applies at
+            this trace level in this build.
+
+    Returns:
+        Which bridges engaged, for `_exit_bridges` to pair.
+    """
+    var state = _BridgeState(
+        range_opened=False, tool_pushed=False, tracy_enabled=False, tracy_ctx=0
+    )
+    if record_range and _is_range_recording():
+        external_call["KGEN_CompilerRT_RangeBegin", NoneType](
+            name.unsafe_ptr(), name.byte_length(), color
+        )
+        state.range_opened = True
+    if push_tool:
+        state.tool_pushed = (
+            external_call[
+                "KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int
+            ](name.unsafe_ptr(), name.byte_length(), color)
+            != 0
+        )
+    if _is_tracy_enabled():
+        state.tracy_enabled = True
+        state.tracy_ctx = external_call[
+            "KGEN_CompilerRT_TracyZoneBegin", UInt64
+        ](name.unsafe_ptr(), name.byte_length(), color)
+    return state
+
+
+def _exit_bridges(
+    *, range_opened: Bool, tool_pushed: Bool, tracy_ctx: UInt64
+) -> Bool:
+    """Pairs the bridges `_enter_bridges` engaged.
+
+    Returns:
+        True when a Tracy zone was closed, which ends the span for the caller
+        the same way an enabled Tracy zone ended `Trace.__enter__`.
+    """
+    if range_opened:
+        external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
+    # Pop-iff-pushed: popping without a matching push would close an
+    # unrelated outer range on this thread's vendor annotation stack.
+    if tool_pushed:
+        external_call[
+            "KGEN_CompilerRT_ExternalProfilerAnnotationPop", NoneType
+        ]()
+    if tracy_ctx != 0:
+        external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](tracy_ctx)
+        return True
+    return False
+
+
+@fieldwise_init
 struct Trace[
     level: TraceLevel,
     *,
@@ -514,13 +602,7 @@ struct Trace[
             or _name_value.isa[StaticString]()
         ), "the AsyncRT profiler only supports `StaticString` names"
 
-        # Validate that only one tracing system is enabled
-        var enabled_systems = _get_enabled_tracing_systems[Self.level]()
-        debug_assert(
-            len(enabled_systems) <= 1,
-            "only one tracing system should be enabled at a time, got: ",
-            StaticString(", ").join(enabled_systems),
-        )
+        _check_single_tracing_system[Self.level]()
 
         # Always initialize the tracy context to zero: it's set in __enter__.
         self._tracy_ctx = 0
@@ -656,81 +738,45 @@ struct Trace[
             self._emit_op_log("LAUNCH")
             return
 
-        # Record a MAX profiler range while a profiler trace is live. Unlike
-        # the branches below this one does not return: the profiler's trace
-        # has a different audience (Perfetto/HTA/on-demand capture) than the
-        # backends below (Tracy, NVTX/nsys, the AsyncRT time-trace), so
-        # whichever of those is enabled must still record its own span.
-        # THREAD-level spans are excluded — their per-task volume would swamp
-        # the profiler's span budget.
-        comptime if Self.level <= TraceLevel.OP:
-            if _is_range_recording():
-                var color_val = UInt32(
-                    Int(self.color.value())
-                ) if self.color else 0
-                if self._name_value.isa[StaticString]():
-                    external_call["KGEN_CompilerRT_RangeBegin", NoneType](
-                        self._name_value[StaticString].as_bytes().unsafe_ptr(),
-                        self._name_value[StaticString].byte_length(),
-                        color_val,
-                    )
-                else:
-                    external_call["KGEN_CompilerRT_RangeBegin", NoneType](
-                        self._name_value[String].as_bytes().unsafe_ptr(),
-                        self._name_value[String].byte_length(),
-                        color_val,
-                    )
-                self._range_opened = True
-
-        # Annotate an external profiler's trace through the
-        # external profiler annotation bridge. Like the MAX profiler branch
-        # above this is runtime-gated (the push reports whether anything was
-        # emitted) and additive: the backends below still record their own
-        # span. Compiled out when this build already emits vendor
-        # annotations directly through the GPU profiler branch below, so
-        # those builds never double-annotate.
-        # Annotations carry the span name only; detail strings are not
-        # forwarded.
-        comptime if Self.level <= TraceLevel.OP and not _is_gpu_profiler_enabled[
-            Self.category, Self.level
-        ]():
-            var tool_color = UInt32(
-                Int(self.color.value())
-            ) if self.color else 0
-            if self._name_value.isa[StaticString]():
-                self._tool_pushed = (
-                    external_call[
-                        "KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int
-                    ](
-                        self._name_value[StaticString].as_bytes().unsafe_ptr(),
-                        self._name_value[StaticString].byte_length(),
-                        tool_color,
-                    )
-                    != 0
-                )
-            else:
-                self._tool_pushed = (
-                    external_call[
-                        "KGEN_CompilerRT_ExternalProfilerAnnotationPush", Int
-                    ](
-                        self._name_value[String].as_bytes().unsafe_ptr(),
-                        self._name_value[String].byte_length(),
-                        tool_color,
-                    )
-                    != 0
-                )
-
-        # Start a Tracy zone if the bridge is available.
-        if _is_tracy_enabled():
-            var name_str = self.name()
-            var color_val = UInt32(Int(self.color.value())) if self.color else 0
-            self._tracy_ctx = external_call[
-                "KGEN_CompilerRT_TracyZoneBegin", UInt64
-            ](
-                name_str.as_bytes().unsafe_ptr(),
-                name_str.byte_length(),
+        # Record a MAX profiler range while a profiler trace is live, and
+        # annotate an external profiler's trace through the annotation
+        # bridge. Neither returns: the profiler's trace has a different
+        # audience (Perfetto/HTA/on-demand capture) than the backends below
+        # (Tracy, NVTX/nsys, the AsyncRT time-trace), so whichever of those
+        # is enabled must still record its own span. THREAD-level spans are
+        # excluded from both since their per-task volume would swamp the
+        # span budget. The annotation bridge is also compiled out when this
+        # build emits vendor annotations directly through the GPU profiler
+        # branch below, so those builds never double-annotate. Annotations
+        # carry the span name only; detail strings are not forwarded.
+        #
+        # A Tracy zone, when the bridge is available, is exclusive and ends
+        # `__enter__` here.
+        comptime record_range = Self.level <= TraceLevel.OP
+        comptime push_tool = (
+            Self.level <= TraceLevel.OP
+            and not _is_gpu_profiler_enabled[Self.category, Self.level]()
+        )
+        var color_val = UInt32(Int(self.color.value())) if self.color else 0
+        var bridges: _BridgeState
+        if self._name_value.isa[StaticString]():
+            bridges = _enter_bridges(
+                self._name_value[StaticString],
                 color_val,
+                record_range=record_range,
+                push_tool=push_tool,
             )
+        else:
+            bridges = _enter_bridges(
+                StringSlice(self._name_value[String]),
+                color_val,
+                record_range=record_range,
+                push_tool=push_tool,
+            )
+        self._range_opened = bridges.range_opened
+        self._tool_pushed = bridges.tool_pushed
+        self._tracy_ctx = bridges.tracy_ctx
+        if bridges.tracy_enabled:
             return
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
@@ -825,23 +871,13 @@ struct Trace[
             self._emit_op_log("COMPLETE")
             return
 
-        # Close the MAX profiler range opened in __enter__ (see _range_opened).
-        if self._range_opened:
-            external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
-
-        # Pop the external profiler annotation range pushed in __enter__
-        # (pop-iff-pushed: popping without a matching push would close an
-        # unrelated outer range on this thread's vendor annotation stack).
-        if self._tool_pushed:
-            external_call[
-                "KGEN_CompilerRT_ExternalProfilerAnnotationPop", NoneType
-            ]()
-
-        # End Tracy zone early to guarantee pairing even on early returns.
-        if self._tracy_ctx != 0:
-            external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](
-                self._tracy_ctx
-            )
+        # Pair whatever __enter__ engaged (see _range_opened, _tool_pushed).
+        # A Tracy zone ends the span here, mirroring __enter__.
+        if _exit_bridges(
+            range_opened=self._range_opened,
+            tool_pushed=self._tool_pushed,
+            tracy_ctx=self._tracy_ctx,
+        ):
             return
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():

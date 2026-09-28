@@ -598,28 +598,24 @@ def test_foreach_captures_tensor_and_scalar() raises:
     _check_capture_tensor_and_scalar[DType.float32]()
 
 
-def _check_capture_input_tensor[dtype: DType]() raises:
-    comptime N = 32
-    comptime FILL = 7
-    # The one test that captures a real `IOSpec.Input` tensor, so the shape the
-    # migrated examples use is covered with its invariant loads intact. It can
-    # do that only because the input is filled once, at construction, and never
-    # written again: with nothing stale in the buffer there is nothing for the
-    # optimizer to forward, which is the hazard `_check_capture_outer_tensor`
-    # documents. The ramp lives in the body instead of the buffer, so the
-    # expected value still varies per index.
-    var in_storage = Array[Scalar[dtype], N](fill=Scalar[dtype](FILL))
-    var out_storage = Array[Scalar[dtype], N](fill={})
-    var in_ptr = in_storage.unsafe_ptr().unsafe_origin_cast[
-        MutUntrackedOrigin
-    ]()
-    var out_ptr = out_storage.unsafe_ptr().unsafe_origin_cast[
-        MutUntrackedOrigin
-    ]()
+@inline(.never)
+def _foreach_over_input[
+    dtype: DType, N: Int
+](
+    in_ptr: Pointer[Scalar[dtype], MutUntrackedOrigin],
+    out_ptr: Pointer[Scalar[dtype], MutUntrackedOrigin],
+) raises:
+    """Runs a `foreach` whose body captures an `IOSpec.Input` tensor.
 
+    Never inlined, on purpose. `IOSpec.Input` loads are LLVM invariant loads,
+    and GVN resolves an invariant load by walking past every store to the
+    allocation, so a load in the same function as the `Array` that backs it
+    reads the allocation's undefined initial value, not what the fill wrote
+    (observed on Linux x86 as NaN for the first vector). Behind a call
+    boundary the walk stops at the pointer argument.
+    """
     var x = _flat_input[dtype, N](in_ptr)
     var out = _flat_output[dtype, N](out_ptr)
-    var view = _flat_view[dtype, N](out_ptr)
 
     @inline(.always)
     def body[width: Int](idx: Coord) {var x} -> SIMD[dtype, width]:
@@ -630,6 +626,26 @@ def _check_capture_input_tensor[dtype: DType]() raises:
     var ctx = DeviceContext(api="cpu")
     foreach(body, out, ctx)
 
+
+def _check_capture_input_tensor[dtype: DType]() raises:
+    comptime N = 32
+    comptime FILL = 7
+    # The one test that captures a real `IOSpec.Input` tensor, so the shape the
+    # migrated examples use is covered with its invariant loads intact. The
+    # ramp lives in the body instead of the buffer, so the expected value still
+    # varies per index.
+    var in_storage = Array[Scalar[dtype], N](fill=Scalar[dtype](FILL))
+    var out_storage = Array[Scalar[dtype], N](fill={})
+    var in_ptr = in_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
+    ]()
+    var out_ptr = out_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
+    ]()
+
+    _foreach_over_input[dtype, N](in_ptr, out_ptr)
+
+    var view = _flat_view[dtype, N](out_ptr)
     for i in range(N):
         assert_equal(view.load[1](IndexList[1](i)), Scalar[dtype](FILL + i))
     _ = in_storage^
