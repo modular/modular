@@ -192,17 +192,18 @@ def _get_emission_kind_id[emission_kind: StaticString]() -> Int:
         + "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'"
     )
 
-    comptime if emission_kind == "llvm":
+    comptime __match emission_kind:
+    case "llvm":
         return _EMISSION_KIND_LLVM
-    elif emission_kind == "llvm-bitcode":
+    case "llvm-bitcode":
         return _EMISSION_KIND_LLVM_BITCODE
-    elif emission_kind == "llvm-opt":
+    case "llvm-opt":
         return _EMISSION_KIND_LLVM_OPT
-    elif emission_kind == "llvm-opt-bitcode":
+    case "llvm-opt-bitcode":
         return _EMISSION_KIND_LLVM_OPT_BITCODE
-    elif emission_kind == "object":
+    case "object":
         return _EMISSION_KIND_OBJECT
-    else:
+    case _:
         return _EMISSION_KIND_ASM
 
 

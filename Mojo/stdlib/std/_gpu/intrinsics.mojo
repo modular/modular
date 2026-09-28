@@ -1188,11 +1188,12 @@ def _raw_ptr_buffer_load_lds[
 
 
 def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
-    comptime if bytes == 1:
+    comptime __match bytes:
+    case 1:
         return DType.uint8
-    elif bytes == 2:
+    case 2:
         return DType.uint16
-    else:
+    case _:
         comptime assert bytes in (4, 8, 16), "Width not supported"
         return DType.uint32
 

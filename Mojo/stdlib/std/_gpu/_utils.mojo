@@ -176,23 +176,20 @@ comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
 @inline(.nodebug)
 def _dtype_to_llvm_type_str[dtype: DType]() -> StaticString:
-    comptime if dtype == .float32:
+    comptime __match dtype:
+    case .float32:
         return "f32"
-    elif dtype == .float16:
+    case .float16:
         return "f16"
-    elif dtype == .bfloat16:
+    case .bfloat16:
         return "bf16"
-    elif dtype == .float64:
+    case .float64:
         return "f64"
-    elif dtype == .int32:
+    case .int32 | .uint32:
         return "i32"
-    elif dtype == .uint32:
-        return "i32"
-    elif dtype == .int64:
+    case .int64 | .uint64:
         return "i64"
-    elif dtype == .uint64:
-        return "i64"
-    else:
+    case _:
         return "i8"  # float8 variants
 
 
@@ -268,45 +265,46 @@ def simd_to_llvm_struct[
 
 @inline(.nodebug)
 def _dtype_to_pop_scalar_str[dtype: DType]() -> StaticString:
-    comptime if dtype == .bool:
+    comptime __match dtype:
+    case .bool:
         return "!kgen.scalar<bool>"
-    elif dtype == .int8:
+    case .int8:
         return "!kgen.scalar<si8>"
-    elif dtype == .uint8:
+    case .uint8:
         return "!kgen.scalar<ui8>"
-    elif dtype == .int16:
+    case .int16:
         return "!kgen.scalar<si16>"
-    elif dtype == .uint16:
+    case .uint16:
         return "!kgen.scalar<ui16>"
-    elif dtype == .int32:
+    case .int32:
         return "!kgen.scalar<si32>"
-    elif dtype == .uint32:
+    case .uint32:
         return "!kgen.scalar<ui32>"
-    elif dtype == .int64:
+    case .int64:
         return "!kgen.scalar<si64>"
-    elif dtype == .uint64:
+    case .uint64:
         return "!kgen.scalar<ui64>"
-    elif dtype == .float16:
+    case .float16:
         return "!kgen.scalar<f16>"
-    elif dtype == .bfloat16:
+    case .bfloat16:
         return "!kgen.scalar<bf16>"
-    elif dtype == .float32:
+    case .float32:
         return "!kgen.scalar<f32>"
-    elif dtype == .float64:
+    case .float64:
         return "!kgen.scalar<f64>"
-    elif dtype == .float8_e5m2:
+    case .float8_e5m2:
         return "!kgen.scalar<f8E5M2>"
-    elif dtype == .float8_e5m2fnuz:
+    case .float8_e5m2fnuz:
         return "!kgen.scalar<f8E5M2FNUZ>"
-    elif dtype == .float8_e4m3fn:
+    case .float8_e4m3fn:
         return "!kgen.scalar<f8E4M3>"
-    elif dtype == .float8_e4m3fnuz:
+    case .float8_e4m3fnuz:
         return "!kgen.scalar<f8E4M3FNUZ>"
-    elif dtype == .float8_e3m4:
+    case .float8_e3m4:
         return "!kgen.scalar<f8E3M4>"
-    elif dtype == .float8_e8m0fnu:
+    case .float8_e8m0fnu:
         return "!kgen.scalar<f8E8M0FNU>"
-    else:
+    case _:
         comptime assert False, "unsupported dtype for !kgen.scalar"
 
 

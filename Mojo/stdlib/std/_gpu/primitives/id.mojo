@@ -322,11 +322,12 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
         elif is_amd_gpu():
 
             def _get_offset() -> Int:
-                comptime if dim == "x":
+                comptime __match dim:
+                case "x":
                     return 6
-                elif dim == "y":
+                case "y":
                     return 7
-                else:
+                case _:
                     comptime assert dim == "z"
                     return 8
 
@@ -375,11 +376,12 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         elif is_amd_gpu():
 
             def _get_offset() -> Int:
-                comptime if dim == "x":
+                comptime __match dim:
+                case "x":
                     return 0
-                elif dim == "y":
+                case "y":
                     return 1
-                else:
+                case _:
                     comptime assert dim == "z"
                     return 2
 

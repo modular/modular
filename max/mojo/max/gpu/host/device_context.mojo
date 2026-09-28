@@ -6106,13 +6106,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        comptime if bitwidth == 8:
+        comptime __match bitwidth:
+        case 8:
             value = UInt64(Int(bitcast[.uint8, 1](val)))
-        elif bitwidth == 16:
+        case 16:
             value = UInt64(Int(bitcast[.uint16, 1](val)))
-        elif bitwidth == 32:
+        case 32:
             value = UInt64(bitcast[.uint32, 1](val))
-        else:
+        case _:
             value = bitcast[.uint64, 1](val)
 
         # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
@@ -6154,13 +6155,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        comptime if bitwidth == 8:
+        comptime __match bitwidth:
+        case 8:
             value = UInt64(Int(bitcast[.uint8, 1](val)))
-        elif bitwidth == 16:
+        case 16:
             value = UInt64(Int(bitcast[.uint16, 1](val)))
-        elif bitwidth == 32:
+        case 32:
             value = UInt64(bitcast[.uint32, 1](val))
-        else:
+        case _:
             value = bitcast[.uint64, 1](val)
 
         # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)

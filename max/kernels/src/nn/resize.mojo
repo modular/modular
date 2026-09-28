@@ -70,18 +70,19 @@ def coord_transform[
     """
     var out_coord_f32 = Float32(out_coord)
 
-    comptime if mode == CoordinateTransformationMode.HalfPixel:
+    comptime __match mode:
+    case .HalfPixel:
         # note: coordinates are for the CENTER of the pixel
         # - 0.5 term at the end is so that when we round to the nearest integer
         # coordinate, we get the coordinate whose center is closest
         return (out_coord_f32 + Float32(0.5)) / scale - 0.5
-    elif mode == CoordinateTransformationMode.HalfPixel1D:
+    case .HalfPixel1D:
         # Same as HalfPixel except for 1D output. Described here:
         # https://onnx.ai/onnx/operators/onnx__Resize.html
         if out_dim == 1:
             return 0
         return (out_coord_f32 + Float32(0.5)) / scale - 0.5
-    elif mode == CoordinateTransformationMode.AlignCorners:
+    case .AlignCorners:
         # aligning "corners" when output is 1D isn't well defined
         # this matches pytorch
         if out_dim == 1:
@@ -91,9 +92,9 @@ def coord_transform[
             out_coord_f32
             * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[.float32]()
         )
-    elif mode == CoordinateTransformationMode.Asymmetric:
+    case .Asymmetric:
         return out_coord_f32 / scale
-    else:
+    case _:
         comptime assert False, "coordinate_transformation_mode not implemented"
 
 
@@ -193,15 +194,16 @@ def resize_nearest_neighbor[
     @__parameter
     @inline(.always)
     def round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
-        comptime if round_mode == RoundMode.HalfDown:
+        comptime __match round_mode:
+        case .HalfDown:
             return ceil(val - 0.5)
-        elif round_mode == RoundMode.HalfUp:
+        case .HalfUp:
             return floor(val + 0.5)
-        elif round_mode == RoundMode.Floor:
+        case .Floor:
             return floor(val)
-        elif round_mode == RoundMode.Ceil:
+        case .Ceil:
             return ceil(val)
-        else:
+        case _:
             comptime assert False, "round_mode not implemented"
 
     def nn_interpolate[

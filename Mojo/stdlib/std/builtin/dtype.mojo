@@ -719,13 +719,14 @@ struct DType(
         comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
-        comptime if dtype == DType.float4_e2m1fn:
+        comptime __match dtype:
+        case DType.float4_e2m1fn:
             return 1
-        elif dtype == DType.float6_e2m3fn:
+        case DType.float6_e2m3fn:
             return 3
-        elif dtype == DType.float6_e3m2fn:
+        case DType.float6_e3m2fn:
             return 2
-        else:
+        case _:
             return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
@@ -975,17 +976,18 @@ def _int_type_of_width[width: Int]() -> DType:
         256,
     ), "width must be either 8, 16, 32, 64, 128, or 256"
 
-    comptime if width == 8:
+    comptime __match width:
+    case 8:
         return DType.int8
-    elif width == 16:
+    case 16:
         return DType.int16
-    elif width == 32:
+    case 32:
         return DType.int32
-    elif width == 64:
+    case 64:
         return DType.int64
-    elif width == 128:
+    case 128:
         return DType.int128
-    else:
+    case _:
         return DType.int256
 
 

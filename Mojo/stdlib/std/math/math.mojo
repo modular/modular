@@ -804,13 +804,14 @@ def exp_approx_f32[W: Int](x: SIMD[.float32, W]) -> SIMD[.float32, W]:
 def _frexp_mask1[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
-    comptime if dtype == .float16:
+    comptime __match dtype:
+    case .float16:
         return 0x7C00
-    elif dtype == .bfloat16:
+    case .bfloat16:
         return 0x7F80
-    elif dtype == .float32:
+    case .float32:
         return 0x7F800000
-    else:
+    case _:
         comptime assert dtype == .float64, "unhandled fp type"
         return 0x7FF0000000000000
 
@@ -819,13 +820,14 @@ def _frexp_mask1[
 def _frexp_mask2[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
-    comptime if dtype == .float16:
+    comptime __match dtype:
+    case .float16:
         return 0x3800
-    elif dtype == .bfloat16:
+    case .bfloat16:
         return 0x3F00
-    elif dtype == .float32:
+    case .float32:
         return 0x3F000000
-    else:
+    case _:
         comptime assert dtype == .float64, "unhandled fp type"
         return 0x3FE0000000000000
 
@@ -3447,13 +3449,14 @@ def _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
 
 @inline(.always)
 def _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
-    comptime if dtype == .float16:
+    comptime __match dtype:
+    case .float16:
         return "f16"
-    elif dtype == .float32:
+    case .float32:
         return "f32"
-    elif dtype == .float64:
+    case .float64:
         return "f64"
-    else:
+    case _:
         comptime assert False, "Extend to support additional dtypes."
 
 

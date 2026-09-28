@@ -4391,57 +4391,58 @@ def _scalar_repr_alias[dtype: DType]() -> Optional[StaticString]:
         The scalar type alias name for `dtype`, or `None` when the `dtype` has
         no scalar alias.
     """
-    comptime if dtype == DType.int:
+    comptime __match dtype:
+    case .int:
         return StaticString("Int")
-    elif dtype == DType.uint:
+    case .uint:
         return StaticString("UInt")
-    elif dtype == DType.int8:
+    case .int8:
         return StaticString("Int8")
-    elif dtype == DType.uint8:
+    case .uint8:
         return StaticString("UInt8")
-    elif dtype == DType.int16:
+    case .int16:
         return StaticString("Int16")
-    elif dtype == DType.uint16:
+    case .uint16:
         return StaticString("UInt16")
-    elif dtype == DType.int32:
+    case .int32:
         return StaticString("Int32")
-    elif dtype == DType.uint32:
+    case .uint32:
         return StaticString("UInt32")
-    elif dtype == DType.int64:
+    case .int64:
         return StaticString("Int64")
-    elif dtype == DType.uint64:
+    case .uint64:
         return StaticString("UInt64")
-    elif dtype == DType.int128:
+    case .int128:
         return StaticString("Int128")
-    elif dtype == DType.uint128:
+    case .uint128:
         return StaticString("UInt128")
-    elif dtype == DType.int256:
+    case .int256:
         return StaticString("Int256")
-    elif dtype == DType.uint256:
+    case .uint256:
         return StaticString("UInt256")
-    elif dtype == DType.float4_e2m1fn:
+    case .float4_e2m1fn:
         return StaticString("Float4_e2m1fn")
-    elif dtype == DType.float8_e5m2:
+    case .float8_e5m2:
         return StaticString("Float8_e5m2")
-    elif dtype == DType.float8_e5m2fnuz:
+    case .float8_e5m2fnuz:
         return StaticString("Float8_e5m2fnuz")
-    elif dtype == DType.float8_e4m3fn:
+    case .float8_e4m3fn:
         return StaticString("Float8_e4m3fn")
-    elif dtype == DType.float8_e4m3fnuz:
+    case .float8_e4m3fnuz:
         return StaticString("Float8_e4m3fnuz")
-    elif dtype == DType.float8_e8m0fnu:
+    case .float8_e8m0fnu:
         return StaticString("Float8_e8m0fnu")
-    elif dtype == DType.bfloat16:
+    case .bfloat16:
         return StaticString("BFloat16")
-    elif dtype == DType.float16:
+    case .float16:
         return StaticString("Float16")
-    elif dtype == DType.float32:
+    case .float32:
         return StaticString("Float32")
-    elif dtype == DType.float64:
+    case .float64:
         return StaticString("Float64")
-    elif dtype == DType.bool or dtype == DType.float8_e3m4:
+    case .bool | .float8_e3m4:
         return None
-    else:
+    case _:
         comptime assert False, (
             "unhandled dtype in `_scalar_repr_alias`: add a `Scalar` alias"
             " branch or an explicit `None` case"
