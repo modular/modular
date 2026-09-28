@@ -194,12 +194,28 @@ The following variables control memory-allocation debugging:
 |--------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------|----------------------|
 | `MODULAR_DEBUG_DEVICE_ALLOCATOR`                       | Comma-separated allocator debugging modes. `poison-all` fills every memory-manager allocation with a NaN-pattern byte; the `uninitialized-read-check` debug option automatically enables `uninitialized-poison` | Comma-separated modes | None                 |
 | `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN` | Byte pattern written by the `poison-all` allocator mode                                                                                                                                                         | Byte (0–255)          | Built-in NaN pattern |
+| `MODULAR_DEBUG_ALLOC_POISON_SELECT`                    | Which allocations the `uninitialized-poison` allocator mode poisons; it zero-fills the rest. See [Select allocations to poison](#select-allocations-to-poison)                                                  | Selection string      | `all`                |
+| `MODULAR_DEBUG_ALLOC_POISON_SELECT_FILE`               | File holding a selection string, checked on every allocation. Each change resets allocation ordinals to 0. Overrides `MODULAR_DEBUG_ALLOC_POISON_SELECT`                                                        | Path                  | Unset                |
 
 The following variable overrides the GPU compiler MAX uses:
 
 | Variable                       | Description                                                                                                                            | Values | Default |
 |--------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|--------|---------|
 | `MODULAR_NVPTX_COMPILER_PATH`  | Path to a custom NVIDIA `ptxas` binary, useful as an escape hatch when the installed NVIDIA driver is too old for the bundled compiler | Path   | Unset   |
+
+### Select allocations to poison
+
+`MODULAR_DEBUG_ALLOC_POISON_SELECT` narrows which allocations the
+`uninitialized-poison` mode poisons, so you can bisect for the one an
+uninitialized read comes from. Unselected allocations are zero-filled, so both
+sides of a comparison stay deterministic. Set it to `all` (the default),
+`none`, `sync-only` (which keeps the per-allocation device synchronization but
+writes nothing, to tell a race apart from an uninitialized read), or to
+`dtype=si64,ui32`, `ord=100-2000`, or both joined by `&`. Ordinals count
+allocations from 0, and MAX logs each one with its data type to stderr on a
+`DEBUG_ALLOC_POISON:` line. `MODULAR_DEBUG_ALLOC_POISON_SELECT_FILE` reads the
+selection from a file instead and resets ordinals whenever the file changes;
+replace the file with a rename so every change registers.
 
 ## Profiling
 
