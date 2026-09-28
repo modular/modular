@@ -55,6 +55,17 @@ build_test(
     ],
 )
 
+# MI355-only targets get their own guard: one target no platform shares with
+# the B200-only ones above would make `fuzz_build_test` incompatible
+# everywhere, and bazel would skip it instead of compiling the suite.
+build_test(
+    name = "fuzz_build_test_mi355",
+    tags = ["gpu"],
+    targets = [
+        ":fuzz_mla_prefill.mojo.test",
+    ],
+)
+
 # CPU unit test for the reusable fuzz harness (_fuzz.mojo): boundary-aware shape
 # generation and the value-distribution fills (incl. NaN/Inf injection). No GPU.
 mojo_test(
@@ -224,6 +235,47 @@ mojo_test(
     target_compatible_with = [
         "//:has_gpu",
         "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+# Target: AMD (gfx950) MLA prefill attention (`Attention.mla_prefill` via the
+# public `flare_mla_prefill` entry point) -- the DeepSeek/Kimi context-encoding
+# op. Targets a deferred-scale online-softmax defect (KERN-2826-class: a
+# causally-fully-masked tile reseeds its running max from a stale scaled
+# value and double-scales it, overflowing `exp2`). Runtime fuzz axis:
+# batch_size, num_keys (== seq_len), and a `spike_mode`/`mu_target_x10` pair
+# that engineers the scaled logit `mu = q.k/sqrt(192)` directly, since
+# ordinary-magnitude random fills never approach the ~94-99 (or <=-115)
+# threshold. num_heads is compile-time (`-D mla_num_heads`, default 16).
+# `contract` (finite in -> finite out) is the primary oracle. AMD-only: on
+# NVIDIA this entry point compiles to a different (SM100) kernel.
+mojo_test(
+    name = "fuzz_mla_prefill.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_mla_prefill.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_mla_prefill.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:mi355_gpu",
     ],
     deps = [
         "//max:internal_utils",

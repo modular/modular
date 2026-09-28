@@ -1,0 +1,13 @@
+{
+  "target": "mla_prefill",
+  "spec": {
+    "batch_size": 1,
+    "num_keys": 67,
+    "spike_mode": 1,
+    "mu_target_x10": 990
+  },
+  "verdict": "PASS",
+  "oracle": "contract",
+  "detail": "Scaled logit of 99.0 on the final tile's exposed rows. Before the unscaled running-max seed, 64 rows went non-finite.",
+  "findings": []
+}

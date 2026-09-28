@@ -1129,6 +1129,15 @@ def main() raises:
             # into the next head's output.
             test_decoding_k3_head_counts[1, 2, True](ctx, 1, 4096)
 
+        comptime if has_amd_gpu_accelerator():
+            # 12 heads needs BM rounded up to 16; 24 leaves a partial last
+            # head tile at BM=16.
+            test_decoding_k3_head_counts[2, 1, False](ctx, 1, 512)
+            test_decoding_k3_head_counts[1, 1, False](ctx, 1, 4096)
+            # AMD reaches its combine kernel through partitions, not warp
+            # split-K.
+            test_decoding_k3_head_counts[1, 4, False](ctx, 1, 4096)
+
         # test mla prefill
         test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)
         test_mla_prefill[4, DType.bfloat16, DType.bfloat16](ctx)

@@ -260,6 +260,131 @@ def extract_k_rope_for_batch[
 
 
 # ===-----------------------------------------------------------------------===#
+# Scattered (non-contiguous) paged blocks + LUT, single batch
+# ===-----------------------------------------------------------------------===#
+#
+# The other fill helpers give a sequence's pages the contiguous layout
+# `[b * num_pages_per_batch, (b+1) * num_pages_per_batch)`. A production
+# paged-KV allocator does not: pages land wherever a shared pool has a
+# free slot, so they can be non-contiguous, out of order, and interleaved
+# with other sequences' pages. These two helpers build that geometry: a
+# sequence's pages are placed in reversed order and spaced
+# `scatter_pool_factor` slots apart in a pool otherwise filled with
+# foreign random content. Single-batch (`batch_size == 1`) only.
+
+
+def fill_scattered_paged_blocks_and_lut[
+    kv_type: DType,
+](
+    blocks_host: MutPointer[Scalar[kv_type], _],
+    lookup_table_host: MutPointer[UInt32, _],
+    num_keys: Int,
+    page_size: Int,
+    max_pages_per_batch: Int,
+    head_size: Int = CACHE_DEPTH,
+    standard_deviation: Float64 = 0.5,
+    scatter_pool_factor: Int = 3,
+) raises:
+    """Fills a `num_pages_per_batch * scatter_pool_factor`-page pool with
+    foreign noise, then overwrites this sequence's real pages (in reversed
+    logical order, `scatter_pool_factor` slots apart) with fresh random
+    content, and points `lookup_table_host` at those physical slots.
+
+    ``blocks_host`` must be sized for ``num_pages_per_batch *
+    scatter_pool_factor`` pages (see ``paged_block_elems``);
+    ``lookup_table_host`` for ``max_pages_per_batch`` entries. Only
+    populates batch 0 — callers combine this with ``batch_size=1``.
+    """
+    if scatter_pool_factor < 2:
+        raise Error(
+            "fill_scattered_paged_blocks_and_lut requires"
+            " scatter_pool_factor >= 2 (an offset of 1 slot per page needs"
+            " room to stay in bounds); got "
+            + String(scatter_pool_factor)
+            + "."
+        )
+
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
+    var total_pages_padded = num_pages_per_batch * scatter_pool_factor
+
+    # Foreign filler: every physical slot gets independent random content,
+    # including the ones this sequence's real pages will land in (below).
+    fill_paged_blocks_uniform[kv_type](
+        blocks_host,
+        batch_size=1,
+        num_keys=total_pages_padded * page_size,
+        page_size=page_size,
+        head_size=head_size,
+        standard_deviation=standard_deviation,
+    )
+
+    var pstride = page_stride(page_size, head_size)
+    var tstride = token_stride(head_size)
+    var real_page_bf16 = alloc[BFloat16](page_size * head_size)
+    for p in range(num_pages_per_batch):
+        var phys = (num_pages_per_batch - 1 - p) * scatter_pool_factor + 1
+        randn[.bfloat16](
+            real_page_bf16,
+            page_size * head_size,
+            mean=0.0,
+            standard_deviation=standard_deviation,
+        )
+        var tokens_before_page = p * page_size
+        var valid_in_page = (
+            page_size if tokens_before_page + page_size
+            <= num_keys else (num_keys - tokens_before_page)
+        )
+        var base = phys * pstride
+        for tok in range(page_size):
+            for d in range(head_size):
+                blocks_host[base + tok * tstride + d] = real_page_bf16[
+                    tok * head_size + d
+                ].cast[kv_type]() if tok < valid_in_page else Scalar[kv_type](0)
+        lookup_table_host[p] = UInt32(phys)
+    for p in range(num_pages_per_batch, max_pages_per_batch):
+        lookup_table_host[p] = UInt32(0)
+    real_page_bf16.free()
+
+
+def extract_k_rope_for_batch_via_lut[
+    kv_type: DType,
+](
+    blocks_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
+    lookup_table_host: MutPointer[UInt32, _],
+    out_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
+    batch_idx: Int,
+    num_keys: Int,
+    page_size: Int,
+    max_pages_per_batch: Int,
+    head_size: Int = CACHE_DEPTH,
+):
+    """Same contract as ``extract_k_rope_for_batch``, but follows
+    ``lookup_table_host`` for each page's physical location instead of
+    assuming the contiguous ``[b * num_pages_per_batch, ...)`` layout --
+    correct for both the contiguous and the scattered fill above.
+    """
+    var rope_offset_in_token = head_size - ROPE_DEPTH
+    var pstride = page_stride(page_size, head_size)
+    var tstride = token_stride(head_size)
+
+    for tok in range(num_keys):
+        var page_idx = tok // page_size
+        var tok_in_page = tok % page_size
+        var physical_page = Int(
+            lookup_table_host[batch_idx * max_pages_per_batch + page_idx]
+        )
+
+        var src_offset = (
+            physical_page * pstride
+            + tok_in_page * tstride
+            + rope_offset_in_token
+        )
+        var dst_offset = tok * ROPE_DEPTH
+        for d in range(ROPE_DEPTH):
+            out_host[dst_offset + d] = blocks_host[src_offset + d]
+
+
+# ===-----------------------------------------------------------------------===#
 # Shared plain-bf16 `flare_mla_prefill` driver (generic + vhead tests)
 # ===-----------------------------------------------------------------------===#
 
@@ -276,6 +401,10 @@ def run_test_paged_prefill[
     batch_size: Int = 1,
     diagnostic_bands: Bool = False,
     cache_length: Int = 0,  # pre-existing KV prefix per batch (start_pos)
+    # 1 (default) = the contiguous layout every call site used before this
+    # parameter existed. >1 = scatter pages across a `scatter_pool_factor`x
+    # pool (`fill_scattered_paged_blocks_and_lut`); requires batch_size=1.
+    scatter_pool_factor: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     """Runs one paged-KV MLA-prefill shape and asserts the output matches
     naive MHA.
@@ -391,8 +520,19 @@ def run_test_paged_prefill[
     # ``MLAPositionSummary.get_num_keys_and_start_pos`` in
     # ``mla_prefill_utils.mojo``.
     # ------------------------------------------------------------------
+    if scatter_pool_factor != 1 and batch_size != 1:
+        raise Error(
+            "run_test_paged_prefill: scatter_pool_factor > 1 requires"
+            " batch_size == 1 (fill_scattered_paged_blocks_and_lut is"
+            " single-batch only)."
+        )
+
     var num_pages_per_batch = ceildiv(num_keys, page_size)
-    var total_pages = batch_size * num_pages_per_batch
+    var total_pages: Int
+    comptime if scatter_pool_factor == 1:
+        total_pages = batch_size * num_pages_per_batch
+    else:
+        total_pages = num_pages_per_batch * scatter_pool_factor
     var max_pages_per_batch = lut_max_pages_per_batch(num_keys, page_size)
     var lut_size = batch_size * max_pages_per_batch
     var block_elems = paged_block_elems(total_pages, page_size, CACHE_DEPTH)
@@ -401,9 +541,19 @@ def run_test_paged_prefill[
     var cache_lengths_host = alloc[UInt32](batch_size)
     var lookup_table_host = alloc[UInt32](lut_size)
 
-    fill_paged_blocks_uniform[k_rope_type](
-        blocks_host, batch_size, num_keys, page_size
-    )
+    comptime if scatter_pool_factor == 1:
+        fill_paged_blocks_uniform[k_rope_type](
+            blocks_host, batch_size, num_keys, page_size
+        )
+    else:
+        fill_scattered_paged_blocks_and_lut[k_rope_type](
+            blocks_host,
+            lookup_table_host,
+            num_keys,
+            page_size,
+            max_pages_per_batch,
+            scatter_pool_factor=scatter_pool_factor,
+        )
     # The naive-MHA reference (Step 9) places the ``seq_len`` queries at the
     # TAIL of the ``num_keys``-token sequence: query ``y`` attends keys
     # ``[0, y + (num_keys - seq_len)]`` under ``CausalMask`` (its start_pos is
@@ -428,13 +578,16 @@ def run_test_paged_prefill[
         )
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_length)
-    fill_uniform_lookup_table(
-        lookup_table_host,
-        batch_size,
-        num_keys,
-        page_size,
-        max_pages_per_batch,
-    )
+    # Scattered mode already filled the LUT above, alongside the pages
+    # themselves (the two are computed together there).
+    comptime if scatter_pool_factor == 1:
+        fill_uniform_lookup_table(
+            lookup_table_host,
+            batch_size,
+            num_keys,
+            page_size,
+            max_pages_per_batch,
+        )
 
     # ------------------------------------------------------------------
     # Step 4: Device buffers + copy.
@@ -587,13 +740,24 @@ def run_test_paged_prefill[
     var k_rope_one_batch = alloc[Scalar[k_rope_type]](num_keys * ROPE_DEPTH)
 
     for b in range(batch_size):
-        extract_k_rope_for_batch[k_rope_type](
-            blocks_host.as_unsafe_any_origin(),
-            k_rope_one_batch.as_unsafe_any_origin(),
-            b,
-            num_keys,
-            page_size,
-        )
+        comptime if scatter_pool_factor == 1:
+            extract_k_rope_for_batch[k_rope_type](
+                blocks_host.as_unsafe_any_origin(),
+                k_rope_one_batch.as_unsafe_any_origin(),
+                b,
+                num_keys,
+                page_size,
+            )
+        else:
+            extract_k_rope_for_batch_via_lut[k_rope_type](
+                blocks_host.as_unsafe_any_origin(),
+                lookup_table_host,
+                k_rope_one_batch.as_unsafe_any_origin(),
+                b,
+                num_keys,
+                page_size,
+                max_pages_per_batch,
+            )
         for s in range(num_keys):
             for h in range(num_heads):
                 var dst_base = (

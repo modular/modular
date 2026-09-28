@@ -55,6 +55,8 @@ python3 max/kernels/test/gpu/fuzz/fuzz.py --replay-corpus --timeout 30
 
 Confirmed failures and their shrunk specs are recorded under `corpus/<target>/`
 with their expected verdict, and the replay gate re-runs them deterministically.
+Entries whose target can't build on the local GPU (for example a B200-only
+target on MI355) are reported as `SKIP` rather than failing the replay.
 
 The orchestrator only writes an entry for a non-PASS verdict, so a `_pass_`
 entry is always hand-written: an anchor asserting a representative boundary

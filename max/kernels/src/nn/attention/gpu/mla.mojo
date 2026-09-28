@@ -1394,9 +1394,11 @@ def flare_mla_decoding_dispatch[
             comptime preferred_BM_default = (
                 16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
             )
+            # Round up, not clamp: the kernel asserts `BM % 16 == 0`, so e.g.
+            # 12 heads per device must use BM=16.
             comptime BM_default = preferred_BM_default if (
                 preferred_BM_default <= num_heads
-            ) else num_heads
+            ) else align_up(num_heads, 16)
             launch_with_BM[BM_default]()
 
 
@@ -4776,6 +4778,17 @@ def _k_cache_to_buffer[
         comptime assert rank == 2, "rank should be equal to 2"
 
         var global_token_idx = idx[0]
+
+        # KERN-3412: `length` can exceed the plan's real total. Past it, a
+        # gather would read the shared null page through the LUT sentinel,
+        # so write zero instead; that also keeps these rows finite for the
+        # up-projection matmuls without a caller-side memset.
+        var real_total_rows = Int(
+            buffer_row_offsets[buffer_row_offsets.num_elements() - 1]
+        )
+        if global_token_idx >= real_total_rows:
+            buffer.store_linear(idx, SIMD[dtype, width](0))
+            return
 
         var batch_idx: Int = get_batch_from_row_offsets(
             buffer_row_offsets, global_token_idx

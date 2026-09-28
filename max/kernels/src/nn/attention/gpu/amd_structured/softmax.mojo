@@ -165,11 +165,12 @@ struct Softmax[
 
     @inline(.always)
     def _reduce_rows[
-        is_max: Bool
+        is_max: Bool, unscale_seed: Bool = False
     ](
         self,
         score: TileTensor[Self.dtype, ...],
         warp_scratch: TileTensor[mut=True, Self.dtype, ...],
+        inv_scale: Scalar[Self.dtype] = 1,
     ):
         """Reduce score rows to per-thread scalars (max or sum).
 
@@ -179,10 +180,15 @@ struct Softmax[
 
         Parameters:
             is_max: True for rowwise max, False for rowwise sum.
+            unscale_seed: Divide the carried-in row max by the score scale
+                before seeding, for callers whose `score` is unscaled
+                (defaults to False).
 
         Args:
             score: Score tile in registers.
             warp_scratch: Shared memory scratch for cross-warp reduce.
+            inv_scale: Reciprocal of the score scale, applied to the seed
+                when `unscale_seed` is set (defaults to 1).
         """
         comptime assert score.flat_rank == 2
         comptime assert warp_scratch.flat_rank == 2
@@ -190,12 +196,21 @@ struct Softmax[
         comptime assert score_reg_tile.flat_rank == 2
 
         # Init accumulator: copy current max (for max) or zero (for sum).
+        # `rowmax_tensor` stays scaled because split-K combine reads it back
+        # verbatim, so deferred-scale callers (raw `score`) unscale the seed
+        # here. A scaled seed gets scaled again by `scale_rowmax` on a fully
+        # masked tile and overflows `exp2` (KERN-2826).
         comptime for col_tile in range(Self.num_colwise_tiles):
             comptime for row in range(Self.frag_num_rows):
                 comptime if is_max:
-                    self.score_frag_rowmax[col_tile, row] = self.rowmax_tensor[
-                        col_tile, row
-                    ]
+                    comptime if unscale_seed:
+                        self.score_frag_rowmax[col_tile, row] = (
+                            self.rowmax_tensor[col_tile, row] * inv_scale
+                        )
+                    else:
+                        self.score_frag_rowmax[
+                            col_tile, row
+                        ] = self.rowmax_tensor[col_tile, row]
                 else:
                     self.score_frag_rowsum[col_tile, row] = 0
 
@@ -311,12 +326,17 @@ struct Softmax[
                         )
 
     @inline(.always)
-    def calculate_qk_max(
+    def calculate_qk_max[
+        unscale_seed: Bool = False
+    ](
         self,
         score: TileTensor[Self.dtype, ...],
         warp_scratch: TileTensor[mut=True, Self.dtype, ...],
+        inv_scale: Scalar[Self.dtype] = 1,
     ):
-        self._reduce_rows[is_max=True](score, warp_scratch)
+        self._reduce_rows[is_max=True, unscale_seed=unscale_seed](
+            score, warp_scratch, inv_scale
+        )
 
     @inline(.always)
     def calculate_qk_sum(

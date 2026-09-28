@@ -533,6 +533,9 @@ _FILECHECK_TESTS = [
             "test_mla_prefill_blockscale_large_cache.mojo",
             "test_mla_prefill_per_token_scale_paged.mojo",
             "test_mla_prefill_vhead_repro.mojo",
+            "test_mla_prefill_amd_cached_prefix.mojo",
+            "test_mla_prefill_amd_plan_gather.mojo",
+            "test_mla_prefill_amd_gather_sentinel_guard.mojo",
             "_paged_prefill_test_utils.mojo",
             # SM100 FA4 1Q split-K combine test: fully covered by the explicit
             # b200-gated (mask, depth, P) registrations below. Exclude the default
@@ -1486,3 +1489,105 @@ _MLA_PREFILL_PAGED_VARIANTS = [
     for (src, label, page_sizes, gpu_memory) in _MLA_PREFILL_PAGED_VARIANTS
     for page_size in page_sizes
 ]
+
+# AMD/gfx950 counterpart to the paged-prefill variants above: drives the same
+# `run_test_paged_prefill` helper (`flare_mla_prefill` against a paged
+# `KVCacheT` for K_rope), whose dispatch already routes to
+# `Attention[...].mla_prefill` on AMD -- but at a `cache_length > 0` cached-
+# prefix geometry the B200-only variants above never exercise. MI355-only.
+_MLA_PREFILL_PAGED_AMD_PAGE_SIZES = [
+    "64",
+    "128",
+]
+
+[
+    mojo_test(
+        name = "test_mla_prefill_amd_cached_prefix_ps{}.mojo.test".format(page_size),
+        size = "large",
+        srcs = [
+            "_paged_prefill_test_utils.mojo",
+            "test_mla_prefill_amd_cached_prefix.mojo",
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        main = "test_mla_prefill_amd_cached_prefix.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:mi355_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for page_size in _MLA_PREFILL_PAGED_AMD_PAGE_SIZES
+]
+
+# AMD/gfx950 plan + gather/decompress stages -- the two stages that precede
+# the attention kernel in production and that `test_mla_prefill_amd_cached_
+# prefix.mojo` never reaches (its K-nope/V are randn-filled flat buffers,
+# not gathered from the paged cache). MI355-only.
+mojo_test(
+    name = "test_mla_prefill_amd_plan_gather.mojo.test",
+    size = "large",
+    srcs = [
+        "_paged_prefill_test_utils.mojo",
+        "test_mla_prefill_amd_plan_gather.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "test_mla_prefill_amd_plan_gather.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# KERN-3412: `_k_cache_to_buffer`'s guard against gathering rows past the
+# plan's real total (the out-of-range case, as opposed to the in-range
+# page-alignment tail the sibling plan+gather test above covers). MI355-only
+# for the same reason as that sibling.
+mojo_test(
+    name = "test_mla_prefill_amd_gather_sentinel_guard.mojo.test",
+    size = "large",
+    srcs = [
+        "_paged_prefill_test_utils.mojo",
+        "test_mla_prefill_amd_gather_sentinel_guard.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "test_mla_prefill_amd_gather_sentinel_guard.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)

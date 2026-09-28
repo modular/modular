@@ -348,6 +348,20 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="memcheck",
     ),
+    "mla_prefill": FuzzTarget(
+        name="mla_prefill",
+        bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_prefill.mojo.test"),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_mla_prefill.mojo.test"
+        ),
+        description=(
+            "AMD gfx950 Attention.mla_prefill (via flare_mla_prefill):"
+            " deferred-scale online-softmax defect (KERN-2826-class) where a"
+            " fully-masked tile reseeds its running max and double-scales it,"
+            " overflowing exp2 (contract)"
+        ),
+        default_oracle="contract",
+    ),
     "fused_rope_rmsnorm": FuzzTarget(
         name="fused_rope_rmsnorm",
         bazel_target=(
@@ -783,6 +797,37 @@ def build_target(root: Path, target: FuzzTarget, line_info: bool) -> None:
     subprocess.run(cmd, cwd=root, check=True)
 
 
+def incompatible_targets(root: Path, targets: list[FuzzTarget]) -> set[str]:
+    """Returns the names of `targets` that bazel cannot build on this machine.
+
+    Asks bazel rather than mirroring each target's `target_compatible_with`,
+    since several targets are gated to a single GPU (B200 or MI355).
+    """
+    by_label = {t.bazel_target.lstrip("@"): t.name for t in targets}
+    out = subprocess.run(
+        [
+            "./bazelw",
+            "cquery",
+            f"set({' '.join(by_label)})",
+            "--output=starlark",
+            "--starlark:expr=str(target.label) + ' ' + str("
+            "'IncompatiblePlatformProvider' in (providers(target) or {}))",
+            "--curses=no",
+            "--noshow_progress",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    incompatible: set[str] = set()
+    for line in out.stdout.splitlines():
+        label, _, flag = line.rpartition(" ")
+        if flag == "True":
+            incompatible.add(by_label[label.lstrip("@")])
+    return incompatible
+
+
 def list_specs(
     root: Path, target: FuzzTarget, seed: int, budget: int
 ) -> list[dict[str, int]]:
@@ -1033,7 +1078,9 @@ def replay_corpus(
     fixed bug whose corpus entry needs updating, or a broken oracle), else 0.
 
     This is the deterministic, fast gate: same seed/spec -> same verdict.
-    Entries whose target package is absent from the checkout are skipped.
+    Entries whose target package is absent from the checkout, or whose target
+    cannot build on this machine's GPU, are skipped; an explicitly requested
+    `only_target` that cannot build on this machine returns 1.
     """
     loaded: list[tuple[Path, dict[str, object]]] = []
     targets_needed: set[str] = set()
@@ -1062,6 +1109,17 @@ def replay_corpus(
     if not loaded:
         print("[replay] no corpus entries found")
         return 0
+
+    incompatible = incompatible_targets(
+        root, [_TARGETS[t] for t in targets_needed]
+    )
+    for tname in sorted(incompatible):
+        print(f"[replay] SKIP     {tname}: incompatible with this machine")
+    if only_target and incompatible:
+        return 1
+    skipped += sum(1 for _, d in loaded if d["target"] in incompatible)
+    loaded = [(p, d) for p, d in loaded if d["target"] not in incompatible]
+    targets_needed -= incompatible
 
     if do_build:
         for tname in sorted(targets_needed):
