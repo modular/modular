@@ -22,16 +22,12 @@ from std.sys import (
     get_defined_int,
     simd_width_of,
     size_of,
-    has_nvidia_gpu_accelerator,
 )
 
-from max.algorithm import elementwise
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import B200
 from layout import (
-    Coord,
     DefaultEngine,
     Idx,
     RowMajorLayout,
@@ -39,10 +35,9 @@ from layout import (
     TensorLayout,
     TileTensor,
 )
-from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.collections import OptionalReg
 
 from .....utils import (
@@ -675,7 +670,7 @@ def matmul_dispatch_sm100_fp8[
     var m = Int(c.dim[0]())
 
     if m <= 128:
-        var status = heuristic_and_outliers_dispatch[
+        var status = sm100_heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -698,7 +693,7 @@ def matmul_dispatch_sm100_fp8[
         comptime default_config = default_matmul_config_bf16_fp8[
             a_type, b_type, c_type, transpose_b
         ]()
-        _matmul_dispatch_sm100[
+        blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=default_config,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -716,7 +711,7 @@ def matmul_dispatch_sm100_fp8[
             block_swizzle_size=entry.block_swizzle_size,
         )
 
-        return _matmul_dispatch_sm100[
+        return blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -779,7 +774,7 @@ def matmul_dispatch_sm100_fp8[
     # mma_shape = umma_shape,
     # cluster_shape = cluster_shape,
     # )
-    # _matmul_dispatch_sm100[
+    # blackwell_matmul_tma_umma_warp_specialized[
     # transpose_b = transpose_b,
     # config = config,
     # elementwise_lambda_fn = elementwise_lambda_fn,
@@ -977,111 +972,6 @@ def select_and_launch_sm100_config[
     return DISPATCH_MISS
 
 
-def heuristic_and_outliers_dispatch[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-    has_epilogue_tensor: Bool = False,
-    epilogue_is_1d: Bool = False,
-    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
-](
-    c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[a_type, ...],
-    b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-            Engine=EpilogueEngine,
-        ]
-    ] = None,
-) raises -> Int:
-    """Dispatches an SM100 matmul through the heuristic outlier config set.
-
-    Wraps `select_and_launch_sm100_config` with a launch callback that invokes
-    `_matmul_dispatch_sm100` (the epilogue-aware SM100 tile GEMM launcher) for
-    each selected config.
-
-    Parameters:
-        c_type: Output element type (inferred).
-        a_type: Element type of the LHS operand `a` (inferred).
-        b_type: Element type of the RHS operand `b` (inferred).
-        transpose_b: Whether `b` is stored transposed (defaults to
-            `True`).
-        elementwise_lambda_fn: Optional epilogue applied to each output
-            element (defaults to `None`).
-        elementwise_compute_lambda_fn: Optional compute epilogue lambda,
-            for example a static scale (defaults to `None`).
-        pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
-        has_epilogue_tensor: Whether an epilogue tensor is supplied for
-            the TMA epilogue load path (defaults to `False`).
-        epilogue_is_1d: Whether the epilogue tensor is treated as
-            1D rather than row-major 2D (defaults to `False`).
-        EpilogueEngine: Engine of the epilogue tensor (defaults to
-            `DefaultEngine[element_width=1]`).
-    Args:
-        c: Output matrix as a rank-2 mutable `TileTensor` of shape
-            `[M, N]`.
-        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
-        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
-            or `[N, K]` when `transpose_b` is set.
-        ctx: Device context used to enqueue the selected kernel.
-        epilogue_tensor: Optional row-major epilogue tensor of the
-            same dtype as `c`, consumed by the TMA epilogue load path
-            (defaults to `None`).
-    """
-
-    @inline(.always)
-    def launch_callback[
-        config: MatmulConfig[...]
-    ](
-        c_tensor: TileTensor[mut=True, c_type, ...],
-        a_tensor: TileTensor[a_type, ...],
-        b_tensor: TileTensor[b_type, ...],
-        dispatch_ctx: DeviceContext,
-        dispatch_epilogue_tensor: OptionalReg[
-            TileTensor[
-                c_type,
-                RowMajorLayout[Int64, Int64],
-                ImmutAnyOrigin,
-                Engine=EpilogueEngine,
-            ]
-        ],
-    ) raises:
-        _matmul_dispatch_sm100[
-            transpose_b,
-            rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](config),
-            elementwise_lambda_fn,
-            elementwise_compute_lambda_fn,
-            pdl_level,
-        ](
-            c_tensor,
-            a_tensor,
-            b_tensor,
-            dispatch_ctx,
-            epilogue_tensor=dispatch_epilogue_tensor,
-        )
-
-    return select_and_launch_sm100_config[
-        transpose_b,
-        elementwise_lambda_fn,
-        elementwise_compute_lambda_fn,
-        pdl_level,
-        has_epilogue_tensor=has_epilogue_tensor,
-        epilogue_is_1d=epilogue_is_1d,
-    ](launch_callback, c, a, b, ctx, epilogue_tensor)
-
-
 # NOTE:
 # 1. SM100 matmul supports compute lambdas, so we should use normal and
 #    compute lambdas.
@@ -1202,7 +1092,7 @@ def matmul_dispatch_sm100_bf16[
     comptime default_config = default_matmul_config_bf16_fp8[
         a_type, b_type, c_type, transpose_b
     ]()
-    _matmul_dispatch_sm100[
+    blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=default_config,
         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1348,170 +1238,6 @@ def _vendor_blas_matmul_sm100[
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )
         return
-
-
-def _matmul_dispatch_sm100[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
-](
-    c_tensor: TileTensor[mut=True, c_type, ...],
-    a_tensor: TileTensor[a_type, ...],
-    b_tensor: TileTensor[b_type, ...],
-    ctx: DeviceContext,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-            Engine=EpilogueEngine,
-        ]
-    ] = None,
-) raises:
-    _matmul_dispatch_sm100[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        pdl_level=pdl_level,
-    ](
-        NullableTileTensor(c_tensor),
-        a_tensor,
-        b_tensor,
-        ctx,
-        epilogue_tensor=epilogue_tensor,
-    )
-
-
-def _matmul_dispatch_sm100[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-    EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
-](
-    c_tensor: NullableTileTensor[mut=True, c_type, ...],
-    a_tensor: TileTensor[a_type, ...],
-    b_tensor: TileTensor[b_type, ...],
-    ctx: DeviceContext,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-            Engine=EpilogueEngine,
-        ]
-    ] = None,
-) raises:
-    """Our sm100 matmul kernel still does not support fusion of elementwise
-    operations. This is a temporary implementation that uses our sm100 matmul
-    kernel and dispatch a separate epilogue kernel to apply the elementwise
-    operations if there is any.
-    """
-
-    comptime assert (
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
-    ), "Either the epilogue lambda or the compute lambda can be used"
-
-    comptime if not elementwise_lambda_fn:
-        if not c_tensor.ptr:
-            raise "c must be allocated!"
-
-        blackwell_matmul_tma_umma_warp_specialized[
-            transpose_b=transpose_b,
-            config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](
-            c_tensor.value(),
-            a_tensor,
-            b_tensor,
-            ctx,
-            epilogue_tensor=epilogue_tensor,
-        )
-        return
-
-    else:
-        comptime epilogue = elementwise_lambda_fn.value()
-        # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
-        # arch support 32B load / store to global memory, see KERN - 2037.
-        comptime use_32b_simd = (
-            has_nvidia_gpu_accelerator()
-            and ctx.default_device_info.compute >= B200.compute
-        )
-        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target=get_gpu_target()]()
-        )
-
-        # If c is already allocated, we can just use the sm100 matmul and
-        # apply the epilogue.
-        if c_tensor.ptr:
-            var m = Int(c_tensor.dim[0]())
-            var n = Int(c_tensor.dim[1]())
-            var c_tt = c_tensor.value()
-
-            def epilogue_wrapper[
-                simd_width: Int, alignment: Int = 1
-            ](idx: Coord) {var}:
-                comptime assert c_tt.flat_rank >= 2
-                var c_val = c_tt.load[
-                    width=simd_width,
-                    # load_alignment is in bytes, lambda alignment is in elements
-                    alignment=alignment * size_of[c_type](),
-                ](idx)
-                epilogue[c_type, simd_width, alignment=alignment](
-                    IndexList[2](Int(idx[0].value()), Int(idx[1].value())),
-                    c_val,
-                )
-
-            blackwell_matmul_tma_umma_warp_specialized[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](
-                c_tt,
-                a_tensor,
-                b_tensor,
-                ctx,
-                epilogue_tensor=epilogue_tensor,
-            )
-
-            elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
-            return
-
-        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
-            c_tensor.num_elements()
-        )
-
-        var c_tmp = TileTensor(tmp_device_buffer, c_tensor.layout)
-
-        _matmul_dispatch_sm100[
-            transpose_b=transpose_b,
-            config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c_tmp, a_tensor, b_tensor, ctx)
-
-        _ = tmp_device_buffer^
 
 
 def _sm100_batched_outlier_configs[
@@ -1706,7 +1432,7 @@ def sm100_heuristic_and_outliers_dispatch[
     """Dispatches an SM100 matmul through the heuristic outlier config set.
 
     Wraps `select_and_launch_sm100_config` with a launch callback that invokes
-    `blackwell_matmul_tma_umaa_warp_specialized` directly, passing through the
+    `blackwell_matmul_tma_umma_warp_specialized` directly, passing through the
     elementwise and compute epilogue lambdas.
 
     Parameters:

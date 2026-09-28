@@ -21,8 +21,9 @@
 # vendor cuBLASLt.
 #
 #   * FP8 (a=b=float8_e4m3fn, c=bfloat16, static-scaled): the fp8 dispatcher's
-#     `heuristic_and_outliers_dispatch` (bf16 output) has no never-miss, so the
-#     band MISSed -> vendor. Fixed in `matmul_dispatch_sm100_fp8`.
+#     `sm100_heuristic_and_outliers_dispatch` (bf16 output) has no
+#     never-miss, so the band MISSed -> vendor. Fixed in
+#     `matmul_dispatch_sm100_fp8`.
 #   * BF16 (a=b=c=bfloat16): `select_and_launch_sm100_config`'s never-miss is
 #     fp8-OUTPUT-only, so `matmul_dispatch_sm100_bf16` MISSed -> vendor for the
 #     same band. Fixed in `matmul_dispatch_sm100_bf16`.
