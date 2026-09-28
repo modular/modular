@@ -888,8 +888,10 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     for (ConstraintAttr bodyConstraint : srcParamList.getBodyConstraints()) {
       TypedAttr remappedProp =
           evaluator.getReboundAttribute(bodyConstraint.getProposition());
-      paramList.emittedBodyConstraints.push_back(ConstraintAttr::get(
-          remappedProp, bodyConstraint.getLoc(), bodyConstraint.getMessage()));
+      auto remapped = ConstraintAttr::get(remappedProp, bodyConstraint.getLoc(),
+                                          bodyConstraint.getMessage());
+      paramList.emittedBodyConstraints.push_back(remapped);
+      paramList.declScope.insertKnownAssumptions({remapped});
     }
   };
 
