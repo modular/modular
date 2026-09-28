@@ -348,6 +348,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scaled_output.address_space_cast[.GENERIC](),
                 scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
+                0.0,
             )
 
             ctx.enqueue_function(
@@ -380,8 +381,16 @@ def quantize_dynamic_scaled_fp8[
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
+    amax_floor: Float32 = 0.0,
 ) raises:
-    """TileTensor primary implementation of dynamic scaled FP8 quantization."""
+    """TileTensor primary implementation of dynamic scaled FP8 quantization.
+
+    `amax_floor` lower-bounds a group's max-abs before the scale is derived,
+    which is how QAT recipes such as DeepSeek-V4's `act_quant` (floor 1e-4)
+    keep near-zero activation groups on the scale grid the checkpoint was
+    trained against. It is only honored on the `float8_e8m0fnu` scale path;
+    `0` (the default) leaves the scale unchanged.
+    """
     comptime assert scaled_output.rank == 2, "expected rank-2 output"
     comptime assert scales.rank == 2, "expected rank-2 scales"
 
@@ -451,6 +460,7 @@ def quantize_dynamic_scaled_fp8[
                 scaled_output.address_space_cast[.GENERIC](),
                 scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
+                amax_floor,
             )
 
             ctx.enqueue_function(
@@ -498,6 +508,7 @@ struct _QuantizeFp8Kernel[
         linear_idx_type=Self.scales_idx_type,
     ]
     var scale_ub: Scalar[Self.scales_type]
+    var amax_floor: Float32
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -509,6 +520,7 @@ struct _QuantizeFp8Kernel[
         var output = TileTensor(self.output.ptr, self.output.layout)
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
         var scale_ub = self.scale_ub
+        var amax_floor = self.amax_floor
         comptime use_warp_tiling = Self.group_size <= Self.num_threads * Self.simd_width
         comptime fp8_max = Scalar[Self.out_type].MAX_FINITE
         comptime accum_type = get_accum_type[Self.in_type]()
@@ -547,7 +559,8 @@ struct _QuantizeFp8Kernel[
 
             comptime if Self.scales_type == .float8_e8m0fnu:
                 scale_factor = max(
-                    group_max / fp8_max.cast[accum_type](),
+                    max(group_max, amax_floor.cast[accum_type]())
+                    / fp8_max.cast[accum_type](),
                     Scalar[accum_type](1e-10),
                 ).cast[Self.scales_type]()
                 scale_factor_recip = (

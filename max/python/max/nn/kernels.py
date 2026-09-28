@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import MutableSequence
 from typing import Any
 
@@ -7586,6 +7587,7 @@ def quantize_dynamic_scaled_float8(
     group_size_or_per_token: int = -1,
     out_type: DType = DType.float8_e4m3fn,
     scales_type: DType = DType.bfloat16,
+    amax_floor: float = 0.0,
 ) -> tuple[TensorValue, TensorValue]:
     """Dynamically quantize the input tensor to fp8.
 
@@ -7596,6 +7598,12 @@ def quantize_dynamic_scaled_float8(
             the quantization is column-wise.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
+        amax_floor: Lower bound applied to a group's max-abs before the scale
+            is derived. QAT recipes that floor the activation amax
+            (DeepSeek-V4's ``act_quant`` uses 1e-4) need it to stay on the
+            scale grid the checkpoint was trained against. Supported only when
+            ``scales_type`` is ``float8_e8m0fnu``; ``0.0`` (the default) leaves
+            the scale unchanged.
 
     Returns:
         The quantized tensor and the scales.
@@ -7605,6 +7613,17 @@ def quantize_dynamic_scaled_float8(
 
     if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
         raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
+
+    if not math.isfinite(amax_floor) or amax_floor < 0.0:
+        raise ValueError(
+            f"amax_floor must be finite and non-negative, got {amax_floor}"
+        )
+
+    if amax_floor > 0.0 and scales_type != DType.float8_e8m0fnu:
+        raise ValueError(
+            "amax_floor is only supported with float8_e8m0fnu scales, got"
+            f" {scales_type}"
+        )
 
     if not isinstance(input.shape[1], StaticDim):
         raise ValueError(
@@ -7635,6 +7654,15 @@ def quantize_dynamic_scaled_float8(
             (input.shape[0] + padding_size - 1) // padding_size
         ) * padding_size
 
+    # The kernel takes the floor string-encoded (the extensibility bridge has no
+    # float parameter), and the RMS-norm fusion pattern only matches a quantize
+    # op carrying exactly one parameter, so leave it off at the default.
+    parameters: dict[str, bool | int | str | DType] = {
+        "group_size_or_per_token": group_size,
+    }
+    if amax_floor > 0.0:
+        parameters["amax_floor"] = repr(amax_floor)
+
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
         device=input.device,
@@ -7654,9 +7682,7 @@ def quantize_dynamic_scaled_float8(
                 device=input.device,
             ),
         ],
-        parameters={
-            "group_size_or_per_token": group_size,
-        },
+        parameters=parameters,
     )
 
     return result[0].tensor, result[1].tensor
