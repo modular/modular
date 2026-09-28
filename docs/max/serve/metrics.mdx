@@ -61,65 +61,85 @@ Review all available metrics grouped by type.
 
 The following metrics track end-to-end and per-phase request latency.
 
-| Metric                                         | Type      | Description                                                                                                                                                                                         |
-|------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxserve_request_time_milliseconds`           | Histogram | Total time spent handling a request (total inference time), in milliseconds.                                                                                                                        |
-| `maxserve_input_processing_time_milliseconds`  | Histogram | Input processing time (IPT), in milliseconds.                                                                                                                                                       |
-| `maxserve_output_processing_time_milliseconds` | Histogram | Output generation time (OGT), in milliseconds.                                                                                                                                                      |
-| `maxserve_time_to_first_token_milliseconds`    | Histogram | Time to first token (TTFT), in milliseconds. Measured from when the server received the request, so it includes request parsing, validation, media resolution, tokenization, queueing, and prefill. |
-| `maxserve_time_per_output_token_milliseconds`  | Histogram | Mean decode-phase latency per generated token (TPOT), in milliseconds. Emitted once per request as decode_time / (num_generated_tokens - 1). Excludes the first token and prefill/TTFT.             |
-| `maxserve_itl_milliseconds`                    | Histogram | Inter-token latency, in milliseconds.                                                                                                                                                               |
+{/* BEGIN METRICS: Request latency */}
+
+| Metric                                         | Type      | Description                                                                                                                                                                                     |
+|------------------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_request_time_milliseconds`           | Histogram | Total time spent handling a request, measured from the HTTP middleware receiving it to the response completing: request parsing, validation, queueing, model execution and response generation. |
+| `maxserve_input_processing_time_milliseconds`  | Histogram | Input processing time (IPT).                                                                                                                                                                    |
+| `maxserve_output_processing_time_milliseconds` | Histogram | Output generation time (OGT).                                                                                                                                                                   |
+| `maxserve_time_to_first_token_milliseconds`    | Histogram | Time to first token (TTFT). Measured from when the server received the request, so it includes request parsing, validation, media resolution, tokenization, queueing, and prefill.              |
+| `maxserve_itl_milliseconds`                    | Histogram | Inter-token latency.                                                                                                                                                                            |
+| `maxserve_time_per_output_token_milliseconds`  | Histogram | Mean decode-phase latency per generated token (TPOT). Emitted once per request as decode_time / (num_generated_tokens - 1). Excludes the first token and prefill/TTFT.                          |
+
+{/* END METRICS: Request latency */}
 
 ### Token counts
 
 The following metrics track cumulative and per-request token volumes.
 
+{/* BEGIN METRICS: Token counts */}
+
 | Metric                                      | Type      | Description                                |
 |---------------------------------------------|-----------|--------------------------------------------|
 | `maxserve_num_input_tokens_total`           | Counter   | Cumulative input tokens processed.         |
-| `maxserve_num_output_tokens_total`          | Counter   | Cumulative output tokens generated.        |
 | `maxserve_num_input_characters_total`       | Counter   | Cumulative input characters processed.     |
+| `maxserve_num_output_tokens_total`          | Counter   | Cumulative output tokens generated.        |
 | `maxserve_input_tokens_per_request_tokens`  | Histogram | Distribution of input tokens per request.  |
 | `maxserve_output_tokens_per_request_tokens` | Histogram | Distribution of output tokens per request. |
+
+{/* END METRICS: Token counts */}
 
 ### Request counts and state
 
 The following metrics track request volume and queue depth.
 
-| Metric                                     | Type          | Description                                                                                                                                                                      |
-|--------------------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxserve_request_count_total`             | Counter       | Total requests since server start.                                                                                                                                               |
-| `maxserve_num_requests_running`            | UpDownCounter | Requests currently being processed.                                                                                                                                              |
-| `maxserve_num_requests_queued`             | Gauge         | Current depth of the scheduler's CE/prefill queue, sampled once per scheduler iteration.                                                                                         |
-| `maxserve_num_requests_awaiting_admission` | UpDownCounter | Requests received by the API server but not yet handed off to the model worker. A persistently high value indicates a backlog in the API server rather than the scheduler.       |
-| `maxserve_requests_awaiting_admission`     | Histogram     | Distribution of the ingress backlog (requests accepted by the API server but not yet handed off to the model worker), sampled periodically. Captures the p50/p99 tail over time. |
+{/* BEGIN METRICS: Request counts and state */}
+
+| Metric                                     | Type      | Description                                                                                                                                                                      |
+|--------------------------------------------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_request_count_total`             | Counter   | Total API requests since server start. Liveness and observability endpoints (/health, /version, /ping and /metrics) are excluded.                                                |
+| `maxserve_num_requests_queued`             | Gauge     | Current depth of the scheduler's CE/prefill queue, sampled once per scheduler iteration.                                                                                         |
+| `maxserve_num_requests_running`            | Gauge     | Requests currently being processed.                                                                                                                                              |
+| `maxserve_num_requests_awaiting_admission` | Gauge     | Requests received by the API server but not yet handed off to the model worker. A persistently high value indicates a backlog in the API server rather than the scheduler.       |
+| `maxserve_requests_awaiting_admission`     | Histogram | Distribution of the ingress backlog (requests accepted by the API server but not yet handed off to the model worker), sampled periodically. Captures the p50/p99 tail over time. |
+
+{/* END METRICS: Request counts and state */}
 
 ### Response buffering
 
 The following metrics track the egress backlog between the model worker and the
 streaming layer.
 
+{/* BEGIN METRICS: Response buffering */}
+
 | Metric                                      | Type      | Description                                                                                                                                                   |
 |---------------------------------------------|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `maxserve_num_responses_buffered`           | Gauge     | Model-worker responses received by the API server but not yet consumed by the streaming layer (sum of per-request output-queue depths), sampled periodically. |
 | `maxserve_responses_buffered`               | Histogram | Distribution of the egress backlog, sampled periodically. Captures the p50/p99 tail that a scrape-interval gauge sample would miss.                           |
-| `maxserve_response_queue_time_milliseconds` | Histogram | Time a model-worker response waits in the per-request output queue before the streaming layer consumes it, in milliseconds.                                   |
+| `maxserve_response_queue_time_milliseconds` | Histogram | Time a model-worker response waits in the per-request output queue before the streaming layer consumes it.                                                    |
+
+{/* END METRICS: Response buffering */}
 
 ### Batch scheduler
 
 The following metrics track batch composition and per-batch throughput.
 
+{/* BEGIN METRICS: Batch scheduler */}
+
 | Metric                                                   | Type      | Description                                                                                          |
 |----------------------------------------------------------|-----------|------------------------------------------------------------------------------------------------------|
 | `maxserve_batch_size`                                    | Histogram | Distribution of batch sizes (number of requests), labeled by `batch_type` (CE prefill or TG decode). |
-| `maxserve_batch_execution_time_milliseconds`             | Histogram | Distribution of batch execution time, in milliseconds.                                               |
-| `maxserve_batch_creation_time_milliseconds`              | Histogram | Distribution of scheduler batch creation time, in milliseconds.                                      |
+| `maxserve_batch_execution_time_milliseconds`             | Histogram | Distribution of batch execution time.                                                                |
 | `maxserve_batch_input_tokens`                            | Histogram | Distribution of input tokens per scheduler batch.                                                    |
 | `maxserve_batch_context_tokens`                          | Histogram | Distribution of accumulated context tokens per scheduler batch.                                      |
-| `maxserve_batch_prompt_throughput_tokens_per_second`     | Histogram | Per-batch prompt-side throughput, in tokens per second.                                              |
-| `maxserve_batch_generation_throughput_tokens_per_second` | Histogram | Per-batch generation-side throughput, in tokens per second.                                          |
+| `maxserve_batch_creation_time_milliseconds`              | Histogram | Distribution of scheduler batch creation time.                                                       |
+| `maxserve_batch_prompt_throughput_tokens_per_second`     | Histogram | Per-batch prompt-side throughput per second.                                                         |
+| `maxserve_batch_generation_throughput_tokens_per_second` | Histogram | Per-batch generation-side throughput per second.                                                     |
 | `maxserve_batch_terminated_reqs`                         | Histogram | Distribution of requests terminated per scheduler batch.                                             |
 | `maxserve_batch_pending_reqs`                            | Histogram | Distribution of requests pending in the queue, sampled once per scheduler batch.                     |
+
+{/* END METRICS: Batch scheduler */}
 
 ### KV cache
 
@@ -127,6 +147,8 @@ The following metrics track KV cache utilization, prefix cache hit rates, and
 KV movement across memory tiers and replicas. Device figures are in blocks, the
 unit the cache allocates in; the connector's host and disk tiers are in bytes,
 since those are byte budgets whose block width need not match the device's.
+
+{/* BEGIN METRICS: KV cache */}
 
 | Metric                                                    | Type      | Description                                                                                                                                                                                                                    |
 |-----------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -138,44 +160,55 @@ since those are byte budgets whose block width need not match the device's.
 | `maxserve_cache_misses_tokens_total`                      | Counter   | Cumulative KV cache miss tokens (prompt tokens actually prefilled by the model).                                                                                                                                               |
 | `maxserve_cache_used_kv_pct_percent`                      | Histogram | Percentage of device KV cache blocks in use (0-100%), sampled once per scheduler batch.                                                                                                                                        |
 | `maxserve_cache_used_host_kv_pct_percent`                 | Histogram | Percentage of the KV connector's host tier bytes in use (0-100%), sampled once per scheduler batch when a connector with a host tier is configured.                                                                            |
-| `maxserve_cache_used_disk_kv_pct_percent`                 | Histogram | Percentage of the KV connector's disk tier bytes in use (0-100%), sampled once per scheduler batch when the connector has a disk tier.                                                                                         |
 | `maxserve_cache_device_blocks_served_blocks_total`        | Counter   | Cumulative KV blocks served directly from the local device prefix cache.                                                                                                                                                       |
 | `maxserve_cache_h2d_bytes_copied_bytes_total`             | Counter   | Cumulative KV bytes copied from the connector's host tier to device. Rate this to see the PCIe bandwidth the host tier consumes.                                                                                               |
-| `maxserve_cache_d2h_bytes_copied_bytes_total`             | Counter   | Cumulative KV bytes copied from device to the connector's host tier.                                                                                                                                                           |
 | `maxserve_cache_cross_replica_blocks_copied_blocks_total` | Counter   | Cumulative KV blocks copied device-to-device across data-parallel replicas to reuse a prefix-cache hit on another replica.                                                                                                     |
 | `maxserve_cache_cross_replica_bytes_copied_bytes_total`   | Counter   | Cumulative bytes moved by device-to-device KV copies across data-parallel replicas.                                                                                                                                            |
+| `maxserve_cache_d2h_bytes_copied_bytes_total`             | Counter   | Cumulative KV bytes copied from device to the connector's host tier.                                                                                                                                                           |
 | `maxserve_cache_disk_bytes_read_bytes_total`              | Counter   | Cumulative KV bytes read from the disk cache tier.                                                                                                                                                                             |
 | `maxserve_cache_disk_bytes_written_bytes_total`           | Counter   | Cumulative KV bytes written to the disk cache tier.                                                                                                                                                                            |
+| `maxserve_cache_used_disk_kv_pct_percent`                 | Histogram | Percentage of the KV connector's disk tier bytes in use (0-100%), sampled once per scheduler batch when the connector has a disk tier.                                                                                         |
+
+{/* END METRICS: KV cache */}
 
 ### Data parallel
 
 MAX records these metrics only when `data_parallel_degree > 1`.
+
+{/* BEGIN METRICS: Data parallel */}
 
 | Metric                                        | Type      | Description                                                                                                                                                                                       |
 |-----------------------------------------------|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `maxserve_dp_active_token_occupancy_percent`  | Histogram | Per-batch data-parallel balance, measured as the mean/max of per-rank active-token load as a percentage. 100% means perfectly balanced ranks.                                                     |
 | `maxserve_dp_context_token_occupancy_percent` | Histogram | Per-batch data-parallel balance, measured as the mean/max of per-rank context-token (KV/attention) load as a percentage. 100% means perfectly balanced ranks.                                     |
 | `maxserve_dp_active_tokens_total`             | Counter   | Cumulative active tokens scheduled across all data-parallel replicas, excluding padding. Divide by `maxserve_dp_step_capacity_tokens_total` over the same window for token-weighted DP occupancy. |
-| `maxserve_dp_step_capacity_tokens_total`      | Counter   | Cumulative synchronized step capacity in tokens. For each batch, this is the data-parallel degree times the heaviest rank's active tokens.                                                        |
+| `maxserve_dp_step_capacity_tokens_total`      | Counter   | Cumulative synchronized step capacity. For each batch, this is the data-parallel degree times the heaviest rank's active tokens.                                                                  |
+
+{/* END METRICS: Data parallel */}
 
 ### Vision and video
 
 The following metrics track vision and video encoder activity and cache
 performance.
 
-| Metric                                                 | Type      | Description                                                                                    |
-|--------------------------------------------------------|-----------|------------------------------------------------------------------------------------------------|
-| `maxserve_vision_images_encoded_images_total`          | Counter   | Cumulative images run through the vision encoder (cache misses).                               |
-| `maxserve_vision_images_cached_images_total`           | Counter   | Cumulative images served from the vision encoder cache (cache hits).                           |
-| `maxserve_vision_patches_encoded_patches_total`        | Counter   | Cumulative image patches fed to the vision encoder.                                            |
-| `maxserve_vision_tokens_encoded_tokens_total`          | Counter   | Cumulative merged vision tokens produced by the vision encoder.                                |
-| `maxserve_vision_cache_hit_rate_percent`               | Histogram | Per-batch vision encoder cache hit rate (0-100%).                                              |
-| `maxserve_vision_preprocess_cache_hits_images_total`   | Counter   | Cumulative images found already preprocessed, whose decode and preprocessing are both skipped. |
-| `maxserve_vision_preprocess_cache_misses_images_total` | Counter   | Cumulative images not already preprocessed, which the API server must decode and preprocess.   |
-| `maxserve_video_clips_encoded_clips_total`             | Counter   | Cumulative video clips run through the video encoder (cache misses).                           |
-| `maxserve_video_tokens_encoded_tokens_total`           | Counter   | Cumulative merged video tokens produced by the video encoder.                                  |
-| `maxserve_video_encoding_time_milliseconds`            | Histogram | Per-batch video encoder wall-clock time, in milliseconds.                                      |
-| `maxserve_video_frames_per_clip_frames`                | Histogram | Sampled frame count per newly encoded video clip.                                              |
+{/* BEGIN METRICS: Vision and video */}
+
+| Metric                                                     | Type      | Description                                                                                                                                     |
+|------------------------------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_vision_images_encoded_images_total`              | Counter   | Cumulative images run through the vision encoder (cache misses).                                                                                |
+| `maxserve_vision_images_cached_images_total`               | Counter   | Cumulative images served from the vision encoder cache (cache hits).                                                                            |
+| `maxserve_vision_patches_encoded_patches_total`            | Counter   | Cumulative image patches fed to the vision encoder.                                                                                             |
+| `maxserve_vision_tokens_encoded_tokens_total`              | Counter   | Cumulative merged vision tokens produced by the vision encoder.                                                                                 |
+| `maxserve_vision_cache_hit_rate_percent`                   | Histogram | Per-batch vision encoder cache hit rate (0-100%).                                                                                               |
+| `maxserve_vision_preprocess_cache_hits_images_total`       | Counter   | Cumulative images found already preprocessed, whose decode and preprocessing are both skipped.                                                  |
+| `maxserve_vision_preprocess_cache_misses_images_total`     | Counter   | Cumulative images not already preprocessed, which the API server must decode and preprocess.                                                    |
+| `maxserve_vision_image_admission_decode_time_milliseconds` | Histogram | Per-request wall-clock time of the admission image work: deciding which images are already preprocessed, then decoding and validating the rest. |
+| `maxserve_video_clips_encoded_clips_total`                 | Counter   | Cumulative video clips run through the video encoder (cache misses).                                                                            |
+| `maxserve_video_tokens_encoded_tokens_total`               | Counter   | Cumulative merged video tokens produced by the video encoder.                                                                                   |
+| `maxserve_video_encoding_time_milliseconds`                | Histogram | Per-batch video encoder wall-clock time.                                                                                                        |
+| `maxserve_video_frames_per_clip_frames`                    | Histogram | Sampled frame count per newly encoded video clip.                                                                                               |
+
+{/* END METRICS: Vision and video */}
 
 `maxserve_vision_preprocess_cache_hits_images_total` and its `_misses`
 counterpart are recorded from one of two vantages depending on the
@@ -194,19 +227,23 @@ media before a request reaches the model: resolving each item to bytes,
 decoding images, and caching the preprocessed result. This window is inside
 `maxserve_time_to_first_token_milliseconds`.
 
-| Metric                                            | Type      | Description                                                                                                                                                                                                                                                                                                                                                    |
-|---------------------------------------------------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxserve_media_items_total`                      | Counter   | Cumulative media items the API server resolved into bytes, split by `media_kind` (`image`, `video`) and `source` (`inline` for a data URI, `url` for http(s), `file` for a local path). A rejected item is counted by `maxserve_media_rejections_total` instead.                                                                                               |
-| `maxserve_media_resolve_time_milliseconds`        | Histogram | Per-item time to turn one media reference into bytes, in milliseconds: the http(s) download, the base64 decode of a data URI, or the local file read. Excludes the image decode. Split by `source` (`inline`, `url`, `file`). Items on one request are resolved concurrently, so these windows overlap and their sum isn't the request's elapsed resolve time. |
-| `maxserve_media_item_size_bytes`                  | Histogram | Encoded size of one resolved media item as it arrived on the wire or in the request body, in bytes. Not the decoded pixel buffer. Split by `media_kind`.                                                                                                                                                                                                       |
-| `maxserve_media_image_size_pixels`                | Histogram | Pixel count (`width * height`) of one image as it arrived, read from the header before any resize, split by `format`.                                                                                                                                                                                                                                          |
-| `maxserve_media_image_decodes_total`              | Counter   | Cumulative images whose pixels the API server actually decoded, split by `format`. An image the preprocess cache let the server skip is sized but not counted here.                                                                                                                                                                                            |
-| `maxserve_media_image_decode_ms_total`            | Counter   | Cumulative milliseconds of per-image codec decode, split by `format`. Excludes the per-architecture processor (resize, patchify, normalize), whose cost follows the pixel count rather than the container.                                                                                                                                                     |
-| `maxserve_media_rejections_total`                 | Counter   | Cumulative media items the API server refused, split by `reason`. Every value is an HTTP 400 to the client, so this counts client-visible failures rather than server faults.                                                                                                                                                                                  |
-| `maxserve_media_items_per_request_items`          | Histogram | Media items of one `media_kind` carried by a single request, counted before any media is downloaded and before the per-request count caps, so a request refused for carrying too many items is still sampled. Requests carrying none of that kind aren't sampled, so the distribution starts at one.                                                           |
-| `maxserve_media_preprocess_cache_evictions_total` | Counter   | Cumulative preprocessed-media entries the tokenizer dropped to stay inside its byte budget, split by `media_kind`. Budget pressure only, so an idle-timeout reclaim isn't counted.                                                                                                                                                                             |
-| `maxserve_media_preprocess_cache_size_bytes`      | Gauge     | Host bytes the tokenizer's preprocessed-media cache retains, split by `media_kind`. Sampled after tokenization, once per media request rather than on a timer.                                                                                                                                                                                                 |
-| `maxserve_media_preprocess_cache_capacity_bytes`  | Gauge     | The byte budget `maxserve_media_preprocess_cache_size_bytes` is evicted down to, split by `media_kind`. Zero means caching is disabled for that kind.                                                                                                                                                                                                          |
+{/* BEGIN METRICS: Media ingestion */}
+
+| Metric                                            | Type      | Description                                                                                                                                                                                                                                                                                                                                   |
+|---------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_media_items_total`                      | Counter   | Cumulative media items the API server resolved into bytes, split by `media_kind` (`image`, `video`) and `source` (`inline` for a data URI, `url` for http(s), `file` for a local path). A rejected item is counted by `maxserve_media_rejections_total` instead.                                                                              |
+| `maxserve_media_resolve_time_milliseconds`        | Histogram | Per-item time to turn one media reference into bytes: the http(s) download, the base64 decode of a data URI, or the local file read. Excludes the image decode. Split by `source` (`inline`, `url`, `file`). Items on one request are resolved concurrently, so these windows overlap and their sum isn't the request's elapsed resolve time. |
+| `maxserve_media_item_size_bytes`                  | Histogram | Encoded size of one resolved media item as it arrived on the wire or in the request body. Not the decoded pixel buffer. Split by `media_kind`.                                                                                                                                                                                                |
+| `maxserve_media_image_size_pixels`                | Histogram | Pixel count (`width * height`) of one image as it arrived, read from the header before any resize, split by `format`.                                                                                                                                                                                                                         |
+| `maxserve_media_image_decodes_total`              | Counter   | Cumulative images whose pixels the API server actually decoded, split by `format`. An image the preprocess cache let the server skip is sized but not counted here.                                                                                                                                                                           |
+| `maxserve_media_image_decode_ms_total`            | Counter   | Cumulative milliseconds of per-image codec decode, split by `format`. Excludes the per-architecture processor (resize, patchify, normalize), whose cost follows the pixel count rather than the container.                                                                                                                                    |
+| `maxserve_media_rejections_total`                 | Counter   | Cumulative media items the API server refused, split by `reason`. Every value is an HTTP 400 to the client, so this counts client-visible failures rather than server faults.                                                                                                                                                                 |
+| `maxserve_media_items_per_request_items`          | Histogram | Media items of one `media_kind` carried by a single request, counted before any media is downloaded and before the per-request count caps, so a request refused for carrying too many items is still sampled. Requests carrying none of that kind aren't sampled, so the distribution starts at one.                                          |
+| `maxserve_media_preprocess_cache_evictions_total` | Counter   | Cumulative preprocessed-media entries the tokenizer dropped to stay inside its byte budget, split by `media_kind`. Budget pressure only, so an idle-timeout reclaim isn't counted.                                                                                                                                                            |
+| `maxserve_media_preprocess_cache_size_bytes`      | Gauge     | Host bytes the tokenizer's preprocessed-media cache retains, split by `media_kind`. Sampled after tokenization, once per media request rather than on a timer.                                                                                                                                                                                |
+| `maxserve_media_preprocess_cache_capacity_bytes`  | Gauge     | The byte budget `maxserve_media_preprocess_cache_size_bytes` is evicted down to, split by `media_kind`. Zero means caching is disabled for that kind.                                                                                                                                                                                         |
+
+{/* END METRICS: Media ingestion */}
 
 `maxserve_media_image_decodes_total` and
 `maxserve_media_image_decode_ms_total` are a counter pair rather than a
@@ -242,10 +279,14 @@ have opposite remedies.
 The following metrics track draft-token acceptance rates for speculative
 decoding.
 
+{/* BEGIN METRICS: Speculative decoding */}
+
 | Metric                                                      | Type      | Description                                                        |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------|
 | `maxserve_spec_decode_acceptance_rate_per_position_percent` | Histogram | Draft-token acceptance rate per position (0-100%).                 |
 | `maxserve_spec_decode_avg_acceptance_length_tokens`         | Histogram | Mean draft-token acceptance length per speculative decoding batch. |
+
+{/* END METRICS: Speculative decoding */}
 
 For more information, see [speculative decoding](/serve/speculative-decoding).
 
@@ -253,35 +294,56 @@ For more information, see [speculative decoding](/serve/speculative-decoding).
 
 MAX records these metrics only in disaggregated inference deployments.
 
-| Metric                                                      | Type      | Description                                                                                                                                                                                        |
-|-------------------------------------------------------------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxserve_di_decode_admission_queue_wait_time_milliseconds` | Histogram | Time a request spends in the decode node's admission queue before dispatch to prefill, in milliseconds.                                                                                            |
-| `maxserve_di_decode_send_time_milliseconds`                 | Histogram | Time to build and send a prefill request on the decode side (struct construction, serialization, ZMQ enqueue), in milliseconds.                                                                    |
-| `maxserve_di_dispatch_rtt_milliseconds`                     | Histogram | Decode-clock round trip from sending a prefill request to receiving the prefill node's acknowledgment, in milliseconds.                                                                            |
-| `maxserve_di_prefill_span_milliseconds`                     | Histogram | Decode-clock time between the prefill node's "arrived" and "done" acknowledgments for a request, in milliseconds. Covers prefill queue wait plus CE execution plus the return hop.                 |
-| `maxserve_di_reply_rtt_milliseconds`                        | Histogram | Decode-clock time from the prefill node's "done" acknowledgment to the actual prefill response arriving, in milliseconds. Covers KV-transfer initiation, reply serialization, and network transit. |
-| `maxserve_di_prefill_queue_wait_time_milliseconds`          | Histogram | Prefill-local time a request spends enqueued before its first CE batch executes, in milliseconds.                                                                                                  |
-| `maxserve_di_decode_postprocess_time_milliseconds`          | Histogram | Decode-local time from receiving a prefill response to handing the result off to the response queue, in milliseconds.                                                                              |
+{/* BEGIN METRICS: Disaggregated inference */}
+
+| Metric                                                      | Type      | Description                                                                                                                                                                                                                                                                                                                                                    |
+|-------------------------------------------------------------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_di_decode_admission_queue_wait_time_milliseconds` | Histogram | Time a request spends in the decode node's admission queue before dispatch to prefill.                                                                                                                                                                                                                                                                         |
+| `maxserve_di_decode_send_time_milliseconds`                 | Histogram | Time to build and send a prefill request on the decode side (struct construction, serialization, ZMQ enqueue).                                                                                                                                                                                                                                                 |
+| `maxserve_di_dispatch_rtt_milliseconds`                     | Histogram | Decode-clock round trip from sending a prefill request to receiving the prefill node's acknowledgment.                                                                                                                                                                                                                                                         |
+| `maxserve_di_prefill_span_milliseconds`                     | Histogram | Decode-clock time between the prefill node's "arrived" and "ce_done" acknowledgments for a request. Covers prefill queue wait plus CE execution plus the return hop.                                                                                                                                                                                           |
+| `maxserve_di_reply_rtt_milliseconds`                        | Histogram | Decode-clock time from the prefill node's "ce_done" acknowledgment to the actual prefill response arriving. Covers KV-transfer initiation, reply serialization, and network transit.                                                                                                                                                                           |
+| `maxserve_di_prefill_queue_wait_time_milliseconds`          | Histogram | Prefill-local time a request spends enqueued before its first CE batch executes.                                                                                                                                                                                                                                                                               |
+| `maxserve_di_decode_postprocess_time_milliseconds`          | Histogram | Decode-local time from receiving a prefill response to handing the result off to the response queue.                                                                                                                                                                                                                                                           |
+| `maxserve_di_early_sync_time_milliseconds`                  | Histogram | Duration of the early-sync guard's blocking commit of the previous batch's structured-output FSM state, when it fired (see '_should_early_sync_prev_batch').                                                                                                                                                                                                   |
+| `maxserve_di_ce_preempted_tg_iteration_count_total`         | Counter   | Counter: incremented once per scheduling iteration in which a CE batch was admitted while TG requests were pending, so those TG requests got zero progress this iteration -- how often this preemption pattern occurs.                                                                                                                                         |
+| `maxserve_di_ce_preempted_tg_pending_count`                 | Histogram | Histogram: the number of TG requests pending at the moment of one such preemption (paired with 'maxserve.di.ce_preempted_tg_iteration_count', which counts how often it happens; this measures how large each occurrence is).                                                                                                                                  |
+| `maxserve_di_handoff_to_first_token_time_milliseconds`      | Histogram | Wall-clock time from a prefill-to-decode handoff landing (its token discarded, re-queued as a one-token chunked-CE continuation) to decode's own re-forward actually sending token 1 to the API process. A TTFT contribution specific to the handoff path; the ordinary path's token already arrives with the 'PrefillResponse', so it has no equivalent wait. |
+
+{/* END METRICS: Disaggregated inference */}
 
 ### Structured output and tool calls
 
 The following metrics track schema-conformance errors and grammar-rejection
 rates for structured output and tool calls.
 
-| Metric                                                | Type    | Description                                                                                                                                                                                         |
-|-------------------------------------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxserve_tool_call_conformance_errors_total`         | Counter | Generated tool calls that failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `unknown_tool`, `schema_mismatch`).                                     |
-| `maxserve_structured_output_grammar_rejections_total` | Counter | Structured-output requests rejected at admission (HTTP 400) because the grammar backend couldn't compile the schema, split by `kind` label (`tool_grammar`, `json_schema`).                         |
-| `maxserve_response_format_conformance_errors_total`   | Counter | `response_format` (`json_schema`/`json_object`) responses whose final content failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `schema_mismatch`). |
+{/* BEGIN METRICS: Structured output and tool calls */}
+
+| Metric                                                       | Type      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+|--------------------------------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_tool_call_conformance_errors_total`                | Counter   | Generated tool calls that failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `unknown_tool`, `schema_mismatch`).                                                                                                                                                                                                                                                                                                   |
+| `maxserve_structured_output_grammar_rejections_total`        | Counter   | Structured-output requests rejected at admission (HTTP 400) because the grammar backend couldn't compile the schema, split by `kind` label (`tool_grammar`, `json_schema`).                                                                                                                                                                                                                                                                                       |
+| `maxserve_structured_output_grammar_build_time_milliseconds` | Histogram | Wall-clock time of an off-thread grammar-matcher build in AsyncGrammarGate, from the start of the backend's compile/create call to its completion. For a DI handoff, this build overlaps prefill's round trip when submitted at admission time; a build that outlasts that round trip can still gate the handoff's chunked-CE continuation.                                                                                                                       |
+| `maxserve_response_format_conformance_errors_total`          | Counter   | `response_format` (`json_schema`/`json_object`) responses whose final content failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `schema_mismatch`).                                                                                                                                                                                                                                                               |
+| `maxserve_tool_call_responses_total`                         | Counter   | Count of chat-completion requests whose response contained at least one tool call, counted once per request however many calls it emitted. Against 'maxserve.tool_call.requests' this gives the share of declared tool inventories the model actually draws on; tools declared but never called cost prompt tokens on every request. Not a denominator for 'maxserve.tool_call.conformance_errors', which counts individual generated calls rather than requests. |
+| `maxserve_tool_call_tools_per_request_tools`                 | Histogram | Distribution of tools declared per chat-completion request. Declared tools are rendered into the prompt, so inventory size explains a client's prompt length and grammar compile cost. Shares its population with 'maxserve.tool_call.requests'.                                                                                                                                                                                                                  |
+| `maxserve_tool_call_requests_total`                          | Counter   | Count of chat-completion requests that supplied a non-empty 'tools' array, split by the 'choice' tag (auto, required, named). Pairs with 'maxserve.tool_call.responses' to show how often a declared inventory is actually used. A tool_choice='none' request is not counted: it cannot produce a tool call.                                                                                                                                                      |
+| `maxserve_structured_output_requests_total`                  | Counter   | Count of chat-completion requests that carried a response_format, split by the 'kind' tag (json_object, json_schema); a 'text' format is the unconstrained default and is not counted. Counted before the schema is compiled, so a request later rejected by 'maxserve.structured_output.grammar_rejections' still counts.                                                                                                                                        |
+
+{/* END METRICS: Structured output and tool calls */}
 
 ### Server
 
 The following metrics track server startup and model loading.
 
-| Metric                                  | Type      | Description                                                                                                                                                     |
-|-----------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxserve_model_load_time_milliseconds` | Histogram | Model-worker startup duration, in milliseconds. Also split by `component` tag (`build`, `compile`, `init`, `graph_capture`, `pinned_memory`, `spawn`, `total`). |
-| `maxserve_pipeline_load_total`          | Counter   | Pipelines loaded for each model.                                                                                                                                |
+{/* BEGIN METRICS: Server */}
+
+| Metric                                  | Type      | Description                                                                                                                                    |
+|-----------------------------------------|-----------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxserve_model_load_time_milliseconds` | Histogram | Model-worker startup duration. Also split by `component` tag (`build`, `compile`, `init`, `graph_capture`, `pinned_memory`, `spawn`, `total`). |
+| `maxserve_pipeline_load_total`          | Counter   | Pipelines loaded for each model.                                                                                                               |
+
+{/* END METRICS: Server */}
 
 ## Telemetry
 
