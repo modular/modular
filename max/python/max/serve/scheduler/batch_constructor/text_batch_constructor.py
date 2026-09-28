@@ -1824,10 +1824,17 @@ class TextBatchConstructor:
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         """Constructs Pipeline Inputs which includes a batch for each replica."""
 
-        # Re-admit any cordoned requests whose KV onload has landed. The
-        # block-level drain (unpin/commit/reclaim) is handled inside
-        # ``kv_cache.alloc`` itself, so the scheduler only tracks the
-        # request-level side here.
+        # Settle what the last forward left in flight, every iteration and not
+        # only when something is admitted. ``kv_cache.alloc`` is the only other
+        # caller of this drain, so an idle engine would leave the previous
+        # batch's offloads unsettled until the next request arrived: they stay
+        # unreadable to any other replica or node, their device sources stay
+        # pinned, and a long enough gap hands them to the store's stale-write
+        # reaper instead of registering them.
+        if self.kv_cache is not None:
+            self.kv_cache.poll_transfers()
+
+        # Re-admit any cordoned requests whose KV onload has landed.
         self._readmit_completed_onloads()
 
         self._promote_grammar_ready_requests()

@@ -24,8 +24,9 @@ from __future__ import annotations
 
 import logging
 from bisect import bisect_left
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import chain
 
 from max.driver import Buffer, batch_inplace_copy
 from max.nn.kv_cache import KVCacheGroupId, KVLeafRegion
@@ -76,6 +77,10 @@ class _PendingTransfer:
     event: KVTransfer
     blocks: dict[str, list[LittleKVCacheBlock]]
     commit_hashes: list[bytes] | None = None
+
+    def pinned_blocks(self) -> Iterator[LittleKVCacheBlock]:
+        """Every block this transfer pins, across all its leaves."""
+        return chain.from_iterable(self.blocks.values())
 
 
 @dataclass(frozen=True)
@@ -435,17 +440,7 @@ class JengaBlockManager:
 
     @traced
     def step(self, ctx: TextContext) -> None:
-        """Settles the last forward's offloads before recording this one.
-
-        Records what the forward just wrote and slides every window.
-
-        A synchronous connector publishes an offload's blocks in
-        ``wait_for_offloads``, so the barrier has to run or those blocks stay
-        unreadable and no later load can hit them. An asynchronous connector
-        settles through ``poll_transfers`` instead, so this is a no-op for it.
-        """
-        if self._connector is not None:
-            self._connector.wait_for_offloads()
+        """Records what the forward just wrote and slides every window."""
         replica_idx = self._replica_of(ctx)
         if self._enable_prefix_caching:
             self._commit_blocks_into_prefix_cache(ctx, replica_idx)
@@ -540,8 +535,9 @@ class JengaBlockManager:
                 block_hashes,
                 replica_idx=replica_idx,
             )
-            # An asynchronous connector reads these pages on its own engine, so
-            # pin them until the D2H lands. A synchronous one is already done.
+            # The connector reads these pages on its own engine, so pin them
+            # until the D2H lands. An offload that moved nothing is already
+            # complete and needs no pin.
             if not event.is_complete():
                 self._track_transfer(event, src, replica_idx)
         self._pending_offloads[replica_idx].clear()
@@ -552,22 +548,38 @@ class JengaBlockManager:
         For each pending async transfer, check if it has completed. If so, we
         may commit the hashes into the prefix cache and then unpin the blocks.
         """
+        if self._connector is not None:
+            self._connector.poll_transfers()
         for replica_idx, pending_list in enumerate(self._pending_transfers):
             if not pending_list:
                 continue
             pool = self.pools[replica_idx]
             still_pending: list[_PendingTransfer] = []
-            for pending in pending_list:
-                if not pending.event.is_complete():
+            unreached = iter(pending_list)
+            for pending in unreached:
+                try:
+                    complete = pending.event.is_complete()
+                except BaseException:
+                    # A poll that raises has settled its own transfer, and the
+                    # blocks it was filling hold no valid KV. Unpin them
+                    # without committing, and put back the entries this pass
+                    # never reached -- leaving them on a list it already drained
+                    # would free their blocks a second time.
+                    for block in pending.pinned_blocks():
+                        pool.free_block(block)
+                    self._pending_transfers[replica_idx] = still_pending + list(
+                        unreached
+                    )
+                    raise
+                if not complete:
                     still_pending.append(pending)
                     continue
                 if pending.commit_hashes is not None:
                     self._commit_onloaded_blocks(
                         pool, pending.blocks, pending.commit_hashes
                     )
-                for leaf_blocks in pending.blocks.values():
-                    for block in leaf_blocks:
-                        pool.free_block(block)
+                for block in pending.pinned_blocks():
+                    pool.free_block(block)
             self._pending_transfers[replica_idx] = still_pending
 
     def pending_transfers_exist(self, replica_idx: int = 0) -> bool:

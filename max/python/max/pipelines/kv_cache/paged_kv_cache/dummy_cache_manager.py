@@ -55,6 +55,13 @@ class DummyKVCache(PagedKVCacheManager):
     def step(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""
 
+    def poll_transfers(self) -> None:
+        """No-op; ``alloc`` posts nothing, so nothing is ever in flight."""
+
+    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
+        """Returns False, for the same reason."""
+        return False
+
     def contains(self, ctx: TextContext) -> bool:
         """Returns True for any request."""
         return True

@@ -13,9 +13,9 @@
 
 """CPU conformance tests for the ``KVConnector`` protocol additions.
 
-Covers the ``wait_for_loads`` / ``wait_for_offloads`` barriers and the
-fire-and-forget ``touch`` method, verified against the no-op ``NullConnector``
-(which needs no device) plus the host/disk connector.
+Covers the per-step ``poll_transfers`` drain and the fire-and-forget ``touch``
+method, verified against the no-op ``NullConnector`` (which needs no device)
+plus the host/disk connector.
 """
 
 from __future__ import annotations
@@ -31,11 +31,11 @@ def test_null_connector_satisfies_protocol() -> None:
     assert isinstance(NullConnector(), KVConnector)
 
 
-def test_barrier_methods_are_callable() -> None:
+def test_poll_transfers_is_callable() -> None:
+    # The default drain is a no-op a connector need not override; the managers
+    # call it every time they drain, so it has to be callable on any connector.
     connector = NullConnector()
-    # Both are no-op barriers (return ``None``); just ensure they are callable.
-    connector.wait_for_loads()
-    connector.wait_for_offloads()
+    connector.poll_transfers()
 
 
 def test_touch_returns_none_and_never_raises() -> None:

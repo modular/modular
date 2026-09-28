@@ -404,11 +404,10 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
 
         Returns:
             The async onload transfer for the request's reused prefix -- an
-            already-complete :class:`CompletedTransfer` when nothing was onloaded
-            asynchronously (device hits and synchronous connectors). The caller
-            polls ``is_complete()`` to hold the request out of a batch until its
-            onloaded KV has landed -- an asynchronous connector's H2D runs off
-            the forward stream.
+            already-complete :class:`CompletedTransfer` when nothing was
+            onloaded (a device hit). The caller polls ``is_complete()`` to hold
+            the request out of a batch until its onloaded KV has landed, since
+            a connector's H2D runs off the forward stream.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -470,8 +469,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 ``max_cache_length`` implies a LUT shape that is invalid, or if
                 the real batch shape exceeds ``batch_characteristics``.
         """
-        replica = self._replica[replica_idx]
-
         max_seq_len = 0
         for ctx in batch:
             # Allocate blocks for request if we need more.
@@ -587,14 +584,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                     ctx, self.params.num_draft_tokens
                 ),
             )
-
-        # Pre-forward load barrier (deprecated, dKV-only): dKV posts its READs in
-        # ``load`` and orders them here before the forward reads their KV.
-        # Asynchronous connectors instead hold a request out of the batch until
-        # its onload event polls complete (``poll_transfers`` + the batch
-        # constructor cordon), so the forward never reads KV that has not landed
-        # and this is a no-op for them.
-        replica.connector.wait_for_loads()
 
         # Initiate saves to external cache tiers.
         self._block_manager.offload(replica_idx)
@@ -743,23 +732,15 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
 
     def step(self, ctx: TextContext) -> None:
         """Commits the request's newly written tokens into the prefix cache."""
-        # Post-forward offload barrier (deprecated, dKV-only): dKV awaits its
-        # NIXL WRITEs here and registers the blocks. Asynchronous connectors
-        # settle offloads via ``poll_transfers`` (which unpins the D2H source
-        # blocks once the copy lands), so this is a no-op for them. Only
-        # ``runtime_inputs`` posts offloads, so every call after the first in a
-        # batch finds nothing left to settle.
-        self._connector.wait_for_offloads()
         self._block_manager.step(ctx)
 
     def poll_transfers(self) -> None:
         """Drains completed async KV transfers (onloads and offloads).
 
         Unpins the device blocks of completed transfers, commits completed
-        onloads into the device prefix cache, and lets asynchronous connectors
-        reclaim their host-side resources. Cheap to call every scheduler
-        iteration; a no-op unless an asynchronous connector (``rust_tiered``)
-        is in use.
+        onloads into the device prefix cache, and lets connectors reclaim their
+        host-side resources. Cheap to call every scheduler iteration, and a
+        no-op when no transfer is in flight.
         """
         self._block_manager.poll_transfers()
 

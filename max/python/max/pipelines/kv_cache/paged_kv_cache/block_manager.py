@@ -141,9 +141,8 @@ class _PendingTransfer:
     ``event`` completes. ``commit_hashes`` is set for onloads only: the onloaded
     blocks are committed into the device prefix cache on completion (deferred so
     a concurrent request cannot read them before the H2D lands), keyed by these
-    hashes in ``blocks`` order. Only asynchronous connectors (``rust_tiered``)
-    produce these; synchronous connectors' transfers are already complete and
-    never tracked.
+    hashes in ``blocks`` order. A transfer that came back already complete moved
+    nothing and is never tracked.
     """
 
     event: KVTransfer
@@ -338,9 +337,9 @@ class BlockManager:
         ]
 
         # In-flight async transfers (host/disk onloads and offloads) per
-        # replica, each pinning its device blocks until it completes. Only
-        # asynchronous connectors (``rust_tiered``) populate this; drained on
-        # the main thread by ``poll_transfers``.
+        # replica, each pinning its device blocks until it completes. A
+        # transfer that came back already complete moved nothing and never
+        # lands here; drained on the main thread by ``poll_transfers``.
         self._pending_transfers: list[list[_PendingTransfer]] = [
             [] for _ in range(self.num_replicas)
         ]
@@ -466,9 +465,9 @@ class BlockManager:
             ``(skip_amount, event)`` where ``skip_amount`` is the number of
             tokens skipped due to prefix-cache reuse (0 when no blocks were
             reused) and ``event`` is the async onload transfer for the reused
-            prefix -- an already-complete :class:`CompletedTransfer` when nothing
-            was onloaded asynchronously (the common case: device hits and
-            synchronous connectors), so callers can just poll ``is_complete()``.
+            prefix -- an already-complete :class:`CompletedTransfer` when
+            nothing was onloaded (the common case: a device hit), so callers
+            can just poll ``is_complete()``.
         """
         # Reject an unclaimed request here rather than deeper in: the early
         # returns below skip every other call that would resolve its replica.
@@ -735,23 +734,20 @@ class BlockManager:
         The device blocks are newly allocated and initialized with the contents
         of the host/external blocks via the connector's ``load``.
 
-        For a synchronous / stream-ordered connector the H2D is already ordered
-        ahead of the forward, so the onloaded blocks are committed into the
-        device prefix cache immediately and the (already-complete) transfer is
-        returned unchanged.
-
-        For an asynchronous connector (``rust_tiered``) the H2D runs on a
-        separate copy engine: the destination blocks are pinned and their
-        prefix-cache commit is deferred until the copy lands (``poll_transfers``)
-        so a concurrent request in the same batch cannot read them early.
+        The H2D runs off the forward stream, so the destination blocks are
+        pinned and their prefix-cache commit is deferred until the copy lands
+        (``poll_transfers``) -- a concurrent request in the same batch cannot
+        read them early, and the scheduler holds this one out of the batch
+        meanwhile. A transfer that comes back already complete moved nothing,
+        and its blocks are committed at once.
 
         ``hint`` is the request's raw ``dkv_cache_hint``, passed through to the
         connector; see :meth:`KVConnector.load`.
 
         Returns:
             ``(loaded_blocks, event)``; ``event`` is an already-complete
-            :class:`CompletedTransfer` when nothing was onloaded or the onload
-            was synchronous, otherwise the in-flight transfer.
+            :class:`CompletedTransfer` when nothing was onloaded, otherwise the
+            in-flight transfer.
         """
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
@@ -804,9 +800,8 @@ class BlockManager:
             return [], CompletedTransfer()
 
         if event.is_complete():
-            # Synchronous / stream-ordered connector (dKV): the
-            # H2D is already ordered ahead of the forward, so commit into the
-            # device prefix cache now.
+            # Nothing is in flight, so the blocks are readable now; commit them
+            # into the device prefix cache.
             for block, block_hash in zip(
                 loaded_blocks, loaded_hashes, strict=True
             ):
@@ -817,9 +812,9 @@ class BlockManager:
                     continue
                 pool.commit_into_prefix_cache(block_hash, block)
         else:
-            # Asynchronous connector (``rust_tiered``): pin the destination
-            # blocks and defer their prefix-cache commit until the H2D lands, so
-            # a concurrent request cannot read them before the data arrives.
+            # Pin the destination blocks and defer their prefix-cache commit
+            # until the H2D lands, so a concurrent request cannot read them
+            # before the data arrives.
             self._track_transfer(
                 event, loaded_blocks, replica_idx, commit_hashes=loaded_hashes
             )
@@ -1012,9 +1007,9 @@ class BlockManager:
                     block_hashes,
                     replica_idx=replica_idx,
                 )
-                # Asynchronous connector: pin the device source blocks until the
-                # D2H lands so they are not evicted / reused mid-copy. Synchronous
-                # connectors report the offload already complete (no pin).
+                # Pin the device source blocks until the D2H lands so they are
+                # not evicted / reused mid-copy. An offload that moved nothing
+                # reports complete and takes no pin.
                 if not event.is_complete():
                     self._track_transfer(event, src_blocks, replica_idx)
         self._pending_offloads[replica_idx].clear()
@@ -1030,8 +1025,7 @@ class BlockManager:
 
         Pinning (a ``ref_cnt`` bump via ``touch``) keeps the blocks out of the
         eviction / free path until ``poll_transfers`` observes ``event``
-        complete and unpins them. Only asynchronous connectors reach here; a
-        no-op for an empty block list.
+        complete and unpins them. A no-op for an empty block list.
         """
         if not blocks:
             return
@@ -1050,16 +1044,31 @@ class BlockManager:
         For each completed transfer: commits any deferred onload blocks into the
         device prefix cache (now safe for cross-request reuse) and unpins the
         transfer's device blocks. Cheap to call every scheduler iteration -- an
-        ``is_complete`` poll per in-flight transfer. A no-op unless an
-        asynchronous connector (``rust_tiered``) is in use.
+        ``is_complete`` poll per in-flight transfer, and a no-op when none is.
         """
+        self.connector.poll_transfers()
         for replica_idx, pending_list in enumerate(self._pending_transfers):
             if not pending_list:
                 continue
             pool = self.device_block_pools[replica_idx]
             still_pending: list[_PendingTransfer] = []
-            for pending in pending_list:
-                if not pending.event.is_complete():
+            unreached = iter(pending_list)
+            for pending in unreached:
+                try:
+                    complete = pending.event.is_complete()
+                except BaseException:
+                    # A poll that raises has settled its own transfer, and the
+                    # blocks it was filling hold no valid KV. Unpin them
+                    # without committing, and put back the entries this pass
+                    # never reached -- leaving them on a list it already drained
+                    # would free their blocks a second time.
+                    for block in pending.blocks:
+                        pool.free_block(block)
+                    self._pending_transfers[replica_idx] = still_pending + list(
+                        unreached
+                    )
+                    raise
+                if not complete:
                     still_pending.append(pending)
                     continue
                 if pending.commit_hashes is not None:
@@ -1370,7 +1379,7 @@ class BlockManager:
         # queue while their copy lands, and an offload's sources outlive the
         # request that owned them, so they are neither free nor request-active.
         # Count them here or the pool's free + active == total check trips
-        # whenever an asynchronous connector has a transfer in flight.
+        # whenever a connector has a transfer in flight.
         for replica_idx_, pending_list in enumerate(self._pending_transfers):
             for pending in pending_list:
                 for block in pending.blocks:

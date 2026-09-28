@@ -1882,10 +1882,10 @@ def test_dkv_read_blocks_publishes_outside_the_cache_hit_clause() -> None:
     It is a per-window delta that ``take_metrics`` clears after every batch,
     so a window published under any other batch type would lose its count for
     good. That matters because a load posted on a CE iteration can have its
-    blocks accounted on a later ``wait_for_loads``, which also runs on TG
-    iterations: under the old placement those blocks were dropped, letting the
-    counter read *below* ``cache.hits{tier=external}`` despite being
-    documented as an upper bound on it.
+    blocks accounted on a later drain, which also runs on TG iterations: under
+    the old placement those blocks were dropped, letting the counter read
+    *below* ``cache.hits{tier=external}`` despite being documented as an upper
+    bound on it.
     """
     metrics = _make_metrics(
         batch_type=BatchType.TG,

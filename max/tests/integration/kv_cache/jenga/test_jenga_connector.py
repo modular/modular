@@ -51,13 +51,21 @@ SLIDING = "sliding"
 
 
 class FakeTransfer:
-    """A transfer that reports complete only once ``synchronize`` is called."""
+    """A transfer that reports complete only once ``synchronize`` is called.
+
+    Setting ``fails`` makes every poll raise, as a terminal transfer failure
+    does: the destination blocks hold no valid KV, and the failure is sticky so
+    a second poller cannot see completion instead.
+    """
 
     def __init__(self, g0: Mapping[str, Sequence[int]] | None = None) -> None:
         self.g0_blocks_per_leaf = {} if g0 is None else g0
         self.done = False
+        self.fails = False
 
     def is_complete(self) -> bool:
+        if self.fails:
+            raise RuntimeError("transfer failed")
         return self.done
 
     def synchronize(self) -> None:
@@ -89,6 +97,7 @@ class FakeConnector:
         self.offloads: list[tuple[dict[str, list[int]], list[bytes]]] = []
         self.touches: list[tuple[list[bytes], int]] = []
         self.transfers: list[FakeTransfer] = []
+        self.polls = 0
 
     def lookup(
         self,
@@ -168,11 +177,8 @@ class FakeConnector:
     ) -> None:
         self.touches.append((list(block_hashes), replica_idx))
 
-    def wait_for_loads(self) -> None:
-        return None
-
-    def wait_for_offloads(self) -> None:
-        return None
+    def poll_transfers(self) -> None:
+        self.polls += 1
 
     def reset_prefix_cache(self) -> None:
         self.held.clear()
@@ -549,68 +555,108 @@ def test_swa_connector_onload_null_pads_and_skips_prefix_cache_commit() -> None:
     assert len(pool.prefix_caches[FULL]) == len(asked)
 
 
-def test_step_settles_offloads_before_committing() -> None:
-    """``step`` must run the post-forward offload barrier.
+def test_the_drain_settles_offloads_rather_than_step() -> None:
+    """A posted offload is settled by the manager's drain, not by ``step``.
 
     dKV's ``offload`` only acquires its slots and posts the writes; the blocks
     stay ``Filling`` -- counted under ``g1_blocks`` but unreadable -- until
-    ``wait_for_offloads`` settles the transfers and registers them. Without the
-    barrier every read misses and the connector reports a 0% hit rate while dKV
-    appears to fill up.
-
-    Order matters as much as presence: the barrier settles the PREVIOUS
-    forward's offloads, so it has to run before this step commits new writes.
+    their transfer settles. Nothing settling them is a 0% hit rate while dKV
+    appears to fill up. ``step`` used to run a post-forward barrier for that;
+    the transfer's own completion is what does it now, observed by
+    ``poll_transfers``, which also hands the connector its own drain.
     """
-    seen: list[int] = []
-    manager_box: list[JengaBlockManager] = []
-
-    class _BarrierRecorder(FakeConnector):
-        """Reads the prefix cache from INSIDE the offload barrier.
-
-        Sampling here is what lets the ordering half of this test fail.
-        Appending a marker after ``step`` returns cannot: the marker lands
-        after the whole call either way, whatever order ``step`` used inside.
-        """
-
-        def wait_for_offloads(self) -> None:
-            pool = manager_box[0].pools[0]
-            seen.append(
-                sum(len(cache) for cache in pool.prefix_caches.values())
-            )
-
-    connector = _BarrierRecorder([FULL])
+    connector = FakeConnector([FULL])
     manager = make_manager(connector)
-    manager_box.append(manager)
 
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    manager.offload(0)
+
+    assert connector.offloads, "step should leave a committed run to offload"
+    posted = connector.transfers[-1]
+    assert not posted.done, "an in-flight offload is not settled by step"
+
+    polls_before = connector.polls
+    manager.poll_transfers()
+    assert connector.polls > polls_before, (
+        "the drain has to reach the connector, whose own transfers settle "
+        "resources no poll of the manager's covers"
+    )
+
+    pool = manager.pools[0]
+    sources = [pool.block(FULL, bid) for bid in posted.g0_blocks_per_leaf[FULL]]
+    # The request holds these pages too, so the write's own pin shows up as one
+    # ref on top of that rather than as an absolute count.
+    pinned = [block.ref_cnt for block in sources]
+
+    posted.synchronize()
+    manager.poll_transfers()
+
+    assert not manager.pending_transfers_exist(0)
+    assert [block.ref_cnt for block in sources] == [n - 1 for n in pinned], (
+        "a settled write has to hand its source pages back"
+    )
+
+
+def test_a_failed_poll_unpins_without_publishing() -> None:
+    """A poll that raises unpins the onload's pages and commits nothing.
+
+    The transfer settled itself on the way to failing, and the pages it was
+    filling hold no valid KV, so publishing them would let any later request
+    hit garbage. The pin still has to come off, or those pages are lost to the
+    pool for the rest of the process.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+
+    # Fill the connector from a forward, then empty the device tier so the
+    # same prompt has to come back over an onload.
     first = make_ctx([1, 2, 3, 4])
     manager.claim(first)
     manager.alloc(first)
     first.update(9)
     manager.step(first)
     manager.offload(0)
+    _, offloaded_hashes = connector.offloads[-1]
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.release(first)
+    manager.reset_prefix_cache()
+
+    connector.held = set(offloaded_hashes)
+    second = make_ctx([1, 2, 3, 4])
+    manager.claim(second)
+    transfer = manager.alloc(second)
+    asked = connector.loads[-1][1][FULL]
+    assert asked, "no onload issued"
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
 
     pool = manager.pools[0]
-    after_first = sum(len(cache) for cache in pool.prefix_caches.values())
-    assert after_first, "step should have committed the filled run"
-    assert connector.offloads, "step should leave a committed run to offload"
+    onloaded = [
+        pool.block(FULL, bid)
+        for bid in manager.get_req_blocks_per_leaf(second)[FULL]
+    ]
 
-    # A second forward. Its barrier settles the FIRST forward's offloads, so it
-    # must run before this step's own commit and can only see what the first
-    # step published.
-    second = make_ctx([5, 6, 7, 8])
-    manager.claim(second)
-    manager.alloc(second)
-    second.update(9)
-    manager.step(second)
+    with pytest.raises(RuntimeError, match="transfer failed"):
+        manager.poll_transfers()
 
-    assert seen == [0, after_first], (
-        f"barrier saw {seen}; it must run before each step's commit "
-        f"(expected [0, {after_first}])"
+    prefix_cache = pool.prefix_caches[FULL]
+    assert all(h not in prefix_cache for h in asked), (
+        "a failed onload's pages must not be published"
+    )
+    assert not manager.pending_transfers_exist(0)
+    assert all(block.ref_cnt == 1 for block in onloaded), (
+        "the failed transfer's pin is released, leaving the allocation's own"
     )
 
 
 def test_step_without_a_connector_still_commits() -> None:
-    """A manager with no connector must not reach for a barrier."""
+    """A manager with no connector must not reach for one."""
     manager = make_manager(None)
 
     ctx = make_ctx([1, 2, 3, 4])

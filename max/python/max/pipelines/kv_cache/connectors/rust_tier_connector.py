@@ -568,23 +568,13 @@ class RustTierConnector(KVConnector):
             list(self.leaves),
         )
 
-    def wait_for_loads(self) -> None:
-        # No-op: this connector reports load completion through the
-        # KVConnectorTransfer it returns from ``load`` (the scheduler polls it),
-        # so there is no pre-forward barrier.
-        return None
-
-    def wait_for_offloads(self) -> None:
-        # No-op: offloads settle through ``poll_transfers`` (the returned
-        # transfer's ``is_complete``), not a post-forward barrier.
-        return None
-
     def wait_for_writes(self) -> None:
         """Blocks until all in-flight transfers (incl. disk write-through) drain.
 
-        Not a scheduler hot-path barrier (see ``wait_for_offloads``); this is a
-        real quiesce for tests and teardown that need a stable tier state (e.g.
-        asserting disk residency after an offload's write-through has landed).
+        Not a scheduler hot-path call: transfers settle through
+        ``poll_transfers``. This is a real quiesce for tests and teardown that
+        need a stable tier state (e.g. asserting disk residency after an
+        offload's write-through has landed).
         """
         self._rust.wait_for_writes()
 

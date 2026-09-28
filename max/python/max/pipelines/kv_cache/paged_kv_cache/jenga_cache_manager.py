@@ -402,15 +402,9 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         if binds_rows and not any(batches):
             raise ValueError("runtime_inputs called with an empty batch")
 
-        if self._connector is not None:
-            # Pre-forward load barrier (dKV-only): dKV posts its READs in
-            # `load` and orders them here. Asynchronous connectors instead hold
-            # a request out of the batch until its onload polls complete, so
-            # this is a no-op for them.
-            self._connector.wait_for_loads()
-            for replica_idx in range(len(batches)):
-                # Initiate saves of everything committed since the last forward.
-                self.offload(replica_idx)
+        for replica_idx in range(len(batches)):
+            # Initiate saves of everything committed since the last forward.
+            self.offload(replica_idx)
 
         # One scope per forward: every replica stages into it, and leaving
         # it sends the lot.
