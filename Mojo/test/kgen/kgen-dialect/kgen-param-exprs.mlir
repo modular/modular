@@ -1382,3 +1382,12 @@ kgen.generator @param_identical_nested_unknown() {
   } : () -> ()
   hlcf.return
 }
+
+
+// CHECK-LABEL: @add_simplification
+kgen.generator @add_simplification<p1, p2, p3>()  {
+  // CHECK: = kgen.param.constant = <to_builtin(:scalar<index> add(from_builtin(p1), from_builtin(p2), from_builtin(p3), -3))>
+  %test = kgen.param.constant = <add(add(p1, -1), add(p2, -1), add(p3, -1))>
+
+  hlcf.return
+}

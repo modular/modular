@@ -2766,14 +2766,17 @@ simplifyAssocOp(POC opcode, SmallVectorImpl<TypedAttr> &operands,
   // `(add x, (add y, z))` => `(add x, y, z)`.
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
     if (auto subexpr = dyn_castPE(opcode, operands[i])) {
-      operands[i] = operands.back();
-      operands.pop_back();
+      operands[i] = operands[e - 1];
+      operands[e - 1] = nullptr;
       --e;
       --i;
       operands.append(subexpr.getOperands().begin(),
                       subexpr.getOperands().end());
     }
   }
+
+  auto it = llvm::remove_if(operands, [](TypedAttr attr) { return !attr; });
+  operands.erase(it, operands.end());
 
   // If allowed, deduplicate operands after flattening
   if (shouldDeduplicateOperands)
