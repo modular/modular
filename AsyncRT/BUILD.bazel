@@ -24,6 +24,7 @@ package_group(
         "//Target/...",
         "//bazel/...",
         "//max/...",
+        "//plugins/...",
         "//utils/...",
     ],
 )

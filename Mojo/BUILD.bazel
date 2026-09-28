@@ -927,7 +927,10 @@ modular_cc_library(
         "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
     }),
     tags = ["no-clang-tidy-headers"],
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//Mojo:consumers",
+        "//Mojo:plugin_consumers",
+    ],
     deps = [
         ":KGENPassesIncGen",
         "//AsyncRT:Runtime",
