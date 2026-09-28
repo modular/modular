@@ -390,16 +390,16 @@ struct MmaOpSM100_SS[
 
     @staticmethod
     def _get_umma_kind[dtype: DType]() -> UMMAKind:
-        comptime if dtype == .float32:
+        comptime __match dtype:
+        case .float32:
             return UMMAKind.KIND_TF32
-        elif dtype in (DType.float16, DType.bfloat16):
+        case .float16 | DType.bfloat16:
             return UMMAKind.KIND_F16
-        elif dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+        case .float8_e4m3fn | DType.float8_e5m2:
             return UMMAKind.KIND_F8F6F4
-        else:
+        case _:
             comptime assert False, String(
-                "Unsupported/not implemented operand type for UMMA: ",
-                String(dtype),
+                t"Unsupported/not implemented operand type for UMMA: {dtype}"
             )
 
         return UMMAKind(-1)

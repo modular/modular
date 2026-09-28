@@ -228,31 +228,32 @@ def _dtype_to_rocshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime if dtype == .float16:
+    comptime __match dtype:
+    case .float16:
         return get_static_string[prefix, "half", suffix]()
-    elif dtype == .float32:
+    case .float32:
         return get_static_string[prefix, "float", suffix]()
-    elif dtype == .float64:
+    case .float64:
         return get_static_string[prefix, "double", suffix]()
-    elif dtype == .int8:
+    case .int8:
         return get_static_string[prefix, "schar", suffix]()
-    elif dtype == .uint8:
+    case .uint8:
         return get_static_string[prefix, "char", suffix]()
-    elif dtype == .int16:
+    case .int16:
         return get_static_string[prefix, "short", suffix]()
-    elif dtype == .uint16:
+    case .uint16:
         return get_static_string[prefix, "ushort", suffix]()
-    elif dtype == .int32:
+    case .int32:
         return get_static_string[prefix, "int", suffix]()
-    elif dtype == .uint32:
+    case .uint32:
         return get_static_string[prefix, "uint", suffix]()
-    elif dtype == .int64:
+    case .int64:
         return get_static_string[prefix, "long", suffix]()
-    elif dtype == .uint64:
+    case .uint64:
         return get_static_string[prefix, "ulong", suffix]()
-    elif dtype == .int:
+    case .int:
         return get_static_string[prefix, "longlong", suffix]()
-    else:
+    case _:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()

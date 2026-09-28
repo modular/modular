@@ -247,20 +247,21 @@ def normalize(
     """
     comptime dtype = value.dtype
 
-    comptime if dtype == .int32:
+    comptime __match dtype:
+    case .int32:
         return normalize(rebind[Int32](value)).cast[result.dtype]()
-    elif dtype == .uint32:
+    case .uint32:
         return normalize(rebind[UInt32](value)).cast[result.dtype]()
-    elif dtype == .float32:
+    case .float32:
         return normalize(rebind[Float32](value)).cast[result.dtype]()
     # TODO: These below don't return uint32 so must generalize and fix
-    elif dtype == .uint16:
+    case .uint16:
         return normalize(rebind[UInt16](value)).cast[result.dtype]()
-    elif dtype == .float16:
+    case .float16:
         return normalize(rebind[Float16](value)).cast[result.dtype]()
-    elif dtype == .bfloat16:
+    case .bfloat16:
         return normalize(rebind[BFloat16](value)).cast[result.dtype]()
-    else:
+    case _:
         comptime assert False, "unhandled normalize type"
 
 
