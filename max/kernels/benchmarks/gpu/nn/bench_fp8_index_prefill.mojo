@@ -340,9 +340,10 @@ def execute_fp8_index_prefill[
     # Score buffer must start filled (the scorer leaves forbidden slots
     # untouched; a benchmark that reuses the buffer across iters relies on a
     # defined baseline). Pre-fill with -inf, the production convention.
-    with o_device.map_to_host() as o_host:
-        for i in range(o_size):
-            o_host[i] = -Float32.MAX
+    # On device: a host fill is quadratic in the two axes deep-cache shapes
+    # raise (`total_seq_len * max_num_keys`), and at `s8192 k131072` it runs
+    # past a probe's timeout before the kernel launches once.
+    ctx.enqueue_memset(o_device, Scalar[DType.float32](-Float32.MAX))
 
     @inline(.always)
     def kernel_launch(launch_ctx: DeviceContext) raises {mut o_tile, imm}:

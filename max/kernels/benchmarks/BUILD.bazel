@@ -525,3 +525,12 @@ filegroup(
     srcs = glob(["gpu/**/*.yaml"]),
     tags = ["maybe-unused"],
 )
+
+# Driver scripts for the ncu captures behind the benchmarks above. They are run
+# by hand on a profiling box, not by any target, so they exist only to be named
+# here.
+filegroup(
+    name = "ncu_scripts",
+    srcs = glob(["gpu/**/*_ncu.sh"]),
+    tags = ["maybe-unused"],
+)

@@ -900,16 +900,8 @@ def fp8_index_score_sm100[
     var out_rows = Int(output.dim[0]())
     var win_seq_len = min(max_seq_len, out_rows)
 
-    var total_q_rows = Int(q.dim[0]()) * num_heads
-    var q_tma_tile = create_split_tma[
-        Index(MMA_N, 1, depth),
-        Index(UNKNOWN_VALUE, 1, depth),
-        _INDEX_SWIZZLE,
-    ](
-        ctx,
-        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
-        total_q_rows,
-    )
+    var num_q_tokens = Int(q.dim[0]())
+    var q_ptr = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr)
     var k_tma_tile = k_operand.create_tma_tile[
         _INDEX_SWIZZLE,
         BN=BM_key,
@@ -1029,7 +1021,14 @@ def fp8_index_score_sm100[
                 and MMA_N_ALT % 16 == 0
                 and MMA_N_ALT >= 64
                 and MMA_N_ALT <= 256
-                and _ctas_per_sm[MMA_N_ALT]() == _ctas_per_sm[MMA_N]()
+                # PRODUCTION residency class on both sides (the explicit `0`),
+                # not the knob-aware default. This gate is a COMPARISON, so
+                # reading it through `FP8_INDEX_CTAS_PER_SM` would newly admit
+                # the alternate tile whenever a define forced MMA_N=128 to 1
+                # CTA/SM -- changing WHICH kernel is chosen, so the arm being
+                # measured would not route like the arm it is compared against.
+                # A measurement lever configures the chosen kernel only.
+                and _ctas_per_sm[MMA_N_ALT, 0]() == _ctas_per_sm[MMA_N, 0]()
             ):
                 if (
                     max_seq_len % N_ALT == 0
@@ -1037,17 +1036,6 @@ def fp8_index_score_sm100[
                     and max_seq_len // N_ALT
                     <= max(token_tiles, _KEYSPLIT_MAX_TOKEN_TILES)
                 ):
-                    var q_tma_alt = create_split_tma[
-                        Index(MMA_N_ALT, 1, depth),
-                        Index(UNKNOWN_VALUE, 1, depth),
-                        _INDEX_SWIZZLE,
-                    ](
-                        ctx,
-                        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                            q.ptr
-                        ),
-                        total_q_rows,
-                    )
                     fp8_index_score_sm100_prefill[
                         dtype,
                         KOperand,
@@ -1062,7 +1050,8 @@ def fp8_index_score_sm100[
                         QSEngine=q_s.Engine,
                         OutEngine=output.Engine,
                     ](
-                        rebind[QTMATileT[dtype, MMA_N_ALT, depth]](q_tma_alt),
+                        q_ptr,
+                        num_q_tokens,
                         rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
                         k_operand,
                         ks_operand,
@@ -1091,9 +1080,8 @@ def fp8_index_score_sm100[
                 QSEngine=q_s.Engine,
                 OutEngine=output.Engine,
             ](
-                rebind[QTMATileT[dtype, N_TOKENS * num_heads, depth]](
-                    q_tma_tile
-                ),
+                q_ptr,
+                num_q_tokens,
                 rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
                 k_operand,
                 ks_operand,
@@ -1115,6 +1103,17 @@ def fp8_index_score_sm100[
     # keep compiling two kernel families it can never launch. With it, "the
     # scorer never runs for GLM-5.2" is checkable from the emitted blob set.
     comptime if not UNIFY:
+        # Only the K-resident scorer reads this descriptor; the prefill routes
+        # above build their own in the row order they fold in.
+        var q_tma_tile = create_split_tma[
+            Index(MMA_N, 1, depth),
+            Index(UNKNOWN_VALUE, 1, depth),
+            _INDEX_SWIZZLE,
+        ](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
+            num_q_tokens * num_heads,
+        )
         comptime kernel_flat = _fp8_index_score_kernel_sm100[
             dtype,
             KOperand,

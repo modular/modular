@@ -295,3 +295,121 @@ params:
   $cache_len: 8192
   $spread: 90
   $max_num_keys: 17612
+
+# label=narrow_decode -- `seq_len` in {4, 8}, the widths that miss the alternate
+# tile's `% 3 == 0` and stay on the default 4-token MMA_N=128 tile. Under
+# `-D FP8_INDEX_CONS_WGS=2` a `seq_len=4` CTA holds one live token block and one
+# dead one while `seq_len=8` fills both, so the 4-cells against the 8-cells
+# measure the dead-warpgroup drain.
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: narrow_decode
+  $spread: 0
+  $seq_len: 4
+  $cache_len: 8192
+  $max_num_keys: 8196
+  $batch_size: [1, 8, 32, 148]
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: narrow_decode
+  $spread: 0
+  $seq_len: 8
+  $cache_len: 8192
+  $max_num_keys: 8200
+  $batch_size: [1, 8, 32, 148]
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: narrow_decode
+  $spread: 0
+  $seq_len: 8
+  $cache_len: 32768
+  $max_num_keys: 32776
+  $batch_size: [32]
+
+# label=deep_prefill -- a cache-depth ladder at two prefill shapes, with
+# `max_num_keys == cache_len + seq_len` so the metadata matches the live keys.
+# Every cell has one key part, so depth is the only thing moving.
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 1
+  $seq_len: 2048
+  $cache_len: 0
+  $max_num_keys: 2048
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 1
+  $seq_len: 2048
+  $cache_len: 8192
+  $max_num_keys: 10240
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 1
+  $seq_len: 2048
+  $cache_len: 32768
+  $max_num_keys: 34816
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 1
+  $seq_len: 2048
+  $cache_len: 65536
+  $max_num_keys: 67584
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 1
+  $seq_len: 2048
+  $cache_len: 131072
+  $max_num_keys: 133120
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 8
+  $seq_len: 512
+  $cache_len: 8192
+  $max_num_keys: 8704
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 8
+  $seq_len: 512
+  $cache_len: 32768
+  $max_num_keys: 33280
+
+- num_heads: 32
+  depth: 128
+  page_size: 128
+  $label: deep_prefill
+  $spread: 0
+  $batch_size: 8
+  $seq_len: 512
+  $cache_len: 65536
+  $max_num_keys: 66048
