@@ -522,8 +522,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/22.1.4/2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b/llvm-linux-x86_64.tar.xz",
+    sha256 = "4a8c1bd46ac42ee8ff73a27d86b2ec7d922304e0e9ded8b8b7e50c29cc38408f",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/23.1.1/4a8c1bd46ac42ee8ff73a27d86b2ec7d922304e0e9ded8b8b7e50c29cc38408f/llvm-linux-x86_64.tar.xz",
 )
 
 http_archive(
@@ -531,8 +531,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/22.1.4/474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab/llvm-linux-aarch64.tar.xz",
+    sha256 = "29cc18da13b7a730bc7a9a67c8cfa3048d62cb2133f171a276d41924303f90db",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/23.1.1/29cc18da13b7a730bc7a9a67c8cfa3048d62cb2133f171a276d41924303f90db/llvm-linux-aarch64.tar.xz",
 )
 
 http_archive(
@@ -540,8 +540,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/22.1.4/ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c/llvm-macos.tar.xz",
+    sha256 = "84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.1/84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3/llvm-macos.tar.xz",
 )
 
 SHELLCHECK_VERSION = "v0.11.0"
