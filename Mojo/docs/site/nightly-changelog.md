@@ -10,11 +10,14 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- Added experimental `__match` / `case` pattern matching for early testing.
-  Patterns include literals, or-patterns (`|`), guards (`if`), `var` / `ref` /
-  `as` bindings, tuples, structs, and `EnumLike` types such as `Optional`.
-  Nested patterns can dig through several layers in one case — for example
-  matching an optional point without a nested `match`:
+- Added experimental `__match` / `case` pattern matching for early testing,
+  including `comptime __match` for compile-time subjects. Patterns include
+  literals, or-patterns (`|`), guards (`if`), `as` / bare name bindings,
+  tuples, structs, and `EnumLike` types such as `Optional`. Dynamic match also
+  supports `var` / `ref` bindings; comptime match binds names as parameter
+  values and rejects `var` / `ref`. Nested patterns can dig through several
+  layers in one case — for example matching an optional point at runtime, or
+  specializing a kernel path on a compile-time tile size:
 
   ```mojo
   def describe(p: Optional[Point]) -> String:
@@ -29,10 +32,25 @@ This version is still a work in progress.
           return "missing"
       case _:
           return "unreachable"
+
+  # comptime match is guaranteed evaluated at compile time.  The subject must be
+  # a parameter and the bound names are also parameters. var and ref specifiers
+  # are not allowed in comptime match, because they are not meaningful.
+  def matmul_tile[m: Int, n: Int, k: Int](...):
+      comptime __match (m, n, k):
+      case (16, 16, 16):
+          # Hand-tuned 16³ path.
+          ...
+      case (m_tile, n_tile, k_tile) if m_tile * n_tile <= 256:
+          # Small-tile path; bound sizes stay available as parameters.
+          ...
+      case _:
+          # Generic fallback.
+          ...
   ```
 
-  `__match` warns on non-exhaustive `EnumLike` subjects (including `Bool`
-  and tuples/structs of such types) and on unreachable or duplicate cases. Open
+  Both forms warn on non-exhaustive `EnumLike` subjects (including `Bool` and
+  tuples/structs of such types) and on unreachable or duplicate cases. Open
   subjects such as `Int` and `String` diagnose duplicate literal cases but are
   not required to be exhaustive.
 

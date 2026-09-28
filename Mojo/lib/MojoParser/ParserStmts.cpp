@@ -313,6 +313,8 @@ struct StmtParser : public ParserBase {
   /// pattern tests (and optional guard, AND'd in) become a PValue bool
   /// condition; bodies fill then/else regions. Pattern bindings are installed
   /// as PValues before the guard is evaluated and remain visible in the body.
+  /// Unreachable arms are still parsed for diagnostics then sealed with
+  /// `hlcf.unreachable`; a concluding match seals an empty else the same way.
   void emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
                          PatternEmitState &emissionState, size_t curIndent);
 
@@ -1745,12 +1747,19 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
 /// Each tested case contributes one condition attribute; a trailing
 /// always-matching case (`_` / bare binding) becomes the else arm. Pattern
 /// bindings are PValues installed before any guard runs and kept for the body;
-/// guards are AND'd into the case condition.
+/// guards are AND'd into the case condition. Unreachable arms still parse their
+/// bodies for diagnostics, then become `hlcf.unreachable`; a concluding match
+/// seals the else the same way.
 void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
                                    PatternEmitState &emissionState,
                                    size_t curIndent) {
   assert(!caseEntries.empty() && "emitComptimeCases requires a non-empty list");
   llvm::SaveAndRestore builderSaver(builder);
+
+  bool matchIsConcluding =
+      llvm::any_of(caseEntries, [](const MatchCaseEntry &entry) {
+        return entry.isConcluding;
+      });
 
   // Install pattern bindings as PValues in `curDeclScope` (caller opens the
   // scope). Guards and the case body both resolve names against this scope.
@@ -1806,6 +1815,13 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
     return ParamOperatorAttr::getLogicalAnd(patternCond, guardPV);
   };
 
+  auto replaceBlockWithUnreachable = [&](Location loc) {
+    Block *block = builder.getInsertionBlock();
+    block->clear();
+    builder.setInsertionPointToStart(block);
+    HLCF::UnreachableOp::create(builder, loc);
+  };
+
   auto emitInlineBody = [&](const MatchCaseEntry &entry,
                             ArrayRef<PatternBoundName> bindings,
                             ArrayRef<ConstraintAttr> assumptions = {}) {
@@ -1835,32 +1851,55 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
     TypedAttr cond;
     const MatchCaseEntry *entry;
     SmallVector<PatternBoundName, 4> bindings;
+    bool isUnreachable = false;
   };
   SmallVector<Arm, 4> arms;
   const MatchCaseEntry *elseEntry = nullptr;
   SmallVector<PatternBoundName, 4> elseBindings;
+  TypedAttr falseAttr = SIMDAttr::getScalarBool(getContext(), false);
 
   for (const MatchCaseEntry &entry : caseEntries) {
-    if (entry.isUnreachable)
-      continue;
     SmallVector<PatternBoundName, 4> bindings;
     FailureOr<TypedAttr> cond =
         emissionState.emitComptimeCondition(entry.commandList, bindings);
     if (failed(cond))
       return;
-    FailureOr<TypedAttr> withGuard = andGuard(*cond, entry, bindings);
-    if (failed(withGuard))
-      return;
-    // Irrefutable pattern with no guard: else arm (bindings still apply).
+
+    // Past a catch-all: remaining cases are unreachable. Keep parsing their
+    // bodies for diagnostics via a `false` elif arm (never taken), then seal
+    // with `hlcf.unreachable`.
+    if (elseEntry) {
+      if (failed(andGuard(*cond, entry, bindings)))
+        return;
+      arms.push_back({falseAttr, &entry, std::move(bindings),
+                      /*isUnreachable=*/true});
+      continue;
+    }
+
+    // Irrefutable pattern with no guard: else arm (may itself be unreachable
+    // after prior cases covered the subject).
     if (entry.alwaysMatches()) {
       elseEntry = &entry;
       elseBindings = std::move(bindings);
-      break;
+      continue;
     }
-    arms.push_back({*withGuard, &entry, std::move(bindings)});
+
+    FailureOr<TypedAttr> withGuard = andGuard(*cond, entry, bindings);
+    if (failed(withGuard))
+      return;
+
+    // Unreachable tested arms use a false condition so they cannot steal
+    // control from a later else; the body is still parsed for diagnostics.
+    if (entry.isUnreachable)
+      arms.push_back({falseAttr, &entry, std::move(bindings),
+                      /*isUnreachable=*/true});
+    else
+      arms.push_back({*withGuard, &entry, std::move(bindings),
+                      /*isUnreachable=*/false});
   }
 
-  // No live tested arms: either only unreachable cases, or only an else.
+  // No tested arms: only a live else (unreachable-after-else cases always
+  // produce false arms above).
   if (arms.empty()) {
     if (elseEntry)
       emitInlineBody(*elseEntry, elseBindings);
@@ -1888,24 +1927,44 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
     arm.entry->caseCursor.restore(getLexer());
     (void)parseSuite(arm.entry->caseIndent);
     auto caseLoc = translateLocation(arm.entry->patternExpr->getLoc());
-    HLCF::ComptimeYieldOp::create(builder, caseLoc);
+    // Unreachable arms: keep the body only long enough to diagnose, then seal.
+    if (arm.isUnreachable)
+      replaceBlockWithUnreachable(caseLoc);
+    else
+      HLCF::ComptimeYieldOp::create(builder, caseLoc);
   };
 
   SmallVector<ConstraintAttr, 4> falseAssumptions;
   auto thenRegions = comptimeIfOp.getThenRegions();
   for (auto [idx, arm] : llvm::enumerate(arms)) {
     SmallVector<ConstraintAttr, 4> thenAssumptions(falseAssumptions);
-    thenAssumptions.push_back(LIT::buildBranchAssumption(
-        arm.cond, /*invertCondition=*/false, emissionState.matchLocation));
+    // False-conditioned unreachable arms do not contribute branch assumptions.
+    if (!arm.isUnreachable) {
+      thenAssumptions.push_back(LIT::buildBranchAssumption(
+          arm.cond, /*invertCondition=*/false, emissionState.matchLocation));
+    }
     emitArmBody(thenRegions[idx], arm, thenAssumptions);
-    falseAssumptions.push_back(LIT::buildBranchAssumption(
-        arm.cond, /*invertCondition=*/true, emissionState.matchLocation));
+    if (!arm.isUnreachable) {
+      falseAssumptions.push_back(LIT::buildBranchAssumption(
+          arm.cond, /*invertCondition=*/true, emissionState.matchLocation));
+    }
   }
 
   builder.createBlock(&comptimeIfOp.getElseRegion());
-  if (elseEntry)
+  if (elseEntry) {
     emitInlineBody(*elseEntry, elseBindings, falseAssumptions);
-  HLCF::ComptimeYieldOp::create(builder, emissionState.matchLocation);
+    if (elseEntry->isUnreachable) {
+      replaceBlockWithUnreachable(
+          translateLocation(elseEntry->patternExpr->getLoc()));
+    } else {
+      HLCF::ComptimeYieldOp::create(builder, emissionState.matchLocation);
+    }
+  } else if (matchIsConcluding) {
+    // Prior cases cover every subject value — nothing can reach the else.
+    HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
+  } else {
+    HLCF::ComptimeYieldOp::create(builder, emissionState.matchLocation);
+  }
 }
 
 /// Determine if some number of the specified cases can be emitted as a cluster

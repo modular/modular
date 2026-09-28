@@ -943,6 +943,15 @@ FailureOr<TypedAttr> PatternEmitState::emitComptimeCondition(
     TypedAttr newTest; // The new test to merge in
     switch (cmd->kind) {
     case PatternCommand::Bind: {
+      // Comptime match only supports bare (imm) name bindings as PValues.
+      if (cmd->declKind == PatternDeclKind::kVar ||
+          cmd->declKind == PatternDeclKind::kRef) {
+        emitter.emitError(cmd->expr->getLoc())
+            << (cmd->declKind == PatternDeclKind::kVar ? "'var'" : "'ref'")
+            << " bindings are not supported in 'comptime match'"
+            << cmd->expr->getRange();
+        return failure();
+      }
       CValue subject = getPathValue(emitter, cmd->path, cmd->expr);
       if (!subject)
         return failure();

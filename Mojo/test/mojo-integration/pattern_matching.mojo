@@ -13,7 +13,8 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-"""End-to-end pattern matching: literals, tuples, structs, Optional, EnumLike."""
+"""End-to-end pattern matching: literals, tuples, structs, Optional, EnumLike,
+and comptime match."""
 
 from std.collections import Optional
 from std.utils import Variant
@@ -167,6 +168,42 @@ def classify_or_bind_ref(var pair: Tuple[Int, Int]) -> String:
         return "miss"
 
 
+def classify_comptime_int[x: Int]() -> String:
+    comptime __match x:
+    case 0:
+        return "zero"
+    case 1 | 2:
+        return "small"
+    case n if n < 0:
+        return "negative"
+    case n:
+        return String("other:", n)
+
+
+def classify_comptime_bool[flag: Bool]() -> String:
+    comptime __match flag:
+    case True:
+        return "yes"
+    case False:
+        return "no"
+
+
+def classify_comptime_or_bind[pair: Tuple[Int, Int]]() -> String:
+    comptime __match pair:
+    case (0, y) | (y, 1):
+        return String("hit:", y)
+    case _:
+        return "miss"
+
+
+def classify_comptime_as[x: Int]() -> String:
+    comptime __match x:
+    case 0 as n:
+        return String("zero:", n)
+    case _:
+        return "other"
+
+
 # ===----------------------------------------------------------------------=== #
 # Tests
 # ===----------------------------------------------------------------------=== #
@@ -283,9 +320,50 @@ def test_or_bindings():
     print(classify_or_bind_ref((0, 0)))
 
 
+def test_comptime_match():
+    # CHECK-LABEL: == test_comptime_match
+    print("== test_comptime_match")
+
+    # Literals, or-patterns, guards, and bare bindings.
+    # CHECK: zero
+    print(classify_comptime_int[0]())
+    # CHECK: small
+    print(classify_comptime_int[1]())
+    # CHECK: small
+    print(classify_comptime_int[2]())
+    # CHECK: negative
+    print(classify_comptime_int[-3]())
+    # CHECK: other:10
+    print(classify_comptime_int[10]())
+
+    # Exhaustive Bool match.
+    # CHECK: yes
+    print(classify_comptime_bool[True]())
+    # CHECK: no
+    print(classify_comptime_bool[False]())
+
+    # Or-pattern bindings Cond-select across alternatives.
+    # CHECK: hit:5
+    print(classify_comptime_or_bind[(0, 5)]())
+    # CHECK: hit:7
+    print(classify_comptime_or_bind[(7, 1)]())
+    # Both match; first alternative wins (y from the right element).
+    # CHECK: hit:1
+    print(classify_comptime_or_bind[(0, 1)]())
+    # CHECK: miss
+    print(classify_comptime_or_bind[(4, 4)]())
+
+    # `as` binding after a value test.
+    # CHECK: zero:0
+    print(classify_comptime_as[0]())
+    # CHECK: other
+    print(classify_comptime_as[3]())
+
+
 def main():
     test_optional()
     test_enum_like_token()
     test_literals_guards_or()
     test_tuples_and_structs()
     test_or_bindings()
+    test_comptime_match()

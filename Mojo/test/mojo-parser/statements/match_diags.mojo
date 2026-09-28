@@ -493,8 +493,36 @@ def comptime_match_or_binding_name_mismatch[x: Tuple[Int, Int]]():
         pass
 
 
-def comptime_match_or_binding_kind_mismatch[x: Tuple[Int, Int]]():
+def comptime_match_var_binding_rejected[x: Int]():
     comptime __match x:
-    # expected-error @+1 {{or-pattern binding 'y' must use the same 'var'/'ref' kind in each alternative}}
-    case (0, var y) | (1, y):
+    case var y: # expected-error {{'var' bindings are not supported in 'comptime match'}}
         pass
+
+
+def comptime_match_ref_binding_rejected[x: Int]():
+    comptime __match x:
+    case ref y: # expected-error {{'ref' bindings are not supported in 'comptime match'}}
+        pass
+
+
+def comptime_match_unreachable_body_still_diagnosed[flag: Bool]():
+    # Unreachable arms are still parsed so body errors are reported.
+    comptime __match flag:
+    case True:
+        pass
+    case False:
+        pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        # expected-error @+1 {{use of unknown declaration 'no_such_name'}}
+        _ = no_such_name
+
+
+def comptime_match_unreachable_after_catchall[x: Int]():
+    comptime __match x:
+    case _:
+        pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case 1:
+        # expected-error @+1 {{use of unknown declaration 'also_missing'}}
+        _ = also_missing

@@ -876,6 +876,7 @@ def comptime_match_literals[x: Int]():
 
 # CHECK-LABEL: lit.fn @"comptime_match_bool
 def comptime_match_bool[flag: Bool]():
+    # True/False cover Bool, so the else is sealed with `hlcf.unreachable`.
     # CHECK:      hlcf.comptime.if {{.*}}__eq__{{.*}}flag{{.*}}{:scalar<bool> true}{{.*}} {
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:        hlcf.comptime.yield
@@ -883,13 +884,35 @@ def comptime_match_bool[flag: Bool]():
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:        hlcf.comptime.yield
     # CHECK:      } else {
-    # CHECK:        hlcf.comptime.yield
+    # CHECK:        hlcf.unreachable
     # CHECK:      }
     comptime __match flag:
     case True:
         case_callee[0]()
     case False:
         case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_bool_unreachable_wildcard
+def comptime_match_bool_unreachable_wildcard[flag: Bool]():
+    # Trailing `_` is unreachable after True/False; body is parsed then sealed.
+    # CHECK:      hlcf.comptime.if {{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } elif {{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:        hlcf.comptime.yield
+    # CHECK:      } else {
+    # CHECK:        hlcf.unreachable
+    # CHECK:      }
+    comptime __match flag:
+    case True:
+        case_callee[0]()
+    case False:
+        case_callee[1]()
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        case_callee[2]()
 
 
 # CHECK-LABEL: lit.fn @"comptime_match_or
