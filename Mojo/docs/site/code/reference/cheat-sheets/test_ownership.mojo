@@ -73,8 +73,8 @@ def test_var_assignment() raises:
     ref r = lst[0]
     var copied = r  # copy out of a reference
     assert_equal(copied.v, 7)
-    var moved = made^  # transfer (last use of made)
-    assert_equal(moved.v, 1)
+    var transferred = made^  # transfer (last use of made)
+    assert_equal(transferred.v, 1)
 
 
 # Mutability: mut writes through; imm borrows.

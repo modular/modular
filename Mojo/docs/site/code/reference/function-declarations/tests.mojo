@@ -252,7 +252,7 @@ def test_var_convention() raises:
     consume(greeting)  # Hello! (copied)
     assert_equal(greeting, "Hello")
 
-    consume(greeting^)  # Hello! (moved)
+    consume(greeting^)  # Hello!
     # greeting is now inaccessible
 
 

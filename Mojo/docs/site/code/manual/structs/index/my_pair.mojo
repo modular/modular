@@ -27,7 +27,7 @@ def main():
     # copyable, movable
     var original_pair = MyPair(2, 6)
     var copied_pair = original_pair  # copy
-    var moved_pair = original_pair^  # move
+    var transferred_pair = original_pair^  # transfer
 
     # methods
     var mine = MyPair(6, 8)
@@ -36,4 +36,4 @@ def main():
     # Suppress compiler warnings
     _ = a^
     _ = copied_pair^
-    _ = moved_pair^
+    _ = transferred_pair^

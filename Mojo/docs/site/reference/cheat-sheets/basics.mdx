@@ -261,12 +261,11 @@ Mark a raising function **raises**; **raise** signals, **try**/**except** catche
 <Panel title="Coming from C++ / Rust">
 
 - Python-style syntax: indentation and `def`, no braces, semicolons, or headers.
-- Value semantics with moves: `^` transfers ownership (like
-  `std::move` or a Rust move); `__deinit__` gives RAII cleanup.
+- Value semantics with transfer: `^` transfers ownership of a value;
+  `__deinit__` gives RAII cleanup.
 - Behavior comes from **traits**, not class inheritance or templates (like Rust
   traits or C++20 concepts).
-- No `?:` ternary or Elvis operator: write `a if cond else b`.
-- No **switch** yet: use `if/elif/else`.
+- No **switch** or **match** yet: use `if/elif/else`.
 
 </Panel>
 

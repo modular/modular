@@ -64,7 +64,7 @@ reference copies out the referenced value.
 | some_value^ (Movable)                 | the source's value, transferred |
 | some_ref                              | a copy of the referenced value  |
 
-A copy doesn't change a value's ownership. Only **^** moves the
+A copy doesn't change a value's ownership. Only **^** transfers the
 value to a new owner.
 
 </Panel>
@@ -98,7 +98,8 @@ The **var** argument takes ownership of the original only with
 **^**; a plain call implicitly copies (**String** is **ImplicitlyCopyable**),
 so **g** stays usable. Either value, the copy or the transferred original, ends its
 lifetime after the **print** (its last use). The same **^** drains a
-collection in a loop: **for var x in items^** moves each element out.
+collection in a loop: **for var x in items^** transfers each element value
+out.
 
 </Panel>
 
@@ -225,7 +226,7 @@ stays valid.
 | -&gt; ref[origin] T | return a reference                     |
 
 Like a var assignment, **return x** copies; when **x** is at its
-last use the compiler moves it instead (you own it, so it can be moved).
+last use the compiler transfers it instead.
 
 No **-&gt; T^**: the **^** goes on the returned value in
 **return x^**, not on the return type.
