@@ -971,12 +971,15 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
             The string concatenated `n` times.
         """
-        var string = String()
-        var buffer = _FlushingWriteBuffer(string)
-        for _ in range(n):
-            buffer.write_string(self)
-        buffer.flush()
-        return string^
+        var length = self.byte_length()
+        if n <= 0 or length == 0:
+            return String()
+
+        var result = String(unsafe_uninit_length=n * length)
+        var bytes = result.unsafe_as_bytes_mut()
+        for i in range(n):
+            bytes[i * length : (i + 1) * length].copy_from(self.as_bytes())
+        return result^
 
     @inline(.nodebug)
     def __merge_with__[
@@ -1085,10 +1088,10 @@ struct StringSpan[origin: ImmOrigin](
         return res^
 
     def _interleave(self, val: StringSpan) -> String:
-        # TODO: this may be better as:
-        # (val.byte_length() * self.count_codepoints()) + self.count_codepoints()
-        var estimated_capacity = val.byte_length() * self.byte_length()
-        var res = String(capacity_bytes=estimated_capacity)
+        var res = String(
+            capacity_bytes=val.byte_length() * self.count_codepoints()
+            + self.byte_length()
+        )
         for codepoint in self.codepoint_slices():
             res += val
             res += codepoint
@@ -2405,14 +2408,14 @@ struct StringSpan[origin: ImmOrigin](
             fillchar.byte_length() == 1
         ), "fill char needs to be a one byte literal"
 
-        var result = String(capacity_bytes=width)
-        for _ in range(start):
-            result += fillchar
-        result += self
-
-        while result.byte_length() < width:
-            result += fillchar
-        return result
+        var length = self.byte_length()
+        var fill = fillchar.as_bytes()[0]
+        var result = String(unsafe_uninit_length=width)
+        var bytes = result.unsafe_as_bytes_mut()
+        bytes[:start].fill(fill)
+        bytes[start : start + length].copy_from(self.as_bytes())
+        bytes[start + length :].fill(fill)
+        return result^
 
     def join[
         T: Copyable & Writable,
