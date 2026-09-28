@@ -231,7 +231,7 @@ def main() raises:
             # gemm_mma_cpasync_kernel). A smaller table value would undersize
             # the guard, so a regressed kernel could fault past it instead of
             # tripping the sentinel check.
-            comptime if config.kernel_kind == GEMVAlgorithm.GEMM_MMA_CPASYNC:
+            comptime if config.kernel_kind == GEMVAlgorithm.GemmMmaCpasync:
                 comptime assert config.tile_m == 16, (
                     "GEMM_MMA_CPASYNC entry must have tile_m=16 (the kernel's"
                     " hard-wired row tile); this test sizes its guard region"

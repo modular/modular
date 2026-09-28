@@ -85,7 +85,9 @@ comptime logger = Logger()
 
 
 @fieldwise_init
-struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct GEMVAlgorithm(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Enumerates the GEMV kernel algorithm variants used by the GPU dispatcher.
 
     Each variant targets a distinct operand shape, memory access pattern, or
@@ -93,59 +95,68 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
     on runtime shape information and target architecture.
     """
 
+    comptime _enum_case_types = TypeList.of[
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+    ].values
+    comptime _enum_case_names = ParameterList.of[
+        "GemvKernel".value,
+        "GemvKernelVector".value,
+        "GemvSplitK".value,
+        "GevmKernelVector".value,
+        "GevmKernel".value,
+        "MatmulNaive".value,
+        "GemmMmaCpasync".value,
+    ].values
+
     var _value: Int
 
-    comptime GEMV_KERNEL = Self(0)
-    comptime GEMV_KERNEL_VECTOR = Self(1)
-    comptime GEMV_SPLIT_K = Self(2)
-    comptime GEVM_KERNEL_VECTOR = Self(3)
-    comptime GEVM_KERNEL = Self(4)
-    comptime MATMUL_NAIVE = Self(5)
-    comptime GEMM_MMA_CPASYNC = Self(6)
+    comptime GemvKernel = Self(0)
+    comptime GemvKernelVector = Self(1)
+    comptime GemvSplitK = Self(2)
+    comptime GevmKernelVector = Self(3)
+    comptime GevmKernel = Self(4)
+    comptime MatmulNaive = Self(5)
+    comptime GemmMmaCpasync = Self(6)
 
     @inline(.nodebug)
     def __int__(self) -> Int:
         return self._value
 
-    @inline(.always)
-    def __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    @inline(.always)
-    def __ne__(self, other: Self) -> Bool:
-        return self._value != other._value
-
-    @inline(.always)
-    def __is__(self, other: Self) -> Bool:
-        return self == other
-
-    @inline(.always)
-    def __isnot__(self, other: Self) -> Bool:
-        return self != other
-
-    @inline(.always)
-    def __hash__(self) -> Int:
+    @inline(.nodebug)
+    def _get_enum_discriminant(self) -> Int:
         return self._value
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "GEMVAlgorithm has no payload"
 
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         __match self:
-        case .GEMV_KERNEL:
+        case .GemvKernel:
             writer.write("GEMV")
-        case .GEMV_KERNEL_VECTOR:
+        case .GemvKernelVector:
             writer.write("GEMV_KERNEL_VECTOR")
-        case .GEMV_SPLIT_K:
+        case .GemvSplitK:
             writer.write("GEMV_SPLIT_K")
-        case .GEVM_KERNEL_VECTOR:
+        case .GevmKernelVector:
             writer.write("GEVM_KERNEL_VECTOR")
-        case .GEVM_KERNEL:
+        case .GevmKernel:
             writer.write("GEVM_KERNEL")
-        case .MATMUL_NAIVE:
+        case .MatmulNaive:
             writer.write("MATMUL_NAIVE")
-        case .GEMM_MMA_CPASYNC:
+        case .GemmMmaCpasync:
             writer.write("GEMM_MMA_CPASYNC")
-        case _:
-            writer.write("UNKNOWN")
 
 
 @inline(.always)
@@ -1170,7 +1181,8 @@ def gemv_gpu_dispatch[
     comptime static_N = c.static_shape[1] if has_N else UNKNOWN_VALUE
     comptime static_K = a.static_shape[1]
 
-    if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
+    __match kernel_func:
+    case GEMVAlgorithm.GemvSplitK:
         logger.info("Executing: GEMV_SPLIT_K kernel")
 
         @__parameter
@@ -1248,7 +1260,7 @@ def gemv_gpu_dispatch[
                 config[2],
             ]()
 
-    elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
+    case GEMVAlgorithm.GemvKernelVector:
         logger.info("Executing: GEMV_KERNEL_VECTOR kernel")
 
         comptime check_bounds_k = static_K % (WARP_SIZE * simd_width) != 0
@@ -1419,52 +1431,53 @@ def gemv_gpu_dispatch[
             else:
                 _one_row_per_warp()
 
-    elif kernel_func is GEMVAlgorithm.GEMV_KERNEL and transpose_b == False:
-        logger.info("Executing: GEMV_KERNEL (no transpose)")
+    case GEMVAlgorithm.GemvKernel:
+        comptime if transpose_b:
+            logger.info("Executing: GEMV_KERNEL (with transpose)")
 
-        comptime kernel = gemv_kernel[
-            c_type,
-            a_type,
-            b_type,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ]
+            comptime kernel = gemv_kernel[
+                c_type,
+                b_type,
+                a_type,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level=pdl_level,
+            ]
+            ctx.enqueue_function[kernel](
+                c.to_device_buffer(ctx),
+                b.to_device_buffer(ctx),
+                a.to_device_buffer(ctx),
+                Int32(n),
+                Int32(m),
+                Int32(k),
+                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+        else:
+            logger.info("Executing: GEMV_KERNEL (no transpose)")
 
-        ctx.enqueue_function[kernel](
-            c.to_device_buffer(ctx),
-            a.to_device_buffer(ctx),
-            b.to_device_buffer(ctx),
-            Int32(m),
-            Int32(n),
-            Int32(k),
-            grid_dim=ceildiv(m, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            attributes=pdl_launch_attributes(pdl_level),
-        )
+            comptime kernel = gemv_kernel[
+                c_type,
+                a_type,
+                b_type,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level=pdl_level,
+            ]
 
-    elif kernel_func is GEMVAlgorithm.GEMV_KERNEL and transpose_b == True:
-        logger.info("Executing: GEMV_KERNEL (with transpose)")
+            ctx.enqueue_function[kernel](
+                c.to_device_buffer(ctx),
+                a.to_device_buffer(ctx),
+                b.to_device_buffer(ctx),
+                Int32(m),
+                Int32(n),
+                Int32(k),
+                grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
 
-        comptime kernel = gemv_kernel[
-            c_type,
-            b_type,
-            a_type,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ]
-        ctx.enqueue_function[kernel](
-            c.to_device_buffer(ctx),
-            b.to_device_buffer(ctx),
-            a.to_device_buffer(ctx),
-            Int32(n),
-            Int32(m),
-            Int32(k),
-            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            attributes=pdl_launch_attributes(pdl_level),
-        )
-    elif kernel_func is GEMVAlgorithm.GEVM_KERNEL:
+    case GEMVAlgorithm.GevmKernel:
         logger.info("Executing: GEVM_KERNEL")
         comptime kernel = gevm_kernel[
             c_type,
@@ -1486,7 +1499,7 @@ def gemv_gpu_dispatch[
             attributes=pdl_launch_attributes(pdl_level),
         )
 
-    else:
+    case _:
         logger.info("Executing: MATMUL_NAIVE kernel")
         comptime BLOCK_DIM = 16
 
@@ -1604,11 +1617,11 @@ def gemv_gpu[
     if n == 1:
         comptime if a_type == .bfloat16:
             if k % simd_width == 0:
-                kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
+                kernel_func = GEMVAlgorithm.GemvKernelVector
             else:
-                kernel_func = GEMVAlgorithm.GEMV_KERNEL
+                kernel_func = GEMVAlgorithm.GemvKernel
         else:
-            kernel_func = GEMVAlgorithm.GEMV_KERNEL
+            kernel_func = GEMVAlgorithm.GemvKernel
 
     elif (
         m == 1
@@ -1631,19 +1644,19 @@ def gemv_gpu[
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
                 ):
-                    kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
+                    kernel_func = GEMVAlgorithm.GemvSplitK
                 else:
-                    kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
+                    kernel_func = GEMVAlgorithm.GemvKernelVector
             else:
-                kernel_func = GEMVAlgorithm.GEMV_KERNEL
+                kernel_func = GEMVAlgorithm.GemvKernel
         else:
-            kernel_func = GEMVAlgorithm.GEMV_KERNEL
+            kernel_func = GEMVAlgorithm.GemvKernel
 
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
-        kernel_func = GEMVAlgorithm.GEVM_KERNEL
+        kernel_func = GEMVAlgorithm.GevmKernel
 
     else:
-        kernel_func = GEMVAlgorithm.MATMUL_NAIVE
+        kernel_func = GEMVAlgorithm.MatmulNaive
 
     gemv_gpu_dispatch[
         transpose_b=transpose_b,

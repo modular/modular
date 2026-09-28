@@ -14,7 +14,7 @@ defaults: &defaults
   N: 384
   K: 7168
   TILE_N: 2
-  KERNEL_KIND: GEMV_SPLIT_K
+  KERNEL_KIND: GemvSplitK
   UNROLL_FACTOR: 1
   TILE_K: 128
   SWAP_AB: false
@@ -53,7 +53,7 @@ params:
   TILE_M: 16
   TILE_N: 8
   NUM_THREADS: 256
-  KERNEL_KIND: GEMM_MMA_CPASYNC
+  KERNEL_KIND: GemmMmaCpasync
   TILE_K: 256
 - <<: *defaults
   N: 264
@@ -63,5 +63,5 @@ params:
   TILE_M: 16
   TILE_N: 8
   NUM_THREADS: 256
-  KERNEL_KIND: GEMM_MMA_CPASYNC
+  KERNEL_KIND: GemmMmaCpasync
   TILE_K: 256

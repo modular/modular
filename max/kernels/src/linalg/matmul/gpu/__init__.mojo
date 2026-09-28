@@ -816,7 +816,7 @@ def _matmul_gpu[
                             elementwise_lambda_fn=elementwise_lambda_wrapper,
                             pdl_level=PDLLevel.OFF,
                             tile_m=1,
-                        ](GEMVAlgorithm.GEMV_SPLIT_K, c, a, b, ctx)
+                        ](GEMVAlgorithm.GemvSplitK, c, a, b, ctx)
 
                 if m == 1:
                     return _gemv_dispatch()

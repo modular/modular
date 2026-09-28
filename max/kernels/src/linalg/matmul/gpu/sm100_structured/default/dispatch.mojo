@@ -122,7 +122,7 @@ def small_MN_gemms[
     comptime assert a.rank == 2
     comptime assert b.rank == 2
 
-    comptime if config.kernel_kind == GEMVAlgorithm.GEMM_MMA_CPASYNC:
+    comptime if config.kernel_kind == GEMVAlgorithm.GemmMmaCpasync:
         var m = Int(c.dim[0]())
         comptime static_K = a.static_shape[1]
         comptime static_N = c.static_shape[1]
@@ -445,7 +445,7 @@ def matmul_dispatch_sm100[
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
                 pdl_level=pdl_level,
                 tile_m=tile_m,
-            ](GEMVAlgorithm.GEMV_SPLIT_K, c, a, b, ctx)
+            ](GEMVAlgorithm.GemvSplitK, c, a, b, ctx)
 
         if m <= 6:
             _dispatch_split_k[1]()
@@ -501,7 +501,7 @@ def matmul_dispatch_sm100[
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                     pdl_level=pdl_level,
                     tile_m=tile_m,
-                ](GEMVAlgorithm.GEMV_SPLIT_K, c, a, b, ctx)
+                ](GEMVAlgorithm.GemvSplitK, c, a, b, ctx)
 
             if m <= 6:
                 _dispatch_unaligned_n_split_k[1]()
