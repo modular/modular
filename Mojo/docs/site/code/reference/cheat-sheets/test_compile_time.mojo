@@ -14,21 +14,26 @@
 # Tests for the Mojo "compile-time" cheat-sheet card.
 #
 # Exercises the card's claims so one that drifts stops compiling or fails an
-# assert: parameters, where clauses, trait bounds, running a function at
-# compile time, comptime if/for, sys.info queries, comptime members, and the
-# inlining decorators.
+# assert: parameters, where clauses (with messages and on thin function
+# types), trait bounds, running a function at compile time, literal
+# precision, comptime if/for/__match, sys.info queries with a
+# CompilationTarget, comptime members, and the inlining decorators, including
+# inlining chosen by a parameter.
 #
 # Not tested (no portable assertable value, or a compile error can't be
 # asserted at runtime):
 #   - reflect[T] field surface beyond .name(): newly introduced and documented
 #     as incomplete; the wider field API may still shift.
-#   - numeric precision: float equality is touchy to assert, and 2**200
-#     overflows a 64-bit Int so it can't be materialized to compare.
+#   - 2**200: overflows a 64-bit Int, so it can't be materialized to compare.
 #   - comptime if on hardware facts (is_nvidia_gpu, ...): machine-dependent.
+#   - CompilationTarget.current_accelerator(): fails to instantiate on a host
+#     with no accelerator configured.
+#   - where messages: they appear only in compile errors.
 #   - the compile-time boundary (no file I/O, no raising, runs on CPU): these
 #     are compile errors, which a runtime test can't assert.
 from std.testing import assert_equal
-from std.sys.info import size_of, align_of
+from std.sys.info import size_of, align_of, simd_width_of
+from std.sys.info import CompilationTarget
 from std.builtin.globals import global_constant
 
 
@@ -47,16 +52,45 @@ def test_parameters() raises:
 
 
 # --- where: gate on a numeric truth ---
-def block[w: Int]() -> Int where w.is_power_of_two():
+def block[
+    w: Int
+]() -> Int where w.is_power_of_two() else ("'w' must be a power of two"):
     return w  # only callable when w is a power of two
+
+
+# A thin function type carries the constraint; every bound function must too.
+comptime Kernel = def[w: Int](Int) thin -> Int where w > 0 else (
+    "'w' must be positive"
+)
+
+
+def times[w: Int](x: Int) -> Int where w > 0 else "'w' must be positive":
+    return x * w
+
+
+def apply[F: Kernel](x: Int) -> Int:
+    return F[4](x)
+
+
+# The type exists for every DType; average() exists only for numeric ones.
+@fieldwise_init
+struct Values[dtype: DType]:
+    var a: Scalar[Self.dtype]
+    var b: Scalar[Self.dtype]
+
+    def average(self) -> Float64 where Self.dtype.is_numeric():
+        return (Float64(self.a) + Float64(self.b)) / 2
 
 
 def test_where() raises:
     assert_equal(block[8](), 8)
+    assert_equal(apply[times](3), 12)
+    assert_equal(Values[DType.int32](3, 4).average(), 3.5)
+    _ = Values[DType.bool](True, False)  # constructs, but has no average()
 
 
 # --- conformances: a trait bound admits only proven operations ---
-def largest[T: Comparable & Copyable](xs: List[T]) -> T:
+def largest[T: Comparable & Copyable & Deinitable](xs: List[T]) -> T:
     var best_i = 0
     for i in range(len(xs)):
         if xs[i] > xs[best_i]:
@@ -78,11 +112,25 @@ def test_run_at_compile_time() raises:
     assert_equal(nine, 9)
 
 
+# --- numeric precision: literals stay exact, Float64 rounds ---
+def test_numeric_precision() raises:
+    comptime c = 0.1 + 0.2  # folded exactly as a literal
+    assert_equal(c == 0.3, True)
+    var a = 0.1  # a Float64 now
+    var r = a + 0.2
+    assert_equal(r == 0.3, False)  # 0.30000000000000004
+
+
 # --- query the target ---
 def test_query_target() raises:
     assert_equal(size_of[Int32](), 4)
     assert_equal(size_of[Int64](), 8)
     assert_equal(align_of[Int32](), 4)
+    comptime host = CompilationTarget.current()  # an explicit target
+    assert_equal(size_of[Int64, host](), 8)
+    assert_equal(
+        simd_width_of[DType.float32, host](), simd_width_of[DType.float32]()
+    )
 
 
 # --- comptime members live on types ---
@@ -105,7 +153,7 @@ def test_comptime_for() raises:
     assert_equal(total, 6)
 
 
-# --- comptime if: only the live branch compiles ---
+# --- comptime if: only the live branch is kept ---
 def test_comptime_if() raises:
     var width: Int
     comptime if size_of[Int64]() == 8:
@@ -126,9 +174,61 @@ def add_separate(a: Int, b: Int) -> Int:
     return a + b
 
 
+@inline(.automatic)
+def add_auto(a: Int, b: Int) -> Int:
+    return a + b
+
+
+@inline(.nodebug)
+def add_nodebug(a: Int, b: Int) -> Int:
+    return a + b
+
+
+# --- inline by parameter: each instantiation chooses ---
+@inline(policy)
+def doubled[policy: InlineLevel](x: Int) -> Int:
+    return x * 2
+
+
 def test_inlining() raises:
     assert_equal(add_inline(2, 3), 5)
     assert_equal(add_separate(2, 3), 5)
+    assert_equal(add_auto(2, 3), 5)
+    assert_equal(add_nodebug(2, 3), 5)
+    assert_equal(doubled[.always](3), 6)
+    assert_equal(doubled[.never](3), 6)
+
+
+# --- comptime __match: specialize by pattern ---
+def small_tile[mt: Int, nt: Int]() -> String where mt * nt <= 256:
+    return String("small ", mt, "x", nt)
+
+
+def tile_path[m: Int, n: Int]() -> String:
+    comptime __match (m, n):
+    case (16, 16):
+        return "tuned 16x16"
+    case (mt, nt) if mt * nt <= 256:  # the guard proves small_tile's where
+        return small_tile[mt, nt]()
+    case _:
+        return "generic"
+
+
+def tile_count[m: Int]() -> Int:
+    var hits = 0
+    comptime __match m:
+    case 16:
+        hits += 1
+    # no case _: an unmatched subject compiles to nothing
+    return hits
+
+
+def test_comptime_match() raises:
+    assert_equal(tile_path[16, 16](), "tuned 16x16")
+    assert_equal(tile_path[8, 4](), "small 8x4")
+    assert_equal(tile_path[64, 64](), "generic")
+    assert_equal(tile_count[16](), 1)
+    assert_equal(tile_count[64](), 0)
 
 
 # --- conditional availability: a method exists only when its condition holds ---
@@ -184,11 +284,13 @@ def main() raises:
     test_where()
     test_conformances()
     test_run_at_compile_time()
+    test_numeric_precision()
     test_query_target()
     test_comptime_members()
     test_comptime_for()
     test_comptime_if()
     test_inlining()
+    test_comptime_match()
     test_conditional_availability()
     test_type_of()
     test_conditional_construction()
