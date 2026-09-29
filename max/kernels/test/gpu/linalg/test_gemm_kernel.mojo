@@ -16,7 +16,7 @@ from std.sys import argv
 
 from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
-from max.gpu import block_idx, warp_id
+from max.gpu import block_idx, thread_idx, warp_id
 from max.gpu.memory import async_copy_wait_all
 from max.gpu.sync import barrier
 from layout import (
@@ -27,11 +27,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.layout_tensor import (
-    copy_sram_to_local,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-)
+from layout.layout_tensor import copy_dram_to_sram_async, copy_local_to_dram
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
@@ -137,11 +133,11 @@ def gemm_kernel[
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](0, warp_n).slice[
                 k_i : k_i + 1, :
             ]()
-            copy_sram_to_local[src_warp_layout=warp_layout, axis=0](
-                a_reg, a_smem_warp_row
+            a_reg.copy_from(
+                a_smem_warp_row.distribute[warp_layout, axis=0](thread_idx.x)
             )
-            copy_sram_to_local[src_warp_layout=warp_layout, axis=1](
-                b_reg, b_smem_warp_row
+            b_reg.copy_from(
+                b_smem_warp_row.distribute[warp_layout, axis=1](thread_idx.x)
             )
             outer_product_acc(c_reg, a_reg, b_reg)
 

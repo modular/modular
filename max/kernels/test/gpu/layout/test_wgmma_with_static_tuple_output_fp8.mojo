@@ -27,10 +27,9 @@ from internal_utils import assert_equal
 from std.random import rand
 from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout.tensor_core_async import (
-    _lhs_descriptor,
-    _rhs_descriptor,
     tile_layout_k_major,
 )
+from wgmma_test_utils import _lhs_descriptor, _rhs_descriptor
 from std.utils import StaticTuple
 
 

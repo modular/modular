@@ -8,10 +8,6 @@ _EXTRA_COPTS = {
         "--debug-level",
         "full",
     ],
-    "test_layout_tensor_copy_amd.mojo": [
-        "--debug-level",
-        "full",
-    ],
     "test_layout_tensor_copy_nvidia.mojo": [
         "--debug-level",
         "full",
@@ -60,7 +56,6 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 } | {
-    "test_layout_tensor_copy_amd.mojo": ["//:amd_gpu"],
     "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific
     "test_layout_tensor_indexlist_codegen.mojo": ["//:nvidia_gpu"],
@@ -92,7 +87,6 @@ _EXTRA_CONSTRAINTS = {
 _FILECHECK_TESTS = [
     "test_codegen_to_llvm.mojo",
     "test_layout_tensor_copy.mojo",
-    "test_layout_tensor_copy_amd.mojo",
     "test_layout_tensor_copy_nvidia.mojo",
     "test_tensor_core_amd.mojo",
     "test_tensor_core_apple.mojo",
@@ -143,6 +137,7 @@ _FILECHECK_EXTRA_DEPS = {
             "//max:max_mojo",
             "//max:nn",
             "//max:quantization",
+            "//max/kernels/test/gpu/layout/wgmma_test_utils",
             "@mojo//:std",
         ],
     )
@@ -203,6 +198,7 @@ _FILECHECK_EXTRA_DEPS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
+            "//max/kernels/test/gpu/layout/wgmma_test_utils",
             "@mojo//:std",
         ] + _FILECHECK_EXTRA_DEPS.get(src, []),
     )

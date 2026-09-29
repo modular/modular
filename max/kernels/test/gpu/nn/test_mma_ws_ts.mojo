@@ -599,12 +599,9 @@ def sparse_mma_ws_ts_kernel[
                 var chunk_elem_off = c * 4 * box_width
                 var elem_off = cg_elem_off + chunk_elem_off
                 var smem_dst_ptr = k_smem_ptr + elem_off
-                var smem_dst_tile = LayoutTensor[
-                    op_type,
-                    Layout.row_major(4, box_width),
-                    address_space=.SHARED,
-                    alignment=128,
-                ](smem_dst_ptr.as_unsafe_any_origin())
+                var smem_dst_tile = TileTensor(
+                    smem_dst_ptr, row_major[4, box_width]()
+                )
 
                 k_gather4_tma.async_copy_gather4(
                     smem_dst_tile,

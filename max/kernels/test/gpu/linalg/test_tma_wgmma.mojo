@@ -20,7 +20,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import product
@@ -352,9 +352,12 @@ def test_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_tensor[update=False](),
-        a.device_tensor[update=False](),
-        b.device_tensor[update=False](),
+        TileTensor(c_ref.device_tensor[update=False]().ptr, row_major[M, N]()),
+        TileTensor(a.device_tensor[update=False]().ptr, row_major[M, K]()),
+        TileTensor(
+            b.device_tensor[update=False]().ptr,
+            row_major[N if transpose_b else K, K if transpose_b else N](),
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

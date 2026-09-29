@@ -67,7 +67,13 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    row_major,
+    stack_allocation,
+)
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import (
     SharedMemBarrier,
@@ -703,14 +709,9 @@ def gather4_kernel[
     """
     comptime box_width = tile_shape_param[1]
     comptime num_col_groups = ceildiv(tile_width, box_width)
-    comptime smem_layout = Layout.row_major(4, box_width)
-    var smem_tile = LayoutTensor[
-        dtype,
-        smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    var smem_tile = stack_allocation[
+        dtype=dtype, address_space=.SHARED, alignment=128
+    ](row_major[4, box_width]())
 
     var mbar = unsafe_stack_allocation[
         1,

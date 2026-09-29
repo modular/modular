@@ -18,7 +18,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.compute.mma import mma
 from layout import *
-from layout.layout_tensor import LayoutTensor, LayoutTensorIter
+from layout.layout_tensor import LayoutTensor
 from std.memory.unsafe import bitcast
 
 from std.utils import IndexList
@@ -224,15 +224,6 @@ def make_amd_buffer_resource(
     var ptr = tensor.ptr
     var size = _get_bounds(tensor)
     return AMDBufferResource(readfirstlane(ptr), readfirstlane(size))
-
-
-@inline(.always)
-def make_amd_buffer_resource(
-    tensor_iter: LayoutTensorIter, bound: Int
-) -> AMDBufferResource:
-    return AMDBufferResource(
-        readfirstlane(tensor_iter.ptr), readfirstlane(bound)
-    )
 
 
 @inline(.always)

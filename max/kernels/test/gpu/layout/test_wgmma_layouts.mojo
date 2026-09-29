@@ -25,11 +25,10 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
-    _lhs_descriptor,
-    _rhs_descriptor,
     tile_layout_k_major,
     tile_layout_mn_major,
 )
+from wgmma_test_utils import _lhs_descriptor, _rhs_descriptor
 from std.memory import bitcast
 
 

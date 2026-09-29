@@ -51,6 +51,8 @@ from layout import (
     Layout,
     LayoutTensor,
     lt_to_tt,
+    TileTensor,
+    row_major,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
@@ -1173,9 +1175,11 @@ def test_blackwell_kernel_8[
     var c_device = ctx.enqueue_create_buffer[c_type](M * N)
     var c_device_lt = LayoutTensor[c_type, c_layout](c_device.unsafe_ptr())
     var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
-    var c_device_ref_lt = LayoutTensor[c_type, c_layout](
-        c_device_ref.unsafe_ptr()
+    var a_device_tt = TileTensor(a_device, row_major[M, K]())
+    var b_device_tt = TileTensor(
+        b_device, row_major[N if transpose_b else K, K if transpose_b else N]()
     )
+    var c_device_ref_tt = TileTensor(c_device_ref, row_major[M, N]())
 
     # Initialize matmul operands
     for m_idx in range(M):
@@ -1257,9 +1261,9 @@ def test_blackwell_kernel_8[
 
         vendor_blas.matmul(
             ctx,
-            c_device_ref_lt,
-            a_device_lt,
-            b_device_lt,
+            c_device_ref_tt,
+            a_device_tt,
+            b_device_tt,
             c_row_major=True,
             transpose_b=transpose_b,
         )

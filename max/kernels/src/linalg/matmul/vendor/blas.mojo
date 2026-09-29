@@ -100,8 +100,6 @@ from max.gpu.host._nvidia_cuda import CUDA
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     TileTensor,
     row_major,
 )
@@ -423,56 +421,6 @@ def matmul[
             c,
             a,
             b,
-            c_row_major=c_row_major,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            alpha=alpha,
-            beta=beta,
-            batch_size=batch_size,
-        )
-
-
-def matmul[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
-    *,
-    use_tf32: Bool = False,
-](
-    ctx: DeviceContext,
-    c_tensor: LayoutTensor[mut=True, c_type, c_layout, _],
-    a_tensor: LayoutTensor[mut=False, a_type, a_layout, _],
-    b_tensor: LayoutTensor[mut=False, b_type, b_layout, _],
-    *,
-    c_row_major: Bool = False,
-    transpose_a: Bool = False,
-    transpose_b: Bool = False,
-    alpha: Float32 = 1.0,
-    beta: Float32 = 0.0,
-    batch_size: Int = 1,
-) raises:
-    var c_tt = TileTensor(
-        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_tensor.ptr),
-        row_major(Coord(c_tensor.dim(0), c_tensor.dim(1))),
-    )
-    var a_tt = TileTensor(
-        rebind[UnsafePointer[Scalar[a_type], ImmutAnyOrigin]](a_tensor.ptr),
-        row_major(Coord(a_tensor.dim(0), a_tensor.dim(1))),
-    )
-    var b_tt = TileTensor(
-        rebind[UnsafePointer[Scalar[b_type], ImmutAnyOrigin]](b_tensor.ptr),
-        row_major(Coord(b_tensor.dim(0), b_tensor.dim(1))),
-    )
-    with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32](
-            cur_ctx,
-            _get_global_handle[a_type](ctx),
-            c_tt,
-            a_tt,
-            b_tt,
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,

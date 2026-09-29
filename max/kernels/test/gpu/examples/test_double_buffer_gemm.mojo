@@ -22,11 +22,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.memory import async_copy_wait_all
 from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
 from layout.layout import *
-from layout.layout_tensor import (
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-    copy_sram_to_local,
-)
+from layout.layout_tensor import copy_dram_to_sram_async, copy_local_to_dram
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
@@ -223,15 +219,19 @@ def sgemm_double_buffer[
     # Load A fragments to the first buffer.
     var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
     var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
-    copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
-        a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
+    a_reg[0].vectorize[simd_size]().copy_from(
+        a_smem_warp_row.vectorize[simd_size]().distribute[
+            thread_layout, axis=0
+        ](thread_idx.x)
     )
 
     # Load B fragments to the first buffer.
     var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
     var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
-    copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
-        b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
+    b_reg[0].vectorize[simd_size]().copy_from(
+        b_smem_warp_row.vectorize[simd_size]().distribute[
+            thread_layout, axis=1
+        ](thread_idx.x)
     )
 
     var num_k_tiles = ceildiv(K, BK)
@@ -264,17 +264,19 @@ def sgemm_double_buffer[
             var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
                 next_k, 0
             ).coalesce()
-            copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
-                a_reg[next_buffer_id].vectorize[simd_size](),
-                a_smem_warp_row.vectorize[simd_size](),
+            a_reg[next_buffer_id].vectorize[simd_size]().copy_from(
+                a_smem_warp_row.vectorize[simd_size]().distribute[
+                    thread_layout, axis=0
+                ](thread_idx.x)
             )
 
             var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
                 next_k, 0
             ).coalesce()
-            copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
-                b_reg[next_buffer_id].vectorize[simd_size](),
-                b_smem_warp_row.vectorize[simd_size](),
+            b_reg[next_buffer_id].vectorize[simd_size]().copy_from(
+                b_smem_warp_row.vectorize[simd_size]().distribute[
+                    thread_layout, axis=1
+                ](thread_idx.x)
             )
 
             # Load next k tile from global memory to shared memory.

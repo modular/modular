@@ -22,7 +22,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, thread_idx
 from max.gpu import warp_id as get_warp_id
 from max.gpu.memory import fence_mbarrier_init
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_local_to_dram
@@ -425,9 +425,12 @@ def test_multicast_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_tensor[update=False](),
-        a.device_tensor[update=False](),
-        b.device_tensor[update=False](),
+        TileTensor(c_ref.device_tensor[update=False]().ptr, row_major[M, N]()),
+        TileTensor(a.device_tensor[update=False]().ptr, row_major[M, K]()),
+        TileTensor(
+            b.device_tensor[update=False]().ptr,
+            row_major[N if transpose_b else K, K if transpose_b else N](),
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

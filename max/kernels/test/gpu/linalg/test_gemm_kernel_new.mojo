@@ -15,7 +15,7 @@ from std.math import ceildiv, isclose
 from std.sys import argv
 
 from max.gpu.host import DeviceContext
-from max.gpu import block_idx, global_idx, warp_id
+from max.gpu import block_idx, global_idx, thread_idx, warp_id
 from max.gpu.memory import async_copy_wait_all
 from max.gpu.sync import barrier
 from std.memory import alloc
@@ -30,11 +30,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
-from layout.layout_tensor import (
-    copy_sram_to_local,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-)
+from layout.layout_tensor import copy_dram_to_sram_async, copy_local_to_dram
 
 
 def is_benchmark() -> Bool:
@@ -137,11 +133,15 @@ def gemm_kernel[
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
                 (Idx[0], warp_n)
             ).slice[k_j : k_j + 1, :]()
-            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=0](
-                a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor()
+            a_reg.to_layout_tensor().copy_from(
+                a_smem_warp_row.to_layout_tensor().distribute[
+                    warp_layout.to_layout(), axis=0
+                ](thread_idx.x)
             )
-            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=1](
-                b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor()
+            b_reg.to_layout_tensor().copy_from(
+                b_smem_warp_row.to_layout_tensor().distribute[
+                    warp_layout.to_layout(), axis=1
+                ](thread_idx.x)
             )
             outer_product_acc(c_reg, a_reg, b_reg)
 

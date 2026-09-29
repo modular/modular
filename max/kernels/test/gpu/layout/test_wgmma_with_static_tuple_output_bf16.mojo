@@ -26,10 +26,9 @@ from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
-    _lhs_descriptor,
-    _rhs_descriptor,
     tile_layout_k_major,
 )
+from wgmma_test_utils import _lhs_descriptor, _rhs_descriptor
 from std.testing import assert_almost_equal
 
 from std.utils import StaticTuple

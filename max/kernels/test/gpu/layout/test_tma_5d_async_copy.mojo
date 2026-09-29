@@ -17,7 +17,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, grid_dim, thread_idx
-from layout import IntTuple, Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, lt_to_tt
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -92,7 +92,7 @@ def test_tma_5d_load_kernel[
         mbar[0].init()
         mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy_5d(
-            smem_tile,
+            lt_to_tt(smem_tile),
             mbar[0],
             (
                 idx4 * cta_tile_dim4,

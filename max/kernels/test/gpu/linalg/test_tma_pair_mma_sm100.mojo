@@ -33,7 +33,7 @@ from max.gpu import (
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
@@ -535,18 +535,27 @@ def test_tma_umma_pair_cta[
 
         vendor_blas.matmul(
             ctx,
-            c_ref.device_tensor[update=False](),
-            a.device_tensor[update=False](),
-            b_col_major.device_tensor[update=True](),
+            TileTensor(
+                c_ref.device_tensor[update=False]().ptr, row_major[M, N]()
+            ),
+            TileTensor(a.device_tensor[update=False]().ptr, row_major[M, K]()),
+            TileTensor(
+                b_col_major.device_tensor[update=True]().ptr, row_major[N, K]()
+            ),
             c_row_major=True,
             transpose_b=True,
         )
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_tensor[update=False](),
-            a.device_tensor[update=False](),
-            b.device_tensor[update=False](),
+            TileTensor(
+                c_ref.device_tensor[update=False]().ptr, row_major[M, N]()
+            ),
+            TileTensor(a.device_tensor[update=False]().ptr, row_major[M, K]()),
+            TileTensor(
+                b.device_tensor[update=False]().ptr,
+                row_major[N if transpose_b else K, K if transpose_b else N](),
+            ),
             c_row_major=True,
             transpose_b=transpose_b,
         )

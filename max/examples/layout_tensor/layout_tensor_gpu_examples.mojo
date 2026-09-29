@@ -24,7 +24,6 @@ from max.gpu.sync import barrier
 from max.gpu.memory import async_copy_wait_all
 from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Layout, LayoutTensor, print_layout
-from layout.layout_tensor import copy_sram_to_local
 from std.memory import Pointer
 from std.sys import has_accelerator
 from std.sys.info import (

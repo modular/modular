@@ -17,7 +17,7 @@ from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from std.testing import assert_almost_equal
@@ -145,9 +145,14 @@ def test_kernel_1[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_tensor[update=False](),
-            a.device_tensor[update=False](),
-            b_vendor.device_tensor(),
+            TileTensor(
+                c_ref.device_tensor[update=False]().ptr, row_major[M, N]()
+            ),
+            TileTensor(a.device_tensor[update=False]().ptr, row_major[M, K]()),
+            TileTensor(
+                b_vendor.device_tensor().ptr,
+                row_major[N if transpose_b else K, K if transpose_b else N](),
+            ),
             c_row_major=True,
             transpose_b=transpose_b,
         )

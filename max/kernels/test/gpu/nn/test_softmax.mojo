@@ -14,7 +14,7 @@
 from std.math import isclose, isnan
 from std.utils.numerics import min_or_neg_inf
 from std.random import rand, random_float64, seed
-from std.sys import has_amd_gpu_accelerator, simd_width_of
+from std.sys import simd_width_of
 
 from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext, get_gpu_target
@@ -31,7 +31,6 @@ from layout import (
 )
 from layout._utils import ManagedLayoutTensor
 from nn.softmax import (
-    _online_softmax_kernel,
     _softmax_cpu,
     _softmax_gpu,
     softmax_with_temperature,
@@ -576,97 +575,6 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
     _ = in_device
 
 
-def test_gpu_online_softmax[
-    WM: Int, WN: Int, transpose_fragments: Bool
-](ctx: DeviceContext) raises:
-    print("== test_online_softmax")
-
-    comptime type = DType.float32
-    comptime rank = 3
-    comptime seqlen = 256
-
-    # For testing purpose, call online softmax twice and each time updates half
-    # seq_len. Limit to WM rows and arrange warps in N dim.
-    comptime shape = IndexList[rank](1, WM, seqlen)
-    comptime num_warps = seqlen // (2 * WN)
-    comptime num_threads = num_warps * WARP_SIZE
-
-    var in_host_ptr = ctx.enqueue_create_host_buffer[type](
-        shape.flattened_length()
-    )
-    var out_host_ptr = ctx.enqueue_create_host_buffer[type](
-        shape.flattened_length()
-    )
-    var out_ref_ptr = ctx.enqueue_create_host_buffer[type](
-        shape.flattened_length()
-    )
-
-    comptime layout_dyn = Layout.row_major[rank]()
-    var in_host = LayoutTensor[type, layout_dyn](
-        in_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
-    )
-    var out_ref = LayoutTensor[type, layout_dyn](
-        out_ref_ptr, RuntimeLayout[layout_dyn].row_major(shape)
-    )
-
-    var in_device_ptr = ctx.enqueue_create_buffer[type](
-        shape.flattened_length()
-    )
-    var out_device_ptr = ctx.enqueue_create_buffer[type](
-        shape.flattened_length()
-    )
-
-    var in_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
-        in_device_ptr
-    )
-    var out_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
-        out_device_ptr
-    )
-
-    rand[type](in_host_ptr.as_span())
-
-    ctx.enqueue_copy(in_device_ptr, in_host_ptr)
-    comptime kernel = _online_softmax_kernel[
-        WM,
-        WN,
-        DType.float32,
-        Layout.row_major(shape[1], shape[2]),
-        transpose_fragments,
-    ]
-
-    ctx.enqueue_function[kernel](
-        in_device,
-        out_device,
-        grid_dim=1,
-        block_dim=num_threads,
-    )
-
-    @__parameter
-    @__copy_capture(in_host)
-    def input_fn_host[
-        _simd_width: Int
-    ](coords: Coord) -> SIMD[type, _simd_width]:
-        return in_host.load[width=_simd_width](coord_to_index_list(coords))
-
-    _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
-        Coord(shape),
-        TileTensor(out_ref.ptr, row_major(Coord(shape))),
-        rank - 1,
-    )
-
-    ctx.synchronize()
-    ctx.enqueue_copy(out_host_ptr, out_device_ptr)
-    ctx.synchronize()
-
-    for i in range(shape.flattened_length()):
-        assert_almost_equal(
-            out_host_ptr[i], out_ref_ptr[i], atol=1e-4, rtol=1e-5
-        )
-
-    _ = in_device_ptr
-    _ = out_device_ptr
-
-
 def test_gpu_logsoftmax(ctx: DeviceContext) raises:
     print("== test_gpu_logsoftmax")
 
@@ -895,13 +803,3 @@ def main() raises:
         test_gpu_logsoftmax(ctx)
         test_gpu_softmax_temperature[per_row=False](ctx)
         test_gpu_softmax_temperature[per_row=True](ctx)
-        # Test general online-softmax, communicating data via shared memory.
-
-        test_gpu_online_softmax[32, 32, False](ctx)
-        # Test covering entire row within one warp
-        test_gpu_online_softmax[16, 128, False](ctx)
-
-        comptime if has_amd_gpu_accelerator():
-            test_gpu_online_softmax[32, 32, True](ctx)
-            # Test covering entire row within one warp
-            test_gpu_online_softmax[16, 128, True](ctx)

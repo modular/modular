@@ -202,9 +202,9 @@ def main() raises:
 
         vendor_blas.matmul(
             ctx,
-            y_ref_tensor.to_layout_tensor(),
-            a_iter0.to_layout_tensor(),
-            b_iter0.to_layout_tensor(),
+            y_ref_tensor,
+            a_iter0,
+            b_iter0,
             c_row_major=True,
             transpose_b=True,
         )
