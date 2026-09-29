@@ -305,3 +305,40 @@ modular_py_test(
         ":gpqa_logit_gate_lib",
     ],
 )
+
+modular_py_library(
+    name = "mmmu_logit_gate_lib",
+    testonly = True,
+    srcs = ["calibration/mmmu_gate.py"],
+    data = ["calibration/data/mmmu_pro_gate_hist.json"],
+    imports = ["."],
+    deps = [":gpqa_logit_gate_lib"],
+)
+
+modular_py_binary(
+    name = "mmmu_logit_gate",
+    testonly = True,
+    srcs = [
+        "calibration/mmmu_gate_report.py",
+        "calibration/mmmu_logit_gate.py",
+    ],
+    imports = ["."],
+    main = "calibration/mmmu_logit_gate.py",
+    tags = ["manual"],
+    deps = [
+        ":gpqa_logit_gate_lib",
+        ":mmmu_logit_gate_lib",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mmmu_logit_gate",
+    size = "medium",
+    srcs = ["calibration/test_mmmu_logit_gate.py"],
+    deps = [
+        ":gpqa_logit_gate_lib",
+        ":mmmu_logit_gate",
+        ":mmmu_logit_gate_lib",
+    ],
+)
