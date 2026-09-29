@@ -19,8 +19,8 @@ actually sees rather than all of it or none of it.
 
 The fraction is per request and per user turn, not per session as
 `image_augmentation` selects, so it lands on the share of *requests* that set
-`response_format` -- the quantity `maxserve.response_format.requests` reports
-via its `kind` tag.
+`response_format` -- `maxserve.structured_output.requests` over the
+chat-completion `maxserve.request_count`.
 """
 
 from __future__ import annotations
