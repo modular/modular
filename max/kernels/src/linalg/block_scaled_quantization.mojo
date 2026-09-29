@@ -30,9 +30,6 @@ from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     RowMajorLayout,
     DefaultEngine,
     TensorEngine,
@@ -84,7 +81,6 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
-from layout.layout_tensor import LayoutTensorIter
 from max.gpu.memory import external_memory, fence_async_view_proxy
 from max.gpu.sync import barrier
 from std.sys import size_of, align_of, simd_width_of, get_defined_int
@@ -941,9 +937,12 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         ]()
     )
 
-    comptime input_smem_tile_size = _idx_product[
+    comptime input_stage_tile_size = _idx_product[
         input_tile_rank, input_tile_shape
-    ]() * NUM_PIPELINES_STAGES
+    ]()
+    comptime input_smem_tile_size = (
+        input_stage_tile_size * NUM_PIPELINES_STAGES
+    )
     comptime output_smem_tile_size = _idx_product[
         output_tile_rank, output_tile_shape
     ]()
@@ -975,35 +974,11 @@ def quantize_dynamic_scaled_async_fp4_kernel[
     ]()
     var mbar_ptr = scales_smem_ptr + scales_smem_tile_size
 
-    var input_smem = LayoutTensorIter[
-        input_dtype,
-        Layout.row_major(input_tile_shape),
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ](
-        input_smem_ptr,
-        input_smem_tile_size,
+    var output_smem = TileTensor(
+        output_smem_ptr, row_major(Coord(output_tile_shape))
     )
-
-    var output_smem = LayoutTensor[
-        output_dtype,
-        Layout.row_major(output_tile_shape),
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ](
-        output_smem_ptr,
-    )
-
-    var scales_smem = LayoutTensor[
-        scales_dtype,
-        Layout.row_major(scales_tile_shape),
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ](
-        scales_smem_ptr,
+    var scales_smem = TileTensor(
+        scales_smem_ptr, row_major(Coord(scales_tile_shape))
     )
 
     var tma_mbar = mbar_ptr.bitcast[SharedMemBarrier]()
@@ -1027,7 +1002,12 @@ def quantize_dynamic_scaled_async_fp4_kernel[
             warpgroup_reg_dealloc[24]()
 
             comptime for iter_idx in range(NUM_PIPELINES_STAGES):
-                var smem_tile = input_smem.next(iter_idx)[]
+                var smem_tile = TileTensor(
+                    input_smem_ptr.unsafe_offset(
+                        iter_idx * input_stage_tile_size
+                    ),
+                    row_major(Coord(input_tile_shape)),
+                )
 
                 if lane_id() == 0:
                     tma_mbar[iter_idx].expect_bytes(Int32(expected_bytes))
@@ -1045,7 +1025,12 @@ def quantize_dynamic_scaled_async_fp4_kernel[
             var scale_factors = SIMD[scales_dtype, SF_ATOM_K]()
 
             comptime for iter_idx in range(NUM_PIPELINES_STAGES):
-                var smem_tile = input_smem.next(iter_idx)[]
+                var smem_tile = TileTensor(
+                    input_smem_ptr.unsafe_offset(
+                        iter_idx * input_stage_tile_size
+                    ),
+                    row_major(Coord(input_tile_shape)),
+                )
 
                 tma_mbar[iter_idx].wait(tma_phase[iter_idx])
                 var quantized_elements = SIMD[.uint32, 8]()
@@ -1203,12 +1188,6 @@ def quantize_dynamic_scaled_fp4_async[
         tensor_sf: Tensor-wise scale factor applied to the
             quantization (defaults to 1.0).
     """
-    var output_tensor = output_tensor_tile.to_layout_tensor()
-    var scales_tensor = scales_tensor_tile.to_layout_tensor()
-    var input_tensor = input_tensor_tile.to_layout_tensor()
-    comptime output_layout = output_tensor.layout
-    comptime scales_layout = scales_tensor.layout
-    comptime input_layout = input_tensor.layout
     comptime assert input_dtype == .bfloat16, "input_dtype must be bfloat16"
 
     comptime assert (
@@ -1224,14 +1203,14 @@ def quantize_dynamic_scaled_fp4_async[
     comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_32B  # 64 elements / 2 elements per uint8 = 32 elements per 32B
     comptime scales_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE  # 16 elements / 1 elements per float8_e4m3fn = 16 elements per 16B
 
-    var M = input_tensor.dim(0)
-    var N = input_tensor.dim(1)
+    var M = Int(input_tensor_tile.dim[0]())
+    var N = Int(input_tensor_tile.dim[1]())
 
-    comptime output_N = output_layout.shape[1].value()
+    comptime output_N = output_tensor_tile.LayoutType.static_shape[1]
     comptime assert (
         output_N % 32 == 0
     ), "output_tensor N must be a multiple of 32"
-    comptime input_N = input_layout.shape[1].value()
+    comptime input_N = input_tensor_tile.LayoutType.static_shape[1]
     comptime assert (
         input_N // output_N == 2
     ), "input_tensor N must be a multiple of 2 * output_tensor N"
@@ -1243,38 +1222,32 @@ def quantize_dynamic_scaled_fp4_async[
     var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
-    ](ctx, input_tensor)
+    ](ctx, input_tensor_tile)
 
     comptime output_tma_tile_shape = Index(128, 32)
     var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
-    ](ctx, output_tensor)
+    ](ctx, output_tensor_tile)
 
-    comptime assert scales_tensor.rank == 5, "scales must be 5D tensors"
+    comptime assert scales_tensor_tile.rank == 5, "scales must be 5D tensors"
 
-    comptime assert scales_layout.shape[2].value() == SF_ATOM_M[0], ""
-    comptime assert scales_layout.shape[3].value() == SF_ATOM_M[1], ""
-    comptime assert scales_layout.shape[4].value() == SF_ATOM_K, ""
+    comptime scales_layout = scales_tensor_tile.LayoutType
+    comptime assert scales_layout.static_shape[2] == SF_ATOM_M[0], ""
+    comptime assert scales_layout.static_shape[3] == SF_ATOM_M[1], ""
+    comptime assert scales_layout.static_shape[4] == SF_ATOM_K, ""
 
-    comptime scales_4d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    )
-
-    var scales_4d_tensor = LayoutTensor[
-        scales_dtype, scales_4d_layout[scales_layout]
-    ](
-        scales_tensor.ptr,
-        RuntimeLayout[scales_4d_layout[scales_layout]].row_major(
-            IndexList[4](
-                scales_tensor.dim(0),
-                scales_tensor.dim(1),
-                scales_tensor.dim(2),
-                scales_tensor.dim(3) * scales_tensor.dim(4),
-            ),
+    # The TMA box covers one (M1, K) atom, so the two innermost scale dims
+    # are folded into a single contiguous extent for a rank-4 descriptor.
+    var scales_4d_tensor = TileTensor(
+        scales_tensor_tile.ptr,
+        row_major(
+            Coord(
+                Int(scales_tensor_tile.dim[0]()),
+                Int(scales_tensor_tile.dim[1]()),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
+            )
         ),
     )
 
@@ -1872,27 +1845,17 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         ),
     )
 
-    var scales_tensor_lt = scales_tensor.to_layout_tensor()
-    comptime scales_lt_layout = scales_tensor_lt.layout
-
-    comptime scales_4d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    )
-
-    var scales_4d_tensor = LayoutTensor[
-        scales_dtype, scales_4d_layout[scales_lt_layout]
-    ](
+    # The TMA box covers one (M1, K) atom, so the two innermost scale dims
+    # are folded into a single contiguous extent for a rank-4 descriptor.
+    var scales_4d_tensor = TileTensor(
         scales_tensor.ptr,
-        RuntimeLayout[scales_4d_layout[scales_lt_layout]].row_major(
-            IndexList[4](
-                scales_tensor_lt.dim(0),
-                scales_tensor_lt.dim(1),
-                scales_tensor_lt.dim(2),
-                scales_tensor_lt.dim(3) * scales_tensor_lt.dim(4),
-            ),
+        row_major(
+            Coord(
+                Int(scales_tensor.dim[0]()),
+                Int(scales_tensor.dim[1]()),
+                Int(scales_tensor.dim[2]()),
+                Int(scales_tensor.dim[3]()) * Int(scales_tensor.dim[4]()),
+            )
         ),
     )
 
