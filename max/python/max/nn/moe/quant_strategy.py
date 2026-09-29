@@ -654,7 +654,7 @@ class Mxfp6Strategy:
     Preshuffled-B only: an FP6 lane fragment is 24 bytes, which the kernel
     reads plane-split, and the dense row-major grouped kernel has no path for
     that layout. The weight loader must apply
-    ``preshuffle_mxfp4_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+    ``preshuffle_block_scaled_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
 
     Unlike :class:`Mxfp4Strategy` there is no fused activation kernel, so the
     down-projection input is produced as bf16 SwiGLU followed by a standalone

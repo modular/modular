@@ -6487,7 +6487,7 @@ def grouped_dynamic_scaled_mxfp6_matmul(
     Preshuffled-B only: an FP6 lane fragment is 24 bytes and reaches the MFMA
     plane-split, a layout the dense row-major grouped kernel has no path for.
     ``weight`` must therefore already carry the plane-split permutation from
-    ``preshuffle_mxfp4_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+    ``preshuffle_block_scaled_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
 
     Args:
         hidden_states: Packed activations ``[total_tokens, K * 3 // 4]``.

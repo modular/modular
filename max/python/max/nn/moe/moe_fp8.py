@@ -67,7 +67,7 @@ class MoEQuantized(MoE):
                     "MXFP6 MoE requires preshuffled B weights: the 24-byte FP6 "
                     "lane fragment is read plane-split and the dense "
                     "row-major grouped kernel cannot address it. The weight "
-                    "loader must call preshuffle_mxfp4_b_experts with "
+                    "loader must call preshuffle_block_scaled_b_experts with "
                     "lane_bytes=MXFP6_LANE_BYTES and set "
                     "block_scaled_preshuffled_b=True."
                 )

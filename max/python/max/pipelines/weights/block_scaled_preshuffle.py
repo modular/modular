@@ -102,7 +102,7 @@ is the only width that needs the plane-split layout.
 """
 
 
-def _as_shuffleable_mxfp4_b(
+def _as_shuffleable_block_scaled_b(
     wd: WeightData, lane_bytes: int = 16
 ) -> np.ndarray | None:
     """Return ``wd`` as a numpy view if it's a shuffleable MX B weight.
@@ -135,8 +135,8 @@ def _as_shuffleable_mxfp4_b(
     return arr
 
 
-def _as_shuffleable_mxfp4_b_scale(wd: WeightData) -> np.ndarray | None:
-    """Return ``wd`` as a uint8 view if it's a shuffleable MXFP4 B scale.
+def _as_shuffleable_block_scaled_b_scale(wd: WeightData) -> np.ndarray | None:
+    """Return ``wd`` as a uint8 view if it's a shuffleable MX B scale.
 
     Shuffleable when dtype is E8M0 and dims are cell-aligned for
     ``Shuffler.scale_4d_grouped_layout``: ``N % 32 == 0`` (S_MN_BLOCK) and
@@ -308,7 +308,9 @@ def preshuffle_block_scaled_b_experts(
                 (name, arr)
                 for name in names
                 if (
-                    arr := _as_shuffleable_mxfp4_b(state_dict[name], lane_bytes)
+                    arr := _as_shuffleable_block_scaled_b(
+                        state_dict[name], lane_bytes
+                    )
                 )
                 is not None
             ]
@@ -406,7 +408,11 @@ def preshuffle_block_scaled_b_scales(
             shuffleable = [
                 (name, arr)
                 for name in names
-                if (arr := _as_shuffleable_mxfp4_b_scale(state_dict[name]))
+                if (
+                    arr := _as_shuffleable_block_scaled_b_scale(
+                        state_dict[name]
+                    )
+                )
                 is not None
             ]
             if len(shuffleable) != len(names):
@@ -520,7 +526,7 @@ def preshuffle_block_scaled_b_dense(
     n_total = 0
     for name in names:
         wd = state_dict[name]
-        arr = _as_shuffleable_mxfp4_b(wd, lane_bytes)
+        arr = _as_shuffleable_block_scaled_b(wd, lane_bytes)
         if arr is None:
             raise ValueError(
                 f"{name!r} is not a shuffleable MX weight (dtype "
@@ -529,7 +535,7 @@ def preshuffle_block_scaled_b_dense(
             )
         scale_name = f"{name}_scale"
         sf_wd = state_dict[scale_name]
-        sf_arr = _as_shuffleable_mxfp4_b_scale(sf_wd)
+        sf_arr = _as_shuffleable_block_scaled_b_scale(sf_wd)
         if sf_arr is None:
             raise ValueError(
                 f"{scale_name!r} is not a shuffleable E8M0 scale (dtype "
