@@ -17,10 +17,10 @@ These mirror `GraphCompiler/test/mo-opt/MAPDialect/Transforms/FuseMutableLoads/`
 cases with real ops rather than the MLIR suite's `sampler.apply_penalties`
 opaque kernel, so each case here also proves numeric correctness on the
 mutated buffer, not just IR shape. Every shape here fuses and computes
-correctly under both pipelines.
+correctly.
 
-The four write-back cases used to carry `@xfail_under_adv_fusion`, on the
-reading that the new system merely left the store unfused. It did worse than
+The four write-back cases were once expected to fail under the new fusion
+system, on the reading that it merely left the store unfused. It did worse than
 that: the store was dropped and the buffer never written, because `mogg._kernel`
 modelled no memory effects, so a kernel whose only effect was the store had no
 reason to survive DCE. With the effects carried and the output fuser

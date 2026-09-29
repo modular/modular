@@ -13,7 +13,7 @@
 
 """End-to-end tests for the new MAP-dialect fusion system's view handling.
 
-Every graph here is compiled with ``MAX_GC_USE_ADV_FUSION`` set, exercising
+Every graph here exercises
 ``MOToMAP``'s per-view-kind lowering (slice/broadcast/transpose/reshape) and
 ``ViewFuser`` end to end. `test_transpose_of_add_fuses_with_correct_index` in
 particular is the Python-level regression test for the `ElementwiseFuser`
@@ -35,9 +35,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_slice_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_slice_static(session: InferenceSession) -> None:
     """A standalone `mo.slice` with static bounds compiles and runs correctly."""
     with Graph(
         "slice_static",
@@ -51,9 +49,7 @@ def test_slice_static(
     np.testing.assert_allclose(out, a[2:6, 2:6], rtol=1e-5, atol=1e-5)
 
 
-def test_slice_dynamic(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_slice_dynamic(session: InferenceSession) -> None:
     """A `mo.slice` over a symbolic input shape compiles and runs correctly."""
     with Graph(
         "slice_dynamic",
@@ -69,9 +65,7 @@ def test_slice_dynamic(
     np.testing.assert_allclose(out, a[2:6, 2:6], rtol=1e-5, atol=1e-5)
 
 
-def test_broadcast_rank_preserving(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_broadcast_rank_preserving(session: InferenceSession) -> None:
     """A rank-preserving `mo.static.broadcast_to` compiles and runs correctly."""
     with Graph(
         "broadcast_rank_preserving",
@@ -87,9 +81,7 @@ def test_broadcast_rank_preserving(
     )
 
 
-def test_broadcast_rank_expanding(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_broadcast_rank_expanding(session: InferenceSession) -> None:
     """A rank-expanding `mo.static.broadcast_to` compiles and runs correctly."""
     with Graph(
         "broadcast_rank_expanding",
@@ -105,9 +97,7 @@ def test_broadcast_rank_expanding(
     )
 
 
-def test_transpose_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_transpose_static(session: InferenceSession) -> None:
     """A standalone `mo.transpose` (2D swap) compiles and runs correctly."""
     with Graph(
         "transpose_static",
@@ -121,9 +111,7 @@ def test_transpose_static(
     np.testing.assert_allclose(out, a.T, rtol=1e-5, atol=1e-5)
 
 
-def test_reshape_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_reshape_static(session: InferenceSession) -> None:
     """A standalone `mo.static.reshape` (flatten) compiles and runs correctly."""
     with Graph(
         "reshape_static",
@@ -137,9 +125,7 @@ def test_reshape_static(
     np.testing.assert_allclose(out, a.reshape([24]), rtol=1e-5, atol=1e-5)
 
 
-def test_chained_slice_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_chained_slice_fuses(session: InferenceSession) -> None:
     """A slice of a slice fuses into one kernel, composing against the first
     slice's view rather than the original tensor.
     """
@@ -159,9 +145,7 @@ def test_chained_slice_fuses(
     np.testing.assert_allclose(out, a[1:9, 1:9][1:7, 1:7], rtol=1e-5, atol=1e-5)
 
 
-def test_view_fuses_into_existing_prologue(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_view_fuses_into_existing_prologue(session: InferenceSession) -> None:
     """A slice fuses into `mo.gather`'s existing prologue capture.
 
     Regression test for the `LoopInvariantViewMotion` fix that let it hoist
@@ -194,7 +178,7 @@ def test_view_fuses_into_existing_prologue(
 
 
 def test_broadcast_fuses_into_existing_epilogue(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """A broadcast bias fuses into `mo.reduce.max`'s existing epilogue capture.
 
@@ -237,9 +221,7 @@ def test_broadcast_fuses_into_existing_epilogue(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_view_fanout_duplicates(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_view_fanout_duplicates(session: InferenceSession) -> None:
     """A view feeding two different elementwise consumers fuses into both.
 
     Unlike `ElementwiseFuser`'s cost-gated duplication, `ViewFuser` always
@@ -263,7 +245,7 @@ def test_view_fanout_duplicates(
 
 
 def test_reshape_and_view_fuse_into_opaque_prologue(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """A reshape (and the transpose below it) fuse into an opaque's prologue;
     the view feeding the reshape stays materialized.
@@ -299,7 +281,7 @@ def test_reshape_and_view_fuse_into_opaque_prologue(
 
 
 def test_reshape_and_view_fuse_into_opaque_epilogue(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """The same rule holds for an opaque's epilogue load, not just its prologue.
 
@@ -332,9 +314,7 @@ def test_reshape_and_view_fuse_into_opaque_epilogue(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_view_and_reshape_both_fuse_into_add(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_view_and_reshape_both_fuse_into_add(session: InferenceSession) -> None:
     """`slice(a) + reshape(b)` fuses both views into the one add kernel.
 
     The reshape indexes one operand's load, the slice the other -- the reshape
@@ -362,7 +342,7 @@ def test_view_and_reshape_both_fuse_into_add(
 
 
 def test_stacked_reshapes_split_at_each_reshape(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """`slice -> reshape -> transpose -> reshape -> relu` compiles and is
     correct: each reshape is terminal for its own upstream, so the chain splits
@@ -385,9 +365,7 @@ def test_stacked_reshapes_split_at_each_reshape(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_reshape_producer_fuses_downstream(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_reshape_producer_fuses_downstream(session: InferenceSession) -> None:
     """A reshape feeding an elementwise consumer fuses in as the producer.
 
     Reshape is always the terminal (most-upstream) link in a fusion chain --
@@ -416,7 +394,7 @@ def test_reshape_producer_fuses_downstream(
     reason="the misaligned vector load only faults on GPU (NVPTX)",
 )
 def test_inner_slice_misaligned_row_stride_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """An inner-dim slice of a 2-byte-dtype tensor whose row stride is not a
     multiple of the GPU vector width, fused into an elementwise op, must not

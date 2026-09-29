@@ -13,7 +13,7 @@
 
 """End-to-end tests for the new MAP-dialect fusion system's `PrologueFuser`.
 
-Every graph here is compiled with ``MAX_GC_USE_ADV_FUSION`` set, exercising
+Every graph here exercises
 ``MOToMAP`` + ``PrologueFuser`` end to end. These mirror
 `GraphCompiler/test/mo-opt/MAPDialect/Transforms/PrologueFusion/prologue_fusion.mlir`'s
 cases with real ops rather than the MLIR suite's signature-only test kernels,
@@ -36,9 +36,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_add_fuses_into_gather_data(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_add_fuses_into_gather_data(session: InferenceSession) -> None:
     """`gather(add(a, b), indices)` fuses the add into `gather`'s data capture.
 
     Mirrors `add_gather` in prologue_fusion.mlir.
@@ -65,9 +63,7 @@ def test_add_fuses_into_gather_data(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_add_fuses_into_gather_indices(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_add_fuses_into_gather_indices(session: InferenceSession) -> None:
     """`gather(data, add(i0, i1))` fuses the add into `gather`'s indices capture.
 
     Mirrors `add_gather_indices` in prologue_fusion.mlir -- a *second*,
@@ -95,9 +91,7 @@ def test_add_fuses_into_gather_indices(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_chain_fuses_into_prologue(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_chain_fuses_into_prologue(session: InferenceSession) -> None:
     """`softmax(cast(add(a, a)))` fuses the whole elementwise chain into one
     prologue.
 
@@ -127,7 +121,7 @@ def test_chain_fuses_into_prologue(
 
 
 def test_fuses_independently_per_conditional_branch(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """Each `mo.if` branch gets its own, independently-fused prologue.
 
@@ -184,9 +178,7 @@ def test_fuses_independently_per_conditional_branch(
         np.testing.assert_allclose(out, ref_fn(), rtol=1e-5, atol=1e-5)
 
 
-def test_no_fuse_across_conditional_blocks(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_no_fuse_across_conditional_blocks(session: InferenceSession) -> None:
     """A producer defined *outside* an `mo.if` cannot fuse into a gather
     inside one of its branches -- `PrologueFuser` never crosses block
     boundaries. Mirrors `no_fuse_across_blocks`.
@@ -227,9 +219,7 @@ def test_no_fuse_across_conditional_blocks(
         np.testing.assert_allclose(out, ref_fn(), rtol=1e-5, atol=1e-5)
 
 
-def test_no_fuse_multi_use(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_no_fuse_multi_use(session: InferenceSession) -> None:
     """A producer with a second use outside the consumer it would fuse into
     keeps computing standalone -- `PrologueFuser`'s `hasOneUse()` guard.
     Mirrors `no_fuse_multi_use`: `data` feeds both `gather` and the graph's
@@ -256,9 +246,7 @@ def test_no_fuse_multi_use(
     np.testing.assert_allclose(data_out, data_ref, rtol=1e-5, atol=1e-5)
 
 
-def test_matmul_gains_no_prologue_capture(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_matmul_gains_no_prologue_capture(session: InferenceSession) -> None:
     """`matmul(add(x, y), z)` -- the add stays its own elementwise kernel; the
     matmul takes its result as a plain input and gains no prologue capture.
     Mirrors `no_fuse_plain_input`.

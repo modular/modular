@@ -99,10 +99,9 @@ _GRAPH_COMMON_DEPS = [
     requirement("torchvision"),
 ]
 
-# The legacy bulk `graph` target: every graph test under the default (legacy)
-# pipeline, one per-file target each. Kept as a plain glob (identical to the
-# pre-adv-fusion form) so `modular_py_test` fans each file out into its own
-# target running only that file. A filegroup can't be used here -- its members
+# The bulk `graph` target: every graph test, one per-file target each. Kept as
+# a plain glob so `modular_py_test` fans each file out into its own target
+# running only that file. A filegroup can't be used here -- its members
 # are opaque to the fan-out, so it would be attached as a shared src to every
 # target, making each one collect and run the whole directory.
 modular_py_test(
@@ -161,7 +160,6 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
-        requirement("pytest"),
     ],
 )
 
