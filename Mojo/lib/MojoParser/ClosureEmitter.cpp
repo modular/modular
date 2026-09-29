@@ -385,18 +385,32 @@ createDeviceTypeStruct(SharedState &shared, ASTDecl &moduleDecl,
   MLIRContext *ctx = shared.getContext();
   auto storageStruct = cast<StructDeclOp>(storageStructDecl.getIfOperation());
   ArrayRef<ParamDeclAttr> structParams = storageStruct.getInputParams();
-  StringAttr deviceStructName = StringAttr::get(
-      ctx, Twine(storageStruct.getSymName()).concat("::__device_type"));
-  auto [deviceStructDecl, deviceStructOp] = createStruct(
-      shared, moduleDecl, deviceStructName, structParams,
-      storageStructDecl.getLoc(),
-      SmallVector<PassingKind>(structParams.size(), PassingKind::Inferred));
-  OpBuilder b(deviceStructOp.getRegion());
-  b.setInsertionPointToStart(&deviceStructOp.getFields().front());
-  for (auto [field, image] :
-       llvm::zip(storageStruct.getFieldDecls(), deviceFieldTypes))
-    addFieldOpAndDecl(field.getNameAttr(), image, deviceStructOp,
-                      deviceStructDecl, b, *shared.declResolver);
+  StringAttr thunkKey = storageStruct.getSymNameAttr();
+  auto creation = [&]() -> StructDeclOp {
+    StringAttr deviceStructName = StringAttr::get(
+        ctx, Twine(thunkKey.getValue()).concat(kClosureDeviceTypeSuffix));
+    auto [deviceStructDecl, deviceStructOp] = createStruct(
+        shared, moduleDecl, deviceStructName, structParams,
+        storageStructDecl.getLoc(),
+        SmallVector<PassingKind>(structParams.size(), PassingKind::Inferred));
+    deviceStructOp.setClosureThunkKeyAttr(thunkKey);
+    OpBuilder b(deviceStructOp.getRegion());
+    b.setInsertionPointToStart(&deviceStructOp.getFields().front());
+    for (auto [field, image] :
+         llvm::zip(storageStruct.getFieldDecls(), deviceFieldTypes))
+      addFieldOpAndDecl(field.getNameAttr(), image, deviceStructOp,
+                        deviceStructDecl, b, *shared.declResolver);
+    return deviceStructOp;
+  };
+
+  // TODO: this will always be top level decl after fully migrated. Should it be
+  // keyed by captured value types (we can reuse the struct as long as closures
+  // has the same captures types). It is probably not as important as we are
+  // removing device passable conformance from closure anyway.
+  StructDeclOp deviceStructOp =
+      &moduleDecl == &shared.getTopLevelDecl()
+          ? shared.getOrCreateClosureDeviceType(thunkKey, creation)
+          : creation();
   SmallVector<TypedAttr> structBindings =
       llvm::map_to_vector(structParams, [](ParamDeclAttr param) -> TypedAttr {
         return ParamDeclRefAttr::get(param);
@@ -1019,7 +1033,7 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
   // interface, not a thin function pointer, so its name must not carry the
   // `thin` keyword (unlike a genuine thin function type or its `_PtrWrapper`).
   ASTTypePrinterContext ctx{&shared};
-  ctx.suppressThin = true;
+  ctx.isClosureSignature = true;
   std::string result = ASTType(remapped).getAsString(ctx);
   if (numPrependedCaptures)
     result += (Twine("{") + Twine(numPrependedCaptures) + "}").str();
@@ -1378,9 +1392,10 @@ ClosureEmitter::getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
 
   // TODO: The cache key includes pog list, we can potentially strip in order to
   // get fewer inflated struct
+  auto thunkKey = TypeAttr::get(fnSig);
   StructDeclOp inflatedDeclOp =
-      shared.getOrCreateInflatedClosureForSig(fnSig, [&]() {
-        std::string extName("inflated$");
+      shared.getOrCreateInflatedClosure(thunkKey, [&]() {
+        std::string extName(kClosureInflatedPrefix);
         llvm::raw_string_ostream os(extName);
         generateConversionThunkName(os, {fnSig});
 
@@ -1389,6 +1404,7 @@ ClosureEmitter::getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
                          StringAttr::get(ctx, extName), structParams, loc,
                          SmallVector<PassingKind>(structParams.size(),
                                                   PassingKind::PosOnly));
+        declOp.setClosureThunkKeyAttr(thunkKey);
         auto fnName = StringAttr::get(shared.getContext(), "__call__");
         TypedAttr callee = ParamDeclRefAttr::get("#__CALL__#", fnSig);
 
@@ -1423,6 +1439,8 @@ ClosureEmitter::getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
         addConformanceTable(
             structDecl, callParent,
             {{"__call__", buildSymbol(callMethod, structParams)}});
+
+        addStorageConformanceToDevicePassable(structDecl, {}, extName);
         return declOp;
       });
 
@@ -1433,7 +1451,7 @@ bool ClosureEmitter::isInflatedClosureForFnSymbol(PValue fnSymbol,
                                                   LIT::StructType wrapper) {
   // The inflated struct's last parameter is the fnSymbol.
   return wrapper.getSymbolRef().getLeafReference().getValue().starts_with(
-             "inflated$") &&
+             kClosureInflatedPrefix) &&
          isEqualCanon(wrapper.getParamValues().back(), fnSymbol.get());
 }
 
@@ -2712,18 +2730,24 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   SmallVector<Type> selfBoundFieldTypes = getConcreteStructFieldTypes(
       structInstType, concreteParams, selfRefParamValues);
 
-  // Create a StructType to serve as the self. The __call__ method will become a
-  // method on the struct
-  StringAttr structName =
-      StringAttr::get(ctx, Twine(getFlattenedSymbolName(parentSymbolRef))
+  bool isParamClosure = llvm::any_of(closureParents, [&](ClosureParent &p) {
+    return shared.isUniversalParametricClosureTrait(p.getSymbol());
+  });
+  auto structName =
+      StringAttr::get(ctx, Twine(kClosurePrefix)
+                               .concat(getFlattenedSymbolName(parentSymbolRef))
                                .concat("::")
                                .concat(name.getValue())
                                .concat("::__storage"));
+
+  // Create a StructType to serve as the self. The __call__ method will become
+  // a method on the struct
   auto [structDecl, structOp] = createStruct(
       shared, moduleDecl, structName, concreteParams, smLoc,
       SmallVector<PassingKind>(concreteParams.size(), PassingKind::Inferred));
   structOp.setConvention(convention);
-  structOp.setDefinesClosure(true);
+  // TODO: delete the flag after fully migrated!
+  structOp.setDefinesClosure(!isParamClosure);
   TraitType traitType = getTraitType(shared, closureParents);
   structOp.setCanonicalTrait(traitType);
   OpBuilder structBuilder(structOp.getRegion());
@@ -3084,7 +3108,6 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                   ArrayRef<Capture> captures,
                                   ASTDecl &traitDecl, Location location,
                                   bool isCopyable,
-                                  FnTypeGeneratorType closureSig,
                                   ArrayRef<ParamDeclRefAttr> paramCaptures) {
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
 
@@ -3213,30 +3236,6 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       highestCaptureConvention == TypeConvention::MemoryOnly)
     allCapturesEncodable = false;
 
-  SmallVector<ClosureParent> closureParents;
-  if (trait.getInputParams().size() > 1) {
-    TraitSymbolAttr boundSymbol =
-        emitter.bindParamsToClosureTraitFromSig(closureSig);
-    closureParents.emplace_back(
-        boundSymbol, shared.getClosureFnSig(boundSymbol),
-        StringAttr::get(shared.getContext(), "__call__"), ClosureMethod::CALL);
-  } else {
-    closureParents.emplace_back(shared, trait.bindReference({}), "__call__",
-                                ClosureMethod::CALL);
-  }
-  closureParents.append(
-      {getMoveParent(), getDeinitableParent(), getAnyParent()});
-
-  if (isCopyable) {
-    closureParents.push_back(getCopyParent());
-    closureParents.push_back(getImplicitlyCopyableParent());
-  }
-  if (highestCaptureConvention == TypeConvention::RegisterPassableTrivial) {
-    closureParents.push_back(getTrivialRegisterTypeParent());
-    closureParents.push_back(getRegisterPassableParent());
-  } else if (highestCaptureConvention == TypeConvention::RegisterPassable)
-    closureParents.push_back(getRegisterPassableParent());
-
   FnTypeGeneratorType original = nestedFn.getFuncTypeGenerator();
   // TODO: Remove capturing when legacy closures are removed
   FnTypeGeneratorType closureBodySignature = FnTypeGeneratorType::get(
@@ -3274,6 +3273,31 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
           shared, fieldDecls, allStructParams, structParamBindings, nestedFn,
           deviceCaptureFieldTypes, aliases, location)))
     return {};
+
+  SmallVector<ClosureParent> closureParents;
+  if (trait.getInputParams().size() > 1) {
+    // Bind the closure signature after origin is promoted.
+    TraitSymbolAttr boundSymbol = emitter.bindParamsToClosureTraitFromSig(
+        nestedFn.getFuncTypeGenerator());
+    closureParents.emplace_back(
+        boundSymbol, shared.getClosureFnSig(boundSymbol),
+        StringAttr::get(shared.getContext(), "__call__"), ClosureMethod::CALL);
+  } else {
+    closureParents.emplace_back(shared, trait.bindReference({}), "__call__",
+                                ClosureMethod::CALL);
+  }
+  closureParents.append(
+      {getMoveParent(), getDeinitableParent(), getAnyParent()});
+
+  if (isCopyable) {
+    closureParents.push_back(getCopyParent());
+    closureParents.push_back(getImplicitlyCopyableParent());
+  }
+  if (highestCaptureConvention == TypeConvention::RegisterPassableTrivial) {
+    closureParents.push_back(getTrivialRegisterTypeParent());
+    closureParents.push_back(getRegisterPassableParent());
+  } else if (highestCaptureConvention == TypeConvention::RegisterPassable)
+    closureParents.push_back(getRegisterPassableParent());
 
   // Storage bindings passed to initializer call.
   SmallVector<TypedAttr> storageParamBindings = structParamBindings;
@@ -4489,9 +4513,11 @@ PValue ClosureEmitter::createParamClosureExtensionType(
 
   // TODO: The cache key includes pog list, we can potentially strip in order to
   // get fewer extension struct
-  StructDeclOp extDeclOp = shared.getOrCreateParamClosureExtension(
-      srcClosureInst, tgtClosureInst, [&] {
-        std::string extName("extension$");
+  auto thunkKey =
+      ArrayAttr::get(ctx, {TypeAttr::get(tgtSig), TypeAttr::get(srcSig)});
+  StructDeclOp extDeclOp =
+      shared.getOrCreateParamClosureExtension(thunkKey, [&] {
+        std::string extName(kClosureExtensionPrefix);
         llvm::raw_string_ostream os(extName);
         generateConversionThunkName(os, {tgtSig, srcSig});
 
@@ -4500,6 +4526,7 @@ PValue ClosureEmitter::createParamClosureExtensionType(
             structParams, srcTypeVal.expr->getLoc(),
             SmallVector<PassingKind>(structParams.size(),
                                      PassingKind::PosOnly));
+        declOp.setClosureThunkKeyAttr(thunkKey);
 
         // The bridging thunk is the whole conformance; there is nothing to
         // store.
@@ -4735,12 +4762,17 @@ void ClosureEmitter::addConformanceToDevicePassable(
 void ClosureEmitter::addStorageConformanceToDevicePassable(
     ASTDecl &structDecl, ArrayRef<Type> deviceCaptureFieldTypes,
     StringRef name) {
-  ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+  ASTDecl *fileModule = structDecl.getNearestDeclOfType<FileModuleOp>();
+  if (!fileModule) {
+    // for parametric trait based closure, the struct decl is put within the top
+    // level decl.
+    fileModule = &structDecl.getShared().getTopLevelDecl();
+  }
   MLIRContext *ctx = structDecl.getContext();
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
   ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
   FailureOr<LIT::StructType> deviceType = createDeviceTypeStruct(
-      shared, fileModule, structDecl, deviceCaptureFieldTypes);
+      shared, *fileModule, structDecl, deviceCaptureFieldTypes);
   if (failed(deviceType))
     return;
 

@@ -870,6 +870,11 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
         handled = true;
       }
     }
+
+    // Ignore origin on a trait symbol (this can only happen for parametric
+    // closures trait).
+    if (isa<TraitSymbolAttr>(typeOrAttr))
+      handled = true;
   }
 
   // Values of function types should only consider any origins in the capture

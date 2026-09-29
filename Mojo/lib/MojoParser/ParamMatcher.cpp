@@ -293,6 +293,20 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
           *expectedKwVarArgIndex + 1 == expectedArgTypes.size()) &&
          "kwargs must be the last user argument");
 
+  // Allow promote a non capturing function to a capturing one. We are 1.
+  // removing capturing effect anyway and 2. the promotion should be allowed
+  // regardless since non-capturing is also a capturing function that captures
+  // nothing.
+  //
+  // TODO: remove the if/else branch after capturing is removed!!!
+  if (!actualEffects.isCapturing() && expectedEffects.isCapturing())
+    actualEffects.setCapturing(true);
+  // FIXME: Penalize non-throws more than non-capturing conversion to make
+  // overload selection works. We don't need this once we remove capturing
+  // effect.
+  if (!actualEffects.isThrows() && expectedEffects.isThrows())
+    state.numImplicitConversions++;
+
   // If the actual function is not throwing, and the expected function is,
   // then we can infer the Error type to be Never.
   if (!actualEffects.isThrows() && expectedEffects.isThrows()) {

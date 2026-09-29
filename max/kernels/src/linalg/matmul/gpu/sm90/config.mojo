@@ -724,12 +724,7 @@ def build_configs_generic[
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
     for m in range(M_start, M_end):
-        var config = config_fn.__call__[
-            _a_type=a_type,
-            _b_type=b_type,
-            _c_type=c_type,
-            _transpose_b=transpose_b,
-        ](m)
+        var config = config_fn(m)
         if config not in set:
             set.add(config)
 

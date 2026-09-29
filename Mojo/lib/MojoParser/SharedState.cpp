@@ -171,6 +171,15 @@ private:
       return &shared.getTopLevelDecl();
 
     StringAttr rootAttr = symbol.getRootReference();
+    for (auto st : shared.getTopLevelDecl().lookupInCurrentScope(rootAttr)) {
+      // This must be a recognizable struct emitted for closures.
+      assert(rootAttr.getValue().starts_with(kClosurePrefix) ||
+             rootAttr.getValue().starts_with(kClosureExtensionPrefix) ||
+             rootAttr.getValue().starts_with(kClosureInflatedPrefix));
+      assert(isa<StructDeclOp>(st->getIfOperation()));
+      return st;
+    }
+
     auto nestedRefs = symbol.getNestedReferences().drop_back();
     auto it = resolvedSymbolParents.find({rootAttr, nestedRefs});
     if (it != resolvedSymbolParents.end())
@@ -362,11 +371,17 @@ struct SharedState::Impl {
   //   "clarifying parameters", see TAPCPTTT).
   DenseMap<Attribute, FnOp> conversionThunks;
 
-  /// Parametric-closure extension structs, keyed on the (source, target)
-  /// closure instances the extension bridges between.
-  DenseMap<std::pair<TraitSymbolAttr, TraitSymbolAttr>, StructDeclOp>
-      paramClosureExtensions;
-  DenseMap<FnTypeGeneratorType, StructDeclOp> inflatedClosureStructs;
+  /// Parametric-closure extension structs, keyed on their `closureThunkKey`:
+  /// the pair of signatures the extension bridges between.
+  DenseMap<Attribute, StructDeclOp> paramClosureExtensions;
+
+  /// Inflated closure wrapper structs, keyed on their `closureThunkKey`: the
+  /// signature the wrapper inflates.
+  DenseMap<Attribute, StructDeclOp> inflatedClosureStructs;
+
+  /// Closure `__device_type` companion structs, keyed on their
+  /// `closureThunkKey`: the name of the storage struct they mirror.
+  DenseMap<Attribute, StructDeclOp> closureDeviceTypeStructs;
 
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
@@ -1405,6 +1420,18 @@ ASTDecl *SharedState::resolveAndGetFuncDecl(SymbolRefAttr symbol, SMLoc loc) {
   return declResolver->getDeclForFuncSymbol(symbol);
 }
 
+ASTDecl *SharedState::resolveAndGetTypeDecl(SymbolRefAttr symbol, SMLoc loc) {
+  if (!symbol)
+    return nullptr;
+  if (ASTDecl *decl = declResolver->getDeclForTypeSymbolIfExists(symbol))
+    return decl;
+  if (failed(
+          getImpl().bytecodeRefResolutionWalker.resolveBytecodeSymbolSignature(
+              symbol, loc)))
+    return nullptr;
+  return declResolver->getDeclForTypeSymbolIfExists(symbol);
+}
+
 LogicalResult
 SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                                      DeclResolvedness resolvedness) {
@@ -1848,22 +1875,31 @@ FnOp SharedState::getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
   return thunk;
 }
 
-StructDeclOp SharedState::getOrCreateParamClosureExtension(
-    TraitSymbolAttr srcClosureInst, TraitSymbolAttr tgtClosureInst,
-    CreateParamClosureExtensionFn create) {
-  StructDeclOp &extension =
-      impl->paramClosureExtensions[{srcClosureInst, tgtClosureInst}];
+StructDeclOp
+SharedState::getOrCreateParamClosureExtension(Attribute key,
+                                              CreateClosureStructFn create) {
+  StructDeclOp &extension = impl->paramClosureExtensions[key];
   if (!extension)
     extension = create();
   return extension;
 }
 
-StructDeclOp SharedState::getOrCreateInflatedClosureForSig(
-    FnTypeGeneratorType fnSig, CreateParamClosureExtensionFn create) {
-  StructDeclOp &inflated = impl->inflatedClosureStructs[fnSig];
+StructDeclOp
+SharedState::getOrCreateInflatedClosure(Attribute key,
+                                        CreateClosureStructFn create) {
+  StructDeclOp &inflated = impl->inflatedClosureStructs[key];
   if (!inflated)
     inflated = create();
   return inflated;
+}
+
+StructDeclOp
+SharedState::getOrCreateClosureDeviceType(Attribute key,
+                                          CreateClosureStructFn create) {
+  StructDeclOp &deviceType = impl->closureDeviceTypeStructs[key];
+  if (!deviceType)
+    deviceType = create();
+  return deviceType;
 }
 
 const llvm::MapVector<StringRef, Capture> &

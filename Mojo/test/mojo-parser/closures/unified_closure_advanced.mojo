@@ -46,8 +46,6 @@ def target[
     pass
 
 
-
-
 def repro_stencil_indirect_call[
     dtype: DType,
     num_channels: Int,
@@ -66,12 +64,12 @@ def repro_stencil_indirect_call[
 
     target[rank, dtype, type_of(compute_gpu)](compute_gpu)
 
+
 # COM: Stateless nested functions whose signature references both a captured
 # COM: parameter (dtype) and a free wildcard (alignment) are promoted to a
 # COM: top-level fn whose call site binds the captured params directly.
 # S1-LABEL: lit.fn @"outer
 # S1-DAG: lit.call tail @{{.*}}::@"inner{{.*}}"<:!DType dtype, :!Int *"a.alignment{{.*}}">(%a)
-
 
 
 def _current_target() -> __mlir_type.`!kgen.target`:
@@ -99,19 +97,17 @@ def outer[dtype: DType, valid: Bool](a: LayoutTensor[dtype, ...]) raises:
 
     var x = inner(a)
 
+
 # COM: Captured type params live on the storage struct; only free param C
 # COM: remains on the promoted call method.
 # S2-LABEL: lit.struct.decl @"{{.*}}s2_top{{.*}}::closure::__storage"
 # S2-DAG: lit.fn @"closure{{.*}}"<C: !AnyType_Copyable_Movable, +>
 
 
-
 def s2_bind[
     D: Copyable, E: Copyable, FuncType: def[F: Copyable](a: D, b: E, c: F)
 ](impl: FuncType):
     pass
-
-
 
 
 def s2_top[A: Copyable, B: Copyable](aa: A, bb: B):
@@ -121,12 +117,10 @@ def s2_top[A: Copyable, B: Copyable](aa: A, bb: B):
     closure(aa, bb, 3)
     s2_bind[A, B, type_of(closure)](closure)
 
-# COM: Verify Lazy Conformance (adaptor on storage, not parametric wrapper).
-# S3-LABEL: lit.struct.decl @"{{.*}}s3_top{{.*}}::closureConcrete::__storage"
-# S3: lit.fn @"__call__$def
-# S3-NEXT: kgen.rebind %a : !lit.ref<:!AnyType_Copyable_Movable *"Closure_Syn#0", imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
-# S3-NEXT: kgen.rebind %b : !lit.ref<:!AnyType_Copyable_Movable *"Closure_Syn#1", imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">
 
+# COM: Verify parameter inference on closure
+# S3-LABEL: lit.struct.decl @"{{.*}}s3_top{{.*}}::closureConcrete::__storage"
+# S3: lit.fn @"__call__$trait
 
 
 def s3_bind[
@@ -135,18 +129,16 @@ def s3_bind[
     pass
 
 
-
-
 def s3_top():
     def closureConcrete[C: Copyable, //](a: String, b: String, c: C) {imm}:
         pass
 
     s3_bind[String, String, type_of(closureConcrete)](closureConcrete)
 
-# COM: Origins are properly captured and lifted into the storage struct
-# S4: lit.struct.decl @"s4_demo{{.*}}::write::__storage"
-# S4-SAME: <{{.*}}*"o._mlir_origin`": origin<true>, o: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">>
 
+# COM: Origins are properly captured and lifted into the storage struct
+# S4: lit.struct.decl @"closure$s4_demo{{.*}}::write::__storage"
+# S4-SAME: <{{.*}}*"o._mlir_origin`": origin<true>, o: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">>
 
 
 def can_mutate[FuncType: def() -> None](impl: FuncType):
@@ -161,18 +153,15 @@ def s4_demo[
 
     can_mutate(write)
 
-# COM: If a mutable origin is captured but only in the context of a cast to immutable, do not lift and bind a mutable origin to the closure struct
-# S5: lit.struct.decl @"s5_demo{{.*}}::imm::__storage"
-# S5-SAME: <{{.*}}*"o._mlir_origin`": origin<false>, {{.*}}*"immut_ptr{{.*}}": origin<false>
 
+# COM: If a mutable origin is captured but only in the context of a cast to immutable, do not lift and bind a mutable origin to the closure struct
+# S5: lit.struct.decl @"closure$s5_demo{{.*}}::imm::__storage"
+# S5-SAME: <{{.*}}*"o._mlir_origin`": origin<false>, {{.*}}*"immut_ptr{{.*}}": origin<false>
 
 
 def must_be_imm_only[
     Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
-](
-    impl: FuncType,
-    ptr: UnsafePointer[Int, o, address_space=.GENERIC],
-):
+](impl: FuncType, ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
     impl()
 
 
@@ -181,18 +170,17 @@ def s5_demo[
 ](ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
     var immut_ptr = ptr.as_imm()
 
-
     def imm() {imm immut_ptr}:
         _ = immut_ptr[0]
 
     must_be_imm_only(imm, immut_ptr)
+
 
 # COM: MOCO-4128
 # S6-LABEL: lit.fn @"apply_closure
 # COM: Make sure the field type is paramtric over `T`, not a plain `AnyType`.
 # S6: lit.call {{.*}}::f::__storage"::@"__init__
 # S6-SAME: "x": !lit.ref<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable T,
-
 
 
 def apply_closure[T: TrivialRegisterPassable](x: T):
@@ -205,10 +193,10 @@ def apply_closure[T: TrivialRegisterPassable](x: T):
 def main():
     apply_closure(Int(42))
 
+
 # COM: Use where clauses to infer parameters that depend on aliases
 # S7-LABEL: lit.fn @"thing
 # S7-DAG: lit.call @{{.*}}::@"typed_raises{{.*}}"[{{.*}}]<:!AnyType !Int
-
 
 
 def typed_raises[
@@ -225,16 +213,17 @@ def thing():
 
     typed_raises(closure)
 
+
 # COM: Verify a promoted method reference bridges a captured `Int` parameter to a
 # COM: differently-typed (`MyInt`) generator parameter. The captured `Self.width`
-# COM: is an `Int`, but `MySIMD.__add__` needs a `MyInt`, so a generator attr
-# COM: bridges the gap inside the `_PtrWrapper` Impl type,
-# COM: i.e. gen<:!Int x> __add__[MyInt(x)]().
+# COM: is an `Int`, but `MySIMD.__add__` needs a `MyInt`, so the inflated closure
+# COM: struct hoists `width` as its own `Int` parameter and binds the generator
+# COM: through `MyInt.__init__`, i.e. gen<:!Int x> __add__[MyInt(x)]().
 # S8-LABEL: lit.fn @"add()"()
 # S8: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth :
-# S8-SAME: !lit.ref<!lit.struct<#PtrWrapper <:!Int width, :!lit.generator<<"width": !Int, +>
-# S8-SAME: #kgen.gen<#kgen.func.symbol<@{{.*}}::@MySIMD::@"__add__({{.*}}MySIMD[$0],{{.*}}MySIMD[$0])"<:!MyInt
-
+# S8-SAME: !lit.ref<!lit.struct<#_{{[0-9a-f]+}} <:!Int width, :!lit.generator<
+# S8-SAME: @{{.*}}::@MySIMD::@"__add__({{.*}}MySIMD[$0],{{.*}}MySIMD[$0])"<:!MyInt
+# S8-SAME: @{{.*}}::@MyInt::@"__init__({{.*}})"), width)
 
 
 struct MyInt(Movable where False):
@@ -261,19 +250,17 @@ struct Foo[width: Int](Movable where False):
     def add():
         Self.helper(MySIMD[Self.width].__add__)
 
-# S9: lit.trait.decl @"def{{.*}}mut Builder[origin]{{.*}}definesClosure
-# S9: lit.alias.decl {{.*}}origin.mut`{{.*}}: !Bool
-# S9: lit.alias.decl {{.*}}origin._mlir_origin`1{{.*}}: origin<
-# S9: lit.alias.decl origin: !lit.struct<
-# S9-SAME: get_witness<{{.*}}"origin.mut`">
-# S9-SAME: get_witness<{{.*}}"origin._mlir_origin`1">
-# S9-LABEL: lit.fn @"region[
+
+# S9: lit.fn @"region[
+# COM: The closure parameter's trait instance quotes `self`'s three Builder
+# COM: origin params directly, in order (`origin.mut`, `origin._mlir_origin`,
+# COM: `origin`), so no per-signature trait alias witnesses them.
+# S9-SAME: *"work.T{{.*}}": trait<@"##__mojo_closure__##"
+# S9-SAME: #kgen.quote<!lit.ref<!lit.struct<#Builder <:!Bool *"origin.mut`", :origin<{{.*}}> *"origin._mlir_origin`1", :!lit.struct<{{.*}}> origin>>, mut
 # S9: lit.call
-# S9-SAME: bind_params
-# S9-SAME: get_witness<{{.*}}work.T{{.*}}__call__
-# COM: The three captured origin parameters are bound, in order, to `self`'s
-# COM: Builder origin params (`origin.mut`, `origin._mlir_origin`, `origin`).
-# S9-SAME: , :!Bool *"origin.mut`", :origin<{{.*}}> *"origin._mlir_origin`1", :!lit.struct<{{.*}}> origin)
+# S9-SAME: #kgen.get_witness<:trait<@"##__mojo_closure__##"
+# S9-SAME: *"work.T{{.*}}", @"##__mojo_closure__##"
+# S9-SAME: "__call__">
 # S9-SAME: (%work, %self,
 
 #
@@ -291,10 +278,12 @@ struct Builder[origin: Origin](Movable):
         work(self)
         pass
 
+
 # COM: A captured local's origin is promoted into a nested closure's storage
-# COM: struct and interned as a witness.
+# COM: struct as a parameter and flows from there into the closure trait
+# COM: instance the storage conforms to, rather than through a trait alias.
 # S10-DAG: lit.struct.decl @"{{.*}}capture_nested()::outer2::__storage"<["z`"]*"z`": origin<false>
-# S10-DAG: kgen.witness "z`" : origin<false> = *"z`"
+# S10-DAG: kgen.conformance @"##__mojo_closure__##"{{.*}}:type #kgen.quote<!lit.struct<{{.*}} <:origin<false> *"z`">>>
 
 
 def capture_nested() -> Int:

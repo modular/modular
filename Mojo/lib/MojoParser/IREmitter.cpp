@@ -2244,8 +2244,10 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
   argConventions.push_back(ArgConvention::ImmMem);
   llvm::append_range(argConventions, sig.getFnMetadata().getArgConventions());
+  // TODO: remove capturing when legacy closures are removed.
   auto metadata = FnMetadataAttr::get(
-      ctx, argConventions, sig.getFnMetadata().getFnEffects(), originData);
+      ctx, argConventions,
+      sig.getFnMetadata().getFnEffects().setCapturing(true), originData);
 
   // Account for `_Self`/`self` inserted when constructing the closure trait.
   // We have to do it here since we can not parametrize a pog_list. (So we can

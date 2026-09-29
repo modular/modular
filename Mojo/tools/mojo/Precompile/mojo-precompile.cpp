@@ -130,7 +130,11 @@ buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
   for (auto trait : theModule.getOps<LIT::TraitDeclOp>()) {
     if (trait.getClosureSignature().has_value())
       pushOpsOntoWorklist(MutableArrayRef(*trait));
+    else if (trait.getSymName() == "##__mojo_closure__##")
+      pushOpsOntoWorklist(MutableArrayRef(*trait));
   }
+  for (auto structOp : theModule.getOps<LIT::StructDeclOp>())
+    pushOpsOntoWorklist(MutableArrayRef(*structOp));
 
   // Clone the parsed package operation and push its ops onto the worklist.
   LIT::PackageOp thePackage = cloneWithoutRegions(parsedPackageOp);

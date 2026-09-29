@@ -15,8 +15,7 @@
 # RUN: mojo -I %t.closure-dir %s 4 | FileCheck %s
 # RUN: kgen-opt %t.closure-dir/closure.mojoc | FileCheck %s -check-prefix=CHECK-PACK
 
-# CHECK-PACK: lit.trait.decl @"def(x: Int) -> Int"
-# CHECK-PACK: definesClosure
+# CHECK-PACK: lit.trait.decl @"##__mojo_closure__##"
 
 from closure import printIt, defineIt
 from std.sys import argv

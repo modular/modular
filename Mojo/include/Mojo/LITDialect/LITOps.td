@@ -469,6 +469,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
     OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
+    // Mark the struct as a thunk struct for closures, see also FnOp::thunkKey
+    OptionalAttr<AnyAttr>:$closureThunkKey,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,

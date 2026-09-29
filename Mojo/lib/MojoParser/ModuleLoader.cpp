@@ -1249,6 +1249,42 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
     };
     shared.getClosureEmitter().getOrCreateClosureTrait(key, creation);
   }
+  for (auto structOp :
+       llvm::make_early_inc_range(tmpModule.getOps<StructDeclOp>())) {
+    auto creation = [&]() -> StructDeclOp {
+      if (failed(bytecodeReader->materialize(structOp, [](Operation *) {
+            // eagerly materialize every thing
+            return true;
+          })))
+        return {};
+
+      structOp->remove();
+      theModule.push_back(structOp);
+      ASTDecl &structDecl = shared.declResolver->addBytecodeDecl(
+          &*structOp, structOp.getSymNameAttr(), &shared.getTopLevelDecl(),
+          DeclResolvedness::body);
+      structDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structOp));
+      for (auto fn : structOp.getOps<FnOp>()) {
+        ASTDecl &fnDecl = shared.declResolver->addBytecodeDecl(
+            fn, fn.getSourceNameAttr(), &structDecl, DeclResolvedness::body);
+        shared.declResolver->finalizeFuncSignature(fn, fnDecl);
+      }
+      for (auto conformance : structOp.getOps<ConformanceOp>()) {
+        shared.declResolver->addBytecodeDecl(
+            conformance, conformance.getTraitSymbol().getFlattenedName(),
+            &structDecl, DeclResolvedness::body);
+      }
+      return structOp;
+    };
+    Attribute key = structOp.getClosureThunkKeyAttr();
+    assert(key && "expected closure-support struct to carry a thunk key");
+    if (structOp.getSymName().ends_with(kClosureDeviceTypeSuffix))
+      shared.getOrCreateClosureDeviceType(key, creation);
+    else if (structOp.getSymName().starts_with(kClosureExtensionPrefix))
+      shared.getOrCreateParamClosureExtension(key, creation);
+    else
+      shared.getOrCreateInflatedClosure(key, creation);
+  }
   // Insert a new module decl. Use createUnlistedDecl instead of addBytecodeDecl
   // so the package is NOT added to parentState.decl->declsInScope.
   ASTDecl &decl = shared.declResolver->createUnlistedDecl(

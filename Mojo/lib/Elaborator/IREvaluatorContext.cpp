@@ -480,31 +480,43 @@ IREvaluatorContext::resolveTransparentThunkCallee(GeneratorOp generator,
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
 
-  // Plug `this` in as the evaluation context so the rebind dispatches
-  // parameter operators through the subclass's `evaluateContextSpecific`
-  // hook (and routes any materialization errors back through `emitError`).
-  ParameterEvaluator evaluator(generator.getInputParams(),
-                               symbol.getParamValues());
-  evaluator.setEvaluationContext(this);
-  Attribute rebound =
-      extractSymbolConstantAttr(evaluator.getReboundAttribute(calleeExpr));
+  // Transparent Thunks are transitive.
+  while (true) {
+    // Plug `this` in as the evaluation context so the rebind dispatches
+    // parameter operators through the subclass's `evaluateContextSpecific`
+    // hook (and routes any materialization errors back through `emitError`).
+    ParameterEvaluator evaluator(generator.getInputParams(),
+                                 symbol.getParamValues());
+    evaluator.setEvaluationContext(this);
+    Attribute rebound =
+        extractSymbolConstantAttr(evaluator.getReboundAttribute(calleeExpr));
 
-  if (error)
-    return ErrorTreeOr<SymbolConstantAttr>(std::move(*error));
-  if (!rebound)
-    return ErrorTreeOr<SymbolConstantAttr>(SymbolConstantAttr());
-  if (auto resolved = dyn_cast<SymbolConstantAttr>(rebound))
-    return ErrorTreeOr<SymbolConstantAttr>(resolved);
+    if (error)
+      return ErrorTreeOr<SymbolConstantAttr>(std::move(*error));
+    if (!rebound)
+      return ErrorTreeOr<SymbolConstantAttr>(SymbolConstantAttr());
 
-  // Defensive: the callee expression rebound to a non-symbol attr. A
-  // well-formed `kgen.transparent_thunk_callee_expr` should always resolve to
-  // a `SymbolConstantAttr`; reaching this branch means the attribute is
-  // malformed (likely a compiler bug at the producer site). Surface as an
-  // internal error rather than crashing in `cast`.
-  return ErrorTreeOr<SymbolConstantAttr>(ErrorTree(
-      loc, "internal error: transparent thunk callee expression resolved to "
-           "non-symbol attr: " +
-               mlir::debugString(rebound)));
+    // Defensive: the callee expression rebound to a non-symbol attr. A
+    // well-formed `kgen.transparent_thunk_callee_expr` should always resolve
+    // to a `SymbolConstantAttr`; reaching this branch means the attribute is
+    // malformed (likely a compiler bug at the producer site). Surface as an
+    // internal error rather than crashing in `cast`.
+    symbol = dyn_cast<SymbolConstantAttr>(rebound);
+    if (!symbol) {
+      return ErrorTreeOr<SymbolConstantAttr>(ErrorTree(
+          loc,
+          "internal error: transparent thunk callee expression resolved to "
+          "non-symbol attr: " +
+              mlir::debugString(rebound)));
+    }
+
+    generator = getGenerator(symbol.getSymbol());
+    calleeExpr = generator ? generator->getAttrOfType<TypedAttr>(
+                                 kTransparentThunkCalleeExprAttr)
+                           : TypedAttr();
+    if (!calleeExpr)
+      return ErrorTreeOr<SymbolConstantAttr>(symbol);
+  }
 }
 
 /// Evaluate the mangled name of a function. Returns an empty StringAttr to

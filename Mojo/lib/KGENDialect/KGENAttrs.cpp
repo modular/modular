@@ -1811,20 +1811,39 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
     }
   }
 
-  // We are pulling out the index ref and evaluated it under a different scope,
-  // -1 depth to compensate the extra depth pushed by getSpecializedGenerator.
-  IndexDepthAdjuster adjuster(-1);
-  SmallVector<TypedAttr> adjustedParam = adjuster.replace(getParamValues());
-  FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
-  declSignature = declSignature.getSpecializedGenerator(
-      adjustedParam, &evaluationContext, [&] { return emitError(loc); });
+  struct UnboundIdxRefRemapper
+      : public IndexParameterReplacer<UnboundIdxRefRemapper> {
+    using Base = IndexParameterReplacer<UnboundIdxRefRemapper>;
+    UnboundIdxRefRemapper() = default;
+
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
+      if (!indexRef || indexRef.getDepth() < depth)
+        return nullptr;
+      // This is a escaped ref. bind it!
+      Type mappedType = Base::replace(indexRef.getType());
+      return ParamDeclRefAttr::get("#" + std::to_string(indexRef.getIndex()),
+                                   mappedType);
+    }
+    Type tryReplace(Type t, size_t) { return {}; }
+  };
+
+  // The function symbol attr itself might be the body of an generator, bind any
+  // existing free parameters here otherwise `getSpecializedGenerator` won't be
+  // able to handle free reference correctly.
+  UnboundIdxRefRemapper remapper;
+  SmallVector<TypedAttr> boundParams = remapper.replace(getParamValues());
+  auto declSignature =
+      getSymbolSignature(func, symbolOps)
+          .getSpecializedGenerator(boundParams, &evaluationContext,
+                                   [&] { return emitError(loc); });
 
   if (!declSignature)
     return failure();
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
-  return verifyFuncTypesMatch("symbol use", getType(), loc,
+  return verifyFuncTypesMatch("symbol use", remapper.replace(getType()), loc,
                               symbol.getLeafReference(),
                               declSignature.getBody(), func->getLoc());
 }

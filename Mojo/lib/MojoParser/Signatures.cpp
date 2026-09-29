@@ -45,14 +45,7 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-bool LIT::useParametricClosureTrait() {
-  static const bool enabled = [] {
-    std::optional<std::string> value =
-        llvm::sys::Process::GetEnv("MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT");
-    return value && *value != "0" && !value->empty();
-  }();
-  return enabled;
-}
+bool LIT::useParametricClosureTrait() { return true; }
 
 TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
                                       SMLoc loc, SharedState &shared) {

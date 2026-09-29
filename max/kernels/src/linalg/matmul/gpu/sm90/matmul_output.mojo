@@ -430,7 +430,7 @@ struct MatmulTileWriter[
 
             def apply_epilogue[
                 F: ImplicitlyCopyable & RegisterPassable & Self.lambda_type
-            ](epilogue_fn: F):
+            ](epilogue_fn: F) {imm}:
                 self._apply_epilogue(
                     epilogue_fn,
                     workgroup_tile,

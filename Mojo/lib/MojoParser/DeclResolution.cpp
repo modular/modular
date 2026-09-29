@@ -1666,8 +1666,10 @@ isCapturingByDefault(SharedState &shared, FnOp funcOp, TraitType canonicalTrait,
       return WalkResult::advance();
     TraitDeclOp traitDeclOp =
         dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
-    if (traitDeclOp && traitDeclOp.getDefinesClosure())
+    if (traitDeclOp && (traitDeclOp.getDefinesClosure() ||
+                        shared.isUniversalParametricClosureTrait(traitDecl)))
       return WalkResult::interrupt();
+
     return WalkResult::advance();
   });
   bool isInterrupted = false;
@@ -1774,7 +1776,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   }
   Value closureInstance =
       emitter.emitClosure(*moduleDecl, nestedFnDecl, captures, *closureTrait,
-                          mlirLoc, isCopyable, closureSig, capturedRefs);
+                          mlirLoc, isCopyable, capturedRefs);
   if (!closureInstance)
     return {};
   return MLValue(closureInstance);

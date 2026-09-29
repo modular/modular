@@ -1789,8 +1789,9 @@ static FailureOr<TraitType> verifyClosureTrait(SharedState &shared,
         SyntheticNode node(declScope->getLoc());
         if (!canConvertFunctionTypes(srcSig, tgtSig, &node, *declScope))
           return failure();
+        // else continue.
+        continue;
       }
-      continue;
     }
 
     auto &symbolDecl =
@@ -2100,6 +2101,7 @@ static TriBool classifyImplicitConversionImpl(
   // asked why, we use the cached value only if the verdict was true.
   std::optional<bool> cache =
       shared.getCachedImplicitConvertibility(rvType, requiredType);
+
   if (cache.has_value() && (!reason || cache.value()))
     return TriBool::fromBool(cache.value());
 
@@ -2391,9 +2393,10 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
     }
 
     if (concreteType) {
+      TraitType traitType = anyTrait.getTraitType();
       // Augment the witness table of a closure wrapper with a rebind if
       // necessary, mirroring the AnyTraitType-metatype branch above.
-      for (const auto &symbol : anyTrait.getTraitType().getSymbols()) {
+      for (const auto &symbol : traitType.getSymbols()) {
         auto &symbolDecl =
             shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
         if (auto traitDeclOp =
@@ -2403,9 +2406,17 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
               concreteType, &symbolDecl);
         }
       }
+      auto closureConvert = emitClosureTraitConversion(valueExpr, traitType);
+      if (succeeded(closureConvert)) {
+        if (auto converted = closureConvert->get())
+          return PValue(TypeParamAttr::get(ASTType(converted).extractMetaType(),
+                                           anyTrait));
 
+        return PValue(); // conversion failure.
+      }
+      // Inapplicable, fails back to the simple case.
       if (concreteType
-              .doesConformTo(anyTrait.getTraitType(), shared,
+              .doesConformTo(traitType, shared,
                              ASTDecl::getAssumptionsFromScope(&declScope))
               .isTrue()) {
         // This is just the trait itself, not a conformance, just upcast.

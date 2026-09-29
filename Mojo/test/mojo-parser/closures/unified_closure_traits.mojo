@@ -28,7 +28,7 @@
 # COM: requires recursive matching through both composite attr types.
 # S0-LABEL: lit.fn @"repro_struct_attr()"
 # S0: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
-# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[DType.int, 1],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::Deinitable & ::Movable]($1){identical($1.tag, $0)}"
+# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[DType.int, 1],{{.*}}]($1)"
 # S0-SAME: <:!Int {:scalar<index> 2}
 
 
@@ -63,7 +63,7 @@ def repro_struct_attr():
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
-# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[DType.int, 1],def() -> Dispatch[identity] & ::AnyType & ::Deinitable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
+# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[DType.int, 1],{{.*}}]($1)"{{.*}}<:!Int {:scalar<index> 1}
 
 
 struct Dispatch[F: def(Int) thin -> Int](Movable where False):
@@ -93,11 +93,12 @@ def repro_symbol_attr():
     symbol_callee[1, type_of(my_fn)](my_fn)
 
 
-# COM: Storage owns the call trait directly; `tag` is witnessed from the
-# COM: captured type param (no parametric wrapper / `impl` hop).
+# COM: Storage owns the call trait directly; the captured `tag` is referenced
+# COM: straight from the trait instance's quoted signature, so it needs no
+# COM: trait alias to witness (no parametric wrapper / `impl` hop).
 # S2-LABEL: lit.struct.decl @"{{.*}}repro_rebind_nonref_operand{{.*}}::body::__storage"
-# S2-DAG: kgen.conformance @"def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}" {
-# S2-DAG: kgen.witness "tag" : !Int = tag
+# S2-DAG: lit.struct.field func : !lit.ref<:trait<@"##__mojo_closure__##"{{.*}}<:!Int tag,
+# S2-DAG: kgen.conformance @"##__mojo_closure__##"
 # S2-DAG: lit.fn @"body[{{.*}}(unified_closure_traits::Vec[tag,{{.*}})`"
 
 struct Width(TrivialRegisterPassable):
@@ -173,10 +174,9 @@ struct s4_Foo(Movable where False):
 # COM: Verify generic map where the actual closure returns in-register but the
 # COM: trait signature expects a memory-only ByRefResult slot.
 # S5-DAG: [[S5_INT:!Int.*]] = !lit.struct<#SIMD <{{.*}}>>
-# S5-DAG: kgen.conformance @"def{{.*}}(x: T) -> U{2}" {
-# S5-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
-# S5-DAG:   kgen.witness "T" : {{.*}} = [[S5_INT]]
-# S5-DAG:   kgen.witness "U" : {{.*}} = [[S5_INT]]
+# S5-DAG: kgen.conformance @"##__mojo_closure__##"<:param_list<type> [], :param_list<type> [#kgen.quote<[[S5_INT]]>], :type #kgen.quote<[[S5_INT]]>
+# S5-DAG:   kgen.witness "__call__" : !lit.generator
+# S5-DAG: lit.fn @"__call__$trait(unified_closure_traits::closure$s5_foo{{.*}}::double::__storage,{{.*}})"
 
 
 comptime CollectionElement = Deinitable & ImplicitlyCopyable
@@ -196,10 +196,12 @@ def s5_foo(x: Int):
     _ = map[Int, Int, type_of(double)](x, double)
 
 
-# COM: Verify names match cache keys to avoid collisions.
-# S6-DAG: lit.trait.decl @"def[U: DoB, //](y: U) -> None{1}"
-# S6-DAG: lit.trait.decl @"def[T: DoA](y: T) -> None"
-# S6-DAG: lit.trait.decl @"def[T: DoA, //](y: T) -> None{1}"
+# COM: Verify names match cache keys to avoid collisions. There is now a
+# COM: single parametric closure trait, so the per-closure names that have to
+# COM: stay distinct are the storage structs'.
+# S6-DAG: lit.struct.decl @"closure$s6_foo[::AnyType & unified_closure_traits::DoA]($0)::closure::__storage"
+# S6-DAG: lit.struct.decl @"closure$s6_foo[::AnyType & unified_closure_traits::DoA]($0)::closure2::__storage"
+# S6-DAG: lit.struct.decl @"closure$bar[::AnyType & unified_closure_traits::DoB]($0)::closure::__storage"
 
 
 trait DoA:
@@ -276,9 +278,9 @@ def s8_call_inner[
 # COM: Verify lazy conformance fires for a parametric closure trait whose
 # COM: argument type is a (`param_list.get`).
 
-# S9: kgen.conformance @"def[idx: Int](var elt: *?[idx]) -> None{1}" {
-# S9:   kgen.witness "__call__{{.*}} capturing -> !kgen.none>
-# S9:   kgen.witness "element_types.values`" : param_list<{{.*}}> = [!String, !Int]
+# S9: kgen.conformance @"##__mojo_closure__##"{{.*}}#kgen.param_list.get<:param_list<{{.*}}> [!String, !Int]
+# S9-NEXT: kgen.witness "__call__"
+# S9-SAME: capturing -> !kgen.none>
 
 
 struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
@@ -320,10 +322,13 @@ def s9(var t: s9_MiniTuple[String, Int]):
     t^.consume_elements(handler)
 
 
-# COM: Bridging one closure trait to a structurally compatible one emits a
-# COM: stateless extension struct plus a `#kgen.extension` at the call site.
-# S10: lit.struct.decl @"{{.*}}$extension${{.*}}"<Anchor:{{.*}}register_passable
-# S10: #kgen.extension<
+# COM: Bridging one closure trait to a structurally identical one no longer
+# COM: needs a stateless extension struct: the two parametric trait instances
+# COM: match, so the closure parameter forwards unwrapped.
+# S10: lit.fn @"s10_forward
+# S10-NEXT: lit.call tail @unified_closure_traits::@"s10_sink
+# S10-SAME: > G, imm
+# S10-NOT: #kgen.extension<
 
 
 def s10_sink[V: Movable & Deinitable, //, F: def() -> V](*, call: F) -> V:

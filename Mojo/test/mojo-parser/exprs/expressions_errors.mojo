@@ -761,8 +761,7 @@ def takesFnParam[F: def(x: Int) -> Int]():
   pass
 
 def testLambdaNonThinCallParam() raises:
-  # expected-error @+2 {{'takesFnParam' parameter 'F' has 'def(x: Int) -> Int' type}}
-  # expected-note @+1 {{a thin function cannot bind to a closure trait}}
+  # expected-error @+1 {{invalid call to 'takesFnParam': 'takesFnParam' parameter 'F' has 'def(x: Int) -> Int' type, but value has type 'def `lambda_6(x: Int) thin -> Int'}}
   takesFnParam[lambda (x: Int) {} -> Int: x + 1]()
 
 # A `def` reference is rejected identically -- def-parity, not a lambda-specific
@@ -775,8 +774,7 @@ def takesFnParam2[F: def(x: Int) -> Int]():
   pass
 
 def testDefRefNonThinCallParam() raises:
-  # expected-error @+2 {{'takesFnParam2' parameter 'F' has 'def(x: Int) -> Int' type}}
-  # expected-note @+1 {{a thin function cannot bind to a closure trait; use 'type_of(someIntFn)'}}
+  # expected-error @+1 {{'takesFnParam2' parameter 'F' has 'def(x: Int) -> Int' type}}
   takesFnParam2[someIntFn]()
 
 # expected-error @+1 {{value to 'def(x: Int) -> Int'}}

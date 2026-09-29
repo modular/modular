@@ -3029,34 +3029,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
         return self.reduce[body, size_out]()
 
-    # TODO: remove when non-capturing can be converted to capturing.
-    @inline(.always)
-    def reduce[
-        func: def[width: SIMDLength](
-            Self._T[width], Self._T[width]
-        ) thin -> Self._T[width],
-        size_out: Int = 1,
-    ](self) -> Self._T[size_out]:
-        """Reduces the vector using a provided reduce operator.
-
-        Parameters:
-            func: The reduce function to apply to elements in this SIMD.
-            size_out: The width of the reduction.
-
-        Constraints:
-            `size_out` must not exceed width of the vector.
-
-        Returns:
-            A new scalar which is the reduction of all vector elements.
-        """
-
-        @inline(.always)
-        @__parameter
-        def body[w: Int](lhs: Self._T[w], rhs: Self._T[w]) -> Self._T[w]:
-            return func(lhs, rhs)
-
-        return self.reduce[body, size_out]()
-
     @inline(.always)
     def reduce[
         func: def[width: Int](

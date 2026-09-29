@@ -407,6 +407,15 @@ public:
   /// Returns null if resolution fails.
   ASTDecl *resolveAndGetFuncDecl(SymbolRefAttr symbol, SMLoc loc);
 
+  /// The same, for a type (struct/trait) symbol.
+  ///
+  /// TODO: it seems that declResolver->getDeclForTypeSymbol() is very unsafe to
+  /// call: We didn't enforce the invariance to ensure when a symbol ref is
+  /// materialize from bytecode, the decl must have be registered as well. We
+  /// should probably delete `getDeclForTypeSymbol` and switch to the more
+  /// conservative path here.
+  ASTDecl *resolveAndGetTypeDecl(SymbolRefAttr symbol, SMLoc loc);
+
   /// Finalize any imported bytecode modules. This should be called after all
   /// decls have been resolved, as this will erase bytecode operations attached
   /// to decls that have not been resolved.
@@ -601,20 +610,24 @@ public:
   FnOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
                                 SMLoc useLoc);
 
-  /// Function used to create a parametric-closure extension struct.
-  using CreateParamClosureExtensionFn = function_ref<StructDeclOp()>;
+  /// Function used to create a synthesized closure-support struct.
+  using CreateClosureStructFn = function_ref<StructDeclOp()>;
 
   /// This gets the extension struct that supplies `tgtClosureInst`'s
   /// conformance by bridging through `srcClosureInst`, or creates one if
   /// needed.
-  StructDeclOp
-  getOrCreateParamClosureExtension(TraitSymbolAttr srcClosureInst,
-                                   TraitSymbolAttr tgtClosureInst,
-                                   CreateParamClosureExtensionFn create);
+  StructDeclOp getOrCreateParamClosureExtension(Attribute key,
+                                                CreateClosureStructFn create);
 
-  StructDeclOp
-  getOrCreateInflatedClosureForSig(FnTypeGeneratorType fnSig,
-                                   CreateParamClosureExtensionFn create);
+  /// This gets the wrapper struct that inflates a function symbol into a
+  /// closure, or creates one if needed.
+  StructDeclOp getOrCreateInflatedClosure(Attribute key,
+                                          CreateClosureStructFn create);
+
+  /// This gets the `__device_type` companion struct of the closure storage, or
+  /// creates one if needed.
+  StructDeclOp getOrCreateClosureDeviceType(Attribute key,
+                                            CreateClosureStructFn create);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values. The name of the capture is paired with the metadata.

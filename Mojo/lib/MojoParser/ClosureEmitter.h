@@ -27,6 +27,13 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN::LIT {
+// Naming schemes used for emitting closure related-struct.
+inline constexpr llvm::StringLiteral kClosurePrefix = "closure$";
+inline constexpr llvm::StringLiteral kClosureInflatedPrefix = "inflated$";
+inline constexpr llvm::StringLiteral kClosureExtensionPrefix = "extension$";
+inline constexpr llvm::StringLiteral kClosureDeviceTypeSuffix =
+    "::__device_type";
+
 class TypeCheckedFnSignature;
 class TypeCheckedParamList;
 struct AuxiliaryParameters;
@@ -147,7 +154,6 @@ public:
   Value emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                     ArrayRef<Capture> captures, ASTDecl &traitDecl,
                     Location location, bool isCopyable,
-                    FnTypeGeneratorType closureSig,
                     ArrayRef<ParamDeclRefAttr> paramCaptures);
   static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
                                   StringRef name, SMLoc location);

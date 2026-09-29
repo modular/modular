@@ -831,7 +831,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
         cast<FnTypeGeneratorType>(evaluator->replace(callAlias.getType()));
 
     auto name = StringAttr::get(shared.getContext(), "__call__");
-    allMatchFound = succeeded(checkMethod(name, decl, name, fullSig));
+    allMatchFound = succeeded(checkMethod(name, &structDecl, name, fullSig));
   } else {
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
@@ -868,18 +868,22 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     return success();
   }
 
-  // Otherwise, emit the set of requirements that are missing.
-  diag->attachNote(traitDecl)
-      << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
-      << " declared here";
-  if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
-    if (auto it = inheritedFrom->find(parent);
-        it != inheritedFrom->end() && it->second.first != parent) {
-      ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
-          it->second.first.getSymbol());
-      diag->attachNote(parentDecl)
-          << "inherited through '" << *parentDecl.getUserNameIfOperation()
-          << "' here";
+  bool isSynthetic = shared.isUniversalParametricClosureTrait(&traitDecl);
+  // We don't have a location for synthetic decl for the attached note.
+  if (!isSynthetic) {
+    // Otherwise, emit the set of requirements that are missing.
+    diag->attachNote(traitDecl)
+        << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
+        << " declared here";
+    if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
+      if (auto it = inheritedFrom->find(parent);
+          it != inheritedFrom->end() && it->second.first != parent) {
+        ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
+            it->second.first.getSymbol());
+        diag->attachNote(parentDecl)
+            << "inherited through '" << *parentDecl.getUserNameIfOperation()
+            << "' here";
+      }
     }
   }
   return failure();

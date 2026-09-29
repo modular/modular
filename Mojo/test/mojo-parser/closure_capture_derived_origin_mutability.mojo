@@ -32,7 +32,7 @@ struct Outer:
         # `self`'s origin must stay mutable in the closure's storage type: the
         # captured pointer writes through it. Only the closure's own capture of
         # the local `p` is immutable, per `{imm}`.
-        # CHECK: lit.struct.decl @"Outer::apply{{.*}}::closure::__storage"<["self{{[^"]*}}"]*"self{{[^"]*}}": origin<true>
+        # CHECK: lit.struct.decl @"closure$Outer::apply{{.*}}::closure::__storage"<["self{{[^"]*}}"]*"self{{[^"]*}}": origin<true>
         @always_inline
         def closure() {imm}:
             p[].value = 5
