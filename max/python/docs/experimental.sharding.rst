@@ -74,7 +74,6 @@ Tensor-to-mesh mappings
 
    DeviceMapping
    NamedMapping
-   PlacementMapping
 
 Per-op decisions
 ----------------

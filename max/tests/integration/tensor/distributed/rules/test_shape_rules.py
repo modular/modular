@@ -81,12 +81,12 @@ class TestPassthrough:
     def test_replicated(self) -> None:
         layout = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(passthrough_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_sharded(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(passthrough_rule, layout)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -98,24 +98,24 @@ class TestPermute:
     def test_replicated(self) -> None:
         layout = _layout(M(MESH_1D, R), (4, 8, 3))
         _, (out,) = pick(permute_rule, layout, dims=[2, 0, 1])
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_sharded_axis0_moves(self) -> None:
         """S(0) with dims=[1,0,2] -> S(1) (axis 0 goes to position 1)."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8, 3))
         _, (out,) = pick(permute_rule, layout, dims=[1, 0, 2])
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_sharded_axis2_moves(self) -> None:
         """S(2) with dims=[2,0,1] -> S(0) (axis 2 goes to position 0)."""
         layout = _layout(M(MESH_1D, S(2)), (4, 8, 3))
         _, (out,) = pick(permute_rule, layout, dims=[2, 0, 1])
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_identity_permute(self) -> None:
         layout = _layout(M(MESH_1D, S(1)), (4, 8, 3))
         _, (out,) = pick(permute_rule, layout, dims=[0, 1, 2])
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
 
 class TestTranspose:
@@ -123,19 +123,19 @@ class TestTranspose:
         """S(0) + transpose(0,1) -> S(1)."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(transpose_rule, layout, axis_1=0, axis_2=1)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_swap_other_axis(self) -> None:
         """S(0) + transpose(1,2) -> S(0) (unaffected)."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8, 3))
         _, (out,) = pick(transpose_rule, layout, axis_1=1, axis_2=2)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_negative_axes(self) -> None:
         """S(0) + transpose(-2,-1) on 3-D -> S(0) (swaps axes 1,2)."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8, 3))
         _, (out,) = pick(transpose_rule, layout, axis_1=-2, axis_2=-1)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -148,19 +148,19 @@ class TestUnsqueeze:
         """S(1) + unsqueeze(0) -> S(2) (shifted up)."""
         layout = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(unsqueeze_rule, layout, axis=0)
-        assert out.to_placements() == (S(2),)
+        assert out.placements == (S(2),)
 
     def test_insert_after_sharded(self) -> None:
         """S(0) + unsqueeze(2) -> S(0) (unaffected)."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(unsqueeze_rule, layout, axis=2)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_insert_at_sharded(self) -> None:
         """S(1) + unsqueeze(1) -> S(2) (at insertion point, shifts up)."""
         layout = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(unsqueeze_rule, layout, axis=1)
-        assert out.to_placements() == (S(2),)
+        assert out.placements == (S(2),)
 
 
 class TestSqueeze:
@@ -168,19 +168,19 @@ class TestSqueeze:
         """S(0) + squeeze(2) -> S(0) (unaffected, axes after shift down)."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8, 1))
         _, (out,) = pick(squeeze_rule, layout, axis=2)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_squeeze_shifts_down(self) -> None:
         """S(2) + squeeze(0) -> S(1) (shifted down)."""
         layout = _layout(M(MESH_1D, S(2)), (1, 4, 8))
         _, (out,) = pick(squeeze_rule, layout, axis=0)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_squeeze_sharded_axis_falls_back(self) -> None:
         """Sharding on the squeezed axis: cost model auto-gathers to R."""
         layout = _layout(M(MESH_1D, S(1)), (4, 1, 8))
         _, (out,) = pick(squeeze_rule, layout, axis=1)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -193,25 +193,25 @@ class TestFlatten:
         """S(0) + flatten(1, 2) -> S(0) (unaffected)."""
         layout = _layout(M(MESH_1D, S(0)), (2, 4, 8))
         _, (out,) = pick(flatten_rule, layout, start_dim=1, end_dim=2)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_flatten_shifts_axis(self) -> None:
         """S(3) + flatten(0, 1) -> S(2) (shifted down by 1 removed dim)."""
         layout = _layout(M(MESH_1D, S(3)), (2, 4, 8, 3))
         _, (out,) = pick(flatten_rule, layout, start_dim=0, end_dim=1)
-        assert out.to_placements() == (S(2),)
+        assert out.placements == (S(2),)
 
     def test_flatten_across_sharded_falls_back(self) -> None:
         """Flattening across a sharded axis: cost model auto-gathers to R."""
         layout = _layout(M(MESH_1D, S(1)), (2, 4, 8))
         _, (out,) = pick(flatten_rule, layout, start_dim=0, end_dim=2)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_flatten_all_sharded_falls_back(self) -> None:
         """flatten(0, -1) with any sharding: cost model auto-gathers."""
         layout = _layout(M(MESH_1D, S(0)), (2, 4, 8))
         _, (out,) = pick(flatten_rule, layout, start_dim=0, end_dim=-1)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -223,14 +223,14 @@ class TestReshape:
     def test_replicated(self) -> None:
         layout = _layout(M(MESH_1D, R), (4, 8))
         (_, target_shape), (out,) = pick(reshape_rule, layout, shape=(2, 16))
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
         assert _unwrap(target_shape) == [2, 16]
 
     def test_sharded_maps_cleanly(self) -> None:
         """S(0) on [4, 8] -> reshape [4, 2, 4]: axis 0 maps 1:1."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         (_, target_shape), (out,) = pick(reshape_rule, layout, shape=(4, 2, 4))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         # Axis 0 is sharded across 4 devices: 4/4 = 1. Static
         # divisible -> uniform raw Shape (no PerShard wrap needed).
         assert _unwrap(target_shape) == [1, 2, 4]
@@ -239,7 +239,7 @@ class TestReshape:
         """S(0) on [4, 8] -> reshape [32]: axis 0 boundary aligns, 32 % 4 = 0."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         (_, target_shape), (out,) = pick(reshape_rule, layout, shape=(32,))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         # Output is sharded on axis 0: 32/4 = 8.
         assert _unwrap(target_shape) == [8]
 
@@ -247,7 +247,7 @@ class TestReshape:
         """Accepts shape as positional arg."""
         layout = _layout(M(MESH_1D, R), (4, 8))
         (_, target_shape), (out,) = pick(reshape_rule, layout, (2, 16))
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
         assert _unwrap(target_shape) == [2, 16]
 
     def test_sharded_split_no_auto_fallback(self) -> None:
@@ -257,13 +257,13 @@ class TestReshape:
         infeasible Sharded row and the picker falls back to Replicated."""
         layout = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(reshape_rule, layout, shape=(4, 2, 4))
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_split_unper_rank_dim(self) -> None:
         """S(1) on [4, 8] -> reshape [2, 2, 8]: results in S(2)"""
         layout = _layout(M(MESH_1D, S(1)), (4, 8))
         (_, target_shape), (out,) = pick(reshape_rule, layout, shape=(2, 2, 8))
-        assert out.to_placements() == (S(2),)
+        assert out.placements == (S(2),)
         # Output is sharded on axis 2: 8/4 = 2.
         assert _unwrap(target_shape) == [2, 2, 2]
 
@@ -275,7 +275,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=("batch", 32)
         )
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
         # Replicated: each shard sees the full target shape.
         assert _unwrap(target_shape) == ["batch", 32]
 
@@ -289,7 +289,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=(layout.shape[0], 4)
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         # Symbolic batch axis is sharded -> per-rank distinct names
         # (rank 0's name appended with mesh-axis 'tp' and coord 0).
         assert isinstance(target_shape, PerShard)
@@ -302,7 +302,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=("batch", 8, 4, 2)
         )
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
         # Output is sharded on axis 1: 8/4 = 2.
         assert _unwrap(target_shape) == ["batch", 2, 4, 2]
 
@@ -316,7 +316,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=(layout.shape[0], 32)
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         # Symbolic batch is sharded -> per-rank distinct names.
         assert isinstance(target_shape, PerShard)
         assert _unwrap(target_shape) == [Dim("batch_tp_0"), 32]
@@ -328,7 +328,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=("batch", 32)
         )
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
         # Output is sharded on axis 1: 32/4 = 8.
         assert _unwrap(target_shape) == ["batch", 8]
 
@@ -340,7 +340,7 @@ class TestReshape:
         an explicit wrapper target or allgathering upstream."""
         layout = _layout(M(MESH_1D, S(2)), ("batch", 4, 8))
         _, (out,) = pick(reshape_rule, layout, shape=("batch", 32))
-        assert isinstance(out.to_placements()[0], type(S(0)))
+        assert isinstance(out.placements[0], type(S(0)))
 
     def test_minus_one_absorbs_static_dynamic_sharded_unaffected(self) -> None:
         """S(0) on ('batch', 4, 8) -> (wrapper, -1): -1 resolves per rank to
@@ -351,7 +351,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=(layout.shape[0], -1)
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         assert isinstance(target_shape, PerShard)
         assert _unwrap(target_shape) == [Dim("batch_tp_0"), 32]
         assert _unwrap(target_shape, rank=2) == [Dim("batch_tp_2"), 32]
@@ -363,7 +363,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=("batch", -1)
         )
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
         assert _unwrap(target_shape) == ["batch", 8]
 
     def test_split_static_dynamic_sharded_unaffected(self) -> None:
@@ -374,7 +374,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=(layout.shape[0], 4, 8)
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         assert isinstance(target_shape, PerShard)
         assert _unwrap(target_shape) == [Dim("batch_tp_0"), 4, 8]
         assert _unwrap(target_shape, rank=2) == [Dim("batch_tp_2"), 4, 8]
@@ -385,7 +385,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=("batch", 4, -1)
         )
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
         assert _unwrap(target_shape) == ["batch", 1, Dim("dynamic") * 8]
 
     def test_dynamic_dim_all_merged(self) -> None:
@@ -394,7 +394,7 @@ class TestReshape:
         target axis), trusting the caller to know whether that's correct."""
         layout = _layout(M(MESH_1D, S(1)), ("batch", 4, 8, "dynamic"))
         _, (out,) = pick(reshape_rule, layout, shape=(-1,))
-        assert isinstance(out.to_placements()[0], type(S(0)))
+        assert isinstance(out.placements[0], type(S(0)))
 
     def test_split_sharded_static_with_dynamic_present(self) -> None:
         """S(1) on ('batch', 32) -> ('batch', 4, 8): pure split of the
@@ -404,7 +404,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=("batch", 4, 8)
         )
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
         # Output is sharded on new axis 1: 4/4 = 1.
         assert _unwrap(target_shape) == ["batch", 1, 8]
 
@@ -417,7 +417,7 @@ class TestReshape:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=(-1, 8, 256)
         )
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
         assert _unwrap(target_shape) == [Dim("total_seq_len"), 4, 256]
 
     def test_split_sharded_axis_mixed_split_with_dynamic(
@@ -428,7 +428,7 @@ class TestReshape:
         Caller must verify this is the semantics they want."""
         layout = _layout(M(MESH_2, S(1)), ("total_seq_len", 2048))
         _, (out,) = pick(reshape_rule, layout, shape=(-1, 4, 256))
-        assert isinstance(out.to_placements()[0], type(S(0)))
+        assert isinstance(out.placements[0], type(S(0)))
 
     def test_multiple_minus_ones_raises(self) -> None:
         """('batch', 4, 8) -> ('batch', -1, -1): only one -1 dimension allowed."""
@@ -445,7 +445,7 @@ class TestReshape:
         emission-order choice; either is valid under "no further checks"."""
         layout = _layout(M(MESH_2D, R, S(1)), ("batch", 4, 8))
         _, (out,) = pick(reshape_rule, layout, shape=("batch", 32))
-        placements = out.to_placements()
+        placements = out.placements
         assert placements[0] == R
         assert isinstance(placements[1], type(S(0)))
 
@@ -456,17 +456,17 @@ class TestReshapeDynamic:
     def test_symbolic_batch_preserved_in_place(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), ("batch", 8))
         _, (out,) = pick(reshape_rule, layout, shape=(layout.shape[0], 8))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_symbolic_batch_minus_one_at_sharded_position(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), ("batch", 8))
         _, (out,) = pick(reshape_rule, layout, shape=(-1, 4, 2))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_symbolic_non_sharded_preserved(self) -> None:
         layout = _layout(M(MESH_1D, S(1)), ("batch", 8))
         _, (out,) = pick(reshape_rule, layout, shape=("batch", 8, 1))
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_symbolic_two_minus_ones_raises(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), ("batch", 8))
@@ -478,7 +478,7 @@ class TestReshapeDynamic:
     def test_symbolic_replicated_path_untouched(self) -> None:
         layout = _layout(M(MESH_1D, R), ("batch", 8))
         _, (out,) = pick(reshape_rule, layout, shape=("batch", 4, 2))
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -490,12 +490,12 @@ class TestBroadcastTo:
     def test_replicated(self) -> None:
         layout = _layout(M(MESH_1D, R), (1, 8))
         _, (out,) = pick(broadcast_to_rule, layout, shape=(4, 8))
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_sharded_passthrough(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 1))
         _, (out,) = pick(broadcast_to_rule, layout, shape=(4, 8))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_symbolic_target_preserves_sharding(self) -> None:
         """Sharded symbolic axis preserved via an explicit wrapper target —
@@ -503,7 +503,7 @@ class TestBroadcastTo:
         per-rank symbols, which broadcast trusts verbatim."""
         layout = _layout(M(MESH_1D, S(0)), ("batch", 1))
         _, (out,) = pick(broadcast_to_rule, layout, shape=(layout.shape[0], 8))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_symbolic_mismatch_raises(self) -> None:
         layout = _layout(M(MESH_1D, R), ("seq", 8))
@@ -515,25 +515,25 @@ class TestSplit:
     def test_replicated(self) -> None:
         layout = _layout(M(MESH_1D, R), (8, 4))
         _, (out,) = pick(split_rule, layout, split_sizes=[4, 4], axis=0)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_sharded_non_split_axis(self) -> None:
         """S(0) + split on axis=1 -> S(0) preserved."""
         layout = _layout(M(MESH_1D, S(0)), (8, 4))
         _, (out,) = pick(split_rule, layout, split_sizes=[2, 2], axis=1)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_sharded_split_axis_divisible(self) -> None:
         """S(0) + split on axis=0: sizes must be divisible by shard count."""
         layout = _layout(M(MESH_1D, S(0)), (8, 4))
         _, (out,) = pick(split_rule, layout, split_sizes=[4, 4], axis=0)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_sharded_split_axis_not_divisible_falls_back(self) -> None:
         """Non-divisible split sizes on a sharded axis: cost model auto-gathers."""
         layout = _layout(M(MESH_1D, S(0)), (8, 4))
         _, (out,) = pick(split_rule, layout, split_sizes=[3, 5], axis=0)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_split_unsharded_axis_returns_uniform_sizes(self) -> None:
         """Splitting an unsharded axis: ``localize_sizes`` returns the
@@ -542,7 +542,7 @@ class TestSplit:
         (_, local_sizes, _), (out,) = pick(
             split_rule, layout, split_sizes=[2, 4], axis=1
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         # Unsharded split axis -> ``list[Dim]`` (uniform), not PerShard.
         assert _unwrap(local_sizes) == [Dim(2), Dim(4)]
 
@@ -553,7 +553,7 @@ class TestSplit:
         (_, local_sizes, _), (out,) = pick(
             split_rule, layout, split_sizes=[4, 4], axis=0
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         # 4//4 = 1 each, shared by all ranks.
         assert _unwrap(local_sizes) == [Dim(1), Dim(1)]
 
@@ -564,7 +564,7 @@ class TestSplit:
         (_, local_sizes, _), (out,) = pick(
             split_rule, layout, split_sizes=[Dim("k1"), Dim("k2")], axis=1
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         assert _unwrap(local_sizes) == [Dim("k1"), Dim("k2")]
 
 
@@ -588,7 +588,7 @@ class TestReshapeSymbolicEdges:
         (_, target_shape), (out,) = pick(
             reshape_rule, layout, shape=(layout.shape[0], 8)
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         # Each rank's "batch" carries its rank-specific name.
         assert isinstance(target_shape, PerShard)
         assert _unwrap(target_shape, rank=0) == [Dim("batch_tp_0"), 8]
@@ -601,7 +601,7 @@ class TestReshapeSymbolicEdges:
         constructs ``PerShard`` for placement projection uniformity)."""
         layout = _layout(M(MESH_1D, R), ("seq", 8))
         (_, target_shape), (out,) = pick(reshape_rule, layout, shape=("seq", 8))
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
         # No sharded axes; target is a PerShard container with uniform per-rank
         # shapes (each rank holds ``[seq, 8]``).
         assert _unwrap(target_shape) == [Dim("seq"), 8]
@@ -613,7 +613,7 @@ class TestReshapeSymbolicEdges:
         — should emit ``PerShard`` with each rank's actual local size."""
         layout = _layout(M(MESH_1D, S(0)), (7, 8))
         (_, target_shape), (out,) = pick(reshape_rule, layout, shape=(7, 8))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
         assert isinstance(target_shape, PerShard)
         sizes = []
         for r in range(4):
@@ -633,14 +633,14 @@ class TestConcat:
         a = _layout(M(MESH_1D, S(0)), (4, 8))
         b = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(same_placement_multi_input_rule, [a, b])
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_mixed_placements_aligns_to_cheapest(self) -> None:
         """Mismatched shards: cost model aligns both to S(0) (the cheaper plan)."""
         a = _layout(M(MESH_1D, S(0)), (4, 8))
         b = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(same_placement_multi_input_rule, [a, b])
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
 
 class TestStack:
@@ -649,14 +649,14 @@ class TestStack:
         a = _layout(M(MESH_1D, S(0)), (4, 8))
         b = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(stack_rule, [a, b], axis=0)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_stack_at_end(self) -> None:
         """S(0) + stack(axis=2) -> S(0) (unaffected)."""
         a = _layout(M(MESH_1D, S(0)), (4, 8))
         b = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(stack_rule, [a, b], axis=2)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_mixed_aligns_to_first(self) -> None:
         """Mixed (S(0), R): cost model picks (S(0),S(0))->S(1) -- R->S(0) is
@@ -664,7 +664,7 @@ class TestStack:
         a = _layout(M(MESH_1D, S(0)), (4, 8))
         b = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(stack_rule, [a, b], axis=0)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -677,7 +677,7 @@ class TestGather:
         x = _layout(M(MESH_1D, S(0)), (8, 4))
         indices = _layout(M(MESH_1D, R), (8, 2))
         _, (out,) = pick(gather_rule, x, indices, axis=1)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_sharded_axis_falls_back_to_replicated(self) -> None:
         """Sharding the gather-axis: the rule deliberately omits the
@@ -692,7 +692,7 @@ class TestGather:
         x = _layout(M(MESH_1D, S(0)), (8, 4))
         indices = _layout(M(MESH_1D, R), (4, 4))
         _, (out,) = pick(gather_rule, x, indices, axis=0)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 class TestGatherNd:
@@ -700,14 +700,14 @@ class TestGatherNd:
         x = _layout(M(MESH_1D, S(0)), (4, 8, 3))
         indices = _layout(M(MESH_1D, R), (4, 8, 1))
         _, (out,) = pick(gather_nd_rule, x, indices, batch_dims=2)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_non_batch_dim_sharded_falls_back(self) -> None:
         """Sharding a non-batch axis on input: cost model auto-gathers to R."""
         x = _layout(M(MESH_1D, S(1)), (4, 8, 3))
         indices = _layout(M(MESH_1D, R), (4, 2, 1))
         _, (out,) = pick(gather_nd_rule, x, indices, batch_dims=1)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -719,13 +719,13 @@ class TestPad:
     def test_no_padding_on_sharded(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(pad_rule, layout, paddings=[0, 0, 1, 1])
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_padding_on_sharded_falls_back(self) -> None:
         """Pad on a sharded axis: cost model auto-gathers that axis."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(pad_rule, layout, paddings=[1, 1, 0, 0])
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 class TestSliceTensor:
@@ -734,7 +734,7 @@ class TestSliceTensor:
         _, (out,) = pick(
             slice_tensor_rule, layout, indices=[slice(None), slice(0, 4)]
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_slice_on_sharded_falls_back(self) -> None:
         """Slicing a sharded axis: cost model auto-gathers that axis."""
@@ -742,26 +742,26 @@ class TestSliceTensor:
         _, (out,) = pick(
             slice_tensor_rule, layout, indices=[slice(0, 2), slice(None)]
         )
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 class TestRepeatInterleave:
     def test_non_sharded_axis(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(repeat_interleave_rule, layout, repeats=2, axis=1)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_sharded_axis_falls_back(self) -> None:
         """repeat_interleave on a sharded axis: cost model auto-gathers."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(repeat_interleave_rule, layout, repeats=2, axis=0)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_axis_none_any_sharded_falls_back(self) -> None:
         """repeat_interleave(axis=None) auto-gathers any sharding."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(repeat_interleave_rule, layout, repeats=2, axis=None)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -773,13 +773,13 @@ class TestRejectAllSharded:
     def test_replicated_ok(self) -> None:
         layout = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(argsort_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_any_sharded_falls_back(self) -> None:
         """argsort needs a global view: cost model auto-gathers any sharding."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(argsort_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -792,23 +792,23 @@ class TestOuter:
         x = _layout(M(MESH_1D, R), (4,))
         y = _layout(M(MESH_1D, R), (6,))
         _, (out,) = pick(outer_rule, x, y)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_x_sharded(self) -> None:
         x = _layout(M(MESH_1D, S(0)), (4,))
         y = _layout(M(MESH_1D, R), (6,))
         _, (out,) = pick(outer_rule, x, y)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_y_sharded(self) -> None:
         x = _layout(M(MESH_1D, R), (4,))
         y = _layout(M(MESH_1D, S(0)), (6,))
         _, (out,) = pick(outer_rule, x, y)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_both_sharded_picks_cheaper(self) -> None:
         """Both inputs sharded: cost model picks (R, S(0)) -> S(1) (cheaper)."""
         x = _layout(M(MESH_1D, S(0)), (4,))
         y = _layout(M(MESH_1D, S(0)), (6,))
         _, (out,) = pick(outer_rule, x, y)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)

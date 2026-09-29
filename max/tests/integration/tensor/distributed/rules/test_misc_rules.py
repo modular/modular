@@ -20,7 +20,6 @@ from max.dtype import DType
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     TensorLayout,
 )
@@ -39,7 +38,7 @@ from rules._fixtures import MESH_1D, M, R, S, pick
 def _layout(
     mapping: DeviceMapping, shape: tuple[int, ...], dtype: DType = DType.float32
 ) -> TensorLayout:
-    """Build a TensorLayout from a PlacementMapping and shape."""
+    """Build a TensorLayout from a DeviceMapping and shape."""
     return TensorLayout(dtype, Shape(shape), mapping)
 
 
@@ -48,24 +47,24 @@ class TestBandPartRule:
         """S(0) is fine — only last 2 axes are forbidden."""
         layout = _layout(M(MESH_1D, S(0)), (4, 8, 3))
         _, (out,) = pick(band_part_rule, layout)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_last_axis_auto_gathers(self) -> None:
         """Last-axis shard auto-gathers (band_part operates on last 2 axes jointly)."""
         layout = _layout(M(MESH_1D, S(2)), (4, 8, 3))
         _, (out,) = pick(band_part_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_second_last_axis_auto_gathers(self) -> None:
         """Second-last axis shard auto-gathers."""
         layout = _layout(M(MESH_1D, S(1)), (4, 8, 3))
         _, (out,) = pick(band_part_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_replicated_ok(self) -> None:
         layout = _layout(M(MESH_1D, R), (4, 8, 3))
         _, (out,) = pick(band_part_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 class TestFoldRule:
@@ -74,45 +73,45 @@ class TestFoldRule:
         _, (out,) = pick(
             fold_rule, layout, output_size=(2, 4), kernel_size=(2, 2)
         )
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_axis1_auto_gathers(self) -> None:
         layout = _layout(M(MESH_1D, S(1)), (4, 8, 3))
         _, (out,) = pick(
             fold_rule, layout, output_size=(2, 4), kernel_size=(2, 2)
         )
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_axis2_auto_gathers(self) -> None:
         layout = _layout(M(MESH_1D, S(2)), (4, 8, 3))
         _, (out,) = pick(
             fold_rule, layout, output_size=(2, 4), kernel_size=(2, 2)
         )
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 class TestResizeRule:
     def test_batch_only_ok(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8, 3))
         _, (out,) = pick(resize_rule, layout, shape=(4, 16, 6))
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_non_batch_auto_gathers(self) -> None:
         layout = _layout(M(MESH_1D, S(1)), (4, 8, 3))
         _, (out,) = pick(resize_rule, layout, shape=(4, 16, 6))
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 class TestIrfftRule:
     def test_batch_sharded_ok(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(irfft_rule, layout)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_last_axis_auto_gathers(self) -> None:
         layout = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(irfft_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
 
 class TestRejectDistributedRule:
@@ -121,13 +120,13 @@ class TestRejectDistributedRule:
         single = DeviceMesh(
             devices=(CPU(),), mesh_shape=(1,), axis_names=("x",)
         )
-        m = PlacementMapping(single, (Replicated(),))
+        m = DeviceMapping(single, (Replicated(),))
         layout = _layout(m, (4, 8))
         _, (out,) = pick(reject_distributed_rule, layout, op_name="custom")
-        assert out.to_placements() == (Replicated(),)
+        assert out.placements == (Replicated(),)
 
     def test_multi_device_replicates(self) -> None:
         """Multi-device input: rule auto-gathers to fully Replicated."""
         layout = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(reject_distributed_rule, layout, op_name="custom")
-        assert out.to_placements() == (Replicated(),)
+        assert out.placements == (Replicated(),)

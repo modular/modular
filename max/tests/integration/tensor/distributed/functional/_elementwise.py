@@ -43,9 +43,9 @@ from max.experimental.functional import (
     where,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -68,7 +68,7 @@ class _UnaryNonlinear:
         )
         t = transfer_to(
             Tensor(arr),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -115,7 +115,7 @@ class _UnaryLinear:
         )
         t = transfer_to(
             Tensor(arr),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -167,7 +167,7 @@ class _BinaryNonlinear:
         )
         ta = transfer_to(
             Tensor(a),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -177,7 +177,7 @@ class _BinaryNonlinear:
         )
         tb = transfer_to(
             Tensor(b),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -224,7 +224,7 @@ class _BinaryLinear:
         b = np.ones((2, 4), dtype=np.float32) * 10
         ta = transfer_to(
             Tensor(a),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -234,7 +234,7 @@ class _BinaryLinear:
         )
         tb = transfer_to(
             Tensor(b),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -264,7 +264,7 @@ class _BinaryLinear:
         b = np.full((2, 4), 2.0, dtype=np.float32)
         ta = self.partial_fn(a, self.MESH_1D, (Partial(),))
         tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(b), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         result = add(ta, tb)
         assert not any(isinstance(p, Partial) for p in result.placements)
@@ -276,7 +276,7 @@ class _BinaryLinear:
         b = np.full((2, 2), 2.0, dtype=np.float32)
         ta = self.partial_fn(a, self.MESH_1D, (Partial(),))
         tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(b), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         # auto_reduce_partial is now a no-op; transfer_to is deterministic.
         result = add(ta, tb)
@@ -298,12 +298,8 @@ class _Broadcast:
         # (2,4) + (4,) with RHS replicated on a 2-device mesh
         a = np.arange(8, dtype=np.float32).reshape(2, 4)
         b = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
-        ta = transfer_to(
-            Tensor(a), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
+        ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_2, (Replicated(),)))
         result = add(ta, tb)
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
@@ -312,12 +308,8 @@ class _Broadcast:
         # (4,) + (2,4)
         a = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
         b = np.arange(8, dtype=np.float32).reshape(2, 4)
-        ta = transfer_to(
-            Tensor(a), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
-        tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_2, (Replicated(),)))
+        tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = add(ta, tb)
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
@@ -326,12 +318,8 @@ class _Broadcast:
         # (3,4) * (4,) — mul with broadcast
         a = np.arange(12, dtype=np.float32).reshape(3, 4)
         b = np.array([2.0, 2.0, 2.0, 2.0], dtype=np.float32)
-        ta = transfer_to(
-            Tensor(a), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
-        tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
+        ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_2, (Replicated(),)))
+        tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_2, (Replicated(),)))
         result = mul(ta, tb)
         assert tuple(result.shape) == (3, 4)
         np.testing.assert_allclose(result.to_numpy(), a * b, rtol=1e-5)
@@ -342,7 +330,7 @@ class _Broadcast:
         b = np.array([[10.0, 20.0, 30.0, 40.0]], dtype=np.float32)
         ta = transfer_to(
             Tensor(a),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -352,7 +340,7 @@ class _Broadcast:
         )
         tb = transfer_to(
             Tensor(b),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -369,12 +357,8 @@ class _Broadcast:
         # (2,3,4) + (4,): rhs is two ranks lower, leading axes broadcast.
         a = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         b = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
-        ta = transfer_to(
-            Tensor(a), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
+        ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_2, (Replicated(),)))
         result = add(ta, tb)
         assert tuple(result.shape) == (2, 3, 4)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
@@ -386,12 +370,8 @@ class _Broadcast:
         # so the per-shard op stays consistent along the sharded axis.
         a = np.arange(32, dtype=np.float32).reshape(4, 8)
         b = np.arange(8, dtype=np.float32) + 1.0
-        ta = transfer_to(
-            Tensor(a), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
-        tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
+        ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_2, (Sharded(1),)))
+        tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_2, (Replicated(),)))
         result = add(ta, tb)
         assert tuple(result.shape) == (4, 8)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
@@ -402,12 +382,8 @@ class _Broadcast:
         # sharded on axis 0 and RMO expands the size-1 axis per shard.
         a = np.arange(8, dtype=np.float32).reshape(2, 4)
         b = np.array([[100.0, 200.0, 300.0, 400.0]], dtype=np.float32)
-        ta = transfer_to(
-            Tensor(a), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
+        ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_2, (Replicated(),)))
         result = add(ta, tb)
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
@@ -419,14 +395,10 @@ class _Broadcast:
         x = np.arange(8, dtype=np.float32).reshape(2, 4)
         y = np.array([-1.0, -2.0, -3.0, -4.0], dtype=np.float32)
         tc = transfer_to(
-            Tensor(cond > 0), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(cond > 0), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
-        tx = transfer_to(
-            Tensor(x), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        ty = transfer_to(
-            Tensor(y), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
+        tx = transfer_to(Tensor(x), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        ty = transfer_to(Tensor(y), DeviceMapping(self.MESH_2, (Replicated(),)))
         result = where(tc, tx, ty)
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(
@@ -442,14 +414,10 @@ class _Broadcast:
         x = np.arange(8, dtype=np.float32).reshape(2, 4)
         y = -np.arange(8, dtype=np.float32).reshape(2, 4)
         tc = transfer_to(
-            Tensor(cond > 0), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(cond > 0), DeviceMapping(self.MESH_2, (Replicated(),))
         )
-        tx = transfer_to(
-            Tensor(x), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        ty = transfer_to(
-            Tensor(y), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        tx = transfer_to(Tensor(x), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        ty = transfer_to(Tensor(y), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = where(tc, tx, ty)
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(
@@ -471,7 +439,7 @@ class _Cast:
         arr = np.arange(8, dtype=np.float32).reshape(2, 4)
         t = transfer_to(
             Tensor(arr),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -511,7 +479,7 @@ class _Smoke:
         )
         t = transfer_to(
             Tensor(arr),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -530,7 +498,7 @@ class _Smoke:
         )
         t = transfer_to(
             Tensor(arr),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -549,7 +517,7 @@ class _Smoke:
         b = np.full((2, 4), 2.0, dtype=np.float32)
         ta = transfer_to(
             Tensor(a),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -559,7 +527,7 @@ class _Smoke:
         )
         tb = transfer_to(
             Tensor(b),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -575,12 +543,8 @@ class _Smoke:
     def test_chain_add_negate(self) -> None:
         a = np.arange(8, dtype=np.float32).reshape(2, 4)
         b = np.ones((2, 4), dtype=np.float32) * 10
-        ta = transfer_to(
-            Tensor(a), PlacementMapping(self.MESH_1D, (Sharded(1),))
-        )
-        tb = transfer_to(
-            Tensor(b), PlacementMapping(self.MESH_1D, (Sharded(1),))
-        )
+        ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_1D, (Sharded(1),)))
+        tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_1D, (Sharded(1),)))
         result = negate(add(ta, tb))
         assert result.placements == (Sharded(1),)
         assert tuple(result.shape) == (2, 4)
@@ -604,11 +568,9 @@ class _MixedPlacement:
         a_np = np.ones((4, 2), dtype=np.float32) * 10.0
         b_np = np.arange(8, dtype=np.float32).reshape(4, 2)
         a = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(a_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
-        b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        b = transfer_to(Tensor(b_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = add(a, b)
         assert result.placements == (Sharded(0),)
         assert tuple(result.shape) == (4, 2)
@@ -618,11 +580,9 @@ class _MixedPlacement:
         """mul(Sharded(0), Replicated) produces correct Sharded(0) result."""
         a_np = np.arange(8, dtype=np.float32).reshape(4, 2)
         b_np = np.ones((4, 2), dtype=np.float32) * 3.0
-        a = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        a = transfer_to(Tensor(a_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = mul(a, b)
         assert result.placements == (Sharded(0),)

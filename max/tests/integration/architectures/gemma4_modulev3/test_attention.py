@@ -56,8 +56,8 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
 )
 from max.experimental.tensor import Tensor, default_dtype
@@ -313,9 +313,7 @@ class AttentionHarness(Module[..., Tensor]):
 
         kv_inputs = iter(t._graph_value for t in variadic_args)
         kv_concrete = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        kv_mapping = PlacementMapping(
-            self.mesh, (Replicated(),) * self.mesh.ndim
-        )
+        kv_mapping = DeviceMapping(self.mesh, (Replicated(),) * self.mesh.ndim)
         kv_collection = PagedCacheValues.from_upstream(kv_concrete, kv_mapping)
         return self.attention(
             x, kv_collection, input_row_offsets=input_row_offsets

@@ -22,9 +22,9 @@ from max.experimental import functional as F
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Placement,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -268,7 +268,7 @@ def _local_functional_op(
 
 
 def _reassemble(
-    shard_values: list[Any], mapping: PlacementMapping
+    shard_values: list[Any], mapping: DeviceMapping
 ) -> Tensor | None:
     """Reassembles a list of shard values into a distributed tensor."""
     if all(s is None for s in shard_values):
@@ -282,7 +282,7 @@ def _get_mapping(
     return_input_sharding: str | None,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
-) -> PlacementMapping:
+) -> DeviceMapping:
     placements: tuple[Placement, ...]
     if return_input_sharding is not None:
         # Get the input specified by return_input_sharding from args and kwargs.
@@ -299,7 +299,7 @@ def _get_mapping(
     else:
         mesh = _find_mesh(*args, **kwargs)
         placements = tuple(Replicated() for _ in range(mesh.ndim))
-    return PlacementMapping(mesh, placements)
+    return DeviceMapping(mesh, placements)
 
 
 def _find_mesh(*args: Any, **kwargs: Any) -> DeviceMesh:
@@ -377,7 +377,7 @@ def stack_device_shards(
     """Reassembles a per-device weight-shard bundle into one ``Sharded`` tensor."""
     if len(shards) == 1:
         return shards[0]
-    mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+    mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
     return Tensor.from_shard_values([TensorValue(s) for s in shards], mapping)
 
 

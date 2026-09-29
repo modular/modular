@@ -89,6 +89,10 @@ This version is still a work in progress.
   `--host` is now exposed for both paths and defaults `max serve --cascade` to
   `0.0.0.0`, matching `max serve`, instead of the Cascade entrypoint's
   `localhost` default.
+
+- `max.experimental.sharding.PlacementMapping` and
+  `DeviceMapping.to_placements()` are removed; use `DeviceMapping` and its
+  `placements` attribute, which they aliased.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk

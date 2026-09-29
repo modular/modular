@@ -25,9 +25,9 @@ from typing import Any
 
 from max.driver import CPU
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
@@ -69,9 +69,9 @@ MESH_2 = DeviceMesh(
 
 def M(
     mesh: DeviceMesh, *placements: Replicated | Sharded | Partial
-) -> PlacementMapping:
-    """Shorthand: M(MESH_1D, S(0)) -> PlacementMapping(MESH_1D, (S(0),))."""
-    return PlacementMapping(mesh, tuple(placements))
+) -> DeviceMapping:
+    """Shorthand: M(MESH_1D, S(0)) -> DeviceMapping(MESH_1D, (S(0),))."""
+    return DeviceMapping(mesh, tuple(placements))
 
 
 # ── Solver-driven picker for rule tests ─────────────────────────────

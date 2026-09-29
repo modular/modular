@@ -26,7 +26,7 @@ from max.experimental.sharding.cost import (
     pair_transition_cost,
     tensor_byte_count,
 )
-from max.experimental.sharding.mappings import PlacementMapping
+from max.experimental.sharding.mappings import DeviceMapping
 from max.experimental.sharding.mesh import DeviceMesh
 from max.experimental.sharding.placements import (
     Partial,
@@ -65,7 +65,7 @@ def enumerate_feasible_actions(
     menu: ActionSet, mesh: DeviceMesh
 ) -> list[Action]:
     """Cartesian product of per-axis admissible rows from ``menu``."""
-    placements = [l.mapping.to_placements() for l in menu.layouts]
+    placements = [l.mapping.placements for l in menu.layouts]
     combos = list(
         itertools.product(
             *(
@@ -78,16 +78,14 @@ def enumerate_feasible_actions(
         Action(
             inputs=(
                 *tuple(
-                    PlacementMapping(
+                    DeviceMapping(
                         mesh, tuple(row.needed_inputs[i] for row in combo)
                     )
                     for i in range(len(menu.layouts))
                 ),
                 *menu.extras,
             ),
-            outputs=(
-                PlacementMapping(mesh, tuple(row.output for row in combo)),
-            ),
+            outputs=(DeviceMapping(mesh, tuple(row.output for row in combo)),),
         )
         for combo in combos
     ]
@@ -109,7 +107,7 @@ def action_input_for_slot(action: Action, slot_idx: int) -> Any:
     """Flat-index lookup into an action's per-slot expected placement.
 
     Returns whatever the action stored at that slot (typically
-    :class:`PlacementMapping`, :class:`PerShard`, a bare scalar, or
+    :class:`DeviceMapping`, :class:`PerShard`, a bare scalar, or
     ``None``). Callers are expected to ``isinstance``-check before use.
     """
     flat: list[Any] = []
@@ -133,11 +131,11 @@ def cheapest_action(
         total = 0.0
         for slot, in_layout in enumerate(in_layouts):
             consumer = action_input_for_slot(action, slot)
-            if not isinstance(consumer, PlacementMapping):
+            if not isinstance(consumer, DeviceMapping):
                 continue
             tensor_bytes = tensor_byte_count(in_layout)
             total += pair_transition_cost(
-                in_layout.mapping.to_placements(),
+                in_layout.mapping.placements,
                 consumer.placements,
                 tensor_bytes,
                 mesh,
@@ -225,10 +223,10 @@ def _reject_partial_to_sharded(
         ok = True
         for slot, in_layout in enumerate(in_layouts):
             consumer = action_input_for_slot(action, slot)
-            if not isinstance(consumer, PlacementMapping):
+            if not isinstance(consumer, DeviceMapping):
                 continue
             for src, dst in zip(
-                in_layout.mapping.to_placements(),
+                in_layout.mapping.placements,
                 consumer.placements,
                 strict=True,
             ):
@@ -249,7 +247,7 @@ def _zero_reshard(action: Action, in_layouts: Sequence[TensorLayout]) -> bool:
     """``True`` if every tensor input slot already matches the action."""
     for slot, layout in enumerate(in_layouts):
         consumer = action_input_for_slot(action, slot)
-        if not isinstance(consumer, PlacementMapping):
+        if not isinstance(consumer, DeviceMapping):
             continue
         if consumer != layout.mapping:
             return False
@@ -269,13 +267,13 @@ def _only_partial_to_replicated(
     """
     for slot, layout in enumerate(in_layouts):
         consumer = action_input_for_slot(action, slot)
-        if not isinstance(consumer, PlacementMapping):
+        if not isinstance(consumer, DeviceMapping):
             continue
         producer = layout.mapping
         if producer == consumer:
             continue
-        prod_ps = producer.to_placements()
-        cons_ps = consumer.to_placements()
+        prod_ps = producer.placements
+        cons_ps = consumer.placements
         if len(prod_ps) != len(cons_ps):
             return False
         for p_in, p_out in zip(prod_ps, cons_ps, strict=False):

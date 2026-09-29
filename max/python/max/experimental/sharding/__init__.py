@@ -30,7 +30,7 @@ A ``mode(...)`` block selects the solver for the ops inside it:
     from max.experimental.sharding import (
         DeviceMesh,
         GreedyReshard,
-        PlacementMapping,
+        DeviceMapping,
         Sharded,
         mode,
     )
@@ -42,11 +42,11 @@ A ``mode(...)`` block selects the solver for the ops inside it:
     # sharded dimension, so the picker resolves the result back to replicated.
     a = transfer_to(
         full([4, 8], 1.0, dtype=DType.float32, device=mesh.devices[0]),
-        PlacementMapping(mesh, (Sharded(1),)),
+        DeviceMapping(mesh, (Sharded(1),)),
     )
     b = transfer_to(
         full([8, 2], 1.0, dtype=DType.float32, device=mesh.devices[0]),
-        PlacementMapping(mesh, (Sharded(0),)),
+        DeviceMapping(mesh, (Sharded(0),)),
     )
 
     with mode(GreedyReshard(on_reshard="warn")):
@@ -85,7 +85,6 @@ from .mappings import (
     ConversionError,
     DeviceMapping,
     NamedMapping,
-    PlacementMapping,
     as_device_mapping,
 )
 from .mesh import DeviceMesh, get_active_mesh, mesh_context
@@ -133,7 +132,6 @@ __all__ = [
     "PerShard",
     "PerShardDim",
     "Placement",
-    "PlacementMapping",
     "R",
     "ReduceOp",
     "Replicated",

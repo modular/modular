@@ -33,7 +33,7 @@ from max.experimental import custom as C
 from max.experimental import executor
 from max.experimental import functional as F
 from max.experimental import realization_context as rc
-from max.experimental.sharding import DeviceMesh, PlacementMapping, Sharded
+from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
 from max.experimental.sharding.rules import unary_rule
 from max.experimental.tensor import Tensor, realization_context
 from max.experimental.testing import assert_all_close
@@ -1810,9 +1810,7 @@ def test_signature_and_functional_composition_scenario() -> None:
         devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
     )
     sharded_op = F.functional(op, rule=unary_rule)
-    sharded_x = F.transfer_to(
-        _full(2.0, 8), PlacementMapping(mesh, (Sharded(0),))
-    )
+    sharded_x = F.transfer_to(_full(2.0, 8), DeviceMapping(mesh, (Sharded(0),)))
     result = sharded_op(sharded_x)
     assert result.is_distributed
     assert result.placements == (Sharded(0),)

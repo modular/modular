@@ -67,9 +67,9 @@ from max.experimental.functional import (
 )
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -9073,7 +9073,7 @@ class TestDistributedScatterSimulated:
         )
 
         data = np.arange(8, dtype=np.float32).reshape(4, 2)
-        mapping = PlacementMapping(mesh, (Sharded(0),))
+        mapping = DeviceMapping(mesh, (Sharded(0),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -9100,7 +9100,7 @@ class TestDistributedBroadcastSimulated:
         data = np.arange(8, dtype=np.float32).reshape(4, 2)
         t = Tensor.from_dlpack(data)
 
-        mapping = PlacementMapping(mesh, (Replicated(),))
+        mapping = DeviceMapping(mesh, (Replicated(),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -9137,7 +9137,7 @@ class TestDistributedReducescatterSumSimulated:
             shard_b = Tensor(data_b).__tensorvalue__()
             partial_t = Tensor.from_shard_values(
                 [shard_a, shard_b],
-                PlacementMapping(mesh, (Partial(),)),
+                DeviceMapping(mesh, (Partial(),)),
             )
             result = reduce_scatter(partial_t, scatter_axis=0, mesh_axis=0)
 

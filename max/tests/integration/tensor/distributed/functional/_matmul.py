@@ -40,9 +40,9 @@ from max.experimental.functional import (
     transfer_to,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     ReduceOp,
     Replicated,
     Sharded,
@@ -66,11 +66,11 @@ class _RowTP:
         """MESH_1D: S(1) x S(0) -> Partial (contracting dim match)."""
         lhs = transfer_to(
             full([2, 8], 1.0, dtype=_F32, device=self.MESH_1D.devices[0]),
-            PlacementMapping(self.MESH_1D, (Sharded(1),)),
+            DeviceMapping(self.MESH_1D, (Sharded(1),)),
         )
         rhs = transfer_to(
             full([8, 4], 1.0, dtype=_F32, device=self.MESH_1D.devices[0]),
-            PlacementMapping(self.MESH_1D, (Sharded(0),)),
+            DeviceMapping(self.MESH_1D, (Sharded(0),)),
         )
         out = matmul(lhs, rhs)
         assert out.placements == (Partial(ReduceOp.SUM),)
@@ -84,11 +84,11 @@ class _RowTP:
         """2D mesh with S(1)xS(0) -> Partial on tp axis, values correct."""
         lhs = transfer_to(
             full([2, 8], 1.0, dtype=_F32, device=self.MESH_2D.devices[0]),
-            PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1))),
+            DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1))),
         )
         rhs = transfer_to(
             full([8, 4], 1.0, dtype=_F32, device=self.MESH_2D.devices[0]),
-            PlacementMapping(self.MESH_2D, (Replicated(), Sharded(0))),
+            DeviceMapping(self.MESH_2D, (Replicated(), Sharded(0))),
         )
         out = matmul(lhs, rhs)
         assert any(isinstance(p, Partial) for p in out.placements)
@@ -111,8 +111,8 @@ class _ColTP:
 
     def test_produces_sharded(self) -> None:
         """MESH_2: R x S(1) -> S(1) (column parallel), values correct."""
-        m2_r = PlacementMapping(self.MESH_2, (Replicated(),))
-        m2_s1 = PlacementMapping(self.MESH_2, (Sharded(1),))
+        m2_r = DeviceMapping(self.MESH_2, (Replicated(),))
+        m2_s1 = DeviceMapping(self.MESH_2, (Sharded(1),))
         lhs = ones([3, 5], dtype=_F32, device=m2_r)
         rhs = ones([5, 6], dtype=_F32, device=m2_s1)
         result = matmul(lhs, rhs)
@@ -128,12 +128,12 @@ class _ColTP:
         lhs = ones(
             [2, 3, 5],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Replicated(),)),
+            device=DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         rhs = ones(
             [2, 5, 6],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Sharded(2),)),
+            device=DeviceMapping(self.MESH_2, (Sharded(2),)),
         )
         out = matmul(lhs, rhs)
         assert out.placements == (Sharded(2),)
@@ -161,13 +161,13 @@ class _DataParallel:
         w1_np = np.full((4, 4), 0.5, dtype=np.float32)
         w2_np = np.full((4, 4), 0.25, dtype=np.float32)
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(x_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         w1 = transfer_to(
-            Tensor(w1_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(w1_np), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         w2 = transfer_to(
-            Tensor(w2_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(w2_np), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         h = matmul(x, w1)
         assert isinstance(h, Tensor)
@@ -185,10 +185,10 @@ class _DataParallel:
         x_np = np.ones((5, 4), dtype=np.float32)
         w_np = np.full((4, 4), 2.0, dtype=np.float32)
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(x_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         w = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(w_np), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(x, w)
         assert isinstance(result, Tensor)
@@ -214,7 +214,7 @@ class _PartialPassthrough:
         b_np = np.ones((4, 3), dtype=np.float32)
         a = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(a, b)
         assert any(isinstance(p, Partial) for p in result.placements)
@@ -229,7 +229,7 @@ class _PartialPassthrough:
         b_np = np.ones((4, 4), dtype=np.float32)
         a = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(a, b)
         assert result.placements == (Partial(),)
@@ -252,7 +252,7 @@ class _PartialPassthrough:
         b_np = np.ones((4, 3), dtype=np.float32)
         a = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(a, b)
         assert result.placements == (Partial(),)
@@ -279,12 +279,12 @@ class _BatchedMatmul:
         lhs = ones(
             [4, 3, 5],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Sharded(0),)),
+            device=DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
         rhs = ones(
             [4, 5, 6],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Sharded(0),)),
+            device=DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
         out = matmul(lhs, rhs)
         assert isinstance(out, Tensor)
@@ -296,12 +296,12 @@ class _BatchedMatmul:
         lhs = ones(
             [4, 3, 5],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Sharded(0),)),
+            device=DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
         rhs = ones(
             [5, 6],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Replicated(),)),
+            device=DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         out = matmul(lhs, rhs)
         assert out.placements == (Sharded(0),)
@@ -315,12 +315,12 @@ class _BatchedMatmul:
         lhs = ones(
             [2, 4, 5],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Sharded(1),)),
+            device=DeviceMapping(self.MESH_2, (Sharded(1),)),
         )
         rhs = ones(
             [2, 5, 6],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Replicated(),)),
+            device=DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         out = matmul(lhs, rhs)
         assert out.placements == (Sharded(1),)
@@ -334,12 +334,12 @@ class _BatchedMatmul:
         lhs = ones(
             [2, 3, 6],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Sharded(2),)),
+            device=DeviceMapping(self.MESH_2, (Sharded(2),)),
         )
         rhs = ones(
             [2, 6, 4],
             dtype=_F32,
-            device=PlacementMapping(self.MESH_2, (Sharded(1),)),
+            device=DeviceMapping(self.MESH_2, (Sharded(1),)),
         )
         out = matmul(lhs, rhs)
         assert any(isinstance(p, Partial) for p in out.placements)
@@ -354,7 +354,7 @@ class _BatchedMatmul:
         rhs_np = np.ones((4, 5, 6), dtype=np.float32)
         expected = lhs_np @ rhs_np  # [4, 3, 6] filled with 5.0
 
-        _M2_S0 = PlacementMapping(self.MESH_2, (Sharded(0),))
+        _M2_S0 = DeviceMapping(self.MESH_2, (Sharded(0),))
         lhs = transfer_to(
             full([4, 3, 5], 1.0, dtype=_F32, device=self.MESH_2.devices[0]),
             _M2_S0,
@@ -386,7 +386,7 @@ class _TPChain:
         d: int,
     ) -> Tensor:
         """Column TP -> relu -> Row TP -> full_tensor."""
-        _m = PlacementMapping
+        _m = DeviceMapping
         x = ones(x_shape, dtype=_F32, device=_m(mesh, (Replicated(),)))
         W1 = ones([d, d], dtype=_F32, device=_m(mesh, (Sharded(1),)))
         W2 = ones([d, d], dtype=_F32, device=_m(mesh, (Sharded(0),)))
@@ -399,7 +399,7 @@ class _TPChain:
         d: int,
     ) -> Tensor:
         """Data parallel MLP: S(0) x R -> S(0)."""
-        _m = PlacementMapping
+        _m = DeviceMapping
         x = ones(x_shape, dtype=_F32, device=_m(mesh, (Sharded(0),)))
         W1 = ones([d, d], dtype=_F32, device=_m(mesh, (Replicated(),)))
         W2 = ones([d, d], dtype=_F32, device=_m(mesh, (Replicated(),)))
@@ -408,7 +408,7 @@ class _TPChain:
     def test_tp_mlp_chain(self) -> None:
         """MESH_1D: full TP MLP chain — check intermediates and output."""
         _D = 4
-        _m = PlacementMapping
+        _m = DeviceMapping
         x = ones([4, _D], dtype=_F32, device=_m(self.MESH_1D, (Replicated(),)))
         W1 = ones([_D, _D], dtype=_F32, device=_m(self.MESH_1D, (Sharded(1),)))
         W2 = ones([_D, _D], dtype=_F32, device=_m(self.MESH_1D, (Sharded(0),)))
@@ -468,14 +468,12 @@ class _LayerNorm:
         w_np = np.ones(8, dtype=np.float32)
         b_np = np.zeros(8, dtype=np.float32)
 
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         w = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = layer_norm(x, w, b, epsilon=1e-5)
         assert result.placements == (Sharded(0),)
@@ -495,10 +493,10 @@ class _LayerNorm:
 
         x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
         w = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = layer_norm(x, w, b, epsilon=1e-5)
         assert result.placements == (Replicated(),)

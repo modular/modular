@@ -175,8 +175,8 @@ def _format_arg_block(i: int, lay: Any, sugg: DeviceMapping) -> str:
         f"        mesh axis {name!r}: {a!r} → {n!r}  [{_classify_transition(a, n)}]"
         for name, a, n in zip(
             sugg.mesh.axis_names,
-            lay.mapping.to_placements(),
-            sugg.to_placements(),
+            lay.mapping.placements,
+            sugg.placements,
             strict=True,
         )
         if a != n
@@ -203,7 +203,7 @@ def _format_alternatives(menu: ActionSet, top_n: int = 3) -> str:
     lines = ["  alternatives the cost model considered:"]
     mesh = menu.mesh
     bytes_per_input = tuple(tensor_byte_count(l) for l in menu.layouts)
-    per_input = [l.mapping.to_placements() for l in menu.layouts]
+    per_input = [l.mapping.placements for l in menu.layouts]
     for ax in range(mesh.ndim):
         gs = mesh.mesh_shape[ax]
         actuals = input_placements_at_axis(per_input, ax)

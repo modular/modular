@@ -26,9 +26,9 @@ from max.experimental.nn.common_layers.moe import (
     TensorParallelMoE,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
 )
 from max.experimental.tensor import Tensor
@@ -102,7 +102,7 @@ def test_tensor_parallel_layer(mock_accelerator: MagicMock) -> None:
         devices = [mock_accelerator(0), mock_accelerator(1)]
         num_devices = len(devices)
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
         layer = TensorParallelMoE(
             hidden_dim=_HIDDEN_DIM,
@@ -142,4 +142,4 @@ def test_tensor_parallel_layer(mock_accelerator: MagicMock) -> None:
     assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
     assert out.mapping.mesh == mesh
     # Output is a partial sum that must be all-reduced across TP ranks.
-    assert out.mapping.to_placements() == (Partial(),)
+    assert out.mapping.placements == (Partial(),)

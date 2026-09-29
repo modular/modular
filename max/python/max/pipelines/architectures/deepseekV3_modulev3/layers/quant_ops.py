@@ -27,7 +27,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     fused_silu_quantized,
     grouped_matmul_ragged,
 )
-from max.experimental.sharding import DeviceMesh, PlacementMapping
+from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.sharding.action import Action, ActionSet, AxisAssignment
 from max.experimental.sharding.cost import (
     P,
@@ -112,7 +112,7 @@ def _quantize_finalize(action: Action) -> Action:
     mapping for the block-scale output (see :func:`_transpose2d_placement`).
     """
     (data_mapping,) = action.outputs
-    scales_mapping = PlacementMapping(
+    scales_mapping = DeviceMapping(
         data_mapping.mesh,
         tuple(_transpose2d_placement(p) for p in data_mapping.placements),
     )
@@ -633,7 +633,7 @@ def stack_device_shards(
     """Reassembles a per-device weight-shard bundle into one ``Sharded`` tensor."""
     if len(shards) == 1:
         return shards[0]
-    mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+    mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
     first = shards[0]
     if isinstance(first, FP8BlockTensor):
         assert all_fp8_block(shards)

@@ -32,12 +32,10 @@ from max.experimental.sharding import (
     DeviceMesh,
     NamedMapping,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
     mesh_context,
 )
-from max.experimental.sharding.mappings import is_fully_replicated
 
 
 def cpu_devices(n: int) -> tuple[Device, ...]:
@@ -69,12 +67,6 @@ class TestDeviceMapping:
         m = DeviceMapping(mesh, (Replicated(), Sharded(1)))
         assert m.placements == (Replicated(), Sharded(1))
 
-    def test_to_placements_alias(self) -> None:
-        mesh = mesh_2d(2, 4)
-        placements = (Sharded(0), Replicated())
-        m = DeviceMapping(mesh, placements)
-        assert m.to_placements() == placements
-
     def test_repr(self) -> None:
         mesh = mesh_1d(4)
         m = DeviceMapping(mesh, (Sharded(0),))
@@ -87,9 +79,6 @@ class TestDeviceMapping:
         m = DeviceMapping(mesh, (Sharded(0),))
         with pytest.raises(dataclasses.FrozenInstanceError):
             m.placements = ()  # type: ignore[misc]
-
-    def test_placement_mapping_is_alias(self) -> None:
-        assert PlacementMapping is DeviceMapping
 
     def test_replicated(self) -> None:
         mesh = mesh_2d(2, 4)
@@ -107,22 +96,22 @@ class TestIsFullyReplicated:
     def test_all_replicated(self) -> None:
         mesh = mesh_2d(2, 4)
         m = DeviceMapping(mesh, (Replicated(), Replicated()))
-        assert is_fully_replicated(m)
+        assert m.is_fully_replicated
 
     def test_with_sharded(self) -> None:
         mesh = mesh_1d(4)
         m = DeviceMapping(mesh, (Sharded(0),))
-        assert not is_fully_replicated(m)
+        assert not m.is_fully_replicated
 
     def test_with_partial(self) -> None:
         mesh = mesh_1d(4)
         m = DeviceMapping(mesh, (Partial(),))
-        assert not is_fully_replicated(m)
+        assert not m.is_fully_replicated
 
     def test_single_device_mesh(self) -> None:
         mesh = DeviceMesh.single(CPU())
         m = DeviceMapping(mesh, (Replicated(),))
-        assert is_fully_replicated(m)
+        assert m.is_fully_replicated
 
 
 class TestNamedMapping:
@@ -151,7 +140,7 @@ class TestNamedMapping:
         mesh = mesh_1d(4)
         ns = NamedMapping(mesh, (None, None))
         assert ns.placements == (Replicated(),)
-        assert is_fully_replicated(ns)
+        assert ns.is_fully_replicated
 
     def test_unknown_axis_drops_to_replicated(self) -> None:
         mesh = mesh_1d(4)

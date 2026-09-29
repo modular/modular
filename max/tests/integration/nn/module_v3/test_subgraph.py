@@ -52,7 +52,6 @@ from max.experimental.nn import (
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
@@ -315,9 +314,9 @@ def test_nested_subgraphs_inline() -> None:
 # A two-way tensor-parallel mesh, simulated on CPU: the trace shape and numerics
 # match a real two-GPU mesh, minus the hardware collectives.
 MESH = DeviceMesh(devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",))
-REPLICATED = PlacementMapping(MESH, (Replicated(),))
-COLUMN = PlacementMapping(MESH, (Sharded(1),))
-ROW = PlacementMapping(MESH, (Sharded(0),))
+REPLICATED = DeviceMapping(MESH, (Replicated(),))
+COLUMN = DeviceMapping(MESH, (Sharded(1),))
+ROW = DeviceMapping(MESH, (Sharded(0),))
 
 
 @module_dataclass

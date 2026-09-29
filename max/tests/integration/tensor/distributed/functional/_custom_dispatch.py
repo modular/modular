@@ -45,7 +45,6 @@ from max.experimental.functional.spmd_ops import (
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
@@ -68,7 +67,7 @@ def rms_norm_rule(
     tuple[DeviceMapping, DeviceMapping, float], tuple[DeviceMapping, ...]
 ]:
     """RMSNorm reduces over the last dim — cannot be sharded there."""
-    placements = x.mapping.to_placements()
+    placements = x.mapping.placements
     ndim = x.rank
     for p in placements:
         if isinstance(p, Sharded) and p.axis == ndim - 1:
@@ -76,7 +75,7 @@ def rms_norm_rule(
                 "rms_norm: cannot shard hidden dim. "
                 "Gather first or shard a different axis."
             )
-    out_mapping = PlacementMapping(x.mesh, placements)
+    out_mapping = DeviceMapping(x.mesh, placements)
     return (out_mapping, weight.mapping, eps), (out_mapping,)
 
 
@@ -163,10 +162,10 @@ class _CustomDispatchExplicit:
         w_np = np.ones(8, dtype=np.float32)
 
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         w = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = rms_norm(x, w, 1e-6)
         assert result.placements == (Replicated(),)
@@ -178,11 +177,9 @@ class _CustomDispatchExplicit:
         x_np = rng.standard_normal((4, 8)).astype(np.float32)
         w_np = np.ones(8, dtype=np.float32)
 
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         w = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = rms_norm(x, w, 1e-6)
         assert result.placements == (Sharded(0),)
@@ -201,10 +198,10 @@ class _CustomDispatchManual:
         w_np = np.ones(8, dtype=np.float32)
 
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         w = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = rms_norm_manual(x, w, 1e-6)
         assert result.placements == (Replicated(),)
@@ -216,11 +213,9 @@ class _CustomDispatchManual:
         x_np = rng.standard_normal((4, 8)).astype(np.float32)
         w_np = np.ones(8, dtype=np.float32)
 
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         w = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = rms_norm_manual(x, w, 1e-6)
         assert result.placements == (Sharded(0),)

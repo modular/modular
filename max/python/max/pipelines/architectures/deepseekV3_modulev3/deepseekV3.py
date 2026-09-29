@@ -32,7 +32,6 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -71,7 +70,7 @@ def gather_last_tokens(h: Tensor, input_row_offsets: Tensor) -> Tensor:
     # Placements-only mapping: the body changes the sharded extent (token
     # rows -> request rows), so a dim-carrying mapping would disagree.
     return Tensor.from_shard_values(
-        outs, mapping=PlacementMapping(h.mesh, h.placements)
+        outs, mapping=DeviceMapping(h.mesh, h.placements)
     )
 
 
@@ -304,7 +303,7 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
             )
             batch_context_lengths_tensor = Tensor.from_shard_values(
                 [TensorValue(shard) for shard in batch_context_lengths],
-                PlacementMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
+                DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
             )
 
             data_parallel_splits, input_row_offsets_i64, *rest = variadic_args
@@ -323,7 +322,7 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
         if mesh is not None:
             kv_collection = PagedCacheValues.from_upstream(
                 kv_collections,
-                PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+                DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
             )
         else:
             raise ValueError("Mesh must be define")

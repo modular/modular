@@ -244,7 +244,7 @@ def _cumulative_axis_group_size(
     placements = (
         ctx.input_placements[i]
         if ctx.input_placements is not None
-        else ctx.layouts[i].mapping.to_placements()
+        else ctx.layouts[i].mapping.placements
     )
     return ctx.group_size * math.prod(
         ctx.mesh.mesh_shape[j]
@@ -278,7 +278,7 @@ def _global_axis_size(layout: TensorLayout, tensor_axis: int) -> int:
     """Best-effort global static extent of tensor axis ``tensor_axis``."""
     dim = layout.shape[tensor_axis]
     mesh = layout.mapping.mesh
-    placements = layout.mapping.to_placements()
+    placements = layout.mapping.placements
     factor = 1
     for mesh_axis, p in enumerate(placements):
         if isinstance(p, Sharded) and p.localized_axis() == tensor_axis:
@@ -365,7 +365,7 @@ def build_action_set(
         raise ValueError("build_action_set: at least one layout required.")
 
     mesh = layouts[0].mapping.mesh
-    placements_per_input = [l.mapping.to_placements() for l in layouts]
+    placements_per_input = [l.mapping.placements for l in layouts]
     rows = tuple(rows)
     feasible = tuple(
         r

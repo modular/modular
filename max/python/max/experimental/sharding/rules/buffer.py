@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from max.experimental.sharding import PlacementMapping, Sharded
+from max.experimental.sharding import DeviceMapping, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.graph.ops.slice_tensor import SliceIndices
 
@@ -26,7 +26,7 @@ from ..cost import P, R, build_action_set
 def _output_mirrors_first_input(action: Action) -> Action:
     """Forces the output mapping to mirror ``inputs[0]`` (the destination)."""
     dest = action.inputs[0]
-    assert isinstance(dest, PlacementMapping)
+    assert isinstance(dest, DeviceMapping)
     return Action(inputs=action.inputs, outputs=(dest,))
 
 

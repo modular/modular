@@ -71,10 +71,6 @@ class DeviceMapping:
                 f"got {len(self.placements)}."
             )
 
-    def to_placements(self) -> tuple[Placement, ...]:
-        """Back-compat alias for :attr:`placements`."""
-        return self.placements
-
     def check_shape(self, shape: Sized) -> None:
         """Raises if this mapping shards an axis ``shape`` does not have.
 
@@ -121,10 +117,6 @@ class DeviceMapping:
         return f"{type(self).__name__}({self.mesh}, [{placement_str}])"
 
 
-PlacementMapping = DeviceMapping
-"""Back-compat alias for :class:`DeviceMapping`."""
-
-
 def as_device_mapping(
     device: Device | DeviceRef | DeviceMesh | DeviceMapping,
 ) -> DeviceMapping:
@@ -151,11 +143,6 @@ def as_device_mapping(
         f"expected a Device, DeviceRef, DeviceMesh or DeviceMapping, got "
         f"{type(device).__name__}: {device!r}"
     )
-
-
-def is_fully_replicated(mapping: DeviceMapping) -> bool:
-    """``True`` when every mesh axis is :class:`Replicated`."""
-    return all(isinstance(p, Replicated) for p in mapping.placements)
 
 
 class NamedMapping(DeviceMapping):

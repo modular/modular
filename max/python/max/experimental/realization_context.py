@@ -180,8 +180,7 @@ def _make_unrealized(
     """Wraps graph values into a Tensor, dispatching to sharded constructor if needed."""
     state = RealizationState(values, ctx)
     if mapping is not None and mapping.mesh.num_devices > 1:
-        placements = mapping.to_placements()
-        return Tensor._from_unrealized_shards(state, mapping.mesh, placements)
+        return Tensor._from_unrealized_shards(state, mapping)
     return Tensor(state=state)
 
 

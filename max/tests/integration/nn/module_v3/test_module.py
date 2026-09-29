@@ -31,7 +31,6 @@ from max.experimental.nn.module import (
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
@@ -658,9 +657,9 @@ def test_compile_with_weights_never_realized(
 
 _F32 = DType.float32
 _MESH = DeviceMesh(devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",))
-_REPLICATED = PlacementMapping(_MESH, (Replicated(),))
-_COLUMN = PlacementMapping(_MESH, (Sharded(1),))
-_ROW = PlacementMapping(_MESH, (Sharded(0),))
+_REPLICATED = DeviceMapping(_MESH, (Replicated(),))
+_COLUMN = DeviceMapping(_MESH, (Sharded(1),))
+_ROW = DeviceMapping(_MESH, (Sharded(0),))
 
 
 def cpu_tensor(*shape: int) -> Tensor:

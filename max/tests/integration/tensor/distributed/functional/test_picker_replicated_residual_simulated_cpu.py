@@ -46,7 +46,6 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     GreedyReshard,
-    PlacementMapping,
     Replicated,
     Sharded,
     mode,
@@ -109,12 +108,10 @@ def _make_tp_block(mesh: DeviceMesh) -> TPBlock:
     W_down = rng.standard_normal((FFL, HIDDEN)).astype(np.float32) * 0.1
     norm_w = np.ones((HIDDEN,), dtype=np.float32)
     return TPBlock(
-        W_up=transfer_to(Tensor(W_up), PlacementMapping(mesh, (Sharded(1),))),
-        W_down=transfer_to(
-            Tensor(W_down), PlacementMapping(mesh, (Sharded(0),))
-        ),
+        W_up=transfer_to(Tensor(W_up), DeviceMapping(mesh, (Sharded(1),))),
+        W_down=transfer_to(Tensor(W_down), DeviceMapping(mesh, (Sharded(0),))),
         norm_w=transfer_to(
-            Tensor(norm_w), PlacementMapping(mesh, (Replicated(),))
+            Tensor(norm_w), DeviceMapping(mesh, (Replicated(),))
         ),
     )
 
@@ -124,10 +121,8 @@ def _make_matmul_relu_matmul(mesh: DeviceMesh) -> MatMulReluMatMul:
     W_up = rng.standard_normal((HIDDEN, FFL)).astype(np.float32) * 0.1
     W_down = rng.standard_normal((FFL, HIDDEN)).astype(np.float32) * 0.1
     return MatMulReluMatMul(
-        W_up=transfer_to(Tensor(W_up), PlacementMapping(mesh, (Sharded(1),))),
-        W_down=transfer_to(
-            Tensor(W_down), PlacementMapping(mesh, (Sharded(0),))
-        ),
+        W_up=transfer_to(Tensor(W_up), DeviceMapping(mesh, (Sharded(1),))),
+        W_down=transfer_to(Tensor(W_down), DeviceMapping(mesh, (Sharded(0),))),
     )
 
 

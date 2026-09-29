@@ -37,9 +37,9 @@ from max.experimental.functional import (
     zeros,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -58,7 +58,7 @@ class _Full:
     partial_fn: ClassVar[Callable[..., Tensor]]
 
     def test_full_replicated(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Replicated()))
         t = full([4, 8], 3.0, dtype=_F32, device=mapping)
         assert t.is_distributed
         assert t.placements == (Replicated(), Replicated())
@@ -67,7 +67,7 @@ class _Full:
         np.testing.assert_allclose(result, np.full((4, 8), 3.0), rtol=1e-5)
 
     def test_full_sharded_axis0(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Sharded(0), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Sharded(0), Replicated()))
         t = full([4, 8], 5.0, dtype=_F32, device=mapping)
         assert t.placements == (Sharded(0), Replicated())
         assert tuple(t.shape) == (4, 8)
@@ -75,7 +75,7 @@ class _Full:
         np.testing.assert_allclose(result, np.full((4, 8), 5.0), rtol=1e-5)
 
     def test_full_sharded_axis1(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1)))
         t = full([4, 8], 7.0, dtype=_F32, device=mapping)
         assert t.placements == (Replicated(), Sharded(1))
         assert tuple(t.shape) == (4, 8)
@@ -83,7 +83,7 @@ class _Full:
         np.testing.assert_allclose(result, np.full((4, 8), 7.0), rtol=1e-5)
 
     def test_full_1d_mesh(self) -> None:
-        mapping = PlacementMapping(self.MESH_1D, (Sharded(0),))
+        mapping = DeviceMapping(self.MESH_1D, (Sharded(0),))
         t = full([8, 4], 2.0, dtype=_F32, device=mapping)
         assert t.placements == (Sharded(0),)
         assert tuple(t.shape) == (8, 4)
@@ -91,7 +91,7 @@ class _Full:
         np.testing.assert_allclose(result, np.full((8, 4), 2.0), rtol=1e-5)
 
     def test_ones(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(0)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(0)))
         t = ones([4, 8], dtype=_F32, device=mapping)
         assert t.placements == (Replicated(), Sharded(0))
         assert tuple(t.shape) == (4, 8)
@@ -99,7 +99,7 @@ class _Full:
         np.testing.assert_allclose(result, np.ones((4, 8)), rtol=1e-5)
 
     def test_zeros(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Sharded(0), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Sharded(0), Replicated()))
         t = zeros([4, 8], dtype=_F32, device=mapping)
         assert t.placements == (Sharded(0), Replicated())
         assert tuple(t.shape) == (4, 8)
@@ -119,7 +119,7 @@ class _Distribute:
 
     def test_distribute_sharded_2d(self) -> None:
         arr = np.arange(32, dtype=np.float32).reshape(4, 8)
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1)))
         result = transfer_to(Tensor(arr), mapping)
         assert result.placements == (Replicated(), Sharded(1))
         assert tuple(result.shape) == (4, 8)
@@ -127,7 +127,7 @@ class _Distribute:
 
     def test_distribute_replicated_2d(self) -> None:
         arr = np.ones((2, 4), dtype=np.float32) * 5
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Replicated()))
         result = transfer_to(Tensor(arr), mapping)
         assert result.placements == (Replicated(), Replicated())
         for i in range(4):
@@ -137,14 +137,14 @@ class _Distribute:
 
     def test_distribute_both_axes_sharded(self) -> None:
         arr = np.arange(32, dtype=np.float32).reshape(4, 8)
-        mapping = PlacementMapping(self.MESH_2D, (Sharded(0), Sharded(1)))
+        mapping = DeviceMapping(self.MESH_2D, (Sharded(0), Sharded(1)))
         result = transfer_to(Tensor(arr), mapping)
         assert result.placements == (Sharded(0), Sharded(1))
         assert tuple(result.shape) == (4, 8)
         np.testing.assert_allclose(result.to_numpy(), arr, rtol=1e-5)
 
     def test_distribute_rejects_partial(self) -> None:
-        mapping = PlacementMapping(self.MESH_1D, (Partial(),))
+        mapping = DeviceMapping(self.MESH_1D, (Partial(),))
         with pytest.raises(ValueError, match="Partial"):
             transfer_to(Tensor(np.ones((4, 4), dtype=np.float32)), mapping)
 
@@ -160,7 +160,7 @@ class _Properties:
     partial_fn: ClassVar[Callable[..., Tensor]]
 
     def test_is_distributed(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(0)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(0)))
         t = full([4, 8], 1.0, dtype=_F32, device=mapping)
         assert t.is_distributed
         np.testing.assert_allclose(
@@ -173,29 +173,29 @@ class _Properties:
         np.testing.assert_allclose(t.to_numpy(), np.ones((2, 4)), rtol=1e-5)
 
     def test_mesh_property(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(0)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(0)))
         t = full([4, 8], 1.0, dtype=_F32, device=mapping)
         assert t.mesh == self.MESH_2D
 
     def test_placements_property(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Sharded(0), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Sharded(0), Replicated()))
         t = full([4, 8], 1.0, dtype=_F32, device=mapping)
         assert t.placements == (Sharded(0), Replicated())
 
     def test_global_shape_sharded(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Sharded(0), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Sharded(0), Replicated()))
         t = full([8, 4], 1.0, dtype=_F32, device=mapping)
         assert tuple(t.shape) == (8, 4)
 
     def test_num_shards(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(0)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(0)))
         t = full([4, 8], 1.0, dtype=_F32, device=mapping)
         assert len(t.local_shards) == 4
 
     def test_shard_shapes_sharded_axis0(self) -> None:
         # 2D mesh (2,2), sharded on axis 0 (dp axis, size 2).
         # Global shape (8,4) -> each dp group gets (4,4).
-        mapping = PlacementMapping(self.MESH_2D, (Sharded(0), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Sharded(0), Replicated()))
         t = full([8, 4], 1.0, dtype=_F32, device=mapping)
         for s in t.local_shards:
             arr = s.to_numpy()
@@ -205,7 +205,7 @@ class _Properties:
     def test_shard_shapes_sharded_axis1(self) -> None:
         # 2D mesh (2,2), sharded on axis 1 (tp axis, size 2).
         # Global shape (4,8) -> each tp group gets (4,4).
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1)))
         t = full([4, 8], 2.0, dtype=_F32, device=mapping)
         for s in t.local_shards:
             arr = s.to_numpy()
@@ -215,7 +215,7 @@ class _Properties:
     def test_dtype_preserved(self) -> None:
         from max.experimental.functional import cast
 
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Replicated()))
         t = full([2, 4], 1.0, dtype=DType.bfloat16, device=mapping)
         assert t.dtype == DType.bfloat16
         # Cast to float32 before materializing (bfloat16 not supported by dlpack)

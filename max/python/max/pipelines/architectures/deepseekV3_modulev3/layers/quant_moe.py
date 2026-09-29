@@ -31,7 +31,6 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Sharded,
 )
 from max.experimental.tensor import Tensor
@@ -86,7 +85,7 @@ def _stack_experts(
     if isinstance(stacked, (FP8BlockTensor, NVFP4Tensor)):
         return stacked.shard(shard_axis, mesh)
     assert isinstance(stacked, Tensor)
-    return stacked.to(PlacementMapping(mesh, (Sharded(axis=shard_axis),)))
+    return stacked.to(DeviceMapping(mesh, (Sharded(axis=shard_axis),)))
 
 
 def _local_expert_matmul(
@@ -706,7 +705,7 @@ class ExpertParallelMoE(QuantizedMoE):
 
         # ``ep_combine`` returns each device exactly the tokens it dispatched,
         # so the output placement matches the input's.
-        placement = PlacementMapping(self.mesh, x.placements)
+        placement = DeviceMapping(self.mesh, x.placements)
         outputs: list[TensorValue] = []
         for i in range(self.mesh.num_devices):
             out = combine_results[i]

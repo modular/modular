@@ -32,7 +32,6 @@ from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     TensorLayout,
 )
@@ -183,12 +182,12 @@ def tensor_to_layout(t: Tensor) -> TensorLayout:
         return TensorLayout(
             t.dtype,
             t.shape,
-            PlacementMapping(t.mesh, t.placements),
+            DeviceMapping(t.mesh, t.placements),
         )
     return TensorLayout(
         t.dtype,
         t.shape,
-        PlacementMapping(DeviceMesh.single(t.device), (Replicated(),)),
+        DeviceMapping(DeviceMesh.single(t.device), (Replicated(),)),
     )
 
 

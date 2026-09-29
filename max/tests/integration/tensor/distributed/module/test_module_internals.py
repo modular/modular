@@ -33,7 +33,6 @@ from max.experimental.nn.module import (
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
@@ -70,13 +69,7 @@ def _make_realized_sharded(
         for _ in range(num_shards)
     )
     return Tensor._from_shards(
-        bufs,
-        mesh,
-        (Sharded(shard_axis),),
-        global_shape=[
-            s * num_shards if i == shard_axis else s
-            for i, s in enumerate(shape_per_shard)
-        ],
+        bufs, DeviceMapping(mesh, (Sharded(shard_axis),))
     )
 
 
@@ -286,7 +279,7 @@ class TestModuleTo:
         single_mesh = DeviceMesh(
             devices=(CPU(),), mesh_shape=(1,), axis_names=("_",)
         )
-        mapping = PlacementMapping(single_mesh, (Replicated(),))
+        mapping = DeviceMapping(single_mesh, (Replicated(),))
         model.to(mapping)
         assert model.device == CPU()
         assert not model.W.is_distributed
@@ -296,7 +289,7 @@ class TestModuleTo:
         W = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
         model = _SimpleModule(W=W)
         mesh = mesh_1d(2)
-        mapping = PlacementMapping(mesh, (Replicated(),))
+        mapping = DeviceMapping(mesh, (Replicated(),))
         model.to(mapping)
         assert model.device == CPU()  # Primary device
         assert model.W.is_distributed
@@ -308,7 +301,7 @@ class TestModuleTo:
         W = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
         model = _SimpleModule(W=W)
         mesh = mesh_1d(2)
-        mapping = PlacementMapping(mesh, (Sharded(0),))
+        mapping = DeviceMapping(mesh, (Sharded(0),))
         model.to(mapping)
         assert model.device == CPU()  # Primary device
         assert model.W.is_distributed
@@ -327,7 +320,7 @@ class TestModuleTo:
             Buffer.zeros([4, 8], dtype=DType.float32, device=CPU())
             for _ in range(2)
         )
-        W = Tensor._from_shards(bufs, mesh1, (Sharded(0),), global_shape=[8, 8])
+        W = Tensor._from_shards(bufs, DeviceMapping(mesh1, (Sharded(0),)))
         model = _SimpleModule(W=W)
 
         # Transfer to a different mesh with same shape

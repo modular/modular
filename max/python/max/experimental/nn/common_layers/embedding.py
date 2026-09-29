@@ -21,9 +21,9 @@ from max.experimental import functional as F
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.embedding import Embedding
 from max.experimental.sharding import (
+    DeviceMapping,
     NamedMapping,
     Partial,
-    PlacementMapping,
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorValue, ops
@@ -86,6 +86,6 @@ class VocabParallelEmbedding(Embedding):
             results.append(gathered * mask)
 
         partial = Tensor.from_shard_values(
-            results, PlacementMapping(mesh, (Partial(),))
+            results, DeviceMapping(mesh, (Partial(),))
         )
         return F.allreduce_sum(partial)

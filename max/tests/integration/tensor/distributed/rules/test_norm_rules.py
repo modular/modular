@@ -43,7 +43,7 @@ class TestLayerNormRule:
         gamma = _layout(M(MESH_1D, R), (8,))
         beta = _layout(M(MESH_1D, R), (8,))
         _, (out,) = pick(layer_norm_rule, x, gamma, beta, 1e-5)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_batch_sharded(self) -> None:
         """S(0) on [B, H] with weight shape [H]: norm dims start at 1."""
@@ -51,7 +51,7 @@ class TestLayerNormRule:
         gamma = _layout(M(MESH_1D, R), (8,))
         beta = _layout(M(MESH_1D, R), (8,))
         _, (out,) = pick(layer_norm_rule, x, gamma, beta, 1e-5)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_norm_dim_sharded_falls_back(self) -> None:
         """Sharding the norm (hidden) dim falls back to Replicated.
@@ -64,8 +64,8 @@ class TestLayerNormRule:
         gamma = _layout(M(MESH_1D, R), (8,))
         beta = _layout(M(MESH_1D, R), (8,))
         args, (out,) = pick(layer_norm_rule, x, gamma, beta, 1e-5)
-        assert args[0].to_placements() == (R,)
-        assert out.to_placements() == (R,)
+        assert args[0].placements == (R,)
+        assert out.placements == (R,)
 
     def test_3d_input_2d_weight(self) -> None:
         """[B, S, H] with weight [S, H]: norm dims start at 1."""
@@ -73,7 +73,7 @@ class TestLayerNormRule:
         gamma = _layout(M(MESH_1D, R), (4, 8))
         beta = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(layer_norm_rule, x, gamma, beta, 1e-5)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_3d_input_sharded_seq_falls_back(self) -> None:
         """[B, S, H] with S(1) (seq dim, in norm range): falls back to R."""
@@ -81,8 +81,8 @@ class TestLayerNormRule:
         gamma = _layout(M(MESH_1D, R), (4, 8))
         beta = _layout(M(MESH_1D, R), (4, 8))
         args, (out,) = pick(layer_norm_rule, x, gamma, beta, 1e-5)
-        assert args[0].to_placements() == (R,)
-        assert out.to_placements() == (R,)
+        assert args[0].placements == (R,)
+        assert out.placements == (R,)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -95,17 +95,17 @@ class TestRMSNormRule:
         x = _layout(M(MESH_1D, R), (4, 8))
         weight = _layout(M(MESH_1D, R), (8,))
         _, (out,) = pick(rms_norm_rule, x, weight, 1e-6)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_batch_sharded(self) -> None:
         x = _layout(M(MESH_1D, S(0)), (4, 8))
         weight = _layout(M(MESH_1D, R), (8,))
         _, (out,) = pick(rms_norm_rule, x, weight, 1e-6)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_norm_dim_sharded_falls_back(self) -> None:
         x = _layout(M(MESH_1D, S(1)), (4, 8))
         weight = _layout(M(MESH_1D, R), (8,))
         args, (out,) = pick(rms_norm_rule, x, weight, 1e-6)
-        assert args[0].to_placements() == (R,)
-        assert out.to_placements() == (R,)
+        assert args[0].placements == (R,)
+        assert out.placements == (R,)

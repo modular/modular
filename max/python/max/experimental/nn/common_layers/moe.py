@@ -38,7 +38,6 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
@@ -375,7 +374,7 @@ class TensorParallelMoE(MoE):
             # all-reduce.
             return Tensor.from_shard_values(
                 [TensorValue(s) for s in output.local_shards],
-                mapping=PlacementMapping(self.mesh, (Partial(),)),
+                mapping=DeviceMapping(self.mesh, (Partial(),)),
             )
 
 

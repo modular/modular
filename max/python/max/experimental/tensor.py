@@ -117,12 +117,10 @@ from max.experimental.sharding import (
     DeviceMesh,
     NamedMapping,
     Placement,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
 )
-from max.experimental.sharding.mappings import is_fully_replicated
 from max.experimental.sharding.per_shard_dim import (
     is_per_shard_dim,
     local_shape_at,
@@ -173,7 +171,7 @@ def _fold_sharded_shape(
 ) -> graph.Shape:
     """Folds per-rank wrappers on ``shape`` into the global shape per mapping."""
     mesh = mapping.mesh
-    placements = mapping.to_placements()
+    placements = mapping.placements
     mesh_shape = mesh.mesh_shape
     n_devices = mesh.num_devices
     folded: list[graph.Dim] = []
@@ -627,7 +625,7 @@ class Tensor(DLPackArray, HasTensorValue):
         :class:`~max.experimental.sharding.ConversionError`
         if the spec contains compiler-only annotations.
         """
-        return self._mapping.to_placements()
+        return self._mapping.placements
 
     @property
     def num_shards(self) -> int:
@@ -783,7 +781,7 @@ class Tensor(DLPackArray, HasTensorValue):
             assert state is not None
             dev = state.value.device
             device = dev if isinstance(dev, Device) else dev.to_device()
-        self._mapping = PlacementMapping(
+        self._mapping = DeviceMapping(
             DeviceMesh.single(device), (Replicated(),)
         )
 
@@ -912,7 +910,7 @@ class Tensor(DLPackArray, HasTensorValue):
         if len(shard_values) > 1 and mapping is None:
             raise ValueError(
                 "DeviceMapping is required when providing multiple "
-                "shard values. Pass a PlacementMapping describing how "
+                "shard values. Pass a DeviceMapping describing how "
                 "shards map to mesh devices."
             )
         for v in shard_values:
@@ -958,40 +956,23 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @classmethod
     def _from_shards(
-        cls,
-        storages: tuple[driver.Buffer, ...],
-        mesh: DeviceMesh,
-        placements: tuple[Placement, ...],
-        global_shape: graph.ShapeLike | None = None,
+        cls, storages: tuple[driver.Buffer, ...], mapping: DeviceMapping
     ) -> Tensor:
-        """Creates a realized sharded tensor from per-device buffers.
-
-        ``global_shape`` is accepted for call-site back-compat; the global
-        shape is recovered from per-rank shards at access time.
-        """
-        del global_shape
-        if len(storages) != mesh.num_devices:
+        """Creates a realized distributed tensor from one buffer per device."""
+        if len(storages) != mapping.mesh.num_devices:
             raise ValueError(
-                f"Expected {mesh.num_devices} storages for mesh {mesh}, "
-                f"got {len(storages)}."
-            )
-        if len(placements) != mesh.ndim:
-            raise ValueError(
-                f"Need one placement per mesh axis ({mesh.ndim}), "
-                f"got {len(placements)}."
+                f"Expected {mapping.mesh.num_devices} storages for mesh "
+                f"{mapping.mesh}, got {len(storages)}."
             )
         instance = object.__new__(cls)
         instance._storages = storages
         instance._state = None
-        instance._mapping = PlacementMapping(mesh, placements)
+        instance._mapping = mapping
         return instance
 
     @classmethod
     def _from_unrealized_shards(
-        cls,
-        state: RealizationState,
-        mesh: DeviceMesh,
-        placements: tuple[Placement, ...],
+        cls, state: RealizationState, mapping: DeviceMapping
     ) -> Tensor:
         """Creates an unrealized sharded tensor from a single state.
 
@@ -999,20 +980,15 @@ class Tensor(DLPackArray, HasTensorValue):
         graph.  Realization is atomic: all shards compile and execute
         together.
         """
-        if len(state.values) != mesh.num_devices:
+        if len(state.values) != mapping.mesh.num_devices:
             raise ValueError(
-                f"Expected {mesh.num_devices} shard values for mesh {mesh}, "
-                f"got {len(state.values)}."
-            )
-        if len(placements) != mesh.ndim:
-            raise ValueError(
-                f"Need one placement per mesh axis ({mesh.ndim}), "
-                f"got {len(placements)}."
+                f"Expected {mapping.mesh.num_devices} shard values for mesh "
+                f"{mapping.mesh}, got {len(state.values)}."
             )
         instance = object.__new__(cls)
         instance._storages = None
         instance._state = state
-        instance._mapping = PlacementMapping(mesh, placements)
+        instance._mapping = mapping
         return instance
 
     @property
@@ -1079,23 +1055,6 @@ class Tensor(DLPackArray, HasTensorValue):
         return current_realization_context().create_unrealized(
             tuple(values),
             mapping=self._mapping,
-        )
-
-    def _from_buffers_like(self, buffers: Sequence[driver.Buffer]) -> Tensor:
-        """Reconstructs a Tensor from flat result buffers.
-
-        Uses ``self`` as a sharding template.
-        For unsharded tensors, wraps ``buffers[0]`` as a plain Tensor.
-        For sharded tensors, wraps all buffers into a sharded Tensor
-        preserving ``self``'s mesh, placements, and global shape.
-        """
-        if not self.is_distributed:
-            return Tensor(storage=buffers[0])
-        assert self._mapping is not None
-        return Tensor._from_shards(
-            tuple(buffers),
-            self._mapping.mesh,
-            self._mapping.to_placements(),
         )
 
     @classmethod
@@ -1602,7 +1561,7 @@ class Tensor(DLPackArray, HasTensorValue):
         ndim = len(per_rank_shapes[0])
         sharded_axes = {
             ax
-            for p in self._mapping.to_placements()
+            for p in self._mapping.placements
             if (ax := p.localized_axis()) is not None
         }
         cells = [
@@ -1854,7 +1813,7 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         _validation_hooks.device_transfer("Tensor.item()", self, CPU())
         if self.is_distributed:
-            if not is_fully_replicated(self._mapping):
+            if not self._mapping.is_fully_replicated:
                 # Reuse the standard error for non-replicated distributed
                 # tensors (Sharded, Partial, etc.).
                 self._check_not_distributed("item")
@@ -1933,14 +1892,12 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         mapping: DeviceMapping
         if isinstance(target, Device):
-            mapping = PlacementMapping(
-                DeviceMesh.single(target), self.placements
-            )
+            mapping = DeviceMapping(DeviceMesh.single(target), self.placements)
         elif isinstance(target, DeviceMesh):
             if isinstance(self._mapping, NamedMapping):
                 mapping = self._mapping._resolve(target)
             else:
-                mapping = PlacementMapping(target, self.placements)
+                mapping = DeviceMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):
             mapping = target
         else:

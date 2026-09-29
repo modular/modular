@@ -49,9 +49,9 @@ from max.experimental.functional import (
 )
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -3852,7 +3852,7 @@ class TestDistributedAllreduceSumHandler:
         data = np.ones((4, 4), dtype=np.float32)
 
         # Replicate data on every device, then re-label as Partial.
-        rep_mapping = PlacementMapping(mesh, (Replicated(),))
+        rep_mapping = DeviceMapping(mesh, (Replicated(),))
 
         try:
             replicated = df_shard(
@@ -3868,9 +3868,7 @@ class TestDistributedAllreduceSumHandler:
 
         partial_t = Tensor._from_shards(
             tuple(s.driver_tensor for s in replicated.local_shards),
-            mesh,
-            (Partial(),),
-            data.shape,
+            DeviceMapping(mesh, (Partial(),)),
         )
 
         try:
@@ -3911,7 +3909,7 @@ class TestDistributedAllgatherHandler:
 
         sharded_t = df_shard(
             Tensor.from_dlpack(np.ascontiguousarray(data)),
-            PlacementMapping(mesh, (Sharded(0),)),
+            DeviceMapping(mesh, (Sharded(0),)),
         )
 
         with (
@@ -3981,7 +3979,7 @@ class TestDistributedScatterHandler:
         data = np.arange(16, dtype=np.float32).reshape(4, 4)
         rows_per_chunk = 4 // num_gpus
 
-        mapping = PlacementMapping(mesh, (Sharded(0),))
+        mapping = DeviceMapping(mesh, (Sharded(0),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -4048,7 +4046,7 @@ class TestDistributedBroadcastHandler:
         data = np.arange(16, dtype=np.float32).reshape(4, 4)
         t = Tensor(storage=Buffer.from_numpy(data).to(devices[0]))
 
-        mapping = PlacementMapping(mesh, (Replicated(),))
+        mapping = DeviceMapping(mesh, (Replicated(),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -4148,7 +4146,7 @@ class TestDistributedReducescatterSumHandler:
                 for i in range(num_gpus)
             ]
             partial_t = Tensor.from_shard_values(
-                shard_tvs, PlacementMapping(mesh, (Partial(),))
+                shard_tvs, DeviceMapping(mesh, (Partial(),))
             )
             result = reduce_scatter(partial_t, scatter_axis=0, mesh_axis=0)
 

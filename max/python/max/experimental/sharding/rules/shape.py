@@ -26,7 +26,6 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Placement,
-    PlacementMapping,
     Sharded,
 )
 from max.experimental.sharding.per_shard_dim import (
@@ -316,7 +315,7 @@ def _reshape_finalize(
 
     def finalize(action: Action) -> Action:
         in_mapping = action.inputs[0]
-        assert isinstance(in_mapping, PlacementMapping)
+        assert isinstance(in_mapping, DeviceMapping)
         out_placements = action.outputs[0].placements
         local = _per_rank_target(shape, x.shape, out_placements, x.mapping.mesh)
         return Action(inputs=(in_mapping, local), outputs=action.outputs)
@@ -499,7 +498,7 @@ def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
     sharded_src_axes = sorted(
         {
             ax
-            for p in x.mapping.to_placements()
+            for p in x.mapping.placements
             if (ax := p.localized_axis()) is not None
         }
     )
@@ -511,7 +510,7 @@ def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
     ]
 
     rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
-    placements = x.mapping.to_placements()
+    placements = x.mapping.placements
     seen_placements: set[Sharded] = set()
     for p in placements:
         if not isinstance(p, Sharded) or p in seen_placements:
@@ -574,7 +573,7 @@ def _rebind_finalize(
 
     def finalize(action: Action) -> Action:
         in_mapping = action.inputs[0]
-        assert isinstance(in_mapping, PlacementMapping)
+        assert isinstance(in_mapping, DeviceMapping)
         mesh = in_mapping.mesh
 
         def _local(ti: int, td: DimLike) -> Dim:
@@ -631,7 +630,7 @@ def rebind_rule(
     against that placement.
     """
     target_shape = Shape(shape)
-    placements = x.mapping.to_placements()
+    placements = x.mapping.placements
     rows: list[AxisAssignment] = []
     seen: set[Placement] = set()
     for p in placements:
@@ -656,7 +655,7 @@ def _broadcast_to_finalize(
 
     def finalize(action: Action) -> Action:
         in_mapping = action.inputs[0]
-        assert isinstance(in_mapping, PlacementMapping)
+        assert isinstance(in_mapping, DeviceMapping)
         out_placements = action.outputs[0].placements
         local = _per_rank_target(shape, x.shape, out_placements, x.mapping.mesh)
         return Action(
@@ -694,7 +693,7 @@ def broadcast_to_rule(
             f"either 1 or equal to the target size {t_dim}."
         )
 
-    placements = x.mapping.to_placements()
+    placements = x.mapping.placements
     sharded_src_axes = sorted(
         {ax for p in placements if (ax := p.localized_axis()) is not None}
     )
@@ -992,12 +991,12 @@ def _split_finalize(
 
     def finalize(action: Action) -> Action:
         chosen = action.inputs[0]
-        assert isinstance(chosen, PlacementMapping)
+        assert isinstance(chosen, DeviceMapping)
         local_sizes = _localize_sizes(
             [Dim(sz) for sz in split_sizes],
             axis,
             x.rank,
-            chosen.to_placements(),
+            chosen.placements,
             x.mapping.mesh,
         )
         return Action(

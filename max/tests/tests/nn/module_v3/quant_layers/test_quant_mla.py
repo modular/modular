@@ -26,9 +26,9 @@ from max.experimental import functional as F
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -142,7 +142,7 @@ def _build_kv_collection(
                 graph_values.append(TensorValue(t))
 
     kv_concrete = kv_params.unflatten_kv_inputs(iter(graph_values))
-    mapping = PlacementMapping(
+    mapping = DeviceMapping(
         DeviceMesh(tuple(devices), (len(devices),), ("axis",)), (Replicated(),)
     )
     return PagedCacheValues.from_upstream(kv_concrete, mapping)
@@ -426,7 +426,7 @@ def test_mla_fp8_tensor_parallel(
         devices = [mock_accelerator(0), mock_accelerator(1)]
         kv_params = _make_kv_params(devices)
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
         layer = tensor_parallel_latent_attention_with_rope(
             _make_layer(
@@ -438,14 +438,14 @@ def test_mla_fp8_tensor_parallel(
 
         # Rowwise weights co-shard data and scales on axis 0.
         assert isinstance(layer.kv_b_proj, FP8BlockTensor)
-        assert layer.kv_b_proj.data.mapping.to_placements() == (Sharded(0),)
-        assert layer.kv_b_proj.weight_scale_inv.mapping.to_placements() == (
+        assert layer.kv_b_proj.data.mapping.placements == (Sharded(0),)
+        assert layer.kv_b_proj.weight_scale_inv.mapping.placements == (
             Sharded(0),
         )
         # o_proj is columnwise: data and scales shard the contraction (axis 1).
         assert isinstance(layer.o_proj.weight, FP8BlockTensor)
-        assert layer.o_proj.weight.data.mapping.to_placements() == (Sharded(1),)
-        assert layer.o_proj.weight.weight_scale_inv.mapping.to_placements() == (
+        assert layer.o_proj.weight.data.mapping.placements == (Sharded(1),)
+        assert layer.o_proj.weight.weight_scale_inv.mapping.placements == (
             Sharded(1),
         )
 
@@ -472,7 +472,7 @@ def test_mla_fp8_tensor_parallel(
     assert out.mapping.mesh == mesh
     # o_proj is row-parallel, so the attention output is a partial sum; the
     # all-reduce that resolves it lives in the transformer block.
-    assert out.mapping.to_placements() == (Partial(),)
+    assert out.mapping.placements == (Partial(),)
 
 
 # --------------------------------------------------------------------------- #
@@ -600,7 +600,7 @@ def test_mla_nvfp4_tensor_parallel(
         devices = [mock_accelerator(0), mock_accelerator(1)]
         kv_params = _make_kv_params(devices)
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
         layer = tensor_parallel_latent_attention_with_rope(
             _make_layer(
@@ -613,11 +613,11 @@ def test_mla_nvfp4_tensor_parallel(
         weight = layer.o_proj.weight
         assert isinstance(weight, NVFP4Tensor)
         # o_proj is columnwise: the contraction axis (1) is sharded.
-        assert weight.data.mapping.to_placements() == (Sharded(1),)
-        assert weight.weight_scale.mapping.to_placements() == (Sharded(1),)
+        assert weight.data.mapping.placements == (Sharded(1),)
+        assert weight.weight_scale.mapping.placements == (Sharded(1),)
         # A per-tensor scale cannot be split, so both globals are replicated.
-        assert weight.weight_scale_2.mapping.to_placements() == (Replicated(),)
-        assert weight.input_scale.mapping.to_placements() == (Replicated(),)
+        assert weight.weight_scale_2.mapping.placements == (Replicated(),)
+        assert weight.input_scale.mapping.placements == (Replicated(),)
 
         x = Tensor.zeros(
             [total_seq_len, _HIDDEN_SIZE],
@@ -642,4 +642,4 @@ def test_mla_nvfp4_tensor_parallel(
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
     assert out.dtype == DType.bfloat16
     assert out.mapping.mesh == mesh
-    assert out.mapping.to_placements() == (Partial(),)
+    assert out.mapping.placements == (Partial(),)
