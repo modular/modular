@@ -126,6 +126,7 @@ def main():
 """
 
 from std.format._utils import FormatStruct, Named, TypeNames
+from std.memory import MaybeUninit
 from std.memory.memory import _free, _malloc
 from std.os import abort
 from std.sys import align_of, size_of
@@ -196,7 +197,7 @@ struct Alignment(TrivialRegisterPassable, Writable):
     " `unsafe_leak()` to take ownership of the underlying pointer."
 )
 struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
-    not Deinitable, RegisterPassable, Writable
+    not Deinitable, RegisterPassable, Sized, Writable
 ):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
@@ -350,6 +351,31 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
             The `Layout` this allocation was created with.
         """
         return self._layout
+
+    def __len__(self) -> Int:
+        """Returns the number of elements the storage was allocated for.
+
+        Returns:
+            `layout().count()`, the element count this allocation was created
+            with.
+        """
+        return self._layout.count()
+
+    def storage(
+        ref self,
+    ) -> Span[MaybeUninit[Self.T], origin_of(self._alloc)]:
+        """Returns a span over the allocated storage as possibly uninitialized
+        elements.
+
+        Returns:
+            A span of `MaybeUninit[T]` over the allocated storage.
+        """
+        return {
+            unsafe_ptr = self.unsafe_ptr().unsafe_bitcast[
+                MaybeUninit[Self.T]
+            ](),
+            length = len(self),
+        }
 
     def into_thin(
         deinit self,
@@ -829,7 +855,8 @@ def alloc[
     the `Allocation` is destroyed on every path — by passing it to `dealloc`,
     or by explicitly leaking it with `unsafe_leak()`.
 
-    When `size_of[T]() == 0`, this function returns a sentinel value.
+    An allocation of zero bytes - a zero-sized `T`, or a `layout` with a
+    count of zero - returns a sentinel value.
 
     Parameters:
         T: The type of the elements to allocate storage for.
@@ -842,8 +869,7 @@ def alloc[
         An `Allocation` owning the newly allocated, uninitialized storage.
 
     Constraints:
-        `size_of[T]()` must be greater than zero. `layout.count()` must be
-        `>= 0`.
+        `layout.count()` must be `>= 0`.
 
     Example:
 
@@ -857,21 +883,22 @@ def alloc[
     dealloc(allocation^)
     ```
     """
-    comptime size_of_t = size_of[T]()
-
     if unlikely(layout.count() < 0):
-        abort("alloc: `Layout.count()` must be > 0")
+        abort("alloc: `Layout.count()` must be >= 0")
 
-    comptime if size_of_t == 0:
+    var byte_layout = layout.as_byte_layout()
+
+    # TODO: We should configure this per chosen allocator. If the allocator
+    # returns a non-null sentinel value we can use that, otherwise we need
+    # to manually return our own sentinel (dangling) pointer.
+    if byte_layout.count() == 0:
         return ThinAllocation[T](
             unsafe_owned_ptr=Pointer[T, MutUntrackedOrigin].unsafe_dangling()
         ).unsafe_with_layout(layout)
-    else:
-        return ThinAllocation[T](
-            unsafe_owned_ptr=_alloc_bytes(
-                layout.as_byte_layout()
-            ).unsafe_bitcast[T]()
-        ).unsafe_with_layout(layout)
+
+    return ThinAllocation[T](
+        unsafe_owned_ptr=_alloc_bytes(byte_layout).unsafe_bitcast[T]()
+    ).unsafe_with_layout(layout)
 
 
 def dealloc[T: AnyType, /](var allocation: Allocation[T, alignment=_], /):
@@ -898,10 +925,13 @@ def dealloc[T: AnyType, /](var allocation: Allocation[T, alignment=_], /):
     dealloc(allocation^)
     ```
     """
-    comptime if size_of[T]() == 0:
-        _ = allocation^.unsafe_leak()
-    else:
-        _free(allocation^.unsafe_leak())
+    var is_empty = allocation.layout().as_byte_layout().count() == 0
+    var pointer = allocation^.unsafe_leak()
+
+    # A zero-byte `Allocation` stands in a dangling pointer that never came
+    # from the allocator, so it must not reach `free`. See `alloc`.
+    if not is_empty:
+        _free(pointer)
 
 
 struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](

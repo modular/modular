@@ -53,7 +53,8 @@ inline lldb::ValueObjectSP nonSyntheticChild(lldb_private::ValueObject &parent,
 /// pointer.
 inline lldb::ValueObjectSP unwrapToScalarOrPointer(lldb::ValueObjectSP field) {
   static constexpr const char *kWrapperNames[] = {
-      "_mlir_value", "value", "address", "_value", "_storage"};
+      "_mlir_value", "value",  "address", "_value",
+      "_storage",    "_alloc", "_ptr"};
   while (field && !field->IsPointerType() && !field->IsScalarType()) {
     bool unwrapped = false;
     for (const char *name : kWrapperNames) {
