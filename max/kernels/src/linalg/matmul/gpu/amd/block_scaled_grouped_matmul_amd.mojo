@@ -330,17 +330,17 @@ struct PreShuffledBGroupedGEMM[
             # stores) write only real-token scales; the pad-row matmul outputs
             # are discarded after the gather, so the slot tail is not
             # zero-filled.
-            var sfa_start_row = UInt32(expert_slot * _max_padded_M)
+            var sfa_start_row = expert_slot * _max_padded_M
             var sfa_padded_M = align_up(Int(M), 32)
 
-            var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+            var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
             comptime A_K_BYTES = a_tensor.static_shape[1]
-            var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
-            var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(
+            var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
+            var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
                 K_BYTES
             )
-            var sfa_ptr = sfa_tensor.ptr + sfa_start_row * UInt32(K_SCALES)
-            var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(
+            var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
+            var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(
                 K_SCALES
             )
 
@@ -526,15 +526,17 @@ struct PreShuffledBGroupedGEMM[
         var a_start_row = a_offsets[block_idx.z]
         # Preshuffled A-scales: fixed-stride slot at e * max_padded_M.
         # Per-expert tight V# bound = align_up(num_tokens, 32).
-        var sfa_start_row = UInt32(Int(block_idx.z) * _max_padded_M)
+        var sfa_start_row = Int(block_idx.z) * _max_padded_M
         var sfa_padded_M = align_up(Int(M), 32)
 
-        var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+        var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
         comptime A_K_BYTES = a_tensor.static_shape[1]
-        var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
-        var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
-        var sfa_ptr = sfa_tensor.ptr + sfa_start_row * UInt32(K_SCALES)
-        var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
+        var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
+        var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
+            K_BYTES
+        )
+        var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
+        var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
 
         var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
         var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))
@@ -915,12 +917,15 @@ def block_scaled_grouped_matmul_amd_kernel[
     if block_idx.y >= ceildiv(Int(M), BM):
         return
 
-    var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+    # 64-bit offsets, as in `grouped_matmul.mojo`. B counts packed bytes, so it
+    # passes Int32 once the expert stack exceeds 2 GiB (Kimi K3 gate/up at 4
+    # devices); A and C scale with token rows.
+    var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
     comptime A_K_BYTES = a_tensor.static_shape[1]
-    var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
-    var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
-    var sfa_ptr = sfa_tensor.ptr + a_start_row * UInt32(K_SCALES)
-    var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
+    var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
+    var b_ptr = b_tensor.ptr + Int(expert_id) * Int(N) * Int(K_BYTES)
+    var sfa_ptr = sfa_tensor.ptr + Int(a_start_row) * Int(K_SCALES)
+    var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
 
     var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
     var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))

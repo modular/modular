@@ -648,6 +648,79 @@ def test_step3p5_moe_dims[
     _ = eid_dev_buf^
 
 
+def test_expert_offset_past_int32(ctx: DeviceContext) raises:
+    """Routes experts on both sides of the 32-bit element offset.
+
+    The shape is Kimi K3's routed gate/up weight at eight devices. Only the two
+    routed slices hold ones, so a read from anywhere else, such as the address
+    before the stack that a wrapped offset gives, changes the output or faults;
+    the last expert that still fits is the control.
+    """
+    comptime num_experts = 896
+    comptime N = 768
+    comptime K = 3584
+    comptime tokens_per_expert = 32
+    comptime tokens = 2 * tokens_per_expert
+    comptime below = 2147483647 // (N * K)
+    comptime above = num_experts - 1
+    comptime assert (
+        below < above
+    ), "shape no longer straddles a 32-bit element offset"
+
+    var a_host = ctx.enqueue_create_host_buffer[.bfloat16](tokens * K)
+    var c_host = ctx.enqueue_create_host_buffer[.bfloat16](tokens * N)
+    var offsets_host = ctx.enqueue_create_host_buffer[.uint32](3)
+    var ids_host = ctx.enqueue_create_host_buffer[.int32](2)
+    for i in range(tokens * K):
+        a_host[i] = 1.0
+    offsets_host[0] = 0
+    offsets_host[1] = tokens_per_expert
+    offsets_host[2] = tokens
+    ids_host[0] = below
+    ids_host[1] = above
+
+    var a_dev = ctx.enqueue_create_buffer[.bfloat16](tokens * K)
+    var b_dev = ctx.enqueue_create_buffer[.bfloat16](num_experts * N * K)
+    var c_dev = ctx.enqueue_create_buffer[.bfloat16](tokens * N)
+    var offsets_dev = ctx.enqueue_create_buffer[.uint32](3)
+    var ids_dev = ctx.enqueue_create_buffer[.int32](2)
+
+    ctx.enqueue_memset(b_dev, Scalar[.bfloat16](0))
+    ctx.enqueue_memset(
+        b_dev.create_sub_buffer[.bfloat16](below * N * K, N * K),
+        Scalar[.bfloat16](1),
+    )
+    ctx.enqueue_memset(
+        b_dev.create_sub_buffer[.bfloat16](above * N * K, N * K),
+        Scalar[.bfloat16](1),
+    )
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(offsets_dev, offsets_host)
+    ctx.enqueue_copy(ids_dev, ids_host)
+
+    grouped_matmul(
+        TileTensor[.bfloat16](c_dev, row_major(Coord(tokens, Idx[N]))),
+        TileTensor[.bfloat16](a_dev, row_major(Coord(tokens, Idx[K]))),
+        TileTensor[.bfloat16](b_dev, row_major[num_experts, N, K]()),
+        TileTensor[.uint32](offsets_dev, row_major(Coord(3))),
+        TileTensor[.int32](ids_dev, row_major(Coord(Idx[2]))),
+        tokens_per_expert,
+        2,
+        ctx,
+    )
+    ctx.enqueue_copy(c_host, c_dev)
+    ctx.synchronize()
+
+    for i in range(tokens * N):
+        assert_almost_equal(c_host[i], Scalar[.bfloat16](K))
+
+    _ = a_dev^
+    _ = b_dev^
+    _ = c_dev^
+    _ = offsets_dev^
+    _ = ids_dev^
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
@@ -887,3 +960,5 @@ def main() raises:
             expert_shape=Index(16, 576),
             qkv_perm_dim=True,
         ](2, [128, 64], [0, 2], ctx)
+
+        test_expert_offset_past_int32(ctx)

@@ -438,6 +438,10 @@ comptime allreduce_tuning_table = Table(
             num_blocks=64,
             algorithm=AllReduceAlgorithm.TWO_STAGE,
         ),
+        # No CDNA4 Lamport entry: at ngpus=8 below 64 KB (Kimi K3 TP8 decode)
+        # Lamport ran but lost to 1-stage, 27.0 -> 34.5 us per call and +8.8%
+        # single-stream ITL. Revisit with a CDNA4 size sweep, not by analogy to
+        # the B200 entries.
         AllReduceTuningConfig(
             ngpus=8,
             num_bytes=(256 * KB),

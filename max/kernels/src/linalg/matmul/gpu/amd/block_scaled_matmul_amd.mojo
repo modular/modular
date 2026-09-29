@@ -242,6 +242,11 @@ struct BlockScaledMmaOp[
             32 K-elements in every format; what changes is the bytes that
             occupies -- 16 (FP4), 24 (FP6), 32 (FP8) -- which `lane_bytes`
             below derives.
+
+            Both operands share this format. That is a limit of this pipeline,
+            not the ISA: `cdna4_block_scaled_mfma` takes separate A and B
+            formats, so mixed W4A8 (MXFP8 activations, MXFP4 weights) is not
+            supported here.
     """
 
     comptime MMA_M = Self.mma_shape[0]

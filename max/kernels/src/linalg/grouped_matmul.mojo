@@ -228,9 +228,13 @@ def grouped_matmul_amd_kernel_launcher[
     var expert_id = rebind[Int32](expert_ids[block_idx.z])
     var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
 
-    var a_ptr = a_tensor.ptr + a_start_row * UInt32(K)
-    var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K)
-    var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+    # 64-bit offsets. B passes Int32 once the bf16 expert stack exceeds 4 GiB
+    # (Kimi K3 gate/up at 8 devices), and the wrapped pointer reads out of
+    # bounds without erroring. A and C scale with token rows and fit today,
+    # but a large `max_batch_input_tokens` would wrap them too.
+    var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(K)
+    var b_ptr = b_tensor.ptr + Int(expert_id) * Int(N) * Int(K)
+    var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
 
     @inline(.always)
     @__parameter
@@ -1341,7 +1345,7 @@ def grouped_matmul_vendor[
 
             # Handle experts with expert_id = -1 by writing zeros
             if expert_id < 0:
-                var c_ptr = c.ptr + token_start * UInt32(c_N)
+                var c_ptr = c.ptr + Int(token_start) * Int(c_N)
                 var buff = DeviceBuffer(
                     ctx, c_ptr, num_tokens * c_N, owning=False
                 )
@@ -1350,15 +1354,15 @@ def grouped_matmul_vendor[
 
             # Create TileTensor views into the tensors for this expert
             var a_slice = TileTensor(
-                a.ptr + token_start * UInt32(a_K),
+                a.ptr + Int(token_start) * Int(a_K),
                 row_major(Coord(_ri(num_tokens), _ri(a_K))),
             )
             var b_slice = TileTensor(
-                b.ptr + expert_id * Int32(b_N) * Int32(b_K),
+                b.ptr + Int(expert_id) * Int(b_N) * Int(b_K),
                 row_major(Coord(_ri(b_N), _ri(b_K))),
             )
             var c_slice = TileTensor(
-                c.ptr + token_start * UInt32(c_N),
+                c.ptr + Int(token_start) * Int(c_N),
                 row_major(Coord(_ri(num_tokens), _ri(c_N))),
             )
 
