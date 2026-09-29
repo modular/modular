@@ -49,6 +49,7 @@ family.
    pipelines.architectures.llama3
    pipelines.architectures.llama4
    pipelines.architectures.mamba
+   pipelines.architectures.mimo_v2
    pipelines.architectures.minimax_m2
    pipelines.architectures.minimax_music3
    pipelines.architectures.mistral
@@ -118,6 +119,7 @@ Text generation
    ~max.pipelines.architectures.llama3
    ~max.pipelines.architectures.llama4
    ~max.pipelines.architectures.mamba
+   ~max.pipelines.architectures.mimo_v2
    ~max.pipelines.architectures.minimax_m2
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3

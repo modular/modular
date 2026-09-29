@@ -1,0 +1,192 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "mimo_v2",
+    size = "small",
+    srcs = glob(
+        ["test_*.py"],
+        exclude = ["*_gpu.py"],
+    ),
+    imports = ["."],
+    # Importing max.pipelines times out pytest collection on contended macOS
+    # workers, and macOS adds no coverage to these CPU-only tests.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/weights",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Builds (never compiles) the graph, whose allreduce binds real accelerators.
+# The W4A8 experts run only on SM100.
+modular_py_test(
+    name = "mimo_v2_gpu",
+    size = "small",
+    srcs = glob(
+        ["test_*_gpu.py"],
+        exclude = ["test_serving_numerics_gpu.py"],
+    ),
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "tiny_fixture",
+    testonly = True,
+    srcs = ["tiny_fixture.py"],
+    imports = ["."],
+    deps = [requirement("numpy")],
+)
+
+modular_py_library(
+    name = "mimo_runner",
+    testonly = True,
+    srcs = ["mimo_runner.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+filegroup(
+    name = "tiny_goldens",
+    srcs = ["testdata/tiny_goldens.npz"],
+)
+
+# Compiles and runs the tiny fixture, tensor parallel over two GPUs, and scores
+# its logits against checked-in HF goldens.
+modular_py_test(
+    name = "mimo_v2_numerics_gpu",
+    size = "large",
+    srcs = ["test_serving_numerics_gpu.py"],
+    data = [":tiny_goldens"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        ":mimo_runner",
+        ":tiny_fixture",
+        "//max/python/max/driver",
+        requirement("numpy"),
+    ],
+)
+
+# Real-checkpoint validation; needs both MiMo-V2.6-Flash snapshots on disk, so
+# it runs by hand on a host that has them, never in CI.
+modular_py_binary(
+    name = "check_real_checkpoint",
+    testonly = True,
+    srcs = ["check_real_checkpoint.py"],
+    main = "check_real_checkpoint.py",
+    tags = ["manual"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Scores MAX against the golden fixtures on a real or random checkpoint; needs
+# the checkpoint and fixtures on disk and a GPU, so it runs by hand.
+modular_py_binary(
+    name = "check_reference_fixtures",
+    testonly = True,
+    srcs = ["check_reference_fixtures.py"],
+    imports = ["."],
+    main = "check_reference_fixtures.py",
+    tags = ["manual"],
+    deps = [
+        ":mimo_runner",
+        requirement("numpy"),
+        requirement("safetensors"),
+    ],
+)
+
+# Checks the W4A8 MoE layer (interleave, usage stats, error against an exact
+# host reference) at production width; needs a B200, so it runs by hand.
+modular_py_binary(
+    name = "check_serving_moe",
+    testonly = True,
+    srcs = ["check_serving_moe.py"],
+    main = "check_serving_moe.py",
+    tags = ["manual"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Builds the random-weight and beacon fixtures and their HF references, or
+# the tiny fixture's goldens, from the published checkpoint's code; runs by
+# hand.
+modular_py_binary(
+    name = "make_random_fixture",
+    testonly = True,
+    srcs = ["make_random_fixture.py"],
+    imports = ["."],
+    main = "make_random_fixture.py",
+    tags = ["manual"],
+    deps = [
+        ":tiny_fixture",
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)

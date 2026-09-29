@@ -269,6 +269,28 @@ except ValueError:
     pass
 
 
+class _MiMoV2HFConfig(PretrainedConfig):
+    """Local config class for MiMo-V2 (``model_type: mimo_v2``).
+
+    MiMo-V2 repos point ``auto_map`` at ``configuration_mimo_v2.py``, so
+    ``AutoConfig.from_pretrained`` otherwise demands ``trust_remote_code=True``
+    and executes the repo's config code. The published ``config.json`` states
+    every field ``MiMoV2Config`` reads, so each is kept verbatim rather than
+    re-deriving the repo class's defaults.
+    """
+
+    model_type = "mimo_v2"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("mimo_v2", _MiMoV2HFConfig, exist_ok=True)
+
+
 class _KimiK3SubHFConfig(PretrainedConfig):
     """A Kimi K3 sub-config that preserves every field verbatim.
 

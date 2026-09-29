@@ -13,6 +13,17 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added the MiMo-V2.6-Flash architecture (`MiMoV2ForCausalLM`) for NVFP4
+  checkpoints such as `ProCreations/MiMo-V2.6-Flash-RL-NVFP4`. Its 39
+  sliding-window layers use learned attention sinks, and its Q/K and V
+  head dims (192 and 128) are padded to 256 for paged attention. The
+  NVFP4 routed experts are repacked losslessly to MXFP4 and run with MXFP8
+  activations; the dense projections are repacked losslessly to FP8 with
+  128x128 block scales. The architecture needs two or more B200 (SM100)
+  GPUs, since its weights (about 158 GiB) leave no room for the KV cache on
+  one B200. Only NVFP4 exports load for now, not Xiaomi's FP8 checkpoint
+  (`XiaomiMiMo/MiMo-V2.6-Flash-RL`).
+
 - DeepSeek-V4 (`DeepseekV4ForCausalLM`) now serves `/v1/chat/completions`.
   The checkpoint ships no chat template, so prompts are rendered by its
   reference encoder unless `--chat-template` is given. Thinking is on with
