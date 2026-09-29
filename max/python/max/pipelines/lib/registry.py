@@ -1070,7 +1070,10 @@ class PipelineRegistry:
             )
         if len(matching_tasks) == 1:
             return matching_tasks[0]
-        if arch := self.architectures.get(architecture_name):
+        # The lookup may fall back to another variant, e.g. `<name>_ModuleV3`.
+        if arch := self.retrieve_architecture(architecture_name):
+            if arch.name != architecture_name:
+                return self.retrieve_pipeline_task(arch.name)
             return arch.task
         raise ValueError(
             f"Architecture '{architecture_name}' not found in registry"
