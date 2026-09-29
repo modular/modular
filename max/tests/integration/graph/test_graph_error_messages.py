@@ -195,10 +195,8 @@ def test_unfused_build_error() -> None:
         "Source Traceback:\n"
         "<traceback>\n"
         "\n"
-        "error: 'mo.add' op [MO_TO_MOGG] Found at least one incompatible "
-        "input/output type for a JIT-able operation which is not supported. "
-        "Operand types: <type>, <type>. "
-        "Results Types: <type>\n"
+        "error: 'mo.add' op has a tensor whose rank exceeds the maximum "
+        "supported rank of 8; the graph cannot be lowered\n"
     )
     assert canonicalized == expected
 
@@ -241,10 +239,8 @@ def test_fused_build_error() -> None:
         "Source Traceback:\n"
         "<traceback>\n"
         "\n"
-        "error: 'mo.gather' op [MO_TO_MOGG] Found at least one incompatible "
-        "input/output type for a JIT-able operation which is not supported. "
-        "Operand types: <type>, <type>. "
-        "Results Types: <type>\n"
+        "error: 'mo.gather' op has a tensor whose rank exceeds the maximum "
+        "supported rank of 8; the graph cannot be lowered\n"
     )
     assert canonicalized == expected
 

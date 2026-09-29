@@ -319,7 +319,22 @@ def test_grouped_matmul_swiglu_nvfp4_equiv() -> None:
         "Fused NVFP4 packed output differs from chained reference; the "
         "sigma-permutation contract is broken (see kernel docstring)."
     )
-    assert np.array_equal(sf_a_np, sf_b_np), (
-        "Fused SF tile differs from chained reference; the sigma-permutation "
-        "contract is broken (see kernel docstring)."
+    # The SF tile's first dim is over-allocated (sf_dim_0 = M//128 + num_active)
+    # so each expert's scale block can be tail-padded to a 128-row boundary.
+    # Only the per-expert rows at a_scale_offsets carry defined data: the fused
+    # kernel zero-fills the leftover pad rows, whereas the chained
+    # fused_silu_quantized never writes them, so their contents are
+    # allocation-dependent. Compare only the written rows, not the pad.
+    written_rows = sorted(
+        {
+            int(a_scale_offsets[e]) + r
+            for e in range(num_active)
+            for r in range(
+                (int(expert_start[e + 1]) - int(expert_start[e]) + 127) // 128
+            )
+        }
+    )
+    assert np.array_equal(sf_a_np[written_rows], sf_b_np[written_rows]), (
+        "Fused SF tile differs from chained reference on the written per-expert "
+        "rows; the sigma-permutation contract is broken (see kernel docstring)."
     )
