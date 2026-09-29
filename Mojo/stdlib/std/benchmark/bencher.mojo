@@ -394,8 +394,7 @@ struct BenchConfig(Copyable):
         self.verbose_metric_names = True
 
         # TODO: This function should move out of BenchConfig and be part of update_bench_config_args.
-        @__parameter
-        def argparse() raises:
+        def argparse() raises {mut self}:
             """Parse cmd line args to define benchmark configuration."""
 
             var args = argv()
@@ -641,8 +640,7 @@ struct Bench(Writable):
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 
-        @__parameter
-        def argparse():
+        def argparse() {mut self}:
             """Parse cmd line args to define benchmark configuration."""
 
             var args = argv()

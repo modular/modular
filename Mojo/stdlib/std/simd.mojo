@@ -2844,8 +2844,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ), "output width must be a positive integer less than simd size"
 
         @inline(.always)
-        @__parameter
-        def slice_body() -> SIMD[Self.dtype, output_width]:
+        def slice_body() {imm} -> SIMD[Self.dtype, output_width]:
             var tmp = SIMD[Self.dtype, output_width]()
 
             comptime for i in range(output_width):
@@ -3898,7 +3897,6 @@ def _convert_f32_to_float8_scalar[
 ](x: Scalar[dtype]) -> Scalar[target]:
     # software implementation rounds toward nearest even
 
-    @__parameter
     def max_finite_byte() -> UInt8:
         comptime if target == DType.float8_e4m3fn:
             return UInt8(0x7E)
