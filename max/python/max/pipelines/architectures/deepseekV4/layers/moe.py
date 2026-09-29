@@ -461,9 +461,8 @@ class DeepseekV4RoutedExperts(Module):
         counts = start[1 : groups + 1] - start[0:groups]
         rows_128 = ops.constant(SF_ROWS, i32, device)
         aligned_counts = (
-            ops.floor_div(
-                counts + ops.constant(SF_ROWS - 1, i32, device), rows_128
-            )
+            (counts + ops.constant(SF_ROWS - 1, i32, device))
+            // rows_128
             * rows_128
         )
         # Kept on device, as are the row maps below: ops.cumsum/ops.scatter
@@ -471,8 +470,7 @@ class DeepseekV4RoutedExperts(Module):
         # closed a 2-GPU deadlock.
         aligned_start = count_offsets(aligned_counts)
         scale_offsets = ops.cast(
-            ops.floor_div(aligned_start[0:groups], rows_128)
-            - ops.floor_div(start[0:groups], rows_128),
+            aligned_start[0:groups] // rows_128 - start[0:groups] // rows_128,
             DType.uint32,
         )
         if groups != self.n_experts:
@@ -496,7 +494,7 @@ class DeepseekV4RoutedExperts(Module):
         )
 
         slot_token = ops.cast(
-            ops.floor_div(order, ops.constant(self.topk, i32, device)), i32
+            order // ops.constant(self.topk, i32, device), i32
         )
         x_sorted = ops.gather(x, slot_token, axis=0)
         slot_weight = ops.cast(

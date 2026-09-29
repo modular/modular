@@ -2573,10 +2573,10 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.div(lhs, self)
 
     def __floordiv__(self, rhs: TensorValueLike) -> Tensor:
-        return F.floor(F.div(self, rhs))
+        return F.floor_div(self, rhs)
 
     def __rfloordiv__(self, lhs: TensorValueLike) -> Tensor:
-        return F.floor(F.div(lhs, self))
+        return F.floor_div(lhs, self)
 
     def __mod__(self, rhs: TensorValueLike) -> Tensor:
         return F.mod(self, rhs)

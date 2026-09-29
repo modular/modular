@@ -621,7 +621,7 @@ class MoEQuantized(MoE):
         )
 
         gather_indices = ops.cast(
-            ops.floor_div(token_order, self.num_experts_per_token),
+            token_order // self.num_experts_per_token,
             DType.int32,
         )
         total_m = ops.shape_to_tensor(token_order.shape)[0].cast(DType.uint32)

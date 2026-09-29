@@ -356,7 +356,17 @@ This version is still a work in progress.
   exporting spans, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, for example to
   `http://collector:4318/v1/traces`.
 
+- The `//` operator on `TensorValue` and `max.experimental.tensor.Tensor`
+  now matches `ops.floor_div`: floor division of two integer tensors returns
+  an integer tensor of the operand dtype instead of `float64`. Float operands
+  are unaffected. Code that relied on the float result should cast
+  explicitly, for example `(x // n).cast(DType.float64)`.
+
 ## Fixes
+
+- `ops.floor_div` on mixed integer dtypes such as `uint8 // int16` now
+  applies the floor correction for the promoted signed dtype, so `7 // -2`
+  returns `-4` instead of `-3`.
 
 - Fixed a regression where indexing a buffer -- loading it and then gathering
   rows out of it, as a paged KV cache does -- allocated and copied the entire

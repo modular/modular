@@ -76,7 +76,6 @@ from .cache import (
     KEY,
     DeepseekV4Cache,
     arange,
-    idiv,
     scalar,
 )
 from .compressor import DeepseekV4Compressor
@@ -357,7 +356,7 @@ class DeepseekV4Attention(Module):
             )
             # Query at position ``p`` sees entries below ``(p + 1) // ratio``:
             # every window that closed strictly before it.
-            cutoff = idiv(positions + scalar(1, device), ratio)
+            cutoff = (positions + scalar(1, device)) // ratio
             valid = stream.valid(cutoff)
             if self.indexer is not None:
                 idx_stream = compressed_stream(
