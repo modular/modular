@@ -34,6 +34,10 @@ from state_space.selective_scan import (
     selective_scan_fwd_gpu_minimal,
     selective_scan_update_cpu,
     selective_scan_update_gpu,
+    ssd_combined_cpu,
+    ssd_combined_gpu,
+    mamba_split_conv1d_scan_combined_cpu,
+    mamba_split_conv1d_scan_combined_gpu,
 )
 
 
@@ -884,3 +888,553 @@ def selective_scan_update_shape[
         matches `state_in.shape()` and `output_shape` matches `x.shape()`.
     """
     return (state_in.shape(), x.shape())
+
+
+@extensibility.register("ssd_combined")
+struct SsdCombined[delta_softplus: Bool = False]:
+    """Fused selective scan + RMS-norm + residual operation for Mamba blocks.
+
+    Performs: norm(residual + selective_scan(input)), optionally gated by SiLU(z).
+    Despite the name (`ssd_combined`), this is the Mamba1-shape *sequential* scan
+    fused with the post-norm/residual path — not the chunk-SSD algorithm.
+
+    Parameters:
+        delta_softplus: If True, applies softplus activation to delta values.
+
+    Tensor Shapes:
+        - output: (batch, dim, seqlen) - Final fused output (normalized, optionally gated)
+        - x: (batch, dim, num_chunks, 2*dstate) - Scan checkpoint state (output)
+        - out_z: (batch, dim, seqlen) - Pre-gating normalized output (output, can be empty)
+        - residual: (batch, dim, seqlen) - Residual tensor added before norm
+        - u: (batch, dim, seqlen) - Input tensor
+        - delta: (batch, dim, seqlen) - Time step tensor
+        - A: (dim, dstate) - State transition matrix
+        - B: (batch, n_groups, dstate, seqlen) - Input projection
+        - C: (batch, n_groups, dstate, seqlen) - Output projection
+        - D: (dim,) - Skip connection (optional, can be empty)
+        - z: (batch, dim, seqlen) - Gating tensor (optional, can be empty)
+        - delta_bias: (dim,) - Delta bias (optional, can be empty)
+        - gamma: (dim,) - RMSNorm weight
+        - epsilon: Scalar - Numerical stability epsilon for RMSNorm
+        - weight_offset: Scalar - Offset added to gamma before scaling
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        x: OutputTensor[dtype=dtype, rank=4, ...],
+        out_z: OutputTensor[dtype=dtype, rank=3, ...],
+        residual: InputTensor[dtype=dtype, rank=3, ...],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=3, ...],
+        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if output.shape() != u.shape():
+            raise Error("Output shape must match input u shape")
+
+        var batch = output.dim_size(0)
+        var dim = output.dim_size(1)
+        var seqlen = output.dim_size(2)
+        var dstate = A.dim_size(1)
+        var n_groups = B.dim_size(1)
+        var group_size = dim // n_groups
+
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var out_z_tt = out_z.to_tile_tensor[.int32]()
+        var residual_tt = residual.to_tile_tensor[.int32]()
+        var u_tt = u.to_tile_tensor[.int32]()
+        var delta_tt = delta.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
+        var gamma_tt = gamma.to_tile_tensor[.int32]()
+
+        comptime delta_softplus_int8: Int8 = Int8(
+            1
+        ) if Self.delta_softplus else Int8(0)
+
+        if dstate != 16 and dstate != 8:
+            raise Error(
+                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+            )
+
+        comptime if is_cpu[target]():
+            if dstate == 16:
+                ssd_combined_cpu[
+                    dtype,
+                    16,
+                ](
+                    batch,
+                    dim,
+                    seqlen,
+                    group_size,
+                    delta_softplus_int8,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    residual_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
+                    gamma_tt,
+                    epsilon,
+                    weight_offset,
+                    Optional[DeviceContext](ctx),
+                )
+            else:
+                ssd_combined_cpu[
+                    dtype,
+                    8,
+                ](
+                    batch,
+                    dim,
+                    seqlen,
+                    group_size,
+                    delta_softplus_int8,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    residual_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
+                    gamma_tt,
+                    epsilon,
+                    weight_offset,
+                    Optional[DeviceContext](ctx),
+                )
+        elif is_gpu[target]():
+            var gpu_ctx = ctx
+            var total_batch_dim = batch * dim
+            comptime BLOCK_SIZE = 128
+            var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
+
+            if dstate == 16:
+                comptime DSTATE_VAL = 16
+                var compiled_kernel = gpu_ctx.compile_function[
+                    ssd_combined_gpu[
+                        dtype,
+                        DSTATE_VAL,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        residual_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        delta_bias_tt.LayoutType,
+                        gamma_tt.LayoutType,
+                        output_tt.Storage,
+                    ]
+                ]()
+                gpu_ctx.enqueue_function(
+                    compiled_kernel,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(group_size),
+                    delta_softplus_int8,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    residual_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
+                    gamma_tt,
+                    epsilon,
+                    weight_offset,
+                    grid_dim=(num_blocks,),
+                    block_dim=(BLOCK_SIZE,),
+                )
+            else:
+                comptime DSTATE_VAL = 8
+                var compiled_kernel = gpu_ctx.compile_function[
+                    ssd_combined_gpu[
+                        dtype,
+                        DSTATE_VAL,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        residual_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        delta_bias_tt.LayoutType,
+                        gamma_tt.LayoutType,
+                        output_tt.Storage,
+                    ]
+                ]()
+                gpu_ctx.enqueue_function(
+                    compiled_kernel,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(group_size),
+                    delta_softplus_int8,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    residual_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
+                    gamma_tt,
+                    epsilon,
+                    weight_offset,
+                    grid_dim=(num_blocks,),
+                    block_dim=(BLOCK_SIZE,),
+                )
+        else:
+            raise Error("Unsupported target: " + target)
+
+
+# ===----------------------------------------------------------------------=== #
+# Mamba Split Conv1d Scan Combined (Mamba2-shape fused conv + sequential scan)
+# ===----------------------------------------------------------------------=== #
+
+
+@extensibility.register("mamba_split_conv1d_scan_combined")
+struct MambaSplitConv1dScanCombined[delta_softplus: Bool = False]:
+    """Fused split-conv1d + selective scan + optional RMSNorm + optional outproj.
+
+    Mamba2-shape kernel: head-sharded A (one scalar per head), sequential scan
+    inside, but fused with the upstream conv1d (after splitting xBC out of the
+    packed `zxbcdt` projection input) and optional downstream norm/outproj.
+
+    Parameters:
+        delta_softplus: If True, applies softplus activation to delta values.
+
+    Tensor Shapes:
+        - zxbcdt: (batch, seqlen, 2*dim + 2*ngroups*dstate + nheads) - Packed projection input
+        - conv_weight: (dim + 2*ngroups*dstate, width) - Conv1d weights for x/B/C channels
+        - conv_bias: (dim + 2*ngroups*dstate,) - Conv1d bias
+        - dt_bias: (nheads,) - dt bias (per head)
+        - A: (nheads,) - Scalar state-transition value per head
+        - D: (nheads, headdim) or (nheads,) - Skip connection (optional, can be empty)
+        - x: (batch, dim, num_chunks, 2*dstate) - Scan checkpoint state (output)
+        - out_z: (batch, dim, seqlen) - Pre-gating output (output)
+        - dt: (batch, nheads, seqlen) - dt tensor (output)
+        - B: (batch, ngroups, dstate, seqlen) - Input projection (output of conv split)
+        - C: (batch, ngroups, dstate, seqlen) - Output projection (output of conv split)
+        - z: (batch, dim, seqlen) - Gating tensor (output, split from zxbcdt)
+        - rmsnorm_weight: (dim,) - RMSNorm weight (optional, can be empty)
+        - outproj_weight: (out_dim, dim) - Output projection weight (optional, can be empty)
+        - outproj_bias: (out_dim,) - Output projection bias (optional, can be empty)
+        - output: (batch, seqlen, dim) or (batch, seqlen, out_dim) - Final output
+        - epsilon: Scalar - RMSNorm epsilon
+
+    Runtime scalar args:
+        seqlen, dim, nheads, headdim, ngroups, width, chunk_size - Shape config
+        norm_before_gate, has_rmsnorm, has_outproj - Int8 flags (0/1)
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        x: OutputTensor[dtype=dtype, rank=4, ...],
+        out_z: OutputTensor[dtype=dtype, rank=3, ...],
+        dt: OutputTensor[dtype=dtype, rank=3, ...],
+        B: OutputTensor[dtype=dtype, rank=4, ...],
+        C: OutputTensor[dtype=dtype, rank=4, ...],
+        z: OutputTensor[dtype=dtype, rank=3, ...],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        zxbcdt: InputTensor[dtype=dtype, rank=3, ...],
+        conv_weight: InputTensor[dtype=dtype, rank=2, ...],
+        conv_bias: InputTensor[dtype=dtype, rank=1, ...],
+        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
+        A: InputTensor[dtype=dtype, rank=1, ...],
+        D: InputTensor[dtype=dtype, rank=2, ...],
+        rmsnorm_weight: InputTensor[dtype=dtype, rank=1, ...],
+        outproj_weight: InputTensor[dtype=dtype, rank=2, ...],
+        outproj_bias: InputTensor[dtype=dtype, rank=1, ...],
+        nheads: Int,
+        headdim: Int,
+        ngroups: Int,
+        width: Int,
+        chunk_size: Int,
+        norm_before_gate: Int8,
+        has_rmsnorm: Int8,
+        has_outproj: Int8,
+        epsilon: Scalar[dtype=dtype],
+        ctx: DeviceContext,
+    ) capturing raises:
+        var batch = zxbcdt.dim_size(0)
+        var seqlen = zxbcdt.dim_size(1)
+        var dim = nheads * headdim
+        # dstate inferred from B's third dim (B is (batch, ngroups, dstate, seqlen))
+        var dstate = B.dim_size(2)
+
+        var zxbcdt_tt = zxbcdt.to_tile_tensor[.int32]()
+        var conv_weight_tt = conv_weight.to_tile_tensor[.int32]()
+        var conv_bias_tt = conv_bias.to_tile_tensor[.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var out_z_tt = out_z.to_tile_tensor[.int32]()
+        var dt_tt = dt.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var rmsnorm_weight_tt = rmsnorm_weight.to_tile_tensor[.int32]()
+        var outproj_weight_tt = outproj_weight.to_tile_tensor[.int32]()
+        var outproj_bias_tt = outproj_bias.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+
+        comptime delta_softplus_int8: Int8 = Int8(
+            1
+        ) if Self.delta_softplus else Int8(0)
+
+        if dstate != 16 and dstate != 8:
+            raise Error(
+                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+            )
+
+        comptime if is_cpu[target]():
+            if dstate == 16:
+                mamba_split_conv1d_scan_combined_cpu[
+                    dtype,
+                    16,
+                ](
+                    batch,
+                    seqlen,
+                    dim,
+                    nheads,
+                    headdim,
+                    ngroups,
+                    width,
+                    chunk_size,
+                    delta_softplus_int8,
+                    norm_before_gate,
+                    has_rmsnorm,
+                    has_outproj,
+                    zxbcdt_tt,
+                    conv_weight_tt,
+                    conv_bias_tt,
+                    dt_bias_tt,
+                    A_tt,
+                    D_tt,
+                    x_tt,
+                    out_z_tt,
+                    dt_tt,
+                    B_tt,
+                    C_tt,
+                    z_tt,
+                    rmsnorm_weight_tt,
+                    outproj_weight_tt,
+                    outproj_bias_tt,
+                    output_tt,
+                    epsilon,
+                    Optional[DeviceContext](ctx),
+                )
+            else:
+                mamba_split_conv1d_scan_combined_cpu[
+                    dtype,
+                    8,
+                ](
+                    batch,
+                    seqlen,
+                    dim,
+                    nheads,
+                    headdim,
+                    ngroups,
+                    width,
+                    chunk_size,
+                    delta_softplus_int8,
+                    norm_before_gate,
+                    has_rmsnorm,
+                    has_outproj,
+                    zxbcdt_tt,
+                    conv_weight_tt,
+                    conv_bias_tt,
+                    dt_bias_tt,
+                    A_tt,
+                    D_tt,
+                    x_tt,
+                    out_z_tt,
+                    dt_tt,
+                    B_tt,
+                    C_tt,
+                    z_tt,
+                    rmsnorm_weight_tt,
+                    outproj_weight_tt,
+                    outproj_bias_tt,
+                    output_tt,
+                    epsilon,
+                    Optional[DeviceContext](ctx),
+                )
+        elif is_gpu[target]():
+            var gpu_ctx = ctx
+            var total_batch_dim = batch * dim
+            comptime BLOCK_SIZE = 128
+            var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
+
+            if dstate == 16:
+                comptime DSTATE_VAL = 16
+                var compiled_kernel = gpu_ctx.compile_function[
+                    mamba_split_conv1d_scan_combined_gpu[
+                        dtype,
+                        DSTATE_VAL,
+                        zxbcdt_tt.LayoutType,
+                        conv_weight_tt.LayoutType,
+                        conv_bias_tt.LayoutType,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        dt_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        dt_bias_tt.LayoutType,
+                        rmsnorm_weight_tt.LayoutType,
+                        outproj_weight_tt.LayoutType,
+                        outproj_bias_tt.LayoutType,
+                    ]
+                ]()
+                gpu_ctx.enqueue_function(
+                    compiled_kernel,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(seqlen),
+                    Int32(dim),
+                    Int32(nheads),
+                    Int32(headdim),
+                    Int32(ngroups),
+                    Int32(width),
+                    Int32(chunk_size),
+                    delta_softplus_int8,
+                    norm_before_gate,
+                    has_rmsnorm,
+                    has_outproj,
+                    zxbcdt_tt,
+                    conv_weight_tt,
+                    conv_bias_tt,
+                    dt_bias_tt,
+                    A_tt,
+                    D_tt,
+                    x_tt,
+                    out_z_tt,
+                    dt_tt,
+                    B_tt,
+                    C_tt,
+                    z_tt,
+                    rmsnorm_weight_tt,
+                    outproj_weight_tt,
+                    outproj_bias_tt,
+                    output_tt,
+                    epsilon,
+                    grid_dim=(num_blocks,),
+                    block_dim=(BLOCK_SIZE,),
+                )
+            else:
+                comptime DSTATE_VAL = 8
+                var compiled_kernel = gpu_ctx.compile_function[
+                    mamba_split_conv1d_scan_combined_gpu[
+                        dtype,
+                        DSTATE_VAL,
+                        zxbcdt_tt.LayoutType,
+                        conv_weight_tt.LayoutType,
+                        conv_bias_tt.LayoutType,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        dt_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        dt_bias_tt.LayoutType,
+                        rmsnorm_weight_tt.LayoutType,
+                        outproj_weight_tt.LayoutType,
+                        outproj_bias_tt.LayoutType,
+                    ]
+                ]()
+                gpu_ctx.enqueue_function(
+                    compiled_kernel,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(seqlen),
+                    Int32(dim),
+                    Int32(nheads),
+                    Int32(headdim),
+                    Int32(ngroups),
+                    Int32(width),
+                    Int32(chunk_size),
+                    delta_softplus_int8,
+                    norm_before_gate,
+                    has_rmsnorm,
+                    has_outproj,
+                    zxbcdt_tt,
+                    conv_weight_tt,
+                    conv_bias_tt,
+                    dt_bias_tt,
+                    A_tt,
+                    D_tt,
+                    x_tt,
+                    out_z_tt,
+                    dt_tt,
+                    B_tt,
+                    C_tt,
+                    z_tt,
+                    rmsnorm_weight_tt,
+                    outproj_weight_tt,
+                    outproj_bias_tt,
+                    output_tt,
+                    epsilon,
+                    grid_dim=(num_blocks,),
+                    block_dim=(BLOCK_SIZE,),
+                )
+        else:
+            raise Error("Unsupported target: " + target)
