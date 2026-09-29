@@ -223,6 +223,54 @@ def create_paged_scale_tma_tile[
 
 
 @inline(.always)
+def create_flat_kv_tma_tile[
+    dtype: DType, //, BN: Int, BK: Int, swizzle_mode: TensorMapSwizzle
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    rows: Int,
+    heads: Int,
+    depth: Int,
+) raises -> TMATensorTile[dtype, 4, Index(1, BN, 1, BK), Index(1, BN, 1, BK)]:
+    """Builds the one-block form of the split KV descriptor.
+
+    A contiguous or ragged buffer has no blocks, so it declares a single one
+    spanning every row and is addressed at block 0 -- which is what
+    `MHAOperand.kv_tma_coords` returns by default. The rank matches
+    `PagedKVCache.create_paged_tma_tile` so a consumer that takes either needs
+    one code path rather than two.
+
+    Parameters:
+        dtype: Element type.
+        BN: Rows per tile.
+        BK: Depth per tile, a multiple of the swizzle granularity.
+        swizzle_mode: TMA swizzle for the innermost dimension.
+
+    Args:
+        ctx: Device context used to create the TMA descriptor.
+        ptr: Base of the buffer.
+        rows: Total rows.
+        heads: KV heads.
+        depth: Head size.
+
+    Returns:
+        The TMA descriptor.
+    """
+    var kv_tensor = TileTensor(
+        ptr,
+        InternalLayout(
+            Coord(1, rows, heads, depth),
+            Coord(rows * heads * depth, heads * depth, depth, Idx[1]),
+        ),
+    )
+    return create_tensor_tile[
+        Index(1, BN, 1, BK),
+        swizzle_mode=swizzle_mode,
+        __desc_shape=Index(1, BN, 1, BK),
+    ](ctx, kv_tensor)
+
+
+@inline(.always)
 def padded_depth[
     dtype: DType, swizzle_mode: TensorMapSwizzle, depth: Int
 ]() -> Int:
@@ -1559,6 +1607,27 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ...
 
     @inline(.always)
+    def kv_tma_coords(
+        self, batch_idx: UInt32, tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row_in_block, block)` coordinate of a token's KV tile.
+
+        Defaults to the flat form -- the whole pool as one block -- which is
+        what a contiguous cache wants. A paged cache overrides it: its pool
+        spans the entire KV allocation, so folding the block into the row
+        gives a coordinate that grows with total cache memory and leaves the
+        signed 32-bit TMA coordinate. Mirrors :meth:`scale_tma_coords`.
+
+        Args:
+            batch_idx: Batch entry to address.
+            tok_idx: Token within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return (Int32(self.row_idx(batch_idx, tok_idx)), Int32(0))
+
+    @inline(.always)
     def scale_tma_coords(
         self, batch_idx: UInt32, start_tok_idx: UInt32
     ) -> Tuple[Int32, Int32]:
@@ -1625,6 +1694,26 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ``physical_block * stride + offset``. Non-paged caches return
         the encoded index unchanged.
         """
+        ...
+
+    @inline(.always)
+    def create_paged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
+        ](),
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        Self.dtype, 4, Index(1, BN, 1, BK), Index(1, BN, 1, BK)
+    ]:
+        """Creates the split `(block, row_in_block)` TMA tile for this cache.
+
+        The counterpart of :meth:`create_tma_tile`, addressed by
+        :meth:`kv_tma_coords`. The flat descriptor folds the block into the
+        row, and that product spans the whole allocation rather than this
+        cache's share of it, so it leaves the signed 32-bit TMA coordinate on
+        a large pool."""
         ...
 
     @inline(.always)
@@ -2153,6 +2242,55 @@ struct ContinuousBatchingKVCache[
             "create_index_scale_tma_tile requires a quantized cache;"
             " ContinuousBatchingKVCache has no scale pool"
         )
+
+    @inline(.always)
+    def create_paged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
+        ](),
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        Self.dtype, 4, Index(1, BN, 1, BK), Index(1, BN, 1, BK)
+    ]:
+        """Builds the split descriptor over this cache's blocks.
+
+        The continuous cache is `[num_blocks, num_layers, seq_len, num_heads,
+        head_size]`, subset at the layer, so a block's rows are its sequence
+        and the pitch is the whole per-block span.
+
+        Parameters:
+            swizzle_mode: TMA swizzle for the innermost dimension.
+            BN: Rows per tile.
+            BK: Depth per tile, padded to the swizzle granularity.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+
+        Returns:
+            The TMA descriptor.
+        """
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
+        var total_blocks = Int(self.blocks.dim[0]())
+        var rows_per_block = Int(self.blocks.dim[1]())
+        var block_pitch = Int(self.blocks.layout.stride[0]().value())
+        comptime heads = Self.kv_params.num_heads
+        comptime depth = Self.kv_params.head_size
+        var kv_tensor = TileTensor(
+            self.blocks.ptr,
+            InternalLayout(
+                Coord(total_blocks, rows_per_block, heads, depth),
+                Coord(block_pitch, heads * depth, depth, Idx[1]),
+            ),
+        )
+        return create_tensor_tile[
+            Index(1, BN, 1, BK),
+            swizzle_mode=swizzle_mode,
+            __desc_shape=Index(1, BN, 1, BK),
+        ](ctx, kv_tensor)
 
     @inline(.always)
     def create_tma_tile[
@@ -2790,6 +2928,43 @@ struct PagedKVCache[
         )
 
     @inline(.always)
+    def kv_tma_coords(
+        self, batch_idx: UInt32, tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row_in_block, block)` coordinate of a token's KV tile.
+
+        What :meth:`create_paged_tma_tile` is addressed by, and the same split
+        :meth:`scale_tma_coords` makes for the scale pool. :meth:`row_idx`
+        folds these two into `block * stride + row`, and that product is
+        bounded by the whole slab rather than by this leaf's share of it: a
+        shared-slab allocator hands a small-page leaf millions of blocks, and
+        a TMA coordinate is signed 32-bit. Split, each coordinate is bounded
+        by something that does not track total cache memory -- the block
+        count, and a block's own rows.
+
+        Args:
+            batch_idx: Batch entry whose lookup table is read.
+            tok_idx: Token within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        var lut_block_index, tok_in_block_idx = divmod(
+            Int(tok_idx), Self.page_size
+        )
+        debug_assert(
+            lut_block_index < Int(self.lookup_table.dim[1]()),
+            "lut_block_index is OOB. Attempted to access LUT column ",
+            lut_block_index,
+            " with lookup_table inner dim ",
+            Int(self.lookup_table.dim[1]()),
+        )
+        return (
+            Int32(tok_in_block_idx),
+            Int32(self.lookup_table[Int(batch_idx), lut_block_index]),
+        )
+
+    @inline(.always)
     def row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         var lut_block_index, tok_in_block_idx = divmod(
@@ -3058,6 +3233,78 @@ struct PagedKVCache[
             fold_chunks=fold_chunks,
             row_major=row_major,
         ](ctx, self.blocks.ptr, rows)
+
+    @inline(.always)
+    def create_paged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int = padded_depth[
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
+        ](),
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        Self.dtype,
+        4,
+        Index(1, BN, 1, BK),
+        Index(1, BN, 1, BK),
+    ]:
+        """Builds a `total_blocks x page_size x heads x depth` KV descriptor.
+
+        The split counterpart of :meth:`create_tma_tile`, addressed by
+        :meth:`kv_tma_coords` rather than by :meth:`row_idx`. The flat
+        descriptor folds the block into the row coordinate, and that product
+        spans the whole shared slab, so it leaves signed 32 bits while the
+        slab is still an ordinary size. Here the block is its own coordinate
+        and neither one tracks total cache memory. The scale pool retired the
+        same ceiling the same way; see :func:`create_paged_scale_tma_tile`.
+
+        `page_size` is the extent rather than the block pitch: only a page of
+        a block's `num_layers * page_size` rows belong to this layer, and they
+        are contiguous, so the layer rides in `ptr` and the rest is stride.
+        Declaring the pitch instead would run the last block's extent past the
+        allocation by the layer's own offset.
+
+        A tile never straddles a block, which is what lets the block be
+        constant across one copy: the consumers assert `page_size == 0` or
+        `page_size % BN == 0` and route any other page to a scalar kernel.
+
+        Parameters:
+            swizzle_mode: TMA swizzle for the innermost dimension.
+            BN: Rows per tile.
+            BK: Depth per tile, padded to the swizzle granularity.
+
+        Args:
+            ctx: Device context used to create the TMA descriptor.
+
+        Returns:
+            The TMA descriptor.
+        """
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
+        comptime assert Self.page_size > 0, (
+            "create_paged_tma_tile requires a paged operand; a ragged one has"
+            " no block to split the coordinate on"
+        )
+        # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads,
+        # head_size], subset at kv and layer, so `blocks.ptr` already carries
+        # this layer's offset and `stride[0]` is the whole per-block pitch.
+        var total_blocks = Int(self.blocks.dim[0]())
+        var block_pitch = Int(self.blocks.layout.stride[0]().value())
+        comptime heads = Self.kv_params.num_heads
+        comptime depth = Self.kv_params.head_size
+        var kv_tensor = TileTensor(
+            self.blocks.ptr,
+            InternalLayout(
+                Coord(total_blocks, Self.page_size, heads, depth),
+                Coord(block_pitch, heads * depth, depth, Idx[1]),
+            ),
+        )
+        return create_tensor_tile[
+            Index(1, BN, 1, BK),
+            swizzle_mode=swizzle_mode,
+            __desc_shape=Index(1, BN, 1, BK),
+        ](ctx, kv_tensor)
 
     @inline(.always)
     def create_index_scale_tma_tile[

@@ -24,6 +24,8 @@ from nn.attention.gpu.mla_index_fp8 import (
 )
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
+    _INDEX_SWIZZLE,
+    KTMATileT,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -71,6 +73,9 @@ def _score_paged_sm100[
     var k_cache = k_collection.get_key_cache(0)
     var k_op = KVCacheMHAOperand(k_cache)
     var ks_op = KVCacheScalesMHAOperand(k_cache)
+    var k_tma_tile = rebind[KTMATileT[DType.float8_e4m3fn, _BM_KEY, depth]](
+        k_cache.create_paged_tma_tile[_INDEX_SWIZZLE, BN=_BM_KEY, BK=depth](ctx)
+    )
     fp8_index_score_sm100[
         DType.float8_e4m3fn,
         type_of(k_op),
@@ -88,6 +93,7 @@ def _score_paged_sm100[
         q_s,
         k_op,
         ks_op,
+        k_tma_tile,
         input_row_offsets,
         batch_size,
         max_seq_len,

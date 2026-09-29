@@ -210,6 +210,28 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         )
 
     @inline(.always)
+    def kv_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row_in_block, block)` coordinate of a token's KV tile.
+
+        Defaults to the flat form, which is one block: the row is this
+        operand's own row index and the block is 0. A paged operand overrides
+        this, because folding its block into the row makes the coordinate
+        scale with the whole shared slab rather than with one block, and a TMA
+        coordinate is signed 32-bit. Mirrors :meth:`scale_tma_coords`, which
+        splits for the same reason.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return (Int32(self.row_idx(batch_idx, start_tok_idx)), Int32(0))
+
+    @inline(.always)
     def populate[
         BN: Int,
         base_alignment: Int,
@@ -559,6 +581,25 @@ struct KVCacheMHAOperand[
     def num_kv_rows(self) -> Int:
         """Returns the total number of virtual rows in the KV memory view."""
         return self.cache.num_kv_rows()
+
+    @inline(.always)
+    def kv_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """Forwards to the cache, which knows its own paging.
+
+        The trait's default folds the block into the row, which is what this
+        override exists to avoid on a paged cache; see
+        `PagedKVCache.kv_tma_coords`.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return self.cache.kv_tma_coords(batch_idx, start_tok_idx)
 
     @inline(.always)
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:

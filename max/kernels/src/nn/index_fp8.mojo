@@ -32,10 +32,12 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.sync import barrier
 from max.gpu.memory import external_memory
+from kv_cache.types import create_flat_kv_tma_tile
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.attention.gpu.nvidia.common import q_tma
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
+    _INDEX_SWIZZLE,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -430,6 +432,11 @@ def fp8_index[
             or type_of(k_operand).page_size % _BM_KEY == 0
         )
     ):
+        # One-block form of the same descriptor: a ragged buffer has no
+        # blocks, so it declares one and is addressed at block 0.
+        var k_tma_tile = create_flat_kv_tma_tile[
+            BN=_BM_KEY, BK=depth, swizzle_mode=_INDEX_SWIZZLE
+        ](ctx, k_buf.ptr, Int(total_keys), 1, depth)
         fp8_index_score_sm100[
             dtype,
             type_of(k_operand),
@@ -462,6 +469,7 @@ def fp8_index[
             q_s.as_imm(),
             k_operand,
             ks_operand,
+            k_tma_tile,
             valid_length,
             batch_size,
             max_seq_len,

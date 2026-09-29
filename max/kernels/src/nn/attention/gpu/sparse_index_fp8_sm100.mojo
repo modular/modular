@@ -105,6 +105,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
+    TMATensorTile,
     create_split_tma,
 )
 
@@ -201,9 +202,19 @@ comptime _Q1SmemOffset[
 comptime QTMATileT[
     dtype: DType, MMA_N: Int, depth: Int
 ] = SplitLastDimTMATensorTile[dtype, Index(MMA_N, 1, depth), _INDEX_SWIZZLE]
-comptime KTMATileT[
-    dtype: DType, BM_key: Int, depth: Int
-] = SplitLastDimTMATensorTile[dtype, Index(BM_key, 1, depth), _INDEX_SWIZZLE]
+comptime KTMATileT[dtype: DType, BM_key: Int, depth: Int] = TMATensorTile[
+    dtype,
+    4,
+    Index(1, BM_key, 1, depth),
+    Index(1, BM_key, 1, depth),
+]
+"""The K descriptor, addressed by `(row_in_block, block)`.
+
+Rank 4 rather than a flat row because the flat form folds the block into the
+row, and that product spans the whole shared KV slab -- it leaves signed 32
+bits on a large pool while this leaf's own share is unremarkable. See
+`PagedKVCache.create_paged_tma_tile`.
+"""
 
 
 @inline(.always)
@@ -382,12 +393,14 @@ def _fp8_index_body[
     comptime k_bytes = k_elems * size_of[dtype]()
     comptime q_bytes = q_elems * size_of[dtype]()
     if tid == 0:
-        var k_row0 = Int(k_operand.row_idx(UInt32(b), UInt32(key_start)))
+        var k_row0, k_block = k_operand.kv_tma_coords(
+            UInt32(b), UInt32(key_start)
+        )
         var k_dst = TileTensor[
             dtype, type_of(k_flat_layout), address_space=.SHARED
         ](k_smem, k_flat_layout)
         k_mbar[0].expect_bytes(Int32(k_bytes))
-        k_tma.async_copy_3d(k_dst, k_mbar[0], (0, 0, k_row0))
+        k_tma.async_copy_4d(k_dst, k_mbar[0], (0, 0, Int(k_row0), Int(k_block)))
         # The first token tile's Q TMA is independent of K, so it rides
         # alongside the K TMA instead of stalling behind the k_mbar wait. This
         # prologue arm is the sole producer of q_mbar[0]'s first completion;
@@ -807,6 +820,7 @@ def fp8_index_score_sm100[
     q_s: TileTensor[mut=False, .float32, ...],
     k_operand: KOperand,
     ks_operand: KSOperand,
+    k_tma: KTMATileT[dtype, _BM_KEY, depth],
     valid_length: TileTensor[mut=False, .uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
@@ -850,6 +864,10 @@ def fp8_index_score_sm100[
         q_s: Query scales `[total_seq, num_heads]`, f32.
         k_operand: K values as an `MHAOperand`.
         ks_operand: K scales as an `MHAOperand`.
+        k_tma: The K descriptor, addressed by `MHAOperand.kv_tma_coords`.
+            Built by the caller, where the cache's concrete type is known,
+            so a paged operand can supply the split `(block, row_in_block)`
+            form and a ragged one its single-block equivalent.
         valid_length: Ragged query-token offsets `[batch + 1]`.
         batch_size: Batch size.
         max_seq_len: Upper bound on any batch entry's query-token count; when
@@ -902,12 +920,6 @@ def fp8_index_score_sm100[
 
     var num_q_tokens = Int(q.dim[0]())
     var q_ptr = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr)
-    var k_tma_tile = k_operand.create_tma_tile[
-        _INDEX_SWIZZLE,
-        BN=BM_key,
-        depth=depth,
-        BK=depth,
-    ](ctx)
 
     # Prefill route: the warp-specialized K-streaming kernel (Q resident, causal
     # triangle trim) vs the K-resident scorer. Both fold the same (token, key, head)
@@ -1052,7 +1064,7 @@ def fp8_index_score_sm100[
                     ](
                         q_ptr,
                         num_q_tokens,
-                        rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
+                        rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                         k_operand,
                         ks_operand,
                         valid_length,
@@ -1082,7 +1094,7 @@ def fp8_index_score_sm100[
             ](
                 q_ptr,
                 num_q_tokens,
-                rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
+                rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                 k_operand,
                 ks_operand,
                 valid_length,
@@ -1183,7 +1195,7 @@ def fp8_index_score_sm100[
         if num_slices > 1:
             ctx.enqueue_function[kernel_split](
                 rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
-                rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
+                rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                 k_operand,
                 ks_operand,
                 valid_length.as_imm(),
@@ -1207,7 +1219,7 @@ def fp8_index_score_sm100[
         else:
             ctx.enqueue_function[kernel_flat](
                 rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
-                rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
+                rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                 k_operand,
                 ks_operand,
                 valid_length.as_imm(),

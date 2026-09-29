@@ -32,6 +32,8 @@ from kv_cache.types import KVCollectionT
 from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
+    _INDEX_SWIZZLE,
+    KTMATileT,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -576,6 +578,17 @@ def mla_indexer_ragged_float8_paged[
             scores_buf.enqueue_fill(-Float32.MAX)
 
         comptime if use_sm100_scorer:
+            # The split `(block, row_in_block)` descriptor: folding the block
+            # into the row spans the whole shared slab and leaves signed 32
+            # bits on a large pool. See `PagedKVCache.create_paged_tma_tile`.
+            # `rebind` because the collection's `CacheType.dtype` is not
+            # syntactically `dtype`, though the route already requires them
+            # equal -- the same rebind the scorer does on its own tiles.
+            var k_tma_tile = rebind[KTMATileT[dtype, _BM_KEY, depth]](
+                k_cache.create_paged_tma_tile[
+                    _INDEX_SWIZZLE, BN=_BM_KEY, BK=depth
+                ](ctx)
+            )
             fp8_index_score_sm100[
                 dtype,
                 type_of(k_operand),
@@ -607,6 +620,7 @@ def mla_indexer_ragged_float8_paged[
                 q_s.as_imm(),
                 k_operand,
                 ks_operand,
+                k_tma_tile,
                 input_row_offsets,
                 batch_size,
                 max_new_tokens,

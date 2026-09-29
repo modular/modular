@@ -62,6 +62,8 @@ from layout import (
     row_major,
 )
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
+    _BM_KEY,
+    _INDEX_SWIZZLE,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -85,7 +87,7 @@ def _launch_scorer[
     KCollectionT: KVCollectionT,
 ](
     o_tile: TileTensor[.float32, ...],
-    q_tile: TileTensor[mut=False, .float8_e4m3fn, ...],
+    q_tile: TileTensor[mut=False, KCollectionT.CacheType.dtype, ...],
     qs_tile: TileTensor[mut=False, .float32, ...],
     input_row_offsets_tile: TileTensor[mut=False, .uint32, ...],
     k_collection: KCollectionT,
@@ -97,8 +99,11 @@ def _launch_scorer[
     var k_cache = k_collection.get_key_cache(0)
     var k_op = KVCacheMHAOperand(k_cache)
     var ks_op = KVCacheScalesMHAOperand(k_cache)
+    var k_tma_tile = k_cache.create_paged_tma_tile[
+        _INDEX_SWIZZLE, BN=_BM_KEY, BK=depth
+    ](ctx)
     fp8_index_score_sm100[
-        DType.float8_e4m3fn,
+        KCollectionT.CacheType.dtype,
         type_of(k_op),
         type_of(ks_op),
         num_heads,
@@ -116,6 +121,7 @@ def _launch_scorer[
         qs_tile,
         k_op,
         ks_op,
+        k_tma_tile,
         input_row_offsets_tile,
         batch_size,
         seq_len,

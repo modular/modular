@@ -146,9 +146,12 @@ comptime _INDEX_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
 comptime QTMATileT[
     dtype: DType, MMA_N: Int, depth: Int
 ] = SplitLastDimTMATensorTile[dtype, Index(MMA_N, 1, depth), _INDEX_SWIZZLE]
-comptime KTMATileT[
-    dtype: DType, BM_key: Int, depth: Int
-] = SplitLastDimTMATensorTile[dtype, Index(BM_key, 1, depth), _INDEX_SWIZZLE]
+comptime KTMATileT[dtype: DType, BM_key: Int, depth: Int] = TMATensorTile[
+    dtype,
+    4,
+    Index(1, BM_key, 1, depth),
+    Index(1, BM_key, 1, depth),
+]
 # The k-scale ring's descriptor: a flat `1 x KS_BOX` window on the scale pool,
 # unswizzled because one scalar per key has no depth to swizzle. A SECOND
 # descriptor rather than a widening of `KTMATileT` because the scales live in
@@ -1848,11 +1851,11 @@ def _fp8_index_score_prefill_kernel_sm100[
                 with_q: Bool = False
             ](it: Int32, state: PipelineState[NSTAGE]):
                 var s = state.index()
-                # `k_row0` stays `Int`: `async_copy_3d` takes
-                # `coords: Tuple[Int, Int, Int]`, so narrowing it only adds a
-                # widening cast back at the call.
-                var k_row0 = Int(
-                    k_operand.row_idx(UInt32(b), UInt32(it * Int32(BM_key)))
+                # Split rather than folded: the fold spans the whole shared
+                # slab and leaves the signed 32-bit TMA coordinate on a large
+                # pool. See `MHAOperand.kv_tma_coords`.
+                var k_row0, k_block = k_operand.kv_tma_coords(
+                    UInt32(b), UInt32(it * Int32(BM_key))
                 )
                 # The scales' own row index, NOT `k_row0`: a paged scale pool
                 # resolves its block through `scales_lookup_table` and strides
@@ -1879,7 +1882,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                     ),
                     e,
                 )
-                k_tma.async_copy_3d_elect(k_dst, k_full[s], (0, 0, k_row0), e)
+                k_tma.async_copy_4d_elect(
+                    k_dst, k_full[s], (0, 0, Int(k_row0), Int(k_block)), e
+                )
                 # Rides the K tile's barrier for the same reason Q0 does: the
                 # bytes are summed into the one `expect_tx`, so the slot opens
                 # when the last byte of either copy lands and the consumer needs
