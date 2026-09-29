@@ -629,6 +629,11 @@ class TextGenAggregates(_CompletedRunBase):
     # high request rate with a collapsed rate here is a backend that took
     # ``response_format`` and did nothing with it.
     constrained_conformance_rate: float | None = None
+    # Share of the measured requests that offered ``tools``, and of those, the
+    # share whose response called one: the client-side counterparts of
+    # ``maxserve.tool_call.requests`` and ``.responses``.
+    tool_request_rate: float | None = None
+    tool_call_response_rate: float | None = None
 
     max_input: int
     max_output: int
@@ -724,6 +729,10 @@ class TextGenAggregates(_CompletedRunBase):
             d["constrained_conformance_rate"] = (
                 self.constrained_conformance_rate
             )
+        if self.tool_request_rate is not None:
+            d["tool_request_rate"] = self.tool_request_rate
+        if self.tool_call_response_rate is not None:
+            d["tool_call_response_rate"] = self.tool_call_response_rate
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
@@ -1223,6 +1232,10 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         ),
         constrained_conformance_rate=(
             text_data.constrained_conformance_rate if text_data else None
+        ),
+        tool_request_rate=text_data.tool_request_rate if text_data else None,
+        tool_call_response_rate=(
+            text_data.tool_call_response_rate if text_data else None
         ),
     )
 

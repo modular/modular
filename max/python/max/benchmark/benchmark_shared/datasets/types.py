@@ -148,6 +148,9 @@ class SessionMessage:
     # one; an assistant message is replayed history and asks the server for
     # nothing.
     response_format: ResponseFormat | None = None
+    # Sent as this turn's chat-completions ``tools`` field. Like
+    # ``response_format``, only a "user" message carries one.
+    tools: list[dict[str, Any]] | None = None
 
 
 @dataclass

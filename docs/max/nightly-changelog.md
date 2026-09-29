@@ -154,6 +154,17 @@ This version is still a work in progress.
   at the default `every` it lands directly on the share of requests that set
   `response_format`; `first` and `last` narrow eligibility to one turn per
   session, so the realized request share is correspondingly lower.
+- Added `--tools` and `--tools-fraction` to `max benchmark`, which send OpenAI
+  tool definitions on any workload, multi-turn chat sessions included.
+  Previously only datasets that carry their own tools sent any, and only on
+  single-turn requests. `--tools` takes a `tools` list (inline JSON or
+  `@file`); `--tools-fraction` (default 1.0) sets the fraction of requests, or
+  of chat sessions, that carry it, and a selected session sends its tools on
+  every turn. The rendered definitions are carved out of a session's first
+  turn or a single-turn string prompt, so the input-length distribution still
+  describes the whole prompt. Results report `tool_request_rate` and
+  `tool_call_response_rate`: the share of requests that offered tools, and the
+  share of those whose response called one.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an

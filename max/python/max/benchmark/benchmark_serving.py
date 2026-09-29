@@ -35,7 +35,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -69,6 +69,9 @@ from max.benchmark.benchmark_shared.datasets.image_augmentation import (
 )
 from max.benchmark.benchmark_shared.datasets.response_format_augmentation import (
     augment_samples_with_response_format,
+)
+from max.benchmark.benchmark_shared.datasets.tool_augmentation import (
+    augment_samples_with_tools,
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
@@ -143,6 +146,7 @@ from max.profiler.cpu import (
     collect_pids_for_port,
 )
 from max.profiler.gpu import GPUDiagContext, GpuStatsRecorder
+from openai.types.chat import ChatCompletionToolParam
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import TypeAdapter, ValidationError
 
@@ -243,6 +247,37 @@ def parse_response_format(arg: str) -> ResponseFormat:
         return TypeAdapter(ResponseFormat).validate_json(arg)
     except (json.JSONDecodeError, ValidationError) as e:
         raise ValueError(f"Invalid response format: {e}") from e
+
+
+def parse_tools(arg: str) -> list[Mapping[str, Any]]:
+    """Parses tool definitions from a CLI arg (inline JSON or @filepath).
+
+    Args:
+        arg: Either a JSON list or '@path/to/tools.json' to load from file.
+
+    Returns:
+        The tool definitions, validated against the OpenAI tool shape.
+
+    Raises:
+        ValueError: If the JSON is invalid, the file cannot be read, or the
+            value is not a non-empty list of OpenAI tool definitions.
+    """
+    source = "tools"
+    raw = arg
+    if arg.startswith("@"):
+        file_path = Path(arg[1:])
+        source = f"tools file {file_path}"
+        try:
+            raw = file_path.read_text()
+        except FileNotFoundError as e:
+            raise ValueError(f"Tools file not found: {file_path}") from e
+    try:
+        tools = TypeAdapter(list[ChatCompletionToolParam]).validate_json(raw)
+    except (json.JSONDecodeError, ValidationError) as e:
+        raise ValueError(f"Invalid {source}: {e}") from e
+    if not tools:
+        raise ValueError(f"Invalid {source}: the list is empty")
+    return [dict(tool) for tool in tools]
 
 
 def get_default_trace_path() -> str:
@@ -1259,6 +1294,15 @@ def _sample_for_seed(
             response_format=parse_response_format(args.response_format),
             fraction=args.response_format_fraction,
             turn=args.response_format_turn,
+            seed=seed,
+        )
+
+    if args.tools is not None:
+        augment_samples_with_tools(
+            samples,
+            tools=parse_tools(args.tools),
+            fraction=args.tools_fraction,
+            tokenizer=tokenizer,
             seed=seed,
         )
 

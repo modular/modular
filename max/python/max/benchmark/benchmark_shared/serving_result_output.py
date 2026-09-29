@@ -511,6 +511,19 @@ def print_benchmark_summary(
                     summary.constrained_conformance_rate,
                 )
             )
+    if summary.tool_request_rate:
+        print(
+            "{:<40} {:<10.2%}".format(
+                "Tool-offering requests:", summary.tool_request_rate
+            )
+        )
+        if summary.tool_call_response_rate is not None:
+            print(
+                "{:<40} {:<10.2%}".format(
+                    "  of which called a tool:",
+                    summary.tool_call_response_rate,
+                )
+            )
 
     latency = groups.latency_stats
     if latency is not None:

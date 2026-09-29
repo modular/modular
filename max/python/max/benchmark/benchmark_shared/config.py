@@ -613,6 +613,37 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    tools: str | None = Field(
+        default=None,
+        description=(
+            "OpenAI chat-completions tool definitions to send, as a JSON list "
+            "or '@path/to/tools.json' to load from file. Applied to the share "
+            "of traffic --tools-fraction selects, except chat-judge "
+            "workloads, whose driver builds its own requests, and requests "
+            "whose dataset already attached tools. The rendered definitions "
+            "are carved out of a chat session's first turn or a single-turn "
+            "string prompt, so the drawn input length still describes the "
+            "whole prompt. Unrelated to --agentic-tool-profiles, which shapes "
+            "agent-loop load and sends no tools."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    tools_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or of chat sessions "
+            "(multi-turn) that carry --tools. A selected session carries them "
+            "on every turn, as a real agent does, so the realized request "
+            "share tracks the fraction but is weighted by session length. "
+            "Defaults to 1.0, so --tools alone applies to everything."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
     # cyclopts wants scalar key=value pairs by default and can't take a single
     # nested-JSON object or file path as one value. accepts_keys=False passes
     # the raw token through for the validator to parse.

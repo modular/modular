@@ -270,6 +270,8 @@ def calculate_metrics(
     constrained_requests = 0
     conforming_constrained_requests = 0
     judged_constrained_requests = 0
+    tool_requests = 0
+    tool_call_responses = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -360,6 +362,10 @@ def calculate_metrics(
             unconstrained_ttfts.append(o.ttft)
             if tpot is not None:
                 unconstrained_tpots.append(tpot)
+        if o.tools_offered:
+            tool_requests += 1
+            if o.tool_call_returned:
+                tool_call_responses += 1
         if o.ttft > 0:
             input_throughputs.append(o.prompt_len / o.ttft)
         if (o.latency - o.ttft) > 0:
@@ -566,6 +572,10 @@ def calculate_metrics(
             conforming_constrained_requests / judged_constrained_requests
             if judged_constrained_requests
             else None
+        ),
+        tool_request_rate=(tool_requests / len(measured) if measured else None),
+        tool_call_response_rate=(
+            tool_call_responses / tool_requests if tool_requests else None
         ),
         step_tpot_ms=StandardPercentileMetrics(
             step_tpots, scale_factor=1000.0, unit="ms"

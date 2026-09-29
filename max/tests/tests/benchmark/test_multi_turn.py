@@ -1121,3 +1121,207 @@ async def test_serialized_payload_carries_the_turn_response_format(
     payload = client.post.call_args.kwargs["json"]
     assert payload["response_format"] == response_format
     assert not payload["ignore_eos"]
+
+
+def test_chat_session_driver_sends_each_turns_own_tools() -> None:
+    """A turn's tools go out on that turn and no other.
+
+    Reassigned every turn like ``response_format``: the session reuses one
+    ``RequestFuncInput``, so a turn with tools would otherwise leak them onto
+    the tool-free turns after it. Tools leave ``ignore_eos`` as drawn.
+    """
+    tools = [{"type": "function", "function": {"name": "read_file"}}]
+    sent: list[tuple[list[dict[str, object]] | None, bool]] = []
+
+    class SnapshottingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            sent.append(
+                (request_func_input.tools, request_func_input.ignore_eos)
+            )
+            return RequestFuncOutput(
+                success=True, latency=0.1, ttft=0.05, generated_text="ok"
+            )
+
+    async def run_test() -> None:
+        messages = [
+            SessionMessage(source="user", content="one", num_tokens=5),
+            SessionMessage(source="assistant", content="", num_tokens=5),
+            SessionMessage(
+                source="user", content="two", num_tokens=5, tools=tools
+            ),
+            SessionMessage(source="assistant", content="", num_tokens=5),
+            SessionMessage(source="user", content="three", num_tokens=5),
+            SessionMessage(source="assistant", content="", num_tokens=5),
+        ]
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=SnapshottingDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+        )
+
+    asyncio.run(run_test())
+
+    assert sent == [(None, True), (tools, True), (None, True)]
+
+
+def _mock_chat_stream(mocker: MockerFixture, chunks: list[bytes]) -> MagicMock:
+    """Patches aiohttp so a chat request streams ``chunks`` back.
+
+    Returns the mocked client, whose ``post`` records the sent payload.
+    """
+    mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+    session_class = mocker.patch(
+        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
+    )
+    client = session_class.return_value.__aenter__.return_value
+
+    async def body() -> AsyncIterator[bytes]:
+        for chunk in chunks:
+            yield chunk
+        yield b"data: [DONE]\n\n"
+
+    response = mocker.AsyncMock()
+    response.status = 200
+    response.content = body()
+    post_ctx = mocker.AsyncMock()
+    post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
+    post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
+    client.post = mocker.Mock(return_value=post_ctx)
+    return client
+
+
+def _chat_input(tools: list[dict[str, object]] | None) -> RequestFuncInput:
+    return RequestFuncInput(
+        model="test-model",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt=[
+            ChatMessage(role="user", content=[TextContentBlock(text="hi")])
+        ],
+        images=[],
+        api_url="http://localhost:8000/v1/chat/completions",
+        prompt_len=10,
+        max_tokens=16,
+        ignore_eos=True,
+        tools=tools,
+    )
+
+
+_TOOL_CALL_CHUNK = (
+    b'data: {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c0",'
+    b' "type": "function", "function": {"name": "read_file",'
+    b' "arguments": "{}"}}]}}]}\n\n'
+)
+
+
+@pytest.mark.asyncio
+async def test_serialized_payload_carries_tools_and_flags_a_tool_call(
+    mocker: MockerFixture,
+) -> None:
+    """The serialized body carries ``tools``, and a streamed tool call is
+    recorded against the request that offered them.
+
+    Checked on the wire because a mix that never reaches the payload would
+    report tool-calling numbers for requests the server saw as plain chat.
+    """
+    tools: list[dict[str, object]] = [
+        {"type": "function", "function": {"name": "read_file"}}
+    ]
+    client = _mock_chat_stream(mocker, [_TOOL_CALL_CHUNK])
+
+    output = await OpenAIChatCompletionsRequestDriver().request(
+        _chat_input(tools)
+    )
+
+    payload = client.post.call_args.kwargs["json"]
+    assert payload["tools"] == tools
+    assert output.success
+    assert output.tools_offered
+    assert output.tool_call_returned
+
+
+@pytest.mark.asyncio
+async def test_plain_answer_to_offered_tools_is_not_a_tool_call(
+    mocker: MockerFixture,
+) -> None:
+    _mock_chat_stream(
+        mocker, [b'data: {"choices": [{"delta": {"content": "done"}}]}\n\n']
+    )
+    output = await OpenAIChatCompletionsRequestDriver().request(
+        _chat_input([{"type": "function", "function": {"name": "read_file"}}])
+    )
+    assert output.tools_offered
+    assert not output.tool_call_returned
+
+
+@pytest.mark.asyncio
+async def test_request_without_tools_is_not_counted_as_offering_them(
+    mocker: MockerFixture,
+) -> None:
+    client = _mock_chat_stream(
+        mocker, [b'data: {"choices": [{"delta": {"content": "done"}}]}\n\n']
+    )
+    output = await OpenAIChatCompletionsRequestDriver().request(
+        _chat_input(None)
+    )
+    assert "tools" not in client.post.call_args.kwargs["json"]
+    assert not output.tools_offered
+
+
+@pytest.mark.asyncio
+async def test_atom_tool_call_response_is_a_success_and_flagged(
+    mocker: MockerFixture,
+) -> None:
+    """ATOM answers non-streaming. A response that is only a tool call must
+    still count as content, and be recorded as a call."""
+    mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
+    session_class = mocker.patch(
+        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
+    )
+    client = session_class.return_value.__aenter__.return_value
+    response = mocker.AsyncMock()
+    response.status = 200
+    response.json = mocker.AsyncMock(
+        return_value={
+            "choices": [
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "c0",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": '{"path": "a.py"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ],
+            "usage": {"ttft_s": 0.1, "latency_s": 0.5, "completion_tokens": 8},
+        }
+    )
+    post_ctx = mocker.AsyncMock()
+    post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
+    post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
+    client.post = mocker.Mock(return_value=post_ctx)
+
+    output = await OpenAIChatCompletionsRequestDriver(backend="atom").request(
+        _chat_input([{"type": "function", "function": {"name": "read_file"}}])
+    )
+
+    assert output.success, output.error
+    assert output.generated_text == 'read_file{"path": "a.py"}'
+    assert output.tools_offered
+    assert output.tool_call_returned

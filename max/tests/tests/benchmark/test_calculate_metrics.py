@@ -2000,3 +2000,46 @@ def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
     assert util == [75.0, 50.0]
     # Reported mean GPU util is the mean across all engine devices seen.
     assert statistics.mean(util) == 62.5
+
+
+def test_tool_rates_count_offers_and_calls_separately() -> None:
+    """The request rate is over every measured request; the call rate only
+    over the ones that offered tools, as production's two counters are."""
+    outputs = _constrained_split_outputs(pairs=4)
+    for o in outputs:
+        o.response_format_constrained = False
+    for i, o in enumerate(outputs[:4]):
+        o.tools_offered = True
+        o.tool_call_returned = i < 3
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.tool_request_rate == 4 / len(outputs)
+    assert text.tool_call_response_rate == 0.75
+
+
+def test_tool_rates_reach_result_groups_and_the_flat_result_dict() -> None:
+    """The console summary and stored JSON read ``result_groups`` and the
+    flat dict, not the aggregates."""
+    outputs = _constrained_split_outputs()
+    for o in outputs:
+        o.tools_offered = True
+    outputs[0].tool_call_returned = True
+    metrics = _calculate_for(outputs)
+    summary = metrics.result_groups.summary  # type: ignore[attr-defined]
+    assert summary.tool_request_rate == 1.0
+    assert summary.tool_call_response_rate == 0.25
+    d = metrics.text_data.to_result_dict()  # type: ignore[attr-defined]
+    assert d["tool_request_rate"] == 1.0
+    assert d["tool_call_response_rate"] == 0.25
+
+
+def test_tool_call_rate_is_none_without_tool_requests() -> None:
+    outputs = [
+        o
+        for o in _constrained_split_outputs()
+        if not o.response_format_constrained
+    ]
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.tool_request_rate == 0.0
+    assert text.tool_call_response_rate is None

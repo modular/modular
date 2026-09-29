@@ -385,6 +385,13 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     # Whether the generated text satisfied that response_format. ``None`` when
     # the request was unconstrained or produced nothing to judge.
     response_format_conformed: bool | None = None
+    # Whether the request offered ``tools``, and whether the response contained
+    # a tool call. Offered but never called means the prompts gave the model no
+    # reason to use its tools: MAX Serve builds the tool grammar but never
+    # enforces it, so the run measures the definitions in the prompt and little
+    # of tool-call decoding.
+    tools_offered: bool = False
+    tool_call_returned: bool = False
 
 
 @dataclass
@@ -729,6 +736,11 @@ async def _run_openai_stream_request(
                         # Skip content processing for chunks with no choices.
                         if not data.choices:
                             continue
+                        if (
+                            isinstance(data, _ChatCompletionChunk)
+                            and data.choices[0].delta.tool_calls
+                        ):
+                            output.tool_call_returned = True
 
                         # Only track timing for chunks with actual text
                         text_content = content_extractor(data)
@@ -873,10 +885,20 @@ async def _run_atom_nonstream_chat_request(
         return output
 
     # Merge reasoning/reasoning_content/content (ATOM puts <mm:think> in content).
+    # Tool-call name and argument text counts too, as in the streaming path: a
+    # pure tool-call response has no content by design.
+    tool_calls = message.get("tool_calls") or []
+    output.tool_call_returned = bool(tool_calls)
     generated_text = (
         (message.get("reasoning") or "")
         + (message.get("reasoning_content") or "")
         + (message.get("content") or "")
+        + "".join(
+            (fn.get("name") or "") + (fn.get("arguments") or "")
+            for tc in tool_calls
+            if isinstance(tc, dict)
+            and isinstance(fn := tc.get("function"), dict)
+        )
     )
     usage = body.get("usage") or {}
     ttft_s = usage.get("ttft_s")
@@ -989,22 +1011,24 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             nonstream_payload = dict(payload)
             nonstream_payload["stream"] = False
             nonstream_payload.pop("stream_options", None)
-            return await _run_atom_nonstream_chat_request(
+            output = await _run_atom_nonstream_chat_request(
                 api_url=api_url,
                 payload=nonstream_payload,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
             )
-
-        return await _run_openai_stream_request(
-            api_url=api_url,
-            payload=payload,
-            headers=headers,
-            prompt_len=request_func_input.prompt_len,
-            chunk_type=_ChatCompletionChunk,
-            content_extractor=_extract_chat_delta_text,
-            tokenizer=self.tokenizer,
-        )
+        else:
+            output = await _run_openai_stream_request(
+                api_url=api_url,
+                payload=payload,
+                headers=headers,
+                prompt_len=request_func_input.prompt_len,
+                chunk_type=_ChatCompletionChunk,
+                content_extractor=_extract_chat_delta_text,
+                tokenizer=self.tokenizer,
+            )
+        output.tools_offered = "tools" in payload
+        return output
 
 
 _GENERATED_MEDIA_TYPES = frozenset({"output_image", "output_video"})

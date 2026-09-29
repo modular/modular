@@ -198,6 +198,7 @@ async def chat_session_driver(
         # satisfied anyway, so its length is the schema's to decide rather than
         # the workload's output-length distribution. Ref DISTINF-499.
         request_func_input.ignore_eos = turn_response_format is None
+        request_func_input.tools = messages[content_idx].tools
 
         if not applied_initial_sleep:
             applied_initial_sleep = True
