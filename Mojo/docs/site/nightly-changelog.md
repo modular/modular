@@ -189,6 +189,18 @@ This version is still a work in progress.
   Types that implement their own `write_to()` or `write_repr_to()`, such as
   `Optional` and `Bool`, are unaffected.
 
+- `Tuple.consume_elements()`, `Tuple.deinit_with()`, and
+  `VariadicPack.consume_elements()` now take the element handler as a runtime
+  closure argument instead of a compile-time `capturing` parameter, matching
+  `List.deinit_with()` and `VariadicList.consume_elements()`:
+
+  ```mojo
+  def handler[idx: Int](var elt: t.Ts[idx]) {mut collected}:
+      collected[idx] = elt.data
+
+  t^.consume_elements(handler)  # was: t^.consume_elements[handler]()
+  ```
+
 ## Tooling changes
 
 ## Removed

@@ -1478,8 +1478,8 @@ struct VariadicPack[
                 ]().unsafe_deinit_pointee()
 
     def consume_elements[
-        elt_handler: def[idx: Int](var elt: Self.Ts[idx]) capturing
-    ](deinit self) where (
+        F: def[idx: Int](var elt: Self.Ts[idx])
+    ](deinit self, elt_handler: F, /) where (
         Self.is_owned
     ) else "consume_elements may only be called on owned variadic packs":
         """Consume the variadic pack by transferring ownership of each element
@@ -1487,6 +1487,9 @@ struct VariadicPack[
         variadic packs.
 
         Parameters:
+            F: The type of the element handler closure.
+
+        Args:
             elt_handler: A function that will be called for each element of the
                          pack.
         """

@@ -409,11 +409,10 @@ def test_tuple_consume_elements_move_only() raises:
     var t = (MoveOnly[Int](10), MoveOnly[Int](20), MoveOnly[Int](30))
     var collected = [0, 0, 0]
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]) {mut collected}:
         collected[idx] = elt.data
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     assert_equal(collected, [10, 20, 30])
 
 
@@ -429,12 +428,12 @@ def test_tuple_consume_elements_destroys_once() raises:
     )
     assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 0)
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    # TODO(MOCO-4969): Drop the `{imm}` here.
+    def handler[idx: Int](var elt: t.Ts[idx]) {imm}:
         # Discarding the owned `elt` runs its destructor exactly once.
         _ = elt^
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     # Each element is destroyed once and `deinit self` disables the tuple's own
     # destructor, so there is no double-free.
     assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 3)
@@ -446,8 +445,9 @@ def test_tuple_consume_elements_heterogeneous() raises:
     var got_int = 0
     var got_sum = 0
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    def handler[
+        idx: Int
+    ](var elt: t.Ts[idx]) {mut got_str, mut got_int, mut got_sum}:
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         elif idx == 1:
@@ -457,7 +457,7 @@ def test_tuple_consume_elements_heterogeneous() raises:
             for x in lst:
                 got_sum += x
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     assert_equal(got_str, "hello")
     assert_equal(got_int, 42)
     assert_equal(got_sum, 6)
@@ -467,11 +467,10 @@ def test_tuple_consume_elements_single() raises:
     var t = (MoveOnly[Int](7),)
     var collected = [0]
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]) {mut collected}:
         collected[idx] = elt.data
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     assert_equal(collected, [7])
 
 
@@ -481,12 +480,11 @@ def test_tuple_consume_elements_single() raises:
 def _count_consumed[*Ts: Movable & Deinitable](var t: Tuple[*Ts]) -> Int:
     var count = 0
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]) {mut count}:
         _ = elt^
         count += 1
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     return count
 
 
@@ -501,12 +499,11 @@ def test_tuple_deinit_with() raises:
     var t = (ExplicitDestroy(0), ExplicitDestroy(1), ExplicitDestroy(2))
     var destroyed = List[Int]()
 
-    @__parameter
-    def dispose[idx: Int](var elt: ExplicitDestroy):
+    def dispose[idx: Int](var elt: ExplicitDestroy) {mut destroyed}:
         destroyed.append(elt.value)
         elt^.destroy()
 
-    t^.deinit_with[dispose]()
+    t^.deinit_with(dispose)
     assert_equal(destroyed, [0, 1, 2])
 
 
@@ -517,8 +514,7 @@ def test_tuple_deinit_with_heterogeneous() raises:
     var got_str = String()
     var got_val = 0
 
-    @__parameter
-    def dispose[idx: Int](var elt: t.Ts[idx]):
+    def dispose[idx: Int](var elt: t.Ts[idx]) {mut got_str, mut got_val}:
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         else:
@@ -526,7 +522,7 @@ def test_tuple_deinit_with_heterogeneous() raises:
             got_val = e.value
             e^.destroy()
 
-    t^.deinit_with[dispose]()
+    t^.deinit_with(dispose)
     assert_equal(got_str, "hello")
     assert_equal(got_val, 42)
 

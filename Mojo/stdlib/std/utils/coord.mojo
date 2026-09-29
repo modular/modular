@@ -1620,11 +1620,10 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         # Move each element into the tuple storage.
-        @__parameter
-        def init_elt[idx: Int](var elt: Self.element_types[idx]):
+        def init_elt[idx: Int](var elt: Self.element_types[idx]) {mut self}:
             Pointer(to=self[idx]).write(elt)
 
-        args^.consume_elements[init_elt]()
+        args^.consume_elements(init_elt)
 
     @always_inline("builtin")
     @staticmethod

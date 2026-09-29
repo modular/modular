@@ -2350,6 +2350,8 @@ static LogicalResult outlineAndPromoteOrigins(
   for (ParamDeclAttr param : allStructParams)
     checkOriginAndOutline(ctx, originMutability, interiorOrigins,
                           param.getType());
+  checkOriginAndOutline(ctx, originMutability, interiorOrigins,
+                        nestedFn.getFuncTypeGenerator());
 
   // Append fresh parameter declarations and their parent-scope bindings.
   for (auto &[interiorAttr, paramRef] : interiorOrigins) {

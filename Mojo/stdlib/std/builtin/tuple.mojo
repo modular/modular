@@ -104,11 +104,10 @@ struct Tuple[*Ts: Movable](
         )
 
         # Move each element into the tuple storage.
-        @__parameter
-        def init_elt[idx: Int](var elt: Self.Ts[idx]):
+        def init_elt[idx: Int](var elt: Self.Ts[idx]) {mut self}:
             Pointer(to=self[idx]).unsafe_write(elt^)
 
-        args^.consume_elements[init_elt]()
+        args^.consume_elements(init_elt)
 
     def __deinit__(
         deinit self,
@@ -126,18 +125,21 @@ struct Tuple[*Ts: Movable](
             Pointer(to=self[i]).unsafe_deinit_pointee()
 
     def deinit_with[
-        deinit_func: def[idx: Int](var elt: Self.Ts[idx]) capturing
-    ](deinit self):
+        F: def[idx: Int](var elt: Self.Ts[idx])
+    ](deinit self, deinit_func: F, /):
         """Consume the tuple, deinitializing each element with a closure.
 
         Use this to tear down a `Tuple` whose elements are not
         `Deinitable`. Elements are visited in index order.
 
         Parameters:
+            F: The type of the deinitializing closure.
+
+        Args:
             deinit_func: A closure called once per element, receiving ownership
                 of the element at that index so it can destroy it.
         """
-        self^.consume_elements[deinit_func]()
+        self^.consume_elements(deinit_func)
 
     @inline(.nodebug)
     def __init__(
@@ -489,8 +491,8 @@ struct Tuple[*Ts: Movable](
 
     @inline(.nodebug)
     def consume_elements[
-        elt_handler: def[idx: Int](var elt: Self.Ts[idx]) capturing
-    ](deinit self):
+        F: def[idx: Int](var elt: Self.Ts[idx])
+    ](deinit self, elt_handler: F, /):
         """Consume the tuple by transferring ownership of each element into the
         provided closure one at a time.
 
@@ -502,6 +504,9 @@ struct Tuple[*Ts: Movable](
         visited in index order.
 
         Parameters:
+            F: The type of the element handler closure.
+
+        Args:
             elt_handler: A function called once for each element of the tuple,
                 receiving ownership of the element at that index.
 
@@ -514,11 +519,10 @@ struct Tuple[*Ts: Movable](
         # Each `List` is moved out of the tuple, one at a time.
         var t = ([1, 2, 3], [4, 5, 6])
 
-        @__parameter
         def handler[idx: Int](var elt: t.Ts[idx]):
             print(len(elt))  # prints 3, then 3
 
-        t^.consume_elements[handler]()
+        t^.consume_elements(handler)
         ```
         """
         # `deinit self` disables `Tuple.__deinit__`; the underlying `!kgen.struct`
