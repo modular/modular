@@ -357,6 +357,11 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # SM100 depth512 pair-CTA and FA4 attention-sink routes.
+    "attention/test_mha_sm100_depth512_sink.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # TEMPORARY (sub_rows gate): restored from a3b3414cd32^.
     "attention/test_mha_sm100_qkv_bf16_fp16_d256_d512_decode.mojo": select({
         "//:b200_gpu": [],
@@ -447,6 +452,7 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {
+    "attention/test_mha_sm100_depth512_sink.mojo": ["//max:kv_cache"],
     "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts_pv_m32.mojo": ["//max:max_mojo"],

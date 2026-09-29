@@ -78,6 +78,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.attention.mha_operand import MHAOperand
+from nn.attention.gpu.nvidia.common import OptionalPointer
 from nn.attention.gpu.nvidia.mha_tile_scheduler import SeqInfo
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
@@ -269,6 +270,8 @@ def depth512_scale_write_output[
 
 @inline(.always)
 def depth512_softmax[
+    SinkType: OptionalPointer,
+    //,
     MaskType: MHAMask,
     qkv_dtype: DType,
     output_type: DType,
@@ -296,6 +299,7 @@ def depth512_softmax[
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
+    sink_weights: SinkType,
 ):
     """Runs the online softmax warp group for pair-CTA SM100 attention.
 
@@ -307,7 +311,13 @@ def depth512_softmax[
     sum values are combined via correction SMEM; for d256 each thread owns a
     unique M row and no exchange is needed.
 
+    A non-null `SinkType` folds the per-head sink logit into the row max and
+    sum once, in the peeled first KV tile; later tiles' `correction` factors
+    rescale it along with the rest of `row_sum`.
+
     Parameters:
+        SinkType: Optional pointer type for the per-head sink weights
+            (inferred).
         MaskType: Compile-time mask type for causal/attention masking.
         qkv_dtype: DType of the Q/K/V inputs; specializes the config.
         output_type: DType of the output store to global memory.
@@ -328,6 +338,7 @@ def depth512_softmax[
         num_output_rows: Dynamic output row count for the TMA store.
         out_head_idx: Output head index for the TMA store.
         out_row_idx: Output row index for the TMA store.
+        sink_weights: Optional per-head sink weights, indexed by query head.
     """
     comptime accum_dtype = DType.float32
     comptime BM = config.BM
@@ -373,6 +384,16 @@ def depth512_softmax[
     # split_o: lower→0, upper→effective_bn. !split_o: always 0.
     var col_offset: UInt32 = 0 if is_lower else UInt32(effective_bn)
 
+    comptime sink = not SinkType.is_null
+    var sink_raw: Float32 = 0.0
+    comptime if sink:
+        # Under fuse_gqa, `out_head_idx` is the KV head.
+        var q_head_idx: UInt32 = (
+            out_head_idx * UInt32(group) + (m_row % UInt32(group))
+        ) if fuse_gqa else out_head_idx
+        # The sink is a scaled logit, but `row_max` holds unscaled scores.
+        sink_raw = sink_weights.value()[q_head_idx].cast[accum_dtype]() / scale
+
     # ---- TMEM addresses --------------------------------------------------
     # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
     # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
@@ -390,7 +411,7 @@ def depth512_softmax[
     # exactly an additive +bias in the exp2 argument (added raw, NOT
     # multiplied by scale_log2e). row_sum is accumulated from the SAME scaled
     # P and the output is normalized by 1/row_sum, so the scale cancels
-    # exactly -- no explicit descale. This path has no sink term.
+    # exactly -- no explicit descale.
     #
     # `p_fp8_bias` and the lazy-rescale gate `rescale_threshold` are the same
     # knob (both in the exp2/log2 domain), linked as
@@ -761,6 +782,8 @@ def depth512_softmax[
         row_max = exchange_reduce["max"](partial_max)
     else:
         row_max = partial_max
+    comptime if sink:
+        row_max = max(row_max, sink_raw)
 
     # Compute exp, write P to SMEM (signals PO_lo inside), get partial sum.
     var partial_sum = store_exp(row_max)
@@ -769,6 +792,13 @@ def depth512_softmax[
         global_sum = exchange_reduce["add"](partial_sum.reduce_add())
     else:
         global_sum = partial_sum.reduce_add()
+    # Added after the exchange; before it, both split_o halves would each
+    # contribute a copy. Carries the same `p_fp8_bias` as the summed P values.
+    comptime if sink:
+        comptime if p_fp8_bias != 0:
+            global_sum += exp2((sink_raw - row_max) * scale_log2e + p_fp8_bias)
+        else:
+            global_sum += exp2((sink_raw - row_max) * scale_log2e)
     var row_sum = f32x2(global_sum, 0)
 
     # ---- Main loop (alternating S_even / S_odd) --------------------------

@@ -1035,6 +1035,7 @@ def flash_attention_dispatch[
                         group=group,
                         ragged=ragged,
                         _is_cache_length_accurate=_is_cache_length_accurate,
+                        sink=sink,
                     ](
                         output.to_device_buffer(ctx),
                         q.to_device_buffer(ctx).unsafe_ptr(),
@@ -1050,6 +1051,7 @@ def flash_attention_dispatch[
                         batch_size,
                         NoPartition[get_accum_type[q.dtype]()](),
                         ctx,
+                        _optional_lt_to_tt(sink_weights),
                     )
                     return
                 # Only the deep arm runs the workspace split-K combine, so its
@@ -1146,6 +1148,7 @@ def flash_attention_dispatch[
                             group=group,
                             ragged=ragged,
                             _is_cache_length_accurate=_is_cache_length_accurate,
+                            sink=sink,
                         ](
                             output.to_device_buffer(ctx),
                             q.to_device_buffer(ctx).unsafe_ptr(),
@@ -1163,6 +1166,7 @@ def flash_attention_dispatch[
                             batch_size,
                             NoPartition[get_accum_type[q.dtype]()](),
                             ctx,
+                            _optional_lt_to_tt(sink_weights),
                         )
                     else:
                         mha_sm100_2q_dispatch[

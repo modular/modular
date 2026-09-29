@@ -59,7 +59,6 @@ from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     KVTMATile,
     MHAPosition,
-    NullPointer,
     OptionalPointer,
     Pack,
     PositionSummary,
@@ -94,6 +93,7 @@ struct SM100MHADepth512[
     SchedulerType: MHATileScheduler,
     config: Depth512SM100Config[KVLUTType.dtype],
     ValidLengthType: OptionalPointer,
+    SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
@@ -121,6 +121,8 @@ struct SM100MHADepth512[
         ValidLengthType: Optional pointer type for the per-batch valid
             sequence lengths; when non-null the kernel runs in ragged
             mode.
+        SinkType: Optional pointer type for the per-head attention-sink
+            weights.
         KVRowOffsetsType: Optional pointer type for the KV input row
             offsets; when non-null used to compute the per-batch KV
             sequence length.
@@ -228,7 +230,7 @@ struct SM100MHADepth512[
             Self.MaskType,
             Self.SchedulerType,
             Self.ValidLengthType,
-            NullPointer[.float32],  # SinkType (unused for depth512)
+            Self.SinkType,
             Self.KVRowOffsetsType,
             Self.MaxSeqLenType,
             Self.PartitionType,
@@ -242,6 +244,7 @@ struct SM100MHADepth512[
 
         var mask = pack.mask
         var valid_length = pack.valid_length
+        var sink_weights = pack.sink_weights
         var kv_input_row_offsets = pack.kv_input_row_offsets
         var max_seq_len = pack.max_seq_len
         var partition = pack.partition
@@ -362,6 +365,7 @@ struct SM100MHADepth512[
                 num_output_rows,
                 out_head_idx,
                 out_row_idx,
+                sink_weights,
             )
 
         elif warp_idx < 8:
