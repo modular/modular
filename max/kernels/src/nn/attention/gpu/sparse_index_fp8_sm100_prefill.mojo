@@ -88,7 +88,7 @@ from max.gpu import (
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
-from max.gpu.memory import external_memory
+from max.gpu.memory import external_memory, fence_async_view_proxy
 from max.gpu.sync import barrier, named_barrier
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.tcgen05 import (
@@ -1556,9 +1556,11 @@ def _fp8_index_score_prefill_kernel_sm100[
             # already visible transitively. Read then release immediately --
             # before the fold, not after -- so the TMA gets the slot back as
             # early as possible now that the consumer sits in its WAR loop.
-            # `mbarrier.arrive`'s CTA-scope release pattern orders the `LDS`
-            # ahead of the arrive, the same way it does for the MMA's own
-            # `k_empty` arrive.
+            # `mbarrier.arrive`'s release orders the `LDS` ahead of the arrive
+            # for later GENERIC-proxy accesses only. The refill is an async-proxy
+            # TMA write, so the load warp fences after its wait (see the refill
+            # loops) -- without it the TMA can land the slot's next tile before
+            # this read returns.
             #
             # Under `SPLIT_KS` that transitive argument does NOT hold: the
             # scales land on their own `ks_full`, which the MMA never waited,
@@ -1966,6 +1968,12 @@ def _fp8_index_score_prefill_kernel_sm100[
             # occupant, tile i-NSTAGE) before reissuing.
             for i in range(n_prefetch, n_tiles_local):
                 k_empty[kp_state.index()].wait(kp_state.phase())
+                # Write-after-read across proxies: the consumers read this
+                # slot's k-scales with `LDS` (generic proxy) before arriving,
+                # and the refill below writes it through the async proxy. The
+                # wait acquires their releases; this fence orders those reads
+                # before the TMA write. One thread pays it, not 128.
+                fence_async_view_proxy()
                 issue_k(tile_begin + i, kp_state)
                 kp_state.step()
         elif CFG.split_ks and wid == KS_TMA_WARP:
@@ -2004,6 +2012,9 @@ def _fp8_index_score_prefill_kernel_sm100[
                 sp_ks.step()
             for i in range(n_pre_ks, n_tiles_local):
                 ks_empty[sp_ks.index()].wait(sp_ks.phase())
+                # The same generic-read / async-write hazard as the K ring's
+                # refill.
+                fence_async_view_proxy()
                 issue_ks(tile_begin + i, sp_ks)
                 sp_ks.step()
         else:
