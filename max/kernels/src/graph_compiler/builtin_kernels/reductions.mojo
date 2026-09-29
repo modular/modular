@@ -1435,22 +1435,26 @@ struct ReduceGroupNorm:
             Error: If the operation parameters are invalid.
         """
 
-        @__parameter
         @inline(.always)
-        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        def input_fn[
+            width: Int
+        ](coords: Coord) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width](coords)
 
-        @__parameter
         @inline(.always)
-        def gamma_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        def gamma_fn[
+            width: Int
+        ](coords: Coord) {var gamma} -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](coords)
 
-        @__parameter
         @inline(.always)
-        def beta_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        def beta_fn[width: Int](coords: Coord) {var beta} -> SIMD[dtype, width]:
             return beta._lambda_load[width=width](coords)
 
-        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
+        group_norm[dtype, rank, target=target](
+            input_fn,
+            gamma_fn,
+            beta_fn,
             shape=input.shape_coord(),
             epsilon=epsilon,
             groups=num_groups,

@@ -222,8 +222,10 @@ def call_with_pack_checked_metal[
     *args: *Ts,
     host0: Optional[OpaquePointer[MutAnyOrigin]] = None,
     host1: Optional[OpaquePointer[MutAnyOrigin]] = None,
+    host2: Optional[OpaquePointer[MutAnyOrigin]] = None,
     host0_size: Int = 0,
     host1_size: Int = 0,
+    host2_size: Int = 0,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
     capture_sizes: Pointer[UInt64, ImmUntrackedOrigin],
@@ -256,8 +258,10 @@ def call_with_pack_checked_metal[
         args: The host-side kernel arguments to encode.
         host0: Pointer to the first host-layout argument, or `None`.
         host1: Pointer to the second host-layout argument, or `None`.
+        host2: Pointer to the third host-layout argument, or `None`.
         host0_size: Byte size of the first host-layout argument.
         host1_size: Byte size of the second host-layout argument.
+        host2_size: Byte size of the third host-layout argument.
         func_handle: Handle to the compiled `DeviceFunction` to launch.
         device_context: The device context backing the function, used for
             error reporting in `_checked_call`.
@@ -368,6 +372,11 @@ def call_with_pack_checked_metal[
     if extra_host_count >= 2 and host1:
         dense_args_addrs[unsafe_offset=translated_arg_idx] = host1.value()
         dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host1_size)
+        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
+        translated_arg_idx += 1
+    if extra_host_count >= 3 and host2:
+        dense_args_addrs[unsafe_offset=translated_arg_idx] = host2.value()
+        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host2_size)
         dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
         translated_arg_idx += 1
 
