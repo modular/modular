@@ -2,9 +2,15 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+filegroup(
+    name = "recipe_configs",
+    srcs = glob(["**/recipes/**/*.yaml"]),
+)
+
 modular_py_library(
     name = "deepseekV4",
     srcs = glob(["**/*.py"]),
+    data = [":recipe_configs"],
     deps = [
         requirement("numpy"),
         requirement("transformers"),

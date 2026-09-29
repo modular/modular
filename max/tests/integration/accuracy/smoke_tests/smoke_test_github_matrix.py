@@ -121,6 +121,7 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": _8xB200,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": _2xB200,
     "MiniMaxAI/MiniMax-M3-MXFP8__mtp": _8xB200,
+    "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": _2xB200,
 }
 
 # Aliases whose recipe ships with a private arch, so it cannot appear in
@@ -152,6 +153,7 @@ NIGHTLY_MODELS = frozenset(
         "thinkingmachines/Inkling-Small-NVFP4",
         "thinkingmachines/Inkling-Small-NVFP4__mtp",
         "Qwen/Qwen3.8-27B",
+        "deepseek-ai/DeepSeek-V4-Flash-0731__tp2",
     }
 )
 

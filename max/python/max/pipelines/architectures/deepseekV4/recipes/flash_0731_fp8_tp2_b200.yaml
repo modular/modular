@@ -1,0 +1,35 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 2x B200 recipe for DeepSeek-V4-Flash-0731, native fp8 linears and fp4
+# routed experts, tensor parallel across both GPUs.
+model:
+  model_path: deepseek-ai/DeepSeek-V4-Flash-0731
+  huggingface_model_revision: 7872f01b1d1fe23eabc4c98b48bffcef5a386062
+  huggingface_weight_revision: 7872f01b1d1fe23eabc4c98b48bffcef5a386062
+  device_specs: [0, 1]
+  quantization_encoding: float8_e4m3fn
+  # Sizes the compressed-attention candidate axis, which is a graph shape.
+  # TODO: derive max_length and device_memory_utilization automatically.
+  # Blocked on two planner gaps: DSV4 has no memory_planner, so the weight
+  # estimate counts the unloaded mtp.* tensors (~10 GiB), and the KV budget
+  # ignores Jenga huge-page granularity (4.72 GiB pages, >= 8 per device).
+  # With the defaults max_length is clamped to 1 and KV allocation fails.
+  max_length: 4096
+  kv_cache:
+    device_memory_utilization: 0.76
+
+runtime:
+  max_batch_size: 32
+  # TODO(MXSERV-569): re-enable device graph capture once warmup memory is
+  # planner-accounted (large-prefill OOM, run 36376133383).
+  device_graph_capture: false

@@ -187,6 +187,7 @@ def call_eval(
             "academic-ds",
             "deepseek-r1",
             "deepseek-v3",
+            "deepseek-v4",
             "gemma-4",
             "gpt-oss",
             "inkling",
