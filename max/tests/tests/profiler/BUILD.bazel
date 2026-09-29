@@ -13,6 +13,7 @@ modular_py_test(
         "MODULAR_ENABLE_PROFILING": "1",
     },
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/profiler",
         requirement("pytest-asyncio"),
     ],
