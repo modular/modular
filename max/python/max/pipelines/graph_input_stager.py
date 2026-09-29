@@ -24,7 +24,7 @@ from max.driver import (
     Buffer,
     Device,
     Usage,
-    copy_pinned_to_destinations,
+    batch_inplace_copy,
 )
 from max.dtype import DType
 
@@ -149,13 +149,17 @@ class GraphInputStaging:
     def send(self) -> None:
         """Copies what this scope staged to its devices.
 
-        Called by :meth:`GraphInputStager.stage` on the way out.
-        :func:`~max.driver.copy_pinned_to_destinations` makes the staging
-        device wait for the other shards, so staging is not recycled while
-        their copies are still reading it.
+        Called by :meth:`GraphInputStager.stage` on the way out. Every copy
+        goes out in one batch, one submission per destination device. The
+        driver holds each host buffer until every device copying from it is
+        done, so dropping the staging when the scope closes is safe.
         """
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
         for host, destinations in self._staged.values():
-            copy_pinned_to_destinations(host, destinations)
+            dsts.extend(destinations)
+            srcs.extend([host] * len(destinations))
+        batch_inplace_copy(dsts, srcs)
 
 
 class GraphInputStager:
