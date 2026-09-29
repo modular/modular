@@ -24,29 +24,6 @@ This version is still a work in progress.
   one B200. Only NVFP4 exports load for now, not Xiaomi's FP8 checkpoint
   (`XiaomiMiMo/MiMo-V2.6-Flash-RL`).
 
-- DeepSeek-V4 (`DeepseekV4ForCausalLM`) now serves `/v1/chat/completions`.
-  The checkpoint ships no chat template, so prompts are rendered by its
-  reference encoder unless `--chat-template` is given. Thinking is on with
-  high reasoning effort by default; `thinking` / `enable_thinking` false or
-  `reasoning_effort` change that. The architecture defaults to the new
-  `deepseekv4` reasoning and tool parsers, which return `<think>` reasoning
-  separately from content and turn the model's `<｜DSML｜tool_calls>` blocks
-  into OpenAI tool calls, streaming or not.
-
-- DeepSeek-V4 (`DeepseekV4ForCausalLM`) now runs the released checkpoint
-  natively (fp8 linears, fp4 routed experts) and across multiple GPUs, for
-  example `max serve --devices gpu:0,1`. Attention and its indexer split by
-  head and the routed experts split across devices (expert parallelism);
-  the rest of the model is replicated. The routed experts no longer pad
-  every expert group to 128 activation rows, which cuts single-stream
-  decode latency. Device graph capture stays off for this architecture.
-
-- DeepSeek-V4 (`DeepseekV4ForCausalLM`) now computes each hyper-connection
-  mixing step (the split into read/write weights and the 20-round Sinkhorn
-  normalization, run before every attention and feed-forward sublayer) in one
-  fused kernel instead of a chain of small graph ops. This roughly halves the
-  kernels launched per decode step and cuts single-stream decode latency.
-
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without
