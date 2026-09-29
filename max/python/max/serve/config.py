@@ -71,9 +71,9 @@ class KernelTraceLevel(Enum):
     phase spans are governed by the tracing exporter config, not this flag."""
 
     BATCH = "batch"
-    """Emit a ``max.batch`` OTel span per forward pass (requires tracing to
-    be configured, see ``disable_telemetry``). No per-kernel GPU detail.
-    Minimal overhead."""
+    """Emit a ``max.batch`` OTel span per forward pass (requires
+    ``OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`` to be set and telemetry enabled).
+    No per-kernel GPU detail. Minimal overhead."""
 
     OP = "op"
     """Op-level NVTX annotation. Enables Nsight / libkineto user-annotation

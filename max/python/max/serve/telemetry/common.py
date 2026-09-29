@@ -720,25 +720,39 @@ def configure_metrics(settings: Settings) -> None:
 
 
 def _span_exporter() -> OTLPSpanExporter:
-    """Builds the span exporter, falling back to Modular's shared collector."""
-    if _operator_set_endpoint("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"):
-        return OTLPSpanExporter()
-    return OTLPSpanExporter(endpoint=otelBaseUrl + "/v1/traces")
+    """Builds the span exporter, leaving the endpoint to the SDK."""
+    return OTLPSpanExporter()
 
 
 def configure_tracing(settings: Settings) -> None:
-    egress_enabled = not _telemetry_disabled(settings)
-    if egress_enabled:
+    # Spans cost work on every request, so only the traces-specific variable
+    # turns them on: the generic endpoint may be set for metrics alone.
+    telemetry_on = not _telemetry_disabled(settings)
+    export_spans = telemetry_on and bool(
+        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+    )
+    if export_spans:
         provider = TracerProvider(resource=logs_resource)
         exporter = _span_exporter()
         provider.add_span_processor(BatchSpanProcessor(exporter))
         set_tracer_provider(provider)
 
     logger = logging.getLogger()
-    if not egress_enabled:
-        logger.info("Tracing disabled.")
-    else:
+    if export_spans:
         logger.info("Tracing initialized.")
+    elif not telemetry_on:
+        logger.info("Tracing disabled.")
+    elif os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        # The generic endpoint turned traces on before, so say why they stop.
+        logger.warning(
+            "OTEL_EXPORTER_OTLP_ENDPOINT is set but spans need"
+            " OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; not exporting traces."
+        )
+    else:
+        logger.info(
+            "Tracing off; set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to export"
+            " spans."
+        )
 
 
 _kernel_trace_level = KernelTraceLevel.OFF

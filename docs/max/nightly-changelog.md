@@ -346,6 +346,12 @@ This version is still a work in progress.
   to check for page-locked memory, or `Usage.UNTRACKED in b.usage` to check
   whether reads skip the hazard wait.
 
+- MAX Serve now exports spans only when `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
+  is set. It no longer sends them to Modular's collector by default, and
+  `OTEL_EXPORTER_OTLP_ENDPOINT` alone no longer turns tracing on. To keep
+  exporting spans, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, for example to
+  `http://collector:4318/v1/traces`.
+
 ## Fixes
 
 - Fixed a regression where indexing a buffer -- loading it and then gathering

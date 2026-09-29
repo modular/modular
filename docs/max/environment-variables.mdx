@@ -110,8 +110,8 @@ at your own collector without MAX-specific configuration.
 |---------------------------------------|--------------------------------------|-----------------|-------------------------|
 | `OTEL_SERVICE_NAME`                   | Reported as `service.name`           | String          | `unknown_service`       |
 | `OTEL_RESOURCE_ATTRIBUTES`            | Extra resource attributes, see below | `key=value,...` | None                    |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`         | Base endpoint, signal path appended  | URL             | Modular's               |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | Trace endpoint, used as given        | URL             | Modular's               |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`         | Base metrics endpoint, path appended | URL             | Modular's               |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | Trace endpoint; turns span export on | URL             | None                    |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Metrics endpoint, used as given      | URL             | Modular's               |
 | `OTEL_TRACES_SAMPLER`                 | Trace sampling strategy              | Sampler name    | `parentbased_always_on` |
 | `OTEL_TRACES_SAMPLER_ARG`             | Argument to the sampler              | String          | None                    |
@@ -121,10 +121,11 @@ Leave `MAX_SERVE_OTLP_METRICS_ENDPOINT` unset when you use these variables.
 It is a separate opt-in reader, so aiming both at one collector sends every
 metric twice, with counters and histograms arriving in two temporalities.
 
-A signal-specific endpoint takes precedence over the base endpoint. Setting
-`OTEL_EXPORTER_OTLP_ENDPOINT` to `http://collector:4318` sends traces to
-`http://collector:4318/v1/traces`, while `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
-is used exactly as given.
+MAX exports spans only when `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set, and
+uses it exactly as given; the base endpoint alone never turns tracing on. For
+metrics, a signal-specific endpoint takes precedence over the base endpoint:
+setting `OTEL_EXPORTER_OTLP_ENDPOINT` to `http://collector:4318` sends metrics
+to `http://collector:4318/v1/metrics`.
 
 MAX exports over OTLP HTTP only, so the endpoint must be an HTTP
 receiver, conventionally port 4318. Pointing it at a gRPC receiver on port

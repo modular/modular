@@ -21,8 +21,9 @@ invisible at the call site, so they are pinned here.
 
 from __future__ import annotations
 
+import logging
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 
 import pytest
 from max.serve.config import Settings
@@ -64,7 +65,6 @@ def clear_otel_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 @pytest.mark.parametrize(
     ("build", "signal_var", "path"),
     [
-        pytest.param(common._span_exporter, TRACES, "/v1/traces", id="traces"),
         pytest.param(
             common._metric_exporter, METRICS, "/v1/metrics", id="metrics"
         ),
@@ -72,7 +72,7 @@ def clear_otel_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 )
 def test_exporter_endpoint_precedence(
     monkeypatch: pytest.MonkeyPatch,
-    build: Callable[[], OTLPSpanExporter | OTLPMetricExporter],
+    build: Callable[[], OTLPMetricExporter],
     signal_var: str,
     path: str,
 ) -> None:
@@ -117,12 +117,85 @@ def test_configure_tracing_passes_no_sampler(
     a test that installed one would couple to test order."""
     captured: list[TracerProvider] = []
     monkeypatch.setattr(common, "set_tracer_provider", captured.append)
-    # Keeps the exporter's batch thread off the production collector.
+    # Only the traces endpoint installs a provider.
     monkeypatch.setenv(TRACES, "http://localhost:4318/v1/traces")
     monkeypatch.setenv("OTEL_TRACES_SAMPLER", "traceidratio")
     monkeypatch.setenv("OTEL_TRACES_SAMPLER_ARG", "0.25")
     common.configure_tracing(Settings(disable_telemetry=False))
     assert isinstance(captured[0].sampler, TraceIdRatioBased)
+
+
+@pytest.mark.parametrize(
+    ("env", "installed"),
+    [
+        pytest.param({}, False, id="default"),
+        pytest.param({GENERIC: "http://agent:4318"}, False, id="generic"),
+        pytest.param(
+            {"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "grpc"}, False, id="grpc"
+        ),
+        pytest.param(
+            {TRACES: "http://localhost:4318/v1/traces"}, True, id="traces"
+        ),
+        pytest.param(
+            {
+                TRACES: "http://localhost:4318/v1/traces",
+                "OTEL_SDK_DISABLED": "true",
+            },
+            False,
+            id="traces-sdk-disabled",
+        ),
+    ],
+)
+def test_only_the_traces_endpoint_turns_tracing_on(
+    monkeypatch: pytest.MonkeyPatch, env: Mapping[str, str], installed: bool
+) -> None:
+    """With no provider installed the global stays OTel's
+    ProxyTracerProvider, so spans are no-ops and ``_tracing_enabled`` skips
+    its bookkeeping. The generic endpoint must not count: a deployment may
+    set it for metrics."""
+    captured: list[TracerProvider] = []
+    monkeypatch.setattr(common, "set_tracer_provider", captured.append)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    common.configure_tracing(Settings(disable_telemetry=False))
+    assert len(captured) == int(installed)
+    for provider in captured:
+        provider.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("env", "level"),
+    [
+        pytest.param({}, logging.INFO, id="default"),
+        pytest.param(
+            {GENERIC: "http://agent:4318"}, logging.WARNING, id="generic"
+        ),
+    ],
+)
+def test_tracing_off_warns_only_when_the_generic_endpoint_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    env: Mapping[str, str],
+    level: int,
+) -> None:
+    """The generic endpoint used to turn traces on, so an operator who set
+    only it is told why spans stopped."""
+    monkeypatch.setattr(common, "set_tracer_provider", lambda _: None)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    with caplog.at_level(logging.INFO):
+        common.configure_tracing(Settings(disable_telemetry=False))
+    assert [r.levelno for r in caplog.records] == [level]
+
+
+def test_span_exporter_uses_the_traces_endpoint_as_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(GENERIC, "http://agent:4318")
+    monkeypatch.setenv(TRACES, "http://specific:4318/sink")
+    exporter = common._span_exporter()
+    assert isinstance(exporter, OTLPSpanExporter)
+    assert exporter._endpoint == "http://specific:4318/sink"
 
 
 @pytest.mark.parametrize(

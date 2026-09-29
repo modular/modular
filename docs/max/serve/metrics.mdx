@@ -360,8 +360,10 @@ docker run modular/max-nvidia-full:latest \
     ...
 ```
 
-To send traces and metrics to your own collector, set the standard
+To send metrics to your own collector, set the standard
 [`OTEL_EXPORTER_OTLP_ENDPOINT`](/environment-variables) environment variable.
+MAX exports traces only when
+[`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`](/environment-variables) is set.
 [`MAX_SERVE_OTLP_METRICS_ENDPOINT`](/environment-variables) is a separate
 opt-in that additionally pushes an exponential-histogram shadow of every
 histogram; leave it unset unless you want that comparison.
