@@ -1103,9 +1103,10 @@ class ModuleV3PipelineModelWithKVCache(
     """ModuleV3 pipeline model with shared compile template.
 
     Subclasses override :meth:`_instantiate_module` (and optionally
-    :meth:`_create_model_config`, :meth:`_init_distributed_runtime`,
-    :meth:`_module_default_dtype`, :meth:`_get_compile_input_types`) rather than
-    duplicating weight loading, timing, and ``nn.compile`` wiring.
+    :meth:`_create_model_config`, :meth:`_prepare_state_dict`,
+    :meth:`_init_distributed_runtime`, :meth:`_module_default_dtype`,
+    :meth:`_get_compile_input_types`) rather than duplicating weight loading,
+    timing, and ``nn.compile`` wiring.
 
     Graph-API models should inherit :class:`GraphPipelineModelWithKVCache`
     instead. Encoder models without KV cache should inherit
@@ -1123,6 +1124,7 @@ class ModuleV3PipelineModelWithKVCache(
         """Build and compile the ModuleV3 callable."""
         state_dict = self._load_state_dict()
         model_config = self._create_model_config(state_dict)
+        state_dict = self._prepare_state_dict(state_dict, model_config)
         self._init_distributed_runtime(model_config)
         module_default_dtype = self._module_default_dtype(
             state_dict, model_config
@@ -1143,6 +1145,13 @@ class ModuleV3PipelineModelWithKVCache(
         raise NotImplementedError(
             f"{type(self).__qualname__} must implement `_create_model_config`."
         )
+
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        """Optional hook to cast or rewrite weights before ``nn.compile``."""
+        del model_config
+        return state_dict
 
     def _init_distributed_runtime(self, model_config: Any) -> None:
         """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
