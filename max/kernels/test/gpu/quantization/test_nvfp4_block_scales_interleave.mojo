@@ -16,7 +16,7 @@ from linalg.block_scaled_quantization import (
     block_scales_interleave_fp4,
 )
 from std.testing import assert_equal
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -29,88 +29,55 @@ from linalg.fp4_utils import (
     get_scale_factor,
 )
 from std.math import ceildiv, align_up
-from std.utils import IndexList
 
 
 def test_block_scales_interleave_fp4[
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
-    M: Optional[Int],
-    N: Optional[Int],
+    N: Int,
 ](ctx: DeviceContext, m: Int, n: Int) raises:
-    # Input scales tensor layout [m, n]
-    comptime input_static_layout = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
-    )
-    var input_shape = IndexList[2](M.or_else(m), N.or_else(n))
-    var input_runtime_layout = RuntimeLayout[input_static_layout].row_major(
-        input_shape
-    )
-
-    # Output scales tensor layout [ceildiv(m, SF_MN_GROUP_SIZE), ceildiv(n, SF_ATOM_K), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    comptime output_static_layout = Layout.row_major(
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    var output_shape = IndexList[5](
-        ceildiv(m, SF_MN_GROUP_SIZE),
-        ceildiv(n, SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    var output_runtime_layout = RuntimeLayout[output_static_layout].row_major(
-        output_shape
+    # Input scales [m, n]; output scales in the interleaved 5D TCGEN layout.
+    var input_layout = row_major(Coord(m, Idx[N]))
+    var output_layout = row_major(
+        Coord(
+            ceildiv(m, SF_MN_GROUP_SIZE),
+            ceildiv(n, SF_ATOM_K),
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
+        )
     )
 
-    # Create device buffers
     var input_scales_device = ctx.enqueue_create_buffer[scales_dtype](
-        input_shape.flattened_length()
+        input_layout.size()
     )
     var output_scales_device = ctx.enqueue_create_buffer[scales_dtype](
-        output_shape.flattened_length()
+        output_layout.size()
     )
 
-    # Initialize input with random data on host
     with input_scales_device.map_to_host() as input_host:
-        var input_host_tensor = LayoutTensor[scales_dtype, input_static_layout](
-            input_host, input_runtime_layout
-        )
+        var input_host_tensor = TileTensor(input_host, input_layout)
         random(input_host_tensor)
 
-    # Initialize output with zeros
     with output_scales_device.map_to_host() as output_host:
         for i in range(len(output_host)):
             output_host[i] = 0
 
-    # Create layout tensors for GPU operations
-    var input_scales_tensor = LayoutTensor[scales_dtype, input_static_layout](
-        input_scales_device, input_runtime_layout
-    )
-    var output_scales_tensor = LayoutTensor[scales_dtype, output_static_layout](
-        output_scales_device, output_runtime_layout
-    )
+    var input_scales_tensor = TileTensor(input_scales_device, input_layout)
+    var output_scales_tensor = TileTensor(output_scales_device, output_layout)
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        lt_to_tt(input_scales_tensor).as_unsafe_any_origin(),
-        lt_to_tt(output_scales_tensor).as_unsafe_any_origin(),
+        input_scales_tensor.as_unsafe_any_origin(),
+        output_scales_tensor.as_unsafe_any_origin(),
     )
 
     ctx.synchronize()
 
-    # Verify results
     with input_scales_device.map_to_host() as input_host:
         with output_scales_device.map_to_host() as output_host:
-            var input_host_tensor = LayoutTensor[
-                scales_dtype, input_static_layout
-            ](input_host, input_runtime_layout)
-            var output_host_tensor = LayoutTensor[
-                scales_dtype, output_static_layout
-            ](output_host, output_runtime_layout)
+            var input_host_tensor = TileTensor(input_host, input_layout)
+            var output_host_tensor = TileTensor(output_host, output_layout)
 
             for row_idx in range(0, align_up(m, SF_MN_GROUP_SIZE)):
                 for col_idx in range(0, align_up(n, SF_ATOM_K)):
@@ -141,38 +108,38 @@ def test_block_scales_interleave_fp4[
 def main() raises:
     with DeviceContext() as ctx:
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, N=4
         ](ctx, 128, 4)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, N=4
         ](ctx, 129, 4)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(5)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, N=5
         ](ctx, 129, 5)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, N=1024
         ](ctx, 1024, 1024)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(3328)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, N=3328
         ](ctx, 16384, 3328)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, N=1024
         ](ctx, 53248, 1024)
         test_block_scales_interleave_fp4[
-            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, N=4
         ](ctx, 128, 4)
         test_block_scales_interleave_fp4[
-            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, N=4
         ](ctx, 129, 4)
         test_block_scales_interleave_fp4[
-            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(5)
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, N=5
         ](ctx, 129, 5)
         test_block_scales_interleave_fp4[
-            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, N=1024
         ](ctx, 1024, 1024)
         test_block_scales_interleave_fp4[
-            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(3328)
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, N=3328
         ](ctx, 16384, 3328)
         test_block_scales_interleave_fp4[
-            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, N=1024
         ](ctx, 53248, 1024)

@@ -43,19 +43,8 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index
 from std.utils.numerics import isnan
-from layout import (
-    Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -190,10 +179,6 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         _is_cache_length_accurate=True,
@@ -231,16 +216,14 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_ref_device_ptr = ctx.enqueue_create_buffer[q_type](k_size)
-    var k_ref_device = LayoutTensor[q_type, k_layout](
-        k_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
+    var k_ref_device = TileTensor(
+        k_ref_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
-        var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
+        var k_operand = LayoutTensorMHAOperand(k_ref_device)
         var null_valid_length = TileTensor(
             MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
             row_major(Coord(Idx[0])),

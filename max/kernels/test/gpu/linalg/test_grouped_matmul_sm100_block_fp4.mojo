@@ -46,17 +46,7 @@ from std.simd import (
     _convert_f32_to_float8_scalar,
     _convert_f32_to_float8_ue8m0,
 )
-from layout import (
-    Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -480,28 +470,10 @@ def _test_kernel_impl_base[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    # --- Per-expert reference computation (LayoutTensor slices for
-    # naive_block_scaled_matmul compatibility) ---
+    # --- Per-expert reference computation ---
     comptime packed_K = expert_shape[1] // 2
     comptime ref_k_groups = ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
     comptime ref_n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
-    comptime new_c_layout = Layout.row_major(UNKNOWN_VALUE, expert_shape[0])
-    comptime new_a_layout = Layout.row_major(UNKNOWN_VALUE, packed_K)
-    comptime new_b_layout = Layout.row_major(expert_shape[0], packed_K)
-    comptime new_b_scales_layout = Layout.row_major(
-        ref_n_groups,
-        ref_k_groups,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime new_a_scales_layout = Layout.row_major(
-        UNKNOWN_VALUE,
-        ref_k_groups,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
 
     var c_row_stride = expert_shape[0]
     var a_row_stride = packed_K
@@ -521,70 +493,49 @@ def _test_kernel_impl_base[
         if expert_id < 0 or end - start == 0:
             continue
 
-        var c_slice = LayoutTensor[c_type, new_c_layout](
+        var c_slice = TileTensor(
             c_ref_tensor.ptr + start * c_row_stride,
-            RuntimeLayout[new_c_layout].row_major(
-                IndexList[2](
-                    end - start,
-                    expert_shape[0],
-                ),
-            ),
+            row_major(Coord(end - start, Idx[expert_shape[0]])),
         )
 
-        var new_a_tensor = LayoutTensor[a_type, new_a_layout](
+        var new_a_tensor = TileTensor(
             a_tensor.ptr + start * a_row_stride,
-            RuntimeLayout[new_a_layout].row_major(
-                IndexList[2](
-                    end - start,
-                    packed_K,
-                ),
-            ),
+            row_major(Coord(end - start, Idx[packed_K])),
         )
 
-        var new_b_tensor = LayoutTensor[b_type, new_b_layout](
+        var new_b_tensor = TileTensor(
             b_tensor.ptr + Int(expert_id) * b_expert_stride,
-            RuntimeLayout[new_b_layout].row_major(
-                IndexList[2](
-                    expert_shape[0],
-                    packed_K,
-                ),
-            ),
+            row_major(Coord(Idx[expert_shape[0]], Idx[packed_K])),
         )
 
-        var new_b_scales_tensor = LayoutTensor[
-            scales_dtype,
-            new_b_scales_layout,
-        ](
+        var new_b_scales_tensor = TileTensor(
             b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
-            RuntimeLayout[new_b_scales_layout].row_major(
-                IndexList[5](
-                    ref_n_groups,
-                    ref_k_groups,
-                    SF_ATOM_M[0],
-                    SF_ATOM_M[1],
-                    SF_ATOM_K,
-                ),
+            row_major(
+                Coord(
+                    Idx[ref_n_groups],
+                    Idx[ref_k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
+                )
             ),
         )
 
         var a_scales_start = start // SF_MN_GROUP_SIZE + Int(
             a_scale_offsets_ptr[i]
         )
-        var new_a_scales_tensor = LayoutTensor[
-            scales_dtype,
-            new_a_scales_layout,
-        ](
+        var new_a_scales_tensor = TileTensor(
             (
                 a_scales_tensor.ptr + a_scales_start * a_scales_row_stride
             ).as_unsafe_any_origin(),
-            RuntimeLayout[new_a_scales_layout].row_major(
-                IndexList[5](
+            row_major(
+                Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
-                    ref_k_groups,
-                    SF_ATOM_M[0],
-                    SF_ATOM_M[1],
-                    SF_ATOM_K,
-                ),
+                    Idx[ref_k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
+                )
             ),
         )
 
@@ -607,11 +558,11 @@ def _test_kernel_impl_base[
         else:
             vendor_blas.matmul(
                 ctx,
-                lt_to_tt(c_slice),
-                lt_to_tt(new_a_tensor),
-                lt_to_tt(new_b_tensor),
-                a_scales=lt_to_tt(new_a_scales_tensor).as_imm(),
-                b_scales=lt_to_tt(new_b_scales_tensor).as_imm(),
+                c_slice,
+                new_a_tensor,
+                new_b_tensor,
+                a_scales=new_a_scales_tensor.as_imm(),
+                b_scales=new_b_scales_tensor.as_imm(),
                 transpose_b=transpose_b,
                 c_row_major=True,
                 alpha=expert_scale,

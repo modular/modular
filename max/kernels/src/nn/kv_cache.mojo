@@ -31,6 +31,7 @@ from kv_cache.types import (
 )
 from layout import (
     Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -329,21 +330,9 @@ def _matmul_common[
     comptime N = Int(weight.layout.shape[0])
     comptime K = Int(weight.layout.shape[1])
 
-    comptime hidden_state_layout = Layout.row_major(
-        UNKNOWN_VALUE, Int(hidden_state.layout.shape[2])
+    var hidden_state_2d = TileTensor(
+        hidden_state.ptr, row_major(Coord(BS * SEQ_LEN, Idx[K]))
     )
-    var hidden_state_2d = LayoutTensor[
-        dtype,
-        hidden_state_layout,
-        hidden_state.origin,
-    ](
-        hidden_state.ptr,
-        RuntimeLayout[hidden_state_layout].row_major(
-            IndexList[2](BS * SEQ_LEN, K)
-        ),
-    )
-
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
     comptime if is_cpu[target]():
         var c_alloc = alloc(
@@ -352,16 +341,13 @@ def _matmul_common[
         var c_ptr: UnsafePointer[
             Scalar[dtype], origin_of(c_alloc)
         ] = c_alloc.unsafe_ptr()
-        var c_nd = LayoutTensor[dtype, c_layout](
-            c_ptr,
-            RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
-        )
+        var c_nd = TileTensor(c_ptr, row_major(Coord(BS * SEQ_LEN, Idx[N])))
 
         matmul[
             transpose_b=True,
             target=target,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
+        ](c_nd, hidden_state_2d, lt_to_tt(weight), context)
 
         dealloc(c_alloc^)
     else:
@@ -371,16 +357,15 @@ def _matmul_common[
         var c_device_buffer = context.value().enqueue_create_buffer[dtype](
             BS * SEQ_LEN * N
         )
-        var c_nd = LayoutTensor[dtype, c_layout](
-            c_device_buffer.unsafe_ptr(),
-            RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
+        var c_nd = TileTensor(
+            c_device_buffer, row_major(Coord(BS * SEQ_LEN, Idx[N]))
         )
 
         matmul[
             transpose_b=True,
             target=target,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
+        ](c_nd, hidden_state_2d, lt_to_tt(weight), context)
 
 
 # ===-----------------------------------------------------------------------===#

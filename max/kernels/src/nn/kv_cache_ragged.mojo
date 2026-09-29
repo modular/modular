@@ -4832,30 +4832,14 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         context,
     )
 
-    # rebind k_latent_buffer with dynamic dim
-    comptime latent_last_dim = Int(k_latent_buffer.layout.shape[1])
-    comptime k_latent_layout = Layout.row_major(UNKNOWN_VALUE, latent_last_dim)
-    var k_latent_dynamic_shape = IndexList[2](
-        buffer_length_int, latent_last_dim
-    )
-
-    var k_latent_buffer_dynamic = LayoutTensor[dtype, k_latent_layout](
-        k_latent_buffer.ptr,
-        RuntimeLayout[k_latent_layout].row_major(k_latent_dynamic_shape),
-    )
-
-    # rebind k_buffer with dynamic dim
     comptime k_last_dim = Int(k_buffer.layout.shape[1])
-    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, k_last_dim)
-    var k_dynamic_shape = IndexList[2](buffer_length_int, k_last_dim)
-
-    var k_buffer_dynamic = LayoutTensor[dtype, k_layout](
-        k_buffer.ptr, RuntimeLayout[k_layout].row_major(k_dynamic_shape)
+    var k_tile = TileTensor(
+        k_buffer.ptr, row_major(buffer_length_int, Idx[k_last_dim])
     )
 
     matmul[target=target, transpose_b=True](
-        lt_to_tt(k_buffer_dynamic),
-        lt_to_tt(k_latent_buffer_dynamic),
+        k_tile,
+        k_latent_tile,
         lt_to_tt(weight),
         Optional(context),
     )

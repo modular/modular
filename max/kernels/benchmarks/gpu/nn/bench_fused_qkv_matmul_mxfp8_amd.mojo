@@ -70,12 +70,15 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceContext
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout.tile_tensor import lt_to_tt
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -426,24 +429,14 @@ def bench_shape[
         mut iq_out,
         imm,
     }:
-        var hs = LayoutTensor[
-            mut=False, OPERAND_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
-        ](
+        var hs_tt = TileTensor(
             cb_hs.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, hidden)].row_major(
-                IndexList[2](total_seq, hidden)
-            ),
-        )
-        var asf = LayoutTensor[
-            mut=False, SCALE_DTYPE, Layout.row_major(UNKNOWN_VALUE, k_scales)
-        ](
+            row_major(Coord(total_seq, Idx[hidden])),
+        ).bitcast[.uint8]()
+        var asf_tt = TileTensor(
             cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, k_scales)].row_major(
-                IndexList[2](total_seq, k_scales)
-            ),
+            row_major(Coord(total_seq, Idx[k_scales])),
         )
-        var hs_tt = lt_to_tt(hs).bitcast[.uint8]()
-        var asf_tt = lt_to_tt(asf)
 
         # Q band: the only wide one (N=2048); the rest are N=128.
         @__parameter
@@ -454,37 +447,24 @@ def bench_shape[
             col_off: Int,
             out_ptr: MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin],
         ) raises:
-            var w = LayoutTensor[
-                mut=False, OPERAND_DTYPE, Layout.row_major(band_n, hidden)
-            ](
+            var w = TileTensor(
                 cb_w.offset_ptr(iteration) + col_off * hidden,
-                RuntimeLayout[Layout.row_major(band_n, hidden)].row_major(
-                    IndexList[2](band_n, hidden)
-                ),
+                row_major(Coord(Idx[band_n], Idx[hidden])),
             )
-            var bsf = LayoutTensor[
-                mut=False, SCALE_DTYPE, Layout.row_major(band_n, k_scales)
-            ](
+            var bsf = TileTensor(
                 cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]]()
                 + col_off * k_scales,
-                RuntimeLayout[Layout.row_major(band_n, k_scales)].row_major(
-                    IndexList[2](band_n, k_scales)
-                ),
+                row_major(Coord(Idx[band_n], Idx[k_scales])),
             )
-            var c = LayoutTensor[
-                OUT_DTYPE, Layout.row_major(UNKNOWN_VALUE, band_n)
-            ](
-                out_ptr,
-                RuntimeLayout[
-                    Layout.row_major(UNKNOWN_VALUE, band_n)
-                ].row_major(IndexList[2](total_seq, band_n)),
+            var c = TileTensor(
+                out_ptr, row_major(Coord(total_seq, Idx[band_n]))
             )
             block_scaled_matmul_amd[lane_bytes=32](
-                lt_to_tt(c),
+                c,
                 hs_tt,
-                lt_to_tt(w).bitcast[.uint8](),
+                w.bitcast[.uint8](),
                 asf_tt,
-                lt_to_tt(bsf),
+                bsf,
                 ctx,
             )
 

@@ -18,7 +18,6 @@ is MiniMax-M3 o_proj at TP=4; M is a runtime arg. Cache-busts operands and scale
 
 from std.random import seed
 from std.sys import get_defined_int, size_of
-from std.utils import IndexList
 
 from max.benchmark import bencher_iter_custom
 from max.gpu.host import DeviceContext
@@ -32,8 +31,7 @@ from std.benchmark import (
 
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType, arg_parse
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout.tile_tensor import lt_to_tt
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 
 comptime OPERAND_DTYPE = DType.float8_e4m3fn
@@ -46,12 +44,6 @@ comptime LANE_BYTES = 32
 comptime N = get_defined_int["N", 6144]()
 comptime K = get_defined_int["K", 2048]()
 comptime K_SCALES = K // SF_VECTOR_SIZE
-
-comptime A_LAYOUT = Layout.row_major(UNKNOWN_VALUE, K)
-comptime ASF_LAYOUT = Layout.row_major(UNKNOWN_VALUE, K_SCALES)
-comptime B_LAYOUT = Layout.row_major(N, K)
-comptime BSF_LAYOUT = Layout.row_major(N, K_SCALES)
-comptime C_LAYOUT = Layout.row_major(UNKNOWN_VALUE, N)
 
 
 def bench_shape(ctx: DeviceContext, mut m: Bench, M: Int) raises:
@@ -73,38 +65,33 @@ def bench_shape(ctx: DeviceContext, mut m: Bench, M: Int) raises:
     cb_bsf.init_on_device(InitializationType.uniform_distribution, ctx)
 
     var c_dev = ctx.enqueue_create_buffer[OUT_DTYPE](M * N)
-    var c = LayoutTensor[OUT_DTYPE, C_LAYOUT](
-        c_dev.unsafe_ptr(),
-        RuntimeLayout[C_LAYOUT].row_major(IndexList[2](M, N)),
-    )
+    var c = TileTensor(c_dev, row_major(Coord(M, Idx[N])))
 
     @inline(.always)
     def launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut cb_a, mut cb_b, mut cb_asf, mut cb_bsf, mut c, imm}:
-        var a = LayoutTensor[mut=False, OPERAND_DTYPE, A_LAYOUT](
-            cb_a.offset_ptr(iteration),
-            RuntimeLayout[A_LAYOUT].row_major(IndexList[2](M, K)),
+        var a = TileTensor(
+            cb_a.offset_ptr(iteration), row_major(Coord(M, Idx[K]))
         )
-        var asf = LayoutTensor[mut=False, SCALE_DTYPE, ASF_LAYOUT](
+        var asf = TileTensor(
             cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            RuntimeLayout[ASF_LAYOUT].row_major(IndexList[2](M, K_SCALES)),
+            row_major(Coord(M, Idx[K_SCALES])),
         )
-        var b = LayoutTensor[mut=False, OPERAND_DTYPE, B_LAYOUT](
-            cb_b.offset_ptr(iteration),
-            RuntimeLayout[B_LAYOUT].row_major(IndexList[2](N, K)),
+        var b = TileTensor(
+            cb_b.offset_ptr(iteration), row_major(Coord(Idx[N], Idx[K]))
         )
-        var bsf = LayoutTensor[mut=False, SCALE_DTYPE, BSF_LAYOUT](
+        var bsf = TileTensor(
             cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            RuntimeLayout[BSF_LAYOUT].row_major(IndexList[2](N, K_SCALES)),
+            row_major(Coord(Idx[N], Idx[K_SCALES])),
         )
 
         block_scaled_matmul_amd[lane_bytes=LANE_BYTES](
-            lt_to_tt(c),
-            lt_to_tt(a).bitcast[DType.uint8](),
-            lt_to_tt(b).bitcast[DType.uint8](),
-            lt_to_tt(asf),
-            lt_to_tt(bsf),
+            c,
+            a.bitcast[DType.uint8](),
+            b.bitcast[DType.uint8](),
+            asf,
+            bsf,
             ctx,
         )
 
