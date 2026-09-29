@@ -44,6 +44,7 @@ from extensibility import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
+from std.sys.info import has_amd_gpu_accelerator
 from kda.recurrent import kda_decode_gpu
 from kda.chunk_launch import kda_chunk_launch
 
@@ -406,6 +407,11 @@ struct KdaChunk:
             + state_layout
         )
         comptime assert is_gpu[target](), "kda_chunk is only supported on GPU."
+        # The AMD build of the chunk pipeline compiles but does not yet match
+        # the reference, so reject it rather than return wrong results.
+        comptime assert (
+            not has_amd_gpu_accelerator()
+        ), "kda_chunk is not yet supported on AMD GPUs; use kda_decode."
 
         var num_key_heads = q.dim_size(2)
         var key_head_dim = q.dim_size(3)
