@@ -4,7 +4,7 @@ sidebar_label: Closure declarations
 sidebar_position: 9
 description: >
   Reference for Mojo closure declaration syntax. Covers capture
-  lists, capture conventions, the transfer operator, parametric
+  lists, capture conventions, the transfer sigil, parametric
   closures, declaration-level effects, nesting, and the common
   capture-list errors.
 ---
@@ -223,7 +223,7 @@ def main():
                      #        after transfer
 ```
 
-Transfer capture skips the copy that `var name` would perform.
+Move capture skips the copy that `var name` would perform.
 
 Constraints:
 
@@ -520,7 +520,7 @@ other value.
 | Missing comma between entries               | Identifier followed by an unrecognized token                 |
 | Unterminated capture list                   | Missing closing `}`                                          |
 | Outer name not covered by capture list      | Body references an outer name the capture list doesn't cover |
-| Use after transfer capture                  | Reference to a name after `{var name^}` consumed it          |
+| Use after move capture                      | Reference to a name after `{var name^}` consumed it          |
 
 <!-- markdownlint-enable MD013 -->
 

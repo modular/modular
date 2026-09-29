@@ -335,10 +335,8 @@ Mark a raising function `raises`; `raise` signals, `try`/`except` catches.
 
 <Panel title="Coming from systems languages" summary="Key differences when transitioning from systems languages to Mojo.">
 
-- Pythonic syntax: indentation and `def`, no braces around blocks,
+- Python-style syntax: indentation and `def`, no braces around blocks, no headers,
   parentheses for line continuation.
-- Semicolons let you glue two statements on one line. They aren't required
-  to terminate statements.
 - Value semantics with transfer: `^` transfers ownership of a value;
   `__deinit__()` gives RAII cleanup.
 - Reusable behavior comes from `trait`s, not class inheritance or templates.

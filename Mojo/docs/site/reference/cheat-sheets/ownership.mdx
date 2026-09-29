@@ -52,8 +52,8 @@ type owns its fields.
 
 A **var** assignment uses the right-hand
 side's policy: it determines whether the value is materialized, constructed, copied,
-or transferred. A call or expression returning a value constructs; one returning a
-reference copies out the referenced value.
+or transferred. A call or expression returning a value returns a
+transferrable value.
 
 | You write                             | The var takes ownership of      |
 |---------------------------------------|---------------------------------|
@@ -225,8 +225,9 @@ stays valid.
 | -&gt; T             | return a value                         |
 | -&gt; ref[origin] T | return a reference                     |
 
-Like a var assignment, **return x** copies; when **x** is at its
-last use the compiler transfers it instead.
+Like a var assignment, **return x** copies; when **x** is known to be at
+its last use in a given scope, the compiler transfers it instead of copying
+it.
 
 No **-&gt; T^**: the **^** goes on the returned value in
 **return x^**, not on the return type.
