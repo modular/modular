@@ -247,10 +247,8 @@ def gen_specs(n: Int) -> List[CaseSpec]:
 # ===----------------------------------------------------------------------=== #
 
 
-def fill_scales[
-    scales_layout: Layout
-](
-    scales: LayoutTensor[mut=True, scale_dtype, scales_layout, MutAnyOrigin],
+def fill_scales(
+    scales: TileTensor[mut=True, scale_dtype, ...],
     mn: Int,
     k: Int,
 ):
@@ -373,11 +371,17 @@ def run_one_case(
     var input_scale_host = ctx.enqueue_create_host_buffer[scale_dtype](
         input_scale_elems
     )
-    var input_scale_host_lt = LayoutTensor[scale_dtype, input_sf_layout](
-        input_scale_host.unsafe_ptr(),
-        RuntimeLayout[input_sf_layout].row_major(input_scale_shape),
+    var input_scale_host_tt = TileTensor(
+        input_scale_host,
+        row_major(
+            m_sf,
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
+        ),
     )
-    fill_scales(input_scale_host_lt, M, HIDDEN)
+    fill_scales(input_scale_host_tt, M, HIDDEN)
 
     comptime n_sf = N_TOTAL // SF_MN_GROUP_SIZE
     comptime weight_sf_layout = Layout.row_major(
@@ -389,13 +393,17 @@ def run_one_case(
     var weight_scale_host = ctx.enqueue_create_host_buffer[scale_dtype](
         weight_scale_elems
     )
-    var weight_scale_host_lt = LayoutTensor[scale_dtype, weight_sf_layout](
-        weight_scale_host.unsafe_ptr(),
-        RuntimeLayout[weight_sf_layout].row_major(
-            IndexList[5](n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    var weight_scale_host_tt = TileTensor(
+        weight_scale_host,
+        row_major(
+            Idx[n_sf],
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
-    fill_scales(weight_scale_host_lt, N_TOTAL, HIDDEN)
+    fill_scales(weight_scale_host_tt, N_TOTAL, HIDDEN)
 
     # --- paged blocks (zero-init both caches) --------------------------------
     var main_blocks_host = ctx.enqueue_create_host_buffer[kv_dtype](
@@ -674,22 +682,24 @@ def _verify_ref(
 
     comptime k_sf = ceildiv(HIDDEN, SF_VECTOR_SIZE * SF_ATOM_K)
     comptime n_sf = N_TOTAL // SF_MN_GROUP_SIZE
-    comptime input_sf_layout = Layout.row_major(
-        UNKNOWN_VALUE, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
-    comptime weight_sf_layout = Layout.row_major(
-        n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
-    var input_scale_lt = LayoutTensor[scale_dtype, input_sf_layout](
-        input_scale_host.unsafe_ptr(),
-        RuntimeLayout[input_sf_layout].row_major(
-            IndexList[5](m_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    var input_scale_tt = TileTensor(
+        input_scale_host,
+        row_major(
+            m_sf,
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
-    var weight_scale_lt = LayoutTensor[scale_dtype, weight_sf_layout](
-        weight_scale_host.unsafe_ptr(),
-        RuntimeLayout[weight_sf_layout].row_major(
-            IndexList[5](n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    var weight_scale_tt = TileTensor(
+        weight_scale_host,
+        row_major(
+            Idx[n_sf],
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
 
@@ -704,10 +714,10 @@ def _verify_ref(
                 var a = hs_host[m * HIDDEN + k].cast[.float32]()
                 var b = w_host[n * HIDDEN + k].cast[.float32]()
                 var sa = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    input_scale_lt, m, k
+                    input_scale_tt, m, k
                 ).cast[.float32]()
                 var sb = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    weight_scale_lt, n, k
+                    weight_scale_tt, n, k
                 ).cast[.float32]()
                 acc += (a * sa) * (b * sb)
             full[m * N_TOTAL + n] = acc

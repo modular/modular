@@ -15,11 +15,10 @@
 
 from std.sys._assembly import inlined_assembly
 from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
-from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer, align_of
+from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 from std.utils.numerics import FPUtils
-from std.utils.index import IndexList
 from std.memory import bitcast
-from layout import Coord, CoordLike, Idx, Layout, LayoutTensor, TileTensor
+from layout import Coord, CoordLike, Idx, TileTensor
 from layout.tile_layout import TensorLayout
 from std.simd import _convert_f32_to_float8_ue8m0
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -594,56 +593,6 @@ def cast_float_to_fp4e2m1_amd[
 
 def set_scale_factor[
     scales_dtype: DType,
-    scales_layout: Layout,
-    //,
-    SF_VECTOR_SIZE: Int,
-    width: SIMDLength,
-](
-    scales_tensor: LayoutTensor[mut=True, scales_dtype, scales_layout, ...],
-    row_idx: Int,
-    col_idx: Int,
-    scale_value: SIMD[scales_dtype, width],
-):
-    """Stores a scale factor into a 5D non-batched `LayoutTensor` at the given row and column.
-
-    Translates the linear `(row_idx, col_idx)` coordinates into the 5D
-    scale-factor layout used by MXFP4/NVFP4 block-scaled tensors and stores
-    `scale_value` there with natural alignment.
-
-    Parameters:
-        scales_dtype: Element type of the scales tensor.
-        scales_layout: Layout of the scales `LayoutTensor`.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
-        width: SIMD width of the value to store; must not exceed `SF_ATOM_K`.
-
-    Args:
-        scales_tensor: Mutable 5D `LayoutTensor` holding the scale factors.
-        row_idx: Row index in the original (unscaled) tensor coordinates.
-        col_idx: Column index in the original (unscaled) tensor coordinates.
-        scale_value: Scale factor value(s) to store.
-    """
-    comptime assert (
-        scales_tensor.rank == 5
-    ), "scales_tensor must be 5D for non-batched scales tensor"
-    comptime assert (
-        width <= SF_ATOM_K
-    ), "width must be less than or equal to SF_ATOM_K"
-
-    comptime align = align_of[SIMD[scales_dtype, width]]()
-    scales_tensor.store[store_alignment=align](
-        IndexList[5](
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-        ),
-        scale_value,
-    )
-
-
-def set_scale_factor[
-    scales_dtype: DType,
     width: SIMDLength,
     //,
     SF_VECTOR_SIZE: Int,
@@ -689,54 +638,10 @@ def set_scale_factor[
 
 def get_scale_factor[
     scales_dtype: DType,
-    scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
 ](
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    row_idx: Int,
-    col_idx: Int,
-) -> Scalar[scales_dtype]:
-    """Loads a scale factor from a 5D non-batched `LayoutTensor` at the given row and column.
-
-    Translates the linear `(row_idx, col_idx)` coordinates into the 5D
-    scale-factor layout used by MXFP4/NVFP4 block-scaled tensors and returns
-    the stored scale factor.
-
-    Parameters:
-        scales_dtype: Element type of the scales tensor.
-        scales_layout: Layout of the scales `LayoutTensor`.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
-
-    Args:
-        scales_tensor: 5D `LayoutTensor` holding the scale factors.
-        row_idx: Row index in the original (unscaled) tensor coordinates.
-        col_idx: Column index in the original (unscaled) tensor coordinates.
-
-    Returns:
-        The scale factor stored at the translated 5D coordinate.
-    """
-    comptime assert (
-        scales_tensor.rank == 5
-    ), "scales_tensor must be 5D for non-batched scales tensor"
-
-    return rebind[Scalar[scales_dtype]](
-        scales_tensor[
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-        ]
-    )
-
-
-def get_scale_factor[
-    scales_dtype: DType,
-    //,
-    SF_VECTOR_SIZE: Int,
-](
-    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    scales_tensor: TileTensor[scales_dtype, ...],
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
@@ -859,71 +764,6 @@ def convert_ref_scales_to_mxfp8_format[
         mut=True, scales_type, b_scales_tt_layout, address_space=.GENERIC, ...
     ],
 ):
-    """TileTensor overload of `convert_ref_scales_to_mxfp8_format`.
-
-    Bridges to the LayoutTensor implementation, which stays the reference
-    until the MXFP8 scale-factor helpers are TileTensor-native.
-
-    Parameters:
-        MType: CoordLike type carrying the M dimension size.
-        NType: CoordLike type carrying the N dimension size.
-        KType: CoordLike type carrying the K dimension size.
-        ref_a_scales_tt_layout: `TensorLayout` of the 2D reference A scales.
-        ref_b_scales_tt_layout: `TensorLayout` of the 2D reference B scales.
-        a_scales_tt_layout: `TensorLayout` of the 5D output A scales.
-        b_scales_tt_layout: `TensorLayout` of the 5D output B scales.
-        ref_scales_type: Element type of the reference scales.
-        scales_type: Element type of the output scales.
-        REF_BLOCK_SIZE: Block size of the reference scales.
-        SF_VECTOR_SIZE: Scale-factor vector size of the output scales.
-
-    Args:
-        m: M dimension size.
-        n: N dimension size.
-        k: K dimension size.
-        ref_a_scales: 2D reference A scales.
-        ref_b_scales: 2D reference B scales.
-        a_scales: 5D output A scales.
-        b_scales: 5D output B scales.
-    """
-    convert_ref_scales_to_mxfp8_format[
-        REF_BLOCK_SIZE=REF_BLOCK_SIZE, SF_VECTOR_SIZE=SF_VECTOR_SIZE
-    ](
-        m,
-        n,
-        k,
-        ref_a_scales.to_layout_tensor(),
-        ref_b_scales.to_layout_tensor(),
-        a_scales.to_layout_tensor(),
-        b_scales.to_layout_tensor(),
-    )
-
-
-def convert_ref_scales_to_mxfp8_format[
-    MType: CoordLike,
-    NType: CoordLike,
-    KType: CoordLike,
-    //,
-    ref_scales_type: DType,
-    scales_type: DType,
-    ref_a_scales_layout: Layout,
-    ref_b_scales_layout: Layout,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_scales_origin: MutOrigin,
-    b_scales_origin: MutOrigin,
-    *,
-    REF_BLOCK_SIZE: Int,
-    SF_VECTOR_SIZE: Int,
-](
-    m: MType,
-    n: NType,
-    k: KType,
-    ref_a_scales: LayoutTensor[ref_scales_type, ref_a_scales_layout, _],
-    ref_b_scales: LayoutTensor[ref_scales_type, ref_b_scales_layout, _],
-    a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
-    b_scales: LayoutTensor[scales_type, b_scales_layout, b_scales_origin],
-):
     """Converts reference float32 block scales into the 5D MXFP8 E8M0 scale-factor layout.
 
     Reads the per-block float32 reference scales for the A (M x K) and
@@ -935,14 +775,12 @@ def convert_ref_scales_to_mxfp8_format[
         MType: CoordLike type carrying the M dimension size.
         NType: CoordLike type carrying the N dimension size.
         KType: CoordLike type carrying the K dimension size.
+        ref_a_scales_tt_layout: `TensorLayout` of the 2D reference A scales.
+        ref_b_scales_tt_layout: `TensorLayout` of the 2D reference B scales.
+        a_scales_tt_layout: `TensorLayout` of the 5D output A scales.
+        b_scales_tt_layout: `TensorLayout` of the 5D output B scales.
         ref_scales_type: Element type of the reference scales (must be float32).
         scales_type: Element type of the output scales (must be float8_e8m0fnu).
-        ref_a_scales_layout: Layout of the 2D reference A scales tensor.
-        ref_b_scales_layout: Layout of the 2D reference B scales tensor.
-        a_scales_layout: Layout of the 5D output A scales tensor.
-        b_scales_layout: Layout of the 5D output B scales tensor.
-        a_scales_origin: Mutability origin of the output A scales tensor.
-        b_scales_origin: Mutability origin of the output B scales tensor.
         REF_BLOCK_SIZE: Block size (in elements) used by the reference scales.
         SF_VECTOR_SIZE: Number of elements each scale factor covers in the output layout.
 
@@ -961,10 +799,10 @@ def convert_ref_scales_to_mxfp8_format[
     comptime assert (
         scales_type == .float8_e8m0fnu
     ), "Only support float8_e8m0fnu scales"
-    comptime assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
-    comptime assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
-    comptime assert a_scales_layout.rank() == 5, "a_scales must be 5D"
-    comptime assert b_scales_layout.rank() == 5, "b_scales must be 5D"
+    comptime assert ref_a_scales.flat_rank == 2, "ref_a_scales must be 2D"
+    comptime assert ref_b_scales.flat_rank == 2, "ref_b_scales must be 2D"
+    comptime assert a_scales.flat_rank == 5, "a_scales must be 5D"
+    comptime assert b_scales.flat_rank == 5, "b_scales must be 5D"
 
     var M = Int(m.value())
     var N = Int(n.value())
@@ -973,30 +811,34 @@ def convert_ref_scales_to_mxfp8_format[
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):
         for k in range(K):
-            a_scales[
-                m // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                m % SF_ATOM_M[0],
-                (m % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
+            a_scales.store[width=1](
+                Coord(
+                    m // SF_MN_GROUP_SIZE,
+                    k // (SF_VECTOR_SIZE * SF_ATOM_K),
+                    m % SF_ATOM_M[0],
+                    (m % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+                    k % SF_ATOM_K,
+                ),
                 _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_a_scales[k // REF_BLOCK_SIZE, m]
-                )
+                    ref_a_scales.load[width=1](Coord(k // REF_BLOCK_SIZE, m))
+                ),
             )
 
     for n in range(N):
         for k in range(K):
-            b_scales[
-                n // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                n % SF_ATOM_M[0],
-                (n % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
+            b_scales.store[width=1](
+                Coord(
+                    n // SF_MN_GROUP_SIZE,
+                    k // (SF_VECTOR_SIZE * SF_ATOM_K),
+                    n % SF_ATOM_M[0],
+                    (n % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+                    k % SF_ATOM_K,
+                ),
                 _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_b_scales[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]
-                )
+                    ref_b_scales.load[width=1](
+                        Coord(n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE)
+                    )
+                ),
             )
 
 
