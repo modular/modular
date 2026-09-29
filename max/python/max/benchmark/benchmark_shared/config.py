@@ -849,7 +849,10 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
             "--image-count 1 it equals both newly-encoded images per request "
             "and the share of requests carrying one, whereas 'first'/'last' "
             "encode once per session and so cut the encoder rate by roughly "
-            "the session's turn count. Mutually exclusive with "
+            "the session's turn count. Only the image turn and later turns "
+            "resend it, so 'first' keeps the share of requests carrying one "
+            "at the fraction while 'last' cuts it like the encoder rate. "
+            "Mutually exclusive with "
             "--random-image-count/--random-image-size."
         ),
         json_schema_extra={"group": "Multimodal"},

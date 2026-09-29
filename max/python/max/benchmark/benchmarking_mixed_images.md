@@ -81,10 +81,15 @@ image, every later turn of that session carries it again.
 With `--image-turn every` and `--image-count 1` the two coincide — newly
 encoded images per request and the share of requests carrying one both equal
 `--image-fraction`, which is what makes that combination the one to reach for
-when matching production. With `first` or `last` they diverge sharply: one
-image is encoded per session, so the encoder rate falls by roughly the average
-turn count while the share of requests carrying an image stays at
-`--image-fraction`.
+when matching production. With `first` or `last` one image is encoded per
+session, so the encoder rate falls by roughly the average turn count. The share
+of requests carrying an image then depends on where that image lands, because
+only the image turn and the turns after it resend it:
+
+- `first`: every turn of a selected session carries the image, so the share
+  stays at `--image-fraction`.
+- `last`: only the final request of a selected session carries it, so the share
+  falls by the same factor as the encoder rate.
 
 This is deliberately unlike `--response-format-fraction`, which draws per
 request and per turn. A structured-output constraint applies only to the
