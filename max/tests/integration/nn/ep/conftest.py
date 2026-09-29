@@ -514,6 +514,16 @@ def moe_weights_mxfp8() -> dict[str, torch.Tensor]:
 @pytest.fixture(scope="module")
 def moe_weights() -> dict[str, torch.Tensor]:
     """Generate random BF16 weights on GPU for fast random number generation."""
+    return generate_moe_weights()
+
+
+def generate_moe_weights() -> dict[str, torch.Tensor]:
+    """Returns the BF16 weight set the EP fixtures load.
+
+    Exposed as a plain function so out-of-pytest drivers (the side-stream
+    trace worker) build the same model the fixtures do, rather than keeping
+    a second copy of the shapes that can drift.
+    """
     torch.manual_seed(42)
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -565,15 +575,15 @@ def moe_weights() -> dict[str, torch.Tensor]:
 def _build_compiled_ep_models(
     moe_weights: dict[str, torch.Tensor],
     swiglu_limit: float = 0.0,
+    n_devices: int = N_DEVICES,
 ) -> CompiledEPModels | None:
     """Compile MoE and MoEGate graphs once.
 
     Returns None when hardware requirements are not met.
     """
-    if accelerator_count() < N_DEVICES:
+    if accelerator_count() < n_devices:
         return None
 
-    n_devices = N_DEVICES
     max_tokens_per_rank = 128
     dtype = DType.bfloat16
 

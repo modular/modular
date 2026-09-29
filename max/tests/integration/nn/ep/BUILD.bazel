@@ -12,6 +12,12 @@ _QUANTIZED_TESTS = [
     "test_ep_moe_mxfp8.py",
 ]
 
+# Kept out of `ep_tests`: it shells out to `rocprofv3`, so it is AMD-only and
+# spans two devices rather than four, and it compiles the EP graph twice (once
+# per arm of its A/B) because `MODULAR_OVERLAP_SHARED_EXPERT` is read at
+# graph-build time.
+_TRACED_TESTS = ["test_ep_side_stream.py"]
+
 _COMMON_ENV = select({
     "//:nvidia_gpu": {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",  # reserve memory for NVSHMEM
@@ -50,7 +56,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["test_*.py"],
-        exclude = _QUANTIZED_TESTS,
+        exclude = _QUANTIZED_TESTS + _TRACED_TESTS,
     ) + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
@@ -68,6 +74,44 @@ modular_py_test(
         "requires-network",
     ],
     deps = _COMMON_DEPS + [requirement("numpy")],
+)
+
+modular_py_test(
+    name = "ep_side_stream_test",
+    # Two traced arms run back to back; the test splits TEST_TIMEOUT between
+    # them, so this sets the per-arm budget.
+    size = "enormous",
+    srcs = _TRACED_TESTS + [
+        "conftest.py",
+        "side_stream_worker.py",
+    ],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "12",
+    },
+    gpu_constraints = [
+        "//:amd_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        # Postsubmit rather than presubmit: it holds two GPUs for two full EP
+        # compiles to check a runtime property few changes touch.
+        "postsubmit",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ],
 )
 
 modular_py_test(
