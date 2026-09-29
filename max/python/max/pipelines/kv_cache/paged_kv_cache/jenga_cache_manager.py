@@ -788,14 +788,14 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     # KVConnector APIs (full-attention groups only -- see __init__)
     # ============================================================================
 
-    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the host KV tier occupancy in bytes for the given replica."""
+    def host_byte_count(self) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes, shared by every replica."""
         if self._connector is None:
             return ByteCount(free=0, total=0)
         return self._connector.host_byte_count
 
-    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the disk KV tier occupancy in bytes for the given replica."""
+    def disk_byte_count(self) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes, shared by every replica."""
         if self._connector is None:
             return ByteCount(free=0, total=0)
         return self._connector.disk_byte_count

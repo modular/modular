@@ -73,11 +73,11 @@ class DummyKVCache(PagedKVCacheManager):
         """Returns a single block; this cache never allocates, so it stays free."""
         return BlockCount(free=1, total=1)
 
-    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
+    def host_byte_count(self) -> ByteCount:
         """Returns one permanently used byte."""
         return ByteCount(free=0, total=1)
 
-    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
+    def disk_byte_count(self) -> ByteCount:
         """Returns one permanently used byte."""
         return ByteCount(free=0, total=1)
 

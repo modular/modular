@@ -375,16 +375,15 @@ class BatchMetrics:
                 / 100
             )
 
-            host_byte_counts = [
-                kv_cache.host_byte_count(replica_idx)
-                for replica_idx in range(num_replicas)
-            ]
-            total_host_kv_bytes = sum(bc.total for bc in host_byte_counts)
+            # The host and disk tiers are one pool shared by every replica,
+            # so they are read once rather than summed per replica.
+            host_byte_count = kv_cache.host_byte_count()
+            total_host_kv_bytes = host_byte_count.total
 
             metrics_agg = kv_cache.take_metrics_aggregated()
 
             if total_host_kv_bytes > 0:
-                used_host_kv_bytes = sum(bc.used for bc in host_byte_counts)
+                used_host_kv_bytes = host_byte_count.used
                 used_host_kv_pct = used_host_kv_bytes / total_host_kv_bytes
 
             device_blocks_served = metrics_agg.device_blocks_served
@@ -398,13 +397,10 @@ class BatchMetrics:
             disk_bytes_read = metrics_agg.disk_bytes_read
             inflight_disk_ops = metrics_agg.inflight_disk_ops
 
-            disk_byte_counts = [
-                kv_cache.disk_byte_count(replica_idx)
-                for replica_idx in range(num_replicas)
-            ]
-            total_disk_kv_bytes = sum(bc.total for bc in disk_byte_counts)
+            disk_byte_count = kv_cache.disk_byte_count()
+            total_disk_kv_bytes = disk_byte_count.total
             if total_disk_kv_bytes > 0:
-                used_disk_kv_bytes = sum(bc.used for bc in disk_byte_counts)
+                used_disk_kv_bytes = disk_byte_count.used
                 used_disk_kv_pct = used_disk_kv_bytes / total_disk_kv_bytes
 
             # dKV latency metrics: sum across replicas then average.
