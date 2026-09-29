@@ -13,10 +13,8 @@
 """Implements math methods that work on layout tensors."""
 
 import std.math
-from std.sys.info import simd_width_of
 
 import max.algorithm.reduction as reduction
-from std.algorithm import vectorize
 from std.math.math import max as b_max
 from layout import (
     Coord,
@@ -24,13 +22,9 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
 )
-
-from std.utils.index import IndexList
 
 
 @inline(.always)
@@ -351,129 +345,6 @@ def sum[
     var res_tensor = type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor
-
-
-def mean(src: LayoutTensor) raises -> Scalar[src.dtype]:
-    """Computes the mean value of the elements in a buffer.
-
-    Args:
-        src: The buffer of elements for which the mean is computed.
-
-    Returns:
-        The mean value of the elements in the given buffer.
-
-    Raises:
-        May raise on GPU targets when a device error occurs.
-    """
-    comptime assert src.rank == 1, "src must be of rank 1"
-
-    assert src.size() != 0, "input must not be empty"
-
-    @__parameter
-    @inline(.always)
-    def input_fn_1d[
-        dtype_: DType, width: Int
-    ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.runtime_layout(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
-        )
-        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
-
-    return reduction.mean[src.dtype, input_fn_1d](src.size())
-
-
-def mean[
-    reduce_axis: Int
-](src: LayoutTensor, dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
-    """Computes the mean across reduce_axis of a LayoutTensor.
-
-    Parameters:
-        reduce_axis: The axis to reduce across.
-
-    Args:
-        src: The input buffer.
-        dst: The output buffer.
-
-    Raises:
-        May raise on GPU targets when a device error occurs.
-    """
-    comptime simd_width = simd_width_of[dst.dtype]()
-    sum[reduce_axis](src, dst)
-
-    var n = src.dim[reduce_axis]()
-    var dst_1d = LayoutTensor[
-        dst.dtype,
-        Layout.row_major(UNKNOWN_VALUE),
-        address_space=dst.address_space,
-    ](
-        dst.ptr,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](dst.size())
-        ),
-    )
-
-    comptime src_dtype = src.dtype
-
-    comptime if dst.dtype.is_integral():
-
-        @inline(.always)
-        def normalize_integral[simd_width: Int](idx: Int) {var dst_1d, var n}:
-            var idx_1d = dst_1d.runtime_layout(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
-            )
-            var elem = dst_1d.ptr.load[width=simd_width](idx_1d)
-            var to_store = elem // SIMD[src_dtype, simd_width](n)
-            dst_1d.ptr.store(idx_1d, to_store)
-
-        vectorize[simd_width](dst_1d.size(), normalize_integral)
-    else:
-        var n_recip = Scalar[dst.dtype](1) / Scalar[src.dtype](n)
-
-        @inline(.always)
-        def normalize_floating[
-            simd_width: Int
-        ](idx: Int) {var dst_1d, var n, var n_recip}:
-            var idx_1d = dst_1d.runtime_layout(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
-            )
-            var elem = dst_1d.ptr.load[width=simd_width](idx_1d)
-            var to_store = elem * n_recip
-            dst_1d.ptr.store(idx_1d, to_store)
-
-        vectorize[simd_width](dst_1d.size(), normalize_floating)
-
-
-def variance(
-    src: LayoutTensor, correction: Int = 1
-) raises -> Scalar[src.dtype]:
-    """Computes the variance value of the elements in a buffer.
-
-    ```
-    variance(x) = sum((x - E(x))^2) / (size - correction)
-    ```
-
-    Args:
-        src: The buffer.
-        correction: Normalize variance by size - correction (Default=1).
-
-    Returns:
-        The variance value of the elements in a buffer.
-
-    Raises:
-        May raise on GPU targets when a device error occurs.
-    """
-
-    @inline(.always)
-    @__parameter
-    def input_fn_1d[
-        dtype_: DType, width: Int
-    ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.runtime_layout(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
-        )
-        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
-
-    return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)
 
 
 def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:

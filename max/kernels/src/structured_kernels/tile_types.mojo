@@ -36,7 +36,6 @@ from layout import (
     CoordLike,
     DefaultEngine,
     Idx,
-    LayoutTensor,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -99,7 +98,7 @@ Returns:
 # ============================================================================
 # These create internal Layout types that match the swizzled structures from
 # tile_layout_k_major. Using internal Layout allows passing through struct
-# parameters while preserving type information for .to_layout_tensor().
+# parameters while preserving the swizzle type information.
 #
 # The key insight: new Layout (from _layout.mojo) has compile-time type
 # parameters (shape_types, stride_types) that are preserved through struct
@@ -247,8 +246,8 @@ comptime SMemTile[
 ]
 """Shared memory tile using TileTensor with a Layout.
 
-The Layout parameter preserves swizzle information, enabling
-.to_layout_tensor() to produce correctly swizzled LayoutTensors.
+The Layout parameter preserves swizzle information so that views derived
+from the tile stay correctly swizzled.
 
 Parameters:
     dtype: The data type of tile elements.
@@ -484,52 +483,15 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[mut=False, ...]) raises -> TmaOpType[
-    tensor.dtype, tma_tile_layout, tma_desc_layout
-]:
-    """Create a TMATensorTile using new Layout types.
-
-    Extracts IndexList shapes from new Layout types internally, calls
-    create_tensor_tile, and returns TMATensorTile. No LegacyLayout
-    is exposed to callers -- the conversion is encapsulated here.
-
-    Parameters:
-        tma_tile_layout: Tile layout as new TensorLayout.
-        tma_desc_layout: Descriptor layout as new TensorLayout.
-        tile_shape: Physical tile dimensions for the TMA descriptor.
-        swizzle_mode: TMA swizzle mode.
-
-    Args:
-        ctx: Device context for TMA descriptor creation.
-        tensor: Source tensor in global memory.
-
-    Returns:
-        A TMATensorTile (DevicePassable) for use with enqueue_function.
-    """
-    return create_tensor_tile[
-        tile_shape,
-        swizzle_mode=swizzle_mode,
-        __tile_shape=_to_index_list[tma_tile_layout](),
-        __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
-    ](ctx, tensor)
-
-
-def create_tma_tile[
-    tma_tile_layout: TensorLayout,
-    tma_desc_layout: TensorLayout,
-    tile_shape: IndexList[tma_tile_layout.rank],
-    *,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     unpack_fp4: Bool = False,
 ](ctx: DeviceContext, tensor: TileTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
-    """TileTensor overload of create_tma_tile.
+    """Creates a TMA tile from a TileTensor.
 
-    Calls create_tensor_tile directly with TileTensor, bypassing
-    LayoutTensor entirely. The TileTensor just needs ptr and layout
-    shape/stride accessors, which work on any TileTensor including
-    reshaped views.
+    Calls create_tensor_tile directly with the TileTensor. The TileTensor
+    just needs ptr and layout shape/stride accessors, which work on any
+    TileTensor including reshaped views.
 
     Parameters:
         tma_tile_layout: Tile layout as new TensorLayout.
@@ -567,7 +529,7 @@ comptime GMEMTile[
 ] = TileTensor[dtype, tt_layout, MutAnyOrigin, Engine=Engine]
 """Global memory TileTensor for global memory kernel parameters.
 
-Used for kernel parameter types, replacing LayoutTensor parameters.
+Used for kernel parameter types.
 """
 
 
@@ -634,8 +596,8 @@ struct SMemTileArrayWithLayout[
     """Array of TileTensor tiles with explicit Layout (preserves swizzle info).
 
     Unlike SMemTileArray2D which uses row_major internally, this type preserves
-    the full layout information from TMA swizzling, enabling .to_layout_tensor()
-    to produce correctly swizzled LayoutTensors.
+    the full layout information from TMA swizzling, so tiles taken from it
+    carry the correct swizzle.
 
     Parameters:
         dtype: Tile element data type.
@@ -649,7 +611,6 @@ struct SMemTileArrayWithLayout[
 
         var array = MyArray.stack_allocation()
         var tile = array[0]  # Returns TileTensor with swizzled layout
-        var lt = tile.to_layout_tensor()  # Correctly swizzled!
     """
 
     # The TileTensor-based tile type with correct layout
@@ -764,10 +725,9 @@ struct SMemTileArray[
 ](TrivialRegisterPassable):
     """Array of TileTensor tiles with variadic shape/stride type parameters.
 
-    This is the TileTensor equivalent of the LayoutTensor-based SMemTileArray
-    in structuring.mojo. By taking shape_types and stride_types directly as
-    variadic type parameters, this preserves full compile-time type information
-    including swizzle patterns.
+    By taking shape_types and stride_types directly as variadic type
+    parameters, this preserves full compile-time type information including
+    swizzle patterns.
 
     Parameters:
         dtype: Tile element data type.

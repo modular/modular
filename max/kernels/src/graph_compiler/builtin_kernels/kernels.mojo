@@ -42,10 +42,12 @@ from layout import (
     ComptimeInt,
     Coord,
     CoordLike,
+    DefaultEngine,
     IntTuple,
-    Layout,
-    LayoutTensor,
+    RowMajorLayout,
     RuntimeLayout,
+    TensorEngine,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
@@ -65,7 +67,6 @@ from nn.fold import fold, fold_shape
 from nn.gather_scatter import normalize_neg_index
 from nn.irfft import irfft
 from nn.kv_cache import (
-    generic_fused_qkv_matmul_kv_cache_bshd_paged,
     generic_get_paged_cache,
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
@@ -1399,58 +1400,6 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     )
 
 
-@inline(.always)
-def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
-    dtype: DType,
-    target: StaticString,
-](
-    hidden_state: ManagedTensorSlice[dtype=dtype, rank=3, ...],
-    weight: ManagedTensorSlice[dtype=dtype, rank=2, ...],
-    kv_collection: PagedKVCacheCollection[dtype, ...],
-    layer_idx: UInt32,
-    valid_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ],
-    output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
-    ctx: DeviceContext,
-) raises:
-    """Implements the fused QKV matmul for BSHD inputs, writing the K and V projections directly into a paged KV cache.
-
-    Parameters:
-        dtype: Element type of the `hidden_state`, `weight`, and `output`
-            tensors.
-        target: Target device identifier for kernel dispatch.
-
-    Args:
-        hidden_state: Input tensor of shape
-            `(batch_size, seq_len, num_heads * head_size)`.
-        weight: Weight matrix of shape
-            `(num_heads * head_size, num_kv_heads * head_size)`.
-        kv_collection: Paged KV cache collection holding the keys and
-            values; the cache for this layer is retrieved via
-            `layer_idx`.
-        layer_idx: Index of the layer whose K and V projections are
-            written into the cache.
-        valid_lengths: One-dimensional tensor of shape `[batch]` giving
-            the valid length of each sequence; K and V are only written
-            to the cache for positions within these lengths.
-        output: Pre-allocated output buffer of shape
-            `(batch_size, seq_len, num_heads * head_size)` for the Q
-            projections; K and V projections are written in place to the
-            cache.
-        ctx: Device context used for kernel dispatch.
-    """
-    generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target,](
-        hidden_state.to_layout_tensor(),
-        weight.to_layout_tensor(),
-        kv_collection,
-        layer_idx,
-        valid_lengths,
-        output.to_layout_tensor(),
-        ctx,
-    )
-
-
 @extensibility.register("mo.rope_split_store.ragged.paged")
 struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     """Registers the `mo.rope_split_store.ragged.paged` graph op with the graph compiler.
@@ -1866,6 +1815,9 @@ def _execute_mha_ragged_paged_scalar_args[
     local_window_size: Int = -1,
     output_dtype: DType = q_dtype,
     cache_dtype: DType = q_dtype,
+    SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
+    # `sink_weights` is optional, so its engine cannot be inferred.
+    SinkEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     output: OutputTensor[dtype=output_dtype, rank=3, ...],
     q: InputTensor[dtype=q_dtype, rank=3, ...],
@@ -1881,7 +1833,7 @@ def _execute_mha_ragged_paged_scalar_args[
     mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
     context: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        TileTensor[q_dtype, SinkLayoutType, ImmutAnyOrigin, Engine=SinkEngine]
     ] = None,
 ) raises:
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
@@ -1913,7 +1865,7 @@ def _execute_mha_ragged_paged_scalar_args[
             scale,
             output.to_layout_tensor(),
             context,
-            sink_weights.value(),
+            sink_weights.value().to_layout_tensor(),
             decode_dispatch_metadata,
         )
     else:

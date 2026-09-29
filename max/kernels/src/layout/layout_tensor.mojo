@@ -7614,69 +7614,6 @@ def copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    dst: LayoutTensor[mut=True, ...],
-    src_iter: LayoutTensorIter[mut=False, ...],
-    bounds: UInt32,
-):
-    """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
-
-    This function implements an optimized memory transfer operation specifically
-    for AMD GPU architectures. It utilizes the hardware's buffer_load intrinsic
-    to efficiently transfer data from global memory to registers while handling
-    bounds checking. The function distributes the copy operation across multiple
-    threads for maximum throughput.
-
-    Parameters:
-        src_thread_layout: The layout used to distribute the source tensor
-            across threads. This determines how the workload is divided among
-            participating threads.
-        num_threads: Total number of threads in the thread block. Threads
-            beyond `src_thread_layout.size()` will be disabled and not
-            participate in the copy operation.
-        thread_scope: Defines whether operations are performed at `BLOCK` or
-            `WARP` level. `BLOCK` scope involves all threads in a thread block,
-            while `WARP` scope restricts operations to threads within the same
-            warp. Defaults to `ThreadScope.BLOCK`.
-        block_dim_count: The number of dimensions in the thread block.
-        cache_policy: The cache policy to use for the copy operation.
-            Defaults to `CacheOperation.ALWAYS`.
-
-    Args:
-        dst: The destination tensor in register memory (LOCAL address space).
-        src_iter: The source tensor iterator.
-        bounds: Bounds of the buffer, based on the ptr of the src_iter.
-
-    Constraints:
-        - Only supported on AMD GPUs.
-        - The destination element layout size must match the SIMD width.
-        - Source fragments must be rank 2 with known dimensions.
-
-    Notes:
-
-    - The offset calculation method significantly impacts performance.
-        Current implementation optimizes for throughput over flexibility.
-    - This function is particularly useful for prefetching data into registers
-        before performing computations, reducing memory access latency.
-    """
-    var buffer = make_amd_buffer_resource(src_iter, Int(bounds))
-
-    _copy_dram_to_local[
-        src_thread_layout,
-        num_threads,
-        thread_scope,
-        block_dim_count,
-        cache_policy,
-    ](dst, src_iter, buffer)
-
-
-@inline(.nodebug)
-def copy_dram_to_local[
-    src_thread_layout: Layout,
-    num_threads: Int = src_thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-    block_dim_count: Int = 1,
 ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor[mut=False, ...]):
     """Efficiently copy data from global memory (DRAM) to registers.
 

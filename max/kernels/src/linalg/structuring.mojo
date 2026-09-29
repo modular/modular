@@ -18,9 +18,8 @@ from std.collections import Optional
 from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
-from layout._utils import _get_bounds, make_amd_buffer_resource
+from layout._utils import make_amd_buffer_resource
 from layout.layout_tensor import (
-    LayoutTensorIter,
     ThreadScope,
     _copy_dram_to_local,
     _copy_local_to_dram,
@@ -92,53 +91,6 @@ struct ScatterGatherAmd[
             Self.thread_scope,
             Self.block_dim_count,
         ](dst_gmem_tile, src_reg_tile, self.buffer)
-
-
-struct IteratorScatterGatherAmd[
-    thread_layout: Layout,
-    num_threads: Int = thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-    block_dim_count: Int = 1,
-]:
-    """Iterator-based AMD scatter-gather for DRAM-register data movement.
-
-    Parameters:
-        thread_layout: Thread organization layout.
-        num_threads: Total threads (defaults to thread_layout size).
-        thread_scope: Thread execution scope (block or warp).
-        block_dim_count: Number of block dimensions.
-    """
-
-    var buffer: AMDBufferResource
-
-    @inline(.always)
-    def __init__(out self, tensor: LayoutTensor, tensor_iter: LayoutTensorIter):
-        """Initialize with tensor and iterator.
-
-        Args:
-            tensor: Layout tensor for bounds.
-            tensor_iter: Iterator for AMD buffer resource.
-        """
-        self.buffer = make_amd_buffer_resource(tensor_iter, _get_bounds(tensor))
-
-    @inline(.always)
-    def copy(
-        self,
-        dst_reg_tile: LayoutTensor[mut=True, ...],
-        src_gmem_tile_iter: LayoutTensorIter,
-    ):
-        """Copy DRAM to registers via iterator.
-
-        Args:
-            dst_reg_tile: Destination register tile.
-            src_gmem_tile_iter: Source memory iterator.
-        """
-        _copy_dram_to_local[
-            Self.thread_layout,
-            Self.num_threads,
-            Self.thread_scope,
-            Self.block_dim_count,
-        ](dst_reg_tile, src_gmem_tile_iter, self.buffer)
 
 
 # Shared Memory and Register tiles type declarations.

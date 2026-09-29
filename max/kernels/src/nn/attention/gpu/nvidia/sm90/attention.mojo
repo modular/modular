@@ -607,27 +607,7 @@ def produce[
     ]:
         return {q_smem + UInt32(q_size) * q_idx + offset}
 
-    comptime k_smem_layout = tile_layout_k_major[
-        qkv_type, BN, padded_depth, swizzle_mode
-    ]()
     comptime assert pipeline_stages >= 2
-
-    @__parameter
-    @inline(.always)
-    def kv_tile(
-        idx: UInt32,
-        out tile: LayoutTensor[
-            qkv_type,
-            k_smem_layout,
-            type_of(kv_smem).origin,
-            address_space=.SHARED,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
-            alignment=128,
-        ],
-    ):
-        comptime sz = BN * padded_depth
-        tile = {kv_smem + UInt32(sz) * idx}
 
     comptime kv_sub_BN = kv_sub_tile_rows(BN, KVLUTType.page_size)
 

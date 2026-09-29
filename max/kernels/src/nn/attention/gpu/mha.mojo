@@ -96,7 +96,6 @@ from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
-from linalg.transpose import transpose
 from linalg.utils_gpu import _apple_m5_allow_lossy_f32_attention
 from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
@@ -108,10 +107,7 @@ from .apple.naive_fa_decode import (
     naive_fa_decode_apple,
     naive_fa_decode_apple_supports_depth,
 )
-from .apple.fa_prefill import (
-    FA_PREFILL_APPLE_MAX_HEAD_DIM,
-    fa_prefill_apple,
-)
+from .apple.fa_prefill import FA_PREFILL_APPLE_MAX_HEAD_DIM, fa_prefill_apple
 from .amd_structured.attention import Attention
 from .amd_structured.config import (
     _MHA_DECODE_FOLD_MAX_ROWS,
@@ -7120,191 +7116,6 @@ def mha_gpu_naive[
         ctx,
         sink_weights,
     )
-
-
-# ===-----------------------------------------------------------------------===#
-# Naive CPU MHA as reference
-# ===-----------------------------------------------------------------------===#
-
-
-def _naive_attention_with_transpose[
-    dtype: DType,
-    transpose_k: Bool = False,
-](
-    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    k: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    v: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    mask: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    scale: Float32,
-    ctx: DeviceContext,
-) raises:
-    """This kernel provides reference values for flash attention in llama 2.
-    It can't be used in any model.
-    Layouts:
-        q: BSHD
-        k, v: BKHD
-        output: BSHD
-        mask: SK
-    B, S, K, H, D stand for batch size, sequence length, number of keys,
-    number of heads, and depth per head, respectively.
-    """
-    comptime simd_size = simd_width_of[dtype]()
-
-    var batch_size = q.dim[0]()
-    var seq_len = q.dim[1]()
-    var num_keys = k.dim[1]()
-    var num_heads = q.dim[2]()
-    var depth = q.dim[3]()
-
-    # Q, K, V transposed
-    var qt_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=q.size())
-    ).into_managed()
-    var kt_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=k.size())
-    ).into_managed()
-    var vt_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=v.size())
-    ).into_managed()
-    # Score = softmax(Q * K)
-    var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=score_size)
-    ).into_managed()
-    # O = Score * V. It's transposed and will be transposed back to output.
-    var ot_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=output.size())
-    ).into_managed()
-
-    var qt_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(qt_alloc)
-    ] = qt_alloc.unsafe_ptr()
-    var kt_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(kt_alloc)
-    ] = kt_alloc.unsafe_ptr()
-    var vt_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(vt_alloc)
-    ] = vt_alloc.unsafe_ptr()
-    var ot_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(ot_alloc)
-    ] = ot_alloc.unsafe_ptr()
-
-    var qt = TileTensor(
-        qt_ptr,
-        row_major(batch_size, num_heads, seq_len, depth),
-    )
-    var kt = TileTensor(
-        kt_ptr,
-        row_major(batch_size, num_heads, depth, num_keys),
-    )
-    var vt = TileTensor(
-        vt_ptr,
-        row_major(batch_size, num_heads, num_keys, depth),
-    )
-    var ot = TileTensor(
-        ot_ptr,
-        row_major(batch_size, num_heads, seq_len, depth),
-    )
-
-    comptime layout_4d = Layout.row_major[4]()
-    var qt_lt = LayoutTensor[dtype, layout_4d](
-        qt_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, depth)
-        ),
-    )
-    var kt_lt = LayoutTensor[dtype, layout_4d](
-        kt_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, depth, num_keys)
-        ),
-    )
-    var vt_lt = LayoutTensor[dtype, layout_4d](
-        vt_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, num_keys, depth)
-        ),
-    )
-    var ot_lt = LayoutTensor[dtype, layout_4d](
-        ot_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, depth)
-        ),
-    )
-
-    # BSHD -> BHSD
-    var q_perm_stack: Array[Int, 4] = [0, 2, 1, 3]
-    var q_perm = TileTensor(q_perm_stack, row_major[4]())
-
-    # BSHD -> BHDS
-    var k_perm_stack: Array[Int, 4] = [0, 2, 3, 1]
-    var k_perm = TileTensor(k_perm_stack, row_major[4]())
-
-    # BHSD -> BSHD
-    var o_perm_stack: Array[Int, 4] = [0, 2, 1, 3]
-    var o_perm = TileTensor(o_perm_stack, row_major[4]())
-
-    var q_tt = TileTensor(
-        q.ptr,
-        row_major(
-            (
-                q.dim[0](),
-                q.dim[1](),
-                q.dim[2](),
-                q.dim[3](),
-            )
-        ),
-    )
-    var k_tt = TileTensor(
-        k.ptr,
-        row_major(
-            (
-                k.dim[0](),
-                k.dim[1](),
-                k.dim[2](),
-                k.dim[3](),
-            )
-        ),
-    )
-    var v_tt = TileTensor(
-        v.ptr,
-        row_major(
-            (
-                v.dim[0](),
-                v.dim[1](),
-                v.dim[2](),
-                v.dim[3](),
-            )
-        ),
-    )
-    var output_tt = TileTensor(
-        output.ptr,
-        row_major(
-            (
-                output.dim[0](),
-                output.dim[1](),
-                output.dim[2](),
-                output.dim[3](),
-            )
-        ),
-    )
-
-    transpose(qt, q_tt, q_perm.ptr)
-    transpose(kt, k_tt, k_perm.ptr)
-    transpose(vt, v_tt, q_perm.ptr)
-
-    _naive_attention[dtype, transpose_k](
-        ot_lt, qt_lt, kt_lt, vt_lt, mask, scale, ctx
-    )
-
-    transpose(output_tt, ot, o_perm.ptr)
-
-    dealloc(qt_alloc^)
-    dealloc(kt_alloc^)
-    dealloc(vt_alloc^)
-    dealloc(score_alloc^)
-    dealloc(ot_alloc^)
 
 
 def _naive_attention[

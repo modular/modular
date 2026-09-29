@@ -66,7 +66,7 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
-from nn.attention.mha_utils import as_dynamic_row_major_1d, dispatch_mask
+from nn.attention.mha_utils import dispatch_mask
 from nn.attention.gpu.mla_graph import (
     mla_prefill_branch_fp8,
     mla_prefill_branch_bf16,
@@ -2215,8 +2215,11 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         ],
         context: DeviceContext,
     ) raises:
-        var sink_weights_lt = sink_weights.to_layout_tensor()
-        var sink_weights_rebound = as_dynamic_row_major_1d(sink_weights_lt)
+        var sink_weights_tt = (
+            sink_weights.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin()
+        )
         _execute_mha_ragged_paged_scalar_args[
             target=target,
             mask_str=mask_str,
@@ -2238,11 +2241,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
             scale,
             mha_decode_dispatch_metadata,
             context,
-            OptionalReg[
-                LayoutTensor[
-                    dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-                ]
-            ](sink_weights_rebound),
+            OptionalReg[type_of(sink_weights_tt)](sink_weights_tt),
         )
 
 
