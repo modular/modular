@@ -94,8 +94,10 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import (
+    ElementwiseComputeFn,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
+    identity_compute_fn,
 )
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
 from ..structured_kernels.tile_pipeline import (
@@ -1736,6 +1738,115 @@ struct BlackwellMatmulSM100Kernel[
             my_rank_dev: Rank index of this GPU for multi-GPU reduce-scatter
                 (defaults to 0).
         """
+        Self._run_impl[has_compute_fn=False](
+            a_tma_op,
+            b_tma_op,
+            c_tma_ops,
+            epilogue_load_tma_op,
+            bias_1d_tile,
+            cluster_dim,
+            mnk,
+            workspace,
+            rank_sigs,
+            my_rank_dev,
+            identity_compute_fn,
+        )
+
+    @staticmethod
+    @inline(.always)
+    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(epilogue_load_tma_op, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernel_name())
+        + StaticString("_compute_fn")
+    )
+    def run_with_compute_fn[
+        ComputeFnType: ElementwiseComputeFn
+    ](
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_ops: Array[Self.CTmaOp, Self.num_c_tma_descriptors],
+        epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
+        bias_1d_tile: Self.Bias1DTile,
+        cluster_dim: StaticTuple[Int32, 3],
+        mnk: StaticTuple[UInt32, 3],
+        workspace: Span[UInt64, MutAnyOrigin],
+        compute_fn: ComputeFnType,
+    ):
+        """Kernel entry point for SM100 matmul with a compute epilogue value.
+
+        Same as `run` for the local TMA store, with the compute epilogue
+        passed as a closure instead of the `elementwise_compute_lambda_fn`
+        parameter.
+
+        Parameters:
+            ComputeFnType: Type of the compute epilogue closure.
+
+        Args:
+            a_tma_op: 3D TMA descriptor for the A input matrix.
+            b_tma_op: 3D TMA descriptor for the B input matrix.
+            c_tma_ops: Array holding the single C TMA descriptor.
+            epilogue_load_tma_op: TMA descriptor for the epilogue load
+                (bias) tensor; unused on this path.
+            bias_1d_tile: 1D bias tile in global memory; unused on this path.
+            cluster_dim: Thread block cluster dimensions for CLC scheduling.
+            mnk: Problem dimensions `(M, N, K)` in elements.
+            workspace: Workspace buffer for profiling and scheduling state.
+            compute_fn: Element-wise epilogue applied to each output value.
+        """
+        comptime assert (
+            not Self.output_writer_type.needs_sync
+            and Self.num_c_tma_descriptors == 1
+        ), "a value compute epilogue requires the local output writer"
+        comptime assert (
+            not Self.config.use_tma_epilogue_load
+        ), "use_tma_epilogue_load is mutually exclusive with a compute epilogue"
+        Self._run_impl[has_compute_fn=True](
+            a_tma_op,
+            b_tma_op,
+            c_tma_ops,
+            epilogue_load_tma_op,
+            bias_1d_tile,
+            cluster_dim,
+            mnk,
+            workspace,
+            None,
+            Int32(0),
+            compute_fn,
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run_impl[
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        has_compute_fn: Bool,
+    ](
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_ops: Array[Self.CTmaOp, Self.num_c_tma_descriptors],
+        epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
+        bias_1d_tile: Self.Bias1DTile,
+        cluster_dim: StaticTuple[Int32, 3],
+        mnk: StaticTuple[UInt32, 3],
+        workspace: Span[UInt64, MutAnyOrigin],
+        rank_sigs: Optional[
+            Array[
+                UnsafePointer[Signal, MutAnyOrigin],
+                Self.num_c_tma_descriptors,
+            ]
+        ],
+        my_rank_dev: Int32,
+        compute_fn: ComputeFnType,
+    ):
+        """Shared body of `run` and `run_with_compute_fn`.
+
+        `compute_fn` is applied in the epilogue when `has_compute_fn` is True
+        and ignored otherwise.
+        """
         var my_rank = Int(my_rank_dev)
         Self.validate_constraints()
 
@@ -2098,18 +2209,33 @@ struct BlackwellMatmulSM100Kernel[
                     for current in epi_iter:
                         with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
-                                # Uniform write through the injected writer policy
-                                Self.write_output_tile(
-                                    Pointer(to=c_tma_ops),
-                                    smem.c_tiles(),
-                                    output_stage,
-                                    (
-                                        current.m,
-                                        current.n,
-                                        current.k_start,
-                                    ),
-                                    (mnk[0], mnk[1]),
-                                )
+                                comptime if has_compute_fn:
+                                    Self.TileWriterType(
+                                        Pointer(to=c_tma_ops[0])
+                                    ).write_batched(
+                                        smem.c_tiles(),
+                                        output_stage,
+                                        (
+                                            current.m,
+                                            current.n,
+                                            current.k_start,
+                                        ),
+                                        (mnk[0], mnk[1]),
+                                        compute_fn,
+                                    )
+                                else:
+                                    # Uniform write through the injected writer policy
+                                    Self.write_output_tile(
+                                        Pointer(to=c_tma_ops),
+                                        smem.c_tiles(),
+                                        output_stage,
+                                        (
+                                            current.m,
+                                            current.n,
+                                            current.k_start,
+                                        ),
+                                        (mnk[0], mnk[1]),
+                                    )
                         tile_idx += 1
 
                 # Post-barrier: ensure all peers have finished reduce-add writes.

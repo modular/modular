@@ -27,8 +27,6 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import elementwise_compute_lambda_type
-
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -113,22 +111,15 @@ def test_matmul_sm100_epilogue[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor)
     def test_lambda_add_coords_prod[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](
+        idx: IndexList[2], val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]
+    ) -> SIMD[_dtype, width]:
         # this function helps us determine if the provided indexes are correct
         # while also testing arithmetic operations
-        var x = c_tensor.load[width=width](Coord(idx)).cast[_dtype]()
-        var y = val * x
-        return y
+        return val * c_val
 
     seed(1234)
     rand(a_host.as_span())
@@ -159,19 +150,20 @@ def test_matmul_sm100_epilogue[
         register_based_epilogue=register_based_epilogue,
     )
 
-    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
-        test_lambda_add_coords_prod
-    ) if test_lambda_fn else None
-
     @inline(.always)
     def kernel_launch(
         ctx: DeviceContext,
     ) raises {var c_tensor, var a_tensor, var b_tensor, imm}:
-        blackwell_matmul_tma_umma_warp_specialized[
-            transpose_b=transpose_b,
-            config=matmul_config,
-            elementwise_compute_lambda_fn=optional_lambda_fn,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        comptime if test_lambda_fn:
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=matmul_config,
+            ](c_tensor, a_tensor, b_tensor, test_lambda_add_coords_prod, ctx)
+        else:
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=matmul_config,
+            ](c_tensor, a_tensor, b_tensor, ctx)
 
     if is_benchmark:
         comptime nrun = 50
@@ -208,24 +200,18 @@ def test_matmul_sm100_epilogue[
         ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
         ctx.synchronize()
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(c_host_copy)
         def test_lambda_add_coords_prod_local[
-            _dtype: DType,
-            width: SIMDLength,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-            _dtype, width
-        ]:
+            _dtype: DType, width: SIMDLength
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) {
+            var c_host_copy
+        } -> SIMD[_dtype, width]:
             return (
                 val * c_host_copy.load[width=width](Coord(idx)).cast[_dtype]()
             )
 
-        comptime if optional_lambda_fn:
+        comptime if test_lambda_fn:
             # Apply the compute lambda directly on the reference tensor
-            # alias compute_lambda = elementwise_compute_lambda_fn.value()
             for i in range(M):
                 for j in range(N):
                     comptime assert c_host_ref.flat_rank == 2
@@ -243,11 +229,6 @@ def test_matmul_sm100_epilogue[
         )
 
         print("\n=== TEST PASSED ===\n")
-
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main() raises:

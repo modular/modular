@@ -129,6 +129,23 @@ has launched. `alignment` has no default; pass `alignment=1` where the
 legacy type relied on its default.
 """
 
+comptime _elementwise_output_compute_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](IndexList[2], SIMD[dtype, width], SIMD[dtype, width]) -> SIMD[dtype, width]
+
+comptime ElementwiseOutputComputeFn = (
+    ImplicitlyCopyable
+    & RegisterPassable
+    & _elementwise_output_compute_fn_signature
+)
+"""An `ElementwiseComputeFn` that also receives the output's prior value.
+
+Called as `fn(idx, val, c_val)`, where `c_val` is the output tensor's value
+at `idx` before the kernel writes it, cast to `dtype`. The kernel reads
+`c_val` from its own output argument, so the closure never captures the
+output and cannot alias it.
+"""
+
 
 @inline(.always)
 def identity_compute_fn[

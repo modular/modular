@@ -1695,9 +1695,13 @@ struct SMemEpilogueWriter[
     simd_size: Int,
     stage: Int,
     rep_frag_size: Int,
-    compute_lambda_fn: elementwise_compute_lambda_type,
+    compute_lambda_fn: Optional[elementwise_compute_lambda_type] = None,
 ](TrivialRegisterPassable):
-    """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
+    """SMEM-based epilogue: write accumulators and apply lambda in SMEM.
+
+    `compute_lambda_fn` is only read by the `write_tile` overload that takes
+    no `compute_fn`; leave it unset when passing the epilogue as a value.
+    """
 
     # Local aliases from EpilogueConfig
     comptime BM = Self.epc.BM
@@ -1762,17 +1766,49 @@ struct SMemEpilogueWriter[
 
     @inline(.always)
     def write_tile(self, tile: Self.Tile):
-        """Write accumulator tile to SMEM and apply epilogue lambda."""
+        """Apply the `compute_lambda_fn` parameter; see the `compute_fn`
+        overload."""
+        comptime assert Self.compute_lambda_fn, "compute_lambda_fn is unset"
+        comptime compute_lambda_fn = Self.compute_lambda_fn.value()
+
+        def forward[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            return compute_lambda_fn[dtype, width, alignment=alignment](
+                idx, val
+            )
+
+        self.write_tile(tile, forward)
+
+    @inline(.always)
+    def write_tile[
+        ComputeFnType: ElementwiseComputeFn
+    ](self, tile: Self.Tile, compute_fn: ComputeFnType):
+        """Write accumulator tile to SMEM and apply `compute_fn`.
+
+        Parameters:
+            ComputeFnType: Type of the compute epilogue closure.
+
+        Args:
+            tile: Upper and lower accumulator fragments.
+            compute_fn: Element-wise epilogue applied to each output value.
+        """
         # Double-buffer tile selection
         var c_smem_tile = self.c_tiles[Self.stage % Self.num_output_stages]
 
         comptime if Self.transpose_c:
-            self._write_transpose(tile.upper, tile.lower, c_smem_tile)
+            self._write_transpose(
+                tile.upper, tile.lower, c_smem_tile, compute_fn
+            )
         else:
-            self._write_non_transpose(tile.upper, tile.lower, c_smem_tile)
+            self._write_non_transpose(
+                tile.upper, tile.lower, c_smem_tile, compute_fn
+            )
 
     @inline(.always)
-    def _write_transpose(
+    def _write_transpose[
+        ComputeFnType: ElementwiseComputeFn
+    ](
         self,
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
@@ -1782,6 +1818,7 @@ struct SMemEpilogueWriter[
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
+        compute_fn: ComputeFnType,
     ):
         """Transpose path: reshape tiles and apply epilogue."""
 
@@ -1857,7 +1894,6 @@ struct SMemEpilogueWriter[
                 Self.c_type,
                 smem_logical_layout,
                 Self.swizzle,
-                Self.compute_lambda_fn,
                 Self.num_output_warps,
                 2,  # warp_dim
                 Self.MMA_M,
@@ -1871,6 +1907,7 @@ struct SMemEpilogueWriter[
                 new_smem,
                 warp_i,
                 warp_j,
+                compute_fn,
             )
         else:
             # cta_group=1 path with only upper fragment
@@ -1908,7 +1945,6 @@ struct SMemEpilogueWriter[
                 Self.c_type,
                 smem_logical_layout,
                 Self.swizzle,
-                Self.compute_lambda_fn,
                 Self.num_output_warps,
                 1,  # warp_dim
                 Self.MMA_M,
@@ -1922,10 +1958,13 @@ struct SMemEpilogueWriter[
                 new_smem,
                 Int(self.warp_id),
                 0,
+                compute_fn,
             )
 
     @inline(.always)
-    def _write_non_transpose(
+    def _write_non_transpose[
+        ComputeFnType: ElementwiseComputeFn
+    ](
         self,
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
@@ -1935,6 +1974,7 @@ struct SMemEpilogueWriter[
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
+        compute_fn: ComputeFnType,
     ):
         """Non-transpose path: tile per warp and apply epilogue."""
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
@@ -1993,7 +2033,6 @@ struct SMemEpilogueWriter[
             c_smem_warp_layout,
             c_smem_warp_layout,
             Self.swizzle,
-            Self.compute_lambda_fn,
             Self.num_output_warps,
         ](
             self.M,
@@ -2002,6 +2041,7 @@ struct SMemEpilogueWriter[
             Int(self.c_row),
             upper_tile,
             lower_tile,
+            compute_fn,
         )
 
 
@@ -2014,12 +2054,13 @@ struct SMemEpilogueWriter[
 
 @inline(.always)
 def shared_memory_epilogue_transpose[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     stage: Int,
     stageN: Int,
     c_type: DType,
     c_smem_layout: Layout,
     swizzle: Swizzle,
-    compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: Int,
     warp_dim: Int,
     MMA_M: Int,
@@ -2038,6 +2079,7 @@ def shared_memory_epilogue_transpose[
     ],
     warp_i: Int,
     warp_j: Int,
+    compute_fn: ComputeFnType,
 ):
     """Apply element-wise epilogue to transposed SMEM tile.
 
@@ -2122,8 +2164,8 @@ def shared_memory_epilogue_transpose[
                 if row < UInt32(Int(M)) and col < UInt32(Int(N)):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     ptr.store[width=simd_size, alignment=alignment](
-                        compute_lambda_fn[alignment=simd_size](
-                            (Int(row), Int(col)), val
+                        compute_fn[c_type, simd_size, alignment=simd_size](
+                            IndexList[2](Int(row), Int(col)), val
                         )
                     )
     else:
@@ -2187,8 +2229,8 @@ def shared_memory_epilogue_transpose[
                             width=simd_size, alignment=alignment
                         ]()
                         ptr.store[width=simd_size, alignment=alignment](
-                            compute_lambda_fn[alignment=simd_size](
-                                (Int(row), Int(col)), val
+                            compute_fn[c_type, simd_size, alignment=simd_size](
+                                IndexList[2](Int(row), Int(col)), val
                             )
                         )
 
@@ -2197,6 +2239,8 @@ def shared_memory_epilogue_transpose[
 
 @inline(.always)
 def shared_memory_epilogue[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     MMA_M: Int,
     data_paths: Int,
     num_stages: Int,
@@ -2208,7 +2252,6 @@ def shared_memory_epilogue[
     c_smem_upper_layout: Layout,
     c_smem_lower_layout: Layout,
     swizzle: Swizzle,
-    compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: Int,
 ](
     M: UInt32,
@@ -2227,6 +2270,7 @@ def shared_memory_epilogue[
         Engine=DefaultEngine[element_width=1],
         ...,
     ],
+    compute_fn: ComputeFnType,
 ):
     """Apply element-wise epilogue to non-transposed SMEM tile.
 
@@ -2366,20 +2410,20 @@ def shared_memory_epilogue[
             if gmem_upper_row < Int64(Int(M)) and gmem_upper_col < Int64(
                 Int(N)
             ):
-                c_smem_upper_frag[i, 0] = compute_lambda_fn[
-                    alignment=simd_size
+                c_smem_upper_frag[i, 0] = compute_fn[
+                    c_type, simd_size, alignment=simd_size
                 ](
-                    (Int(gmem_upper_row), Int(gmem_upper_col)),
+                    IndexList[2](Int(gmem_upper_row), Int(gmem_upper_col)),
                     c_smem_upper_frag[i, 0],
                 )
 
             if gmem_lower_row < Int64(Int(M)) and gmem_lower_col < Int64(
                 Int(N)
             ):
-                c_smem_lower_frag[i, 0] = compute_lambda_fn[
-                    alignment=simd_size
+                c_smem_lower_frag[i, 0] = compute_fn[
+                    c_type, simd_size, alignment=simd_size
                 ](
-                    (Int(gmem_lower_row), Int(gmem_lower_col)),
+                    IndexList[2](Int(gmem_lower_row), Int(gmem_lower_col)),
                     c_smem_lower_frag[i, 0],
                 )
 

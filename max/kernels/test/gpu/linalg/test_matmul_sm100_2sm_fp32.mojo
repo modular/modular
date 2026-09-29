@@ -18,10 +18,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
-from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
-)
+from linalg.utils import elementwise_epilogue_type
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -177,34 +174,34 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         )
 
     # Compute epilogue: out = matmul * C_initial (also checks the coordinate).
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor)
     def compute_fn[
-        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
-        return val * c_tensor.load[width=width](Coord(idx)).cast[_dtype]()
-
-    comptime epi = Optional[elementwise_epilogue_type](
-        epilogue_fn
-    ) if normal_epilogue else None
-    comptime compute_epi = Optional[elementwise_compute_lambda_type](
-        compute_fn
-    ) if compute_epilogue else None
-
-    blackwell_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-        elementwise_lambda_fn=epi,
-        elementwise_compute_lambda_fn=compute_epi,
+        _dtype: DType, width: SIMDLength, *, alignment: Int
     ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        ctx,
-    )
+        idx: IndexList[2], val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]
+    ) -> SIMD[_dtype, width]:
+        return val * c_val
+
+    comptime if compute_epilogue:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](c_tensor, a_tensor, b_tensor, compute_fn, ctx)
+    else:
+        comptime epi = Optional[elementwise_epilogue_type](
+            epilogue_fn
+        ) if normal_epilogue else None
+
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+            elementwise_lambda_fn=epi,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            ctx,
+        )
 
     comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
@@ -242,12 +239,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         rtol=rtol,
     )
     print("\n=== TEST PASSED ===\n")
-
-    # Cleanup
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main() raises:

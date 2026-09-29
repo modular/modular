@@ -732,6 +732,49 @@ struct TileWriter[
         self._copy_to_gmem_batched(c_tiles, stage, tile_coord, shape, alpha)
 
     @inline(.always)
+    def write_batched[
+        ComputeFnType: ElementwiseComputeFn
+    ](
+        self,
+        c_tiles: Self.CTileArray,
+        stage: Self.Stage,
+        tile_coord: Tuple[UInt32, UInt32, UInt32],
+        shape: Tuple[UInt32, UInt32],
+        compute_fn: ComputeFnType,
+        alpha: Float32 = Float32(1.0),
+    ):
+        """Write accumulated results to global memory (3D batched coords),
+        applying `compute_fn`.
+
+        Takes the compute epilogue as a runtime closure instead of the
+        `elementwise_compute_lambda_fn` parameter, which must be unset.
+
+        Parameters:
+            ComputeFnType: Type of the compute epilogue closure.
+
+        Args:
+            c_tiles: TileTensor-based SMEM tile array for C output.
+            stage: OutputStage with pipeline, index, and TMEM handle.
+            tile_coord: (m_tile, n_tile, batch) coordinates.
+            shape: (M, N) problem dimensions.
+            compute_fn: Element-wise epilogue applied to each output value.
+            alpha: Tensor scale factor (scalar).
+        """
+        comptime assert (
+            not Self.elementwise_compute_lambda_fn
+            and not Self.elementwise_lambda_fn
+        ), "pass the compute epilogue either as a parameter or as a value"
+        self._copy_to_gmem_impl[has_compute_fn=True](
+            c_tiles,
+            stage,
+            (tile_coord[0], tile_coord[1]),
+            shape,
+            compute_fn,
+            alpha,
+            tile_coord[2],
+        )
+
+    @inline(.always)
     def write_splitk[
         reduction_layout: TensorLayout,
         reduction_engine: TensorEngine,
@@ -1382,10 +1425,9 @@ struct TileWriter[
                     simd_size,
                     stage,
                     Self.rep_frag_size,
-                    Self.elementwise_compute_lambda_fn.value(),
                 ](UInt32(warp_id), c_tiles, c_shape, c_coord)
                 writer.write_tile(
-                    AccumTile(upper_frag_casted, lower_frag_casted)
+                    AccumTile(upper_frag_casted, lower_frag_casted), compute_fn
                 )
 
             self._tma_store_to_gmem[stage](
