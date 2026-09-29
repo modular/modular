@@ -234,6 +234,7 @@ modular_py_test(
     size = "small",
     srcs = ["test_max_tokenizer_decode_stream.py"],
     deps = [
+        "//max/python/max/experimental/cascade/interfaces",
         "//max/python/max/experimental/cascade/workers",
         requirement("numpy"),
         requirement("pytest-asyncio"),

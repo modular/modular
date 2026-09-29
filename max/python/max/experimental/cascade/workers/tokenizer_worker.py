@@ -25,7 +25,10 @@ from max.experimental.cascade.core import (
     ResultIter,
     Worker,
 )
-from max.experimental.cascade.interfaces.gen_ai import ChatMessage
+from max.experimental.cascade.interfaces.gen_ai import (
+    ChatMessage,
+    RawTextChunk,
+)
 
 Int32Array = npt.NDArray[np.int32]
 
@@ -62,8 +65,8 @@ class TokenizerWorker(Worker, ABC):
         token_iter: MaybeAsync[AsyncIterable[Int32Array]],
         skip_special_tokens: MaybeAsync[bool],
         /,
-    ) -> ResultIter[str]:
-        """Detokenize a stream of token-id chunks into a stream of text."""
+    ) -> ResultIter[RawTextChunk]:
+        """Detokenize a stream of token-id chunks into :class:`RawTextChunk`."""
         ...
 
 
@@ -74,7 +77,7 @@ _REPLACEMENT_CHAR = "\ufffd"
 async def stream_incremental_text(
     token_iter: AsyncIterable[Int32Array],
     decode: Callable[[list[int]], str],
-) -> AsyncIterator[str]:
+) -> AsyncIterator[RawTextChunk]:
     """Detokenize a stream of token-id chunks into a stream of text.
 
     Offset-based incremental decoding (the approach vLLM/TGI use): a multibyte
@@ -89,11 +92,15 @@ async def stream_incremental_text(
     # whole sequence.
     prefix_offset = 0
     read_offset = 0
+    # Tokens consumed since the last emission. A chunk held back mid-character
+    # emits nothing, so its tokens belong to the emission that completes it.
+    pending = 0
     async for chunk in token_iter:
         if chunk.size == 0:
             continue
         new_ids = np.asarray(chunk, dtype=np.int32).reshape(-1).tolist()
         all_ids.extend(new_ids)
+        pending += len(new_ids)
 
         prefix_text = decode(all_ids[prefix_offset:read_offset])
         new_text = decode(all_ids[prefix_offset:])
@@ -103,7 +110,10 @@ async def stream_incremental_text(
         ):
             prefix_offset = read_offset
             read_offset = len(all_ids)
-            yield new_text[len(prefix_text) :]
+            yield RawTextChunk(
+                text=new_text[len(prefix_text) :], num_tokens=pending
+            )
+            pending = 0
 
     # Flush any deferred tail: a chunk ending in the replacement char is held
     # back pending completion and would be dropped if the stream ends first.
@@ -113,4 +123,12 @@ async def stream_incremental_text(
         final_text = decode(all_ids[prefix_offset:])
         prefix_text = decode(all_ids[prefix_offset:read_offset])
         if len(final_text) > len(prefix_text):
-            yield final_text[len(prefix_text) :]
+            yield RawTextChunk(
+                text=final_text[len(prefix_text) :], num_tokens=pending
+            )
+            pending = 0
+
+    # A trailing token can decode to nothing -- the EOS, under
+    # ``skip_special_tokens`` -- and still has to be counted.
+    if pending:
+        yield RawTextChunk(text="", num_tokens=pending)

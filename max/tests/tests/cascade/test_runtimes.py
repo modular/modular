@@ -349,7 +349,9 @@ async def test_textgen_pipeline(runtime: Runtime) -> None:
     tokens = [token async for token in pipeline.generate(req)]
 
     assert len(tokens) == 5
-    assert all(token == GenAITextChunk(text="A") for token in tokens)
+    assert all(
+        token == GenAITextChunk(text="A", num_tokens=1) for token in tokens
+    )
 
 
 @pytest.mark.asyncio

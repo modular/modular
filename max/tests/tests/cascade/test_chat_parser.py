@@ -218,3 +218,22 @@ def test_nested_json_arguments_survive_chunking(chunk_size: int) -> None:
         "a": [1, 2, 3],
         "b": {"c": True},
     }
+
+
+def test_trailing_delta_with_no_chunk_is_still_counted() -> None:
+    """A final delta that yields no chunk does not lose its tokens.
+
+    Both the stripped ``</think>`` and the text-free EOS leave nothing to hang
+    a count on, so the two tokens ride out together on an empty chunk.
+    """
+    parser = ChatChunkParser(REASONING_CONFIG)
+    chunks = parser.feed("<think>reason", 4)
+    chunks.extend(parser.feed("</think>", 1))
+    # Stands in for the detokenizer's text-free EOS chunk.
+    chunks.extend(parser.feed("", 1))
+    chunks.extend(parser.finish())
+
+    assert chunks == [
+        GenAIReasoningChunk(text="reason", num_tokens=4),
+        GenAITextChunk(text="", num_tokens=2),
+    ]

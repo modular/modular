@@ -51,6 +51,7 @@ from max.experimental.cascade.interfaces.gen_ai import (
     GenAIRequest,
     GenAITextChunk,
     Modality,
+    RawTextChunk,
 )
 from max.experimental.cascade.interfaces.pipeline import GenAIPipeline
 from max.experimental.cascade.pipelines.chat_parser import (
@@ -91,10 +92,10 @@ class TextEchoWorker(Worker):
         super().__init__(deploy_hints=["gpu"])
 
     @worker_method()
-    async def replay(self, text: str) -> AsyncIterator[str]:
+    async def replay(self, text: str) -> AsyncIterator[RawTextChunk]:
         """Stream ``text`` back one character at a time."""
         for char in text:
-            yield char
+            yield RawTextChunk(text=char, num_tokens=1)
 
 
 class TextEchoPipeline(GenAIPipeline):

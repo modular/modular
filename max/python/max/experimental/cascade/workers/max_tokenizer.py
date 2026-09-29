@@ -25,6 +25,7 @@ from max.experimental.cascade.core import worker_method
 from max.experimental.cascade.interfaces.gen_ai import (
     ChatMessage,
     GenAITextChunk,
+    RawTextChunk,
 )
 from max.experimental.cascade.workers.tokenizer_worker import (
     TokenizerWorker,
@@ -163,7 +164,7 @@ class MAXTokenizer(TokenizerWorker):
     @worker_method()
     async def decode_stream(
         self, token_iter: AsyncIterable[Int32Array], skip_special_tokens: bool
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[RawTextChunk]:
         """Detokenize a stream of token-id chunks into a stream of text.
 
         The orchestrator hands this the model worker's token stream, and it
@@ -173,10 +174,10 @@ class MAXTokenizer(TokenizerWorker):
         """
         assert self._tokenizer is not None, "MAXTokenizer must be deployed"
         tokenizer = self._tokenizer
-        async for text in stream_incremental_text(
+        async for piece in stream_incremental_text(
             token_iter,
             lambda ids: tokenizer.decode(
                 ids, skip_special_tokens=skip_special_tokens
             ),
         ):
-            yield text
+            yield piece
