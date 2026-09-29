@@ -561,6 +561,12 @@ public:
   ASTType getBuiltinSliceType(llvm::SMLoc loc, StringRef name);
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 
+  /// Look up a named type's declaration in the given module, caching the
+  /// result. This emits a diagnostic and returns null if the name does not
+  /// resolve to a type.
+  ASTDecl *getCachedBuiltinTypeDecl(const ImportPath &path, StringRef name,
+                                    llvm::SMLoc loc);
+
   /// Lookup a builtin special function overload set.
   ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context,
                                          const ImportPath &modulePath,
@@ -696,10 +702,6 @@ private:
   /// from a module and caching the result.
   ASTType getCachedBuiltinType(const ImportPath &path, StringRef name,
                                llvm::SMLoc loc);
-  /// Look up a builtin type decl; either by finding it in the cache or
-  /// resolving it from a module and caching the result.
-  ASTDecl *getCachedBuiltinTypeDecl(const ImportPath &path, StringRef name,
-                                    llvm::SMLoc loc);
 
   /// Open (and lex-prepare) the module source file at the given path within the
   /// source manager, reusing an already-open buffer if present. Returns null

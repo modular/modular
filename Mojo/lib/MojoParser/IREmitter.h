@@ -312,6 +312,13 @@ public:
   MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
 
+  /// This helper emits the specified value into memory, so that it has an
+  /// origin that can be named and can bind to a `ref` parameter.  Unlike
+  /// emitMBValue it also works in a comptime context, where there is no
+  /// function body to hold a temporary.  This returns null if emission fails.
+  AnyValue emitMemoryValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                           ASTType resultType = {});
+
   /// This helper emits the specified expression as a parameter value,
   /// diagnosing the problem if the expression is only valid as a runtime value.
   /// This returns null if emission fails.

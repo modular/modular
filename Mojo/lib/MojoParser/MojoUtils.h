@@ -37,6 +37,8 @@ class ExprNode;
 class FnTypeGeneratorType;
 class IREmitter;
 class MojoInflightDiag;
+class ParamBindings;
+class StructDeclOp;
 class StructMetaType;
 class ASTType;
 class OriginSetAttr;
@@ -83,6 +85,12 @@ replaceIndexRefsWithNamedRefs(FunctionType functionType,
 FunctionType
 replaceIndexRefsWithNamedRefs(FunctionType functionType,
                               ArrayRef<ParamDeclAttr> explicitParamDecls);
+
+/// Specialize `structOp` using `bindings`; any parameter the caller left out
+/// is inferred.  `declIfKnown` only points diagnostics at the declaration.
+/// Returns a null type, with the diagnostic already emitted, on failure.
+ASTType specializeStruct(const ParamBindings &bindings, StructDeclOp structOp,
+                         ASTDecl *declIfKnown);
 
 /// The results of calls to async functions are always bound to a `Coroutine`
 /// type, or `RaisingCoroutine` type in the case of a raising function. This

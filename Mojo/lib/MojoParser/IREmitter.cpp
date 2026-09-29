@@ -580,6 +580,19 @@ MBValue IREmitter::emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context,
   return MBValue(mrVal);
 }
 
+AnyValue IREmitter::emitMemoryValue(ASTExprAnd<AnyValue> value,
+                                    ExprContext context, ASTType resultType) {
+  if (builder)
+    return emitMBValue(std::move(value), context, resultType);
+
+  // With no builder there is nowhere to allocate a temporary, so the value
+  // has to be a parameter that the interpreter can store for us.
+  PValue pValue = emitPValue(std::move(value), context, resultType);
+  if (!pValue)
+    return {};
+  return PMBValue::getFromPValue(pValue);
+}
+
 PValue IREmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
                              ASTType resultType) {
   if (!value)

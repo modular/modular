@@ -698,63 +698,191 @@ AnyValue StringLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 /// Get the source range for a t-string, from start to the closing quote.
 SourceRange TStringExprNode::getRange() const { return {startLoc, endLoc}; }
 
-/// Emit IR for a t-string.
-///
-/// Lowers t"Hello, {name}!" to __make_tstring["Hello, {}"](name).
-/// The format template is built at compile time with {} placeholders for each
-/// interpolation, then passed as a comptime string parameter to
-/// __make_tstring. The interpolated expressions become runtime arguments.
-AnyValue TStringExprNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
-  // Build the format template string and collect interpolated expressions.
-  SmallString<128> formatTemplate;
-  SmallVector<const ExprNode *> interpolatedExprs;
+static constexpr StringRef kTStringModule[] = {"std", "format", "tstring"};
 
-  for (const Part &part : parts) {
+/// Build the format template, replacing each interpolation with a `{}`.
+static void
+buildFormatTemplate(ArrayRef<TStringExprNode::Part> parts,
+                    SmallVectorImpl<char> &formatTemplate,
+                    SmallVectorImpl<const ExprNode *> &interpolatedExprs) {
+  using LiteralPart = TStringExprNode::LiteralPart;
+  using InterpolationPart = TStringExprNode::InterpolationPart;
+  for (const TStringExprNode::Part &part : parts) {
     std::visit(Overloaded{
                    [&](const LiteralPart &literal) {
-                     formatTemplate += Lexer::getTStringLiteralValue(
+                     std::string text = Lexer::getTStringLiteralValue(
                          literal.text, literal.isRaw);
+                     llvm::append_range(formatTemplate, text);
                    },
                    [&](const InterpolationPart &interpolation) {
-                     formatTemplate += "{}";
+                     formatTemplate.append({'{', '}'});
                      interpolatedExprs.push_back(interpolation.expr);
                    },
                },
                part);
   }
+}
 
-  // Emit IR for each interpolated expression.
-  SmallVector<ASTExprAnd<AnyValue>> interpolatedValues;
-  ExprDest exprDest(EC_OperatorOperandValue);
+/// Emit each interpolated expression into memory.  Returns the immutable
+/// union of their origins.
+static TypedAttr
+emitInterpolatedValues(IREmitter &emitter, ExprContext context,
+                       ArrayRef<const ExprNode *> interpolatedExprs,
+                       SmallVectorImpl<ASTExprAnd<AnyValue>> &values) {
+  SmallVector<TypedAttr> origins;
   for (const ExprNode *expr : interpolatedExprs) {
+    ExprDest exprDest(EC_OperatorOperandValue);
     AnyValue exprValue = emitter.emitExpr(expr, exprDest);
     if (!exprValue)
       return {};
-    interpolatedValues.push_back({std::move(exprValue), expr});
+
+    // A literal has no storage to reference until it takes its materialized
+    // type: `t"{42}"` interpolates an `Int`, not an `IntLiteral`.
+    ASTType type = exprValue.getRValueTypeIfResolvable();
+    if (type)
+      if (ASTType materialized =
+              type.getNonmaterializableTarget(emitter.shared))
+        type = materialized;
+
+    AnyValue memValue =
+        emitter.emitMemoryValue({std::move(exprValue), expr}, context, type);
+    if (!memValue)
+      return {};
+
+    origins.push_back(memValue.getMValueType().getOrigin());
+    values.push_back({std::move(memValue), expr});
   }
 
-  // Bind the format string as a compile-time parameter.
-  ParamBindings paramBindings(emitter.declScope, this);
-  auto formatStringAttr = StringAttr::get(
-      formatTemplate, KGEN::StringType::get(emitter.getContext()));
-  paramBindings.add(this, formatStringAttr);
+  // `_FormatArgument` holds an immutable reference, so the union is too.
+  return OriginMutCastAttr::get(
+      OriginUnionAttr::get(emitter.getContext(), origins), /*isMutable=*/false);
+}
 
-  // Look up __make_tstring and create an overload set.
-  constexpr auto kMakeTStringFnName = "__make_tstring";
-  auto fnDecls = emitter.shared.getBuiltinFunction(
-      emitter.declScope, {"std", "format", "tstring"}, kMakeTStringFnName,
-      getLoc());
+/// Return the `_FormatArgument[origin]` type each value is wrapped in.
+static ASTType getArgumentType(IREmitter &emitter, const ExprNode *expr,
+                               PValue origin) {
+  ASTDecl *decl = emitter.shared.getCachedBuiltinTypeDecl(
+      SharedState::ImportPath(kTStringModule), "_FormatArgument",
+      expr->getLoc());
+  if (!decl)
+    return {};
+  auto structOp = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  assert(structOp && "builtin '_FormatArgument' does not refer to a struct");
+
+  ParamBindings bindings(emitter.declScope, expr);
+  bindings.add(expr, origin);
+  return specializeStruct(bindings, structOp, decl);
+}
+
+/// Look up a t-string entry point and bind the parameters given, in order.
+static std::optional<OverloadSet>
+getTStringOverloadSet(IREmitter &emitter, const ExprNode *expr,
+                      StringRef fnName, ArrayRef<AnyValue> params) {
+  ArrayRef<ASTDecl *> fnDecls = emitter.shared.getBuiltinFunction(
+      emitter.declScope, SharedState::ImportPath(kTStringModule), fnName,
+      expr->getLoc());
   if (fnDecls.empty())
+    return std::nullopt;
+
+  ParamBindings bindings(emitter.declScope, expr);
+  for (const AnyValue &param : params)
+    bindings.add(expr, param);
+  return OverloadSet(fnName, fnDecls, std::move(bindings),
+                     CallSyntax::kDirectCall);
+}
+
+/// Wrap each of `values` in `argumentType` and collect them into an array.
+static AnyValue emitArgumentArray(IREmitter &emitter, const ExprNode *expr,
+                                  ASTType argumentType,
+                                  ArrayRef<ASTExprAnd<AnyValue>> values) {
+  ASTDecl *decl = emitter.shared.getCachedBuiltinTypeDecl(
+      SharedState::ImportPath({"std", "collections"}), "Array", expr->getLoc());
+  if (!decl)
+    return {};
+  auto structOp = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  assert(structOp && "builtin 'Array' does not refer to a struct");
+
+  // The element type is bound rather than inferred, because a t-string with
+  // no interpolations has no element to infer it from.  The length is left
+  // unbound for the literal's `__literal_size__` to fill in.
+  ParamBindings bindings(emitter.declScope, expr);
+  bindings.add(expr, PValue(argumentType));
+  bindings.add(expr,
+               UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
+  ASTType arrayType = specializeStruct(bindings, structOp, decl);
+  if (!arrayType)
     return {};
 
-  OverloadSet os(kMakeTStringFnName, fnDecls, std::move(paramBindings),
-                 CallSyntax::kDirectCall);
+  CallOperands operands(CallSyntax::kTypeCall, expr, ExprDest(EC_CallArgValue));
+  for (const ASTExprAnd<AnyValue> &value : values) {
+    CValue argument = emitter.emitConstructorCall(
+        argumentType, CallOperands(CallSyntax::kTypeCall, value.expr,
+                                   ExprDest(EC_CallArgValue), {value}));
+    if (!argument)
+      return {};
+    operands.add({AnyValue(argument), value.expr});
+  }
+  addNoneLiteralMarker(operands, "__list_literal__", emitter);
+  return emitter.emitConstructorCall(arrayType, std::move(operands));
+}
 
-  // Build the call operands from the interpolated values.
+/// Lowers t"Hello, {name}!" to:
+///
+///   __make_tstring["Hello, {}", origin_of(name)](
+///     [_FormatArgument[origin_of(name)](name), ...])
+///
+/// Each value is wrapped in a `_FormatArgument` and then in an `Array`.
+AnyValue TStringExprNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
+  SmallString<128> formatTemplate;
+  SmallVector<const ExprNode *> interpolatedExprs;
+  buildFormatTemplate(parts, formatTemplate, interpolatedExprs);
+
+  // Abandon the destination, which ~ExprDest requires of a diagnosed error.
+  auto fail = [&]() -> AnyValue {
+    dest.resetForError(emitter);
+    return {};
+  };
+
+  // The `ref` arguments this lowering introduces are not in the source, so
+  // phrase their diagnostics against the enclosing context instead.
+  ExprContext context = dest.getContext();
+
+  SmallVector<ASTExprAnd<AnyValue>> values;
+  TypedAttr originUnion =
+      emitInterpolatedValues(emitter, context, interpolatedExprs, values);
+  if (!originUnion)
+    return fail();
+  PValue origin = emitter.getStdlibOriginOf(originUnion, getLoc());
+  if (!origin)
+    return fail();
+
+  // The wrappers need the whole union, so they cannot be built until every
+  // interpolated value has been emitted.
+  ASTType argumentType = getArgumentType(emitter, this, origin);
+  if (!argumentType)
+    return fail();
+
+  AnyValue arguments = emitArgumentArray(emitter, this, argumentType, values);
+  if (!arguments)
+    return fail();
+
+  // `__make_tstring` borrows that array, so it has to be in memory too.
+  arguments = emitter.emitMemoryValue({std::move(arguments), this}, context);
+  if (!arguments)
+    return fail();
+
+  AnyValue params[] = {
+      PValue(StringAttr::get(formatTemplate,
+                             KGEN::StringType::get(emitter.getContext()))),
+      origin};
+  auto overloadSet =
+      getTStringOverloadSet(emitter, this, "__make_tstring", params);
+  if (!overloadSet)
+    return fail();
+
   CallOperands operands(CallSyntax::kDirectCall, this, std::move(dest));
-  for (const auto &interpolated : interpolatedValues)
-    operands.add(interpolated);
-  return os.emitCall(std::move(operands), emitter);
+  operands.add({std::move(arguments), this});
+  return overloadSet->emitCall(std::move(operands), emitter);
 }
 
 bool Operand::isPositionalStringLiteral(StringRef str) const {

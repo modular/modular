@@ -78,6 +78,18 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
   return OriginSetAttr::get(shared.getContext(), origins);
 }
 
+ASTType LIT::specializeStruct(const ParamBindings &bindings,
+                              StructDeclOp structOp, ASTDecl *declIfKnown) {
+  TypeSignatureType sig = structOp.getSignature();
+  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, declIfKnown,
+                     /*discardError=*/false);
+  VerifiedParamBindings verified = inference.inferForStruct();
+  if (!verified)
+    return {};
+  return verified.specializeStructType(structOp);
+}
+
 ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
                                    FnTypeGeneratorType sig, TypedAttr origin) {
   auto &shared = declScope.getShared();
@@ -94,17 +106,8 @@ ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, PValue(resultType));
   paramBinds.add(expr, origin);
 
-  auto structOp = cast<StructDeclOp>(decl->getIfOperation());
-  TypeSignatureType structSig = structOp.getSignature();
-  ParamInf inference(paramBinds, structSig.getParamTypes(),
-                     structSig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, decl,
-                     /*discardError=*/false);
-  VerifiedParamBindings bindings = inference.inferForStruct();
-  if (!bindings)
-    return {};
-
-  return bindings.specializeStructType(structOp);
+  return specializeStruct(paramBinds,
+                          cast<StructDeclOp>(decl->getIfOperation()), decl);
 }
 
 CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,

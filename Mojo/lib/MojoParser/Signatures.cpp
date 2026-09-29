@@ -1098,15 +1098,9 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
                UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "values"));
 
-  TypeSignatureType sig = structDeclOp.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, listDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-
-  if (!verifiedBindings)
+  ASTType result = specializeStruct(bindings, structDeclOp, listDecl);
+  if (!result)
     return emitter.shared.getTypeCheckErrorType();
-  ASTType result = verifiedBindings.specializeStructType(structDeclOp);
 
   // Add the !kgen.param_list parameter to the parameter list.  It is possible
   // the element type is a non-inferred parameter, so "append" this.
@@ -1876,14 +1870,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                UnpackedAttr::get(param, /*kwOnly=*/false, elementType));
 
-  TypeSignatureType sig = packStruct.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, packDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-  if (!verifiedBindings)
-    return {};
-  return verifiedBindings.specializeStructType(packStruct);
+  return specializeStruct(bindings, packStruct, packDecl);
 }
 
 // If this argument is a homogenous vararg like "*args: SomeType" then the
@@ -1943,15 +1930,7 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   bindings.add(arg.typeExpr,
                SIMDAttr::getScalarBool(emitter.getContext(), isVar));
 
-  TypeSignatureType sig = structDeclOp.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, listDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-
-  if (!verifiedBindings)
-    return {};
-  return verifiedBindings.specializeStructType(structDeclOp);
+  return specializeStruct(bindings, structDeclOp, listDecl);
 }
 
 /// Type check each argument in turn, resolving their type and default
