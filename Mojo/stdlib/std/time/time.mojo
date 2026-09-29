@@ -93,15 +93,15 @@ def _gettime_as_nsec_unix(clockid: Int) -> Int:
 def _amd_gpu_realtime() -> UInt64:
     """Returns the AMD GPU real-time counter (constant-speed clock).
 
-    This reads the s_memrealtime register which provides a constant-speed
-    64-bit clock counter, independent of GPU core clock frequency scaling.
-    This is suitable for wall-clock timing measurements.
+    This reads the realtime register which provides a constant-speed 64-bit
+    clock counter, independent of GPU core clock frequency scaling. This is
+    suitable for wall-clock timing measurements.
 
     The counter frequency is 100 MHz (10ns per tick) on MI355 (gfx950) and
     likely other modern AMD GPUs, though this may vary by architecture.
     Use _AMD_GPU_REALTIME_FREQ_HZ for conversions.
     """
-    return llvm_intrinsic["llvm.amdgcn.s.memrealtime", UInt64]()
+    return llvm_intrinsic["llvm.readsteadycounter", UInt64]()
 
 
 # AMD GPU real-time counter frequency in Hz.
@@ -195,8 +195,8 @@ def global_perf_counter_ns() -> UInt64:
     is common across all SM's.
 
     On NVIDIA GPUs, this uses the globaltimer register which provides nanosecond
-    resolution. On AMD GPUs, this uses the s_memrealtime counter (constant-speed
-    clock) converted to nanoseconds. On other platforms, this falls back to
+    resolution. On AMD GPUs, this uses the realtime counter (constant-speed clock)
+    converted to nanoseconds. On other platforms, this falls back to
     perf_counter_ns().
 
     Returns:
@@ -210,7 +210,7 @@ def global_perf_counter_ns() -> UInt64:
             has_side_effect=True,
         ]()
     elif is_amd_gpu():
-        # Convert s_memrealtime ticks to nanoseconds.
+        # Convert realtime ticks to nanoseconds.
         # At 100 MHz, each tick is 10ns (1e9 / 100e6 = 10).
         var ticks = _amd_gpu_realtime()
         return (ticks * 1_000_000_000) // _AMD_GPU_REALTIME_FREQ_HZ
@@ -313,10 +313,10 @@ def sleep(sec: Float64):
                 elapsed = global_perf_counter_ns() - start
             return
         elif is_amd_gpu():
-            # AMD GPU sleep using s_memrealtime for timing feedback.
+            # AMD GPU sleep using the realtime counter for timing feedback.
             # This approach is based on ROCm's ockl rtcwait implementation.
             #
-            # We use the constant-speed s_memrealtime counter to track actual
+            # We use the constant-speed realtime counter to track actual
             # elapsed time and loop with progressive s_sleep calls until the
             # target duration is reached. The s_sleep instruction accepts
             # values 0-127 and sleeps for approximately that many cycles.

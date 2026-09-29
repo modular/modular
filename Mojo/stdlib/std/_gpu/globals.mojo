@@ -24,6 +24,7 @@ are used to optimize code generation and ensure hardware compatibility.
 from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
+    _cdna_5_or_newer,
     _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -46,7 +47,8 @@ This constant represents the hardware warp size, which is the number of threads 
 instructions synchronously as a unit. The value is architecture-dependent:
 - 32 threads per warp on NVIDIA GPUs
 - 32 threads per warp on AMD RDNA GPUs
-- 64 threads per warp on AMD CDNA GPUs
+- 64 threads per warp on AMD CDNA3/CDNA4 GPUs
+- 32 threads per warp on AMD CDNA5 GPUs
 - 0 if no GPU is detected
 
 The warp size is a fundamental parameter that affects:
@@ -60,7 +62,7 @@ The warp size is a fundamental parameter that affects:
 def _resolve_warp_size() -> Int:
     comptime if is_nvidia_gpu():
         return 32
-    elif _is_amd_rdna():
+    elif _cdna_5_or_newer() or _is_amd_rdna():
         return 32
     elif is_amd_gpu():
         return 64

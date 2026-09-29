@@ -1186,17 +1186,24 @@ def _is_amd_mi355x() -> Bool:
 
 
 @inline(.nodebug)
+def _is_amd_mi455x() -> Bool:
+    return is_amd_gpu["gfx1250"]()
+
+
+@inline(.nodebug)
 def _cdna_version() -> Int:
     comptime assert (
-        _is_amd_mi250x() or _is_amd_mi300x() or _is_amd_mi355x()
+        _is_amd_cdna()
     ), "querying the cdna version is only supported on AMD hardware"
 
     comptime if _is_amd_mi250x():
         return 2
     elif _is_amd_mi300x():
         return 3
-    else:
+    elif _is_amd_mi355x():
         return 4
+    else:
+        return 5
 
 
 @inline(.nodebug)
@@ -1214,8 +1221,20 @@ def _cdna_4_or_newer() -> Bool:
 
 
 @inline(.nodebug)
+def _cdna_5_or_newer() -> Bool:
+    comptime if _is_amd_cdna():
+        return _cdna_version() >= 5
+    return False
+
+
+@inline(.nodebug)
 def _is_amd_cdna() -> Bool:
-    return _is_amd_mi250x() or _is_amd_mi300x() or _is_amd_mi355x()
+    return (
+        _is_amd_mi250x()
+        or _is_amd_mi300x()
+        or _is_amd_mi355x()
+        or _is_amd_mi455x()
+    )
 
 
 @inline(.nodebug)

@@ -77,6 +77,7 @@ struct BuiltinTargets(TargetAcceleratorCollection):
         # detection cannot distinguish the two parts.
         MI300A     ._with_cli_values[["mi300a"]], # Could also include "gfx942", but `gfx942` resolves to MI300X.
         MI355X     ._with_cli_values[["gfx950", "mi355x"]],
+        MI455X     ._with_cli_values[["gfx1250", "mi455x"]],
         Radeon6900 ._with_cli_values[["gfx1030"]],
         SteamDeck  ._with_cli_values[["gfx1033"]],
         Radeon7900 ._with_cli_values[["gfx1100"]],
@@ -257,6 +258,15 @@ comptime AMDCDNA4Family = AcceleratorArchitectureFamily(
     max_thread_block_size=_K,
 )
 """AMD CDNA4 architecture family (gfx95x)."""
+
+comptime AMDCDNA5Family = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=32 * 32,
+    shared_memory_per_multiprocessor=320 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
+)
+"""AMD CDNA5 architecture family (gfx125x)."""
 
 comptime AMDRDNAFamily = AcceleratorArchitectureFamily(
     warp_size=32,
@@ -1414,6 +1424,41 @@ comptime MI355X = TargetAccelerator[
     _mi355x_target,
 ]()
 """AMD MI355X GPU configuration."""
+
+
+# ===-----------------------------------------------------------------------===#
+# MI455X
+# ===-----------------------------------------------------------------------===#
+
+
+comptime _mi455x_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
+        `#kgen.target<triple = "amdgpu12.50-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
+        `arch = "gfx1250", `,
+        `features = "", `,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-p10:32:32-p11:32:32-p12:32:32-p13:32:32-p14:32:32-p15:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+]()
+"""Target configuration for AMD MI455X GPU."""
+
+
+comptime MI455X = TargetAccelerator[
+    GPUInfo.from_family(
+        family=AMDCDNA5Family,
+        name="MI455X",
+        api="hip",
+        arch_name="gfx1250",
+        compute=12.5,
+        version="CDNA5",
+        sm_count=256,
+    ),
+    _mi455x_target,
+]()
+"""AMD MI455X GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
