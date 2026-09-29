@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import math
-import random as _random
+import random
 from collections.abc import Mapping
 from typing import NamedTuple
 
@@ -37,10 +37,10 @@ from .types import (
     ChatMessage,
     ChatSamples,
     ChatSession,
-    ImageTurn,
     OpenAIImage,
     RequestSamples,
     Samples,
+    TurnSelector,
     encode_image,
 )
 
@@ -143,13 +143,14 @@ def _sample_one_image(
 def augment_samples_with_images(
     samples: Samples,
     *,
-    image_fraction: float,
+    fraction: float,
     image_count: DistributionParameter,
     image_long_side: DistributionParameter,
     image_aspect_ratio: DistributionParameter,
-    image_turn: ImageTurn = "first",
+    turn: TurnSelector = "first",
     max_chat_len: int | None = None,
     run_prefix_len: int = 0,
+    seed: int | None = None,
 ) -> None:
     """Mix generated images into a fraction of already-sampled requests/sessions.
 
@@ -165,32 +166,44 @@ def augment_samples_with_images(
 
     Args:
         samples: Already-sampled requests or chat sessions, mutated in place.
-        image_fraction: Fraction (0.0-1.0) of requests (single-turn) or
-            sessions (multi-turn) selected for images. Selection is not a
-            guarantee: see above for when a selected one is left alone.
+        fraction: Fraction (0.0-1.0) of requests (single-turn) or sessions
+            (multi-turn) selected for images. Selection is not a guarantee:
+            see above for when a selected one is left alone.
+
+            Drawn per *session* in multi-turn, where
+            `augment_samples_with_response_format` draws per turn. The
+            difference is deliberate and load-bearing: images persist into
+            later turns' payloads, so a per-turn draw inflates the share of
+            requests carrying one far past production's. See `TurnSelector`
+            for the rule.
         image_count: Distribution for the number of images on a
             request/turn that was selected to have images.
         image_long_side: Distribution for each image's longer side, in pixels.
         image_aspect_ratio: Distribution for each image's width / height.
-        image_turn: Which user turn(s) in a multi-turn session get images:
+        turn: Which user turn(s) in a multi-turn session get images:
             "first", "last", or "every".
         max_chat_len: Per-session token budget the multi-turn driver enforces.
             When given, sessions whose images would push them past it before
             their first measured turn are skipped rather than counted.
         run_prefix_len: Tokens the per-run unique prefix adds to the first
             measured turn under ``--force-unique-runs``.
+        seed: Seed for this function's own selection RNG. Drawing from a
+            private stream rather than the global one keeps which
+            requests/sessions are picked stable when another augmentation is
+            added ahead of this one. Image sizes, counts and pixels still come
+            from the global numpy stream via `BaseDistribution`.
 
     Raises:
-        ValueError: If `image_fraction` is outside [0, 1], or if
+        ValueError: If `fraction` is outside [0, 1], or if
             `image_aspect_ratio` samples a non-positive or non-finite value.
         TypeError: If `samples` is neither `RequestSamples` nor `ChatSamples`.
     """
-    if not (0.0 <= image_fraction <= 1.0):
-        raise ValueError(
-            f"image_fraction must be in [0, 1], got {image_fraction}"
-        )
-    if image_fraction == 0:
+    if not (0.0 <= fraction <= 1.0):
+        raise ValueError(f"image_fraction must be in [0, 1], got {fraction}")
+    if fraction == 0:
         return
+
+    rng = random.Random(seed)
 
     count_dist = BaseDistribution.from_distribution_parameter(image_count)
     long_side_dist = BaseDistribution.from_distribution_parameter(
@@ -206,10 +219,11 @@ def augment_samples_with_images(
     if isinstance(samples, RequestSamples):
         _augment_request_samples(
             samples,
-            image_fraction,
+            fraction,
             count_dist,
             long_side_dist,
             aspect_ratio_dist,
+            rng,
         )
     elif isinstance(samples, ChatJudgeChatSamples):
         # chat_judge_session_driver sends text-only messages, so augmenting
@@ -221,11 +235,12 @@ def augment_samples_with_images(
     elif isinstance(samples, ChatSamples):
         _augment_chat_samples(
             samples,
-            image_fraction,
+            fraction,
             count_dist,
             long_side_dist,
             aspect_ratio_dist,
-            image_turn,
+            turn,
+            rng,
             max_chat_len,
             run_prefix_len,
         )
@@ -247,15 +262,17 @@ def _prompt_accepts_images(prompt: str | list[ChatMessage]) -> bool:
 
 def _augment_request_samples(
     samples: RequestSamples,
-    image_fraction: float,
+    fraction: float,
     count_dist: BaseDistribution,
     long_side_dist: BaseDistribution,
     aspect_ratio_dist: BaseDistribution,
+    rng: random.Random,
 ) -> None:
     augmented = 0
+    added_images = 0
     no_user_message = 0
     for request in samples.requests:
-        if _random.random() >= image_fraction:
+        if rng.random() >= fraction:
             continue
         if not _prompt_accepts_images(request.prompt_formatted):
             no_user_message += 1
@@ -267,6 +284,7 @@ def _augment_request_samples(
             request.encoded_images.append(image)
             added_tokens += tokens
         request.prompt_len += added_tokens
+        added_images += num_images
         augmented += 1
     if no_user_message:
         logger.warning(
@@ -274,10 +292,15 @@ def _augment_request_samples(
             " the driver has nowhere to attach images on those.",
             no_user_message,
         )
+    total = len(samples.requests)
     logger.info(
-        "Image augmentation: added images to %d/%d requests",
+        "Image augmentation: added images to %d/%d requests (%.3f of"
+        " requests), %d newly-encoded image(s), %.3f per request",
         augmented,
-        len(samples.requests),
+        total,
+        augmented / total if total else 0.0,
+        added_images,
+        added_images / total if total else 0.0,
     )
 
 
@@ -329,32 +352,34 @@ def _sends_no_measured_turns(
 
 def _augment_chat_samples(
     samples: ChatSamples,
-    image_fraction: float,
+    fraction: float,
     count_dist: BaseDistribution,
     long_side_dist: BaseDistribution,
     aspect_ratio_dist: BaseDistribution,
-    image_turn: ImageTurn,
+    turn: TurnSelector,
+    rng: random.Random,
     max_chat_len: int | None = None,
     run_prefix_len: int = 0,
 ) -> None:
     augmented = 0
+    added_images = 0
     unmeasurable: list[int | None] = []
     for session in samples.chat_sessions:
-        if _random.random() >= image_fraction:
+        if rng.random() >= fraction:
             continue
         user_turn_indices = [
             i for i, m in enumerate(session.messages) if m.source == "user"
         ]
         if not user_turn_indices:
             continue
-        if image_turn == "first":
+        if turn == "first":
             target_indices = [user_turn_indices[0]]
-        elif image_turn == "last":
+        elif turn == "last":
             target_indices = [user_turn_indices[-1]]
-        elif image_turn == "every":
+        elif turn == "every":
             target_indices = user_turn_indices
         else:
-            assert_never(image_turn)
+            assert_never(turn)
 
         # Generate first, attach second. Attaching is itself what can push a
         # session past the budget, so a session we end up rejecting must not
@@ -385,6 +410,7 @@ def _augment_chat_samples(
         for idx, (images, added_tokens) in pending.items():
             session.messages[idx].images.extend(images)
             session.messages[idx].num_tokens += added_tokens
+            added_images += len(images)
         augmented += 1
     if unmeasurable:
         logger.warning(
@@ -395,8 +421,31 @@ def _augment_chat_samples(
             max_chat_len,
             ", ".join(str(sid) for sid in unmeasurable),
         )
+    # The per-request shares this sample encodes, which is what a workload is
+    # calibrated against. Counted over sampled turns, not dispatched ones: a
+    # run capped by --num-prompts or its duration may send a different mix. A
+    # turn "carries" an image once it or an earlier turn of its session has
+    # one, because the driver resends history.
+    total_turns = 0
+    carrying_turns = 0
+    for session in samples.chat_sessions:
+        carrying = False
+        for message in session.messages:
+            if message.source != "user":
+                continue
+            total_turns += 1
+            if message.images:
+                carrying = True
+            if carrying:
+                carrying_turns += 1
     logger.info(
-        "Image augmentation: added images to %d/%d chat sessions",
+        "Image augmentation: added images to %d/%d chat sessions; across %d"
+        " sampled user turns that is %d newly-encoded image(s) (%.3f per"
+        " request) with %.1f%% of turns carrying at least one image part",
         augmented,
         len(samples.chat_sessions),
+        total_turns,
+        added_images,
+        added_images / total_turns if total_turns else 0.0,
+        100.0 * carrying_turns / total_turns if total_turns else 0.0,
     )

@@ -1122,11 +1122,11 @@ def test_instruct_coder_multiturn_compatible_with_image_augmentation(
 
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=256,
         image_aspect_ratio=1.0,
-        image_turn="first",
+        turn="first",
     )
 
     assert len(samples.chat_sessions) == 4

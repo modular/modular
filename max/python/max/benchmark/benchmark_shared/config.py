@@ -28,7 +28,6 @@ from .backend_names import Backend
 from .datasets import (
     DatasetMode,
     DistributionParameter,
-    ImageTurn,
     TurnSelector,
 )
 from .utils import int_or_none, parse_comma_separated
@@ -841,7 +840,18 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         ge=0.0,
         le=1.0,
         allow_inf_nan=False,
-        description="Fraction (0.0-1.0) of requests (single-turn) or chat sessions (multi-turn) that get at least one generated image mixed in, on top of whatever dataset is selected via --dataset-name. Mutually exclusive with --random-image-count/--random-image-size.",
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or chat sessions "
+            "(multi-turn) that get at least one generated image mixed in, on "
+            "top of whatever dataset is selected via --dataset-name. Drawn "
+            "per session in multi-turn rather than per request, because the "
+            "chat driver resends history: with --image-turn every and "
+            "--image-count 1 it equals both newly-encoded images per request "
+            "and the share of requests carrying one, whereas 'first'/'last' "
+            "encode once per session and so cut the encoder rate by roughly "
+            "the session's turn count. Mutually exclusive with "
+            "--random-image-count/--random-image-size."
+        ),
         json_schema_extra={"group": "Multimodal"},
     )
     image_count: DistributionParameter = Field(
@@ -859,9 +869,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description="Distribution for each generated image's width/height ratio (used with --image-fraction). 1.0 produces square images.",
         json_schema_extra={"group": "Multimodal"},
     )
-    image_turn: ImageTurn = Field(
+    image_turn: TurnSelector = Field(
         default="first",
-        description="Which user turn(s) in a multi-turn chat session get images when selected: 'first', 'last', or 'every'. Ignored for single-turn requests.",
+        description=(
+            "Which user turn(s) in a multi-turn chat session get images when "
+            "selected: 'first', 'last', or 'every'. Ignored for single-turn "
+            "requests."
+        ),
         json_schema_extra={"group": "Multimodal"},
     )
     random_input_len: DistributionParameter = Field(

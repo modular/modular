@@ -127,10 +127,14 @@ class PixelGenerationSampledRequest(SampledRequest):
 MessageSource = Literal["user", "assistant", "system"]
 
 # Which user turn(s) of a multi-turn session an augmentation may act on.
+#
+# The selector is shared; the unit each augmentation's fraction draws in is
+# not. Draw per session when the payload persists into later turns, per turn
+# when it does not: images ride in the message history, a response_format is
+# per-request. That also decides whether "first" survives a warmed session --
+# the prefix loop resends its images but never sets response_format
+# (CENG-1086).
 TurnSelector = Literal["first", "last", "every"]
-
-# Alias kept so the image-mixing call sites don't churn in this change.
-ImageTurn = TurnSelector
 
 
 @dataclass

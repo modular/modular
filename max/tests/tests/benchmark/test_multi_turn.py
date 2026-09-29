@@ -1325,3 +1325,69 @@ async def test_atom_tool_call_response_is_a_success_and_flagged(
     assert output.generated_text == 'read_file{"path": "a.py"}'
     assert output.tools_offered
     assert output.tool_call_returned
+
+
+def test_prefix_turn_images_reach_the_wire() -> None:
+    """An image on a locally-replayed prefix turn is still sent.
+
+    The prefix loop builds those turns without a round-trip, but splices their
+    images into the history the first measured turn carries. This is why
+    `--image-turn first` is safe on a warmed session while
+    `--response-format-turn first` is not: an image lives in the message
+    history, a response_format is a per-request field the prefix loop never
+    sets. Ref CENG-1086.
+    """
+    captured: list[RequestFuncInput] = []
+
+    class CapturingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            captured.append(request_func_input)
+            return RequestFuncOutput(
+                success=True,
+                latency=0.1,
+                ttft=0.05,
+                prompt_len=request_func_input.prompt_len,
+                generated_text="ok",
+            )
+
+    image: OpenAIImage = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,AAAA"},
+    }
+
+    async def run_test() -> None:
+        session = _make_4turn_session(prefix_turns=2, delay_ms=0.0)
+        # The first user turn is inside the replayed prefix (prefix_turns=2).
+        session.messages[0].images.append(image)
+
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=CapturingDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=session,
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+        )
+
+    asyncio.run(run_test())
+
+    assert captured, "expected at least one measured turn"
+    first_prompt = captured[0].prompt
+    assert isinstance(first_prompt, list)
+    image_blocks = [
+        block
+        for message in first_prompt
+        for block in message.content
+        if isinstance(block, ImageContentBlock)
+    ]
+    assert image_blocks, (
+        "the prefix turn's image must appear in the history the first measured"
+        " turn sends"
+    )
+    assert image_blocks[0].image_url.url == "data:image/jpeg;base64,AAAA"

@@ -165,6 +165,16 @@ This version is still a work in progress.
   describes the whole prompt. Results report `tool_request_rate` and
   `tool_call_response_rate`: the share of requests that offered tools, and the
   share of those whose response called one.
+- `max benchmark`'s image mixing now draws its selection from a private seeded
+  RNG rather than the global one, so adding another augmentation ahead of it no
+  longer changes which requests or sessions carry images. It also logs, over
+  the turns it sampled, the newly-encoded images per request and the share of
+  turns carrying one, the two shares a multi-modal workload is calibrated
+  against.
+  `augment_samples_with_images`'s `image_fraction` and `image_turn` arguments
+  are renamed `fraction` and `turn` to match
+  `augment_samples_with_response_format`; the `--image-fraction` and
+  `--image-turn` flags are unchanged.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an

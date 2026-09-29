@@ -1309,15 +1309,18 @@ def _sample_for_seed(
     if args.image_fraction > 0:
         augment_samples_with_images(
             samples,
-            image_fraction=args.image_fraction,
+            fraction=args.image_fraction,
             image_count=args.image_count,
             image_long_side=args.image_long_side,
             image_aspect_ratio=args.image_aspect_ratio,
-            image_turn=args.image_turn,
+            turn=args.image_turn,
             max_chat_len=(
                 tokenizer.model_max_length if tokenizer is not None else None
             ),
             run_prefix_len=_run_prefix_len(args, benchmark_task, tokenizer),
+            # Offset from the response-format mixer's stream so the two pick
+            # independently rather than in lockstep.
+            seed=None if seed is None else seed + 1,
         )
 
     return samples
