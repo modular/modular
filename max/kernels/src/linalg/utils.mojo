@@ -114,6 +114,45 @@ comptime elementwise_compute_lambda_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
+comptime _elementwise_compute_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](IndexList[2], SIMD[dtype, width]) -> SIMD[dtype, width]
+
+comptime ElementwiseComputeFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_compute_fn_signature
+)
+"""Value-taking counterpart of `elementwise_compute_lambda_type`.
+
+A unified closure passed as a runtime value carries the origins of its
+captures, so the buffers it reads stay alive until the kernel that calls it
+has launched. `alignment` has no default; pass `alignment=1` where the
+legacy type relied on its default.
+"""
+
+
+@inline(.always)
+def identity_compute_fn[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Returns `val` unchanged.
+
+    Stands in for an `ElementwiseComputeFn` argument on code paths that
+    apply no compute epilogue.
+
+    Parameters:
+        dtype: Element dtype of `val`.
+        width: SIMD width of `val`.
+        alignment: Alignment of `val` in elements.
+
+    Args:
+        idx: Output coordinates, unused.
+        val: Input value.
+
+    Returns:
+        `val`.
+    """
+    return val
+
 
 trait TileConsumer(DevicePassable, TrivialRegisterPassable):
     """Trait for an epilogue operation which consumes a tile of data.

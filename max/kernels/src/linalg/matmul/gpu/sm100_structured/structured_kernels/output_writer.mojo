@@ -60,8 +60,10 @@ from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 from max.gpu.compute.mma import ld_matrix
 from linalg.utils import (
+    ElementwiseComputeFn,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
+    identity_compute_fn,
 )
 
 from std.utils.index import IndexList
@@ -670,6 +672,46 @@ struct TileWriter[
         self._copy_to_gmem(c_tiles, stage, tile_coord, shape)
 
     @inline(.always)
+    def write[
+        ComputeFnType: ElementwiseComputeFn
+    ](
+        self,
+        c_tiles: Self.CTileArray,
+        stage: Self.Stage,
+        tile_coord: Tuple[UInt32, UInt32],
+        shape: Tuple[UInt32, UInt32],
+        elect_one_warp: Bool,
+        compute_fn: ComputeFnType,
+    ):
+        """Write accumulated results to global memory, applying `compute_fn`.
+
+        Takes the compute epilogue as a runtime closure instead of the
+        `elementwise_compute_lambda_fn` parameter, which must be unset. Only
+        the register-based epilogue is supported.
+
+        Parameters:
+            ComputeFnType: Type of the compute epilogue closure.
+
+        Args:
+            c_tiles: SMEM tile array for the C output.
+            stage: OutputStage with pipeline, index, and TMEM handle.
+            tile_coord: (m_tile, n_tile) tile coordinates.
+            shape: (M, N) problem dimensions.
+            elect_one_warp: Whether this warp is elected for coordination.
+            compute_fn: Element-wise epilogue applied to each output value.
+        """
+        comptime assert (
+            not Self.elementwise_compute_lambda_fn
+            and not Self.elementwise_lambda_fn
+        ), "pass the compute epilogue either as a parameter or as a value"
+        comptime assert (
+            Self.register_based_epilogue
+        ), "a value compute epilogue requires register_based_epilogue"
+        self._copy_to_gmem_impl[has_compute_fn=True](
+            c_tiles, stage, tile_coord, shape, compute_fn
+        )
+
+    @inline(.always)
     def write_batched(
         self,
         c_tiles: Self.CTileArray,
@@ -1113,6 +1155,54 @@ struct TileWriter[
         alpha: Float32 = Float32(1.0),
         batch_idx: UInt32 = 0,
     ):
+        """Run the unified pipeline with `elementwise_compute_lambda_fn`."""
+        comptime if Self.elementwise_compute_lambda_fn:
+            comptime compute_lambda_fn = (
+                Self.elementwise_compute_lambda_fn.value()
+            )
+
+            def forward[
+                dtype: DType, width: SIMDLength, *, alignment: Int
+            ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+                return compute_lambda_fn[dtype, width, alignment=alignment](
+                    idx, val
+                )
+
+            self._copy_to_gmem_impl[has_compute_fn=True](
+                c_tiles,
+                output_stage,
+                c_coord,
+                c_shape,
+                forward,
+                alpha,
+                batch_idx,
+            )
+        else:
+            self._copy_to_gmem_impl[has_compute_fn=False](
+                c_tiles,
+                output_stage,
+                c_coord,
+                c_shape,
+                identity_compute_fn,
+                alpha,
+                batch_idx,
+            )
+
+    @inline(.always)
+    def _copy_to_gmem_impl[
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        has_compute_fn: Bool,
+    ](
+        self,
+        c_tiles: Self.CTileArray,
+        output_stage: Self.Stage,
+        c_coord: Tuple[UInt32, UInt32],
+        c_shape: Tuple[UInt32, UInt32],
+        compute_fn: ComputeFnType,
+        alpha: Float32 = Float32(1.0),
+        batch_idx: UInt32 = 0,
+    ):
         """Unified TMEM → Registers → SMEM → GMEM pipeline.
 
         Handles both standard (2D) and batched (3D) output paths.
@@ -1236,13 +1326,12 @@ struct TileWriter[
                         lower_frag_casted[offset + _j] = dst[_j]
 
             # Apply epilogue lambda if provided
-            comptime if Self.elementwise_compute_lambda_fn:
+            comptime if has_compute_fn:
                 comptime if Self.register_based_epilogue:
                     if tile_in_bounds:
                         var _result = epilogue_applier.apply_to_both_fragments[
                             Self.epilogue_dtype,
                             Self.rep_frag_size,
-                            Self.elementwise_compute_lambda_fn.value(),
                             Self.is_lower_frag_required,
                             is_in_bounds=True,
                         ](
@@ -1251,6 +1340,7 @@ struct TileWriter[
                             UInt32(stage),
                             c_row,
                             c_col,
+                            compute_fn,
                         )
                         upper_frag_casted = _result[0].copy()
                         lower_frag_casted = _result[1].copy()
@@ -1258,7 +1348,6 @@ struct TileWriter[
                         var _result = epilogue_applier.apply_to_both_fragments[
                             Self.epilogue_dtype,
                             Self.rep_frag_size,
-                            Self.elementwise_compute_lambda_fn.value(),
                             Self.is_lower_frag_required,
                             is_in_bounds=False,
                         ](
@@ -1267,16 +1356,14 @@ struct TileWriter[
                             UInt32(stage),
                             c_row,
                             c_col,
+                            compute_fn,
                         )
                         upper_frag_casted = _result[0].copy()
                         lower_frag_casted = _result[1].copy()
 
             var c_smem_tile = c_tiles[stage % 2]
 
-            comptime if (
-                Self.register_based_epilogue
-                or not Self.elementwise_compute_lambda_fn
-            ):
+            comptime if Self.register_based_epilogue or not has_compute_fn:
                 self._cast_frags_and_write_to_smem(
                     upper_frag_casted,
                     lower_frag_casted,

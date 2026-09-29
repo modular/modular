@@ -57,7 +57,6 @@ from nn.conv.gpu.nvidia.sm100.conv_config import (
     Conv2dConfig,
     Conv2dProblemShape,
 )
-from linalg.utils import elementwise_compute_lambda_type
 
 
 def test_conv2d_implicit_im2col[
@@ -558,15 +557,10 @@ def test_conv2d_epilogue_lambda[
     # Define epilogue lambda that adds bias (broadcast over M dimension)
     # Output shape is [M, N] where N = out_channels
     # Bias is [N], so we index by idx[1] (the column/channel index)
-    @__parameter
     @inline(.always)
-    @__copy_capture(bias_tensor)
     def epilogue_add_bias[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
         _dtype, width
     ]:
         # Load bias value for this channel and broadcast to SIMD width
@@ -575,20 +569,13 @@ def test_conv2d_epilogue_lambda[
         var bias_val = bias_tensor.load[width=width]((idx[1],)).cast[_dtype]()
         return val + bias_val
 
-    # Create optional lambda
-    comptime optional_lambda = Optional[elementwise_compute_lambda_type](
-        epilogue_add_bias
-    )
-
     # Run conv2d with epilogue lambda
-    conv2d_fprop[
-        config=config,
-        elementwise_compute_lambda_fn=optional_lambda,
-    ](
+    conv2d_fprop[config=config](
         out_device_nd,
         act_device_nd,
         filter_device_nd,
         problem,
+        epilogue_add_bias,
         ctx,
     )
 
@@ -641,9 +628,6 @@ def test_conv2d_epilogue_lambda[
         rtol=rtol,
     )
     print("  PASSED\n")
-    # `bias_tensor` reaches the kernel only through the epilogue closure's
-    # capture, which does not extend `bias_device`'s lifetime.
-    _ = bias_device^
 
 
 def test_conv2d_bias_fusion[
@@ -760,42 +744,33 @@ def test_conv2d_bias_fusion[
     var bias_tensor = TileTensor(bias_dev, row_major(out_c))
 
     # Epilogue lambda: add bias (idx[1] = channel index in [M, N] output)
-    @__parameter
     @inline(.always)
-    @__copy_capture(bias_tensor)
     def add_bias[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
         _dtype, width
     ]:
         return val + bias_tensor.load[width=width]((idx[1],)).cast[_dtype]()
-
-    comptime bias_lambda = Optional[elementwise_compute_lambda_type](add_bias)
 
     # Run conv2d with fused bias
     comptime if use_1sm:
         conv2d_fprop[
             config=Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
-            elementwise_compute_lambda_fn=bias_lambda,
         ](
             out_nd,
             act_nd,
             filter_nd,
             problem,
+            add_bias,
             ctx,
         )
     else:
-        conv2d_fprop[
-            config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),
-            elementwise_compute_lambda_fn=bias_lambda,
-        ](
+        conv2d_fprop[config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),](
             out_nd,
             act_nd,
             filter_nd,
             problem,
+            add_bias,
             ctx,
         )
 
@@ -843,7 +818,6 @@ def test_conv2d_bias_fusion[
     print("    PASSED")
     _ = act_dev^
     _ = filter_dev^
-    _ = bias_dev^
     _ = out_dev^
     _ = out_ref_dev^
     _ = im2col_dev^

@@ -54,6 +54,7 @@ from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
 from std.utils.index import Index, IndexList
 from linalg.utils import (
+    ElementwiseComputeFn,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
@@ -875,6 +876,34 @@ struct EpilogueApplier[
         staged_col: UInt32,
         is_upper: Bool,
     ):
+        """Apply a comptime epilogue lambda; see the `compute_fn` overload."""
+
+        def forward[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            return compute_lambda_fn[dtype, width, alignment=alignment](
+                idx, val
+            )
+
+        self.apply_to_fragment[
+            epilogue_dtype, frag_size, is_in_bounds=is_in_bounds
+        ](frag, staged_row, staged_col, is_upper, forward)
+
+    @inline(.always)
+    def apply_to_fragment[
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        epilogue_dtype: DType,
+        frag_size: Int,
+        is_in_bounds: Bool = False,
+    ](
+        self,
+        mut frag: Array[Scalar[epilogue_dtype], frag_size],
+        staged_row: UInt32,
+        staged_col: UInt32,
+        is_upper: Bool,
+        compute_fn: ComputeFnType,
+    ):
         """Apply epilogue lambda to fragment elements with global coords.
 
         ``is_in_bounds=True``: caller asserts the whole tile fits in
@@ -908,53 +937,49 @@ struct EpilogueApplier[
 
             comptime if Self.transpose_c:
                 comptime if is_in_bounds:
-                    frag[offset] = compute_lambda_fn[epilogue_dtype, 1](
+                    frag[offset] = compute_fn[epilogue_dtype, 1, alignment=1](
                         IndexList[2](Int(top_col), Int(top_row)), elem0
                     )
-                    frag[offset + 1] = compute_lambda_fn[epilogue_dtype, 1](
-                        IndexList[2](Int(top_col + 1), Int(top_row)), elem1
-                    )
-                    frag[offset + 2] = compute_lambda_fn[epilogue_dtype, 1](
-                        IndexList[2](Int(bot_col), Int(bot_row)), elem2
-                    )
-                    frag[offset + 3] = compute_lambda_fn[epilogue_dtype, 1](
-                        IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3
-                    )
+                    frag[offset + 1] = compute_fn[
+                        epilogue_dtype, 1, alignment=1
+                    ](IndexList[2](Int(top_col + 1), Int(top_row)), elem1)
+                    frag[offset + 2] = compute_fn[
+                        epilogue_dtype, 1, alignment=1
+                    ](IndexList[2](Int(bot_col), Int(bot_row)), elem2)
+                    frag[offset + 3] = compute_fn[
+                        epilogue_dtype, 1, alignment=1
+                    ](IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3)
                 else:
                     var valid_top_row = top_row < self.N
                     var valid_bot_row = bot_row < self.N
 
                     if valid_top_row and top_col < self.M:
-                        frag[offset] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(top_col), Int(top_row)), elem0
-                        )
+                        frag[offset] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(top_col), Int(top_row)), elem0)
                     if valid_bot_row and top_col < self.M:
-                        frag[offset + 2] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(bot_col), Int(bot_row)), elem2
-                        )
+                        frag[offset + 2] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(bot_col), Int(bot_row)), elem2)
 
                     if valid_top_row and (top_col + 1) < self.M:
-                        frag[offset + 1] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(top_col + 1), Int(top_row)), elem1
-                        )
+                        frag[offset + 1] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(top_col + 1), Int(top_row)), elem1)
                     if valid_bot_row and (top_col + 1) < self.M:
-                        frag[offset + 3] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3
-                        )
+                        frag[offset + 3] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3)
             else:
                 comptime if is_in_bounds:
-                    var elem01 = compute_lambda_fn[
-                        epilogue_dtype, 2, alignment=2
-                    ](
+                    var elem01 = compute_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
                             elem0,
                             elem1,
                         ),
                     )
-                    var elem23 = compute_lambda_fn[
-                        epilogue_dtype, 2, alignment=2
-                    ](
+                    var elem23 = compute_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
                             elem2,
@@ -973,9 +998,7 @@ struct EpilogueApplier[
                     var valid_bot_row = bot_row < self.M
 
                     if valid_top_row:
-                        var elem01 = compute_lambda_fn[
-                            epilogue_dtype, 2, alignment=2
-                        ](
+                        var elem01 = compute_fn[epilogue_dtype, 2, alignment=2](
                             IndexList[2](Int(top_row), Int(top_col)),
                             SIMD[epilogue_dtype, 2](
                                 elem0,
@@ -986,9 +1009,7 @@ struct EpilogueApplier[
                         frag[offset + 1] = elem01[1]
 
                     if valid_bot_row:
-                        var elem23 = compute_lambda_fn[
-                            epilogue_dtype, 2, alignment=2
-                        ](
+                        var elem23 = compute_fn[epilogue_dtype, 2, alignment=2](
                             IndexList[2](Int(bot_row), Int(bot_col)),
                             SIMD[epilogue_dtype, 2](
                                 elem2,
@@ -1016,6 +1037,42 @@ struct EpilogueApplier[
         Array[Scalar[epilogue_dtype], frag_size],
         Array[Scalar[epilogue_dtype], frag_size],
     ]:
+        """Apply a comptime epilogue lambda; see the `compute_fn` overload."""
+
+        def forward[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            return compute_lambda_fn[dtype, width, alignment=alignment](
+                idx, val
+            )
+
+        return self.apply_to_both_fragments[
+            epilogue_dtype,
+            frag_size,
+            is_lower_frag_required,
+            is_in_bounds=is_in_bounds,
+        ](upper_frag, lower_frag, stage, c_row, c_col, forward)
+
+    @inline(.always)
+    def apply_to_both_fragments[
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        epilogue_dtype: DType,
+        frag_size: Int,
+        is_lower_frag_required: Bool,
+        is_in_bounds: Bool = False,
+    ](
+        self,
+        mut upper_frag: Array[Scalar[epilogue_dtype], frag_size],
+        mut lower_frag: Array[Scalar[epilogue_dtype], frag_size],
+        stage: UInt32,
+        c_row: UInt32,
+        c_col: UInt32,
+        compute_fn: ComputeFnType,
+    ) -> Tuple[
+        Array[Scalar[epilogue_dtype], frag_size],
+        Array[Scalar[epilogue_dtype], frag_size],
+    ]:
         """Apply epilogue to both fragments (main entry point)."""
         var staged_row, staged_col = self.compute_staged_coords(
             stage, c_row, c_col
@@ -1024,17 +1081,15 @@ struct EpilogueApplier[
         self.apply_to_fragment[
             epilogue_dtype,
             frag_size,
-            compute_lambda_fn,
             is_in_bounds=is_in_bounds,
-        ](upper_frag, staged_row, staged_col, is_upper=True)
+        ](upper_frag, staged_row, staged_col, True, compute_fn)
 
         comptime if is_lower_frag_required:
             self.apply_to_fragment[
                 epilogue_dtype,
                 frag_size,
-                compute_lambda_fn,
                 is_in_bounds=is_in_bounds,
-            ](lower_frag, staged_row, staged_col, is_upper=False)
+            ](lower_frag, staged_row, staged_col, False, compute_fn)
 
         return (upper_frag.copy(), lower_frag.copy())
 

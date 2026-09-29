@@ -54,8 +54,10 @@ from structured_kernels.tile_types import (
 from layout import TileTensor
 from layout.tile_layout import Coord, row_major
 from linalg.utils import (
+    ElementwiseComputeFn,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
+    identity_compute_fn,
 )
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -132,6 +134,96 @@ def conv2d_fprop[
 
     Raises:
         Error if kernel launch fails or constraints are violated.
+    """
+    _conv2d_fprop_impl[
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+        has_compute_fn=False,
+    ](output, activation, filter, problem, identity_compute_fn, ctx)
+
+
+def conv2d_fprop[
+    act_type: DType,
+    filter_type: DType,
+    out_type: DType,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    config: Conv2dConfig[act_type, filter_type, out_type] = Conv2dConfig[
+        act_type, filter_type, out_type
+    ].default_bf16(),
+](
+    output: TileTensor[mut=True, out_type, ...],  # NHWC
+    activation: TileTensor[
+        mut=True, act_type, address_space=.GENERIC, ...
+    ],  # NHWC
+    filter: TileTensor[filter_type, ...],  # KRSC (out_ch, R, S, in_ch)
+    problem: Conv2dProblemShape,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Launch Conv2D forward propagation with a compute epilogue closure.
+
+    Same as the `elementwise_compute_lambda_fn` form, but the epilogue is a
+    runtime unified closure. Its captures, and the origins they carry, stay
+    live until the launch is enqueued, so a buffer the epilogue reads cannot
+    be destroyed before the kernel runs. The epilogue is applied in
+    registers.
+
+    Parameters:
+        act_type: Data type of the input activation tensor.
+        filter_type: Data type of the filter weights tensor.
+        out_type: Data type of the output tensor.
+        ComputeFnType: Type of the compute epilogue closure.
+        config: Kernel configuration (tile sizes, pipeline stages, etc.).
+
+    Args:
+        output: Output tensor [N, H_out, W_out, C_out] in NHWC layout.
+        activation: Input activation [N, H, W, C] in NHWC layout.
+        filter: Filter weights [K, R, S, C] in KRSC layout.
+        problem: Convolution problem shape specification.
+        compute_fn: Element-wise epilogue (bias add, activation, etc.)
+            applied to each output value. Signature:
+            `def[dtype, width, *, alignment](IndexList[2], SIMD) -> SIMD`,
+            with coordinates in the [M, N] GEMM view of the output.
+        ctx: Device context for kernel launch.
+
+    Raises:
+        Error if kernel launch fails or constraints are violated.
+    """
+    _conv2d_fprop_impl[config=config, has_compute_fn=True](
+        output, activation, filter, problem, compute_fn, ctx
+    )
+
+
+def _conv2d_fprop_impl[
+    act_type: DType,
+    filter_type: DType,
+    out_type: DType,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    config: Conv2dConfig[act_type, filter_type, out_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    register_based_epilogue: Bool = True,
+    has_compute_fn: Bool,
+](
+    output: TileTensor[mut=True, out_type, ...],
+    activation: TileTensor[mut=True, act_type, address_space=.GENERIC, ...],
+    filter: TileTensor[filter_type, ...],
+    problem: Conv2dProblemShape,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Shared body of the `conv2d_fprop` overloads.
+
+    `compute_fn` is launched with the kernel when `has_compute_fn` is True
+    and ignored otherwise.
     """
     # Validate problem constraints
     if problem.stride_h != 1 or problem.stride_w != 1:
@@ -276,8 +368,6 @@ def conv2d_fprop[
         swizzle_mode=config.c_swizzle,
     ](ctx, out_tensor)
 
-    comptime kernel = conv_kernel.run
-
     # Grid dimensions
     var grid_dim = (
         align_up(ceildiv(M, BM), cluster_shape[0]),
@@ -295,19 +385,39 @@ def conv2d_fprop[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # Launch kernel with im2col TMA
-    ctx.enqueue_function[kernel](
-        act_tma_op,
-        filter_tma_op,
-        out_tma_op,
-        cluster_dim,
-        mnk,
-        grid_dim=grid_dim,
-        block_dim=(conv_kernel.NUM_THREADS),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-    )
+    comptime if has_compute_fn:
+        # `host_arg` copies the closure at host layout: the kernel is
+        # compiled against `ComputeFnType` itself, not a device encoding.
+        comptime kernel = conv_kernel.run_with_compute_fn[ComputeFnType]
+        ctx.enqueue_function[kernel](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            cluster_dim,
+            mnk,
+            host_arg=compute_fn,
+            grid_dim=grid_dim,
+            block_dim=(conv_kernel.NUM_THREADS),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+        )
+    else:
+        comptime kernel = conv_kernel.run
+        ctx.enqueue_function[kernel](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            cluster_dim,
+            mnk,
+            grid_dim=grid_dim,
+            block_dim=(conv_kernel.NUM_THREADS),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+        )
 
 
 # =============================================================================
