@@ -252,6 +252,11 @@ def register_all_models() -> None:
             "minimax_music3_arch",
         ),
         _LazyArch("NemotronHForCausalLM", ".nemotron_h", "nemotron_h_arch"),
+        _LazyArch(
+            "NemotronHForCausalLM_ModuleV3",
+            ".nemotron_h_modulev3",
+            "nemotron_h_modulev3_arch",
+        ),
         _LazyArch("MistralForCausalLM", ".mistral", "mistral_arch"),
         _LazyArch(
             "Mistral3ForConditionalGeneration", ".mistral3", "mistral3_arch"

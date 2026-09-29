@@ -1,0 +1,35 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+filegroup(
+    name = "recipe_configs",
+    srcs = glob(["**/recipes/**/*.yaml"]),
+)
+
+modular_py_library(
+    name = "nemotron_h_modulev3",
+    srcs = glob(["**/*.py"]),
+    data = [":recipe_configs"],
+    deps = [
+        requirement("numpy"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        # Registers the "qwen3_5" reasoning and tool parsers the arch defaults to.
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+    ],
+)

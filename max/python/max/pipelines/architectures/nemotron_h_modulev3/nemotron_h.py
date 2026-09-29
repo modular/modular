@@ -1,0 +1,172 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""The Nemotron-H hybrid decoder.
+
+The module tree mirrors the checkpoint's (``backbone.layers.{i}.mixer``), so
+weights load under their own names.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from max import tree
+from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module, as_subgraph
+from max.experimental.nn.embedding import Embedding
+from max.experimental.nn.norm import RMSNorm
+from max.experimental.nn.sequential import ModuleList
+from max.experimental.tensor import Tensor
+from max.graph import BufferValue, TensorValue
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    MultiKVCacheParams,
+    PagedCacheValues,
+    RecurrentStateInputsPerDevice,
+)
+from max.nn.transformer import ReturnLogits
+
+from .layers.attention import NemotronHAttention
+from .layers.mamba2 import MambaStateAccess, NemotronHMamba2Mixer
+from .layers.moe import NemotronHMLP, NemotronHMoE
+from .model_config import ATTN_CACHE_KEY, STATE_CACHE_KEY, NemotronHConfig
+
+
+class NemotronHBlock(Module[..., Tensor]):
+    """A pre-norm residual block around one mixer."""
+
+    def __init__(self, mixer: Module[..., Tensor], config: NemotronHConfig):
+        self.norm = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
+        self.mixer = mixer
+
+    def forward(self, h: Tensor, *mixer_args: object) -> Tensor:
+        return h + self.mixer(self.norm(h), *mixer_args)
+
+
+class NemotronHBackbone(Module[..., Tensor]):
+    """Embedding, then the hybrid layer stack. Returns pre-norm hidden states."""
+
+    def __init__(self, config: NemotronHConfig, attn_params: KVCacheParams):
+        self.embeddings = Embedding(config.vocab_size, dim=config.hidden_size)
+        self.layer_kinds = tuple(config.layer_kinds)
+        layers: list[NemotronHBlock] = []
+        for i, kind in enumerate(self.layer_kinds):
+            mixer: Module[..., Tensor]
+            if kind == "mamba":
+                mixer = NemotronHMamba2Mixer(config)
+            elif kind == "attention":
+                attn_idx = self.layer_kinds[:i].count("attention")
+                mixer = NemotronHAttention(config, attn_params, attn_idx)
+            elif kind == "moe":
+                mixer = NemotronHMoE(config)
+            else:
+                mixer = NemotronHMLP(
+                    config.hidden_size, config.intermediate_size
+                )
+            layers.append(NemotronHBlock(mixer, config))
+        self.layers = ModuleList(layers)
+        self.norm_f = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
+
+    def forward(
+        self,
+        tokens: Tensor,
+        kv_collection: PagedCacheValues,
+        state: RecurrentStateInputsPerDevice[TensorValue, BufferValue],
+        input_row_offsets: Tensor,
+    ) -> Tensor:
+        h = self.embeddings(tokens)
+        query_start_loc = F.cast(input_row_offsets, DType.int32)
+        # In the order NemotronHConfig.construct_kv_params declares them.
+        conv, ssm = state.leaves
+        # Jenga zeroes a request's state rows before its first forward, so
+        # every request can resume from its rows.
+        batch_size = conv.live_row_ids.shape[1]
+        has_initial_state = F.full(
+            [batch_size], True, dtype=DType.bool, device=h.device
+        )
+        mamba_idx = 0
+        for kind, layer in zip(self.layer_kinds, self.layers, strict=True):
+            if kind == "attention":
+                h = layer(h, kv_collection, input_row_offsets)
+                continue
+            # The blocks of each other kind share one subgraph, and each call
+            # resolves its own layer's weights. Attention layers bake their
+            # KV-cache layer index in as a constant, so they can't share a
+            # subgraph.
+            call: Callable[..., Tensor] = as_subgraph(layer, name=kind)
+            if kind == "mamba":
+                # The rows are selected here rather than inside the layer, so
+                # the Mamba layers can share one subgraph.
+                access = MambaStateAccess(
+                    conv_pool=Tensor.from_graph_value(conv.pool),
+                    conv_rows=Tensor.from_graph_value(
+                        conv.live_row_id(mamba_idx)
+                    ),
+                    ssm_pool=Tensor.from_graph_value(ssm.pool),
+                    ssm_rows=Tensor.from_graph_value(
+                        ssm.live_row_id(mamba_idx)
+                    ),
+                )
+                h = call(h, access, query_start_loc, has_initial_state)
+                mamba_idx += 1
+            else:
+                h = call(h)
+        return h
+
+
+class NemotronH(Module[..., tuple[Tensor, ...]]):
+    """Nemotron-H for causal language modeling."""
+
+    def __init__(self, config: NemotronHConfig) -> None:
+        if config.return_logits == ReturnLogits.VARIABLE:
+            raise NotImplementedError(
+                "Nemotron-H does not return a variable number of logits, "
+                "which speculative decoding needs"
+            )
+        self.kv_params = config.kv_params
+        self.return_logits = config.return_logits
+        assert isinstance(config.kv_params, MultiKVCacheParams)
+        attn_params = config.kv_params.children[ATTN_CACHE_KEY]
+        assert isinstance(attn_params, KVCacheParams)
+        self.backbone = NemotronHBackbone(config, attn_params)
+        self.lm_head = Linear(config.hidden_size, config.vocab_size, bias=False)
+
+    def _logits(self, h: Tensor) -> Tensor:
+        return F.cast(self.lm_head(self.backbone.norm_f(h)), DType.float32)
+
+    def forward(
+        self,
+        tokens: Tensor,
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        *kv_inputs: Tensor,
+    ) -> tuple[Tensor, ...]:
+        del return_n_logits
+        kv_tree = self.kv_params.unflatten_kv_inputs(
+            iter(x._graph_value for x in kv_inputs)
+        )
+        assert isinstance(kv_tree, dict)
+        (kv_collection,) = tree.leaves(
+            kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
+        )
+        (state,) = tree.leaves(
+            kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+        )
+        h = self.backbone(tokens, kv_collection, state, input_row_offsets)
+
+        last = self._logits(F.gather(h, input_row_offsets[1:] - 1, axis=0))
+        if self.return_logits == ReturnLogits.ALL:
+            return (last, self._logits(h), input_row_offsets)
+        return (last,)
