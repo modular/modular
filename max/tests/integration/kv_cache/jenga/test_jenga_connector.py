@@ -222,7 +222,7 @@ def make_manager(
     pools = create_pools(leaf_infos, num_huge_blocks)
     return JengaBlockManager(
         pools=pools,
-        groups=create_groups(leaf_infos, pools, 1),
+        groups=create_groups(leaf_infos, pools, 1, enable_prefix_caching=True),
         leaves={
             leaf_id: PagedKVLeafRegion(
                 leaf_id=leaf_id,

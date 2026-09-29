@@ -75,7 +75,12 @@ def make_manager(
     pools = create_pools(leaf_infos, num_huge_blocks, num_replicas)
     return JengaBlockManager(
         pools=pools,
-        groups=create_groups(leaf_infos, pools, block_size),
+        groups=create_groups(
+            leaf_infos,
+            pools,
+            block_size,
+            enable_prefix_caching=enable_prefix_caching,
+        ),
         block_size=block_size,
         enable_prefix_caching=enable_prefix_caching,
         max_num_input_tokens=max_num_input_tokens,

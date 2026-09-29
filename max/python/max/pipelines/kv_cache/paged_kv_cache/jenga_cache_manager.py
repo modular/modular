@@ -73,6 +73,7 @@ from .jenga_block_manager import (
 from .jenga_block_pool import (
     JengaBlockPool,
     JengaGeometry,
+    _pristine_pool_can_satisfy,
     plan_jenga_geometry,
 )
 from .kv_group_coordinator import KVGroupCoordinatorInterface
@@ -128,10 +129,88 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             params.page_size,
             geometry.num_huge_blocks - 1,  # Huge block 0 is the null block.
             geometry.ratios,
+            enable_prefix_caching=params.enable_prefix_caching,
         )
         if longest is None:
             return None
         return max(1, longest - spec_decode_cache_slack(params))
+
+    @classmethod
+    def memory_size(
+        cls,
+        params: KVCacheParamInterface,
+        available_bytes: int,
+        max_batch_size: int,
+        max_seq_len: int,
+    ) -> int:
+        """Returns the slab bytes a full batch at ``max_seq_len`` needs.
+
+        Every leaf, a state or scratch leaf included, is priced in the whole
+        huge blocks an empty pool would carve for it, the same test the pool
+        admits a request by. The answer is checked against the geometry
+        :meth:`create` plans for it, since a smaller budget can choose a
+        different huge block, and is never more than ``available_bytes``.
+
+        Args:
+            params: The cache the slab holds.
+            available_bytes: The KV budget across all devices.
+            max_batch_size: Requests held at once.
+            max_seq_len: The longest request, before speculative slack.
+
+        Returns:
+            The bytes across all devices.
+
+        Raises:
+            RuntimeError: If ``available_bytes`` cannot hold a single block.
+        """
+        num_blocks = ceildiv(
+            max_seq_len + spec_decode_cache_slack(params), params.page_size
+        )
+        demand = {
+            leaf_id: max_batch_size
+            * leaf.blocks_to_reserve(
+                num_blocks, enable_prefix_caching=params.enable_prefix_caching
+            )
+            for leaf_id, leaf in params.leaves().items()
+        }
+        n_devices = len(params.devices)
+
+        def geometry_for(size: int) -> JengaGeometry:
+            try:
+                geometry = cls._plan_geometry(params, size)
+            except ValueError as e:
+                raise RuntimeError(
+                    f"Insufficient cache memory to allocate even a single"
+                    f" page: {e}"
+                ) from None
+            if geometry.num_huge_blocks < 2:
+                raise RuntimeError(
+                    "Insufficient cache memory to allocate even a single"
+                    f" page: {to_human_readable_bytes(size)} holds"
+                    f" {geometry.num_huge_blocks} huge block of"
+                    f" {to_human_readable_bytes(geometry.huge_page_bytes)},"
+                    " and one is the null block."
+                )
+            return geometry
+
+        geometry = geometry_for(available_bytes)
+        needed = 1 + sum(  # Huge block 0 is the null block.
+            ceildiv(blocks, geometry.ratios[leaf_id])
+            for leaf_id, blocks in demand.items()
+        )
+        size = min(
+            available_bytes, needed * geometry.huge_page_bytes * n_devices
+        )
+        while size < available_bytes:
+            planned = geometry_for(size)
+            if _pristine_pool_can_satisfy(
+                planned.num_huge_blocks - 1, planned.ratios, demand
+            ):
+                return size
+            size = min(
+                available_bytes, size + planned.huge_page_bytes * n_devices
+            )
+        return available_bytes
 
     @classmethod
     def create(
@@ -209,7 +288,12 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             leaf_infos, num_huge_blocks, params.data_parallel_degree
         )
 
-        groups = create_groups(leaf_infos, pools, params.page_size)
+        groups = create_groups(
+            leaf_infos,
+            pools,
+            params.page_size,
+            enable_prefix_caching=params.enable_prefix_caching,
+        )
 
         # A single connector serves every replica; each load/offload passes
         # the replica_idx that selects the device endpoint.

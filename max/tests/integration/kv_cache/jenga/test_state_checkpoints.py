@@ -130,7 +130,12 @@ def make_manager(
         pools=pools,
         block_size=BLOCK_SIZE,
         enable_prefix_caching=enable_prefix_caching,
-        groups=create_groups(STATE_LEAVES, pools, BLOCK_SIZE),
+        groups=create_groups(
+            STATE_LEAVES,
+            pools,
+            BLOCK_SIZE,
+            enable_prefix_caching=enable_prefix_caching,
+        ),
         leaves=STATE_PARAMS.leaves(),
     )
 
@@ -443,6 +448,77 @@ def test_nothing_is_published_when_prefix_caching_is_off() -> None:
     assert not published(bm)
 
 
+def test_admission_prices_the_successor_a_boundary_draws() -> None:
+    # The pool holds two requests at one state block each. A checkpoint takes
+    # a second block, so a batch admitted without it finds the pool empty at
+    # the boundary, in the step, where nothing can requeue it.
+    bm = make_manager(num_huge_blocks=7)
+    admitted: list[TextContext] = []
+    for idx in range(2):
+        ctx = make_ctx(BLOCK_SIZE, offset=idx * BLOCK_SIZE)
+        bm.claim(ctx)
+        try:
+            bm.alloc(ctx)
+        except InsufficientBlocksError:
+            continue  # the scheduler requeues what admission refuses
+        admitted.append(ctx)
+    assert admitted, "the pool must hold at least one request"
+
+    for ctx in admitted:
+        resume(bm, ctx)
+        ctx.update(42)
+        assert checkpoint(bm, ctx), "the forward must end on a boundary"
+        bm.step(ctx)
+
+
+def held_state_blocks(bm: JengaBlockManager, ctx: TextContext) -> int:
+    """Returns the state blocks the request holds, its successors included."""
+    held = 0
+    for group in state_groups(bm):
+        row = group.rows.get(ctx.request_id)
+        if row is not None:
+            held += sum(not block.is_null for block in row[group.leaf_id])
+        held += ctx.request_id in group.successors
+    return held
+
+
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_state_holds_its_successor_from_admission_only_with_caching(
+    caching: bool,
+) -> None:
+    # With caching on each state also holds the block its next checkpoint
+    # continues in, whether or not this forward reaches a boundary.
+    bm = make_manager(enable_prefix_caching=caching)
+    ctx = make_ctx(BLOCK_SIZE - 1)
+    bm.claim(ctx)
+
+    bm.alloc(ctx)
+
+    per_state = 2 if caching else 1
+    assert held_state_blocks(bm, ctx) == per_state * len(state_groups(bm))
+
+
+def test_a_state_never_holds_more_than_its_two_budgeted_blocks() -> None:
+    # A checkpoint takes the successor, and admission does not replace it
+    # until the checkpoint is published, so the budget's two blocks hold
+    # across a boundary. Release gives every one back.
+    bm = make_manager()
+    free_before = bm.huge_block_count().free
+    ctx = make_ctx(BLOCK_SIZE)
+    bm.claim(ctx)
+    budget = 2 * len(state_groups(bm))
+    for _ in range(3 * BLOCK_SIZE):
+        bm.alloc(ctx)
+        resume(bm, ctx)
+        assert held_state_blocks(bm, ctx) <= budget
+        ctx.update(42)
+        checkpoint(bm, ctx)
+        bm.step(ctx)
+
+    bm.release(ctx)
+    assert bm.huge_block_count().free == free_before
+
+
 def test_release_commits_nothing() -> None:
     # A checkpoint is committed by a later step, so one still outstanding at
     # release is never published.
@@ -567,7 +643,9 @@ def make_hybrid_manager(num_huge_blocks: int = 999) -> JengaBlockManager:
     return JengaBlockManager(
         pools=pools,
         block_size=BLOCK_SIZE,
-        groups=create_groups(HYBRID_LEAVES, pools, BLOCK_SIZE),
+        groups=create_groups(
+            HYBRID_LEAVES, pools, BLOCK_SIZE, enable_prefix_caching=True
+        ),
         leaves=hybrid_leaves(),
     )
 

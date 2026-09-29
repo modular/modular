@@ -22,8 +22,11 @@ from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, DeviceSpec, is_virtual_device_mode, load_devices
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheParamInterface, estimated_memory_size
-from max.pipelines.kv_cache import max_seq_len_fitting_in_cache
+from max.nn.kv_cache import KVCacheParamInterface
+from max.pipelines.kv_cache import (
+    kv_cache_memory_size,
+    max_seq_len_fitting_in_cache,
+)
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
@@ -541,11 +544,16 @@ class MemoryEstimator:
             )
             max_batch_size = pipeline_config.runtime.max_batch_input_tokens
 
+        # Which KV manager will hold the cache decides how it is priced.
+        is_di_enabled = pipeline_config.runtime.is_disaggregated
+        model_name = model_config.model_name
         actual_kv_cache_size = cls._calculate_kv_cache_size(
             arch_config=arch_config,
             max_batch_size=max_batch_size,
             available_kv_cache_memory=available_kv_cache_memory,
             max_seq_len=resolved_max_seq_len,
+            is_di_enabled=is_di_enabled,
+            model_name=model_name,
         )
 
         # Committed KV byte budget (captured before the OOM-fit search below may
@@ -568,6 +576,8 @@ class MemoryEstimator:
                 max_batch_size,
                 devices,
                 max_length,
+                is_di_enabled=is_di_enabled,
+                model_name=model_name,
             )
 
             if found_valid_max_length:
@@ -583,6 +593,8 @@ class MemoryEstimator:
                 max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 max_seq_len=resolved_max_seq_len,
+                is_di_enabled=is_di_enabled,
+                model_name=model_name,
             )
             total_size = model_weights_size + actual_kv_cache_size
 
@@ -600,6 +612,8 @@ class MemoryEstimator:
                     available_kv_cache_memory,
                     devices,
                     max_length,
+                    is_di_enabled=is_di_enabled,
+                    model_name=model_name,
                 )
 
             elif int(total_size) > int(vram_usage_limit_scale * free_memory):
@@ -696,6 +710,9 @@ class MemoryEstimator:
         max_batch_size: int,
         devices: list[Device],
         max_length: int,
+        *,
+        is_di_enabled: bool,
+        model_name: str,
     ) -> tuple[bool, int, int]:
         """Binary search to find a valid max_length configuration.
 
@@ -723,6 +740,8 @@ class MemoryEstimator:
                 max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 max_seq_len=inferred_max_length,
+                is_di_enabled=is_di_enabled,
+                model_name=model_name,
             )
 
             if lower > upper:
@@ -750,6 +769,9 @@ class MemoryEstimator:
         user_provided_max_batch_size: bool,
         max_batch_size: int,
         arch_config: ArchConfig,
+        *,
+        is_di_enabled: bool,
+        model_name: str,
     ) -> tuple[bool, int]:
         """Binary search to find a valid batch size configuration.
 
@@ -775,6 +797,8 @@ class MemoryEstimator:
                 max_batch_size=inferred_max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 max_seq_len=original_max_length,
+                is_di_enabled=is_di_enabled,
+                model_name=model_name,
             )
 
             if lower > upper:
@@ -798,6 +822,9 @@ class MemoryEstimator:
         max_batch_size: int,
         available_kv_cache_memory: int,
         max_seq_len: int,
+        *,
+        is_di_enabled: bool,
+        model_name: str,
     ) -> int:
         """Calculate the KV cache size for the current configuration.
 
@@ -810,15 +837,18 @@ class MemoryEstimator:
                 normally the architecture's policy value
                 (:meth:`ArchConfig.calculate_max_seq_len`); binary searches
                 pass their candidate value.
+            is_di_enabled: Whether disaggregated inference is on, which
+                decides the KV manager and so how the cache is priced.
+            model_name: The served model, which also decides the manager.
         """
         if isinstance(arch_config, ArchConfigWithKVCache):
-            params = arch_config.get_kv_params()
-            return estimated_memory_size(
-                params=params,
+            return kv_cache_memory_size(
+                params=arch_config.get_kv_params(),
+                available_cache_memory=available_kv_cache_memory,
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
-                available_cache_memory=available_kv_cache_memory,
-                include_null_block=True,
+                is_di_enabled=is_di_enabled,
+                model_name=model_name,
             )
         else:
             return 0
@@ -835,6 +865,9 @@ class MemoryEstimator:
         available_kv_cache_memory: int,
         devices: list[Device],
         max_length: int,
+        *,
+        is_di_enabled: bool,
+        model_name: str,
     ) -> None:
         """Suggests a viable configuration when the current one does not fit in memory.
 
@@ -870,6 +903,8 @@ class MemoryEstimator:
             max_batch_size,
             devices,
             max_length,
+            is_di_enabled=is_di_enabled,
+            model_name=model_name,
         )
 
         found_valid_max_batch_size, inferred_max_batch_size = (
@@ -879,6 +914,8 @@ class MemoryEstimator:
                 user_provided_max_batch_size,
                 max_batch_size,
                 arch_config=arch_config,
+                is_di_enabled=is_di_enabled,
+                model_name=model_name,
             )
         )
 

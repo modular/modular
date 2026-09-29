@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
@@ -39,6 +39,23 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
 
     page_size: int = 0
     """Tokens per page: the granularity a state can be committed at."""
+
+    enable_prefix_caching: bool = False
+    """Whether the state checkpoints at page boundaries.
+
+    Without prefix caching nothing is published, so the state stays in the
+    block it ran in.
+    """
+
+    successors: dict[RequestID, LittleKVCacheBlock] = field(
+        default_factory=dict, kw_only=True
+    )
+    """The block each request's next checkpoint continues the state in.
+
+    Held from admission to release while prefix caching is on, which is
+    the second block ``blocks_to_reserve`` budgets. Drawing it in ``step``
+    instead would be a draw no admission check priced.
+    """
 
     def _live(
         self, row: Sequence[LittleKVCacheBlock]
@@ -97,31 +114,63 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Returns one block until the row holds a live one, then none."""
         return 0 if self._live(row) is not None else 1
 
+    def _needs_successor(self, req_id: RequestID) -> bool:
+        """Whether admission must draw the request's successor.
+
+        Not while a checkpoint is still unpublished: ``checkpoint`` runs one
+        at a time, so the request holds at most its live block and one more.
+        """
+        if not self.enable_prefix_caching or req_id in self.successors:
+            return False
+        row = self.rows[req_id][self.leaf_id]
+        return not any(
+            not block.is_null and block.block_hash is None for block in row[:-1]
+        )
+
+    def blocks_to_allocate(
+        self, req_id: RequestID, num_required_blocks: int
+    ) -> dict[str, int]:
+        """Returns the live block the row lacks, and its missing successor."""
+        demand = super().blocks_to_allocate(req_id, num_required_blocks)
+        if self._needs_successor(req_id):
+            demand[self.leaf_id] += 1
+        return demand
+
     def grow(
         self, req_id: RequestID, num_required_blocks: int, replica_idx: int
     ) -> None:
-        """Draws the live block if the request has none, and pads the row out."""
-        pool = self.pools[replica_idx]
-        drawn: dict[str, LittleKVCacheBlock] = {}
-        try:
-            leaf_id = self.leaf_id
-            row = self.rows[req_id][leaf_id]
-            if self._num_blocks_to_allocate(row, num_required_blocks):
-                drawn[leaf_id] = pool.alloc_block(leaf_id)
-        except InsufficientBlocksError:
-            for block in drawn.values():
-                pool.free_block(block)
-            raise InsufficientBlocksError(
-                f"No blocks left for the recurrent state of {req_id}"
-            ) from None
+        """Draws the live block and successor the request lacks.
 
+        Also pads the row out.
+        """
+        pool = self.pools[replica_idx]
         leaf_id = self.leaf_id
         row = self.rows[req_id][leaf_id]
+        draws_live = bool(
+            self._num_blocks_to_allocate(row, num_required_blocks)
+        )
+        draws_successor = self._needs_successor(req_id)
+        # Checked up front so a pool with room for one of the two blocks
+        # draws neither.
+        if not pool.can_satisfy_demand({leaf_id: draws_live + draws_successor}):
+            raise InsufficientBlocksError(
+                f"No blocks left for the recurrent state of {req_id}"
+            )
+        live = pool.alloc_block(leaf_id) if draws_live else row.pop()
+        if draws_successor:
+            self.successors[req_id] = pool.alloc_block(leaf_id)
+
         null_block = pool.null_little_blocks[leaf_id]
-        live = drawn.get(leaf_id) or row.pop()
         while len(row) < max(num_required_blocks - 1, 0):
             row.append(null_block)
         row.append(live)
+
+    def release(self, req_id: RequestID, replica_idx: int) -> None:
+        """Frees every block the request holds, its successor too."""
+        successor = self.successors.pop(req_id, None)
+        if successor is not None:
+            self.pools[replica_idx].free_block(successor)
+        super().release(req_id, replica_idx)
 
     def shrink_to_fit(
         self, req_id: RequestID, num_committed_blocks: int, replica_idx: int
@@ -222,6 +271,8 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         Empty unless the forward ended exactly on a block boundary and the
         row holds no unpublished predecessor already.
         """
+        if not self.enable_prefix_caching:
+            return {}
         row = self.rows.get(ctx.request_id)
         if row is None:
             return {}
@@ -243,9 +294,15 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
             return {}  # one checkpoint at a time
 
         # Admission reserves the successor alongside the block being
-        # published, so a failure here is an accounting bug, not pressure.
+        # published, so a missing one is an accounting bug, not pressure.
         pool = self.pools[replica_idx]
-        drawn = {self.leaf_id: pool.alloc_block(self.leaf_id)}
+        successor = self.successors.pop(ctx.request_id, None)
+        if successor is None:
+            raise AssertionError(
+                f"{ctx.request_id} reached a checkpoint with no successor"
+                " reserved; was the group built with enable_prefix_caching?"
+            )
+        drawn = {self.leaf_id: successor}
 
         fills: dict[str, tuple[int | None, int]] = {}
         leaf_id = self.leaf_id

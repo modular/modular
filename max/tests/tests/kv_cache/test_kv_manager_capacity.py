@@ -94,7 +94,9 @@ def test_a_hybrid_is_capped_at_exactly_what_its_slab_admits() -> None:
     def admits(seq_len: int) -> bool:
         num_blocks = ceildiv(seq_len, PAGE_SIZE)
         demand = {
-            leaf_id: leaf.blocks_to_reserve(num_blocks)
+            leaf_id: leaf.blocks_to_reserve(
+                num_blocks, enable_prefix_caching=params.enable_prefix_caching
+            )
             for leaf_id, leaf in params.leaves().items()
         }
         return pool.can_satisfy_demand(demand, at_capacity=True)

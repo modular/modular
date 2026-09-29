@@ -869,3 +869,96 @@ def test_an_attention_only_tree_asks_for_no_alignment_either_way() -> None:
             max_batch_size=4,
         )
         assert mgr.chunk_alignment_tokens == 0
+
+
+# ===--------------------------------------------------------------------=== #
+# Sizing a slab for a full batch
+# ===--------------------------------------------------------------------=== #
+
+PLENTY = 1 << 30
+SCRATCH_LEAF = "lin/ring"
+
+
+def make_budget_params(*, caching: bool) -> MultiKVCacheParams:
+    """An attention leaf beside a state and a scratch leaf."""
+    attn = make_leaf(n_kv_heads=1, page_size=4)
+    attn.enable_prefix_caching = caching
+    state = RecurrentStateParams(
+        devices=attn.devices,
+        data_parallel_degree=attn.data_parallel_degree,
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=STATE_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SCRATCH_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+                scratch=True,
+            ),
+        ),
+    )
+    return MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_slab_of_memory_size_admits_the_batch_it_was_sized_for(
+    caching: bool,
+) -> None:
+    """Checks the size holds every leaf of a full batch, states included."""
+    params = make_budget_params(caching=caching)
+    max_batch_size = 4
+    size = JengaKVCacheManager.memory_size(
+        params, PLENTY, max_batch_size=max_batch_size, max_seq_len=16
+    )
+    assert size < PLENTY, "the batch must bind before the budget does"
+
+    mgr = JengaKVCacheManager.create(
+        params=params, available_bytes=size, max_batch_size=max_batch_size
+    )
+    for _ in range(max_batch_size):
+        ctx = make_ctx(16)
+        mgr.claim(ctx)
+        mgr.alloc(ctx)
+
+
+def test_memory_size_counts_the_states() -> None:
+    """Checks the state and scratch leaves cost the slab more than attention."""
+    params = make_budget_params(caching=True)
+    attn = params.children["attn"]
+    assert isinstance(attn, MHAKVCacheParams)
+
+    def size(p: KVCacheParamInterface) -> int:
+        return JengaKVCacheManager.memory_size(
+            p, PLENTY, max_batch_size=4, max_seq_len=16
+        )
+
+    assert size(params) > size(attn)
+
+
+def test_memory_size_never_exceeds_the_budget() -> None:
+    """Checks a batch too big for the budget gets the whole budget."""
+    params = make_budget_params(caching=True)
+    small = JengaKVCacheManager.memory_size(
+        params, PLENTY, max_batch_size=1, max_seq_len=4
+    )
+
+    assert (
+        JengaKVCacheManager.memory_size(
+            params, small, max_batch_size=64, max_seq_len=4096
+        )
+        == small
+    )
+
+
+def test_memory_size_raises_when_the_budget_holds_no_block() -> None:
+    params = make_budget_params(caching=True)
+
+    with pytest.raises(RuntimeError, match="Insufficient cache memory"):
+        JengaKVCacheManager.memory_size(
+            params, 1, max_batch_size=1, max_seq_len=4
+        )

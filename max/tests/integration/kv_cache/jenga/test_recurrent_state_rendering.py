@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from max.dtype import DType
 from max.nn.kv_cache import (
     KVCacheGroupId,
@@ -89,12 +90,10 @@ def test_a_leaf_keeps_its_own_layer_count() -> None:
     assert [folded[leaf_id].shape for leaf_id in (A, B)] == [(3, 2), (2, 2)]
 
 
-def test_a_state_leaf_reserves_two_blocks_whatever_the_block_count() -> None:
-    """The block it runs in and the checkpoint it publishes, at any num_blocks."""
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_state_leaf_reserve_ignores_the_block_count(caching: bool) -> None:
+    """The block it runs in, and with caching the checkpoint it publishes."""
     assert [
-        LEAVES[A].blocks_to_reserve(num_blocks) for num_blocks in (1, 7, 4096)
-    ] == [
-        2,
-        2,
-        2,
-    ]
+        LEAVES[A].blocks_to_reserve(num_blocks, enable_prefix_caching=caching)
+        for num_blocks in (1, 7, 4096)
+    ] == [2 if caching else 1] * 3

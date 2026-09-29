@@ -25,6 +25,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
+    estimated_memory_size,
     recurrent_leaf,
 )
 
@@ -99,6 +100,40 @@ def max_seq_len_fitting_in_cache(
         available_cache_memory=available_cache_memory,
         include_null_block=True,
     )
+
+
+def kv_cache_memory_size(
+    params: KVCacheParamInterface,
+    available_cache_memory: int,
+    max_batch_size: int,
+    max_seq_len: int,
+    is_di_enabled: bool,
+    model_name: str,
+) -> int:
+    """Returns the KV bytes the manager for this cache needs for a full batch.
+
+    Jenga carves every leaf, states included, out of whole huge blocks, so it
+    sizes its own slab. The legacy pool charges every leaf a page per slot.
+
+    Returns:
+        The bytes across all devices, at most ``available_cache_memory``.
+    """
+    generic = estimated_memory_size(
+        params=params,
+        available_cache_memory=available_cache_memory,
+        max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
+        include_null_block=True,
+    )
+    if not _use_jenga_kv_cache(params, is_di_enabled, model_name):
+        return generic
+    exact = JengaKVCacheManager.memory_size(
+        params, available_cache_memory, max_batch_size, max_seq_len
+    )
+    # TODO(MXSERV-570): the generic estimate over-counts a windowed leaf, and
+    # that extra room holds cached prefixes, so a slab never shrinks below it.
+    # Drop it once allocation takes the whole KV budget.
+    return min(available_cache_memory, max(exact, generic))
 
 
 def load_kv_manager(

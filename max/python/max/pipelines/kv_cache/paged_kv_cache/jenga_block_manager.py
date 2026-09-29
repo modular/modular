@@ -114,6 +114,8 @@ def _max_seq_len_fitting_in_geometry(
     block_size: int,
     allocatable_huge_blocks: int,
     cache_ratios: Mapping[str, int],
+    *,
+    enable_prefix_caching: bool,
 ) -> int | None:
     """Returns the longest single request an empty pool of this geometry serves.
 
@@ -126,12 +128,15 @@ def _max_seq_len_fitting_in_geometry(
         block_size: Tokens per page.
         allocatable_huge_blocks: Huge blocks excluding the null block.
         cache_ratios: Little pages of each leaf per huge block.
+        enable_prefix_caching: Whether states hold a checkpoint block.
     """
 
     def fits(seq_len: int) -> bool:
         num_blocks = ceildiv(seq_len, block_size)
         demand = {
-            leaf_id: leaf.blocks_to_reserve(num_blocks)
+            leaf_id: leaf.blocks_to_reserve(
+                num_blocks, enable_prefix_caching=enable_prefix_caching
+            )
             for leaf_id, leaf in leaves.items()
         }
         return _pristine_pool_can_satisfy(
@@ -154,6 +159,8 @@ def create_groups(
     leaf_infos: Mapping[str, KVLeafInfo],
     pools: Sequence[JengaBlockPool],
     page_size: int,
+    *,
+    enable_prefix_caching: bool,
 ) -> dict[str, KVGroupCoordinatorInterface]:
     """Returns one coordinator per leaf, keyed by leaf id.
 
@@ -172,7 +179,11 @@ def create_groups(
     """
     return {
         leaf_id: create_kv_group_coordinator(
-            pools, leaf_id, leaf.group_id, page_size
+            pools,
+            leaf_id,
+            leaf.group_id,
+            page_size,
+            enable_prefix_caching=enable_prefix_caching,
         )
         for leaf_id, leaf in leaf_infos.items()
     }
@@ -183,6 +194,8 @@ def create_kv_group_coordinator(
     leaf_id: str,
     group_id: KVCacheGroupId,
     page_size: int,
+    *,
+    enable_prefix_caching: bool = False,
 ) -> KVGroupCoordinatorInterface:
     """Returns the group implementation matching the leaves' access pattern."""
     if group_id.is_sliding_window():
@@ -206,6 +219,7 @@ def create_kv_group_coordinator(
             leaf_id=leaf_id,
             group_id=group_id,
             page_size=page_size,
+            enable_prefix_caching=enable_prefix_caching,
         )
     if group_id.is_scratch():
         return ScratchKVGroupCoordinator(
@@ -779,13 +793,16 @@ class JengaBlockManager:
             self._block_size,
             self.huge_block_count().total,
             pool.cache_ratios,
+            enable_prefix_caching=self._enable_prefix_caching,
         )
 
     def _blocks_to_reserve(self, seq_len: int) -> dict[str, int]:
         """Returns the blocks each leaf draws for a ``seq_len``-token request."""
         num_blocks = ceildiv(seq_len, self._block_size)
         return {
-            leaf_id: leaf.blocks_to_reserve(num_blocks)
+            leaf_id: leaf.blocks_to_reserve(
+                num_blocks, enable_prefix_caching=self._enable_prefix_caching
+            )
             for leaf_id, leaf in self._leaves.items()
         }
 

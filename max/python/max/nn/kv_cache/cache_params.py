@@ -970,7 +970,9 @@ class KVLeafRegion:
         """
         return not self.group_id.is_scratch()
 
-    def blocks_to_reserve(self, num_blocks: int) -> int:
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
         """Returns how many blocks one request draws to fill ``num_blocks`` slots.
 
         Fewer than ``num_blocks`` when some slots hold the null block: a
@@ -1038,7 +1040,9 @@ class PagedKVLeafRegion(KVLeafRegion):
     page_size: int
     """Number of tokens per page."""
 
-    def blocks_to_reserve(self, num_blocks: int) -> int:
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
         """Returns ``num_blocks``, capped by the window when the leaf has one."""
         if self.group_id.is_full():
             return num_blocks
@@ -1119,9 +1123,14 @@ class RecurrentKVLeafRegion(KVLeafRegion):
     region: RecurrentStateRegion
     """The state region that names this leaf and sizes its rows."""
 
-    def blocks_to_reserve(self, num_blocks: int) -> int:
-        """Returns two: the live block, and at most one checkpoint behind it."""
-        return 2
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
+        """Returns the live block, and a checkpoint behind it with caching on.
+
+        Without prefix caching a state never checkpoints.
+        """
+        return 2 if enable_prefix_caching else 1
 
     def staged_input_shapes(
         self, batch_size: int, num_blocks: int
@@ -1172,7 +1181,9 @@ class ScratchKVLeafRegion(RecurrentKVLeafRegion):
     a request holds the same one from its first forward to its release.
     """
 
-    def blocks_to_reserve(self, num_blocks: int) -> int:
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
         """Returns one: the block the request holds for its whole life."""
         return 1
 
@@ -1450,24 +1461,6 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
         on nested trees.
         """
         ...
-
-    def per_request_row_bytes(self, blocks_per_request: int = 1) -> int:
-        """Returns the bytes one request holds in row-addressed leaves.
-
-        These are recurrent state and scratch leaves, which
-        :meth:`bytes_per_block` does not cover. Summed across the
-        tensor-parallel group.
-
-        Args:
-            blocks_per_request: Blocks a request spans, passed to each leaf's
-                ``blocks_to_reserve``.
-        """
-        total = sum(
-            leaf.blocks_to_reserve(blocks_per_request) * leaf.bytes_per_page
-            for leaf in self.leaves().values()
-            if leaf.group_id.is_recurrent() or leaf.group_id.is_scratch()
-        )
-        return total * self.tensor_parallel_degree
 
 
 @dataclass
@@ -3662,7 +3655,9 @@ def compute_num_device_blocks(
         slots = ceildiv(max_seq_len, params.page_size) if max_seq_len else 1
         per_request = max(
             (
-                leaf.blocks_to_reserve(slots)
+                leaf.blocks_to_reserve(
+                    slots, enable_prefix_caching=params.enable_prefix_caching
+                )
                 for leaf in params.leaves().values()
             ),
             default=0,
@@ -3674,13 +3669,8 @@ def compute_num_device_blocks(
     available_cache_memory_per_replica = (
         available_cache_memory // params.data_parallel_degree
     )
-    # ``bytes_per_block`` excludes row-addressed leaves, so reserve them first.
-    row_bytes = params.per_request_row_bytes(
-        max_blocks_per_req if max_blocks_per_req is not None else 1
-    ) * (max_batch_size or 0)
     num_allocable_blocks = (
-        max(0, available_cache_memory_per_replica - row_bytes)
-        // params.bytes_per_block
+        available_cache_memory_per_replica // params.bytes_per_block
     )
 
     if max_total_blocks is not None:
@@ -3782,17 +3772,7 @@ def estimated_memory_size(
         sum(leaf.bytes_per_page for leaf in params.leaves().values())
         * params.tensor_parallel_degree
     )
-    # The block count excludes row-addressed leaves, except under the
-    # zero-price fallback above.
-    row_bytes = (
-        params.per_request_row_bytes(ceildiv(max_seq_len, params.page_size))
-        * max_batch_size
-        if params.bytes_per_block
-        else 0
-    )
-    return (
-        num_device_blocks * bytes_per_block + row_bytes
-    ) * params.data_parallel_degree
+    return num_device_blocks * bytes_per_block * params.data_parallel_degree
 
 
 def compute_max_seq_len_fitting_in_cache(
