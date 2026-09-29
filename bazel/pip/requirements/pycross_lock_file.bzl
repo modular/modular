@@ -74,7 +74,6 @@ PINS = {
     "kaleido": "kaleido@0.2.1",
     "kepler": "kepler@0.3.0",
     "libcst": "libcst@1.8.6",
-    "llguidance": "llguidance@multiple",
     "lm-eval": "lm-eval@0.4.11",
     "locust": "locust@2.18.4",
     "logbar": "logbar@0.0.3",

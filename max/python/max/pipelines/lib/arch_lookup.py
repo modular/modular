@@ -329,7 +329,7 @@ class SupportedArchitecture:
     default_structured_output_backend: str | None = None
     """Optional default structured output backend for this architecture.
 
-    When set (e.g., ``"llguidance"`` or ``"xgrammar"``), the pipeline config
+    When set (e.g., ``"xgrammar"``), the pipeline config
     will use this value for ``sampling.structured_output_backend`` if the
     user did not explicitly configure one. This allows architectures that
     work better with a specific backend to override the global default.

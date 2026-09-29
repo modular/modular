@@ -66,17 +66,11 @@ class _StubMatcher:
     def is_stopped(self) -> bool:
         return False
 
-    def get_error(self) -> str | None:
-        return None
-
-    def get_grammar_warnings(self) -> Any:
-        return None
-
     def deep_copy(self) -> "_StubMatcher":
         return self
 
 
-class _ControlledBackend(GrammarBackend[Any]):
+class _ControlledBackend(GrammarBackend):
     """Backend stub whose build can block on ``release_build`` or fail."""
 
     name = "stub"
@@ -98,9 +92,6 @@ class _ControlledBackend(GrammarBackend[Any]):
         if self.fail_build:
             raise ValueError("stub backend refuses this grammar")
         return _StubMatcher()
-
-    def validate_grammar(self, grammar: Any) -> None:
-        pass
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int

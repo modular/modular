@@ -1895,7 +1895,7 @@ def apply_packed_bitmask[
         logits: Input logits, shape `[batch, vocab]`.
         packed: Packed `int32` bitmask, shape `[batch, ceil(vocab / 32)]`. A set
             bit means the token is grammar-valid. Extra trailing bits beyond
-            `vocab` (32-bit alignment padding from llguidance) are never read.
+            `vocab` (32-bit alignment padding in the packed bitmask) are never read.
         fill_value: Value written for masked-out (grammar-invalid) tokens.
         ctx: The device context.
     """

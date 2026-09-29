@@ -55,7 +55,6 @@ glm5_1_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner,
     tool_parser="glm45",
     reasoning_parser="glm45",
-    default_structured_output_backend="xgrammar",
     # GLM strongly prefers pretty-printed JSON: under the compact grammar its
     # content-bearing continuations are all masked at the first array decision
     # and the schema's shortest terminator wins (measured 8/8 degenerate

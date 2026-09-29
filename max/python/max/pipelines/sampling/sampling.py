@@ -283,7 +283,7 @@ def token_sampler(
 
             # Unpack the packed int32 bitmask and mask the logits in one fused
             # pass. The kernel reads only words covering ``logits``' vocab dim,
-            # so llguidance's 32-bit alignment padding needs no explicit slice.
+            # so the packed bitmask's 32-bit alignment padding needs no explicit slice.
             logits = apply_packed_bitmask(logits, bitmask, fill_val=-10000.0)
 
         # Apply top_k sampling

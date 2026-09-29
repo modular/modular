@@ -21,7 +21,7 @@ a failure), this groups probes by feature class and reports a per-feature
 breakdown, so a failure pinpoints the exact construct. It also encodes the
 honest-rejection contract for constructs no grammar can enforce (see
 ``array_unique_unenforceable`` below, where a 400 is the PASS, not a failure).
-The classes target the known fail-open gaps of the default llguidance JSON path
+The classes target schema features that are easy to under-enforce
 (``$ref``/``$defs``, ``anyOf``, ``type``-lists) plus the constraints a complete
 compiler must hold (``pattern``, numeric bounds, array cardinality, nested
 ``additionalProperties``, ``uniqueItems``). Each feature sends several
@@ -181,7 +181,7 @@ CASES: list[tuple[str, dict[str, Any], list[str]]] = [
     (
         # `uniqueItems` on an unbounded-domain array is a cross-element global
         # constraint no regular/CFG grammar can express, so no constrained-
-        # decoding backend (llguidance, xgrammar) can enforce it. The honest
+        # decoding backend can enforce it. The honest
         # contract is to reject the request up front with a 400 naming the
         # construct (the orchestrator schema gate), not best-effort a 200 that
         # violates the schema: a clean 400 is the PASS, a 200 is the FAIL.

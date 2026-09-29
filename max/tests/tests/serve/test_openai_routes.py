@@ -2912,8 +2912,7 @@ def test_create_response_format_boolean_schema_false() -> None:
     """A boolean schema ``false`` (matches nothing) de-sugars to the
     unsatisfiable ``{"anyOf": [False]}``, which the worker rejects as a 400 --
     no output can satisfy it. (``{"anyOf": [False]}`` is used over
-    ``{"not": {}}`` because llguidance lacks ``not`` and reports a misleading
-    error.)"""
+    ``{"not": {}}`` for broad grammar-backend compatibility.)"""
     result = _create_response_format(
         {
             "type": "json_schema",

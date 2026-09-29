@@ -657,9 +657,13 @@ class TestStructuredOutputBackendResolution:
 
     @prepare_registry
     def test_explicit_backend_value_wins(self) -> None:
-        """An explicit user backend is never overridden by the arch default."""
+        """An explicit user backend is never overridden by the arch default.
+
+        The arch default is ``None``; the user explicitly set ``xgrammar``.
+        The resolved value must be the user's choice.
+        """
         arch = dataclasses.replace(
-            DUMMY_GEMMA_ARCH, default_structured_output_backend="xgrammar"
+            DUMMY_GEMMA_ARCH, default_structured_output_backend=None
         )
         PIPELINE_REGISTRY.register(arch)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -671,11 +675,11 @@ class TestStructuredOutputBackendResolution:
             # Constructing with the field set records it in model_fields_set.
             config = _make_pipeline_config(
                 tmpdir,
-                sampling=SamplingConfig(structured_output_backend="llguidance"),
+                sampling=SamplingConfig(structured_output_backend="xgrammar"),
             )
             with _pipeline_resolve_mocks():
                 config = _plan_memory(config)
-            assert config.sampling.structured_output_backend == "llguidance"
+            assert config.sampling.structured_output_backend == "xgrammar"
 
 
 class TestStructuredOutputAnyWhitespaceResolution:

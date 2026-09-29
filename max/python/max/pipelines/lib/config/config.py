@@ -230,11 +230,9 @@ def _resolve_default_structured_output_backend(
     Resolution order (highest precedence first):
 
     1. An explicit user choice (``sampling.structured_output_backend`` is
-       not ``None``) always wins -- including an explicit ``"xgrammar"`` on
-       an architecture that pins ``"llguidance"``.
+       not ``None``) always wins.
     2. Otherwise, if the resolved ``SupportedArchitecture`` declares a
-       ``default_structured_output_backend`` (e.g. Gemma 3 / MiniMax-M2 pin
-       ``"llguidance"``), use it.
+       ``default_structured_output_backend``, use it.
     3. Otherwise, fall back to the global default ``"xgrammar"``.
 
     Runs whenever construction resolves an architecture, so the field is

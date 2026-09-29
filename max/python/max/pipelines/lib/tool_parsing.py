@@ -24,7 +24,6 @@ Two pieces live here:
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
@@ -72,22 +71,6 @@ def names_from_tools(
         name for t in tools if (name := maybe_name_from_tool(t)) is not None
     ]
     return names or None
-
-
-_JSON_TYPE_TO_GRAMMAR_RULE: dict[str, str] = {
-    "string": "string_val",
-    "number": "number_val",
-    "integer": "integer_val",
-    "boolean": "bool_val",
-    "array": "array_val",
-    "object": "object_val",
-    "null": "null_val",
-}
-
-
-def grammar_rule_for_json_type(json_type: str, default: str = "value") -> str:
-    """Maps a JSON Schema type name to its Lark grammar rule name."""
-    return _JSON_TYPE_TO_GRAMMAR_RULE.get(json_type, default)
 
 
 _TOOL_PARSERS: dict[str, type[ToolParser]] = {}
@@ -159,11 +142,6 @@ def generate_call_id() -> str:
     return f"call_{uuid.uuid4().hex[:_TOOL_CALL_ID_LENGTH]}"
 
 
-def escape_for_lark_string(s: str) -> str:
-    """Escapes a string for use inside a Lark double-quoted terminal."""
-    return s.replace("\\", "\\\\").replace('"', '\\"')
-
-
 def get_token_id(tokenizer: Any, token: str) -> int | None:
     """Resolve a single token string to its ID, or ``None`` if unknown."""
     delegate = getattr(tokenizer, "delegate", tokenizer)
@@ -176,19 +154,6 @@ def get_token_id(tokenizer: Any, token: str) -> int | None:
     if isinstance(tid, int) and tid != unk_id:
         return tid
     return None
-
-
-def resolve_lark_token_reference(token_id: int) -> str:
-    """Format a token ID as llguidance's ``<[N]>`` reference."""
-    return f"<[{token_id}]>"
-
-
-def canonicalize_lark_rule_name(s: str) -> str:
-    """Convert *s* to a string safe for use as a Lark rule name.
-
-    Lark rule names must be lowercase (uppercase starts a terminal).
-    """
-    return re.sub(r"[^a-z0-9_]", "_", s.lower())
 
 
 @dataclass

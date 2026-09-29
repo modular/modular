@@ -190,45 +190,6 @@ def test_fill_slot_after_stop_token_accepted_forces_eos_without_crashing() -> (
     )
 
 
-def test_llguidance_completed_matcher_still_gets_eos_mask() -> None:
-    """llguidance's ``is_stopped()`` becomes true the moment the grammar is
-    satisfied -- before the stop token is even consumed -- so a completed
-    grammar is llguidance's normal, frequent end-of-request state, not a
-    rare corner case. It computes a real EOS-only mask here without
-    crashing, matching xgrammar's hand-built one above.
-    """
-    delegate = _FakeTikTokenTokenizer()
-    pipeline_tokenizer = MagicMock()
-    pipeline_tokenizer.delegate = delegate
-    pipeline_tokenizer.eos_token_ids = {delegate.eos_token_id}
-
-    helper = StructuredOutputHelper.from_tokenizer(
-        cast("PipelineTokenizer[Any, Any, Any]", pipeline_tokenizer),
-        enable_structured_output=True,
-        backend_name="llguidance",
-    )
-    assert helper.backend is not None
-
-    schema = {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": False,
-    }
-    matcher = helper.backend.create_matcher(
-        helper.backend.compile_json_schema(json.dumps(schema))
-    )
-    for char in "{}":
-        assert matcher.try_consume_tokens([ord(char)]) == 1
-    assert matcher.is_accepting()
-    assert matcher.is_stopped()
-
-    allowed = set(np.flatnonzero(_allowed_tokens(helper.backend, matcher)))
-    assert allowed == {delegate.eos_token_id}, (
-        f"a completed llguidance matcher must force exactly its stop token "
-        f"set, not {allowed}"
-    )
-
-
 # Minimal schema for the whitespace-mode tests: one required string property.
 _WS_SCHEMA = json.dumps(
     {
@@ -257,9 +218,8 @@ def _make_helper(
 
     A framing listed in :data:`_TOKENS_BY_MODEL_FORMAT` gets a word-level fake
     holding its structural tokens. Every other framing -- and every caller that
-    names none -- gets the TikToken-shaped fake, which exercises both backends:
-    llguidance cannot infer a decoder from the WordLevel HF fake, but both
-    backends accept the byte-level adapter path.
+    names none -- gets the TikToken-shaped fake, which exercises xgrammar via
+    its byte-level adapter path.
     """
     markers = _TOKENS_BY_MODEL_FORMAT.get(model_format or "", ())
     delegate: Any
@@ -286,10 +246,9 @@ def _make_helper(
     )
 
 
-@pytest.mark.parametrize("backend_name", ["xgrammar", "llguidance"])
-def test_any_whitespace_grammar_admits_whitespace(backend_name: str) -> None:
+def test_any_whitespace_grammar_admits_whitespace() -> None:
     """``any_whitespace=True`` compiles a grammar that accepts whitespaceful JSON."""
-    helper = _make_helper(backend_name, any_whitespace=True)
+    helper = _make_helper("xgrammar", any_whitespace=True)
     assert helper.backend is not None
     matcher = helper.backend.create_matcher(
         helper.backend.compile_json_schema(_WS_SCHEMA)
@@ -297,7 +256,7 @@ def test_any_whitespace_grammar_admits_whitespace(backend_name: str) -> None:
     payload = '{ "a": "x" }'
     tokens = [ord(c) for c in payload]
     assert matcher.try_consume_tokens(tokens) == len(tokens), (
-        f"[{backend_name}] whitespace-tolerant grammar rejected {payload!r}"
+        f"whitespace-tolerant grammar rejected {payload!r}"
     )
     assert matcher.is_accepting()
 
@@ -308,7 +267,7 @@ def test_any_whitespace_grammar_bounds_whitespace_runs() -> None:
     Guards the runaway-generation vector that motivated the compact default:
     a model looping on whitespace must be forced to converge instead of
     emitting whitespace forever (GLM 5.2 produced exactly that runaway
-    inside tool calls). xgrammar-only: llguidance has no whitespace-run cap.
+    inside tool calls). This test is xgrammar-specific.
     """
     backend_name = "xgrammar"
     helper = _make_helper(backend_name, any_whitespace=True)
@@ -335,15 +294,14 @@ def test_any_whitespace_grammar_bounds_whitespace_runs() -> None:
     )
 
 
-@pytest.mark.parametrize("backend_name", ["xgrammar", "llguidance"])
-def test_default_grammar_stays_compact(backend_name: str) -> None:
+def test_default_grammar_stays_compact() -> None:
     """The default (``any_whitespace`` unset) keeps the compact-JSON grammar.
 
     Guards the Gemma-4 runaway mitigation (0c57a6bd331): flipping the global
     default is a product decision, so an unset knob must reproduce today's
     whitespace-free grammar exactly.
     """
-    helper = _make_helper(backend_name)
+    helper = _make_helper("xgrammar")
     assert helper.backend is not None
     grammar = helper.backend.compile_json_schema(_WS_SCHEMA)
 
@@ -356,7 +314,7 @@ def test_default_grammar_stays_compact(backend_name: str) -> None:
     payload = '{"a": "x"}'
     consumed = spaced.try_consume_tokens([ord(c) for c in payload])
     assert consumed == payload.index(" "), (
-        f"[{backend_name}] compact grammar consumed {consumed} tokens of "
+        f"compact grammar consumed {consumed} tokens of "
         f"{payload!r}; expected rejection at the whitespace"
     )
 
@@ -818,8 +776,8 @@ def test_compiled_shape_reads_a_bare_schema_directly() -> None:
     assert _compiled_shape(json.dumps(schema)) == (4, 5)
 
 
-def test_compiled_shape_ignores_a_lark_grammar() -> None:
-    """A Lark grammar is not JSON, so no shape is reported."""
+def test_compiled_shape_ignores_a_non_json_grammar() -> None:
+    """A raw grammar string is not JSON, so no shape is reported."""
     assert _compiled_shape("start: /[a-z]+/\n") is None
 
 

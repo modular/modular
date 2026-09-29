@@ -84,8 +84,8 @@ class SamplingConfig(ConfigFileModel):
     structured_output_backend: str | None = Field(
         default=None,
         description=(
-            "Grammar backend for constrained decoding. One of ``xgrammar`` or "
-            "``llguidance``. When unset (``None``), resolved at config "
+            "Grammar backend for constrained decoding. Supported value: "
+            "``xgrammar``. When unset (``None``), resolved at config "
             "construction to the architecture's default if it declares one, "
             "else the global default ``xgrammar``. An explicit value always "
             "wins."

@@ -99,7 +99,6 @@ from max.serve.parser import (
 )
 from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
-    normalize_response_format_schema,
 )
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
@@ -2685,14 +2684,6 @@ def _create_response_format(
             json_schema = {} if schema else {"anyOf": [False]}
         elif schema is not None:
             json_schema = dict(schema)
-
-    # Default a missing root ``type`` to ``"object"`` before the schema
-    # reaches the grammar backend. An untyped root compiles to a grammar that
-    # permits a bare unbounded top-level value, which lets a looping model run
-    # to ``max_length`` (the runaway-output incident).
-    json_schema = normalize_response_format_schema(json_schema)
-
-    # Not compiled here: the model worker owns the single compile.
 
     # A json_schema/json_object response_format ALWAYS requests enforcement,
     # even when the schema is an explicit ``{}`` / boolean ``true`` ("any valid

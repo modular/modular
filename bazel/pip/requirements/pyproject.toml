@@ -170,7 +170,6 @@ dependencies = [
 [dependency-groups]
 # Common dependencies for amd/nvidia/cpu groups that conflict with vllm or sglang's deps
 common = [
-  "llguidance==1.7.5",
   # Pinned to 5.12.x. We previously held at <5.3.0 to avoid two upstream
   # issues:
   #   - a v5.3.0 LlamaTokenizer regression that overwrote the ByteLevel

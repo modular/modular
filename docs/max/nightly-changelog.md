@@ -246,6 +246,10 @@ This version is still a work in progress.
   Unlike prefill coalescing, mid-prefill chunked continuations are held too:
   the budget emits one chunk per step, so exempting them defeats the cadence.
 
+- Structured and constrained output now uses xgrammar exclusively. The
+  `llguidance` backend has been removed; `--structured-output-backend`
+  no longer accepts `llguidance` as a value.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured

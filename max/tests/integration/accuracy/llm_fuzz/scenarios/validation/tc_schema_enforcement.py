@@ -1185,11 +1185,10 @@ class TCSchemaEnforcement(BaseScenario):
     async def _null_type_standalone(
         self, v: Any, loop: Any
     ) -> list[ScenarioResult]:
-        """Verify a property with type "null" produces null and uses null_val rule.
+        """Verify a property with type "null" is enforced to produce null.
 
-        _JSON_TYPE_TO_GRAMMAR_RULE must have an entry for "null" mapping
-        to "null_val", otherwise the property falls to generic "value"
-        (fail-open).
+        The grammar backend must constrain a ``type: "null"`` property to the
+        JSON literal ``null`` rather than leaving it unconstrained.
         """
 
         def validate(args: dict[str, Any]) -> tuple[Verdict, str]:

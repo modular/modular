@@ -589,10 +589,8 @@ def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
     assert response_format["json_schema"]["schema"] is schema
 
 
-def test_create_response_format_normalizes_schema() -> None:
-    """The worker compiles what this returns, so it must carry the
-    *normalized* schema: an untyped root defaults to "object", which is what
-    keeps a looping model from running to max_length."""
+def test_create_response_format_passes_schema_through_unchanged() -> None:
+    """The route carries the schema through verbatim."""
     response_format = cast(
         Any,
         {
@@ -606,8 +604,7 @@ def test_create_response_format_normalizes_schema() -> None:
     )
 
     assert result is not None
-    assert result.json_schema is not None
-    assert result.json_schema["type"] == "object"
+    assert result.json_schema == {"properties": {}}
 
 
 def test_create_response_format_rejects_schema_without_the_flag() -> None:

@@ -216,6 +216,10 @@ modular_py_test(
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
     env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Used at runtime by the Kimi HF custom tokenizer, not a direct import.
+        requirement("tiktoken"),
+    ],
     tags = [
         "manual",
         "no-sandbox",
@@ -223,7 +227,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/lib",
-        requirement("llguidance"),
+        requirement("tiktoken"),  # Required by HF custom tokenizer for Kimi K2.5
         requirement("transformers"),
     ],
 )

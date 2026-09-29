@@ -2372,25 +2372,23 @@ def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
 
 @mock_hf_repo_access
 def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
-    """Unset + an arch that pins ``llguidance`` (e.g. Gemma 3 / MiniMax-M2)
-    resolves to the arch default."""
+    """Unset + an arch that pins a backend resolves to the arch default."""
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
     )
 
     assert (
         _resolve_default_structured_output_backend(
-            config.sampling, _backend_arch(default="llguidance")
+            config.sampling, _backend_arch(default="xgrammar")
         )
-        == "llguidance"
+        == "xgrammar"
     )
 
 
 @mock_hf_repo_access
 def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
-    """Regression: an explicit ``xgrammar`` on a ``llguidance``-pinned arch is
-    honored, not silently overwritten. This is the precedence bug this fix
-    closes (explicit ``xgrammar`` equalled the old hardcoded default)."""
+    """Regression: an explicit ``xgrammar`` on an arch-pinned arch is honored,
+    not silently overwritten by the arch default."""
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         sampling=SamplingConfig(structured_output_backend="xgrammar"),
@@ -2398,28 +2396,27 @@ def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
 
     assert (
         _resolve_default_structured_output_backend(
-            config.sampling, _backend_arch(default="llguidance")
+            config.sampling, _backend_arch(default="xgrammar")
         )
         == "xgrammar"
     )
 
 
 @mock_hf_repo_access
-def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
-    None
-):
-    """An explicit ``llguidance`` on a model with no arch preference is
-    honored over the global ``xgrammar`` default."""
+def test_resolve_backend__explicit_value_on_normal_arch_is_honored() -> None:
+    """An explicit backend on a model with no arch preference is honored over
+    the global ``xgrammar`` default. Resolution does not validate the name;
+    construction would reject an unknown backend."""
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
-        sampling=SamplingConfig(structured_output_backend="llguidance"),
+        sampling=SamplingConfig(structured_output_backend="some_other_backend"),
     )
 
     assert (
         _resolve_default_structured_output_backend(
             config.sampling, _backend_arch(default=None)
         )
-        == "llguidance"
+        == "some_other_backend"
     )
 
 
@@ -2441,11 +2438,10 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     """Regression: ``PipelineArgs`` with no ``--structured-output-backend``
     must carry the ``None`` sentinel into the built ``PipelineConfig``.
 
-    Before the fix, ``PipelineArgs.structured_output_backend`` defaulted to a
-    hardcoded ``"llguidance"`` string, so ``from_args`` produced a
-    ``SamplingConfig`` that already looked like an explicit user choice. That
-    short-circuited ``_resolve_default_structured_output_backend`` and the
-    global ``xgrammar`` default (and any arch pin) was never reached."""
+    If the arg defaulted to a hardcoded backend string, ``from_args`` would
+    produce a ``SamplingConfig`` that already looked like an explicit user
+    choice, short-circuiting ``_resolve_default_structured_output_backend``
+    and causing the global default and any arch pin to be ignored."""
     args = PipelineArgs(model_path="test/model")
     assert args.sampling.structured_output_backend is None
 
@@ -2457,9 +2453,8 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
 
 @mock_hf_repo_access
 def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
-    """End-to-end guard for the reported bug: a model launched without an
-    explicit backend and no arch pin ends up on ``xgrammar``, not
-    ``llguidance``."""
+    """End-to-end guard: a model launched without an explicit backend and no
+    arch pin ends up on the global default ``xgrammar``."""
     args = PipelineArgs(model_path="test/model")
 
     with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
@@ -2478,16 +2473,16 @@ def test_from_args__explicit_backend_is_preserved() -> None:
     ``from_args`` and wins over resolution."""
     args = PipelineArgs(
         model_path="test/model",
-        sampling=SamplingConfig(structured_output_backend="llguidance"),
+        sampling=SamplingConfig(structured_output_backend="xgrammar"),
     )
 
     with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
         config = PipelineConfig.from_args(args)
-    assert config.sampling.structured_output_backend == "llguidance"
+    assert config.sampling.structured_output_backend == "xgrammar"
 
     assert (
         _resolve_default_structured_output_backend(
             config.sampling, _backend_arch(default=None)
         )
-        == "llguidance"
+        == "xgrammar"
     )

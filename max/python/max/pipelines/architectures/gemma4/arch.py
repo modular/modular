@@ -53,7 +53,6 @@ gemma4_arch = SupportedArchitecture(
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    default_structured_output_backend="xgrammar",
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=False,
 )

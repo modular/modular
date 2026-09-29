@@ -353,7 +353,7 @@ def allocate_token_bitmask(
 ) -> npt.NDArray[np.int32]:
     """Allocate a packed ``[batch_size, ceil(vocab_size/32)]`` int32 bitmask.
 
-    ``-1`` (all bits set) means unconstrained, matching MAX's and llguidance's
+    ``-1`` (all bits set) means unconstrained, matching MAX's
     convention; ``fill_next_token_bitmask`` overwrites filled rows. Torch-free
     (numpy), unlike upstream's torch-tensor allocator.
     """

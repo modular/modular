@@ -63,19 +63,13 @@ class _RecordingMatcher(GrammarMatcher):
     def is_stopped(self) -> bool:
         return False
 
-    def get_error(self) -> str | None:
-        return None
-
-    def get_grammar_warnings(self) -> Any:
-        return None
-
     def deep_copy(self) -> _RecordingMatcher:
         # Speculative walks (Part 2) use a copy, never the original.
         return _RecordingMatcher()
 
 
-class _NoopBackend(GrammarBackend[Any]):
-    """GrammarBackend stub so Part 2's fills don't touch llguidance."""
+class _NoopBackend(GrammarBackend):
+    """GrammarBackend stub so Part 2's fills don't touch the real backend."""
 
     name = "noop"
 
@@ -84,9 +78,6 @@ class _NoopBackend(GrammarBackend[Any]):
 
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         return _RecordingMatcher()
-
-    def validate_grammar(self, grammar: Any) -> None:
-        return None
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -103,7 +94,7 @@ class _NoopBackend(GrammarBackend[Any]):
 
 
 class _DeadMatcher(_RecordingMatcher):
-    """Stopped without accepting: llguidance's state after a rejected token.
+    """Stopped without accepting: the state after a rejected token.
 
     Its mask is all-zero, since no token can continue the grammar.
     """
@@ -484,7 +475,9 @@ class TestAdvanceFsmAndComputeBitmasks:
 
     def test_row_absent_from_producing_batch_degrades_not_raises(self) -> None:
         """A row absent from the producing batch is degraded, not raised on."""
-        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
 
         producer = self._decoding_ctx()
         transferred = self._decoding_ctx()
@@ -518,7 +511,9 @@ class TestAdvanceFsmAndComputeBitmasks:
     def test_row_preempted_in_flight_degrades_not_raises(self) -> None:
         """Regression: a row reset (preempted) after enqueue is degraded, not
         raised on, so the rest of the batch keeps its constraints."""
-        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
 
         survivor = self._decoding_ctx()
         preempted = self._decoding_ctx()
@@ -644,7 +639,9 @@ class TestAdvanceFsmAndComputeBitmasks:
         aggregated steady-state path), the callback attributes every consumer
         row and does not assert.
         """
-        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
 
         row_a = self._decoding_ctx()
         row_b = self._decoding_ctx()
@@ -720,7 +717,7 @@ class TestAdvanceFsmAndComputeBitmasks:
         assert matcher_b.consumed == [[5]]
 
 
-class _RaisingBackend(GrammarBackend[Any]):
+class _RaisingBackend(GrammarBackend):
     """GrammarBackend stub whose compiles always raise, to exercise the
     validator's exception translation."""
 
@@ -731,9 +728,6 @@ class _RaisingBackend(GrammarBackend[Any]):
 
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         raise ValueError("cannot compile grammar")
-
-    def validate_grammar(self, grammar: Any) -> None:
-        return None
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -839,7 +833,7 @@ class TestGrammarCompileFailure:
     """The worker owns the only compile, so it is what turns a compile
     failure into the InputError the API server returns as a 400."""
 
-    def _helper(self, backend: GrammarBackend[Any]) -> StructuredOutputHelper:
+    def _helper(self, backend: GrammarBackend) -> StructuredOutputHelper:
         return StructuredOutputHelper(
             enabled=True,
             enable_response_format_schema=True,
@@ -860,22 +854,6 @@ class TestGrammarCompileFailure:
         bitmask = np.zeros((1, 4), dtype=np.int32)
         with pytest.raises(InputError, match="boom"):
             self._helper(_RaisingBackend()).update_context(ctx, bitmask, 0)
-
-    def test_unsatisfiable_schema_is_rejected(self) -> None:
-        """llguidance's matcher fails open on unsatisfiable schemas, so
-        build_matcher's validate_grammar call is what rejects them."""
-
-        class _UnsatisfiableBackend(_NoopBackend):
-            def validate_grammar(self, grammar: Any) -> None:
-                raise ValueError("Unsatisfiable schema")
-
-        ctx = create_text_context(prompt_len=4, max_length=100)
-        ctx.json_schema = '{"anyOf": [false]}'
-        bitmask = np.zeros((1, 4), dtype=np.int32)
-        with pytest.raises(InputError, match="Unsatisfiable"):
-            self._helper(_UnsatisfiableBackend()).update_context(
-                ctx, bitmask, 0
-            )
 
 
 class TestSpecialTokenIdsForMarkers:

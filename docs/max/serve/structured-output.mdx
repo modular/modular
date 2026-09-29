@@ -7,8 +7,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 MAX supports structured output using
-[xgrammar](https://github.com/mlc-ai/xgrammar) as the default backend, and you
-can switch to [llguidance](https://github.com/guidance-ai/llguidance).
+[xgrammar](https://github.com/mlc-ai/xgrammar) for constrained decoding.
 Structured output, also called constrained decoding, lets you enforce specific
 output formats so a model returns structured, predictable responses.
 
@@ -39,9 +38,7 @@ max serve \
 You can tune structured output behavior with the following options:
 
 - `--structured-output-backend`: Selects the grammar backend for constrained
-  decoding, either `xgrammar` (the default) or `llguidance`. Some architectures
-  declare their own default, but an explicit value on the command line
-  overrides it.
+  decoding. `xgrammar` is the supported backend.
 - `--structured-output-any-whitespace`: Controls whether structured output
   grammars accept whitespace between JSON tokens. The default, `false`,
   constrains the model to compact JSON, which mitigates runaway output on some
