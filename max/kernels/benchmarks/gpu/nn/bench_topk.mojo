@@ -53,7 +53,20 @@ def bench_topk_batched[
     test_case: TestCase,
     fill_fn_name: String,
     top_p: Float32 = 1.0,
+    dispatch: Int = 0,
 ) raises:
+    """Benchmarks a rank-2 top-k selection.
+
+    `dispatch` selects the entry point, so the single-warp fast path and the
+    two-stage path can be A/B'd at one shape without rebuilding:
+
+    - 0: `_topk_gpu`, the two-stage kernels directly. The historical behavior.
+    - 1: the public `topk_gpu` with the partitioning left to its dispatch, so
+      a short row with a small k reaches `_topk_warp`.
+    - 2: the public `topk_gpu` with `num_blocks_per_input` pinned, which the
+      dispatch honors by staying on the two-stage path. This is the control
+      arm for 1: same entry point, same temporary allocations, old kernels.
+    """
     # Fetch arguments
 
     var batch_size = test_case.batch_size
@@ -161,26 +174,55 @@ def bench_topk_batched[
     ) {var K_dev_buffer, var top_p_dev_buffer, imm,}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
-            _topk_gpu[sampling=sampling, largest=largest](
-                ctx,
-                max_k,
-                device_in,
-                device_local_topk_vals,
-                device_local_topk_idxs,
-                device_out_vals,
-                device_out_idxs,
-                k=TileTensor(k.ptr, row_major(Int64(batch_size)))
+            var k_imm = (
+                TileTensor(k.ptr, row_major(Int64(batch_size)))
                 .as_unsafe_any_origin()
-                .as_imm(),
-                block_size=block_size,
-                num_blocks_per_input=num_blocks_per_input,
-                top_p=top_p_tt.as_unsafe_any_origin().as_imm(),
+                .as_imm()
             )
+            var top_p_imm = top_p_tt.as_unsafe_any_origin().as_imm()
+            if dispatch == 0:
+                _topk_gpu[sampling=sampling, largest=largest](
+                    ctx,
+                    max_k,
+                    device_in,
+                    device_local_topk_vals,
+                    device_local_topk_idxs,
+                    device_out_vals,
+                    device_out_idxs,
+                    k=k_imm,
+                    block_size=block_size,
+                    num_blocks_per_input=num_blocks_per_input,
+                    top_p=top_p_imm,
+                )
+            else:
+                var pinned = (
+                    Optional[Int](num_blocks_per_input) if dispatch
+                    == 2 else Optional[Int]()
+                )
+                topk_gpu[sampling=sampling, largest=largest](
+                    ctx,
+                    max_k,
+                    device_in.as_unsafe_any_origin().as_imm(),
+                    device_out_vals,
+                    device_out_idxs,
+                    block_size=block_size,
+                    num_blocks_per_input=pinned,
+                    k=k_imm,
+                    top_p=top_p_imm,
+                )
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var kernel_name = String(
-        "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
+        "bench-topk",
+        "/N=",
+        N,
+        "/K=",
+        K,
+        "/batch_size=",
+        batch_size,
+        "/dispatch=",
+        dispatch,
     )
 
     var num_bytes = device_in.num_elements() * size_of[dtype]()
@@ -840,6 +882,7 @@ def main() raises:
     var batch_size = arg_parse("batch_size", 8)
     var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
     var fill_fn_name = arg_parse("fill_fn_name", "fill_iota")
+    var dispatch = arg_parse("dispatch", 0)
     var top_p = Float32(arg_parse("top_p", 0.95))
     var logit_sigma = arg_parse("logit_sigma", 2.0)
 
@@ -929,7 +972,7 @@ def main() raises:
             bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
         else:
             bench_topk_batched[dtype, out_idx_type, rank](
-                ctx, m, test_case, fill_fn_name
+                ctx, m, test_case, fill_fn_name, dispatch=dispatch
             )
 
     m.dump_report()

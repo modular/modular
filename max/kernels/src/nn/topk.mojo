@@ -1456,6 +1456,129 @@ def _topk_stage2[
                         break
 
 
+# Longest row `_topk_warp` will take. The bound is two constraints at once:
+# it sizes the kernel's static shared-memory staging buffer, and it is the
+# point below which the two-stage path's block partition is still contiguous
+# (`ceildiv(N, 256) <= 8`, i.e. the `min(..., 8)` clamp on
+# `num_blocks_per_input` has not yet bound). Past that point the two-stage
+# path's tie order stops being "smallest index wins", so staying under it is
+# what makes the two paths bit-identical on ties rather than merely equivalent
+# in value.
+comptime _TOPK_WARP_MAX_N = 2048
+
+# Largest k `_topk_warp` will take. It extracts one element per pass, so cost
+# is linear in k; past a few dozen the two-stage path's wider grid wins, and
+# the MLA indexer's k=2048 request must not land here at all.
+comptime _TOPK_WARP_MAX_K = 64
+
+
+@__name(t"topk_warp_{T}_{out_idx_type}_{largest}")
+def _topk_warp[
+    T: DType,
+    out_idx_type: DType,
+    largest: Bool = True,
+](
+    K: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
+    max_k: Int32,
+    num_elements: Int32,
+    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
+    out_vals: UnsafePointer[Scalar[T], MutAnyOrigin],
+    out_idxs: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
+):
+    """Selects the top-K of a short row with a single warp, in one launch.
+
+    Replaces the two-stage `_topk_stage1` + `_topk_stage2` pair for rows short
+    enough to stage in shared memory. The two-stage path pays `2 * k`
+    *block*-wide reductions (two warp reductions each), `5 * k` barriers and,
+    in stage 2, a dependent global load per extracted element, all inside a
+    single block; at an MoE router's shape that dependent chain, not the
+    arithmetic, is the whole cost. Here the row lives in shared memory owned by
+    one warp, so each pass is one *warp* reduction with no barrier and no
+    global round trip, and the second launch disappears.
+
+    The row is partitioned by lane: lane `l` owns elements `l, l + WARP_SIZE,
+    ...` and no other lane ever reads or writes them, so killing an extracted
+    element needs no cross-lane synchronization.
+
+    Parameters:
+        T: Data type of the elements.
+        out_idx_type: The data dtype of the output indices.
+        largest: Whether to find the maximum value (top k) or the minimum
+            (bottom k).
+
+    Args:
+        K: Optional per-row number of top elements to select.
+        max_k: Largest number of top elements to keep for each row.
+        num_elements: Size of the last dimension of the input, at most
+            `_TOPK_WARP_MAX_N`.
+        in_buffer: Input buffer, `[grid_dim.x, num_elements]`. Not modified.
+        out_vals: Output values, `[grid_dim.x, max_k]`.
+        out_idxs: Output indices, `[grid_dim.x, max_k]`.
+    """
+    var _max_k = Int(max_k)
+    var _num_elements = Int(num_elements)
+    var lane = Int(thread_idx.x)
+    var batch_id = Int(block_idx.x)
+
+    var row = in_buffer + batch_id * _num_elements
+    var row_vals = out_vals + batch_id * _max_k
+    var row_idxs = out_idxs + batch_id * _max_k
+
+    var k_batch = _max_k
+    if K:
+        var k_raw = Int(K.unsafe_value()[batch_id])
+        k_batch = _max_k if k_raw == -1 else k_raw
+    if k_batch > _num_elements:
+        k_batch = _num_elements
+
+    # Static, so no `shared_mem_bytes` launch argument and no dynamic
+    # allocation: Apple's static threadgroup budget is the tightest at 32 KB
+    # and this is 8 KB at fp32. Nothing here bounds `num_elements` against it
+    # -- the dispatch in `topk_gpu` does, and is the only caller. A
+    # `debug_assert` was tried and reverted: its failure path costs the kernel
+    # a private (scratch) segment in assertion builds, which is worse than the
+    # check is worth for a private kernel with one call site.
+    var scratch = unsafe_stack_allocation[
+        _TOPK_WARP_MAX_N,
+        Scalar[T],
+        address_space=.SHARED,
+    ]()
+
+    var dead_val = _topk_dead_val[T, largest]()
+
+    with PDL():
+        for i in range(lane, _num_elements, WARP_SIZE):
+            scratch[i] = row[i]
+        barrier()
+
+        var num_written = 0
+        while num_written < k_batch:
+            var partial = TopK_2[T, largest]()
+            for i in range(lane, _num_elements, WARP_SIZE):
+                partial.insert(scratch[i], i)
+
+            # `broadcast` so every lane learns the winner: the owning lane can
+            # then retire it itself, and the loop exit stays warp-uniform.
+            var total = _warp_reduce_topk[T, largest, broadcast=True](partial)
+
+            # No finite candidate left (a row of NaN, or fewer than `k_batch`
+            # values that beat the dead value). Everything from here is
+            # sentinel, which the tail below writes.
+            if total.u == dead_val:
+                break
+
+            if lane == 0:
+                row_vals[num_written] = total.u
+                row_idxs[num_written] = Int(total.p).cast[out_idx_type]()
+            if lane == total.p % WARP_SIZE:
+                scratch[total.p] = dead_val
+            num_written += 1
+
+        for j in range(num_written + lane, _max_k, WARP_SIZE):
+            row_vals[j] = dead_val
+            row_idxs[j] = Scalar[out_idx_type](-1)
+
+
 def _topk_gpu[
     dtype: DType,
     out_idx_type: DType,
@@ -1924,6 +2047,39 @@ def topk_gpu[
             internal_input = reshape(input, internal_in_shape)
             internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
             internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+
+        # Short rows with a small k go to the single-warp, single-launch
+        # kernel. An explicit `num_blocks_per_input` is a caller pinning the
+        # two-stage partition (the NaN-contract test does exactly that), so
+        # honor it rather than routing around it.
+        comptime if not sampling:
+            if (
+                N <= _TOPK_WARP_MAX_N
+                and bound_max_k <= _TOPK_WARP_MAX_K
+                and not num_blocks_per_input
+                and internal_bs > 0
+            ):
+                var warp_k_ptr: Optional[
+                    UnsafePointer[Int64, ImmutAnyOrigin]
+                ] = None
+                if k:
+                    warp_k_ptr = rebind[UnsafePointer[Int64, ImmutAnyOrigin]](
+                        k.value().ptr
+                    )
+
+                comptime warp_kernel = _topk_warp[dtype, out_idx_type, largest]
+                ctx.enqueue_function[warp_kernel](
+                    warp_k_ptr,
+                    Int32(bound_max_k),
+                    Int32(N),
+                    internal_input.to_device_buffer(ctx),
+                    internal_out_vals.to_device_buffer(ctx),
+                    internal_out_idxs.to_device_buffer(ctx),
+                    grid_dim=internal_bs,
+                    block_dim=WARP_SIZE,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                )
+                return
 
         # Calculate the number of blocks per input
         var num_blocks_per_input_ = min(
