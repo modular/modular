@@ -73,7 +73,6 @@ def _shuffle_idx_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         comptime src_lane = 0
         return shuffle_idx(val, src_lane)
@@ -337,14 +336,12 @@ def _warp_reduce_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = 1
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def do_warp_reduce(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return warp.reduce[shuffle_down, reduce_add](val)
 
@@ -384,7 +381,6 @@ def _warp_sum_launch_helper[
     for i in range(block_size):
         host_ptr[i] = Scalar[dtype](i)
 
-    @__parameter
     def do_warp_sum(val: SIMD[dtype, 1]) -> SIMD[dtype, 1]:
         return warp.sum(val)
 
@@ -528,7 +524,6 @@ def _lane_group_reduce_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,

@@ -1892,14 +1892,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                         ](c, a, b, ctx)
                         return DISPATCH_HIT
 
-        @__parameter
         def get_k_groups[N: Int]() -> Optional[Int]:
             comptime if N == 1536:
                 return None
             else:
                 return 1
 
-        @__parameter
         def get_consumer_groups[N: Int]() -> Optional[Int]:
             comptime if N == 1536:
                 return 1

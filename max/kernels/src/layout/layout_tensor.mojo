@@ -1927,7 +1927,6 @@ struct LayoutTensor[
             Self.dtype.is_floating_point()
         ), "dtype must be floating point"
 
-        @__parameter
         def exp_func(val: Self.element_type) -> Self.element_type:
             return exp(val)
 

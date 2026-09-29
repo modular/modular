@@ -2963,7 +2963,6 @@ def fa4_softmax[
             inplace_prod.commit()
         return vrow_max
 
-    @__parameter
     @inline(.always)
     def init_load_mask_max[
         mask_strategy: MaskStrategy

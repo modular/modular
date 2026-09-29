@@ -425,7 +425,6 @@ def test_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_full_dispatch(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
@@ -461,7 +460,6 @@ def test_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_combine_async(dev_idx, slot_idx)
         run_combine_async_wait(dev_idx, slot_idx)

@@ -104,7 +104,6 @@ def _block_minmax[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -142,7 +141,6 @@ def _block_reduce_pivot_bounds[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -1352,7 +1350,6 @@ def _block_reduce_cutoff_stats[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -1402,7 +1399,6 @@ def _block_reduce_topp_stats[
     """Reduces two masses and the cutoff bounds for a top-p-only search."""
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -2209,7 +2205,6 @@ def TopKTopPSamplingFromProbKernel[
                 def load_slice(offset: Int) -> SIMD[.float32, vec_size]:
                     return load_dist[vec_size](offset)
 
-                @__parameter
                 @inline(.always)
                 def load_scalar(offset: Int) -> Float32:
                     return load_dist[1](offset)[0]

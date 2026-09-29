@@ -34,7 +34,6 @@ def test_tracing[level: TraceLevel, enabled: Bool]() raises:
         except e:
             abort(String(e))
 
-    @__parameter
     async def test_tracing_add_two_of_them[
         enabled: Bool
     ](a: Int, b: Int) -> Int:

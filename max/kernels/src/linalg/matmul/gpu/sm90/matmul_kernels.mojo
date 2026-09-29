@@ -530,7 +530,6 @@ struct HopperMatmulSM90Kernel[
             Tuple of (local_warp_group_idx, c_reg_tile, final_c_reg_tile).
         """
 
-        @__parameter
         def num_regs() -> Int:
             if Self.num_consumer == 1:
                 return 256

@@ -817,7 +817,6 @@ def bench_dispatch_common[
         )
 
     @inline(.always)
-    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)

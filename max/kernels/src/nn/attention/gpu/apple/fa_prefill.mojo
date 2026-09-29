@@ -1118,8 +1118,7 @@ def fa_prefill_apple[
         comptime D = di * MMA_DIM
         if depth == D:
 
-            @__parameter
-            def _enqueue[sg: Int]() raises:
+            def _enqueue[sg: Int]() raises {var}:
                 comptime core_kernel = fa_prefill_apple_core[
                     q_type,
                     output_type,
@@ -1163,8 +1162,7 @@ def fa_prefill_apple[
                     block_dim=sg * WARP_SIZE,
                 )
 
-            @__parameter
-            def _dispatch[sg: Int]() raises:
+            def _dispatch[sg: Int]() raises {var}:
                 _enqueue[sg]()
 
             __match sg_env:

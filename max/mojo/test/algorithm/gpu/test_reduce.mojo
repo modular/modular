@@ -246,21 +246,18 @@ def reduce_inner_test[
 
 
 def test_reduce() raises:
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def reduce_max[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
-    @__parameter
     def fused_reduce_add_max[
         dtype: DType,
         width: SIMDLength,
@@ -436,14 +433,12 @@ def test_multiblock_reduce() raises:
     """Tests the multiblock_reduce_kernel path for under-saturated cases
     where num_rows is small but the reduction axis is large."""
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def reduce_max[
         dtype: DType,
         width: SIMDLength,
@@ -509,7 +504,6 @@ def test_thread_saturated_contiguous_reduce() raises:
     boundary.
     """
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,

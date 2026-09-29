@@ -47,19 +47,15 @@ def run_func[
 
 
 def test_trig() raises:
-    @__parameter
     def cos_fn(val: Float16) -> Float16:
         return cos(val)
 
-    @__parameter
     def cos_fn(val: Float32) -> Float32:
         return cos(val)
 
-    @__parameter
     def sin_fn(val: Float16) -> Float16:
         return sin(val)
 
-    @__parameter
     def sin_fn(val: Float32) -> Float32:
         return sin(val)
 

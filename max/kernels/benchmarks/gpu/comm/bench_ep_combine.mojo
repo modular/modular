@@ -647,7 +647,6 @@ def bench_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_full_dispatch(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
@@ -689,7 +688,6 @@ def bench_combine[
     # weights, so the benchmark does too. Unit weights keep the arithmetic
     # identical in cost to the real thing.
     @inline(.always)
-    @__parameter
     def unit_router_weight[
         width: Int
     ](token_idx: Int, topk_id: Int) capturing -> SIMD[.float32, width]:
@@ -741,7 +739,6 @@ def bench_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_combine_async(dev_idx, slot_idx)
         run_combine_async_wait(dev_idx, slot_idx)

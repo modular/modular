@@ -627,7 +627,6 @@ def depth512_softmax[
             load_mask_max_impl[mask_strategy=mask_strategy](s_even_tmem, kv_row)
         )
 
-    @__parameter
     @inline(.always)
     def load_mask_max[
         mask_strategy: MaskStrategy

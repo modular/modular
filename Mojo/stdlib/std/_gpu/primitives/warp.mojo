@@ -912,7 +912,6 @@ def lane_group_reduce[
             from max.gpu.primitives.warp import lane_group_reduce, shuffle_down
 
             # Compute sum across 16 threads using shuffle down
-            @__parameter
             def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
             var val = SIMD[.float32, 16](42.0)
@@ -965,7 +964,6 @@ def reduce[
         from max.gpu.primitives.warp import reduce, shuffle_down
 
         # Compute warp-wide sum using shuffle down
-        @__parameter
         def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
             return x + y
 
@@ -1049,7 +1047,6 @@ def lane_group_sum[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @__parameter
     def _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
@@ -1202,7 +1199,6 @@ def lane_group_max[
     ):
         return _redux_f32_max_min["max"](val)
 
-    @__parameter
     def _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
@@ -1267,7 +1263,6 @@ def lane_group_min[
     ):
         return _redux_f32_max_min["min"](val)
 
-    @__parameter
     def _reduce_min(x: SIMD, y: type_of(x)) -> type_of(x):
         return _min(x, y)
 

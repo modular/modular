@@ -369,7 +369,6 @@ def max[
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @inline(.always)
-    @__parameter
     def reduce_impl[
         ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -434,7 +433,6 @@ def min[
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @inline(.always)
-    @__parameter
     def reduce_impl[
         ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -499,7 +497,6 @@ def sum[
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @inline(.always)
-    @__parameter
     def reduce_impl[
         ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -563,7 +560,6 @@ def product[
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @inline(.always)
-    @__parameter
     def reduce_impl[
         ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -643,7 +639,6 @@ def mean[
     ):
 
         @inline(.always)
-        @__parameter
         def reduce_impl[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -1117,7 +1112,6 @@ def sum[
         out = value._refine[dtype, 1]()
 
     @inline(.always)
-    @__parameter
     def reduce_fn_wrapper[
         dtype: DType, width: SIMDLength
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -1352,7 +1346,6 @@ def variance[
         out = value._refine[dtype, 1]()
 
     @inline(.always)
-    @__parameter
     def reduce_fn_wrapper[
         dtype: DType, width: SIMDLength
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:

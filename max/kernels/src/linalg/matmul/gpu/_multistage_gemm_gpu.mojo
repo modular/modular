@@ -289,7 +289,6 @@ def multistage_mma[
     ) and is_nvidia_gpu()
 
     @inline(.always)
-    @__parameter
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):

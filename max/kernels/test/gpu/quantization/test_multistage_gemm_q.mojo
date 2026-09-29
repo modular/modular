@@ -101,7 +101,6 @@ def repack_Q4_0_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @inline(.always)
-    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[.uint8, _]) -> Scalar[scales_type]:

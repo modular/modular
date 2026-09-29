@@ -272,7 +272,6 @@ def conv_transpose_shape[
     output_shape[0] = batch_size
     output_shape[input.rank - 1] = output_channels
 
-    @__parameter
     @inline(.always)
     def compute_output_spatial_dim(
         input_spatial_dim: Int,

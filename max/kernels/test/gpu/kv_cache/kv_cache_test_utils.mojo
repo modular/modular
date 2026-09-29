@@ -316,7 +316,6 @@ struct PagedLookupTable[page_size: Int](Copyable):
         num_paged_blocks: Int,
         ctx: DeviceContext,
     ) raises -> Self:
-        @__parameter
         def _to_list(idx_list: IndexList) -> List[Int]:
             var list = List[Int](capacity=idx_list.size)
             for i in range(idx_list.size):

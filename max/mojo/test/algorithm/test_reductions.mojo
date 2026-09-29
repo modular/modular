@@ -192,7 +192,6 @@ def test_fused_reductions_outer() raises:
     var shape = Coord((50, 2))
 
     @inline(.always)
-    @__parameter
     def output_fn[
         dtype: DType, width: SIMDLength, rank: Int
     ](

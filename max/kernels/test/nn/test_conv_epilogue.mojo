@@ -158,7 +158,6 @@ def test[
     comptime conv_attr = ConvInfoStatic[rank]()
 
     @inline(.always)
-    @__parameter
     def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 

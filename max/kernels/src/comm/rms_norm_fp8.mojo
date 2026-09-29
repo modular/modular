@@ -58,7 +58,6 @@ def block_reduce_sum_and_max[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:

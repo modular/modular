@@ -508,7 +508,6 @@ def _softmax_3_pass_base[
     # Use _reduce_generator to fuse input lambda with max-reduction
     # Reduce function
     @inline(.always)
-    @__parameter
     def reduce_impl[
         ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -899,14 +898,12 @@ def softmax_kernel[
         dtype=accum_type, address_space=.SHARED
     ](row_major[1]())
 
-    @__parameter
     @inline(.always)
     def _max[
         dtype: DType, width: SIMDLength
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
-    @__parameter
     @inline(.always)
     def _sum[
         dtype: DType, width: SIMDLength

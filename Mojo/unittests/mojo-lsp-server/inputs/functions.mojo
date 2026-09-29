@@ -53,7 +53,6 @@ struct SomeStruct[size: Int, other_param: Bool]:
             pass
 
     async def async_function(mut self):
-        @__parameter
         def parameter_nested_function():
             pass
 

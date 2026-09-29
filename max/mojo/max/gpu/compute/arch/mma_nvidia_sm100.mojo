@@ -1050,7 +1050,6 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @__parameter
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime __match mode:
             case .SWIZZLE_NONE:
@@ -1211,7 +1210,6 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @__parameter
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime __match mode:
             case .SWIZZLE_NONE:

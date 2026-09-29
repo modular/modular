@@ -119,7 +119,6 @@ def _block_reduce_cutoff_stats[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -201,7 +200,6 @@ def _cluster_cutoff_search[
     var phase = 0
 
     @inline(.always)
-    @__parameter
     def _cutoff_stats_combine(x: SIMD, y: type_of(x)) -> type_of(x):
         # Same lane layout as `_block_reduce_cutoff_stats`, padded to a
         # power of two.
@@ -705,7 +703,6 @@ def _block_reduce_sums[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:

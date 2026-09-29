@@ -93,7 +93,6 @@ def powf_fn(val: SIMD) -> type_of(val):
 def test_math() raises:
     with DeviceContext() as ctx:
 
-        @__parameter
         def test[
             *kernel_fns: def[fn_dtype: DType, width: SIMDLength](
                 SIMD[fn_dtype, width]
