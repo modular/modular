@@ -45,16 +45,7 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.primitives.warp import _vote_nvidia_helper
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import (
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-    stack_allocation as tt_stack_allocation,
-)
+from layout import TileTensor, row_major, Idx, stack_allocation
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
@@ -124,7 +115,7 @@ def tma_tile_qo[
     depth: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    ptr: MutPointer[Scalar[dtype], _],
     rows: Int,
     out res: QOTMATile[dtype, BM, BK, swizzle_mode],
 ) raises:
@@ -142,9 +133,8 @@ def tma_tile_qo[
         ptr: Base pointer of the Q or output tensor in device memory.
         rows: Number of rows in the full Q or output tensor.
     """
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, depth)
-    var rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, depth))
-    var tensor = LayoutTensor[dtype, layout](ptr, rt_layout)
+    var rt_layout = row_major((Int64(rows), Idx[depth]))
+    var tensor = TileTensor(ptr, rt_layout)
 
     res = rebind[QOTMATile[dtype, BM, BK, swizzle_mode]](
         create_tensor_tile[
@@ -183,7 +173,7 @@ def tma_tile_o[
     depth: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    ptr: MutPointer[Scalar[dtype], _],
     rows: Int,
     out res: ORaggedTMATile[dtype, BM, BK, swizzle_mode],
 ) raises:
@@ -212,7 +202,7 @@ def tma_tile_o[
     # Outer coordinates run up to rows, so the extent is one past that. Its
     # box is 1, so it never masks.
     res = create_tma_descriptor[dtype, 3, swizzle_mode](
-        DeviceBuffer(ctx, ptr - depth * BM, 1, owning=False),
+        DeviceBuffer(ctx, ptr.unsafe_offset(-depth * BM), 1, owning=False),
         IndexList[3](rows + 1, BM, depth),
         IndexList[3](depth, depth, 1),
         _default_desc_shape[3, dtype, IndexList[3](1, BM, BK), swizzle_mode](),
@@ -259,7 +249,7 @@ def tma_tile_scales[
     BN_QK: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+    ptr: MutPointer[Float32, _],
     total_elements: Int,
     out res: ScalesTMATile[BN_QK],
 ) raises:
@@ -282,11 +272,8 @@ def tma_tile_scales[
         total_elements: Total number of float32 scales in the array,
             used as the inner (column) dimension of the 2D TMA descriptor.
     """
-    comptime layout = Layout.row_major(1, UNKNOWN_VALUE)
-    var rt_layout = RuntimeLayout[layout].row_major(
-        IndexList[2](1, total_elements)
-    )
-    var tensor = LayoutTensor[.float32, layout, MutAnyOrigin](ptr, rt_layout)
+    var rt_layout = row_major((Idx[1], total_elements))
+    var tensor = TileTensor(ptr, rt_layout)
     res = rebind[ScalesTMATile[BN_QK]](
         create_tensor_tile[
             IndexList[2](1, BN_QK),
@@ -3996,7 +3983,7 @@ struct MLA_SM100_Decode_Common[
             tcgen05_fence_after()
 
             # Each thread reads one full 32-element row (128 rows x 32 columns)
-            var s_row = tt_stack_allocation[
+            var s_row = stack_allocation[
                 dtype=Self.AccumType, address_space=.LOCAL
             ](row_major[half_load]())
             var s_row_val = tcgen05_ld[
@@ -4025,7 +4012,7 @@ struct MLA_SM100_Decode_Common[
             # ------------------------------------------------------------------
             # Register-cached per-token scales for this tile.
             # Declared outside the comptime if so it's in scope for Place 2.
-            var _sigma_kv_regs = tt_stack_allocation[
+            var _sigma_kv_regs = stack_allocation[
                 dtype=Self.AccumType, address_space=.LOCAL
             ](row_major[half_load]())
             comptime if has_per_token_scales:
@@ -4241,9 +4228,9 @@ struct MLA_SM100_Decode_Common[
                 # P_i is at rope_base + i * fp8_p_stage_stride (in FP8 elems).
                 # When 0 (default), P stages are contiguous at BlockElems apart.
                 comptime _p_stride = fp8_p_stage_stride if fp8_p_stage_stride > 0 else Self.BlockElems
-                var p_smem_stage = p_smem_ptr.bitcast[
+                var p_smem_stage = p_smem_ptr.unsafe_bitcast[
                     Scalar[fp8_p_type]
-                ]() + p_stage * UInt32(_p_stride)
+                ]().unsafe_offset(p_stage * UInt32(_p_stride))
                 write_fp8_row_to_smem_chunked[
                     half_load,
                     out_dtype=fp8_p_type,
@@ -4252,7 +4239,7 @@ struct MLA_SM100_Decode_Common[
                 ](p_smem_stage, s_row, col0, row)
             else:
                 # BF16 path: P is embedded inside KV stage SMEM
-                var p_smem = p_smem_ptr + (
+                var p_smem = p_smem_ptr.unsafe_offset(
                     p_stage * UInt32(Self.KVStageElems)
                     + UInt32(Self.NumVOBlocks * Self.BlockElems)
                 )
@@ -4331,11 +4318,9 @@ struct MLA_SM100_Decode_Common[
                         + head_local
                     )
                     var lse_ptr = rebind[
-                        UnsafePointer[
-                            Scalar[Self.AccumType], origin=MutAnyOrigin
-                        ]
+                        Pointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
                     ](lse_accum_split_ptr.value())
-                    lse_ptr[lse_offset] = partial_lse
+                    lse_ptr[unsafe_offset=lse_offset] = partial_lse
             else:
                 var head_idx = block_idx.x * Self.config.BM + row
                 if half_idx == 0 and head_idx < Self.config.num_q_heads:
@@ -4454,7 +4439,7 @@ struct MLA_SM100_Decode_Common[
 
         comptime for mma_round in range(num_mma_pv_rounds):
             # Wait for Correction to finish corrections for this MMA PV round
-            corr_done_bars.mbar_base[mma_round].wait(0)
+            corr_done_bars.mbar_base[unsafe_offset=mma_round].wait(0)
 
             # Fence to ensure all MMA writes to O TMEM are visible before we read
             tcgen05_fence_after()
@@ -4468,7 +4453,7 @@ struct MLA_SM100_Decode_Common[
                 ) * epi_half_load * UInt32(blocks_per_stage)
 
                 # Load all data for this tile into a LocalTensor
-                var o_row_subtile = tt_stack_allocation[
+                var o_row_subtile = stack_allocation[
                     dtype=Self.AccumType, address_space=.LOCAL
                 ](row_major[total_elems]())
                 var _o_ld_result = tcgen05_ld[
@@ -4598,7 +4583,7 @@ struct MLA_SM100_Decode_Common[
                             + UInt32(i) * UInt32(Self.config.BN_QK)
                             + UInt32(slot_idx) * UInt32(o_stride)
                         )
-                        var o_row_subtile = tt_stack_allocation[
+                        var o_row_subtile = stack_allocation[
                             dtype=Self.AccumType,
                             address_space=.LOCAL,
                         ](row_major[Self.config.BN_QK]())
@@ -4644,12 +4629,12 @@ struct MLA_SM100_Decode_Common[
         # Wait on the final O from MMA before signaling Softmax
         o_cons.wait()
         # Signal to Softmax that first 4 blocks are ready (slot 0)
-        _ = corr_done_bars.mbar_base[0].arrive()
+        _ = corr_done_bars.mbar_base[].arrive()
         o_cons.release()
         # second stage of the correction pipeline
         o_cons.wait()
         # Signal to Softmax that all corrections are done and O is ready (slot 1)
-        _ = corr_done_bars.mbar_base[1].arrive()
+        _ = corr_done_bars.mbar_base[unsafe_offset=1].arrive()
         # Release the final O barrier
         o_cons.release()
 
@@ -4738,7 +4723,7 @@ struct MLA_SM100_Decode_Common[
                         # Fold: BM=64 TMEM packs q_len_fold * num_q_heads;
                         # emit one TMA store per q_token.
                         comptime for q_local in range(q_len_fold):
-                            var q_stage_ptr = stage_ptr + (
+                            var q_stage_ptr = stage_ptr.unsafe_offset(
                                 q_local
                                 * Self.config.num_q_heads
                                 * (Self.config.BN_PV // 4)
