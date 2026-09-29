@@ -14,6 +14,7 @@
 from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
 from max.serve.router.openai_routes import (
+    _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
     openai_parse_chat_completion_request,
 )
@@ -1697,3 +1698,68 @@ def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
     assert merged[0].function is not None
     assert merged[0].function.name is None
     assert merged[0].function.arguments == ""
+
+
+@pytest.mark.parametrize("strict", [True, False, None, "absent"])
+def test_tool_strict_passes_through_only_when_set(strict: object) -> None:
+    """``strict`` reaches the tool dict only when the client set it; ``null``
+    counts as unset."""
+    function: dict[str, Any] = {
+        "name": "computer",
+        "description": "Control the desktop.",
+        "parameters": {"type": "object", "properties": {}},
+    }
+    if strict != "absent":
+        function["strict"] = strict
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": function}],
+        }
+    )
+
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools
+    )
+
+    assert tools is not None
+    converted = tools[0]["function"]
+    if strict in ("absent", None):
+        assert "strict" not in converted
+    else:
+        assert converted["strict"] == strict
+    assert list(converted) == [k for k in function if function[k] is not None]
+
+
+@pytest.mark.parametrize(
+    "sent,expected",
+    [("absent", False), (None, False), (True, True), (False, False)],
+)
+def test_tool_default_strict_fills_and_orders_tools(
+    sent: object, expected: bool
+) -> None:
+    """A parser default fills a missing ``strict`` in the fixed key order."""
+    function: dict[str, Any] = {
+        "name": "computer",
+        "description": "Control the desktop.",
+        "parameters": {"type": "object", "properties": {}},
+    }
+    if sent != "absent":
+        function["strict"] = sent
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": function}],
+        }
+    )
+
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools, default_strict=False
+    )
+
+    assert tools is not None
+    converted = tools[0]["function"]
+    assert converted["strict"] is expected
+    assert list(converted) == ["description", "name", "parameters", "strict"]
