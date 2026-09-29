@@ -411,8 +411,7 @@ def test_tuple_consume_elements_move_only() raises:
 
     @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
-        var e = rebind_var[MoveOnly[Int]](elt^)
-        collected[idx] = e.data
+        collected[idx] = elt.data
 
     t^.consume_elements[handler]()
     assert_equal(collected, [10, 20, 30])
@@ -433,7 +432,7 @@ def test_tuple_consume_elements_destroys_once() raises:
     @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
         # Discarding the owned `elt` runs its destructor exactly once.
-        _ = rebind_var[Observed](elt^)
+        _ = elt^
 
     t^.consume_elements[handler]()
     # Each element is destroyed once and `deinit self` disables the tuple's own
@@ -470,8 +469,7 @@ def test_tuple_consume_elements_single() raises:
 
     @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
-        var e = rebind_var[MoveOnly[Int]](elt^)
-        collected[idx] = e.data
+        collected[idx] = elt.data
 
     t^.consume_elements[handler]()
     assert_equal(collected, [7])
@@ -504,10 +502,9 @@ def test_tuple_deinit_with() raises:
     var destroyed = List[Int]()
 
     @__parameter
-    def dispose[idx: Int](var elt: t.Ts[idx]):
-        var e = rebind_var[ExplicitDestroy](elt^)
-        destroyed.append(e.value)
-        e^.destroy()
+    def dispose[idx: Int](var elt: ExplicitDestroy):
+        destroyed.append(elt.value)
+        elt^.destroy()
 
     t^.deinit_with[dispose]()
     assert_equal(destroyed, [0, 1, 2])

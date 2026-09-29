@@ -890,7 +890,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = rebind[Int](widths[i])
+            comptime w = widths[i]
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((middle - processed) // w):
@@ -934,7 +934,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = rebind[Int](widths[i])
+            comptime w = widths[i]
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
@@ -974,7 +974,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = rebind[Int](widths[i])
+            comptime w = widths[i]
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):

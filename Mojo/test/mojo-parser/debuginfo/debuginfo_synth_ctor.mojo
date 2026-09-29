@@ -25,8 +25,8 @@
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__deinit__($0$)"
 
 # Bool EnumLike (and transitive SIMD stringification) from the stubs.
-# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__str__(::SIMD[$0, $1])"
-# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "_unsafe_get_enum_payload{{.*}}(::Bool%)"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__str__(::SIMD[$0, $1])"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "_unsafe_get_enum_payload{{.*}}(::Bool%)"
 
 # CHECK-NOT: #debuginfo.subprogram
 

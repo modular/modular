@@ -275,7 +275,7 @@ def test_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16, DType.float32)
 
     comptime for type_idx in range(len(types)):
-        comptime type = rebind[DType](types[type_idx])
+        comptime type = types[type_idx]
         # context encoding
         test_attention[
             type,

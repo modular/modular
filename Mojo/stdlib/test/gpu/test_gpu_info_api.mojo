@@ -50,7 +50,7 @@ def test_api_identifies_the_vendor() raises:
     the independent arch-string classifier.
     """
     comptime for i in range(len(_all_target_accelerator_values)):
-        comptime arch: StaticString = _all_target_accelerator_values[i]
+        comptime arch = _all_target_accelerator_values[i]
 
         # "cuda" is the generic NVIDIA target: it resolves through runtime GPU
         # detection, so what it names depends on the build's accelerator flag.
@@ -77,11 +77,10 @@ def test_amd_spellings_resolve() raises:
     forms.
     """
     comptime for i in range(len(_MI250X_SPELLINGS)):
-        comptime spelling = rebind[StaticString](_MI250X_SPELLINGS[i])
         assert_equal(
-            GPUInfo.from_name[spelling]().name,
+            GPUInfo.from_name[_MI250X_SPELLINGS[i]]().name,
             "MI250X",
-            String("wrong record for ", spelling),
+            String("wrong record for ", _MI250X_SPELLINGS[i]),
         )
 
     assert_equal(GPUInfo.from_name["mi300x"]().name, "MI300X")

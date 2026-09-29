@@ -528,7 +528,7 @@ def test_truthy() raises:
         assert_true(Scalar[dtype](1))
 
     comptime for i in range(dtypes.__len__()):
-        comptime dtype = rebind[DType](dtypes[i])
+        comptime dtype = dtypes[i]
         test_dtype[dtype]()
 
     test_dtype[.bfloat16]()
@@ -2188,7 +2188,7 @@ def test_comparison() raises:
             assert_true(mixed_ge[3])
 
     comptime for i in range(dtypes.__len__()):
-        comptime dtype = rebind[DType](dtypes[i])
+        comptime dtype = dtypes[i]
         test_dtype[dtype]()
 
     test_dtype[.bfloat16]()
