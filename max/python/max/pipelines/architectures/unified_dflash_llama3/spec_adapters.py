@@ -92,11 +92,7 @@ class DFlashLlama3Proposer:
         embeds = self.target.embed_tokens(block_ids)
         # Llama3's embedding is unscaled, so the multiplier is applied here.
         if self.target.embedding_multiplier != 1.0:
-            embeds = embeds * ops.constant(
-                self.target.embedding_multiplier,
-                embeds.dtype,
-                device=batch.device0,
-            )
+            embeds = embeds * float(self.target.embedding_multiplier)
         return [embeds]
 
     def forward_block(

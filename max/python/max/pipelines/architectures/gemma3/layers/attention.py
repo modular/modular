@@ -223,9 +223,7 @@ class Gemma3Attention(Module, Shardable):
             # shape_to_tensor gives us the runtime dimension as a tensor so
             # we can branch on it with ops.cond.
             num_image_tokens = ops.shape_to_tensor(image_token_indices.shape)
-            has_images = num_image_tokens[0] > ops.constant(
-                0, DType.int64, device=DeviceRef.CPU()
-            )
+            has_images = num_image_tokens[0] > 0
 
             out_type = TensorType(
                 dtype=xq.dtype,

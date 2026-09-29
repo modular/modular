@@ -127,7 +127,7 @@ class DeepseekV4Expert(Module):
         gate = ops.cast(self.w1(x), DType.float32)
         up = ops.cast(self.w3(x), DType.float32)
         if self.swiglu_limit > 0:
-            limit = ops.constant(self.swiglu_limit, DType.float32, gate.device)
+            limit = float(self.swiglu_limit)
             # Asymmetric on purpose: the reference clamps ``up`` on both sides
             # but ``gate`` only from above.
             up = ops.min(ops.max(up, -limit), limit)
@@ -404,10 +404,8 @@ class DeepseekV4RoutedExperts(Module):
         router_idx = ops.reshape(indices, [slots])
         if self.n_experts == self.n_global_experts:
             return self._routed(x, weights, router_idx, self.n_experts, None)
-        device = x.device
-        i32 = DType.int32
-        first = ops.constant(self.expert_offset, i32, device)
-        end = ops.constant(self.expert_offset + self.n_experts, i32, device)
+        first = self.expert_offset
+        end = self.expert_offset + self.n_experts
         is_local = ops.logical_and(
             ops.greater_equal(router_idx, first), ops.greater(end, router_idx)
         )
@@ -417,7 +415,7 @@ class DeepseekV4RoutedExperts(Module):
         router_idx = ops.where(
             is_local,
             router_idx - first,
-            ops.constant(self.n_experts, i32, device),
+            self.n_experts,
         )
         return self._routed(
             x, weights, router_idx, self.n_experts + 1, is_local
@@ -459,18 +457,13 @@ class DeepseekV4RoutedExperts(Module):
         # to 128. The kernel finds that first tile as start[g] // 128 plus the
         # group's scale offset.
         counts = start[1 : groups + 1] - start[0:groups]
-        rows_128 = ops.constant(SF_ROWS, i32, device)
-        aligned_counts = (
-            (counts + ops.constant(SF_ROWS - 1, i32, device))
-            // rows_128
-            * rows_128
-        )
+        aligned_counts = (counts + (SF_ROWS - 1)) // SF_ROWS * SF_ROWS
         # Kept on device, as are the row maps below: ops.cumsum/ops.scatter
         # run on the host, and those round trips beside the tokens broadcast
         # closed a 2-GPU deadlock.
         aligned_start = count_offsets(aligned_counts)
         scale_offsets = ops.cast(
-            aligned_start[0:groups] // rows_128 - start[0:groups] // rows_128,
+            aligned_start[0:groups] // SF_ROWS - start[0:groups] // SF_ROWS,
             DType.uint32,
         )
         if groups != self.n_experts:
@@ -484,18 +477,16 @@ class DeepseekV4RoutedExperts(Module):
         # do. Rows past aligned_start[groups] are in no group; clamped to the
         # last one they fail the same test.
         row_group, row_ids = segment_ids(aligned_start, padded, device)
-        row_group = ops.min(row_group, ops.constant(groups - 1, i32, device))
+        row_group = ops.min(row_group, groups - 1)
         in_group = row_ids - ops.gather(aligned_start, row_group, axis=0)
         has_slot = in_group < ops.gather(counts, row_group, axis=0)
         scale_slot = ops.where(
             has_slot,
             ops.gather(start, row_group, axis=0) + in_group,
-            ops.constant(0, i32, device),
+            0,
         )
 
-        slot_token = ops.cast(
-            order // ops.constant(self.topk, i32, device), i32
-        )
+        slot_token = ops.cast(order // self.topk, i32)
         x_sorted = ops.gather(x, slot_token, axis=0)
         slot_weight = ops.cast(
             ops.gather(ops.reshape(weights, [slots]), order, axis=0),
@@ -514,7 +505,7 @@ class DeepseekV4RoutedExperts(Module):
         gate = ops.cast(gate, DType.float32)
         up = ops.cast(up, DType.float32)
         if self.swiglu_limit > 0:
-            limit = ops.constant(self.swiglu_limit, DType.float32, device)
+            limit = float(self.swiglu_limit)
             # Asymmetric on purpose: the reference clamps ``up`` on both sides
             # but ``gate`` only from above.
             up = ops.min(ops.max(up, -limit), limit)
@@ -532,7 +523,7 @@ class DeepseekV4RoutedExperts(Module):
             out = ops.where(
                 ops.unsqueeze(is_local, -1),
                 out,
-                ops.constant(0.0, DType.float32, device),
+                0.0,
             )
         out = ops.reshape(out, [tokens, self.topk, self.hidden])
         routed = ops.squeeze(ops.sum(out, axis=1), axis=1)

@@ -222,14 +222,13 @@ class DeepseekV4Indexer(Module):
 
         Returns what :meth:`__call__` returns.
         """
-        device = index_score.device
         n = int(index_score.shape[1])
 
         # Rule 1: an entry that had not closed by the query cannot be selected.
         index_score = ops.where(
             valid,
             index_score,
-            ops.constant(float("-inf"), DType.float32, device),
+            float("-inf"),
         )
 
         k = min(self.index_topk, n)
@@ -239,13 +238,13 @@ class DeepseekV4Indexer(Module):
         live = ops.squeeze(
             ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
         )
-        picks = ops.min(live, ops.constant(k, DType.int64, device))
+        picks = ops.min(live, k)
         topk_scores, topk_idxs = top_k_per_row(index_score, picks, k)
         topk_idxs = ops.cast(topk_idxs, DType.int32)
 
         # Rule 2: drop any pick whose score was not finite.
         return ops.where(
-            topk_scores > ops.constant(float("-inf"), DType.float32, device),
+            topk_scores > float("-inf"),
             topk_idxs,
-            ops.constant(-1, DType.int32, device),
+            -1,
         )

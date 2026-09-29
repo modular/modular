@@ -121,7 +121,7 @@ class LFM2ShortConv(Module):
         conv_w = ops.unsqueeze(conv_w, 0)
         conv_b = self.conv_bias
 
-        out_init = bx * ops.constant(0.0, dtype=bx.dtype, device=bx.device)
+        out_init = bx * 0.0
         t_init = ops.constant(0, DType.int32, device=DeviceRef.CPU())
         seq_len = ops.cast(ops.shape_to_tensor(x.shape)[0], DType.int32).to(
             DeviceRef.CPU()
@@ -185,10 +185,9 @@ class LFM2ShortConv(Module):
 
             eq = ops.equal(pos, t_ix)
             mask = ops.unsqueeze(ops.cast(eq, out.dtype), -1)
-            one = ops.constant(1.0, out.dtype, device=x.device)
-            out_next = out * (one - mask) + conv_out * mask
+            out_next = out * (1.0 - mask) + conv_out * mask
             return [
-                t + ops.constant(1, DType.int32, device=DeviceRef.CPU()),
+                t + 1,
                 state_stack_next,
                 out_next,
                 pos,

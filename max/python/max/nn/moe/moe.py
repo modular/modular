@@ -58,10 +58,9 @@ def make_concatenated_gated_activation_fn(
         ) -> TensorValue:
             gate = activation_fn(gate_up[:, :moe_dim])
             up = gate_up[:, moe_dim:]
-            lim = ops.constant(limit, gate.dtype, device=gate.device)
-            neg_lim = ops.constant(-limit, up.dtype, device=up.device)
+            lim = float(limit)
             gate = ops.min(gate, lim)
-            up = ops.min(ops.max(up, neg_lim), lim)
+            up = ops.min(ops.max(up, -lim), lim)
             return gate * up
 
         return _clamped_concatenated_gated_activation_fn
@@ -111,13 +110,11 @@ def _swigluoai_activation(
     gate = gate_up[:, :moe_dim]
     up = gate_up[:, moe_dim:]
 
-    lim = ops.constant(limit, gate.dtype, device=gate.device)
-    neg_lim = ops.constant(-limit, up.dtype, device=up.device)
-    alpha_value = ops.constant(alpha, gate.dtype, device=gate.device)
+    lim = float(limit)
 
     gate = ops.min(gate, lim)
-    up = ops.min(ops.max(up, neg_lim), lim)
-    return (up + 1.0) * gate * ops.sigmoid(gate * alpha_value)
+    up = ops.min(ops.max(up, -lim), lim)
+    return (up + 1.0) * gate * ops.sigmoid(gate * float(alpha))
 
 
 class MoEGate(Module):

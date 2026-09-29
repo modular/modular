@@ -119,9 +119,7 @@ def _set_domain_seed(seed: TensorValue, domain: int) -> None:
     per-row seed contributes only its row-0 value.
     """
     scalar = seed[0] if seed.rank == 1 else seed
-    ops.random.set_seed(
-        scalar + ops.constant(domain, DType.uint64, scalar.device)
-    )
+    ops.random.set_seed(scalar + domain)
 
 
 def _multinomial(
@@ -130,12 +128,7 @@ def _multinomial(
     """Samples from a categorical distribution using the Gumbel-max trick."""
     if residual_rand is not None:
         eps = float(np.finfo(probs.dtype.to_numpy()).eps)
-        clamped_uniform = ops.max(
-            residual_rand,
-            ops.constant(
-                eps, dtype=residual_rand.dtype, device=residual_rand.device
-            ),
-        )
+        clamped_uniform = ops.max(residual_rand, eps)
         q = -ops.log(clamped_uniform)
     else:
         eps = float(np.finfo(probs.dtype.to_numpy()).eps)
@@ -174,9 +167,10 @@ def repeat_per_draft_step(
 
 def _gamma_iota(count: Dim, device: DeviceRef) -> TensorValue:
     """Returns ``[0, gamma, 2 * gamma, ...]``, ``count`` entries long."""
-    return ops.range(
-        0, count, 1, out_dim=count, device=device, dtype=DType.uint64
-    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
+    return (
+        ops.range(0, count, 1, out_dim=count, device=device, dtype=DType.uint64)
+        * _SEED_GOLDEN_GAMMA
+    )
 
 
 def _is_shared_seed(seed: TensorValue) -> bool:
@@ -206,12 +200,11 @@ def _keyed_seed_rows(
     the same token, since the sampling kernel's RNG counter no longer varies
     with the slot.
     """
-    tag = ops.constant(domain, DType.uint64, device)
     if _is_shared_seed(seed):
-        return _shared_scalar(seed) + tag + _gamma_iota(rows, device)
+        return _shared_scalar(seed) + domain + _gamma_iota(rows, device)
     # The caller's seed input may carry a static or differently-named batch
     # dim; rebind so it unifies with everything else derived from ``rows``.
-    return ops.rebind(seed, [rows]) + tag
+    return ops.rebind(seed, [rows]) + domain
 
 
 def _keyed_step_seeds(
@@ -229,10 +222,9 @@ def _keyed_step_seeds(
     request rather than with its slot -- while a shared seed spaces them by
     the flattened row, the only index it has.
     """
-    tag = ops.constant(domain, DType.uint64, device)
     flat_rows = batch_size * num_steps
     if _is_shared_seed(seed):
-        return _shared_scalar(seed) + tag + _gamma_iota(flat_rows, device)
+        return _shared_scalar(seed) + domain + _gamma_iota(flat_rows, device)
     per_row = repeat_per_draft_step(
         ops.rebind(seed, [batch_size]), batch_size, num_steps
     )
@@ -243,7 +235,7 @@ def _keyed_step_seeds(
         ),
         [flat_rows],
     )
-    return per_row + tag + step_offsets
+    return per_row + domain + step_offsets
 
 
 def _bonus_seed_rows(
@@ -599,10 +591,7 @@ def synthetic_acceptance_sampler(
     )
     random_values = ops.random.uniform(like=float_type, range=(0.0, 1.0))
 
-    threshold = ops.constant(
-        base_acceptance_rate, dtype=DType.float32, device=device
-    )
-    synthetic_rejected = random_values >= threshold
+    synthetic_rejected = random_values >= float(base_acceptance_rate)
     first_rejected_idx = ops.squeeze(
         _find_first_rejected(synthetic_rejected, device), axis=-1
     )
@@ -1078,13 +1067,8 @@ def _relaxed_thinking_verdict(
     )
 
     # Threshold = top1_prob - delta (broadcast over the N dim).
-    delta_const = ops.constant(
-        relaxed_delta,
-        dtype=target_probs_relaxed.dtype,
-        device=target_probs_relaxed.device,
-    )
     top1_prob = top_probs[:, :, 0:1]  # [B, K, 1]
-    threshold = top1_prob - delta_const
+    threshold = top1_prob - float(relaxed_delta)
     valid = top_probs >= threshold  # [B, K, N] bool
 
     # Compare each top-N index against the draft token at that slot.
@@ -1199,16 +1183,9 @@ def stochastic_acceptance_sampler(
 
     device = draft_tokens.device
 
-    is_greedy_row = temperature < ops.constant(
-        _GREEDY_TEMPERATURE_EPS,
-        dtype=temperature.dtype,
-        device=temperature.device,
-    )
+    is_greedy_row = temperature < _GREEDY_TEMPERATURE_EPS
 
-    temperature = ops.max(
-        temperature,
-        ops.constant(1e-6, dtype=temperature.dtype, device=temperature.device),
-    )
+    temperature = ops.max(temperature, 1e-6)
 
     target_logits_3d = _reshape_target_logits(target_logits)
 
@@ -1517,12 +1494,7 @@ class RejectionSamplerWithResiduals(Module):
     ) -> TensorValue:
         difference = target_probs - draft_probs
         float_tiny = float(np.finfo(difference.dtype.to_numpy()).tiny)
-        f = ops.max(
-            difference,
-            ops.constant(
-                float_tiny, dtype=difference.dtype, device=self.device
-            ),
-        )
+        f = ops.max(difference, float_tiny)
 
         recovered_probs = f / ops.reshape(
             ops.sum(f), shape=[-1, Dim("num_steps"), 1]

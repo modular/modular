@@ -39,9 +39,7 @@ def l2_norm(x: TensorValue, eps: float) -> TensorValue:
     """
     xf = x.cast(DType.float32)
     mean_sq = ops.mean(xf * xf, axis=-1)
-    normed = xf * ops.rsqrt(
-        mean_sq + ops.constant(eps, DType.float32, device=x.device)
-    )
+    normed = xf * ops.rsqrt(mean_sq + float(eps))
     return normed.cast(x.dtype)
 
 
@@ -186,10 +184,8 @@ class Llama4TextAttention(Module):
             device=cpu,
         )
         positions = (global_idx + per_token_delta).cast(DType.float32)
-        floor_scale = ops.constant(self.floor_scale, DType.float32, device=cpu)
-        one = ops.constant(1.0, DType.float32, device=cpu)
-        floored = ops.floor((positions + one) / floor_scale)
-        scales = ops.log(floored + one) * self.attn_scale + 1.0
+        floored = ops.floor((positions + 1.0) / float(self.floor_scale))
+        scales = ops.log(floored + 1.0) * self.attn_scale + 1.0
         return scales.to(device)
 
     def __call__(

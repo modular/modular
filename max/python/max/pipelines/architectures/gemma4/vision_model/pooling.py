@@ -195,11 +195,7 @@ class Gemma4VisionPooler(Module):
         gathered = ops.gather(padded, pool_gather_index, axis=0)
         pooled = ops.squeeze(ops.sum(gathered, axis=1), 1)
 
-        result = pooled * ops.constant(
-            self._scale * self._inv_k2,
-            DType.float32,
-            device=hidden_states.device,
-        )
+        result = pooled * (self._scale * self._inv_k2)
         if original_dtype == DType.float16:
             return result
         return result.cast(original_dtype)

@@ -124,11 +124,7 @@ class LagunaTopKRouter(MoEGate):
         #   if router_logit_softcapping > 0.0:
         #       router_logits = tanh(router_logits / softcap) * softcap
         if self.router_logit_softcapping > 0.0:
-            softcap = ops.constant(
-                self.router_logit_softcapping,
-                logits.dtype,
-                device=logits.device,
-            )
+            softcap = float(self.router_logit_softcapping)
             logits = ops.tanh(logits / softcap) * softcap
         scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
 
@@ -151,11 +147,7 @@ class LagunaTopKRouter(MoEGate):
             topk_weight = topk_weight / ops.sum(topk_weight, axis=-1)
         # Fold routed_scaling_factor into the weights (HF applies it to the
         # summed expert output, which is mathematically equivalent).
-        topk_weight = topk_weight * ops.constant(
-            self.routed_scaling_factor,
-            topk_weight.dtype,
-            device=topk_weight.device,
-        )
+        topk_weight = topk_weight * float(self.routed_scaling_factor)
         return topk_idx, topk_weight
 
     def _set_sharding_strategy(self, strategy: ShardingStrategy) -> None:

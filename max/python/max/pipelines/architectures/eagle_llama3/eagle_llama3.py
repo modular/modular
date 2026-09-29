@@ -63,9 +63,7 @@ class EagleLlama3(Llama3):
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
         fused = ops.concat([h, hidden_states], axis=-1)
         h = self.fc(fused)
 

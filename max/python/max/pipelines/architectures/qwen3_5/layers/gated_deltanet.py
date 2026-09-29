@@ -491,11 +491,9 @@ class GatedDeltaNet(Module, Shardable):
         # Stabilised softplus: for x>20 return x directly (avoids float32 overflow)
         x_sp = a_float + ops.cast(dt_bias, self.ssm_dtype)
         softplus_val = ops.where(
-            x_sp > ops.constant(20.0, self.ssm_dtype, device=device),
+            x_sp > 20.0,
             x_sp,
-            ops.log(
-                ops.constant(1.0, self.ssm_dtype, device=device) + ops.exp(x_sp)
-            ),
+            ops.log(1.0 + ops.exp(x_sp)),
         )
         # Cast to float32 for downstream recurrence arithmetic (q/k/v ops always float32).
         decay = ops.exp(ops.cast(-A * softplus_val, DType.float32))  # [N, nv]

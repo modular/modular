@@ -578,9 +578,7 @@ class Transformer(LogitsPostprocessMixin, Module):
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         return self._process_hidden_states(
             h, kv_collection, return_n_logits, input_row_offsets

@@ -677,10 +677,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         updated_latents = ops.cast(updated_latents, lat_dtype)
 
         token_types = img_ids[:, :, 0]
-        is_condition_token = ops.not_equal(
-            token_types,
-            ops.constant(0, DType.int64, device=token_types.device),
-        )
+        is_condition_token = ops.not_equal(token_types, 0)
         condition_token_mask = ops.broadcast_to(
             ops.unsqueeze(is_condition_token, -1),
             latents.shape,

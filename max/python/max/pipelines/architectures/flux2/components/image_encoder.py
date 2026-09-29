@@ -96,12 +96,8 @@ class PreprocessAndEncode(Module):
         ):
             # Preprocess: (H, W, C) uint8 -> (1, C, H, W) model-dtype [-1, 1].
             image = ops.cast(image, DType.float32)
-            image = image / ops.constant(
-                127.5, DType.float32, device=self._device
-            )
-            image = image - ops.constant(
-                1.0, DType.float32, device=self._device
-            )
+            image = image / 127.5
+            image = image - 1.0
             image = ops.permute(image, [2, 0, 1])  # HWC -> CHW
             image = ops.unsqueeze(image, 0)  # (1, C, H, W)
             image = ops.cast(image, self._dtype)
@@ -133,12 +129,7 @@ class PreprocessAndEncode(Module):
             bn_var = self.encoder_bn_var.to(self._device)
             bn_mean_r = ops.reshape(bn_mean, (1, self._num_channels, 1, 1))
             bn_var_r = ops.reshape(bn_var, (1, self._num_channels, 1, 1))
-            bn_std = ops.sqrt(
-                bn_var_r
-                + ops.constant(
-                    self._batch_norm_eps, self._dtype, device=self._device
-                )
-            )
+            bn_std = ops.sqrt(bn_var_r + self._batch_norm_eps)
             latents = (latents - bn_mean_r) / bn_std
 
             # Pack: (B, C*4, H', W') -> (B, H'*W', C*4)

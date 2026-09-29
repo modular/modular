@@ -81,7 +81,7 @@ _LN2 = math.log(2.0)
 
 def _pow2(k: TensorValue) -> TensorValue:
     """``2 ** k`` for a tensor holding integer-valued floats."""
-    return ops.pow(ops.constant(2.0, DType.float32, k.device), k)
+    return ops.pow(2.0, k)
 
 
 def _ceil_log2(x: TensorValue) -> TensorValue:
@@ -114,7 +114,7 @@ def block_scale(
     """
     grouped = _group(x, block_size)
     amax = ops.max(ops.abs(grouped), axis=-1)
-    amax = ops.max(amax, ops.constant(amax_floor, DType.float32, amax.device))
+    amax = ops.max(amax, amax_floor)
     return _pow2(_ceil_log2(amax * (1.0 / value_max)))
 
 
@@ -168,9 +168,7 @@ def fp4_qat_quantize(
     scale = block_scale(
         x, block_size, value_max=FP4_MAX, amax_floor=FP4_AMAX_FLOOR
     )
-    lo = ops.constant(-FP4_MAX, DType.float32, grouped.device)
-    hi = ops.constant(FP4_MAX, DType.float32, grouped.device)
-    clamped = ops.min(ops.max(grouped / scale, lo), hi)
+    clamped = ops.min(ops.max(grouped / scale, -FP4_MAX), FP4_MAX)
     roundtripped = _round_e2m1(clamped) * scale
     return ops.cast(ops.reshape(roundtripped, x.shape), x.dtype)
 
@@ -202,11 +200,10 @@ def _round_e2m1(x: TensorValue) -> TensorValue:
     a = ops.abs(x)
     acc = ops.constant(0.0, DType.float32, x.device)
     for threshold, step, tie_up in _E2M1_STEPS:
-        t = ops.constant(threshold, DType.float32, x.device)
-        crossed = a >= t if tie_up else a > t
+        crossed = a >= threshold if tie_up else a > threshold
         acc = acc + ops.cast(crossed, DType.float32) * step
     sign = ops.where(
-        x < ops.constant(0.0, DType.float32, x.device),
+        x < 0.0,
         ops.constant(-1.0, DType.float32, x.device),
         ops.constant(1.0, DType.float32, x.device),
     )
@@ -225,9 +222,7 @@ def _roundtrip(
         x, block_size, value_max=value_max, amax_floor=amax_floor
     )
 
-    lo = ops.constant(-value_max, DType.float32, grouped.device)
-    hi = ops.constant(value_max, DType.float32, grouped.device)
-    clamped = ops.min(ops.max(grouped / scale, lo), hi)
+    clamped = ops.min(ops.max(grouped / scale, -value_max), value_max)
 
     roundtripped = ops.cast(ops.cast(clamped, dtype), DType.float32) * scale
     return ops.cast(ops.reshape(roundtripped, x.shape), x.dtype)

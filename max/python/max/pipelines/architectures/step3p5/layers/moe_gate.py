@@ -107,17 +107,7 @@ class Step3p5MoEGate(MoEGate):
         # prevents index-out-of-bounds crashes at the cost of silently routing
         # to a wrong expert — acceptable as a last-resort guard since the root
         # cause (NaN scores) should be fixed upstream.
-        topk_indices = ops.min(
-            ops.max(
-                topk_indices,
-                ops.constant(0, topk_indices.dtype, device=topk_indices.device),
-            ),
-            ops.constant(
-                self.num_experts - 1,
-                topk_indices.dtype,
-                device=topk_indices.device,
-            ),
-        )
+        topk_indices = ops.min(ops.max(topk_indices, 0), self.num_experts - 1)
 
         # Gather weights from original (uncorrected) scores
         # topk_indices: [seq_len, k], scores: [seq_len, num_experts]
@@ -132,17 +122,11 @@ class Step3p5MoEGate(MoEGate):
         # Note: ops.sum keeps the reduced dim (returns [..., 1]), so no
         # unsqueeze is needed — the division broadcasts correctly.
         if self.norm_topk_prob:
-            denominator = ops.sum(topk_weights, axis=-1) + ops.constant(
-                1e-20, DType.float32, device=topk_weights.device
-            )
+            denominator = ops.sum(topk_weights, axis=-1) + 1e-20
             topk_weights = topk_weights / denominator
 
         # Scale weights
-        topk_weights = topk_weights * ops.constant(
-            self.routed_scaling_factor,
-            DType.float32,
-            device=topk_weights.device,
-        )
+        topk_weights = topk_weights * float(self.routed_scaling_factor)
         topk_weights = topk_weights.cast(hidden_states.dtype)
         return topk_indices, topk_weights
 

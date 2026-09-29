@@ -744,19 +744,9 @@ class T5Stack(Module[..., Tensor]):
                 if hasattr(hidden_states.dtype, "to_numpy")
                 else np.float32
             )
-            mask_multiplier = F.constant(
-                float(np.finfo(dtype_np).min),
-                dtype=hidden_states.dtype,
-                device=hidden_states.device,
-            )
             causal_mask = (
-                F.constant(
-                    1.0,
-                    dtype=hidden_states.dtype,
-                    device=hidden_states.device,
-                )
-                - F.cast(attention_mask, hidden_states.dtype)
-            ) * mask_multiplier
+                1.0 - F.cast(attention_mask, hidden_states.dtype)
+            ) * float(np.finfo(dtype_np).min)
             causal_mask = F.unsqueeze(causal_mask, 1)
             causal_mask = F.unsqueeze(causal_mask, 1)
         else:

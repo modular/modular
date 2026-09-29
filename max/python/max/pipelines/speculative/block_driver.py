@@ -570,15 +570,11 @@ class BlockDriver(
         num_steps_u32 = _shape_to_scalar(
             batch.num_draft_tokens, device, dtype=DType.uint32
         )
-        zero_u32 = ops.constant(0, DType.uint32, device=device)
-        is_prefill = (num_steps_u32 == zero_u32).broadcast_to(["batch_size"])
+        is_prefill = (num_steps_u32 == 0).broadcast_to(["batch_size"])
 
-        magic_token = ops.constant(
-            MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device
-        )
         num_magic_tokens = ops.squeeze(
             ops.sum(
-                (batch.draft_tokens == magic_token)
+                (batch.draft_tokens == MAGIC_DRAFT_TOKEN_ID)
                 .cast(DType.int32)
                 .rebind(["batch_size", "num_steps"]),
                 axis=-1,
@@ -737,7 +733,7 @@ class BlockDriver(
                 device=dev,
                 dtype=DType.uint32,
             )
-            * ops.constant(k, DType.uint32, device=dev)
+            * k
             for dev in self.devices
         ]
         if batch.data_parallel_degree > 1:

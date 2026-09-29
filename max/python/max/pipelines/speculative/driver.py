@@ -778,9 +778,8 @@ class SequentialDriver(
         """
         device = batch.device0
         num_steps = batch.num_draft_tokens
-        zero_u32 = ops.constant(0, DType.uint32, device=device)
         is_prefill = (
-            _shape_to_scalar(num_steps, device, dtype=DType.uint32) == zero_u32
+            _shape_to_scalar(num_steps, device, dtype=DType.uint32) == 0
         ).broadcast_to(["batch_size"])
 
         # The extra MAGIC column makes the reduction well-defined at K == 0.
@@ -795,9 +794,9 @@ class SequentialDriver(
             ops.sum((padded_drafts == magic_token).cast(DType.int32), axis=-1),
             axis=-1,
         )
-        num_steps_plus_one = _shape_to_scalar(
-            num_steps, device, dtype=DType.int32
-        ) + ops.constant(1, DType.int32, device=device)
+        num_steps_plus_one = (
+            _shape_to_scalar(num_steps, device, dtype=DType.int32) + 1
+        )
         is_dummy_draft = num_magic_tokens == num_steps_plus_one.broadcast_to(
             ["batch_size"]
         )

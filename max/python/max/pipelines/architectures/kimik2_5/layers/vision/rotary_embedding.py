@@ -85,7 +85,7 @@ class Rope2DPosEmbRepeated(Module):
         flat = ops.range(
             0, N, 1, out_dim=N, dtype=DType.float32, device=self.device
         )
-        mw = ops.constant(self.max_width, DType.float32, device=self.device)
+        mw = float(self.max_width)
         x_pos = flat % mw
         y_pos = ops.floor(flat / mw)
 

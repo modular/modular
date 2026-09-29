@@ -1072,14 +1072,9 @@ class MLP(Module, Shardable):
             gate_out = self.activation_function(gate_out)
 
         if self.swiglu_limit > 0:
-            lim = ops.constant(
-                self.swiglu_limit, gate_out.dtype, device=gate_out.device
-            )
-            neg_lim = ops.constant(
-                -self.swiglu_limit, up_out.dtype, device=up_out.device
-            )
+            lim = float(self.swiglu_limit)
             gate_out = ops.min(gate_out, lim)
-            up_out = ops.min(ops.max(up_out, neg_lim), lim)
+            up_out = ops.min(ops.max(up_out, -lim), lim)
 
         return self.down_proj(gate_out * up_out)
 
@@ -1244,14 +1239,9 @@ class FusedMLP(Module, Shardable):
         gate_out = self.activation_function(gate_out)
 
         if self.swiglu_limit > 0:
-            lim = ops.constant(
-                self.swiglu_limit, gate_out.dtype, device=gate_out.device
-            )
-            neg_lim = ops.constant(
-                -self.swiglu_limit, up_out.dtype, device=up_out.device
-            )
+            lim = float(self.swiglu_limit)
             gate_out = ops.min(gate_out, lim)
-            up_out = ops.min(ops.max(up_out, neg_lim), lim)
+            up_out = ops.min(ops.max(up_out, -lim), lim)
 
         return self.down_proj(gate_out * up_out)
 

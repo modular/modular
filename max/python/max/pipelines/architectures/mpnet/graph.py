@@ -362,10 +362,8 @@ class MPNetModel(Module):
         extended_attention_mask = ops.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
-        extended_attention_mask = (1 - extended_attention_mask) * ops.constant(
-            np.finfo(np.float32).min,
-            DType.float32,
-            device=attention_mask.device,
+        extended_attention_mask = (1 - extended_attention_mask) * float(
+            np.finfo(np.float32).min
         )
         encoded_results = self.encoder(
             embedding_output, attention_mask=extended_attention_mask
@@ -379,12 +377,7 @@ class MPNetModel(Module):
                 ops.unsqueeze(attention_mask, 1),
                 ("batch_size", encoded_results.shape[1], "seq_len"),
             )
-            input_lengths = ops.max(
-                ops.sum(input_mask_expanded),
-                ops.constant(
-                    1e-9, DType.float32, device=input_mask_expanded.device
-                ),
-            )
+            input_lengths = ops.max(ops.sum(input_mask_expanded), 1e-9)
             pooled_output = (
                 ops.sum(encoded_results * input_mask_expanded) / input_lengths
             )
