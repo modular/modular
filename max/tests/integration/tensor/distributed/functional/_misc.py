@@ -39,10 +39,10 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
-    ReduceOp,
     Replicated,
     Sharded,
 )
+from max.experimental.sharding.placements import ReduceOp
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 

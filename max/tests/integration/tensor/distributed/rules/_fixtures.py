@@ -13,9 +13,9 @@
 
 """Shared fixtures for pure-metadata placement rule tests.
 
-These tests never create Tensors or graph ops directly — they call
-rule functions on :class:`TensorLayout` inputs and exercise the
-production :class:`GreedyReshard` to check what the picker selects.
+These tests never create Tensors or graph ops directly. They call
+rule functions on :class:`TensorLayout` inputs and run the production
+picker with every collective permitted to check what it selects.
 """
 
 from __future__ import annotations
@@ -25,13 +25,15 @@ from typing import Any
 
 from max.driver import CPU
 from max.experimental.sharding import (
+    ALL_TRANSITIONS,
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
-    TensorLayout,
+    auto_reshard,
 )
+from max.experimental.sharding._auto_reshard import pick_reshard_action
 from max.experimental.sharding.action import Action, ActionSet
 
 # ── Convenience aliases ──────────────────────────────────────────────
@@ -74,40 +76,16 @@ def M(
     return DeviceMapping(mesh, tuple(placements))
 
 
-# ── Solver-driven picker for rule tests ─────────────────────────────
+# ── Picker for rule tests ────────────────────────────────────────────
 
 
 def pick(rule: Callable[..., ActionSet], *args: Any, **kwargs: Any) -> Action:
     """Picks the cheapest :class:`Action` for ``rule(*args, **kwargs)``.
 
-    Test-only helper that bypasses the source-graph trace: invokes ``rule``
-    directly with the supplied :class:`TensorLayout`\\ s, enumerates the
-    feasible actions over the layouts' shared mesh, and returns the cheapest
-    by :func:`pair_transition_cost`. Equivalent to one step of the
-    :class:`~max.experimental.sharding.picker.GreedyReshard`
-    but without going through a graph.
+    Calls ``rule`` on the given :class:`TensorLayout` inputs and runs the
+    production picker with every transition allowed, with no graph.
     """
-    from max.experimental.sharding.picker import (
-        _finalize,
-        cheapest_action,
-        enumerate_feasible_actions,
-    )
-
-    def _flatten_layouts(value: Any) -> Any:
-        if isinstance(value, TensorLayout):
-            yield value
-        elif isinstance(value, (list, tuple)):
-            for v in value:
-                yield from _flatten_layouts(v)
-
-    in_layouts: list[TensorLayout] = []
-    for a in args:
-        in_layouts.extend(_flatten_layouts(a))
-    for v in kwargs.values():
-        in_layouts.extend(_flatten_layouts(v))
-    menu = rule(*args, **kwargs)
-    mesh = menu.mesh
-    actions = enumerate_feasible_actions(menu, mesh)
-    if not actions:
-        raise ValueError(f"pick: rule {rule.__name__!r} returned no actions.")
-    return _finalize(menu, cheapest_action(actions, in_layouts, mesh))
+    with auto_reshard(ALL_TRANSITIONS, mode="silent"):
+        return pick_reshard_action(
+            rule(*args, **kwargs), op_name=rule.__name__, operand_names=()
+        )

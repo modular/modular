@@ -85,7 +85,7 @@ def transition_cost(
     Dispatches on :meth:`Placement.transition_to`, so custom
     :class:`Placement` subclasses participate as long as they return a
     :class:`Collective` member. Anything else is reported as infeasible
-    (``+inf``) so solvers reject it.
+    (``+inf``) so the picker rejects it.
     """
     if source == dest:
         return 0.0
@@ -99,53 +99,6 @@ def transition_cost(
     if name == Collective.REDUCE_SCATTER:
         return _ring_reduce_scatter(message_bytes, mesh, axis_index)
     return float("inf")
-
-
-def rank_axis_assignments(
-    actuals: tuple[Placement, ...],
-    candidates: Iterable[AxisAssignment],
-    *,
-    mesh: DeviceMesh,
-    axis_index: int,
-    tensor_bytes: tuple[float, ...] | None = None,
-) -> tuple[tuple[AxisAssignment, float], ...]:
-    """Sorts arity-matching strategies ascending by cost (stable on ties)."""
-    n = len(actuals)
-    bpi = tensor_bytes or (1.0,) * n
-    if len(bpi) != n:
-        raise ValueError(f"tensor_bytes has length {len(bpi)}, expected {n}.")
-    scored = [
-        (
-            axs,
-            _action_cost(
-                actuals,
-                axs.needed_inputs,
-                bpi,
-                mesh=mesh,
-                axis_index=axis_index,
-            ),
-        )
-        for axs in candidates
-        if len(axs.needed_inputs) == n
-    ]
-    return tuple(sorted(scored, key=lambda x: x[1]))
-
-
-def _action_cost(
-    actuals: tuple[Placement, ...],
-    needed: tuple[Placement, ...],
-    tensor_bytes: tuple[float, ...],
-    *,
-    mesh: DeviceMesh,
-    axis_index: int,
-) -> float:
-    """Sum of per-input transition costs from ``actuals`` to ``needed`` on one axis."""
-    return sum(
-        transition_cost(
-            a, p, message_bytes=tb, mesh=mesh, axis_index=axis_index
-        )
-        for a, p, tb in zip(actuals, needed, tensor_bytes, strict=True)
-    )
 
 
 # ─── Feasibility ──────────────────────────────────────────────────────

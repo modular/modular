@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import pytest
-from max.experimental.sharding import PerShard
+from max.experimental.sharding.action import PerShard
 
 
 class TestPerShard:

@@ -38,13 +38,11 @@ def _aligned_axis(layout: TensorLayout, out_axis: int, out_rank: int) -> int:
 def _elementwise_rows(
     layouts: tuple[TensorLayout, ...], *, linear: bool
 ) -> list[AxisAssignment]:
-    """Candidate sharding rows for an elementwise op, aligned by trailing axis.
+    """Builds the rows for an elementwise op, aligned by trailing axis.
 
-    For each output axis, offers a symmetric row (all inputs carrying the axis
-    at full extent sharded together) plus one one-sided row per such input
-    (that input sharded alone, the rest Replicated). Inputs that broadcast the
-    axis (absent or size 1) stay Replicated. Prepends the ``(R, ...) -> R``
-    fallback; ``linear`` ops add a ``(P, ...) -> P`` row.
+    Each output axis gets one row that shards every full-extent input along
+    it and keeps broadcast inputs Replicated, after the ``(R, ...) -> R``
+    fallback; ``linear`` ops add ``(P, ...) -> P``.
     """
     n_in = len(layouts)
     out_rank = max(layout.rank for layout in layouts)
@@ -60,16 +58,10 @@ def _elementwise_rows(
         ]
         if not shardable:
             continue
-        # Symmetric row (all shardable inputs together), then one one-sided
-        # row per shardable input (that input alone, the rest Replicated).
-        active_sets = [shardable]
-        if len(shardable) > 1:
-            active_sets.extend([i] for i in shardable)
-        for active in active_sets:
-            needed = tuple(
-                Sharded(aligned[i]) if i in active else R for i in range(n_in)
-            )
-            rows.append(AxisAssignment(needed, Sharded(out_axis)))
+        needed = tuple(
+            Sharded(aligned[i]) if i in shardable else R for i in range(n_in)
+        )
+        rows.append(AxisAssignment(needed, Sharded(out_axis)))
     if linear:
         rows.append(AxisAssignment((P,) * n_in, P))
     return rows

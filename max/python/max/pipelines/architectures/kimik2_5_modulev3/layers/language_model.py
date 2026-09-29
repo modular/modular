@@ -31,10 +31,9 @@ from max.experimental.nn import Module, as_subgraph
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     DeviceMapping,
-    NoReshard,
     Replicated,
     Sharded,
-    mode,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
@@ -132,7 +131,7 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             comm_buffers,
         )
 
-    @mode(NoReshard())
+    @auto_reshard(mode="raise")
     def _run_text_model(
         self,
         tokens: Tensor,

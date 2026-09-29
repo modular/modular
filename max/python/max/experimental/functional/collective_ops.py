@@ -35,6 +35,7 @@ from max.experimental.sharding import (
     Placement,
     Replicated,
     Sharded,
+    ShardingError,
 )
 from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
@@ -362,8 +363,6 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
             continue
         dim = src_shape[ax]
         if isinstance(dim, StaticDim) and dim.dim == 1:
-            from max.experimental.sharding.mode import ShardingError
-
             raise ShardingError(
                 f"_scatter: placement {p!r} on mesh axis "
                 f"{mesh.axis_names[mesh_axis]!r} targets tensor axis {ax} "

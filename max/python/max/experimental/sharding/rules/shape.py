@@ -625,7 +625,7 @@ def rebind_rule(
     Rebind is a runtime shape assertion. It must never insert a
     collective. The rule emits exactly one passthrough row per unique
     placement on the input mesh axes, so the picker's only feasible
-    choice is the input's own placement, independent of solver. The
+    choice is the input's own placement, whatever the reshard policy. The
     finalize hook projects the user-supplied target shape per-rank
     against that placement.
     """

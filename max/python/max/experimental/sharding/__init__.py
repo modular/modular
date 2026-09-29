@@ -11,45 +11,44 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Distributed-tensor sharding: how a tensor is laid out across a device mesh.
+"""Defines how a tensor is laid out across a device mesh and how ops reshard it.
 
 Describes, for every op, what redistribution to perform before the op runs.
 The pipeline is deliberately local: per-op rules over a placement vocabulary
 (:class:`Replicated`, :class:`Sharded`, :class:`Partial`), scored by a single
-cost model, with one pluggable :class:`Solver` making the choice at each
-dispatch. There is no whole-graph trace.
+cost model, with the cheapest plan picked at each dispatch. There is no
+whole-graph trace.
 
-A ``mode(...)`` block selects the solver for the ops inside it:
+An op redistributes its inputs whenever the plan it picks needs it, so a
+model can contain collectives it never wrote. Inside an
+:func:`auto_reshard` block, ``mode="warn"`` reports each one and
+``"raise"`` refuses it, both naming the collective and the ``transfer_to``
+that would replace it:
 
 .. code-block:: python
 
-    import numpy as np
     from max.driver import CPU
-    from max.dtype import DType
-    from max.experimental.functional import full, matmul, relu, transfer_to
+    from max.experimental.functional import full, matmul, relu
     from max.experimental.sharding import (
         DeviceMesh,
-        GreedyReshard,
         DeviceMapping,
         Sharded,
-        mode,
+        auto_reshard,
     )
 
     # A simulated two-device mesh (both slots are the same CPU).
-    mesh = DeviceMesh(devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",))
+    mesh = DeviceMesh(
+        devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
+    )
 
     # ``a`` is column-sharded, ``b`` is row-sharded: a @ b contracts the
-    # sharded dimension, so the picker resolves the result back to replicated.
-    a = transfer_to(
-        full([4, 8], 1.0, dtype=DType.float32, device=mesh.devices[0]),
-        DeviceMapping(mesh, (Sharded(1),)),
-    )
-    b = transfer_to(
-        full([8, 2], 1.0, dtype=DType.float32, device=mesh.devices[0]),
-        DeviceMapping(mesh, (Sharded(0),)),
-    )
+    # sharded dimension, so the product is a partial sum on every device.
+    a = full([4, 8], 1.0, device=DeviceMapping(mesh, (Sharded(1),)))
+    b = full([8, 2], 1.0, device=DeviceMapping(mesh, (Sharded(0),)))
 
-    with mode(GreedyReshard(on_reshard="warn")):
+    # ``relu`` needs the full sum, so its input is allreduced first. This
+    # block reports that, instead of letting it pass unremarked.
+    with auto_reshard(mode="warn"):
         y = relu(matmul(a, b))
 
 .. invisible-code-block: python
@@ -59,93 +58,48 @@ A ``mode(...)`` block selects the solver for the ops inside it:
     # full(4, 8) @ full(8, 2) = 8 * ones(4, 2), then relu is a no-op (positive).
     assert np.allclose(y.to_numpy(), np.full((4, 2), 8.0))
 
-Shipped solvers: :class:`GreedyReshard` (cheapest feasible action),
-:class:`NoReshard` (passthrough only; errors on any reshard), and
-:class:`PartialsOnly` (only ``Partial -> Replicated`` resolutions).
-
 This module avoids the overloaded word "rank". A *device* is one accelerator;
 a *mesh axis* is one named dimension of the :class:`DeviceMesh` grid; a
 *shard* is one device's piece of a tensor; a *tensor axis* is a dimension of
 the tensor itself.
 """
 
-from .action import (
-    Action,
-    ActionSet,
-    AxisAssignment,
-    PerShard,
-)
-from .cost import (
-    P,
-    R,
-    build_action_set,
-    force_replicated_action_set,
-)
-from .mappings import (
-    ConversionError,
-    DeviceMapping,
-    NamedMapping,
-    as_device_mapping,
-)
-from .mesh import DeviceMesh, get_active_mesh, mesh_context
-
-# Re-export so ``sharding.mode(...)`` resolves to the function, not the submodule.
-from .mode import ShardingError, isolated_solver, mode
-from .per_shard_dim import PerShardDim
-from .picker import (
-    GreedyReshard,
-    NoReshard,
-    PartialsOnly,
-    ReshardBehavior,
-    Solver,
-)
+from ._auto_reshard import auto_reshard
+from .action import ActionSet, AxisAssignment
+from .cost import build_action_set, force_replicated_action_set
+from .mappings import ConversionError, DeviceMapping, NamedMapping
+from .mesh import DeviceMesh, mesh_context
 from .placements import (
-    Collective,
+    ALL_TRANSITIONS,
+    DEFAULT_TRANSITIONS,
     Partial,
     Placement,
-    ReduceOp,
     Replicated,
     Sharded,
+    ShardingError,
+    Transition,
 )
-from .rules import *
-from .types import (
-    BufferLayout,
-    TensorLayout,
-    as_layout,
-)
+from .types import BufferLayout, TensorLayout
 
 __all__ = [
-    "Action",
+    "ALL_TRANSITIONS",
+    "DEFAULT_TRANSITIONS",
     "ActionSet",
     "AxisAssignment",
     "BufferLayout",
-    "Collective",
     "ConversionError",
     "DeviceMapping",
     "DeviceMesh",
-    "GreedyReshard",
     "NamedMapping",
-    "NoReshard",
-    "P",
     "Partial",
-    "PartialsOnly",
-    "PerShard",
-    "PerShardDim",
     "Placement",
-    "R",
-    "ReduceOp",
     "Replicated",
-    "ReshardBehavior",
     "Sharded",
     "ShardingError",
-    "Solver",
     "TensorLayout",
-    "as_device_mapping",
-    "as_layout",
+    "Transition",
+    "auto_reshard",
     "build_action_set",
     "force_replicated_action_set",
-    "get_active_mesh",
-    "isolated_solver",
     "mesh_context",
-    "mode",
 ]

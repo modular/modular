@@ -10,16 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""IR-shape tests for ``GreedyReshard.allow_partial_to_sharded``.
+"""IR-shape tests for ``DEFAULT_TRANSITIONS`` versus ``ALL_TRANSITIONS``.
 
-The default ``GreedyReshard()`` resolves every ``Partial`` to
-``Replicated`` (pure tensor-parallel): rms_norm runs on the full
-``[batch, 8]`` tensor and the residual stream never shards. Opting in
-with ``allow_partial_to_sharded=True`` lets the picker take the locally
-cheaper ``Partial -> Sharded`` (reduce_scatter), which on this
+With the default transitions the picker resolves every ``Partial`` to
+``Replicated`` (pure tensor-parallel):
+rms_norm runs on the full ``[batch, 8]`` tensor and the residual stream
+never shards. ``ALL_TRANSITIONS`` adds ``(Partial, Sharded)`` and lets the
+picker take the locally cheaper reduce-scatter, which on this
 ``matmul -> matmul -> norm -> residual_add`` topology splits the
 residual stream along the batch axis (the algebraic dim
-``div(batch, 2)``) and rejoins it — the sequence-parallel roundtrip.
+``div(batch, 2)``) and rejoins it, the sequence-parallel roundtrip.
 
 These tests run on a 2-CPU simulated mesh, where the collective lowering
 inlines reductions as direct per-device ops (no literal ``allreduce`` /
@@ -43,12 +43,14 @@ from max.experimental.functional import (
 )
 from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
+    ALL_TRANSITIONS,
+    DEFAULT_TRANSITIONS,
     DeviceMapping,
     DeviceMesh,
-    GreedyReshard,
     Replicated,
     Sharded,
-    mode,
+    Transition,
+    auto_reshard,
 )
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
@@ -126,9 +128,13 @@ def _make_matmul_relu_matmul(mesh: DeviceMesh) -> MatMulReluMatMul:
     )
 
 
-def _block_ir(solver: GreedyReshard) -> str:
+PURE_TP = DEFAULT_TRANSITIONS
+SEQUENCE_PARALLEL = ALL_TRANSITIONS
+
+
+def _block_ir(allow: frozenset[Transition]) -> str:
     mesh = _mesh_2()
-    with mode(solver):
+    with auto_reshard(allow, mode="silent"):
         block = _make_tp_block(mesh)
         input_type = TensorLayout(
             F32, ["batch", HIDDEN], DeviceMapping(mesh, (Replicated(),))
@@ -136,9 +142,9 @@ def _block_ir(solver: GreedyReshard) -> str:
         return repr(block.trace(input_type))
 
 
-def _matmul_relu_matmul_ir(solver: GreedyReshard) -> str:
+def _matmul_relu_matmul_ir(allow: frozenset[Transition]) -> str:
     mesh = _mesh_2()
-    with mode(solver):
+    with auto_reshard(allow, mode="silent"):
         block = _make_matmul_relu_matmul(mesh)
         input_type = TensorLayout(
             F32, ["batch", HIDDEN], DeviceMapping(mesh, (Replicated(),))
@@ -149,39 +155,39 @@ def _matmul_relu_matmul_ir(solver: GreedyReshard) -> str:
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
 
-class TestAllowPartialToSharded:
-    """Pin the picker's behavior on the Gemma3-shaped block topology."""
+class TestReduceScatterPermission:
+    """Pins the picker's behavior on the Gemma3-shaped block topology."""
 
-    def test_default_is_pure_tp(self) -> None:
-        """Default ``GreedyReshard()`` resolves the Partial to Replicated.
+    def test_without_reduce_scatter_is_pure_tp(self) -> None:
+        """Without ``(Partial, Sharded)`` the Partial resolves to Replicated.
 
         rms_norm runs on the full ``[batch, 8]`` tensor; the residual
         stream stays Replicated; no algebraic per-rank drift, no slices.
         """
-        ir = _block_ir(GreedyReshard())
+        ir = _block_ir(PURE_TP)
         assert "div(batch" not in ir, (
-            "Default GreedyReshard must keep the residual stream "
+            "Without (Partial, Sharded) the residual stream must stay "
             "Replicated; the algebraic per-rank dim ``div(batch, 2)`` "
             "should not appear."
         )
         assert "rmo.mo.slice" not in ir, (
-            "Default GreedyReshard must not emit per-rank slice ops on "
-            "the residual stream."
+            "Without (Partial, Sharded) no per-rank slice ops may appear "
+            "on the residual stream."
         )
 
-    def test_opt_in_enables_sp_roundtrip(self) -> None:
-        """``allow_partial_to_sharded=True`` lets the picker take SP.
+    def test_with_reduce_scatter_enables_sp_roundtrip(self) -> None:
+        """Permitting ``(Partial, Sharded)`` lets the picker take SP.
 
         The residual stream is split via ``rmo.mo.slice`` carrying the
         algebraic per-rank dim ``div(batch, 2)``.
         """
-        ir = _block_ir(GreedyReshard(allow_partial_to_sharded=True))
+        ir = _block_ir(SEQUENCE_PARALLEL)
         assert "div(batch" in ir, (
-            "allow_partial_to_sharded=True should let the picker shard "
+            "Permitting (Partial, Sharded) should let the picker shard "
             "the residual stream, producing ``div(batch, 2)``."
         )
         assert "rmo.mo.slice" in ir, (
-            "allow_partial_to_sharded=True should emit per-rank slice "
+            "Permitting (Partial, Sharded) should emit per-rank slice "
             "ops for the SP path."
         )
 
@@ -191,11 +197,7 @@ class TestAllowPartialToSharded:
         On ``matmul -> relu -> matmul`` the intermediate is ``Sharded``
         (not ``Partial``) and the trailing ``Partial`` is the unconsumed
         graph output, so neither setting inserts a slice. This documents
-        that the flag only acts where a ``Partial`` is actually consumed.
+        that the permission only acts where a ``Partial`` is consumed.
         """
-        ir_default = _matmul_relu_matmul_ir(GreedyReshard())
-        ir_opt_in = _matmul_relu_matmul_ir(
-            GreedyReshard(allow_partial_to_sharded=True)
-        )
-        assert "rmo.mo.slice" not in ir_default
-        assert "rmo.mo.slice" not in ir_opt_in
+        assert "rmo.mo.slice" not in _matmul_relu_matmul_ir(PURE_TP)
+        assert "rmo.mo.slice" not in _matmul_relu_matmul_ir(SEQUENCE_PARALLEL)

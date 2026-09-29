@@ -89,10 +89,11 @@ class TestBinaryElementwise:
         _, (out,) = pick(binary_rule, lhs, rhs)
         assert out.placements == (S(0),)
 
-    def test_sharded_plus_replicated(self) -> None:
+    def test_sharded_plus_replicated_slices_the_replicated_side(self) -> None:
         lhs = _layout(M(MESH_1D, S(0)), (4, 8))
         rhs = _layout(M(MESH_1D, R), (4, 8))
-        _, (out,) = pick(binary_rule, lhs, rhs)
+        ins, (out,) = pick(binary_rule, lhs, rhs)
+        assert [m.placements for m in ins] == [(S(0),), (S(0),)]
         assert out.placements == (S(0),)
 
     def test_replicated_plus_sharded(self) -> None:

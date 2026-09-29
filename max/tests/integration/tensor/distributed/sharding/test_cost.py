@@ -20,20 +20,20 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental.sharding import (
-    Action,
     AxisAssignment,
     DeviceMapping,
     DeviceMesh,
-    P,
     Partial,
-    R,
     Replicated,
     Sharded,
     TensorLayout,
     build_action_set,
     force_replicated_action_set,
 )
+from max.experimental.sharding.action import Action
 from max.experimental.sharding.cost import (
+    P,
+    R,
     pair_transition_cost,
     tensor_byte_count,
     transition_cost,

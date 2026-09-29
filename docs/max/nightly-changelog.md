@@ -93,6 +93,16 @@ This version is still a work in progress.
 - `max.experimental.sharding.PlacementMapping` and
   `DeviceMapping.to_placements()` are removed; use `DeviceMapping` and its
   `placements` attribute, which they aliased.
+
+- Added `max.experimental.sharding.auto_reshard` to control automatic
+  resharding. It replaces `mode()`, `isolated_solver()`, `Solver`,
+  `ReshardBehavior`, `GreedyReshard`, `NoReshard` and `PartialsOnly`; for
+  example, `mode(NoReshard())` becomes `auto_reshard(mode="raise")`.
+
+- `max.experimental.sharding` no longer re-exports `P`, `R`, `Action`,
+  `PerShard`, `PerShardDim`, `Collective`, `ReduceOp`, `get_active_mesh`,
+  `as_device_mapping`, `as_layout` or the `*_rule` functions.
+
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk

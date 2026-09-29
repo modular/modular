@@ -84,9 +84,9 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     TensorLayout,
-    as_layout,
 )
 from max.experimental.sharding.per_shard_dim import make_per_shard_dim
+from max.experimental.sharding.types import as_layout
 from max.experimental.support import _session
 from max.experimental.tensor import (
     Tensor,

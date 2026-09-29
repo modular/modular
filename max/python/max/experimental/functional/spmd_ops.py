@@ -23,6 +23,7 @@ Each op is an explicit function that:
 from __future__ import annotations
 
 import builtins
+import inspect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
@@ -42,12 +43,9 @@ from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 from max.graph.quantization import QuantizationEncoding
 
-from ..sharding import (
-    ActionSet,
-    PerShard,
-    mode,
-)
-from ..sharding.mode import ShardingError
+from ..sharding import ActionSet, ShardingError
+from ..sharding._auto_reshard import pick_reshard_action
+from ..sharding.action import PerShard
 from ..sharding.rules import (
     argsort_rule,
     as_interleaved_complex_rule,
@@ -111,12 +109,10 @@ from ..sharding.rules import (
 from ._signatures import install_tensor_signature
 from .creation_ops import full_like
 
-# Re-exported; user-facing factory lives in ``max.experimental.sharding``.
 __all__ = [
     "ShardingError",
     "any_distributed",
     "map_tensors",
-    "mode",
     "to_tensors",
 ]
 
@@ -326,20 +322,17 @@ def _local_dispatch(
     kwargs: Mapping[str, Any],
 ) -> Any:
     """Picks one :class:`Action` for this call and applies it."""
-    from max.experimental.sharding._diagnostics import report_reshard
-    from max.experimental.sharding.mode import current_solver
-
     # TODO: keyword-only distributed tensor arguments are not supported.
-    flat_args, filtered_kwargs = _canonicalize_call(graph_op, args, kwargs)
+    flat_args, filtered_kwargs, arg_names = _canonicalize_call(
+        graph_op, args, kwargs
+    )
     layout_args = map_tensors(tensor_to_layout, flat_args)
-    in_layouts = _walk_tensor_layouts(layout_args)
 
-    menu = rule(*layout_args)
-    solver = current_solver()
-    action = solver(menu, in_layouts)
-
-    op_name = getattr(graph_op, "__name__", "<op>")
-    report_reshard(solver, op_name, layout_args, menu, action)
+    action = pick_reshard_action(
+        rule(*layout_args),
+        op_name=getattr(graph_op, "__name__", "<op>"),
+        operand_names=_input_names(arg_names, layout_args),
+    )
     redistributed = _transfer_args(flat_args, action.inputs)
 
     if action.outputs:
@@ -362,21 +355,41 @@ def _canonicalize_call(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     kwargs: Mapping[str, Any],
-) -> tuple[tuple[Any, ...], Mapping[str, Any]]:
-    """Normalizes ``args`` + ``kwargs`` into a positional tuple.
+) -> tuple[tuple[Any, ...], Mapping[str, Any], tuple[str, ...]]:
+    """Binds ``args`` and ``kwargs`` to ``graph_op``'s signature as positionals.
 
-    Binds against ``graph_op``'s signature so kwargs become positional.
-    Falls back to ``args`` when the signature is uninspectable.
+    Returns the positionals, the keyword-only arguments and one name per
+    positional; an uninspectable signature yields ``args`` unnamed.
     """
-    import inspect
-
     sig_source = getattr(graph_op, "graph_op", graph_op)
     try:
-        bound = inspect.signature(sig_source).bind(*args, **kwargs)
+        sig = inspect.signature(sig_source)
+        bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
-        return tuple(bound.args), bound.kwargs
     except (TypeError, NotImplementedError, ValueError):
-        return args + tuple(kwargs.values()), {}
+        return args + tuple(kwargs.values()), {}, ()
+    names: list[str] = []
+    for name, value in bound.arguments.items():
+        kind = sig.parameters[name].kind
+        if kind is inspect.Parameter.VAR_POSITIONAL:
+            names.extend(f"{name}[{i}]" for i in range(len(value)))
+        elif kind is not inspect.Parameter.KEYWORD_ONLY:
+            names.append(name)
+    return tuple(bound.args), bound.kwargs, tuple(names)
+
+
+def _input_names(
+    arg_names: Sequence[str], layout_args: Sequence[Any]
+) -> tuple[str, ...]:
+    """Names each ``TensorLayout`` leaf, in ``_walk_tensor_layouts`` order."""
+    names: list[str] = []
+    for name, value in zip(arg_names, layout_args, strict=False):
+        leaves = len(_walk_tensor_layouts(value))
+        if leaves == 1:
+            names.append(name)
+        else:
+            names.extend(f"{name}[{i}]" for i in range(leaves))
+    return tuple(names)
 
 
 def _walk_tensors(value: Any) -> Iterable[Tensor]:

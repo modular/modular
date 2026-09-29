@@ -43,10 +43,10 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
-    ReduceOp,
     Replicated,
     Sharded,
 )
+from max.experimental.sharding.placements import ReduceOp
 from max.experimental.tensor import Tensor
 
 _F32 = DType.float32

@@ -40,11 +40,8 @@ from max.experimental.realization_context import (
     GraphRealizationContext,
     LazyRealizationContext,
 )
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    as_device_mapping,
-)
+from max.experimental.sharding import DeviceMapping, DeviceMesh
+from max.experimental.sharding.mappings import as_device_mapping
 from max.experimental.tensor import (
     GraphValue,
     Tensor,

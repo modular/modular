@@ -187,7 +187,7 @@ def mesh_context(mesh: DeviceMesh) -> Iterator[DeviceMesh]:
         from max.driver import CPU
         from max.experimental.sharding import (
             DeviceMesh,
-            get_active_mesh,
+            NamedMapping,
             mesh_context,
         )
 
@@ -196,14 +196,15 @@ def mesh_context(mesh: DeviceMesh) -> Iterator[DeviceMesh]:
         )
 
         with mesh_context(mesh):
-            # Spec-first constructions inside this block resolve against
-            # ``mesh`` without naming it explicitly.
-            active = get_active_mesh()
+            # Resolves against ``mesh`` without naming it.
+            mapping = NamedMapping(spec=("tp",))
 
     .. invisible-code-block: python
 
-        assert active is mesh
-        assert get_active_mesh() is None  # cleared on block exit
+        from max.experimental.sharding import Sharded
+
+        assert mapping.mesh is mesh
+        assert mapping.placements == (Sharded(0),)
     """
     token = _active_mesh.set(mesh)
     try:

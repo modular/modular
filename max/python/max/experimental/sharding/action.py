@@ -94,7 +94,7 @@ class Action:
 
 @dataclass(frozen=True)
 class ActionSet:
-    """A rule's menu of per-axis sharding options for one op call.
+    """A rule's per-axis sharding options for one op call.
 
     Shape-aware (it depends on operand layouts) but cost-blind: it
     lists what is possible, not what is cheapest. The dispatcher
