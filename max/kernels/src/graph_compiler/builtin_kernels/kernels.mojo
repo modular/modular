@@ -3569,7 +3569,9 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
     forward launch only reads it and the rollback launch places it at the
     accepted length.
 
-    A rollback launch at `K == 0` leaves `conv_output_ragged` unwritten.
+    A rollback launch at `K == 0` leaves `conv_output_ragged` unwritten. At
+    `K > 0` the forward launch raises unless every row is one token and its
+    `K` drafts.
 
     Parameters:
         rollback: Whether this is the rollback's launch.
@@ -3594,9 +3596,29 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
         verify_width: InputTensor[dtype=.int64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        var committed = verify_width.dim_size(0) == 0
+        var num_draft_tokens = verify_width.dim_size(0)
+        var committed = num_draft_tokens == 0
         if Self.rollback and committed:
             return
+        # The rollback's replay plan is sized to one token plus its drafts
+        # per row, so a wider row would take it out of bounds.
+        var batch_size = slot_idx.dim_size(0)
+        if (
+            not Self.rollback
+            and not committed
+            and qkv_input_ragged.dim_size(0)
+            != batch_size * (num_draft_tokens + 1)
+        ):
+            raise Error(
+                "gated_delta_conv1d_verify_fwd: a verify of ",
+                num_draft_tokens,
+                " drafts takes one token and its drafts per row, ",
+                batch_size * (num_draft_tokens + 1),
+                " rows for ",
+                batch_size,
+                " requests, got ",
+                qkv_input_ragged.dim_size(0),
+            )
         if committed or Self.rollback:
             GatedDeltaConv1dFwd[write_state=True].execute[
                 work_dtype, state_dtype, target
@@ -3972,6 +3994,186 @@ def gated_delta_recurrence_fwd_shape(
     var value_head_dim = recurrent_state_shape[3]
     var value_dim = num_value_heads * value_head_dim
     return IndexList[2](total_seq_len, value_dim)
+
+
+@extensibility.register("gated_delta_recurrence_rollback")
+struct GatedDeltaRecurrenceRollback:
+    """`gated_delta_recurrence_fwd` as a speculative rollback's replay.
+
+    The verify width `K` is the length of `verify_width`, whose contents are
+    never read. At `K == 0` the verify's forward already landed the state, so
+    nothing is launched and `recurrence_output` is left unwritten.
+
+    Tensor Shapes:
+        As `gated_delta_recurrence_fwd`, plus
+        - verify_width      : [K]                                   int64
+    """
+
+    @staticmethod
+    def execute[
+        work_dtype: DType,
+        state_dtype: DType,
+        target: StaticString,
+    ](
+        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
+        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if verify_width.dim_size(0) == 0:
+            return
+        GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
+            recurrence_output,
+            qkv_conv_output,
+            decay_per_token,
+            beta_per_token,
+            recurrent_state,
+            slot_idx,
+            input_row_offsets,
+            ctx,
+        )
+
+
+@extensibility.register_shape_function("gated_delta_recurrence_rollback")
+def gated_delta_recurrence_rollback_shape(
+    qkv_conv_output: Some[Tensor],
+    decay_per_token: Some[Tensor],
+    beta_per_token: Some[Tensor],
+    recurrent_state: Some[Tensor],
+    slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
+    verify_width: Some[Tensor],
+) -> IndexList[2]:
+    """Computes the output shape for `gated_delta_recurrence_rollback`.
+
+    Args:
+        qkv_conv_output: Ragged conv output, `[total_seq_len, conv_dim]`.
+        decay_per_token: Per-token decays, `[total_seq_len, nv]`.
+        beta_per_token: Per-token beta gates, `[total_seq_len, nv]`.
+        recurrent_state: State pool, `[max_slots, nv, KD, VD]`.
+        slot_idx: Pool row per batch item, `[batch_size]`.
+        input_row_offsets: Ragged offsets, `[batch_size + 1]`.
+        verify_width: `[K]`, read for its shape only.
+    """
+    comptime assert (
+        type_of(verify_width).rank == 1
+    ), "verify_width must be rank 1"
+    return gated_delta_recurrence_fwd_shape(
+        qkv_conv_output,
+        decay_per_token,
+        beta_per_token,
+        recurrent_state,
+        slot_idx,
+        input_row_offsets,
+    )
+
+
+@extensibility.register("gated_delta_recurrence_shadow_fwd")
+struct GatedDeltaRecurrenceShadowFwd:
+    """`gated_delta_recurrence_fwd` over a speculative verify on a shadow pool.
+
+    The verify width `K` is the length of `verify_width`, whose contents are
+    never read. At `K > 0` this runs on `shadow_state` at `shadow_slot_idx`,
+    leaving `recurrent_state` at its pre-verify state for the rollback. At
+    `K == 0` there is no draft to reject, so it runs on `recurrent_state` at
+    `slot_idx` and the rollback skips at the same width.
+
+    Tensor Shapes:
+        As `gated_delta_recurrence_fwd`, plus
+        - shadow_state      : [shadow_slots, num_value_heads, KD, VD]   (MUT)
+        - shadow_slot_idx   : [batch_size]                          uint32
+        - verify_width      : [K]                                   int64
+    """
+
+    @staticmethod
+    def execute[
+        work_dtype: DType,
+        state_dtype: DType,
+        target: StaticString,
+    ](
+        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
+        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        shadow_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        shadow_slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if verify_width.dim_size(0) == 0:
+            GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
+                recurrence_output,
+                qkv_conv_output,
+                decay_per_token,
+                beta_per_token,
+                recurrent_state,
+                slot_idx,
+                input_row_offsets,
+                ctx,
+            )
+        else:
+            GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
+                recurrence_output,
+                qkv_conv_output,
+                decay_per_token,
+                beta_per_token,
+                shadow_state,
+                shadow_slot_idx,
+                input_row_offsets,
+                ctx,
+            )
+
+
+@extensibility.register_shape_function("gated_delta_recurrence_shadow_fwd")
+def gated_delta_recurrence_shadow_fwd_shape(
+    qkv_conv_output: Some[Tensor],
+    decay_per_token: Some[Tensor],
+    beta_per_token: Some[Tensor],
+    recurrent_state: Some[Tensor],
+    shadow_state: Some[Tensor],
+    slot_idx: Some[Tensor],
+    shadow_slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
+    verify_width: Some[Tensor],
+) -> IndexList[2]:
+    """Computes the output shape for `gated_delta_recurrence_shadow_fwd`.
+
+    Args:
+        qkv_conv_output: Ragged conv output, `[total_seq_len, conv_dim]`.
+        decay_per_token: Per-token decays, `[total_seq_len, nv]`.
+        beta_per_token: Per-token beta gates, `[total_seq_len, nv]`.
+        recurrent_state: Live pool, `[max_slots, nv, KD, VD]`.
+        shadow_state: Shadow pool, `[shadow_slots, nv, KD, VD]`.
+        slot_idx: Live pool row per batch item, `[batch_size]`.
+        shadow_slot_idx: Shadow pool row per batch item, `[batch_size]`.
+        input_row_offsets: Ragged offsets, `[batch_size + 1]`.
+        verify_width: `[K]`, read for its shape only.
+    """
+    comptime assert (
+        type_of(shadow_state).rank == 4
+    ), "shadow_state must be rank 4"
+    comptime assert (
+        type_of(shadow_slot_idx).dtype == .uint32
+    ), "shadow_slot_idx dtype must be uint32"
+    comptime assert (
+        type_of(verify_width).rank == 1
+    ), "verify_width must be rank 1"
+    return gated_delta_recurrence_fwd_shape(
+        qkv_conv_output,
+        decay_per_token,
+        beta_per_token,
+        recurrent_state,
+        slot_idx,
+        input_row_offsets,
+    )
 
 
 @extensibility.register("gated_delta_recurrence_verify_ring_fwd")

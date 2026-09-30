@@ -75,6 +75,7 @@ from max.nn.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     gated_delta_recurrence_fwd,
+    gated_delta_recurrence_shadow_fwd,
     gated_delta_recurrence_verify_ring_fwd,
     kda_chunk,
     kda_chunk_supports_head_dims,
@@ -453,6 +454,7 @@ class GatedDeltaNet(Module, Shardable):
         input_row_offsets: TensorValue,
         replay_capture: list[GatedDeltaReplayInputs] | None = None,
         ring: GatedDeltaVerifyAccess | None = None,
+        shadow: GatedDeltaVerifyAccess | None = None,
         verify_width: TensorValue | None = None,
     ) -> TensorValue:
         """Forward pass through the Gated DeltaNet layer.
@@ -476,11 +478,13 @@ class GatedDeltaNet(Module, Shardable):
             ring: When given, the recurrence writes per-token records to
                 this ring instead of writing ``recurrent_pool``. The caller
                 must fold them before the pool is read again.
+            shadow: When given, a speculative window's recurrence runs on
+                this copy of ``recurrent_pool`` instead.
             verify_width: The speculative graph's
-                :func:`~max.nn.state_space.verify_width_operand`. A launch at
-                width zero lands the conv window, and with ``ring`` the
-                recurrence, on the live pools. A wider one leaves them for
-                the rollback.
+                :func:`~max.nn.state_space.verify_width_operand`, set with
+                ``ring`` or ``shadow``. A launch at width zero lands both
+                leaves on the live pools, and a wider one leaves them for the
+                rollback.
 
         Returns:
             Output hidden states ``[total_seq_len, hidden_size]``.
@@ -660,39 +664,61 @@ class GatedDeltaNet(Module, Shardable):
         # The chunk op's kernels are written for NVIDIA GPUs: on any other
         # accelerator even the scan fallback fails to instantiate, so the
         # decision has to happen here rather than inside the launcher.
-        # A speculative verify stays on the sequential recurrence, since its
-        # rollback replays and folds against that kernel's arithmetic.
-        chunk_servable = (
-            verify_width is None
-            and accelerator_api() == "cuda"
-            and kda_chunk_supports_head_dims(
-                self.key_head_dim, self.value_head_dim
-            )
+        chunk_servable = accelerator_api() == "cuda" and (
+            kda_chunk_supports_head_dims(self.key_head_dim, self.value_head_dim)
         )
-        if ring is not None:
-            assert verify_width is not None, "a ring verify needs its width"
-            recurrence_output_flat = gated_delta_recurrence_verify_ring_fwd(
+        output_types = [
+            TensorType(DType.float32, [x.shape[0], self.value_dim], device)
+        ]
+        total_tokens_t = ops.shape_to_tensor(x.shape)[0]
+        batch_size_t = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+        is_prefill = total_tokens_t > batch_size_t
+
+        def _verify_recurrence() -> TensorValue:
+            assert verify_width is not None
+            if ring is not None:
+                return gated_delta_recurrence_verify_ring_fwd(
+                    qkv_conv_output=conv_output_ragged,
+                    decay_per_token=decay,
+                    beta_per_token=beta,
+                    recurrent_state=recurrent_pool,
+                    ring=ring.pool,
+                    slot_idx=rec_slot_uint32,
+                    ring_slot_idx=ring.row_id,
+                    input_row_offsets=offsets_uint32,
+                    verify_width=verify_width,
+                )
+            assert shadow is not None, "a verify needs a ring or a shadow"
+            return gated_delta_recurrence_shadow_fwd(
                 qkv_conv_output=conv_output_ragged,
                 decay_per_token=decay,
                 beta_per_token=beta,
                 recurrent_state=recurrent_pool,
-                ring=ring.pool,
+                shadow_state=shadow.pool,
                 slot_idx=rec_slot_uint32,
-                ring_slot_idx=ring.row_id,
+                shadow_slot_idx=shadow.row_id,
                 input_row_offsets=offsets_uint32,
                 verify_width=verify_width,
             )
+
+        if verify_width is not None and chunk_servable:
+            # A draft-free prefill has nothing to roll back, so it runs the
+            # forward's own prefill kernel and lands on the forward. A verify
+            # stays on the sequential recurrence, since its rollback replays
+            # and folds against that kernel's arithmetic.
+            no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
+            recurrence_output_flat = ops.cond(
+                ops.logical_and(no_drafts, is_prefill),
+                output_types,
+                _prefill_recurrence,
+                _verify_recurrence,
+            )[0]
+        elif verify_width is not None:
+            recurrence_output_flat = _verify_recurrence()
         elif chunk_servable:
-            total_tokens_t = ops.shape_to_tensor(x.shape)[0]
-            batch_size_t = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
-            is_prefill = total_tokens_t > batch_size_t
             recurrence_output_flat = ops.cond(
                 is_prefill,
-                [
-                    TensorType(
-                        DType.float32, [x.shape[0], self.value_dim], device
-                    )
-                ],
+                output_types,
                 _prefill_recurrence,
                 _decode_recurrence,
             )[0]

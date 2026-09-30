@@ -30,11 +30,10 @@ in the cheap form the measurements allow:
   at length ``j`` — without a second pass over the model's weights.
 
 The replay is therefore ~2 kernels per linear layer instead of a whole extra
-target forward, which is what makes the TPOT win survive the rollback. The
-recurrence replay is unconditional: prefill takes the same path with an
-accepted length equal to the whole prompt, so no branch depends on the phase.
-A window with no drafts lands its conv window on the verify, so there the conv
-replay launches nothing.
+target forward, which is what makes the TPOT win survive the rollback. A
+window with no drafts has nothing to roll back, so at a verify width of zero
+the verify's forward lands both leaves on the live pools and every rollback
+op launches nothing.
 
 With ``speculative_config.recurrent_state_rollback == "ring"``, the verify
 reads the live recurrent pool and records each token's update in a ring, and
@@ -57,7 +56,7 @@ from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
 from max.nn.state_space import (
     gated_delta_conv1d_verify_fwd,
-    gated_delta_recurrence_fwd,
+    gated_delta_recurrence_rollback,
     gated_delta_state_fold,
 )
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
@@ -152,6 +151,8 @@ def accepted_row_plan(
     num_draft_tokens: TensorValue,
     total_rows: Dim,
     device: DeviceRef,
+    *,
+    plan_rows: Dim | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Plans the replay's gather indices and ragged offsets.
 
@@ -162,10 +163,10 @@ def accepted_row_plan(
 
     The gather is deliberately *not* trimmed to the accepted total: that
     length is only known on the device, and materializing it as a shape would
-    cost a device-to-host sync every step. Instead the index vector keeps the
-    verified window's row count and the trailing entries repeat the last
-    accepted row. ``replay_offsets`` stops at the accepted total, so the
-    state kernels never reach those trailing entries.
+    cost a device-to-host sync every step. Instead the index vector is
+    ``plan_rows`` long and the trailing entries repeat the last accepted row.
+    ``replay_offsets`` stops at the accepted total, so the state kernels never
+    reach those trailing entries.
 
     Args:
         merged_offsets: ``[batch + 1]`` offsets of the verified sequence.
@@ -173,6 +174,8 @@ def accepted_row_plan(
         num_draft_tokens: Scalar ``K`` on ``device``.
         total_rows: Row count of the verify pass's per-token tensors.
         device: Device the plan is built on.
+        plan_rows: Length of the index vector, at least the accepted total.
+            Defaults to ``total_rows``.
 
     Returns:
         ``(row_indices, replay_offsets)``: which row of the verify's per-token
@@ -202,10 +205,12 @@ def accepted_row_plan(
         axis=0,
     )
 
+    if plan_rows is None:
+        plan_rows = total_rows
     out_pos = ops.range(
         start=0,
-        stop=total_rows,
-        out_dim=total_rows,
+        stop=plan_rows,
+        out_dim=plan_rows,
         device=device,
         dtype=DType.int64,
     )
@@ -264,8 +269,8 @@ def replay_state_pools(
         row_indices: Rows of the verify tensors the replay consumes.
         replay_offsets: ``[batch + 1]`` ragged offsets over those rows.
         signal_buffers: Used only to place the plan on each device.
-        verify_width: The verify's width operand, which skips the conv
-            launch at width zero.
+        verify_width: The verify's width operand, which skips every launch
+            at width zero.
     """
     assert (live_recurrent_pools is None) == (recurrent_row_ids is None)
     offsets_per_dev = (
@@ -302,13 +307,14 @@ def replay_state_pools(
             )
             if live_recurrent_pools is None or recurrent_row_id is None:
                 continue
-            gated_delta_recurrence_fwd(
+            gated_delta_recurrence_rollback(
                 qkv_conv_output=ops.gather(capture.conv_output, rows, axis=0),
                 decay_per_token=ops.gather(capture.decay, rows, axis=0),
                 beta_per_token=ops.gather(capture.beta, rows, axis=0),
                 recurrent_state=live_recurrent_pools[device_idx],
                 slot_idx=recurrent_row_id[layer_idx],
                 input_row_offsets=offsets,
+                verify_width=verify_width,
             )
 
 

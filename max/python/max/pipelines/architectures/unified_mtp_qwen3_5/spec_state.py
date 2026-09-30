@@ -19,10 +19,11 @@ once the accepted count is known.
 
 The conv pool needs no copy. Its window is the last ``kernel_size - 1`` raw
 inputs, so the verify leaves it unwritten and the rollback writes it at the
-accepted position. A window with no drafts has nothing to reject, so there the
-verify writes the window and the conv rollback does nothing. The verify width
-that decides this is a shape, which the state ops read at launch without a
-device sync.
+accepted position.
+
+A window with no drafts has nothing to reject, so its verify writes both live
+pools directly and the rollback does nothing. The verify width that decides
+this is a shape, which the state ops read at launch without a device sync.
 
 That dance is the same whichever drafter sits behind the target -- it is
 parameterized in the accepted length, not in the draft width -- which is why it
@@ -204,6 +205,8 @@ class Qwen3_5RecurrentState:
         arithmetic the verify did. Filled by :meth:`capturing` and read by
         :meth:`roll_forward`.
         """
+        self.num_draft_tokens: Dim | None = None
+        """The verify's draft width ``K``. Set by :meth:`capturing`."""
         self.verify_width: TensorValue | None = None
         """The verify width operand the forward and the rollback share.
 
@@ -217,57 +220,57 @@ class Qwen3_5RecurrentState:
     ) -> _ShadowState:
         """Returns the verify's state, copying the recurrent leaf to a shadow.
 
-        Must run before the verify. Only the snapshot rollback copies. With a
-        ring, the verify reads the live recurrent pool and records into the
-        ring at the rows the engine supplied. The conv leaf is the live one
-        either way, whose window a verify with drafts only reads.
+        Must run before the verify. Only the snapshot rollback copies, and
+        only the recurrent leaf. The live leaves come first either way, since
+        a verify with no drafts writes them. The shadow or the ring follows.
+        The shadow's rows are this graph's own, and the ring's rows are the
+        ones the engine supplied.
         """
         num_layers = self.num_layers
         live_recurrent_rows = extra[LIVE_RECURRENT_ROW_IDS]
 
-        def live_conv(i: int) -> RecurrentLeafInputs[TensorValue, BufferValue]:
-            return RecurrentLeafInputs(
-                pool=extra[LIVE_CONV_POOLS][i],
-                live_row_ids=extra[LIVE_CONV_ROW_IDS][i],
+        def live_leaves(
+            i: int,
+        ) -> tuple[RecurrentLeafInputs[TensorValue, BufferValue], ...]:
+            return (
+                RecurrentLeafInputs(
+                    pool=extra[LIVE_CONV_POOLS][i],
+                    live_row_ids=extra[LIVE_CONV_ROW_IDS][i],
+                ),
+                RecurrentLeafInputs(
+                    pool=extra[LIVE_RECURRENT_POOLS][i],
+                    live_row_ids=live_recurrent_rows[i],
+                ),
             )
 
-        if self.ring_len:
-            return [
-                RecurrentStateInputsPerDevice(
-                    leaves=(
-                        live_conv(i),
-                        RecurrentLeafInputs(
-                            pool=extra[LIVE_RECURRENT_POOLS][i],
-                            live_row_ids=live_recurrent_rows[i],
-                        ),
-                        RecurrentLeafInputs(
-                            pool=extra[RING_POOLS][i],
-                            live_row_ids=extra[RING_ROW_IDS][i],
-                        ),
+        def verify_leaves(
+            i: int,
+        ) -> tuple[RecurrentLeafInputs[TensorValue, BufferValue], ...]:
+            if self.ring_len:
+                return (
+                    RecurrentLeafInputs(
+                        pool=extra[RING_POOLS][i],
+                        live_row_ids=extra[RING_ROW_IDS][i],
                     ),
                 )
-                for i in range(len(devices))
-            ]
+            return (
+                RecurrentLeafInputs(
+                    pool=extra[SHADOW_RECURRENT_POOLS][i],
+                    live_row_ids=shadow_row_ids(num_layers, devices[i]),
+                ),
+            )
 
-        shadow_recurrent = extra[SHADOW_RECURRENT_POOLS]
-        snapshot_state_pools(
-            extra[LIVE_RECURRENT_POOLS],
-            shadow_recurrent,
-            live_recurrent_rows,
-            ops.shape_to_tensor([live_recurrent_rows[0].shape[1]])[0]
-            * num_layers,
-        )
+        if not self.ring_len:
+            snapshot_state_pools(
+                extra[LIVE_RECURRENT_POOLS],
+                extra[SHADOW_RECURRENT_POOLS],
+                live_recurrent_rows,
+                ops.shape_to_tensor([live_recurrent_rows[0].shape[1]])[0]
+                * num_layers,
+            )
         return [
             RecurrentStateInputsPerDevice(
-                leaves=(
-                    live_conv(i),
-                    # The shadow's layout is this graph's own, so its rows
-                    # are built here.
-                    RecurrentLeafInputs(
-                        pool=shadow_recurrent[i],
-                        live_row_ids=shadow_row_ids(num_layers, devices[i]),
-                    ),
-                ),
+                leaves=(*live_leaves(i), *verify_leaves(i)),
             )
             for i in range(len(devices))
         ]
@@ -285,6 +288,7 @@ class Qwen3_5RecurrentState:
             num_draft_tokens: The verify's draft width ``K``.
         """
         self.captures = [[] for _ in range(n_devs)]
+        self.num_draft_tokens = num_draft_tokens
         self.verify_width = verify_width_operand(num_draft_tokens)
         self._bind(self.captures, self.verify_width)
         try:
@@ -302,6 +306,7 @@ class Qwen3_5RecurrentState:
             assert isinstance(block, Qwen3_5LinearAttentionBlock)
             block.replay_capture = capture
             block.verify_width = verify_width
+            block.verify_ring = bool(self.ring_len)
 
     def roll_forward(
         self,
@@ -320,29 +325,32 @@ class Qwen3_5RecurrentState:
         carried no proposal, and before anything downstream reads the live
         pools.
 
-        This also writes the conv window, which a verify with drafts left
-        unwritten. A verify width of zero launches no conv or fold, because
-        the verify's forward already landed the window and the ring's
-        recurrence.
+        This also writes the conv window, which the verify left unwritten.
+        A verify width of zero launches nothing, because the verify's forward
+        already landed both leaves.
 
         Args:
             extra: The batch's model-owned inputs, holding the state tail.
             merged_offsets: Ragged offsets over the verified window.
             num_accepted: ``[batch]`` accepted draft tokens per request.
             num_draft_tokens: This step's draft width, as a scalar on
-                ``device``; zero on a prefill, where the plan then covers the
-                whole prompt with no phase branch.
+                ``device``, zero on a prefill.
             total_rows: Row count of the verified window.
             signal_buffers: Used only to place the plan on each device.
             device: The device the batch-wide tensors live on.
         """
         assert self.verify_width is not None, "roll_forward before capturing"
+        assert self.num_draft_tokens is not None
         row_indices, replay_offsets = accepted_row_plan(
             merged_offsets,
             num_accepted,
             num_draft_tokens,
             total_rows,
             device,
+            # Each row is one token and its drafts whenever the rollback
+            # runs, and the plan shrinks to a row per request when it does
+            # not.
+            plan_rows=Dim("batch_size") * (1 + self.num_draft_tokens),
         )
         replay_state_pools(
             self.captures,

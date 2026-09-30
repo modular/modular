@@ -68,7 +68,8 @@ leaf, when declared, comes after these.
 _CONV_LEAF = _LEAF_IDS.index(CONV_LEAF_ID)
 _RECURRENT_LEAF = _LEAF_IDS.index(RECURRENT_LEAF_ID)
 _VERIFY_LEAF = len(_LEAF_IDS)
-"""Where a speculative verify's ring follows the live leaves."""
+"""Where a speculative verify's ring or recurrent shadow follows the live
+leaves."""
 
 RING_DTYPE = DType.float32
 """Dtype of the ring pool. Float32 keeps the fold bit-exact against a
@@ -119,7 +120,7 @@ def ring_len_for_window(window: int) -> int:
 
 @tree.dataclass(frozen=True)
 class GatedDeltaVerifyAccess:
-    """One linear layer's verify ring, on one device."""
+    """One linear layer's verify ring or recurrent shadow, on one device."""
 
     pool: BufferValue
     row_id: TensorValue
@@ -138,7 +139,7 @@ class GatedDeltaStateAccess:
     recurrent_pool: BufferValue
     recurrent_row_id: TensorValue
     verify: GatedDeltaVerifyAccess | None = None
-    """The verify's ring, or ``None`` outside a ring verify."""
+    """The verify's ring or shadow, or ``None`` outside a verify."""
 
 
 def layer_state_access(
@@ -163,7 +164,7 @@ def layer_state_access(
         inputs: RecurrentStateInputsPerDevice[TensorValue, BufferValue],
     ) -> GatedDeltaVerifyAccess | None:
         assert len(inputs.leaves) in (len(_LEAF_IDS), _VERIFY_LEAF + 1), (
-            "expected the live leaves alone or with a ring, got"
+            "expected the live leaves alone or with a ring or shadow, got"
             f" {len(inputs.leaves)} leaves"
         )
         if len(inputs.leaves) == len(_LEAF_IDS):

@@ -59,8 +59,8 @@ unified_dflash2_qwen3_5_arch = SupportedArchitecture(
     # state set per request and nothing for the recurrent shadow this graph
     # declares, which MAX does not allocate since it does not serve the graph.
     memory_planner=UnifiedDflash2Qwen3_5MemoryPlanner,
-    # Inherited from the MTP graph's rollback: the replay's row count depends
-    # on how many tokens were accepted, so shapes change from step to step.
+    # MAX does not serve this graph, since `batch_processor` refuses to
+    # build a batch.
     supports_device_graph_capture=False,
     supports_overlap_scheduler=False,
 )

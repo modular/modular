@@ -52,8 +52,8 @@ unified_mtp_qwen3_5_arch = SupportedArchitecture(
     # Reserves the verify's shadows, which sit outside the cache, and counts
     # the shadows and the ring per request when it infers a batch size.
     memory_planner=UnifiedMTPQwen3_5MemoryPlanner,
-    # The rollback replays the verify pass's own intermediates, whose row
-    # count depends on how many tokens were accepted, so the graph's shapes
-    # change from step to step.
+    # Off until validated. The rollback is shape-stable, since
+    # `accepted_row_plan` never sizes a gather by the accepted count, but
+    # batches with unequal draft counts per row are untested under capture.
     supports_device_graph_capture=False,
 )
