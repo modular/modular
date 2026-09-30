@@ -301,8 +301,8 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     @override
     def _wire_batch_processor(
         self,
-        model: Any = None,
-        model_config: Any = None,
+        model: Model | None = None,
+        model_config: Step3p5Config | None = None,
     ) -> None:
         super()._wire_batch_processor(model, model_config)
         batch_processor = self.batch_processor

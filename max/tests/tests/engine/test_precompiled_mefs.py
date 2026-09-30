@@ -20,7 +20,9 @@ they are what stops a caller from quietly reverting to compiling.
 
 from __future__ import annotations
 
+import itertools
 import json
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +30,12 @@ import numpy as np
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import (
+    ArtifactBodyMismatch,
+    InferenceSession,
+    MefStore,
+    MissingArtifactError,
+)
 from max.experimental import support
 from max.experimental.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor
@@ -99,7 +106,7 @@ def test_a_graph_with_no_artifact_raises(tmp_path: Path) -> None:
 
     session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
     session.load(_graph())
-    with pytest.raises(RuntimeError, match="no precompiled artifact"):
+    with pytest.raises(MissingArtifactError, match="no precompiled artifact"):
         session.load(_graph("a_graph_that_was_never_exported"))
 
 
@@ -317,3 +324,179 @@ def test_one_graph_exported_to_two_directories_is_allowed(
     np.testing.assert_allclose(
         _execute(session.load(_graph_adding("shared", 1.0))), np.ones(4)
     )
+
+
+def test_a_manifest_without_fingerprints_still_imports(
+    tmp_path: Path,
+) -> None:
+    # Artifacts outlive the run that wrote them: a manifest from before the
+    # recorded body was kept still has to name its graphs.
+    InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "graphs": [
+                    {
+                        key: value
+                        for key, value in entry.items()
+                        if key != "fingerprint"
+                    }
+                    for entry in json.loads(manifest.read_text())["graphs"]
+                ]
+            }
+        )
+    )
+
+    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    np.testing.assert_allclose(_execute(session.load(_graph())), np.ones(4))
+
+
+def _numbered_key() -> Callable[[Graph], str]:
+    """Returns a key naming each graph by the order it was claimed in.
+
+    Stands in for a caller that knows which unit of work is compiling: it can
+    tell apart two graphs that a name and a signature cannot, so it names their
+    artifacts apart.
+    """
+    claimed = itertools.count()
+
+    def key(graph: Graph) -> str:
+        return f"{graph.name}-{next(claimed)}.mef"
+
+    return key
+
+
+@pytest.fixture
+def _no_default_store() -> Iterator[None]:
+    """Leaves the process without an installed store, whatever a test set."""
+    previous = InferenceSession.default_mef_store
+    InferenceSession.default_mef_store = None
+    try:
+        yield
+    finally:
+        InferenceSession.default_mef_store = previous
+
+
+def test_default_store_is_used_by_sessions_without_their_own(
+    tmp_path: Path, _no_default_store: None
+) -> None:
+    # The case the process-wide store exists for: the code being recorded
+    # builds its own sessions, so there is nowhere to pass a store in.
+    InferenceSession.default_mef_store = MefStore.for_export(tmp_path)
+    InferenceSession(devices=[CPU()]).load(_graph())
+    assert len(list(tmp_path.glob("*.mef"))) == 1
+
+    InferenceSession.default_mef_store = MefStore.for_import(tmp_path)
+    np.testing.assert_allclose(
+        _execute(InferenceSession(devices=[CPU()]).load(_graph())), np.ones(4)
+    )
+
+
+def test_explicit_store_wins_over_default(
+    tmp_path: Path, _no_default_store: None
+) -> None:
+    explicit, installed = tmp_path / "explicit", tmp_path / "installed"
+    InferenceSession.default_mef_store = MefStore.for_export(installed)
+    InferenceSession(devices=[CPU()], export_mefs=explicit).load(_graph())
+
+    assert len(list(explicit.glob("*.mef"))) == 1
+    assert not list(installed.glob("*.mef"))
+
+
+def test_a_custom_key_names_the_artifacts(
+    tmp_path: Path, _no_default_store: None
+) -> None:
+    # The case the default key cannot serve: a caller looping over variants of
+    # one generically named graph, where nothing differs but what they compute.
+    # Installing the store is how a custom key reaches a session, since the
+    # session's own argument is a directory.
+    InferenceSession.default_mef_store = MefStore.for_export(
+        tmp_path, key=_numbered_key()
+    )
+    exporting = InferenceSession(devices=[CPU()])
+    exporting.load(_graph_adding("g", 1.0))
+    exporting.load(_graph_adding("g", 2.0))
+    assert sorted(path.name for path in tmp_path.glob("*.mef")) == [
+        "g-0.mef",
+        "g-1.mef",
+    ]
+
+    InferenceSession.default_mef_store = MefStore.for_import(
+        tmp_path, key=_numbered_key()
+    )
+    reusing = InferenceSession(devices=[CPU()])
+    np.testing.assert_allclose(
+        _execute(reusing.load(_graph_adding("g", 1.0))), np.ones(4)
+    )
+    np.testing.assert_allclose(
+        _execute(reusing.load(_graph_adding("g", 2.0))), np.full(4, 2.0)
+    )
+
+
+def test_verify_body_reports_a_diverging_graph(
+    tmp_path: Path, _no_default_store: None
+) -> None:
+    InferenceSession.default_mef_store = MefStore.for_export(
+        tmp_path, key=_numbered_key()
+    )
+    InferenceSession(devices=[CPU()]).load(_graph_adding("g", 1.0))
+
+    InferenceSession.default_mef_store = MefStore.for_import(
+        tmp_path, key=_numbered_key(), verify_body=True
+    )
+    with pytest.raises(ArtifactBodyMismatch, match="a different graph"):
+        InferenceSession(devices=[CPU()]).load(_graph_adding("g", 2.0))
+
+
+def test_the_body_is_not_verified_by_default(
+    tmp_path: Path, _no_default_store: None
+) -> None:
+    # Why it is off by default: a whole-pipeline caller knowingly builds
+    # different graphs under virtual devices than the ones it runs. The cost
+    # is this -- the artifact answers, and it is the recorded graph's answer.
+    InferenceSession.default_mef_store = MefStore.for_export(
+        tmp_path, key=_numbered_key()
+    )
+    InferenceSession(devices=[CPU()]).load(_graph_adding("g", 1.0))
+
+    InferenceSession.default_mef_store = MefStore.for_import(
+        tmp_path, key=_numbered_key()
+    )
+    reused = InferenceSession(devices=[CPU()]).load(_graph_adding("g", 2.0))
+    np.testing.assert_allclose(_execute(reused), np.ones(4))
+
+
+def test_a_key_that_declines_compiles_in_process(
+    tmp_path: Path, _no_default_store: None
+) -> None:
+    # How a caller says the installed store has nothing to say about this
+    # graph. Looking it up anyway would only manufacture a miss.
+    def decline(graph: Graph) -> str | None:
+        return None
+
+    InferenceSession.default_mef_store = MefStore.for_import(
+        _exported(tmp_path), key=decline
+    )
+    np.testing.assert_allclose(
+        _execute(InferenceSession(devices=[CPU()]).load(_graph("unseen"))),
+        np.ones(4),
+    )
+
+
+def test_default_store_is_consulted_at_compile_time(
+    tmp_path: Path, _no_default_store: None
+) -> None:
+    # A session built before the store is installed still reaches it: the
+    # harness that installs one cannot always get ahead of the code it records.
+    session = InferenceSession(devices=[CPU()])
+    InferenceSession.default_mef_store = MefStore.for_export(tmp_path)
+    session.load(_graph())
+
+    assert len(list(tmp_path.glob("*.mef"))) == 1
+
+
+def _exported(directory: Path) -> Path:
+    """Returns ``directory``, holding one recorded artifact of ``_graph()``."""
+    InferenceSession(devices=[CPU()], export_mefs=directory).load(_graph())
+    return directory

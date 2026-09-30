@@ -735,7 +735,7 @@ class GraphPipelineModel(PipelineModel[BaseContextType]):
         return None
 
     def _wire_batch_processor(
-        self, model: Any = None, model_config: Any = None
+        self, model: Model | None = None, model_config: Any = None
     ) -> None:
         """Optional hook to construct ``self.batch_processor`` after compile."""
         del model, model_config
@@ -917,6 +917,11 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         """HuggingFace config passed to the weight adapter, if any."""
         return None
 
+    # `model` is deliberately untyped here, unlike the hook on
+    # `GraphPipelineModel`: a graph subclass passes what a session load
+    # returned, while a ModuleV3 subclass passes the compiled callable, and
+    # naming the union of the two would stop either from declaring what it
+    # actually receives. Each override below says which it is.
     def _wire_batch_processor(
         self,
         model: Any = None,

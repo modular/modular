@@ -24,3 +24,18 @@ modular_py_test(
         requirement("numpy"),
     ],
 )
+
+# Virtual-device mode latches process-wide at the first device creation, so the
+# stand-in a load hands back there cannot be tested alongside tests that expect
+# a real one.
+modular_py_test(
+    name = "test_compile_only_model",
+    size = "large",
+    srcs = ["test_compile_only_model.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
