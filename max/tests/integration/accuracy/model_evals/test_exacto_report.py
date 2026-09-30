@@ -32,7 +32,7 @@ OPENBENCH_LOG: dict[str, Any] = {
         "config": {"limit": 2, "epochs": 2, "epochs_reducer": ["mean"]},
         "packages": {"inspect_ai": "0.3.125"},
     },
-    "plan": {"config": {"temperature": 0.5}},
+    "plan": {"config": {"temperature": 0.5, "reasoning_effort": "high"}},
     "results": {
         "total_samples": 4,
         "completed_samples": 4,
@@ -181,10 +181,30 @@ def test_unscored_samples_are_not_lost_when_all_requests_completed() -> None:
     assert summary["errors"] == 2
 
 
+def test_summary_names_the_harness_the_task_reproduces() -> None:
+    log = json.loads(json.dumps(OPENBENCH_LOG))
+    log["eval"]["metadata"] = {
+        "harness": "OpenRouterTeam/benchmark-harness",
+        "harness_commit": "232356dc8132f9664011ee73ec2087ab958c6a66",
+        "dataset_revision": "c63e9ba02dc3da4c698e2a8485551b35041c3900",
+    }
+    _, summary = exacto_report.parse_openbench_log(log)
+    assert summary["harness"] == "OpenRouterTeam/benchmark-harness"
+    assert summary["harness_commit"].startswith("232356dc")
+    assert summary["dataset_revision"].startswith("c63e9ba0")
+
+    # openbench's own tasks carry no metadata, so the log's origin is all
+    # there is to report.
+    _, summary = exacto_report.parse_openbench_log(OPENBENCH_LOG)
+    assert summary["harness"] == "openbench"
+    assert summary["harness_commit"] is None
+
+
 def test_summary_records_the_parity_critical_knobs() -> None:
     # A score is only comparable to OpenRouter's if these match their config.
     _, summary = exacto_report.parse_openbench_log(OPENBENCH_LOG)
     assert summary["temperature"] == 0.5
+    assert summary["reasoning_effort"] == "high"
     assert summary["dataset_name"] == "nmayorga7/gpqa_diamond"
     assert summary["epochs"] == 2
     assert summary["epochs_reducer"] == ["mean"]

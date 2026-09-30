@@ -17,16 +17,34 @@
 #
 # OpenRouter gates provider endpoints on its AutoExacto benchmark and deranks
 # statistical outliers, so passing it is an exit criterion for a model bring-up.
-# Scoring the same dataset our own way is not enough: OpenRouter runs Groq's
-# openbench (which wraps UK AISI's Inspect), and model_evals/gpqa_eval.py scores
-# GPQA with MiniMax's vendor prompt instead, so the two numbers are not
-# comparable. This runs *their* harness with *their* config, so the score can be
-# read against the other providers on the model's OpenRouter page.
+# Scoring the same dataset our own way is not enough: model_evals/gpqa_eval.py
+# scores GPQA with MiniMax's vendor prompt, so its numbers are not comparable.
 #
-# openbench is a third-party harness with its own dependency tree, so — like
-# run_omnidocbench_local.sh — this is a shell runner around a pinned venv rather
-# than a single bazel target. The venv persists under .derived/cache, so repeat
-# runs skip straight to inference.
+# OpenRouter benchmarks with its own harness,
+# https://github.com/OpenRouterTeam/benchmark-harness. It is TypeScript and only
+# talks to the OpenRouter Responses API, so this runs an Inspect task that
+# reproduces its GPQA instead (exacto_gpqa_task.py, samples ported in
+# exacto_gpqa_openrouter.py and unit-tested against the harness's own shuffle):
+#   * the same prompt, system message, dataset, temperature 0.5 and 10 epochs;
+#   * the same per-question option shuffle, so correct answers spread over A-D.
+#     openbench's gpqa_diamond, which this runner used before, puts every
+#     correct answer at 'B';
+#   * the same answer extraction: the harness ports openbench's MCQ scorer,
+#     which the task reuses;
+#   * reasoning effort "high", which the harness sends on every request. On
+#     GLM-5.3 the chat template renders a missing effort as "Max", so leaving
+#     it unset asks for longer reasoning than the harness does;
+#   * no client timeout and no output-token cap, so a repetition loop runs to
+#     the server's max_length and scores 0 at any serving speed.
+# The requests go to chat completions rather than the Responses API. OpenRouter
+# translates Responses into each provider's own API, so that is the request a
+# provider receives.
+#
+# The harness venv is openbench's, pinned: it brings Inspect, the MCQ scorer and
+# datasets. It has its own dependency tree, so — like run_omnidocbench_local.sh —
+# this is a shell runner around a pinned venv rather than a single bazel target.
+# The venv persists under .derived/cache, so repeat runs skip straight to
+# inference.
 #
 # Usage:
 #   run_exacto_gpqa_local.sh [options]
@@ -39,17 +57,20 @@
 #                       Passed by environment, never written to disk or logged.
 #   --model MODEL      Model name for the API `model` field. Default:
 #                       auto-detect via GET {url}/v1/models.
-#   --epochs N         Repeated passes over the dataset (default: 10, which is
-#                       openbench's own gpqa_diamond default and therefore
-#                       OpenRouter's). Lower only for a smoke run.
+#   --epochs N         Repeated passes over the dataset (default: 10, the
+#                       harness's). Lower only for a smoke run.
 #   --limit N          Evaluate only the first N of the 198 questions, for a
 #                       smoke run. A limited run's denominator differs from the
 #                       published one, so it is reported PARTIAL and never
 #                       "passes".
 #   --max-connections N  Concurrent requests (default: 32).
 #   --temperature F    Override sampling temperature. Defaults to unset, which
-#                       leaves openbench's own 0.5 in place — changing it breaks
+#                       leaves the harness's 0.5 in place — changing it breaks
 #                       comparability with OpenRouter's numbers.
+#   --reasoning-effort E
+#                      reasoning_effort sent with every request (default: high,
+#                       the harness's). "unset" sends none, which leaves the
+#                       choice to the chat template.
 #   --reference-range LOW,HIGH
 #                      Optional range published providers land in for THIS
 #                       model, shown next to the score as context. Provider
@@ -98,10 +119,11 @@ OPENBENCH_VERSION="${EXACTO_OPENBENCH_VERSION:-0.5.3}"
 MCP_CONSTRAINT="mcp<2"
 OPENAI_CONSTRAINT="openai<3"
 
-# openbench's own gpqa_diamond defaults, restated so a drift in the upstream
-# task is visible as a mismatch in score.json rather than a silent change.
+# The harness's gpqa_diamond settings, restated so a run that overrides one is
+# flagged as not comparable instead of passing silently.
 EXPECTED_DATASET="nmayorga7/gpqa_diamond"
 EXPECTED_TEMPERATURE="0.5"
+EXPECTED_REASONING_EFFORT="high"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${BUILD_WORKSPACE_DIRECTORY:-$(cd "$SCRIPT_DIR/../../../../.." && pwd)}"
@@ -115,13 +137,14 @@ epochs=10
 limit=""
 max_connections=32
 temperature=""
+reasoning_effort="$EXPECTED_REASONING_EFFORT"
 reference_range=""
 reference_source=""
 serve_config=""
 out_dir="/tmp/exacto-gpqa-results"
 refresh=0
 
-usage() { sed -n '15,85p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '15,106p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -132,6 +155,7 @@ while [[ $# -gt 0 ]]; do
     --limit) limit="$2"; shift 2 ;;
     --max-connections) max_connections="$2"; shift 2 ;;
     --temperature) temperature="$2"; shift 2 ;;
+    --reasoning-effort) reasoning_effort="$2"; shift 2 ;;
     --reference-range) reference_range="$2"; shift 2 ;;
     --reference-source) reference_source="$2"; shift 2 ;;
     --serve-config) serve_config="$2"; shift 2 ;;
@@ -161,19 +185,27 @@ find_uv() {
   echo "$uv"
 }
 
-# Under `bazel run` the report module is in the runfiles tree; standalone it
-# sits next to this script.
+# Under `bazel run` the Python modules are in the runfiles tree; standalone
+# they sit next to this script.
 RUNFILES="${RUNFILES_DIR:-${BASH_SOURCE[0]}.runfiles}"
-REPORT=""
-for candidate in \
-  "$RUNFILES/_main/max/tests/integration/accuracy/model_evals/exacto_report.py" \
-  "$SCRIPT_DIR/exacto_report.py"; do
-  if [[ -f "$candidate" ]]; then REPORT="$candidate"; break; fi
-done
-if [[ -z "$REPORT" ]]; then
-  echo "ERROR: exacto_report.py not found in runfiles or next to this script" >&2
+find_module() {
+  local candidate
+  for candidate in \
+    "$RUNFILES/_main/max/tests/integration/accuracy/model_evals/$1" \
+    "$SCRIPT_DIR/$1"; do
+    if [[ -f "$candidate" ]]; then echo "$candidate"; return; fi
+  done
+  echo "ERROR: $1 not found in runfiles or next to this script" >&2
   exit 1
-fi
+}
+REPORT="$(find_module exacto_report.py)"
+# The task imports exacto_gpqa_openrouter from its own directory, so both must
+# resolve to the same place.
+TASK="$(find_module exacto_gpqa_task.py)"
+[[ -f "$(dirname "$TASK")/exacto_gpqa_openrouter.py" ]] || {
+  echo "ERROR: exacto_gpqa_openrouter.py is not next to $TASK" >&2
+  exit 1
+}
 
 ensure_venv() {
   local uv; uv="$(find_uv)"
@@ -326,25 +358,35 @@ detect_model
 preflight_endpoint
 
 mkdir -p "$out_dir"
-# openbench resolves --logfile under a `logs/` directory relative to its cwd,
-# which the run below sets to $out_dir. Clear it first: reusing an --out-dir
-# would otherwise leave a previous run's log here, and the score picked up
-# below would silently be the stale one.
+# Clear the log dir first: reusing an --out-dir would otherwise leave a previous
+# run's log here, and the score picked up below would silently be the stale one.
 LOG_DIR="$out_dir/logs"
 rm -rf "$LOG_DIR"
 
 args=(
-  eval gpqa_diamond
+  eval "$TASK@gpqa_diamond"
   --model "openai-api/local/$model"
   --epochs "$epochs"
   --max-connections "$max_connections"
   --log-format json
-  --logfile run
+  --log-dir "$LOG_DIR"
+  --display plain
+  # The OpenAI SDK defaults cut each HTTP attempt at 600 s and retry it twice,
+  # each retry a fresh sample. A repetition loop still generating at 600 s is
+  # then re-rolled instead of scored, so whether loops count depends on
+  # per-request speed: the same model scored 91% at 16 connections and 73% at
+  # 8. With no client timeout and no SDK retries, as the harness runs and as
+  # eval_common.make_client does for the other model_evals, every loop runs to
+  # the server's max_length and scores 0 at any speed. inspect still retries
+  # real errors (--max-retries).
+  -M timeout=null
+  -M max_retries=0
 )
 [[ -n "$limit" ]] && args+=(--limit "$limit")
 [[ -n "$temperature" ]] && args+=(--temperature "$temperature")
+[[ "$reasoning_effort" != unset ]] && args+=(--reasoning-effort "$reasoning_effort")
 
-echo "[exacto] running gpqa_diamond: epochs=$epochs limit=${limit:-198(all)} temp=${temperature:-$EXPECTED_TEMPERATURE}"
+echo "[exacto] running gpqa_diamond: epochs=$epochs limit=${limit:-198(all)} temp=${temperature:-$EXPECTED_TEMPERATURE} reasoning_effort=$reasoning_effort"
 (
   cd "$out_dir"
   # Inspect resolves the endpoint from <SERVICE>_BASE_URL / <SERVICE>_API_KEY,
@@ -353,15 +395,15 @@ echo "[exacto] running gpqa_diamond: epochs=$epochs limit=${limit:-198(all)} tem
   env -u PYTHONPATH -u PYTHONHOME \
     LOCAL_BASE_URL="$url/v1" \
     LOCAL_API_KEY="${api_key:-dummy}" \
-    "$VENV/bin/bench" "${args[@]}"
+    "$VENV/bin/inspect" "${args[@]}"
 )
 
 # Newest json under the (freshly cleared) log dir, so the exact filename
-# openbench chose does not matter.
+# inspect chose does not matter.
 LOG_JSON="$(find "$LOG_DIR" -name '*.json' -type f -printf '%T@ %p\n' 2>/dev/null \
   | sort -rn | head -1 | cut -d' ' -f2-)"
 if [[ -z "$LOG_JSON" || ! -f "$LOG_JSON" ]]; then
-  echo "ERROR: no openbench JSON log found under $LOG_DIR" >&2
+  echo "ERROR: no inspect JSON log found under $LOG_DIR" >&2
   exit 1
 fi
 echo "[exacto] harness log: $LOG_JSON"
@@ -384,9 +426,10 @@ vpy "$REPORT" \
 
 # Comparability guard: report, don't fail. A drifted upstream default still
 # produces a usable number, it just is not the number OpenRouter would get.
-vpy - "$out_dir/score.json" "$EXPECTED_DATASET" "$EXPECTED_TEMPERATURE" "$limit" <<'PYWARN'
+vpy - "$out_dir/score.json" "$EXPECTED_DATASET" "$EXPECTED_TEMPERATURE" \
+  "$EXPECTED_REASONING_EFFORT" "$limit" <<'PYWARN'
 import json, sys
-score_path, want_dataset, want_temp, limit = sys.argv[1:5]
+score_path, want_dataset, want_temp, want_effort, limit = sys.argv[1:6]
 s = json.load(open(score_path))
 if s.get("dataset_name") != want_dataset:
     print(f"::warning::dataset is {s.get('dataset_name')}, expected {want_dataset}: "
@@ -394,6 +437,9 @@ if s.get("dataset_name") != want_dataset:
 if str(s.get("temperature")) != want_temp:
     print(f"::warning::temperature is {s.get('temperature')}, expected {want_temp}: "
           "score is not comparable to OpenRouter's.")
+if s.get("reasoning_effort") != want_effort:
+    print(f"::warning::reasoning_effort is {s.get('reasoning_effort')}, expected "
+          f"{want_effort}: score is not comparable to OpenRouter's.")
 if limit:
     print(f"::warning::PARTIAL run (--limit {limit}): a subset of the 198 "
           "questions has a different denominator than the published score.")
