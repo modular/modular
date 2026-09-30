@@ -11534,75 +11534,126 @@ def latent_sparse_attention_ragged(
     )[0].tensor
 
 
-def mhc_split_sinkhorn(
-    mixes: TensorValue,
-    scale: TensorValue,
-    base: TensorValue,
-    *,
+def hyper_connection_gates(
+    hc_proj: TensorValue,
+    pre_post_comb_b: TensorValue,
+    pre_post_comb_scale: TensorValue,
     hc_mult: int,
-    sinkhorn_iters: int,
-    eps: float,
-    post_mult: float = 2.0,
+    hc_eps: float,
+    hc_sinkhorn_iters: int,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Splits mHC mixing logits and Sinkhorn-projects the combination block.
+    r"""Computes the Manifold-Constrained Hyper-Connections (mHC) gates.
 
-    ``mixes[t]`` holds ``(2 + hc) * hc`` logits: ``hc`` pre, ``hc`` post, then
-    an ``hc x hc`` combination in row-major order. Each part is scaled by its
-    entry of ``scale`` and offset by ``base``; ``pre`` is
-    ``sigmoid(.) + eps``, ``post`` is ``post_mult * sigmoid(.)``, and the
-    combination is row-softmaxed plus ``eps``, column-normalized, then
-    ``sinkhorn_iters - 1`` times row- and column-normalized, every normalizer
-    being ``sum + eps``. One kernel launch computes all of it.
+    Fuses everything an mHC site does between its stream projection and its
+    stream collapse into one kernel: the ``pre`` and ``post`` sigmoids, the
+    softmax that seeds the ``comb`` mixer, and the ``hc_sinkhorn_iters``
+    Sinkhorn-Knopp steps that project ``comb`` onto the doubly-stochastic
+    manifold. Reference: Xie et al. 2026, section 2.2 equation 8.
+
+    ``hc_proj`` is the projection of the normalized residual streams, split
+    along its last axis into a ``pre`` band, a ``post`` band, and a flattened
+    ``hc_mult x hc_mult`` ``comb`` band. ``pre_post_comb_b`` is the matching
+    concatenated bias and ``pre_post_comb_scale`` holds one scale per band. All
+    three are ``float32``, as are all three outputs.
+
+    Rows are independent, so a ragged batch needs no row offsets: fold the
+    batch and sequence axes into ``hc_proj``'s leading axis.
 
     Args:
-        mixes: ``[tokens, (2 + hc_mult) * hc_mult]`` float32 logits.
-        scale: ``[3]`` float32 per-part scales.
-        base: ``[(2 + hc_mult) * hc_mult]`` float32 bias.
-        hc_mult: The number of residual copies ``hc``.
-        sinkhorn_iters: Sinkhorn rounds, at least one.
-        eps: Floor added to ``pre``, the softmax and every normalizer.
-        post_mult: Multiplier on the ``post`` sigmoid.
+        hc_proj: The projected residual streams. Shape:
+            ``[total_seq_len, 2 * hc_mult + hc_mult ** 2]``.
+        pre_post_comb_b: Per-output bias, concatenated in ``pre``, ``post``,
+            ``comb`` order. Shape: ``[2 * hc_mult + hc_mult ** 2]``.
+        pre_post_comb_scale: Per-output scale, in ``pre``, ``post``, ``comb``
+            order. Shape: ``[3]``.
+        hc_mult: The number of parallel residual streams. Must be a power of
+            two whose square fits in one warp.
+        hc_eps: Epsilon guarding the Sinkhorn divisions.
+        hc_sinkhorn_iters: Number of Sinkhorn-Knopp iterations.
 
     Returns:
-        ``pre`` ``[tokens, hc]``, ``post`` ``[tokens, hc]`` and ``comb``
-        ``[tokens, hc, hc]``, all float32.
-    """
-    _check_rank(2, mixes=mixes)
-    _check_rank(1, scale=scale, base=base)
-    _check_dtype(DType.float32, mixes=mixes, scale=scale, base=base)
-    width = (2 + hc_mult) * hc_mult
-    if int(mixes.shape[1]) != width or int(base.shape[0]) != width:
-        raise ValueError(
-            f"expected mixes/base width {width} for hc_mult={hc_mult}, got"
-            f" {mixes.shape[1]} / {base.shape[0]}"
-        )
-    if int(scale.shape[0]) != 3:
-        raise ValueError(
-            f"expected scale to have 3 entries, got {scale.shape[0]}"
-        )
-    if sinkhorn_iters < 1:
-        raise ValueError(f"sinkhorn_iters must be >= 1, got {sinkhorn_iters}")
+        A tuple of three tensors:
 
-    tokens = mixes.shape[0]
-    device = mixes.device
-    pre, post, comb = ops.custom(
-        "mo.mhc.split_sinkhorn",
-        device=device,
-        values=[mixes, scale, base],
+        - ``pre``: stream-collapse weights. Shape: ``[total_seq_len,
+          hc_mult]``.
+        - ``post``: sublayer-output placement weights in ``[0, 2]``. Shape:
+          ``[total_seq_len, hc_mult]``.
+        - ``comb``: the row-major stream mixer. Shape: ``[total_seq_len,
+          hc_mult ** 2]``.
+
+    Raises:
+        ValueError: If a dtype, rank, or width does not match ``hc_mult``, or
+            if ``hc_mult`` / ``hc_sinkhorn_iters`` are out of range.
+    """
+    _check_dtype(
+        DType.float32,
+        hc_proj=hc_proj,
+        pre_post_comb_b=pre_post_comb_b,
+        pre_post_comb_scale=pre_post_comb_scale,
+    )
+    _check_rank(2, hc_proj=hc_proj)
+    _check_rank(
+        1,
+        pre_post_comb_b=pre_post_comb_b,
+        pre_post_comb_scale=pre_post_comb_scale,
+    )
+
+    if hc_mult < 1 or hc_mult & (hc_mult - 1):
+        raise ValueError(
+            f"expected hc_mult to be a power of two, got {hc_mult}"
+        )
+    if hc_sinkhorn_iters < 1:
+        raise ValueError(
+            f"expected hc_sinkhorn_iters >= 1, got {hc_sinkhorn_iters}"
+        )
+
+    mix_width = 2 * hc_mult + hc_mult**2
+    if hc_proj.shape[1] != mix_width:
+        raise ValueError(
+            f"expected hc_proj of width {mix_width} for hc_mult {hc_mult}, got"
+            f" {hc_proj.shape[1]}"
+        )
+    if pre_post_comb_b.shape[0] != mix_width:
+        raise ValueError(
+            f"expected pre_post_comb_b of size {mix_width} for hc_mult"
+            f" {hc_mult}, got {pre_post_comb_b.shape[0]}"
+        )
+    if pre_post_comb_scale.shape[0] != 3:
+        raise ValueError(
+            "expected pre_post_comb_scale of size 3, got"
+            f" {pre_post_comb_scale.shape[0]}"
+        )
+
+    rows = hc_proj.shape[0]
+    results = ops.custom(
+        "mo.hyper_connection.gates",
+        device=hc_proj.device,
+        values=[
+            hc_proj,
+            pre_post_comb_b,
+            pre_post_comb_scale,
+            ops.constant(hc_eps, DType.float32, device=DeviceRef.CPU()),
+        ],
         out_types=[
-            TensorType(DType.float32, [tokens, hc_mult], device),
-            TensorType(DType.float32, [tokens, hc_mult], device),
-            TensorType(DType.float32, [tokens, hc_mult * hc_mult], device),
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult],
+                device=hc_proj.device,
+            ),  # pre
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult],
+                device=hc_proj.device,
+            ),  # post
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult**2],
+                device=hc_proj.device,
+            ),  # comb
         ],
         parameters={
             "hc_mult": hc_mult,
-            "sinkhorn_iters": sinkhorn_iters,
-            "eps": repr(float(eps)),
-            "post_mult": repr(float(post_mult)),
+            "hc_sinkhorn_iters": hc_sinkhorn_iters,
         },
     )
-    return (
-        pre.tensor,
-        post.tensor,
-        ops.reshape(comb.tensor, [tokens, hc_mult, hc_mult]),
-    )
+    return (results[0].tensor, results[1].tensor, results[2].tensor)

@@ -85,6 +85,7 @@ from nn.kv_cache_ragged import (
 )
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.attention.mha_utils import as_dynamic_row_major_1d
+from nn.mhc import hyper_connection_gates
 from nn.moe import (
     eplb_remap,
     moe_create_indices,
@@ -2290,6 +2291,48 @@ struct Struct_moe_eplb_remap:
             logcnt.to_tile_tensor[.int64]().as_imm(),
             log2phy.to_tile_tensor[.int64]().as_imm(),
             layer_idx.to_tile_tensor[.int64]().as_imm(),
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Manifold-Constrained Hyper-Connections
+# ===-----------------------------------------------------------------------===#
+
+
+@extensibility.register("mo.hyper_connection.gates")
+struct Struct_hyper_connection_gates:
+    """Registers the `mo.hyper_connection.gates` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hc_mult: Int,
+        hc_sinkhorn_iters: Int,
+        target: StaticString,
+    ](
+        pre: OutputTensor[dtype=.float32, rank=2, ...],
+        post: OutputTensor[dtype=.float32, rank=2, ...],
+        comb: OutputTensor[dtype=.float32, rank=2, ...],
+        hc_proj: InputTensor[dtype=.float32, rank=2, ...],
+        pre_post_comb_b: InputTensor[dtype=.float32, rank=1, ...],
+        pre_post_comb_scale: InputTensor[dtype=.float32, rank=1, ...],
+        hc_eps: Float32,
+        context: DeviceContext,
+    ) raises:
+        hyper_connection_gates[
+            hc_mult=hc_mult,
+            hc_sinkhorn_iters=hc_sinkhorn_iters,
+            target=target,
+        ](
+            pre.to_tile_tensor[.int64](),
+            post.to_tile_tensor[.int64](),
+            comb.to_tile_tensor[.int64](),
+            hc_proj.to_tile_tensor[.int64]().as_imm(),
+            pre_post_comb_b.to_tile_tensor[.int64]().as_imm(),
+            pre_post_comb_scale.to_tile_tensor[.int64]().as_imm(),
+            hc_eps,
             context,
         )
 

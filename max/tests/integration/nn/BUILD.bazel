@@ -152,6 +152,7 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:hyper_connection_reference",
         "//max/tests/integration/test_common:numerics",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),

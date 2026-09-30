@@ -208,6 +208,14 @@ This version is still a work in progress.
   Metal also requires a page-aligned base and a page-multiple length.
 - Added an eager usage validator for `ModuleV3` and eager `Tensor` code. Can
   be enabled with a new `--eager-usage-validator` flag in the MAX CLI.
+- Added `max.nn.HyperConnection` and `max.experimental.nn.HyperConnection`,
+  the ModuleV2 and ModuleV3 forms of a manifold-constrained hyper-connection
+  (mHC) site. The layer generalizes the residual connection: `hc_mult`
+  residual streams run in parallel, and a learned gate collapses them into
+  the sublayer's input and decides how the sublayer's output is written back
+  across them. It owns the `hc_fn`, `hc_base`, and `hc_scale` weights, and
+  returns `(post, comb, collapsed)` so the caller drives the residual update.
+  Float32, GPU-only.
 
 ### Inference server
 
@@ -359,6 +367,15 @@ This version is still a work in progress.
 
 - Deprecated `TileTensor.as_immut()` in favor of `TileTensor.as_imm()`, which
   returns the same immutable view and matches the naming of `Pointer.as_imm()`.
+
+- Added `max.nn.kernels.hyper_connection_gates`, a fused kernel for the
+  Manifold-Constrained Hyper-Connections (mHC) gate computation. It replaces
+  the sigmoids, the softmax, and the Sinkhorn-Knopp projection an mHC site
+  runs between its stream projection and its stream collapse -- roughly 40
+  small elementwise and reduction launches at 20 Sinkhorn iterations -- with
+  a single launch that keeps the whole `hc_mult` x `hc_mult` mixer in one
+  warp's registers. Float32, GPU-only. It supersedes
+  `max.nn.kernels.mhc_split_sinkhorn`, which is removed.
 
 - `max.nn.kernels.grouped_matmul_block_scaled` and
   `max.nn.kernels.grouped_matmul_blocked_swiglu` accept an optional

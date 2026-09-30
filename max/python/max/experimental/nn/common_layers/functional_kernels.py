@@ -54,6 +54,9 @@ from max.nn.kernels import (
     grouped_matmul_ragged as _grouped_matmul_ragged,
 )
 from max.nn.kernels import (
+    hyper_connection_gates as _hyper_connection_gates,
+)
+from max.nn.kernels import (
     mla_decode_graph as _mla_decode_graph,
 )
 from max.nn.kernels import (
@@ -140,6 +143,7 @@ flare_mla_prefill_plan = F.functional(_flare_mla_prefill_plan)
 mla_prefill_graph = F.functional(_mla_prefill_graph)
 mla_decode_graph = F.functional(_mla_decode_graph)
 mla_prefill_decode_graph = F.functional(_mla_prefill_decode_graph)
+hyper_connection_gates = F.functional(_hyper_connection_gates)
 
 
 def fused_silu_rule(x: TensorLayout, row_offsets: TensorLayout) -> ActionSet:
@@ -180,6 +184,7 @@ __all__ = [
     "flash_attention_ragged_gpu",
     "fused_silu",
     "grouped_matmul_ragged",
+    "hyper_connection_gates",
     "moe_create_indices",
     "moe_router_group_limited",
     "rms_norm_key_cache",

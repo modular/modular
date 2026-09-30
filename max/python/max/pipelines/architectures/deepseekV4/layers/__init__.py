@@ -24,10 +24,7 @@ from .hadamard import hadamard_rotate
 from .hyper_connection import (
     expand_copies,
     hc_head,
-    hc_mix_width,
     hc_post,
-    hc_pre,
-    hc_split_sinkhorn,
 )
 from .indexer import DeepseekV4Indexer
 from .moe import (
@@ -63,10 +60,7 @@ __all__ = [
     "fp8_qat_quantize",
     "hadamard_rotate",
     "hc_head",
-    "hc_mix_width",
     "hc_post",
-    "hc_pre",
-    "hc_split_sinkhorn",
     "rope_for_layer",
     "sparse_attention",
     "sqrt_softplus",
