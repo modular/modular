@@ -621,4 +621,11 @@ This version is still a work in progress.
   in rows of up to 2048 elements also come back smallest index first now, as on
   other GPUs, instead of grouped by threadgroup.
 
+- Fixed KV cache transfers over NIXL on InfiniBand hosts aborting the process
+  when a NIXL agent shut down, on glibc's `mutex->__data.__owner == 0`
+  assertion. The CUDA and ROCm verbs builds of the NIXL UCX plugin bound part
+  of the mlx5 API to an outdated compatibility ABI, so UCX's completion queue
+  doorbell writes landed on a mutex inside libmlx5. The plugins now link
+  libmlx5 and bind its current ABI.
+
 ## Mojo language
