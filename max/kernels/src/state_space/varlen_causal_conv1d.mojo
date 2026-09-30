@@ -737,10 +737,9 @@ def causal_conv1d_varlen_update_cpu[
 
                         if state_pos >= 0 and state_pos < state_len:
                             var state_offset = (
-                                UInt32(state_batch_idx)
-                                * conv_state_batch_stride
-                                + UInt32(d) * conv_state_dim_stride
-                                + UInt32(state_pos) * conv_state_seqlen_stride
+                                state_batch_idx * Int(conv_state_batch_stride)
+                                + d * Int(conv_state_dim_stride)
+                                + state_pos * Int(conv_state_seqlen_stride)
                             )
                             input_val = Scalar[x_dtype](
                                 conv_state.raw_load(state_offset)
@@ -798,26 +797,23 @@ def causal_conv1d_varlen_update_cpu[
                         # Shift existing values
                         for s in range(state_len - seqlen):
                             var src_offset = (
-                                UInt32(state_batch_idx)
-                                * conv_state_batch_stride
-                                + UInt32(d) * conv_state_dim_stride
-                                + UInt32((s + seqlen))
-                                * conv_state_seqlen_stride
+                                state_batch_idx * Int(conv_state_batch_stride)
+                                + d * Int(conv_state_dim_stride)
+                                + (s + seqlen) * Int(conv_state_seqlen_stride)
                             )
                             var dst_offset = (
-                                UInt32(state_batch_idx)
-                                * conv_state_batch_stride
-                                + UInt32(d) * conv_state_dim_stride
-                                + UInt32(s) * conv_state_seqlen_stride
+                                state_batch_idx * Int(conv_state_batch_stride)
+                                + d * Int(conv_state_dim_stride)
+                                + s * Int(conv_state_seqlen_stride)
                             )
                             var val = conv_state.raw_load(src_offset)
                             conv_state.raw_store(dst_offset, val)
                     state_pos = state_len - seqlen + l
 
                 var state_offset = (
-                    UInt32(state_batch_idx) * conv_state_batch_stride
-                    + UInt32(d) * conv_state_dim_stride
-                    + UInt32(state_pos) * conv_state_seqlen_stride
+                    state_batch_idx * Int(conv_state_batch_stride)
+                    + d * Int(conv_state_dim_stride)
+                    + state_pos * Int(conv_state_seqlen_stride)
                 )
                 conv_state.raw_store(
                     state_offset, Scalar[conv_state_dtype](x_val)
@@ -1568,9 +1564,9 @@ def causal_conv1d_varlen_update_gpu[
 
                 if state_pos >= 0 and state_pos < _state_len:
                     var state_offset = (
-                        UInt32(state_batch_idx) * conv_state_batch_stride
-                        + UInt32(d) * conv_state_dim_stride
-                        + UInt32(state_pos) * conv_state_seqlen_stride
+                        state_batch_idx * Int(conv_state_batch_stride)
+                        + d * Int(conv_state_dim_stride)
+                        + state_pos * Int(conv_state_seqlen_stride)
                     )
                     input_val = Scalar[x_dtype](
                         conv_state.raw_load(state_offset)
@@ -1615,8 +1611,8 @@ def causal_conv1d_varlen_update_gpu[
             state_pos = _state_len - _seqlen + l
 
         var state_offset = (
-            UInt32(state_batch_idx) * conv_state_batch_stride
-            + UInt32(d) * conv_state_dim_stride
-            + UInt32(state_pos) * conv_state_seqlen_stride
+            state_batch_idx * Int(conv_state_batch_stride)
+            + d * Int(conv_state_dim_stride)
+            + state_pos * Int(conv_state_seqlen_stride)
         )
         conv_state.raw_store(state_offset, Scalar[conv_state_dtype](x_val))
