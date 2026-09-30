@@ -21,17 +21,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import (
-    TextTokenizer,
-    resolve_single_special_token,
-)
+from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-
-_THINK_START_TOKEN = "<think>"
-_THINK_END_TOKEN = "</think>"
 
 logger = logging.getLogger("max.serve")
 
@@ -228,7 +222,7 @@ def normalize_glm_reasoning_effort(
     return options
 
 
-class GlmTokenizer(TextTokenizer):
+class GlmTokenizer(ReasoningTextTokenizer):
     """Text tokenizer for GLM-4.5+ (GLM-5.1 / GLM-5.2 / GLM-5.3).
 
     Overridden to apply reasoning parsing normalization to the chat template,
@@ -256,12 +250,6 @@ class GlmTokenizer(TextTokenizer):
             enable_llama_whitespace_fix=enable_llama_whitespace_fix,
             chat_template=chat_template,
             **unused_kwargs,
-        )
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_START_TOKEN
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_END_TOKEN
         )
         self._template_capabilities = _probe_template_rungs(self._render_probe)
         if not self._template_capabilities.honors_thinking_toggle:
@@ -301,13 +289,3 @@ class GlmTokenizer(TextTokenizer):
                 options, self._template_capabilities
             ),
         )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<think>`` (opens a GLM reasoning span)."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``</think>`` (closes a GLM reasoning span)."""
-        return self._reasoning_end_token_id

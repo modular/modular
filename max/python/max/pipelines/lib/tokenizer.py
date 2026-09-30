@@ -21,7 +21,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -177,6 +177,49 @@ def resolve_single_special_token(delegate: Any, token: str) -> int:
             f"(resolved to unk_token_id)."
         )
     return int(token_id)
+
+
+class ReasoningDelimitersMixin:
+    """Resolves and exposes a tokenizer's reasoning-delimiter token ids.
+
+    Mixing this into a tokenizer satisfies
+    :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer`.
+    Subclasses override :attr:`reasoning_delimiters` when their model does not
+    use ``<think>``/``</think>``, and call
+    :meth:`_resolve_reasoning_delimiters` from ``__init__`` once the delegate
+    is loaded. :class:`ReasoningTextTokenizer` does the call itself.
+    """
+
+    reasoning_delimiters: ClassVar[tuple[str, str]] = ("<think>", "</think>")
+    """The special tokens that open and close a reasoning span."""
+
+    _reasoning_start_token_id: int
+    _reasoning_end_token_id: int
+
+    def _resolve_reasoning_delimiters(self, delegate: Any) -> None:
+        """Resolves :attr:`reasoning_delimiters` to ids via ``delegate``.
+
+        Raises:
+            ValueError: If either delimiter is not a single special token in
+                the vocab.
+        """
+        start, end = self.reasoning_delimiters
+        self._reasoning_start_token_id = resolve_single_special_token(
+            delegate, start
+        )
+        self._reasoning_end_token_id = resolve_single_special_token(
+            delegate, end
+        )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """The token id that opens a reasoning span."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """The token id that closes a reasoning span."""
+        return self._reasoning_end_token_id
 
 
 logger = logging.getLogger("max.pipelines")
@@ -800,6 +843,21 @@ class TextTokenizer(
             **kwargs,
         )
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
+
+
+class ReasoningTextTokenizer(ReasoningDelimitersMixin, TextTokenizer):
+    """A :class:`TextTokenizer` that resolves its reasoning-delimiter ids.
+
+    Resolves :attr:`~ReasoningDelimitersMixin.reasoning_delimiters` at
+    construction, so an architecture whose reasoning parser needs them can
+    use this class directly or subclass it.
+    """
+
+    def __init__(
+        self, model_path: str, pipeline_config: PipelineConfig, **kwargs: Any
+    ) -> None:
+        super().__init__(model_path, pipeline_config, **kwargs)
+        self._resolve_reasoning_delimiters(self.delegate)
 
 
 class TextAndVisionTokenizer(

@@ -40,9 +40,9 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import (
+    ReasoningDelimitersMixin,
     encode_dkv_cache_hint,
     open_image,
-    resolve_single_special_token,
 )
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
@@ -91,12 +91,15 @@ REASONING_OPEN = "<|channel>thought\n"
 MODEL_TURN_OPEN = "<|turn>model\n"
 
 
-class Gemma4Tokenizer(TextAndVisionTokenizer):
+class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
     """Gemma4-specific tokenizer handling text and vision inputs.
 
     Uses a custom ``Gemma4ImageProcessor`` (numpy/PIL only) instead of
     HuggingFace's ``AutoProcessor`` to avoid pulling in torch.
     """
+
+    # Gemma 4 wraps reasoning in ``<|channel>thought\n...<channel|>`` blocks.
+    reasoning_delimiters = ("<|channel>", "<channel|>")
 
     def __init__(
         self,
@@ -231,26 +234,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             set(self.delegate.all_special_ids) - tool_token_ids
         )
 
-        # ReasoningPipelineTokenizer surface — Gemma 4 wraps reasoning in
-        # ``<|channel>thought\n...<channel|>`` blocks; expose the delimiter
-        # ids so the overlap pipeline's thinking-mode temperature scaling
-        # can find them without hardcoding ``<think>``/``</think>``.
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, "<|channel>"
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, "<channel|>"
-        )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<|channel>`` (opens a Gemma 4 reasoning span)."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``<channel|>`` (closes a Gemma 4 reasoning span)."""
-        return self._reasoning_end_token_id
+        self._resolve_reasoning_delimiters(self.delegate)
 
     def _patch_chat_template_for_video(self) -> None:
         """Patch the chat template to handle ``type == 'video'`` if missing.

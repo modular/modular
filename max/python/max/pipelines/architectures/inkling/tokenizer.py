@@ -19,7 +19,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
-from max.pipelines.lib.tokenizer import resolve_single_special_token
+from max.pipelines.lib.tokenizer import (
+    ReasoningDelimitersMixin,
+    resolve_single_special_token,
+)
 from transformers import AutoTokenizer
 
 from .model_config import InklingVisionConfig
@@ -28,15 +31,13 @@ from .processor import InklingProcessor, load_processor_config
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
-_THINKING_START_TOKEN = "<|content_thinking|>"
-_END_MESSAGE_TOKEN = "<|end_message|>"
 
 # Opens the JSON payload of a tool call. The tool parser matches this exact
 # string, so it has to survive detokenization.
 TOOL_CALL_JSON_MARKER = "<|content_invoke_tool_json|>"
 
 
-class InklingTokenizer(TextAndVisionTokenizer):
+class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
     """Tokenizer for Inkling, whose own ``AutoProcessor`` class is not shipped
     with the checkpoint, so :class:`InklingProcessor` takes its place.
 
@@ -50,6 +51,8 @@ class InklingTokenizer(TextAndVisionTokenizer):
     parser. Only that marker: a request without ``tools`` runs no tool parser,
     so anything else kept here leaks verbatim into ``message.content``.
     """
+
+    reasoning_delimiters = ("<|content_thinking|>", "<|end_message|>")
 
     def __init__(
         self,
@@ -85,12 +88,7 @@ class InklingTokenizer(TextAndVisionTokenizer):
         )
         self.vision_token_ids = [self.processor.image_token_id]
 
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, _THINKING_START_TOKEN
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, _END_MESSAGE_TOKEN
-        )
+        self._resolve_reasoning_delimiters(self.delegate)
 
         tool_call_json_id = resolve_single_special_token(
             self.delegate, TOOL_CALL_JSON_MARKER
@@ -98,16 +96,6 @@ class InklingTokenizer(TextAndVisionTokenizer):
         self.skipped_special_token_ids: set[int] = set(
             self.delegate.all_special_ids
         ) - {tool_call_json_id}
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<|content_thinking|>``."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``<|end_message|>``."""
-        return self._reasoning_end_token_id
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
