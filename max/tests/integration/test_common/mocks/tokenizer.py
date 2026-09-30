@@ -23,6 +23,7 @@ from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
+    TokenIds,
 )
 
 
@@ -118,5 +119,7 @@ class MockTextTokenizer(
     ) -> np.ndarray:
         return np.array([self.char_to_int[c] for c in prompt])
 
-    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
-        return "".join([self.int_to_char[c] for c in encoded])
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
+        return "".join(
+            self.int_to_char[c] for c in np.atleast_1d(encoded).tolist()
+        )

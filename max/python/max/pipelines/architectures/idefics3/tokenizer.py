@@ -20,7 +20,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import numpy.typing as npt
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
@@ -35,6 +34,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    TokenIds,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL.Image import Image as ImageType
@@ -95,11 +95,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             self.delegate.eos_token_id, pipeline_config
         )
 
-    async def decode(
-        self,
-        encoded: npt.NDArray[np.integer[Any]] | Sequence[int] | int,
-        **kwargs,
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decode token array back into readable text, filtering out special tokens."""
         # Log-probability responses decode one token id (a plain int) and the
         # CLI passes a token list; normalize both to a rank-1 array.

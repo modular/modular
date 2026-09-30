@@ -39,6 +39,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    TokenIds,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image, UnidentifiedImageError
@@ -332,7 +333,7 @@ class IdentityPipelineTokenizer(
 
     async def decode(
         self,
-        encoded: str,
+        encoded: TokenIds | str,
         **kwargs,
     ) -> str:
         """Returns the encoded string unchanged (identity decoding)."""
@@ -663,14 +664,9 @@ class TextTokenizer(
 
         return encoded_prompt
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Transforms a provided encoded token array back into readable text."""
-        # Callers pass plain ints (log-probability responses) and token lists
-        # (CLI streaming) as well as arrays; normalize them all.
-        if not isinstance(encoded, np.ndarray):
-            encoded = np.asarray(encoded)
+        encoded = np.asarray(encoded)
 
         # There is an issue where Llama tokenizer strips leading spaces
         # if a single token is decoded at a time. This is a temporary
@@ -1002,14 +998,8 @@ class TextAndVisionTokenizer(
 
         return encoded_prompt
 
-    async def decode(
-        self,
-        encoded: npt.NDArray[np.integer[Any]] | Sequence[int] | int,
-        **kwargs,
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Transforms a provided encoded token array back into readable text."""
-        # Log-probability responses decode one token id (a plain int) and the
-        # CLI passes a token list; match the text tokenizer's handling.
         encoded = np.asarray(encoded)
         try:
             return self.delegate.decode(encoded.tolist(), **kwargs)
