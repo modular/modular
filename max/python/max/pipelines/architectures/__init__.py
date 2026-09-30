@@ -472,6 +472,18 @@ def register_all_models() -> None:
     except ModuleNotFoundError:
         pass
 
+    # Optional: import the DSpark + MiniMax-M3 unified model if available.
+    try:
+        from minimax_m3_dspark import (  # type: ignore[import-not-found]
+            dspark_minimax_m3_draft_arch,
+            unified_dspark_minimax_m3_arch,
+        )
+
+        PIPELINE_REGISTRY.register(unified_dspark_minimax_m3_arch)
+        PIPELINE_REGISTRY.register(dspark_minimax_m3_draft_arch)
+    except ModuleNotFoundError:
+        pass
+
     _MODELS_ALREADY_REGISTERED = True
 
 

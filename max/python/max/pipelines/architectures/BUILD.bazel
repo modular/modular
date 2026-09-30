@@ -18,6 +18,8 @@ modular_py_library(
         "minimax_m3",
         # Private unified MiniMax-M3 + MTP arch is imported at runtime
         "minimax_m3_mtp",
+        # Private unified MiniMax-M3 + DSpark arch is imported at runtime
+        "minimax_m3_dspark",
         # Private Qwen4-Exp arch is imported at runtime, not directly
         "qwen4_exp",
         # Private unified Qwen4-Exp + MTP arch is imported at runtime

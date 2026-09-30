@@ -754,6 +754,18 @@ def _apply_speculative_target_architecture(
             # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
             # path forbids block-sparse attention.
             target_archs[0] = "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
+        elif draft_archs and draft_archs[0] == "DSparkMiniMaxDraftModel":
+            # The fused graph verifies one DSpark block per step, which only
+            # the v1 dflash harness drives; Eagle, MTP and DFlash2 would load
+            # it against a draft loop that does not match.
+            if not speculative.is_dflash() or speculative.is_dflash2():
+                raise ValueError(
+                    "The MiniMax-M3 DSpark draft requires"
+                    " --speculative-method dflash"
+                )
+            target_archs[0] = (
+                "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
+            )
     if target_archs[0] == "Qwen3_5ForConditionalGeneration":
         # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
         # there is no separate draft model. Qwen3.5 shares the arch name
