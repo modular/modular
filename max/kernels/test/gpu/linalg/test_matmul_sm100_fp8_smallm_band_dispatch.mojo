@@ -48,6 +48,7 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     matmul_dispatch_sm100_bf16,
     DISPATCH_HIT,
 )
+from linalg.utils import identity_compute_fn
 from std.utils.index import IndexList
 from std.testing import assert_equal
 
@@ -58,17 +59,6 @@ comptime STATIC_SCALE = 0.5
 
 # Previously-missing small-M decode band (m in {25..31}) + control m-values.
 comptime BAND_MS = [25, 27, 29, 31, 8, 16, 64, 128]
-
-
-@__parameter
-@inline(.always)
-def scaled_compute_fn[
-    dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
-    # Mirror MatmulStaticScaledFloat8's SM100 compute lambda: accumulate in
-    # fp32, apply the scalar scale, cast back to output dtype (bf16).
-    var scaled = val.cast[.float32]() * Float32(STATIC_SCALE)
-    return scaled.cast[dtype]()
 
 
 def _assert_hit(status: Int, tag: String, N: Int, K: Int, m: Int) raises:
@@ -123,11 +113,24 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
+    # A runtime capture, so the kernel only sees the right scale if the
+    # closure reaches it by value.
+    var scale = Float32(STATIC_SCALE)
+
+    def scaled_compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: IndexList[2], val: SIMD[dtype, width]) {var scale} -> SIMD[
+        dtype, width
+    ]:
+        # Mirror MatmulStaticScaledFloat8's SM100 compute lambda: accumulate
+        # in fp32, apply the scalar scale, cast back to output dtype (bf16).
+        var scaled = val.cast[.float32]() * scale
+        return scaled.cast[dtype]()
+
     # MAX Mojo path: the production static-scaled FP8 dispatch entry.
-    var status = matmul_dispatch_sm100_fp8[
-        transpose_b=transpose_b,
-        elementwise_compute_lambda_fn=scaled_compute_fn,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+    var status = matmul_dispatch_sm100_fp8[transpose_b=transpose_b](
+        c_tensor, a_tensor, b_tensor, scaled_compute_fn, ctx
+    )
     _assert_hit(status, "FP8", N, K, m)
 
     # Reference: same FP8 GEMM via vendor cuBLASLt, static scale via `alpha`.
@@ -190,9 +193,9 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     ctx.enqueue_copy(b_device, b_host_ptr)
 
     # MAX Mojo path: the SM100 bf16 static matmul dispatch entry (no epilogue).
-    var status = matmul_dispatch_sm100_bf16[transpose_b=transpose_b](
-        c_tensor, a_tensor, b_tensor, ctx
-    )
+    var status = matmul_dispatch_sm100_bf16[
+        transpose_b=transpose_b, has_compute_fn=False
+    ](c_tensor, a_tensor, b_tensor, identity_compute_fn, ctx)
     _assert_hit(status, "BF16", N, K, m)
 
     # Reference: same GEMM via vendor cuBLASLt.

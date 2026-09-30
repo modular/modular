@@ -714,14 +714,35 @@ def _matmul_gpu[
         ](c, a, b, ctx)
 
     comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
-        return matmul_dispatch_sm100[
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_lambda_wrapper=elementwise_lambda_wrapper,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=PDLLevel.ON,
-        ](c, a, b, ctx)
+        comptime if elementwise_compute_lambda_fn:
+            comptime compute_lambda = elementwise_compute_lambda_fn.value()
+
+            # TODO(MOCO-4720): the graph compiler still hands `matmul` its
+            # fused compute epilogue as a comptime capturing lambda, so its
+            # captures are not tracked past this point. Take the epilogue as
+            # a value in `matmul` to remove this adapter.
+            def compute_fn[
+                dtype: DType, width: SIMDLength, *, alignment: Int
+            ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+                return compute_lambda[dtype, width, alignment=alignment](
+                    idx, val
+                )
+
+            return matmul_dispatch_sm100[
+                transpose_b=transpose_b,
+                use_tf32=use_tf32,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+                pdl_level=PDLLevel.ON,
+            ](c, a, b, compute_fn, ctx)
+        else:
+            return matmul_dispatch_sm100[
+                transpose_b=transpose_b,
+                use_tf32=use_tf32,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+                pdl_level=PDLLevel.ON,
+            ](c, a, b, ctx)
 
     comptime if ctx.default_device_info == H100:
         var status = matmul_dispatch_sm90[

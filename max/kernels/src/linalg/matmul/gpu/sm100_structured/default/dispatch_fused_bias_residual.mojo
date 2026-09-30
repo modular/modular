@@ -35,6 +35,7 @@ from layout import Coord, RowMajorLayout, TensorEngine, TileTensor
 from std.logger import Logger
 from std.utils.index import Index, IndexList
 
+from .....utils import identity_compute_fn
 from .dispatch import (
     matmul_dispatch_sm100,
     sm100_heuristic_and_outliers_dispatch,
@@ -191,7 +192,15 @@ def fused_bias_residual_matmul_dispatch_sm100[
                 pdl_level=pdl_level,
                 has_epilogue_tensor=True,
                 epilogue_is_1d=epilogue_is_1d,
-            ](c, a, b, ctx, epilogue_tensor=OptionalReg(epilogue_tensor))
+                has_compute_fn=False,
+            ](
+                c,
+                a,
+                b,
+                identity_compute_fn,
+                ctx,
+                epilogue_tensor=OptionalReg(epilogue_tensor),
+            )
             if status:
                 logger.info(
                     "------ Fused matmul+bias/residual: TMA epilogue ----"
