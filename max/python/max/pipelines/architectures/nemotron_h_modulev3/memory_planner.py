@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.support.math import ceildiv
 
 from .model_config import NemotronHConfig
-from .quantization import ModuleFormat
+from .quantization import NVFP4_GROUP_SIZE, ModuleFormat
 
 
 class NemotronHMemoryPlanner(PagedMemoryPlanner):
@@ -28,12 +29,17 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
         """Estimates the device memory the weights occupy, in bytes.
 
         Modules dequantized at load are larger on the device than in the
-        checkpoint files the default estimate measures.
+        checkpoint files the default estimate measures. Routed experts kept in
+        NVFP4 grow only by their block-scale padding.
         """
         size = super().estimate_weights_size(pipeline_config)
         config = self._config
         assert isinstance(config, NemotronHConfig)
+        w4a4_mixers = config.w4a4_mixers()
         for module, fmt in config.quant_scheme.quantized.items():
+            if module.partition(".experts.")[0] in w4a4_mixers:
+                size += _block_scale_padding_bytes(config, module)
+                continue
             if module == "lm_head":
                 inner = config.vocab_size
             elif ".experts." in module:
@@ -60,3 +66,15 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
             # Dequantized to two-byte BF16.
             size += int(inner * config.hidden_size * (2 - stored_bytes))
         return size
+
+
+def _block_scale_padding_bytes(config: NemotronHConfig, module: str) -> int:
+    """Returns the bytes one NVFP4 routed projection's scales are padded by.
+
+    The interleaved layout pads the output rows to a multiple of 128.
+    """
+    hidden, inner = config.hidden_size, config.moe_intermediate_size
+    rows, k = (
+        (inner, hidden) if module.endswith(".up_proj") else (hidden, inner)
+    )
+    return (ceildiv(rows, 128) * 128 - rows) * (k // NVFP4_GROUP_SIZE)

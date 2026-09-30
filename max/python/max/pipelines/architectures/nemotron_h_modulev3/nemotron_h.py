@@ -62,6 +62,7 @@ class NemotronHBackbone(Module[..., Tensor]):
         self.embeddings = Embedding(config.vocab_size, dim=config.hidden_size)
         self.layer_kinds = tuple(config.layer_kinds)
         layers: list[NemotronHBlock] = []
+        w4a4_mixers = config.w4a4_mixers()
         for i, kind in enumerate(self.layer_kinds):
             mixer: Module[..., Tensor]
             if kind == "mamba":
@@ -70,7 +71,10 @@ class NemotronHBackbone(Module[..., Tensor]):
                 attn_idx = self.layer_kinds[:i].count("attention")
                 mixer = NemotronHAttention(config, attn_params, attn_idx)
             elif kind == "moe":
-                mixer = NemotronHMoE(config)
+                mixer = NemotronHMoE(
+                    config,
+                    w4a4_experts=f"backbone.layers.{i}.mixer" in w4a4_mixers,
+                )
             else:
                 mixer = NemotronHMLP(
                     config.hidden_size, config.intermediate_size
