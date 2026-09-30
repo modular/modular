@@ -27,7 +27,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.exceptions import PromptTooLongError
-from max.pipelines.lib import TextAndVisionTokenizer
+from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
 from max.pipelines.lib.tokenizer import encode_dkv_cache_hint, open_image
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -91,10 +91,8 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             model_path, revision=revision
         )
 
-        # Initialize default EOS token IDs (required by parent class new_context method)
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
 
     async def decode(

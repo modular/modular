@@ -356,6 +356,53 @@ def replace_unpaired_surrogates(prompt: str) -> str:
     return prompt
 
 
+def _as_token_id_set(eos_token_id: object) -> set[int]:
+    if isinstance(eos_token_id, int):
+        return {eos_token_id}
+    if isinstance(eos_token_id, list):
+        return {
+            token_id for token_id in eos_token_id if isinstance(token_id, int)
+        }
+    return set()
+
+
+def resolve_eos_token_ids(
+    tokenizer_eos_token_id: int | None,
+    pipeline_config: PipelineConfig | None,
+) -> set[int]:
+    """Returns every token id that ends generation for the model.
+
+    Unions the tokenizer's EOS token with the ``eos_token_id`` of the target
+    model's ``config.json``, the draft model's ``config.json`` and the target
+    model's ``generation_config.json``. Each ``eos_token_id`` may be one id, a
+    list of ids or unset. Hugging Face ``generate`` stops on the
+    ``generation_config.json`` list, which often names more tokens than
+    ``config.json`` (for example a chat turn terminator).
+
+    Args:
+        tokenizer_eos_token_id: The tokenizer's ``eos_token_id``, if any.
+        pipeline_config: The pipeline configuration to read model configs
+            from, or ``None`` to use only the tokenizer's EOS token.
+
+    Returns:
+        The set of EOS token ids.
+    """
+    eos_token_ids = _as_token_id_set(tokenizer_eos_token_id)
+    if pipeline_config is None:
+        return eos_token_ids
+    model = pipeline_config.model
+    draft_hf_config = getattr(
+        pipeline_config.draft_model, "huggingface_config", None
+    )
+    for eos in (
+        getattr(model.huggingface_config, "eos_token_id", None),
+        getattr(draft_hf_config, "eos_token_id", None),
+        model.generation_config.eos_token_id,
+    ):
+        eos_token_ids.update(_as_token_id_set(eos))
+    return eos_token_ids
+
+
 async def build_eos_tracker_for_request(
     eos_token_ids: set[int],
     request: TextGenerationRequest,
@@ -464,25 +511,9 @@ class TextTokenizer(
             self._llama_whitespace_fix_dummy_token_len,
         ) = self._llama_whitespace_fix_dummy_token
 
-        # cache tokenizer eos token ids
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
-
-        if pipeline_config:
-            target_eos = getattr(
-                pipeline_config.model.huggingface_config, "eos_token_id", None
-            )
-            draft_hf = getattr(
-                pipeline_config.draft_model, "huggingface_config", None
-            )
-            draft_eos = getattr(draft_hf, "eos_token_id", None)
-            for eos in (target_eos, draft_eos):
-                if isinstance(eos, int):
-                    self._eos_token_ids.add(eos)
-                elif isinstance(eos, list):
-                    self._eos_token_ids.update(eos)
 
     @property
     def eos_token_ids(self) -> set[int]:
@@ -808,17 +839,9 @@ class TextAndVisionTokenizer(
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
-
-        huggingface_config = pipeline_config.model.huggingface_config
-        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._eos_token_ids.update(eos_token_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching

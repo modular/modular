@@ -16,13 +16,12 @@ from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,
 )
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from .memory_planner import MiMoV2MemoryPlanner
 from .model import MiMoV2Model
 from .model_config import MiMoV2Config
-from .tokenizer import MiMoV2Tokenizer
 from .weight_adapters import convert_safetensor_state_dict
 
 mimo_v2_arch = SupportedArchitecture(
@@ -33,7 +32,7 @@ mimo_v2_arch = SupportedArchitecture(
     default_encoding=MiMoV2Config.DEFAULT_ENCODING,
     supported_encodings=MiMoV2Config.SUPPORTED_ENCODINGS,
     pipeline_model=MiMoV2Model,
-    tokenizer=MiMoV2Tokenizer,
+    tokenizer=TextTokenizer,
     context_type=TextContext,
     weight_adapters={
         WeightsFormat.safetensors: convert_safetensor_state_dict,

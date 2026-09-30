@@ -54,6 +54,7 @@ from max.pipelines.lib import (
     TextAndVisionTokenizer,
     VisionPreprocessCache,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
@@ -459,18 +460,11 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             QWEN3VL_VIDEO_MAX_PIXELS << 16
         ) | QWEN3VL_VIDEO_MAX_FRAMES
 
-        # Initialize EOS token IDs
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
 
         huggingface_config = pipeline_config.model.huggingface_config
-        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._eos_token_ids.update(eos_token_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching

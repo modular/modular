@@ -348,6 +348,18 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- Text generation now stops on every `eos_token_id` in a model's
+  `generation_config.json`, as Hugging Face `generate` does, in addition to
+  the tokenizer's EOS token and the `eos_token_id` in `config.json`. This
+  applies to `TextTokenizer`, `TextAndVisionTokenizer`, and the
+  architecture tokenizers built on them. Before, those extra ids were only a
+  default for `stop_token_ids`, so a request that set its own
+  `stop_token_ids`, or that bypassed the model's sampling defaults, could
+  generate past them. Models whose `generation_config.json` lists more EOS
+  ids than `config.json` (Llama 3.1 Instruct, for example) may now end some
+  responses sooner. `stop_token_ids` still adds to the set, and
+  `ignore_eos` still disables all of it.
+
 - `TensorEngine` drops its `load` and `store` requirements, along with the
   `DefaultEngine`, `DevicePointerEngine`, and `StaticOffsetEngine`
   implementations. Loads and stores go through the raw pointer `unsafe_ptr`

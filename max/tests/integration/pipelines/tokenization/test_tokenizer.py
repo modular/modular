@@ -641,8 +641,8 @@ def test_text_and_vision_tokenizer_forwards_sampling_params() -> None:
 def test_tokenizer_stores_eos_token_ids(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
-    """Tests that all eos token ids stored in the huggingface config are added
-    to the tokenizer's eos token ids.
+    """Tests that all eos token ids stored in the huggingface config and the
+    generation config are added to the tokenizer's eos token ids.
     """
     # Must pass in PipelineConfig so the tokenizer can access the
     # huggingface config.
@@ -663,6 +663,13 @@ def test_tokenizer_stores_eos_token_ids(
         ),
     )
 
+    generation_eos = pipeline_config.model.generation_config.eos_token_id
+    generation_eos_ids = (
+        {generation_eos}
+        if isinstance(generation_eos, int)
+        else set(generation_eos or [])
+    )
+
     # Test single eos token id
     assert pipeline_config.model.huggingface_config is not None
     pipeline_config.model.huggingface_config.eos_token_id = 123456
@@ -670,7 +677,11 @@ def test_tokenizer_stores_eos_token_ids(
         model_path=modular_ai_llama_3_1_local_path,
         pipeline_config=pipeline_config,
     )
-    assert tokenizer.eos_token_ids == {tokenizer.delegate.eos_token_id, 123456}
+    assert tokenizer.eos_token_ids == {
+        tokenizer.delegate.eos_token_id,
+        123456,
+        *generation_eos_ids,
+    }
 
     # Test list of eos token ids
     assert pipeline_config.model.huggingface_config is not None
@@ -683,6 +694,7 @@ def test_tokenizer_stores_eos_token_ids(
         tokenizer.delegate.eos_token_id,
         123,
         456,
+        *generation_eos_ids,
     }
 
 
