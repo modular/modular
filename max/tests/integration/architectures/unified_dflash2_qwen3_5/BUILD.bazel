@@ -94,7 +94,11 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
-    # Six tiny Qwen3.5 compiles; sharding runs them on separate workers.
+    # Eleven tiny Qwen3.5 compiles across six cases, recorded by CPU build
+    # actions, one per shard. Raise `precompile_shards` before `shard_count` if
+    # this file grows: a record action carries its shard's whole compile set
+    # and the longest already runs about 380s of the 900s an action gets.
+    precompile_mefs = True,
     shard_count = 3,
     tags = ["gpu"],
     deps = [
