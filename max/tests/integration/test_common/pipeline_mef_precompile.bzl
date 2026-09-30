@@ -30,47 +30,23 @@ run``/``test``, never when exec'd as a build tool, so read the binary's
 those short_path vars resolve.
 """
 
-def _targets_from_mojo_toolchain(ctx):
-    """Reads the GPU and host-CPU targets to compile for off the mojo toolchain.
+load("//bazel/internal:mojo_targets.bzl", "mojo_targets_from_toolchain")  # buildifier: disable=bzl-visibility
 
-    Same derivation as ``mef_precompile.bzl``, so a call site names neither: the
-    toolchain already describes the lane being built for, and the artifacts have
-    to agree with it.
+def _precompiled_pipeline_mefs_impl(ctx):
+    mef_dir = ctx.actions.declare_directory(ctx.attr.name + "_mefs")
 
-    Args:
-        ctx: The rule context.
+    targets = mojo_targets_from_toolchain(ctx)
+    target = targets.accelerator
+    cpu_target = targets.cpu_target
 
-    Returns:
-        The GPU target as ``"api:arch"`` and the host-CPU codegen descriptor.
-    """
-    toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
-
-    target = None
-    cpu_target = None
-    for copt in toolchain.copts:
-        if copt.startswith("--target-accelerator="):
-            target = copt.removeprefix("--target-accelerator=")
-        elif copt.startswith("--target-cpu="):
-            cpu_target = copt.removeprefix("--target-cpu=")
-
-    # A pipeline compiles for an accelerator or not at all, so say so here rather
-    # than hand the producer a target of `None` and let it fail confusingly. A
-    # target gated to a GPU lane never reaches this.
+    # A pipeline compiles for an accelerator or not at all, so say so here
+    # rather than hand the producer an empty target and let it fail
+    # confusingly. A target gated to a GPU lane never reaches this.
     if not target:
         fail(
             "the mojo toolchain names no target accelerator, so there is " +
             "nothing to precompile for; gate this target to a GPU lane",
         )
-
-    # Mojo and the graph compiler spell the vendor differently.
-    target = target.replace("nvidia", "cuda")
-    target = target.replace("amdgpu", "hip")
-    return target, cpu_target
-
-def _precompiled_pipeline_mefs_impl(ctx):
-    mef_dir = ctx.actions.declare_directory(ctx.attr.name + "_mefs")
-
-    target, cpu_target = _targets_from_mojo_toolchain(ctx)
 
     binary = ctx.attr.producer[DefaultInfo].files_to_run
     env = dict(ctx.attr.producer[RunEnvironmentInfo].environment)
