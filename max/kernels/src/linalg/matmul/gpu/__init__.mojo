@@ -1384,7 +1384,14 @@ def _matmul_gpu[
         and c_type in vendor_blas_fallback_dtypes
         and not has_apple_gpu_accelerator()
         and not has_amd_rdna_gpu_accelerator()
-        # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
+        # `MODULAR_DISABLE_VENDOR_FALLBACK=1` disables this, but it is a
+        # kernel-compile define rather than an environment read: pass
+        # `-D MODULAR_DISABLE_VENDOR_FALLBACK=1` to `mojo`, or set the variable
+        # in the environment of `max serve`, which forwards it in
+        # `PipelineConfig.configure_session`. Serve also forces it on for HIP +
+        # device graph capture, because `hipblasLtCreate` issues a legacy-stream
+        # `hipMemset` and `exit(1)`s when it fails, which a capture region makes
+        # certain.
         and not _vendor_blas_fallback_disabled()
     ):
         logger.info("Executing: vendor BLAS fallback")

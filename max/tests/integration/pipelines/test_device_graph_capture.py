@@ -21,6 +21,7 @@ captured graph; ``replay`` copies inputs into the captured buffers and replays.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, cast
@@ -30,11 +31,15 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
+from max.experimental.compilation import CompiledCallable
 from max.graph import DeviceRef
 from max.nn.kv_cache import AttnKeyInterface, BatchCharacteristics, MHAAttnKey
 from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.lib import MemoryPlan, ModelInputs, ModelOutputs
-from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
+from max.pipelines.lib.graph_capture import (
+    _HOST_INPUT_GUARD_ENV,
+    ServeGraphCaptureRunner,
+)
 from max.pipelines.lib.interfaces import UnifiedEagleOutputs
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
@@ -240,6 +245,71 @@ def test_replay_miss_raises(capture_model: CapturePipelineModel) -> None:
     assert not capture_model.model.replay_calls
 
 
+def _runner_with_captured_host_input(
+    model: DummyModel,
+) -> tuple[ServeGraphCaptureRunner, Buffer]:
+    """Returns a runner holding one graph captured with ``return_n_logits=1``.
+
+    On CPU every captured input is host-resident, so ``replay`` sends each one
+    through the host-input guard.
+    """
+    runner = _make_runner(model)
+    key = _gk(num_partitions=1, q_max_seq_len=1)
+    runner._records[_bc(1, 1, 1)] = key
+    captured = MockModelInputs(
+        active_batch_size=1, eos_prob=0.0, return_n_logits=1
+    )
+    runner.graph_entries[key] = (
+        captured.buffers,
+        ModelOutputs(logits=model.output_buffer),
+    )
+    return runner, captured.return_n_logits
+
+
+def test_replay_guard_abort_reads_the_captured_value_before_refresh(
+    capture_model: CapturePipelineModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abort mode raises on a changed host input and leaves the graph unrun.
+
+    The guard only works while the captured buffer still holds its captured
+    value; if the refresh copy ran first, it would compare the live value with
+    itself and stay silent.
+    """
+    monkeypatch.setenv(_HOST_INPUT_GUARD_ENV, "abort")
+    runner, captured = _runner_with_captured_host_input(capture_model.model)
+    live = MockModelInputs(active_batch_size=1, eos_prob=0.0, return_n_logits=4)
+
+    with pytest.raises(RuntimeError, match="changed since capture"):
+        runner.replay(model_inputs=live, batch_characteristics=_bc(1, 1, 1))
+    assert captured.to_numpy()[0] == 1
+    assert not capture_model.model.replay_calls
+
+
+def test_replay_guard_report_warns_once_and_keeps_replaying(
+    capture_model: CapturePipelineModel,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv(_HOST_INPUT_GUARD_ENV, "report")
+    runner, captured = _runner_with_captured_host_input(capture_model.model)
+
+    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
+        for return_n_logits in (4, 8):
+            live = MockModelInputs(
+                active_batch_size=1,
+                eos_prob=0.0,
+                return_n_logits=return_n_logits,
+            )
+            runner.replay(model_inputs=live, batch_characteristics=_bc(1, 1, 1))
+
+    reports = [
+        r for r in caplog.records if "changed since capture" in r.message
+    ]
+    assert len(reports) == 1
+    assert captured.to_numpy()[0] == 8
+    assert len(capture_model.model.replay_calls) == 2
+
+
 def test_replay_debug_verify_uses_verify_inputs(
     capture_model: CapturePipelineModel,
 ) -> None:
@@ -423,3 +493,18 @@ def test_warmup_dedups_shared_keys() -> None:
         key == _gk(num_partitions=3, q_max_seq_len=1)
         for key in runner._records.values()
     )
+
+
+def test_release_graph_reaches_the_engine_model_of_a_compiled_callable() -> (
+    None
+):
+    compiled = MagicMock(spec=CompiledCallable)
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, compiled),
+        kv_params=_mock_kv_params(),
+        warmup_model_inputs=MagicMock(),
+        max_cache_length_upper_bound=10,
+        max_batch_size=1,
+    )
+    runner.release_graph(_gk(num_partitions=1, q_max_seq_len=1))
+    compiled.engine_model.release_captured_graph.assert_called_once()

@@ -33,11 +33,13 @@ from __future__ import annotations
 
 import bisect
 import logging
+import os
 import time
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import replace
 
+import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
@@ -60,6 +62,93 @@ GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
 WarmupModelInputs = Callable[
     [int, BatchCharacteristics], AbstractContextManager[ModelInputs]
 ]
+
+
+_HOST_INPUT_GUARD_ENV = "MODULAR_DEBUG_CAPTURE_HOST_INPUTS"
+"""Enables the captured-host-input guard. ``report`` or ``abort``; unset is off.
+
+``report`` logs each offending input once and keeps replaying, so a single run
+enumerates every candidate; ``abort`` raises on the first one. The two modes
+mirror ``MOJO_STDLIB_SIMD_UNINIT_CHECK``, which makes the same trade for the
+same reason: when a run is expensive, iterating one site at a time is not
+affordable.
+"""
+
+_HOST_INPUT_GUARD_MODES = ("report", "abort")
+_HOST_INPUT_GUARD_OFF = ("", "0", "off", "false", "no")
+
+
+def _resolve_host_input_guard_mode() -> str | None:
+    """Returns the configured guard mode, or ``None`` when the guard is off.
+
+    Raises:
+        ValueError: If the variable is set to something other than ``report``,
+            ``abort``, or a recognized off value.
+    """
+    raw = os.environ.get(_HOST_INPUT_GUARD_ENV, "").strip().lower()
+    if raw in _HOST_INPUT_GUARD_OFF:
+        return None
+    if raw not in _HOST_INPUT_GUARD_MODES:
+        raise ValueError(
+            f"Invalid {_HOST_INPUT_GUARD_ENV}={raw!r}. Use one of "
+            f"{list(_HOST_INPUT_GUARD_MODES)}, or unset to disable."
+        )
+    return raw
+
+
+def _host_input_diagnostic(
+    name: str, index: int, captured: Buffer, live: Buffer
+) -> str | None:
+    """Reports a host-resident graph input whose value changed since capture.
+
+    Replay runs no host code, so anything an op derived on the host from this
+    input at capture time -- an allocation size, a launch extent, a tile
+    geometry -- is baked into the recorded graph nodes and will not be
+    recomputed. The per-replay refresh copies tensor bytes into the stable
+    buffers the recorded nodes read from, which fixes values read through a
+    device pointer and cannot fix a derived one. A changed value here means any
+    such derived quantity is stale for this replay.
+
+    **What this does not establish.** A changed value is a *candidate*, not a
+    defect: an input read only through a device pointer changes every step and
+    is refreshed correctly by the copy this check precedes. Confirming a real
+    defect means finding host code that consumed the value at capture. Equally,
+    silence is not proof of safety -- it means no host input changed, and says
+    nothing about a stale quantity derived from something that is not a graph
+    input at all. Treat a report as a place to look, not a verdict.
+
+    Args:
+        name: The input's name from the model's input metadata.
+        index: Its position in the model's input list, for when the name is
+            unavailable.
+        captured: The buffer the graph was captured with, read before the
+            per-replay refresh overwrites it.
+        live: The value this replay is about to install.
+
+    Returns:
+        A diagnostic naming the input and both values, or ``None`` if the value
+        is unchanged.
+    """
+    if captured.dtype == live.dtype and captured.shape == live.shape:
+        captured_np = captured.to_numpy()
+        live_np = live.to_numpy()
+        if np.array_equal(captured_np, live_np):
+            return None
+        detail = f"captured={captured_np!r} live={live_np!r}"
+    else:
+        detail = (
+            f"captured={captured.dtype}{list(captured.shape)} "
+            f"live={live.dtype}{list(live.shape)}"
+        )
+    return (
+        f"Captured host input {name!r} (index {index}) changed since capture: "
+        f"{detail}. Replay runs no host code, so any allocation size, launch "
+        "extent or tile geometry an op derived from this value at capture is "
+        "frozen at the captured value and is stale for this replay. Either "
+        "make the value a capture characteristic so each distinct value gets "
+        "its own recorded graph, or pin it to a constant upper bound so "
+        "capture and replay agree."
+    )
 
 
 def _release_graph_capture_outputs_to_borrowed(
@@ -120,6 +209,12 @@ class ServeGraphCaptureRunner:
         self._model = model
         self._warmup_model_inputs = warmup_model_inputs
         self._num_speculative_tokens = num_speculative_tokens
+        # Resolved once: replay is the hot path graph capture exists to keep
+        # free of host work, so when the guard is off the only cost it adds is
+        # this attribute being falsy.
+        self._host_input_guard_mode = _resolve_host_input_guard_mode()
+        self._host_input_names: list[str] | None = None
+        self._host_inputs_reported: set[str] = set()
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -179,7 +274,10 @@ class ServeGraphCaptureRunner:
         unknown keys.
         """
         self.graph_entries.pop(key, None)
-        self._model.release_captured_graph(_pack_model_graph_key(key))
+        model = self._model
+        if isinstance(model, CompiledCallable):
+            model = model.engine_model
+        model.release_captured_graph(_pack_model_graph_key(key))
 
     def _probe_verify_widths(self, batch_size: int) -> list[int]:
         """Returns the verify widths to capture for ``batch_size``.
@@ -341,6 +439,45 @@ class ServeGraphCaptureRunner:
             self._max_batch_size,
         )
 
+    def _host_input_name(self, index: int) -> str:
+        """Returns the model's name for positional input ``index``.
+
+        ``captured_inputs`` is the prefix of the model's declared inputs that
+        graph capture recorded -- ``replay`` appends the signal buffers after
+        it -- so positions line up with ``input_metadata`` over that prefix.
+        """
+        if self._host_input_names is None:
+            model = self._model
+            if isinstance(model, CompiledCallable):
+                model = model.engine_model
+            try:
+                self._host_input_names = [
+                    spec.name for spec in model.input_metadata
+                ]
+            except AttributeError:
+                self._host_input_names = []
+        if index < len(self._host_input_names):
+            name = self._host_input_names[index]
+            if name:
+                return name
+        return f"<input {index}>"
+
+    def _guard_host_input(
+        self, index: int, captured: Buffer, live: Buffer
+    ) -> None:
+        """Applies the configured guard to one host-resident replay input."""
+        name = self._host_input_name(index)
+        diagnostic = _host_input_diagnostic(name, index, captured, live)
+        if diagnostic is None:
+            return
+        if self._host_input_guard_mode == "abort":
+            raise RuntimeError(diagnostic)
+        # Report mode: one line per input, so a long run enumerates the
+        # candidates instead of repeating one of them every step.
+        if name not in self._host_inputs_reported:
+            self._host_inputs_reported.add(name)
+            logger.warning(diagnostic)
+
     def _bucket_cache_length(self, cache_length: int) -> int:
         """Rounds a runtime cache length up to the nearest recorded length.
 
@@ -433,10 +570,14 @@ class ServeGraphCaptureRunner:
         # sequential fallback otherwise).
         dsts: list[Buffer] = []
         srcs: list[Buffer] = []
-        for src_value, dst_value in zip(
-            input_buffers, captured_inputs, strict=True
+        for index, (src_value, dst_value) in enumerate(
+            zip(input_buffers, captured_inputs, strict=True)
         ):
             if dst_value.device.is_host:
+                if self._host_input_guard_mode is not None:
+                    # Before the copy: `dst_value` still holds the value the
+                    # graph was captured with.
+                    self._guard_host_input(index, dst_value, src_value)
                 dst_value.inplace_copy_from(src_value)
                 continue
             assert src_value.device == dst_value.device, (

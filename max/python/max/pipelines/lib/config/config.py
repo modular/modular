@@ -1200,6 +1200,29 @@ class PipelineConfig(ConfigFileModel):
                 "BLASST_LOG_THRESHOLD_MAG",
                 int(os.environ.get("BLASST_LOG_THRESHOLD_MAG", "13000")),
             )
+        if self._disable_vendor_blas_fallback():
+            session._set_mojo_define("MODULAR_DISABLE_VENDOR_FALLBACK", "true")
+
+    def _disable_vendor_blas_fallback(self) -> bool:
+        """Returns whether to compile kernels without the vendor-BLAS fallback.
+
+        ``_matmul_gpu`` reads ``MODULAR_DISABLE_VENDOR_FALLBACK`` through
+        ``get_defined_bool``, so it is a kernel-compile define and an
+        environment variable alone never reaches the kernels serve compiles.
+        Forwarding it here is what makes the documented escape hatch work.
+
+        It is forced on for HIP + device graph capture: the fallback's first
+        GEMM constructs the hipBLASLt handle, and ``hipblasLtCreate`` zeroes a
+        25 MiB workspace with a legacy-stream ``hipMemset`` and calls
+        ``exit(1)`` when that fails. Inside a capture region that memset
+        returns ``hipErrorStreamCaptureImplicit``, so the model worker dies
+        instead of raising. MAX's own kernels cover the same shapes.
+        """
+        if self.runtime.device_graph_capture and accelerator_api() == "hip":
+            return True
+        return os.environ.get(
+            "MODULAR_DISABLE_VENDOR_FALLBACK", ""
+        ).lower() in ("1", "true", "on", "yes")
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None
