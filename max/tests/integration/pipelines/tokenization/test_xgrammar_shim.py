@@ -3848,6 +3848,82 @@ def test_xml_bare_value_regex_guards_are_qwen_only(
         assert isinstance(compiled, xgr.CompiledGrammar)
 
 
+_NESTED_ANY_PARAMETERS = [
+    ({"type": "object"}, '{"a": ["x", {"b": null}]}', '{"a": 1 zzz}'),
+    (
+        {"type": "object", "properties": {"a": {}}},
+        '{"a": ["x", {"b": null}]}',
+        '{"a": 1 zzz}',
+    ),
+    ({"type": "array"}, '[1, ["x", {"b": null}]]', "[1 zzz]"),
+    (
+        {"type": "object", "additionalProperties": {}},
+        '{"a": "x", "c": {"b": 2}}',
+        '{"a": 1 zzz}',
+    ),
+]
+
+
+def _xml_frame(style: _XmlStyle, value: str) -> str:
+    if style == "minimax_xml":
+        return f'<parameter name="m">{value}</parameter>'
+    if style == "glm_xml":
+        return f"<arg_key>m</arg_key><arg_value>{value}</arg_value>"
+    if style == "deepseek_xml":
+        bar = "\uff5c"
+        return (
+            f'<{bar}DSML{bar}parameter name="m" string="false">'
+            f"{value}</{bar}DSML{bar}parameter>"
+        )
+    return f"<parameter=m>{value}</parameter>"
+
+
+def _compile_one_parameter(
+    parameter: dict[str, Any], style: _XmlStyle
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"m": parameter},
+                "required": ["m"],
+            },
+            style=style,
+            # Strict mode would close these objects and arrays outright.
+            strict_mode=False,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+@pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
+def test_xml_nested_any_value_is_json_on_qwen(
+    parameter: dict[str, Any], valid: str, runaway: str
+) -> None:
+    # An any-typed value inside a qwen_xml parameter's JSON is itself JSON; a
+    # bare-value string there would run to </parameter> and admit any text.
+    compiled = _compile_one_parameter(parameter, "qwen_xml")
+    assert _accepts(compiled, _xml_frame("qwen_xml", valid))
+    assert not _accepts(compiled, _xml_frame("qwen_xml", runaway))
+
+
+def test_xml_top_level_any_value_stays_bare_on_qwen() -> None:
+    compiled = _compile_one_parameter({}, "qwen_xml")
+    assert _accepts(compiled, _xml_frame("qwen_xml", "free text, {a: 1 zzz"))
+
+
+@pytest.mark.parametrize("style", ["minimax_xml", "glm_xml", "deepseek_xml"])
+@pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
+def test_xml_nested_any_value_unchanged_on_other_styles(
+    style: _XmlStyle, parameter: dict[str, Any], valid: str, runaway: str
+) -> None:
+    # TODO(qwen-hotfix-9 follow-up): these styles share the widening fixed
+    # for qwen_xml; the runaway assertion flips when they get the same fix.
+    compiled = _compile_one_parameter(parameter, style)
+    assert _accepts(compiled, _xml_frame(style, valid))
+    assert _accepts(compiled, _xml_frame(style, runaway))
+
+
 def test_xml_bare_value_bound_counts_code_points() -> None:
     # JSON Schema counts code points; the automaton counts UTF-8 lead bytes.
     compiled = _compile_xml_length(2, 2)

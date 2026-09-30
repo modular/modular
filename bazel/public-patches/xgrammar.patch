@@ -6430,7 +6430,7 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..a883136 100644
+index 4f1cc65..8071f11 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
 @@ -5,10 +5,20 @@
@@ -6454,7 +6454,7 @@ index 4f1cc65..a883136 100644
 
  namespace xgrammar {
 
-@@ -17,9 +27,27 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,9 +27,28 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
@@ -6479,11 +6479,12 @@ index 4f1cc65..a883136 100644
 +          /*xml_all_depths=*/false,
 +          /*array_item_tag=*/"",
 +          /*value_framing_stripped=*/true,
-+          /*bare_value_regex_exact=*/true}},
++          /*bare_value_regex_exact=*/true,
++          /*any_string_is_json=*/true}},
          {JSONFormat::kMiniMaxXML, {"<parameter name=\\\"", "\\\">", "", "</parameter>"}},
          {JSONFormat::kDeepSeekXML,
           {"<｜DSML｜parameter name=\\\"",
-@@ -28,6 +56,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
+@@ -28,6 +57,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
          {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
@@ -6498,7 +6499,7 @@ index 4f1cc65..a883136 100644
  };
 
  XMLToolCallingConverter::XMLToolCallingConverter(
-@@ -37,19 +73,250 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+@@ -37,19 +74,250 @@ XMLToolCallingConverter::XMLToolCallingConverter(
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
      JSONFormat json_format,
@@ -6753,7 +6754,7 @@ index 4f1cc65..a883136 100644
    ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
 
    return ebnf_script_creator_.GetScript();
-@@ -63,41 +330,65 @@ void XMLToolCallingConverter::AddBasicRules() {
+@@ -63,41 +331,65 @@ void XMLToolCallingConverter::AddBasicRules() {
    JSONSchemaConverter::AddBasicRules();
    nested_object_level_ = 1;
    // The outer part, xml format, is at level 1.
@@ -6837,7 +6838,7 @@ index 4f1cc65..a883136 100644
  }
 
  std::string XMLToolCallingConverter::GetKeyPattern() const {
-@@ -114,13 +405,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
+@@ -114,13 +406,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
    return kBasicAny;
  }
 
@@ -6849,8 +6850,7 @@ index 4f1cc65..a883136 100644
 -    return GetKeyPattern();
 +    auto pattern = BuildBareAdditionalKeyPattern(kXMLVariableNameTerminal, properties, rule_name);
 +    return pattern.has_value() ? *pattern : GetKeyPattern();
-   }
--  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
++  }
 +  return JSONSchemaConverter::GetAdditionalKeyPattern(properties, rule_name);
 +}
 +
@@ -6862,12 +6862,13 @@ index 4f1cc65..a883136 100644
 +        property_names, rule_name,
 +        MakeKeyContext(GenerationContext::Framing::kBare, kXMLVariableNameTerminal)
 +    );
-+  }
+   }
+-  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
 +  return JSONSchemaConverter::GetPropertyNamesKeyPattern(property_names, rule_name);
  }
 
  std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
-@@ -131,19 +435,34 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
+@@ -131,19 +436,34 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
  }
 
  std::string XMLToolCallingConverter::GenerateString(
@@ -6903,7 +6904,7 @@ index 4f1cc65..a883136 100644
          std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
          return converted_regex;
        }
-@@ -151,86 +470,331 @@ std::string XMLToolCallingConverter::GenerateString(
+@@ -151,86 +471,338 @@ std::string XMLToolCallingConverter::GenerateString(
 
      // Check for pattern
      if (spec.pattern.has_value()) {
@@ -7045,12 +7046,12 @@ index 4f1cc65..a883136 100644
 +      while (j < body.size() &&
 +             (std::isalnum(static_cast<unsigned char>(body[j])) || body[j] == '_')) {
 +        ++j;
-       }
--      return char_pattern + repetition;
++      }
 +      if (tight_value_rules_.count(body.substr(i, j - i)) > 0) {
 +        tight_value_rules_.insert(rule_name);
 +        return;
-+      }
+       }
+-      return char_pattern + repetition;
 +      i = j;
 +    } else if (c == '"') {
 +      ++i;
@@ -7063,8 +7064,8 @@ index 4f1cc65..a883136 100644
      }
    }
 -  return JSONSchemaConverter::GenerateString(spec, rule_name);
- }
-
++}
++
 +std::string XMLToolCallingConverter::GenerateRef(
 +    const RefSpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +) {
@@ -7100,8 +7101,15 @@ index 4f1cc65..a883136 100644
 +  return body;
 +}
 +
-+std::string XMLToolCallingConverter::GetAnyStringRuleName() const { return kXMLString; }
-+
++std::string XMLToolCallingConverter::GetAnyStringRuleName() const {
++  // GenerateAny spells a bare value's string arm itself, so outside an xml_all_depths style the
++  // base converter asks here only for a string inside JSON.
++  if (xml_wrapper_.any_string_is_json && !xml_wrapper_.xml_all_depths) {
++    return JSONSchemaConverter::GetAnyStringRuleName();
++  }
++  return kXMLString;
+ }
+
  std::string XMLToolCallingConverter::GenerateAny(
 -    const AnySpec& spec, const std::string& rule_name
 +    const AnySpec& spec, const std::string& rule_name, const GenerationContext& ctx
@@ -7265,7 +7273,7 @@ index 4f1cc65..a883136 100644
    }
    return JSONSchemaConverter::FormatPropertyKey(key);
  }
-@@ -239,15 +803,16 @@ std::string XMLToolCallingConverter::FormatProperty(
+@@ -239,15 +811,16 @@ std::string XMLToolCallingConverter::FormatProperty(
      const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
  ) {
    if (nested_object_level_ <= 1) {
@@ -7290,7 +7298,7 @@ index 4f1cc65..a883136 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +824,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +832,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -7316,7 +7324,7 @@ index 4f1cc65..a883136 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +841,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +849,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -7386,7 +7394,7 @@ index 4f1cc65..a883136 100644
    return result;
  }
 
-@@ -289,14 +907,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +915,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
@@ -7404,7 +7412,7 @@ index 4f1cc65..a883136 100644
 
  }  // namespace xgrammar
 diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
-index 8d778e0..345adbe 100644
+index 8d778e0..e740785 100644
 --- a/cpp/json_schema_converter_ext.h
 +++ b/cpp/json_schema_converter_ext.h
 @@ -7,8 +7,12 @@
@@ -7507,7 +7515,7 @@ index 8d778e0..345adbe 100644
 
    std::string NextSeparator(bool is_end = false) override;
 
-@@ -76,13 +126,28 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -76,13 +126,32 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    void AddCache(const std::string& key, const std::string& value) override;
    std::optional<std::string> GetCache(const std::string& key) const override;
 
@@ -7534,10 +7542,14 @@ index 8d778e0..345adbe 100644
 +    // cannot take back exactly: one that can spell the close delimiter's first byte, or a
 +    // pattern not anchored at both ends.
 +    bool bare_value_regex_exact = false;
++    // Whether an any-typed value inside a parameter's JSON takes a JSON string as its string
++    // arm. Otherwise it takes the bare-value string, which runs to the close delimiter and so
++    // admits any text after it.
++    bool any_string_is_json = false;
    };
 
    static const std::unordered_map<JSONFormat, XMLWrapper> kKeyWrapperMap;
-@@ -90,10 +155,78 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -90,10 +159,78 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    static const std::string kXMLAny;
    static const std::string kXMLObject;
    static const std::string kXMLVariableName;
