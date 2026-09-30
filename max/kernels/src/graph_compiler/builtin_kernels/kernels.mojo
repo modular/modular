@@ -3352,7 +3352,7 @@ def tpool_patch_merger_shape(
 
 
 @extensibility.register("gated_delta_conv1d_fwd")
-struct GatedDeltaConv1dFwd:
+struct GatedDeltaConv1dFwd[write_state: Bool = True]:
     """Gated DeltaNet causal conv1d forward pass (Pass 1 of two-pass prefill).
 
     Reads/writes a single mutable conv-state pool of shape
@@ -3361,6 +3361,10 @@ struct GatedDeltaConv1dFwd:
     per-token conv output. The pool's dtype is independent of the working
     dtype, so the caller can keep the per-token tensors at fp32 while
     storing the pool at the model's native dtype (bf16).
+
+    Parameters:
+        write_state: Whether to write the updated window back to
+            `conv_state`. False only reads it for the look-back.
 
     Tensor Shapes:
         - conv_output_ragged : [total_seq_len, conv_dim]                  (OUT)
@@ -3467,6 +3471,7 @@ struct GatedDeltaConv1dFwd:
                     state_dtype,
                     kKernelSize,
                     CONV1D_BLOCK_DIM,
+                    Self.write_state,
                     qkv_input_ragged_tt.LayoutType,
                     conv_weight_tt.LayoutType,
                     conv_state_tt.LayoutType,

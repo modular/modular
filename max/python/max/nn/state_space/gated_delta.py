@@ -81,6 +81,8 @@ def gated_delta_conv1d_fwd(
     conv_state: BufferValue,
     slot_idx: TensorValue,
     input_row_offsets: TensorValue,
+    *,
+    write_state: bool = True,
 ) -> TensorValue:
     """Applies the causal conv1d pass, mutating a slot-indexed conv-state
     pool in place.
@@ -99,6 +101,8 @@ def gated_delta_conv1d_fwd(
             mutable pool.
         slot_idx: The ``[batch_size]`` uint32 slot indices into the pool.
         input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
+        write_state: Whether to write the updated window back to
+            ``conv_state``. ``False`` only reads it for the look-back.
 
     Returns:
         The conv output, ``[total_seq_len, conv_dim]``.
@@ -134,6 +138,7 @@ def gated_delta_conv1d_fwd(
             offsets_uint32,
         ],
         [conv_output_ragged_type],
+        parameters={"write_state": write_state},
     )
     return cast(TensorValue, results[0])
 

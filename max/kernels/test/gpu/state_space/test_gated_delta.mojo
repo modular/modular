@@ -24,7 +24,8 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.random import rand
+from max.gpu.host import DeviceBuffer
+from std.random import rand, random_float64, seed
 from state_space.gated_delta import gated_delta_recurrence_fwd_gpu
 from std.testing import TestSuite, assert_almost_equal, assert_equal
 from std.utils.index import Index, IndexList
@@ -468,6 +469,388 @@ def test_prefill_gqa_multi_seq() raises:
         ctx=ctx,
         rtol=0.05,
     )
+
+
+def test_slot_indexed_batch1_single_token_production_shape() raises:
+    """Checks batch 1 with a single token at 128-dim heads, 48 value heads."""
+    var ctx = DeviceContext()
+    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
+        batch_size=1,
+        total_seq_len=1,
+        num_value_heads=48,
+        num_key_heads=16,
+        max_slots=2,
+        seq_lengths=Index(1),
+        slot_assignments=Index(1),
+        ctx=ctx,
+        rtol=0.05,
+    )
+
+
+def test_slot_indexed_mixed_ragged_batch_production_shape() raises:
+    """Checks one launch mixing multi-token and single-token rows."""
+    var ctx = DeviceContext()
+    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
+        batch_size=4,
+        total_seq_len=10,  # 1 (decode) + 5 (prefill) + 1 (decode) + 3 (prefill)
+        num_value_heads=48,
+        num_key_heads=16,
+        max_slots=5,
+        seq_lengths=Index(1, 5, 1, 3),
+        slot_assignments=Index(4, 0, 2, 1),
+        ctx=ctx,
+        rtol=0.05,
+    )
+
+
+def _fill_random_signed[dtype: DType](mut data: List[Scalar[dtype]]) raises:
+    """Fills `data` with values in [-1, 1)."""
+    for i in range(len(data)):
+        data[i] = Scalar[dtype](Float32(random_float64(-1.0, 1.0)))
+
+
+def _fill_random_unit_interval[
+    dtype: DType
+](mut data: List[Scalar[dtype]]) raises:
+    """Fills `data` with `|x| / (|x| + 1)` values in [0, 1)."""
+    for i in range(len(data)):
+        var v = abs(Float32(random_float64(-2.0, 2.0)))
+        data[i] = Scalar[dtype](v / (v + Float32(1.0)))
+
+
+def _launch_gdn_ragged_batch[
+    work_dtype: DType,
+    state_dtype: DType,
+    KEY_HEAD_DIM: Int,
+    VALUE_HEAD_DIM: Int,
+](
+    num_value_heads: Int,
+    num_key_heads: Int,
+    conv_dim: Int,
+    value_dim: Int,
+    qkv_full: List[Scalar[work_dtype]],
+    decay_full: List[Scalar[work_dtype]],
+    beta_full: List[Scalar[work_dtype]],
+    row_starts: IndexList,
+    row_lengths: IndexList,
+    row_slots: IndexList,
+    max_slots: Int,
+    pool_device: DeviceBuffer[state_dtype],
+    ctx: DeviceContext,
+) raises -> List[Scalar[work_dtype]]:
+    """Launches the recurrence once over `len(row_lengths)` ragged rows.
+
+    Row `r` takes `row_lengths[r]` tokens of the `*_full` inputs starting at
+    `row_starts[r]`, so rows may overlap. `pool_device` persists across
+    calls. Returns the `[total_seq_len, value_dim]` output.
+    """
+    var num_rows = len(row_lengths)
+    var total_seq_len = 0
+    for r in range(num_rows):
+        total_seq_len += row_lengths[r]
+    var key_dim = num_key_heads * KEY_HEAD_DIM
+
+    var qkv_h = List[Scalar[work_dtype]](
+        length=total_seq_len * conv_dim, fill=Scalar[work_dtype](0)
+    )
+    var decay_h = List[Scalar[work_dtype]](
+        length=total_seq_len * num_value_heads, fill=Scalar[work_dtype](0)
+    )
+    var beta_h = List[Scalar[work_dtype]](
+        length=total_seq_len * num_value_heads, fill=Scalar[work_dtype](0)
+    )
+    var offsets_h = List[Scalar[.uint32]](
+        length=num_rows + 1, fill=Scalar[.uint32](0)
+    )
+    var slot_idx_h = List[Scalar[.uint32]](
+        length=num_rows, fill=Scalar[.uint32](0)
+    )
+
+    var dest_tok = 0
+    var cumsum = UInt32(0)
+    offsets_h[0] = cumsum
+    for r in range(num_rows):
+        var src_start = row_starts[r]
+        var length = row_lengths[r]
+        for t in range(length):
+            var src_tok = src_start + t
+            for c in range(conv_dim):
+                qkv_h[dest_tok * conv_dim + c] = qkv_full[
+                    src_tok * conv_dim + c
+                ]
+            for h in range(num_value_heads):
+                decay_h[dest_tok * num_value_heads + h] = decay_full[
+                    src_tok * num_value_heads + h
+                ]
+                beta_h[dest_tok * num_value_heads + h] = beta_full[
+                    src_tok * num_value_heads + h
+                ]
+            dest_tok += 1
+        cumsum += UInt32(length)
+        offsets_h[r + 1] = cumsum
+        slot_idx_h[r] = UInt32(row_slots[r])
+
+    var qkv_tt_h = TileTensor(qkv_h, row_major(total_seq_len, conv_dim))
+    var decay_tt_h = TileTensor(
+        decay_h, row_major(total_seq_len, num_value_heads)
+    )
+    var beta_tt_h = TileTensor(
+        beta_h, row_major(total_seq_len, num_value_heads)
+    )
+    var offsets_tt_h = TileTensor(offsets_h, row_major(num_rows + 1))
+    var slot_idx_tt_h = TileTensor(slot_idx_h, row_major(num_rows))
+
+    var qkv_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * conv_dim
+    )
+    var decay_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * num_value_heads
+    )
+    var beta_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * num_value_heads
+    )
+    var offsets_device = ctx.enqueue_create_buffer[.uint32](num_rows + 1)
+    var slot_idx_device = ctx.enqueue_create_buffer[.uint32](num_rows)
+    var recur_out_device = ctx.enqueue_create_buffer[work_dtype](
+        total_seq_len * value_dim
+    )
+
+    ctx.enqueue_copy(qkv_device, qkv_tt_h._storage)
+    ctx.enqueue_copy(decay_device, decay_tt_h._storage)
+    ctx.enqueue_copy(beta_device, beta_tt_h._storage)
+    ctx.enqueue_copy(offsets_device, offsets_tt_h._storage)
+    ctx.enqueue_copy(slot_idx_device, slot_idx_tt_h._storage)
+
+    var qkv_tt = TileTensor(qkv_device, row_major(total_seq_len, conv_dim))
+    var decay_tt = TileTensor(
+        decay_device, row_major(total_seq_len, num_value_heads)
+    )
+    var beta_tt = TileTensor(
+        beta_device, row_major(total_seq_len, num_value_heads)
+    )
+    var offsets_tt = TileTensor(offsets_device, row_major(num_rows + 1))
+    var slot_idx_tt = TileTensor(slot_idx_device, row_major(num_rows))
+    var pool_tt = TileTensor(
+        pool_device,
+        row_major(max_slots, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM),
+    )
+    var recur_out_tt = TileTensor(
+        recur_out_device, row_major(total_seq_len, value_dim)
+    )
+
+    var compiled_func = ctx.compile_function[
+        gated_delta_recurrence_fwd_gpu[
+            work_dtype,
+            state_dtype,
+            KEY_HEAD_DIM,
+            VALUE_HEAD_DIM,
+            recur_out_tt.LayoutType,
+            qkv_tt.LayoutType,
+            decay_tt.LayoutType,
+            beta_tt.LayoutType,
+            pool_tt.LayoutType,
+            slot_idx_tt.LayoutType,
+            offsets_tt.LayoutType,
+            recur_out_tt.Engine,
+        ]
+    ]()
+    with ctx.push_context():
+        ctx.enqueue_function(
+            compiled_func,
+            Int32(num_rows),
+            Int32(num_value_heads),
+            Int32(num_key_heads),
+            Int32(key_dim),
+            recur_out_tt,
+            pool_tt,
+            slot_idx_tt,
+            qkv_tt,
+            decay_tt,
+            beta_tt,
+            offsets_tt,
+            UInt32(conv_dim),
+            UInt32(1),
+            UInt32(num_value_heads),
+            UInt32(1),
+            UInt32(value_dim),
+            UInt32(1),
+            grid_dim=(num_rows * num_value_heads,),
+            block_dim=(VALUE_HEAD_DIM,),
+        )
+
+    var out_h = List[Scalar[work_dtype]](
+        length=total_seq_len * value_dim, fill=Scalar[work_dtype](0)
+    )
+    var out_tt_h = TileTensor(out_h, row_major(total_seq_len, value_dim))
+    with ctx.push_context():
+        ctx.enqueue_copy(out_tt_h._storage, recur_out_device)
+    ctx.synchronize()
+    return out_h^
+
+
+def test_gated_delta_chunk_invariance_and_self_consistency() raises:
+    """Checks one sequence run whole, in chunks, and duplicated agrees.
+
+      (a) One launch of 6 tokens into slot 0.
+      (b) Three launches of 2, 3 and 1 tokens into slot 3.
+      (c) Two copies of the sequence in one batch, slots 1 and 2.
+
+    (a) and (c) must agree exactly. (b) rounds its state to bfloat16 at two
+    extra launch boundaries, so it is compared against (a) within the bound
+    those roundings allow.
+    """
+    seed(20260918)
+
+    comptime work_dtype = DType.float32
+    comptime state_dtype = DType.bfloat16
+    comptime KEY_HEAD_DIM = 128
+    comptime VALUE_HEAD_DIM = 128
+    comptime num_value_heads = 48
+    comptime num_key_heads = 16
+    comptime key_dim = num_key_heads * KEY_HEAD_DIM
+    comptime value_dim = num_value_heads * VALUE_HEAD_DIM
+    comptime conv_dim = key_dim * 2 + value_dim
+    comptime seq_len = 6
+    comptime max_slots = 4
+
+    var ctx = DeviceContext()
+
+    var qkv_full = List[Scalar[work_dtype]](
+        length=seq_len * conv_dim, fill=Scalar[work_dtype](0)
+    )
+    _fill_random_signed[work_dtype](qkv_full)
+    var decay_full = List[Scalar[work_dtype]](
+        length=seq_len * num_value_heads, fill=Scalar[work_dtype](0)
+    )
+    _fill_random_unit_interval[work_dtype](decay_full)
+    var beta_full = List[Scalar[work_dtype]](
+        length=seq_len * num_value_heads, fill=Scalar[work_dtype](0)
+    )
+    _fill_random_unit_interval[work_dtype](beta_full)
+
+    var pool_size = max_slots * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    var pool_device = ctx.enqueue_create_buffer[state_dtype](pool_size)
+    ctx.enqueue_memset(pool_device, 0)
+
+    # (a) monolithic -> slot 0.
+    var out_mono = _launch_gdn_ragged_batch[
+        work_dtype, state_dtype, KEY_HEAD_DIM, VALUE_HEAD_DIM
+    ](
+        num_value_heads,
+        num_key_heads,
+        conv_dim,
+        value_dim,
+        qkv_full,
+        decay_full,
+        beta_full,
+        row_starts=Index(0),
+        row_lengths=Index(seq_len),
+        row_slots=Index(0),
+        max_slots=max_slots,
+        pool_device=pool_device,
+        ctx=ctx,
+    )
+
+    # (c) self-consistency: the identical sequence duplicated -> slots 1, 2.
+    var out_dup = _launch_gdn_ragged_batch[
+        work_dtype, state_dtype, KEY_HEAD_DIM, VALUE_HEAD_DIM
+    ](
+        num_value_heads,
+        num_key_heads,
+        conv_dim,
+        value_dim,
+        qkv_full,
+        decay_full,
+        beta_full,
+        row_starts=Index(0, 0),
+        row_lengths=Index(seq_len, seq_len),
+        row_slots=Index(1, 2),
+        max_slots=max_slots,
+        pool_device=pool_device,
+        ctx=ctx,
+    )
+
+    # (a) and both rows of (c) run identical arithmetic, so they agree bit for
+    # bit whatever else shares the launch.
+    for i in range(seq_len * value_dim):
+        assert_equal(out_dup[i], out_dup[seq_len * value_dim + i])
+        assert_equal(out_mono[i], out_dup[i])
+
+    # (b) chunked: three separate launches (2 + 3 + 1 tokens) -> slot 3.
+    var chunk_starts: List[Int] = [0, 2, 5]
+    var chunk_lengths: List[Int] = [2, 3, 1]
+    var out_chunks = List[Scalar[work_dtype]](
+        length=seq_len * value_dim, fill=Scalar[work_dtype](0)
+    )
+    var dest = 0
+    for c in range(3):
+        var piece = _launch_gdn_ragged_batch[
+            work_dtype, state_dtype, KEY_HEAD_DIM, VALUE_HEAD_DIM
+        ](
+            num_value_heads,
+            num_key_heads,
+            conv_dim,
+            value_dim,
+            qkv_full,
+            decay_full,
+            beta_full,
+            row_starts=Index(chunk_starts[c]),
+            row_lengths=Index(chunk_lengths[c]),
+            row_slots=Index(3),
+            max_slots=max_slots,
+            pool_device=pool_device,
+            ctx=ctx,
+        )
+        for i in range(len(piece)):
+            out_chunks[dest * value_dim + i] = piece[i]
+        dest += chunk_lengths[c]
+
+    # The state is rounded to `state_dtype` at each launch boundary, so the
+    # chunked slot carries two more roundings than the whole one.
+    var pool_readback = List[Scalar[state_dtype]](
+        length=pool_size, fill=Scalar[state_dtype](0)
+    )
+    var pool_readback_tt = TileTensor(pool_readback, row_major(pool_size))
+    with ctx.push_context():
+        ctx.enqueue_copy(pool_readback_tt._storage, pool_device)
+    ctx.synchronize()
+    var row_elements = num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    var max_abs_state = Float32(0.0)
+    var max_column_norm = Float32(0.0)
+    for h in range(num_value_heads):
+        for vd in range(VALUE_HEAD_DIM):
+            var squared_norm = Float32(0.0)
+            for kd in range(KEY_HEAD_DIM):
+                var v = Float32(
+                    pool_readback[(h * KEY_HEAD_DIM + kd) * VALUE_HEAD_DIM + vd]
+                )
+                squared_norm += v * v
+                max_abs_state = max(max_abs_state, abs(v))
+            max_column_norm = max(max_column_norm, std.math.sqrt(squared_norm))
+    # Machine epsilon, twice the unit roundoff, so the bounds are loose.
+    comptime bfloat16_epsilon = 0.0078125  # 2**-7
+    comptime extra_bf16_roundtrips = 2.0  # chunked: 3 launches, mono: 1
+    var state_atol = (
+        Float64(max_abs_state) * bfloat16_epsilon * extra_bf16_roundtrips + 1e-6
+    )
+    for i in range(row_elements):
+        var slot0_val = Float32(pool_readback[0 * row_elements + i])
+        var slot3_val = Float32(pool_readback[3 * row_elements + i])
+        assert_almost_equal(slot0_val, slot3_val, atol=state_atol, rtol=0.0)
+
+    # A readout dots the state column with a unit query scaled by
+    # 1/sqrt(KD), and the delta-rule update does not grow an error in the
+    # column, so each extra rounding moves an output by at most epsilon
+    # times a column norm over sqrt(KD).
+    var out_atol = (
+        Float64(max_column_norm)
+        * bfloat16_epsilon
+        * extra_bf16_roundtrips
+        / std.math.sqrt(Float64(KEY_HEAD_DIM))
+        + 1e-6
+    )
+    for i in range(seq_len * value_dim):
+        assert_almost_equal(out_mono[i], out_chunks[i], atol=out_atol, rtol=0.0)
 
 
 # =============================================================================
