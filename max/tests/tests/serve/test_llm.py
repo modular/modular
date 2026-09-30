@@ -745,6 +745,7 @@ async def test_next_token_chunk_reasoning_partitions_logprobs() -> None:
     """Test that logprobs are correctly partitioned between reasoning and content."""
     logprob_content = Mock()
     logprob_content.token_log_probabilities = [-0.4]
+    logprob_content.sampled_token_ids = [30]
 
     responses = [
         TextGenerationOutput(
@@ -766,6 +767,7 @@ async def test_next_token_chunk_reasoning_partitions_logprobs() -> None:
     assert chunks[0].reasoning_token_count == 1
     assert chunks[0].token_log_probabilities == [-0.4]
     assert chunks[0].top_log_probabilities == [{"tok": -0.5}]
+    assert chunks[0].sampled_tokens == ["text"]
 
 
 @pytest.mark.asyncio

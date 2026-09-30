@@ -1151,6 +1151,7 @@ def test_process_chat_log_probabilities_with_logprobs() -> None:
             token_count=2,
             token_log_probabilities=token_log_probs,
             top_log_probabilities=top_log_probs,
+            sampled_tokens=["hello", "bar"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1185,6 +1186,7 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
             token_count=1,
             token_log_probabilities=[-0.1],
             top_log_probabilities=[{"a": -0.1, "b": -0.5}],
+            sampled_tokens=["a"],
         ),
         TokenGeneratorOutput(
             status=GenerationStatus.END_OF_SEQUENCE,
@@ -1192,6 +1194,7 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
             token_count=1,
             token_log_probabilities=[-0.2],
             top_log_probabilities=[{"b": -0.2, "c": -0.8}],
+            sampled_tokens=["b"],
         ),
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1219,6 +1222,7 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
             token_count=1,
             token_log_probabilities=[-1.0],
             top_log_probabilities=[{"x": -1.0, "y": -0.5, "z": -2.0}],
+            sampled_tokens=["x"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1238,6 +1242,40 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
     assert top_logprobs[2].logprob == -2.0
 
 
+def test_process_chat_log_probabilities_tied_sampled_token() -> None:
+    """Test that the entry names the sampled token when its logprob is tied."""
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens=".b",
+            token_count=2,
+            token_log_probabilities=[-0.725921630859375, -0.5],
+            top_log_probabilities=[
+                {",": -0.725921630859375, ".": -0.725921630859375, "x": -2.0},
+                {"b": -0.5, "a": -0.25, "c": -3.0},
+            ],
+            sampled_tokens=[".", "b"],
+        )
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    content = result.content
+    assert content is not None
+    assert len(content) == 2
+    assert content[0].token == "."
+    assert content[0].bytes == [46]
+    assert content[0].logprob == -0.725921630859375
+    assert [t.token for t in content[0].top_logprobs] == [",", ".", "x"]
+
+    assert content[1].token == "b"
+    assert content[1].logprob == -0.5
+    assert [(t.token, t.logprob) for t in content[1].top_logprobs] == [
+        ("a", -0.25),
+        ("b", -0.5),
+        ("c", -3.0),
+    ]
+
+
 def test_process_chat_log_probabilities_bytes_encoding() -> None:
     """Test that token bytes are correctly encoded as UTF-8."""
     outputs = [
@@ -1247,6 +1285,7 @@ def test_process_chat_log_probabilities_bytes_encoding() -> None:
             token_count=1,
             token_log_probabilities=[-0.3],
             top_log_probabilities=[{"é": -0.3}],
+            sampled_tokens=["é"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)

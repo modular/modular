@@ -23,7 +23,7 @@ from max.pipelines.modeling.types import RequestID
 
 
 def _log_probs(i: int) -> LogProbabilities:
-    return LogProbabilities([float(i)], [{i: float(i)}])
+    return LogProbabilities([float(i)], [{i: float(i)}], [i])
 
 
 def test_combine_many() -> None:

@@ -3027,9 +3027,11 @@ def _process_chat_log_probabilities(
             or not output.top_log_probabilities
         ):
             continue
+        assert output.sampled_tokens is not None
 
         # Iterate through each token's log probs
-        for token_logprob, top_logprobs_dict in zip(
+        for sampled_token, token_logprob, top_logprobs_dict in zip(
+            output.sampled_tokens,
             output.token_log_probabilities,
             output.top_log_probabilities,
             strict=True,
@@ -3050,22 +3052,11 @@ def _process_chat_log_probabilities(
             # Sort by logprob descending
             top_logprobs_list.sort(key=lambda x: x.logprob, reverse=True)
 
-            # Get the token string - it should be in top_logprobs_dict
-            # The token with the highest logprob that matches token_logprob is the sampled token
-            token_str = ""
-            for t, lp in top_logprobs_dict.items():
-                if abs(lp - token_logprob) < 1e-6:
-                    token_str = t
-                    break
-            # Fallback: use the first token if no exact match found
-            if not token_str and top_logprobs_list:
-                token_str = top_logprobs_list[0].token
-
             content.append(
                 ChatCompletionTokenLogprob(
-                    token=token_str,
+                    token=sampled_token,
                     logprob=token_logprob,
-                    bytes=list(token_str.encode("utf-8")),
+                    bytes=list(sampled_token.encode("utf-8")),
                     top_logprobs=top_logprobs_list,
                 )
             )
