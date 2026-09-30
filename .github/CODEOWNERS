@@ -47,6 +47,7 @@
 /max/CONTRIBUTING.md @modular/mojo-docs
 /max/docs/development.md @modular/mojo-docs @modular/max-serve
 /Mojo/BUILD.bazel @modular/mojo-lang
+/Mojo/AGENTS.md @modular/stdlib
 /Mojo/CLAUDE.md @modular/stdlib
 /Mojo/CONTRIBUTING.md @modular/stdlib
 /Mojo/README.md @modular/stdlib
