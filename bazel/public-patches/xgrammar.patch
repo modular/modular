@@ -6430,10 +6430,10 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..6faa369 100644
+index 4f1cc65..a883136 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
-@@ -5,10 +5,18 @@
+@@ -5,10 +5,20 @@
   */
  #include "json_schema_converter_ext.h"
 
@@ -6441,6 +6441,8 @@ index 4f1cc65..6faa369 100644
 +
 +#include <algorithm>
 +#include <cctype>
++#include <cstdio>
++#include <cstring>
  #include <unordered_map>
 
 +#include "grammar_functor.h"
@@ -6452,7 +6454,7 @@ index 4f1cc65..6faa369 100644
 
  namespace xgrammar {
 
-@@ -17,6 +25,13 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,9 +27,27 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
@@ -6465,8 +6467,23 @@ index 4f1cc65..6faa369 100644
 +    "[a-zA-Z_][-a-zA-Z0-9_.]*";
  const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
      XMLToolCallingConverter::kKeyWrapperMap = {
-         {JSONFormat::kQwenXML, {"<parameter=", ">", "", "</parameter>"}},
-@@ -28,6 +43,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
+-        {JSONFormat::kQwenXML, {"<parameter=", ">", "", "</parameter>"}},
++        // The Qwen templates write a newline on each side of a value, and its readers strip
++        // them, so a bounded value keeps that framing.
++        {JSONFormat::kQwenXML,
++         {"<parameter=",
++          ">",
++          "",
++          "</parameter>",
++          /*key_is_tag=*/false,
++          /*xml_all_depths=*/false,
++          /*array_item_tag=*/"",
++          /*value_framing_stripped=*/true,
++          /*bare_value_regex_exact=*/true}},
+         {JSONFormat::kMiniMaxXML, {"<parameter name=\\\"", "\\\">", "", "</parameter>"}},
+         {JSONFormat::kDeepSeekXML,
+          {"<｜DSML｜parameter name=\\\"",
+@@ -28,6 +56,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
          {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
@@ -6481,7 +6498,7 @@ index 4f1cc65..6faa369 100644
  };
 
  XMLToolCallingConverter::XMLToolCallingConverter(
-@@ -37,19 +60,168 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+@@ -37,19 +73,250 @@ XMLToolCallingConverter::XMLToolCallingConverter(
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
      JSONFormat json_format,
@@ -6563,7 +6580,8 @@ index 4f1cc65..6faa369 100644
 +  // Token-delimited markers frame the value with no surrounding whitespace
 +  // (the model emits the XML wire form tightly); whitespace could bleed into
 +  // a whitespace-sensitive value (e.g. `^\t$`) or fill an object value with
-+  // blanks. A length-bounded value is framed tightly for the same reason.
++  // blanks. A length-bounded value is framed tightly for the same reason, unless
++  // its style's reader strips the framing.
 +  bool tight = MarkerTokenId(kValueClose) >= 0 || tight_value_rules_.count(value_rule) > 0;
 +  std::string whitespace = tight ? "" : GetWhitespacePattern();
 +
@@ -6592,6 +6610,87 @@ index 4f1cc65..6faa369 100644
 +  }
 +  return result;
 +}
++
++bool XMLToolCallingConverter::ValueRegexCanReachClose(const std::string& regex) const {
++  if (MarkerTokenId(kValueClose) >= 0) {
++    return false;
++  }
++  const std::string& delim = ValueCloseDelimiter();
++  if (delim.empty()) {
++    return false;
++  }
++  // A regex that cannot spell the delimiter's first byte cannot spell the delimiter. The
++  // converse over-approximates: a regex that admits that byte but never the whole delimiter
++  // is refused too. The regex converter itself reports a positive literal or class member
++  // on that byte; a wildcard (`.`, a negated class, `\D`, `\W`, `\S`) always admits it.
++  char lead[7];
++  std::snprintf(lead, sizeof(lead), R"(\u%04x)", static_cast<unsigned char>(delim[0]));
++  if (RegexMatchesForbidden(regex, lead)) {
++    return true;
++  }
++  bool in_class = false;
++  for (size_t i = 0; i < regex.size(); ++i) {
++    const char c = regex[i];
++    if (c == '\\') {
++      if (i + 1 < regex.size() && std::strchr("DWS", regex[i + 1]) != nullptr) {
++        return true;
++      }
++      ++i;
++    } else if (in_class) {
++      in_class = c != ']';
++    } else if (c == '[') {
++      in_class = true;
++      if (i + 1 < regex.size() && regex[i + 1] == '^') {
++        return true;
++      }
++      if (i + 1 < regex.size() && regex[i + 1] == ']') ++i;
++    } else if (c == '.') {
++      return true;
++    }
++  }
++  return false;
++}
++
++namespace {
++
++// Whether a JSON Schema `pattern`, which is a search, means the whole match the regex
++// converter builds: anchored at both ends, with no top-level alternation for an anchor to
++// bind to one side of.
++bool PatternSearchIsWholeMatch(const std::string& pattern) {
++  if (pattern.size() < 2 || pattern.front() != '^' || pattern.back() != '$') {
++    return false;
++  }
++  size_t trailing_backslashes = 0;
++  for (size_t i = pattern.size() - 1; i > 0 && pattern[i - 1] == '\\'; --i) {
++    ++trailing_backslashes;
++  }
++  if (trailing_backslashes % 2 == 1) {
++    return false;
++  }
++  int depth = 0;
++  bool in_class = false;
++  for (size_t i = 1; i + 1 < pattern.size(); ++i) {
++    const char c = pattern[i];
++    if (c == '\\') {
++      ++i;
++    } else if (in_class) {
++      in_class = c != ']';
++    } else if (c == '[') {
++      in_class = true;
++      if (i + 1 < pattern.size() && pattern[i + 1] == '^') ++i;
++      if (i + 1 < pattern.size() && pattern[i + 1] == ']') ++i;
++    } else if (c == '(') {
++      ++depth;
++    } else if (c == ')') {
++      --depth;
++    } else if (c == '|' && depth == 0) {
++      return false;
++    }
++  }
++  return !in_class && depth == 0;
++}
++
++}  // namespace
 +
 +const std::string& XMLToolCallingConverter::ValueCloseDelimiter() const {
 +  // A bare value runs up to the delimiter that begins its close: the tag-prefix
@@ -6654,7 +6753,7 @@ index 4f1cc65..6faa369 100644
    ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
 
    return ebnf_script_creator_.GetScript();
-@@ -63,41 +235,65 @@ void XMLToolCallingConverter::AddBasicRules() {
+@@ -63,41 +330,65 @@ void XMLToolCallingConverter::AddBasicRules() {
    JSONSchemaConverter::AddBasicRules();
    nested_object_level_ = 1;
    // The outer part, xml format, is at level 1.
@@ -6738,7 +6837,7 @@ index 4f1cc65..6faa369 100644
  }
 
  std::string XMLToolCallingConverter::GetKeyPattern() const {
-@@ -114,13 +310,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
+@@ -114,13 +405,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
    return kBasicAny;
  }
 
@@ -6750,7 +6849,8 @@ index 4f1cc65..6faa369 100644
 -    return GetKeyPattern();
 +    auto pattern = BuildBareAdditionalKeyPattern(kXMLVariableNameTerminal, properties, rule_name);
 +    return pattern.has_value() ? *pattern : GetKeyPattern();
-+  }
+   }
+-  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
 +  return JSONSchemaConverter::GetAdditionalKeyPattern(properties, rule_name);
 +}
 +
@@ -6762,13 +6862,12 @@ index 4f1cc65..6faa369 100644
 +        property_names, rule_name,
 +        MakeKeyContext(GenerationContext::Framing::kBare, kXMLVariableNameTerminal)
 +    );
-   }
--  return JSONSchemaConverter::GetKeyPatternExcluding(properties, rule_name);
++  }
 +  return JSONSchemaConverter::GetPropertyNamesKeyPattern(property_names, rule_name);
  }
 
  std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
-@@ -131,8 +340,11 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
+@@ -131,19 +435,34 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
  }
 
  std::string XMLToolCallingConverter::GenerateString(
@@ -6781,7 +6880,41 @@ index 4f1cc65..6faa369 100644
    if (nested_object_level_ <= 1) {
      // For XML format, use TagDispatch for strings
      if (!spec.pattern.has_value() && !spec.format.has_value() && spec.min_length == 0 &&
-@@ -155,82 +367,318 @@ std::string XMLToolCallingConverter::GenerateString(
+         spec.max_length == -1) {
+       return kXMLString;
+     }
++    // A bare value is read back by scanning to its close delimiter, so a regex that can
++    // spell that delimiter has no unambiguous end.
++    const bool exact = reject_unsupported_ && xml_wrapper_.bare_value_regex_exact;
++    auto refuse_if_it_reaches_close = [&](const std::string& regex, const std::string& what) {
++      if (exact && ValueRegexCanReachClose(regex)) {
++        XGRAMMAR_LOG(FATAL) << "unsupported " << what << " on a bare XML tool-call value: "
++                            << "it can match the value's own closing delimiter \""
++                            << ValueCloseDelimiter() << "\", leaving no unambiguous end";
++      }
++    };
++
+     if (spec.format.has_value()) {
+       const std::string& format = *spec.format;
+       auto regex_pattern = JSONFormatToRegexPattern(format);
+
+       if (regex_pattern.has_value()) {
++        refuse_if_it_reaches_close(*regex_pattern, "format \"" + format + "\"");
+         std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
+         return converted_regex;
+       }
+@@ -151,86 +470,331 @@ std::string XMLToolCallingConverter::GenerateString(
+
+     // Check for pattern
+     if (spec.pattern.has_value()) {
++      // The converter matches a regex whole, which is what a pattern means only when it is
++      // anchored at both ends; any other pattern would be narrowed, not enforced.
++      if (exact && !PatternSearchIsWholeMatch(*spec.pattern)) {
++        XGRAMMAR_LOG(FATAL) << "unsupported pattern on a bare XML tool-call value: only a "
++                            << "pattern anchored at both ends (^...$) is enforced";
++      }
++      refuse_if_it_reaches_close(*spec.pattern, "pattern");
+       std::string converted_regex = RegexToEBNF(*spec.pattern, false);
        return converted_regex;
      }
 
@@ -6802,8 +6935,7 @@ index 4f1cc65..6faa369 100644
 +      if (MarkerTokenId(kValueClose) >= 0) {
 +        const std::string ch = "[^\\0-\\x1f]";
 +        return ch + RepeatExpr(spec.min_length, spec.max_length);
-       }
--      return char_pattern + repetition;
++      }
 +      return BoundedBareValue(spec.min_length, spec.max_length, rule_name);
 +    }
 +    // Only an unenforceable format reaches here (freeform/pattern/length all
@@ -6826,7 +6958,7 @@ index 4f1cc65..6faa369 100644
 +                                 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A,
 +                                 0x2028, 0x2029, 0x202F, 0x205F, 0x3000}) {
 +      edges.push_back(CharToUTF8(codepoint));
-     }
++    }
 +    return edges;
 +  }();
 +  return kEdges;
@@ -6837,11 +6969,10 @@ index 4f1cc65..6faa369 100644
 +  for (const auto& edge : EdgeWhitespace()) {
 +    if (result.size() > 1) result += ", ";
 +    result += "\"" + EscapeString(edge) + "\"";
-   }
--  return JSONSchemaConverter::GenerateString(spec, rule_name);
++  }
 +  return result + ")";
- }
-
++}
++
 +}  // namespace
 +
 +std::string XMLToolCallingConverter::BoundedBareValue(
@@ -6882,7 +7013,9 @@ index 4f1cc65..6faa369 100644
 +  if (min_length == 0 && max_length == -1) {
 +    return kXMLString;
 +  }
-+  tight_value_rules_.insert(rule_name);
++  if (!xml_wrapper_.value_framing_stripped) {
++    tight_value_rules_.insert(rule_name);
++  }
 +  std::string result =
 +      "TagDispatch(loop_after_dispatch=false, excludes=(\"" + EscapeString(delim) + "\")";
 +  if (min_length > 0) {
@@ -6912,7 +7045,8 @@ index 4f1cc65..6faa369 100644
 +      while (j < body.size() &&
 +             (std::isalnum(static_cast<unsigned char>(body[j])) || body[j] == '_')) {
 +        ++j;
-+      }
+       }
+-      return char_pattern + repetition;
 +      if (tight_value_rules_.count(body.substr(i, j - i)) > 0) {
 +        tight_value_rules_.insert(rule_name);
 +        return;
@@ -6926,10 +7060,11 @@ index 4f1cc65..6faa369 100644
 +      ++i;
 +    } else {
 +      ++i;
-+    }
-+  }
-+}
-+
+     }
+   }
+-  return JSONSchemaConverter::GenerateString(spec, rule_name);
+ }
+
 +std::string XMLToolCallingConverter::GenerateRef(
 +    const RefSpec& spec, const std::string& rule_name, const GenerationContext& ctx
 +) {
@@ -7130,7 +7265,7 @@ index 4f1cc65..6faa369 100644
    }
    return JSONSchemaConverter::FormatPropertyKey(key);
  }
-@@ -239,15 +687,16 @@ std::string XMLToolCallingConverter::FormatProperty(
+@@ -239,15 +803,16 @@ std::string XMLToolCallingConverter::FormatProperty(
      const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
  ) {
    if (nested_object_level_ <= 1) {
@@ -7155,7 +7290,7 @@ index 4f1cc65..6faa369 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +708,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +824,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -7181,7 +7316,7 @@ index 4f1cc65..6faa369 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +725,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +841,65 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -7251,7 +7386,7 @@ index 4f1cc65..6faa369 100644
    return result;
  }
 
-@@ -289,14 +791,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +907,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
@@ -7269,7 +7404,7 @@ index 4f1cc65..6faa369 100644
 
  }  // namespace xgrammar
 diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
-index 8d778e0..283b47b 100644
+index 8d778e0..345adbe 100644
 --- a/cpp/json_schema_converter_ext.h
 +++ b/cpp/json_schema_converter_ext.h
 @@ -7,8 +7,12 @@
@@ -7372,7 +7507,7 @@ index 8d778e0..283b47b 100644
 
    std::string NextSeparator(bool is_end = false) override;
 
-@@ -76,13 +126,21 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -76,13 +126,28 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    void AddCache(const std::string& key, const std::string& value) override;
    std::optional<std::string> GetCache(const std::string& key) const override;
 
@@ -7392,10 +7527,17 @@ index 8d778e0..283b47b 100644
 +    bool key_is_tag = false;
 +    bool xml_all_depths = false;
 +    std::string array_item_tag = "";
++    // Whether the style's reader strips a value's framing whitespace. Where it keeps it, a
++    // bounded value is framed with none, or the framing would count against the bound.
++    bool value_framing_stripped = false;
++    // Whether reject_unsupported refuses a bare-value pattern or format the value's reader
++    // cannot take back exactly: one that can spell the close delimiter's first byte, or a
++    // pattern not anchored at both ends.
++    bool bare_value_regex_exact = false;
    };
 
    static const std::unordered_map<JSONFormat, XMLWrapper> kKeyWrapperMap;
-@@ -90,10 +148,73 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -90,10 +155,78 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    static const std::string kXMLAny;
    static const std::string kXMLObject;
    static const std::string kXMLVariableName;
@@ -7424,8 +7566,13 @@ index 8d778e0..283b47b 100644
 +
 +  // Rule body for a bare value with a byte-literal close and a length bound: the close
 +  // delimiter excluded, the length counted, and no whitespace at either edge. Registers
-+  // rule_name for tight framing. Falls back to what the state budget allows.
++  // rule_name for tight framing unless the style strips framing. Falls back to what the
++  // state budget allows.
 +  std::string BoundedBareValue(int64_t min_length, int64_t max_length, const std::string& rule_name);
++
++  // Whether a bare value's regex can reach the byte that begins its close delimiter. A reader
++  // scans a bare value up to that delimiter, so such a value has no unambiguous end.
++  bool ValueRegexCanReachClose(const std::string& regex) const;
 +
 +  // Marks rule_name for tight framing when body, an alias or a union of rules, reaches a
 +  // rule already marked.

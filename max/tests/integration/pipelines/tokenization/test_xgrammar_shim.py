@@ -3598,7 +3598,7 @@ def test_xml_bare_value_bound_longer_than_delimiter() -> None:
     assert not _accepts(compiled, _qwen_state("ab</parameter>cd"))
 
 
-def test_xml_bare_value_bound_is_framed_tightly() -> None:
+def test_xml_bare_value_bound_is_framed_as_its_reader_reads_it() -> None:
     # Framing whitespace is part of the value to a parser that keeps it
     # (MiniMax-M3), so a bounded value gets none.
     compiled = _compile_xml_length(
@@ -3606,8 +3606,12 @@ def test_xml_bare_value_bound_is_framed_tightly() -> None:
     )
     assert not _accepts(compiled, _m3_state("\nNY\n"))
     assert not _accepts(compiled, _m3_state(" NY"))
+    # The Qwen templates write a newline on each side of a value and its
+    # readers strip them, so a bounded Qwen value keeps that framing; without
+    # it the model could not close the value the way it writes it.
     qwen = _compile_xml_length(2, 2)
-    assert not _accepts(qwen, _qwen_state("\nNY\n"))
+    assert _accepts(qwen, _qwen_state("\nNY\n"))
+    assert not _accepts(qwen, _qwen_state("\nNYC\n"))
     # An unbounded value keeps its framing.
     loose = _compile_xml_length(0, None)
     assert _accepts(loose, _qwen_state("\nNY\n"))
@@ -3656,9 +3660,12 @@ def test_xml_bare_value_bound_masks_tokens_by_remaining_length() -> None:
     assert not {" ", "true", "null"} & allowed
     assert matcher.accept_string("b")
     matcher.fill_next_token_bitmask(bitmask)
-    assert not any(
-        _gemma_bit_set(bitmask[0], i) for i in range(len(_VOCAB) - 1)
-    )
+    # At the bound only the framing before the close is left.
+    assert [
+        tok
+        for i, tok in enumerate(_VOCAB[:-1])
+        if _gemma_bit_set(bitmask[0], i)
+    ] == [" "]
 
 
 def _compile_xml_property(
@@ -3711,10 +3718,16 @@ def test_xml_bound_through_wrapper_is_framed_tightly(
     state: dict[str, Any],
 ) -> None:
     # A wrapper rule that reaches a bounded value is framed tightly as a whole.
-    compiled = _compile_xml_property(state)
-    assert _accepts(compiled, _qwen_state("NY"))
-    assert not _accepts(compiled, _qwen_state("\nNY\n"))
-    assert not _accepts(compiled, _qwen_state("NYC"))
+    compiled = _compile_xml_property(
+        state, style="minimax_m3_xml", xml_tag_prefix=_M3_PREFIX
+    )
+    assert _accepts(compiled, _m3_state("NY"))
+    assert not _accepts(compiled, _m3_state("\nNY\n"))
+    assert not _accepts(compiled, _m3_state("NYC"))
+    # Qwen's readers strip the framing, so its wrapped bound keeps it.
+    qwen = _compile_xml_property(state)
+    assert _accepts(qwen, _qwen_state("\nNY\n"))
+    assert not _accepts(qwen, _qwen_state("\nNYC\n"))
 
 
 _BYTE_VOCAB = [chr(c) for c in range(32, 127)] + [
@@ -3774,7 +3787,7 @@ def test_xml_bare_value_bound_counts_split_byte_tokens_as_one() -> None:
     assert not m.accept_token(_BYTE_ID["<"])
 
 
-def test_xml_additional_property_bound_is_framed_tightly() -> None:
+def test_xml_additional_property_bound_keeps_qwen_framing() -> None:
     compiled = _compiler().compile_structural_tag(
         xgr.StructuralTag(
             format=JSONSchemaFormat(
@@ -3791,8 +3804,48 @@ def test_xml_additional_property_bound_is_framed_tightly() -> None:
         )
     )
     assert _accepts(compiled, "<parameter=foo>NY</parameter>")
-    assert not _accepts(compiled, "<parameter=foo>\nNY\n</parameter>")
+    assert _accepts(compiled, "<parameter=foo>\nNY\n</parameter>")
     assert not _accepts(compiled, "<parameter=foo>NYC</parameter>")
+
+
+_UNEXACT_BARE_VALUES = [
+    {"type": "string", "pattern": "^.+$"},
+    {"type": "string", "pattern": "^[^/]+$"},
+    {"type": "string", "pattern": "^https"},
+    {"type": "string", "pattern": "[a-z]+$"},
+    {"type": "string", "format": "email"},
+]
+
+
+def _compile_rejecting_xml_property(
+    state: dict[str, Any], style: _XmlStyle
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"state": state},
+                "required": ["state"],
+            },
+            style=style,
+            reject_unsupported=True,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+@pytest.mark.parametrize("state", _UNEXACT_BARE_VALUES)
+def test_xml_bare_value_regex_guards_are_qwen_only(
+    state: dict[str, Any],
+) -> None:
+    # Under reject_unsupported, a qwen_xml bare value refuses a pattern or
+    # format that can spell its close delimiter's first byte, and a pattern
+    # not anchored at both ends. Other XML styles convert them as before.
+    with pytest.raises(Exception, match="bare XML tool-call value"):
+        _compile_rejecting_xml_property(state, "qwen_xml")
+    for style in ("minimax_xml", "glm_xml"):
+        compiled = _compile_rejecting_xml_property(state, style)
+        assert isinstance(compiled, xgr.CompiledGrammar)
 
 
 def test_xml_bare_value_bound_counts_code_points() -> None:
