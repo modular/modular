@@ -201,6 +201,20 @@ This version is still a work in progress.
   t^.consume_elements(handler)  # was: t^.consume_elements[handler]()
   ```
 
+- `SIMD.reduce()` now takes a closure reduction function as a runtime
+  argument instead of a compile-time `capturing` parameter. The `thin`
+  function-pointer form is unchanged:
+
+  ```mojo
+  def add[width: SIMDLength](
+      lhs: SIMD[DType.int32, width], rhs: SIMD[DType.int32, width]
+  ) -> SIMD[DType.int32, width]:
+      return lhs + rhs
+
+  v.reduce(add)          # was: v.reduce[add]()
+  v.reduce[2](add)       # was: v.reduce[add, 2]()
+  ```
+
 ## Tooling changes
 
 ## Removed

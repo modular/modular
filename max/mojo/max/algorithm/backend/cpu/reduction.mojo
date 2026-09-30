@@ -175,9 +175,16 @@ def _reduce_along_inner_dimension[
         ]()
 
         comptime for i in range(num_reductions):
-            out_acc_tup[i] = in_acc_tup[i].reduce[
-                reduce_function[init_type, reduction_idx=i, ...], out_width
-            ]()
+
+            @inline(.always)
+            def reduce_wrapper[
+                width: SIMDLength
+            ](lhs: SIMD[init_type, width], rhs: SIMD[init_type, width]) -> SIMD[
+                init_type, width
+            ]:
+                return reduce_function[init_type, width, i](lhs, rhs)
+
+            out_acc_tup[i] = in_acc_tup[i].reduce[out_width](reduce_wrapper)
 
         return out_acc_tup
 

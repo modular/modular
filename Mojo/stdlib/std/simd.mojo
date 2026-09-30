@@ -3025,54 +3025,43 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
             return func[width](lhs, rhs)
 
-        return self.reduce[body, size_out]()
+        return self.reduce[size_out](body)
 
     @inline(.always)
     def reduce[
-        func: def[width: Int](
-            Self._T[width], Self._T[width]
-        ) capturing -> Self._T[width],
+        FuncType: ImplicitlyCopyable
+        & RegisterPassable
+        & def[width: SIMDLength](Self._T[width], Self._T[width]) -> Self._T[
+            width
+        ],
+        //,
         size_out: Int = 1,
-    ](self) -> Self._T[size_out]:
-        """Reduces the vector using a provided reduce operator.
+    ](self, func: FuncType) -> Self._T[size_out]:
+        """Reduces the vector using a provided reduce closure.
 
         Parameters:
-            func: The reduce function to apply to elements in this SIMD.
+            FuncType: The type of the reduce closure.
             size_out: The width of the reduction.
+
+        Args:
+            func: The reduce function to apply to elements in this SIMD.
 
         Constraints:
             `size_out` must not exceed width of the vector.
 
         Returns:
             A new scalar which is the reduction of all vector elements.
-        """
 
-        @inline(.always)
-        def body[
-            width: SIMDLength
-        ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
-            return func[width=width](lhs, rhs)
+        Example:
 
-        return self.reduce[body, size_out]()
+        ```mojo
+        def add[width: SIMDLength](
+            lhs: SIMD[DType.int32, width], rhs: SIMD[DType.int32, width]
+        ) -> SIMD[DType.int32, width]:
+            return lhs + rhs
 
-    @inline(.always)
-    def reduce[
-        func: def[width: SIMDLength](
-            Self._T[width], Self._T[width]
-        ) capturing -> Self._T[width],
-        size_out: Int = 1,
-    ](self) -> Self._T[size_out]:
-        """Reduces the vector using a provided reduce operator.
-
-        Parameters:
-            func: The reduce function to apply to elements in this SIMD.
-            size_out: The width of the reduction.
-
-        Constraints:
-            `size_out` must not exceed width of the vector.
-
-        Returns:
-            A new scalar which is the reduction of all vector elements.
+        var total = SIMD[DType.int32, 4](1, 2, 3, 4).reduce(add)  # 10
+        ```
         """
         comptime assert (
             size_out <= Self.length
@@ -3082,7 +3071,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             return self._refine[new_size=size_out]()
         else:
             var lhs, rhs = self.split()
-            return func(lhs, rhs).reduce[func, size_out]()
+            return func(lhs, rhs).reduce[size_out](func)
 
     @inline(.nodebug)
     def reduce_max[size_out: Int = 1](self) -> Self._T[size_out]:
@@ -3103,7 +3092,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
             return self[0]
 
         comptime if CompilationTarget.is_x86() or size_out > 1:
-            return self.reduce[max[dtype=Self.dtype], size_out]()
+
+            def max_fn[
+                width: SIMDLength
+            ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
+                return max(lhs, rhs)
+
+            return self.reduce[size_out](max_fn)
 
         comptime if Self.dtype.is_unsigned():
             return llvm_intrinsic[
@@ -3143,7 +3138,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
             return self[0]
 
         comptime if CompilationTarget.is_x86() or size_out > 1:
-            return self.reduce[min[dtype=Self.dtype], size_out]()
+
+            def min_fn[
+                width: SIMDLength
+            ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
+                return min(lhs, rhs)
+
+            return self.reduce[size_out](min_fn)
 
         comptime if Self.dtype.is_unsigned():
             return llvm_intrinsic[
@@ -3178,7 +3179,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
             The sum of all vector elements.
 
         """
-        return self.reduce[Self._T.__add__, size_out]()
+
+        def add_fn[
+            width: SIMDLength
+        ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
+            return lhs + rhs
+
+        return self.reduce[size_out](add_fn)
 
     @inline(.always)
     def reduce_mul[size_out: Int = 1](self) -> SIMD[Self.dtype, size_out]:
@@ -3194,7 +3201,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Returns:
             The product of all vector elements.
         """
-        return self.reduce[Self._T.__mul__, size_out]()
+
+        def mul_fn[
+            width: SIMDLength
+        ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
+            return lhs * rhs
+
+        return self.reduce[size_out](mul_fn)
 
     @inline(.always)
     def reduce_and[size_out: Int = 1](self) -> SIMD[Self.dtype, size_out]:
@@ -3218,7 +3231,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ), "The element type of the vector must be integer or boolean."
 
         comptime if size_out > 1:
-            return self.reduce[Self._T.__and__, size_out]()
+
+            def and_fn[
+                width: SIMDLength
+            ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
+                return lhs & rhs
+
+            return self.reduce[size_out](and_fn)
 
         comptime if Self.length == 1:
             return self[0]
@@ -3251,7 +3270,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ), "The element type of the vector must be integer or boolean."
 
         comptime if size_out > 1:
-            return self.reduce[Self._T.__or__, size_out]()
+
+            def or_fn[
+                width: SIMDLength
+            ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
+                return lhs | rhs
+
+            return self.reduce[size_out](or_fn)
 
         comptime if Self.length == 1:
             return self[0]
