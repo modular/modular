@@ -16,7 +16,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
@@ -46,6 +47,51 @@ from max.support.human_readable_formatter import (
 from .config import TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
+
+# Brackets the model-execute call with dispatch/completion lines. A dispatch
+# with no matching completion means the scheduler is stuck inside that one
+# call, rather than its loop not running at all. Off by default: two extra
+# log lines per batch is unwanted outside an active investigation.
+_TRACE_BATCH = os.getenv("MAX_SERVE_TRACE_BATCH", "0") == "1"
+
+
+@contextmanager
+def _trace_batch(
+    role: str, inputs: TextGenerationInputs[TextContext]
+) -> Iterator[None]:
+    """Brackets one model-execute call so a stall inside it is visible."""
+    if not _TRACE_BATCH:
+        yield
+        return
+    sizes = [len(batch) for batch in inputs.batches]
+    dispatch_t0 = time.monotonic()
+    logger.info(
+        "Dispatching %s batch: %d replica(s), sizes=%s",
+        role,
+        len(inputs.batches),
+        sizes,
+    )
+    try:
+        yield
+    except BaseException:
+        # Close the bracket on the way out, so a raised execute is not
+        # mistaken for one that never returned. Readers of these lines key
+        # on a dispatch that stays unmatched, which only a hang produces.
+        logger.info(
+            "Failed %s batch: %d replica(s), sizes=%s, after %.1fms",
+            role,
+            len(inputs.batches),
+            sizes,
+            (time.monotonic() - dispatch_t0) * 1000,
+        )
+        raise
+    logger.info(
+        "Completed %s batch: %d replica(s), sizes=%s, took %.1fms",
+        role,
+        len(inputs.batches),
+        sizes,
+        (time.monotonic() - dispatch_t0) * 1000,
+    )
 
 
 def _to_human_readable_throughput(tps: float) -> str:

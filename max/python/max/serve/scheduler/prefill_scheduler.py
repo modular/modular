@@ -56,7 +56,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger
+from .utils import SchedulerLogger, _trace_batch
 
 logger = logging.getLogger("max.serve")
 
@@ -66,13 +66,6 @@ logger = logging.getLogger("max.serve")
 # request is unwanted steady-state overhead outside an active
 # investigation.
 _DI_LATENCY_PING_ENABLED = os.getenv("MAX_SERVE_DI_LATENCY_PING", "0") == "1"
-
-# Bracketing dispatch/completion logging around the model-execute call in
-# schedule() -- on a stall, a dispatch line with no matching completion
-# means prefill is stuck inside that one call, rather than the scheduler
-# loop not running at all. Off by default -- two extra log lines per batch
-# is unwanted steady-state overhead outside an active investigation.
-_TRACE_PREFILL_BATCH = os.getenv("MAX_SERVE_TRACE_PREFILL_BATCH", "0") == "1"
 
 
 @dataclass
@@ -373,22 +366,8 @@ class PrefillScheduler(Scheduler):
         """
         # Execute the Batch
         assert len(inputs.batches) > 0
-        if _TRACE_PREFILL_BATCH:
-            batch_sizes = [len(batch) for batch in inputs.batches]
-            dispatch_t0 = time.monotonic()
-            logger.info(
-                "Dispatching prefill batch: %d replica(s), sizes=%s",
-                len(inputs.batches),
-                batch_sizes,
-            )
-        responses = self.pipeline.execute(inputs)
-        if _TRACE_PREFILL_BATCH:
-            logger.info(
-                "Completed prefill batch: %d replica(s), sizes=%s, took %.1fms",
-                len(inputs.batches),
-                batch_sizes,
-                (time.monotonic() - dispatch_t0) * 1000,
-            )
+        with _trace_batch("prefill", inputs):
+            responses = self.pipeline.execute(inputs)
 
         self.batch_constructor.advance_requests(inputs)
 

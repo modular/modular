@@ -358,6 +358,14 @@ This version is still a work in progress.
   indices are compile-time values, prefer `slice[]()`, which keeps the view
   fully static.
 
+- `MAX_SERVE_TRACE_PREFILL_BATCH` is renamed `MAX_SERVE_TRACE_BATCH` and now
+  brackets the model-execute call on the decode scheduler as well as prefill.
+  A dispatch line with no matching completion identifies which worker is stuck
+  inside one call, which the prefill-only form could not do for a decode-side
+  stall. Log lines name the role, as `Dispatching decode batch: ...`, and
+  an execute that raises closes its bracket with `Failed ... batch` so it
+  is distinguishable from one that never returned.
+
 - `KVCacheMetrics` drops `nixl_read_blocks_local`, `nixl_read_blocks_remote`,
   and the `remote_read_ratio` property computed over them. No code path ever
   populated either field, so the ratio returned `0.0` for every caller. Six

@@ -71,6 +71,7 @@ from .config import TokenGenerationSchedulerConfig
 from .dp_padding import DPBatchPadder
 from .utils import (
     SchedulerLogger,
+    _trace_batch,
     get_cancelled_reqs,
 )
 
@@ -704,7 +705,8 @@ class DecodeScheduler(Scheduler):
             inputs: The inputs containing the batch of requests to schedule.
         """
         assert len(inputs.batches) > 0
-        responses = self.pipeline.execute(inputs)
+        with _trace_batch("decode", inputs):
+            responses = self.pipeline.execute(inputs)
 
         # Filter out responses for already-released requests. With the
         # overlap pipeline, the previous batch may produce a token for a
