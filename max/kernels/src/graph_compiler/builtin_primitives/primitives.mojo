@@ -2287,119 +2287,6 @@ def foreach[
     ](wrapper, tensor.shape_coord(), ctx)
 
 
-@fieldwise_init
-struct _ElementwiseFusionAdapter[
-    dtype: DType,
-    rank: Int,
-    InFusion: InputFusion,
-    OutFusion: OutputFusion,
-    ComputeFusion: ComputeOutputFusion,
-    ComputeFusionTile: ComputeOutputFusionTile,
-    OutFusionTile: OutputFusionTile,
-    io_spec: IOSpec[True, _],
-    static_spec: StaticTensorSpec[
-        dtype,
-        rank,
-        _,
-        InFusion,
-        OutFusion,
-        ComputeFusion,
-        ComputeFusionTile,
-        OutFusionTile,
-    ],
-    //,
-    E: ElementwiseFusion,
-](
-    ImplicitlyCopyable,
-    RegisterPassable,
-    def[width: Int, alignment: Int = 1](Coord) -> None,
-):
-    """Per-element body for `foreach_fusion`, holding the fusion struct and
-    output tensor by value.
-
-    Named adapter twin of a `{var elem, var tensor}` closure: a closure over
-    the generic `E` synthesizes a parametric-witness `lit.closure.init` the
-    MOGG package loader can't resolve, so the body is a concrete
-    register-passable struct instead. Passing the instance by value to
-    `elementwise` carries `elem` (and the tensor's ptr/shape/strides) through
-    `crossDeviceCaptures` by value.
-
-    Parameters:
-        dtype: The data type of the tensor elements.
-        rank: The rank of the tensor.
-        InFusion: The tensor's input-fusion type.
-        OutFusion: The tensor's output-fusion type.
-        ComputeFusion: The tensor's compute-output-fusion type.
-        ComputeFusionTile: The tensor's compute-output-fusion-tile type.
-        OutFusionTile: The tensor's output-fusion-tile (store) type.
-        io_spec: The tensor's IO spec.
-        static_spec: The tensor's static spec.
-        E: The elementwise fusion struct type.
-    """
-
-    var elem: Self.E
-    var tensor: ManagedTensorSlice[
-        io_spec=Self.io_spec, static_spec=Self.static_spec
-    ]
-
-    @inline(.always)
-    def __call__[width: Int, alignment: Int = 1](self, index: Coord):
-        var idx = rebind[IndexList[Self.rank]](coord_to_index_list(index))
-        var val = self.elem.compute[Self.dtype, Self.rank, width, alignment](
-            idx
-        )
-        self.tensor._fused_store[element_alignment=alignment](idx, val)
-
-
-@register_internal("mogg.call.foreach")
-@inline(.never)
-def foreach_fusion[
-    dtype: DType,
-    rank: Int,
-    //,
-    E: ElementwiseFusion,
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    var elem: E,
-    ctx: DeviceContext,
-) raises:
-    """Apply a pure elementwise fusion to each element of the tensor slice.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        E: The elementwise fusion struct type.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target.
-        _trace_name: Name of the executed operation displayed in the trace.
-
-    Args:
-        tensor: The output tensor slice which receives the computed values.
-        elem: The elementwise fusion struct.
-        ctx: The call context (forward this from the custom operation).
-    """
-
-    # Capture `elem` by value through a named adapter struct rather than a
-    # closure. A `{var elem}` closure over the generic `E` synthesizes a
-    # `lit.closure.init` with parametric witnesses the package loader can't
-    # resolve (see functional.mojo `_IndexListToCoordAdapter`); the adapter is
-    # a concrete register-passable type, so passing it by value to
-    # `elementwise` sends `elem`'s decomposed ptr/shape/strides through
-    # `crossDeviceCaptures` by value — which the host-stack `@__parameter
-    # capturing` form did not.
-    var adapter = _ElementwiseFusionAdapter[E](elem, tensor)
-
-    elementwise[
-        simd_width=simd_width,
-        target=target,
-        _trace_description=_trace_name,
-    ](adapter, Coord(tensor.shape()), ctx)
-
-
 @register_internal("mogg._call.foreach")
 def _foreach[
     Lambda: ImplicitlyCopyable
@@ -2851,8 +2738,8 @@ struct _ElementwiseFusionTileAdapter[
     """Per-tile body for `foreach_fusion_tile`, holding the fusion struct and
     output tensor by value.
 
-    Analogous to `_ElementwiseFusionAdapter`, but for tile-based fusion: a
-    named, register-passable struct (not a closure) so `elem` and the tensor's
+    A named, register-passable struct (not a closure) for tile-based fusion, so
+    `elem` and the tensor's
     decomposed ptr/shape/strides cross into the GPU kernel by value. Its
     `__call__` drives one output *tile*, handing the fusion struct a load copier
     (used by `compute` to pull its inputs into `Copier.dst_address_space`) and
