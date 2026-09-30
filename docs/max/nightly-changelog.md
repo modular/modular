@@ -607,4 +607,9 @@ This version is still a work in progress.
 - Fixed the scheduler refusing to admit queued prefill on models with a
   recurrent state cache while KV cache memory was still free.
 
+- Fixed `top_k` on Apple GPUs returning stale memory past the 32nd output of a
+  row that a single threadgroup reduces, which a large `k` forces. Tied values
+  in rows of up to 2048 elements also come back smallest index first now, as on
+  other GPUs, instead of grouped by threadgroup.
+
 ## Mojo language
