@@ -67,6 +67,7 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
 )
+from max.support.host_memory import available_host_memory
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ..kv_connector import (
@@ -83,6 +84,10 @@ from ._offload_dir import OffloadDirectory, acquire_offload_dir
 
 logger = logging.getLogger("max.pipelines")
 
+# The default host tier is page-locked up front, so cap it below what the
+# process can still allocate, leaving headroom for everything else.
+_HOST_OFFLOAD_MAX_FRACTION_OF_AVAILABLE = 0.9
+
 
 def _check_disk_capacity(cache_dir: str, max_disk_size_bytes: int) -> None:
     """Raises when a disk offload budget exceeds free space at cache_dir."""
@@ -98,14 +103,12 @@ def _check_disk_capacity(cache_dir: str, max_disk_size_bytes: int) -> None:
 
 
 def _check_host_memory_capacity(requested_bytes: int) -> None:
-    """Raises when a pinned host allocation exceeds host availability."""
-    try:
-        available_bytes = psutil.virtual_memory().available
-    except (OSError, RuntimeError) as error:
+    """Raises when a pinned host allocation exceeds what this process may use."""
+    available_bytes = available_host_memory()
+    if available_bytes is None:
         logger.warning(
             "Unable to determine available host memory; skipping KV cache "
-            "host capacity preflight: %s",
-            error,
+            "host capacity preflight."
         )
         return
     if requested_bytes > available_bytes:
@@ -113,9 +116,38 @@ def _check_host_memory_capacity(requested_bytes: int) -> None:
             "KV cache host offload buffer requires "
             f"{to_human_readable_bytes(requested_bytes)} of pinned host "
             f"memory but only {to_human_readable_bytes(available_bytes)} is "
-            "available. Reduce "
-            "host_offload_max_gb or provision more host memory."
+            "available to this process (free host memory, bounded by this "
+            "process's cgroup memory limit where one is set). Reduce "
+            "host_offload_max_gb, raise the container's memory limit, or "
+            "provision more host memory."
         )
+
+
+def _default_host_offload_bytes(device_memory_bytes: int) -> int:
+    """Returns 1.5x the device page pool, capped to what the process may use.
+
+    Only the default is capped; an explicit ``host_offload_max_gb`` that
+    doesn't fit is refused instead.
+    """
+    requested = int(1.5 * device_memory_bytes)
+    available_bytes = available_host_memory()
+    if available_bytes is None:
+        return requested
+
+    cap = int(available_bytes * _HOST_OFFLOAD_MAX_FRACTION_OF_AVAILABLE)
+    if requested <= cap:
+        return requested
+    logger.warning(
+        "Reduced the default KV cache host offload budget from %s to %s: it "
+        "exceeded %.0f%% of the %s this process can still allocate (free host "
+        "memory, bounded by this process's cgroup memory limit where one is "
+        "set). Set host_offload_max_gb to size the tier yourself.",
+        to_human_readable_bytes(requested),
+        to_human_readable_bytes(cap),
+        _HOST_OFFLOAD_MAX_FRACTION_OF_AVAILABLE * 100,
+        to_human_readable_bytes(available_bytes),
+    )
+    return cap
 
 
 def _validate_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
@@ -377,7 +409,7 @@ class RustTierConnector(KVConnector):
         host_offload_max_bytes: int = (
             int(cfg.host_offload_max_gb * GiB)
             if cfg.host_offload_max_gb is not None
-            else int(1.5 * device_memory_bytes)
+            else _default_host_offload_bytes(device_memory_bytes)
         )
         _check_host_memory_capacity(host_offload_max_bytes)
 

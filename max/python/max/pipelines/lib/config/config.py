@@ -36,10 +36,6 @@ from max.pipelines.lib.arch_lookup import (
     import_custom_architectures,
     select_speculator,
 )
-from max.pipelines.lib.host_memory import (
-    _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY,
-    _host_memory_limit,
-)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     arch_has_vision_tower,
@@ -57,6 +53,7 @@ from max.pipelines.sampling import (
     SamplingConfig,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.support.host_memory import host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     BaseModel,
@@ -79,6 +76,10 @@ from .model_config import (
 from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
+
+# The preprocessed-media caches live in host memory, and their multi-GiB
+# defaults can OOM a small container.
+_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY = 0.25
 
 # ModelManifest is a dict[str, MAXModelConfig] subclass with extra methods.
 # cyclopts (CLI framework) only recognizes plain dict types via typing.get_origin(),
@@ -459,7 +460,7 @@ def _resolve_preprocess_cache_budgets(
     ):
         return configured
 
-    host_bytes = _host_memory_limit()
+    host_bytes = host_memory_limit()
     if host_bytes is None:
         logger.debug(
             "Could not determine host memory; leaving the preprocessed-"
