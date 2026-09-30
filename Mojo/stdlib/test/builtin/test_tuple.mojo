@@ -27,6 +27,35 @@ from test_utils import (
 )
 
 
+def test_tuple_first_of() raises:
+    var t = (1, String("two"), 3.0, 4)
+
+    assert_equal(t.first_of[Int](), 1)
+    assert_equal(t.first_of[String](), "two")
+    assert_equal(t.first_of[Float64](), 3.0)
+
+    # The returned reference propagates mutability and picks the first match.
+    t.first_of[Int]() += 10
+    t.first_of[String]() += "!"
+    assert_equal(t[0], 11)
+    assert_equal(t[3], 4)
+    assert_equal(t[1], "two!")
+
+    var m = (MoveOnly[Int](7), 2)
+    assert_equal(m.first_of[MoveOnly[Int]]().data, 7)
+
+
+def test_tuple_first_of_picks_first_match() raises:
+    var t = (10, String("x"), 20)
+
+    assert_equal(t.first_of[Int](), 10)
+
+    # Writing through the reference must hit the first `Int`, not the second.
+    t.first_of[Int]() = 30
+    assert_equal(t[0], 30)
+    assert_equal(t[2], 20)
+
+
 def test_tuple_contains() raises:
     var a = (123, True, StaticString("Mojo is awesome"))
 

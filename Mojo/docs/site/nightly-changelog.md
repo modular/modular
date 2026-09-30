@@ -92,6 +92,15 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Tuple` gained `first_of[T]()`, which returns a reference to the first
+  element of type `T`. The lookup is resolved at compile time, and it is a
+  compile-time error if the tuple has no element of that type:
+
+  ```mojo
+  var t = (1, String("two"), 3.0)
+  t.first_of[String]() += "!"
+  ```
+
 - Hashing a byte sequence is now spelled `hash_bytes()`, which takes an
   `ImmSpan[Byte]`. The pointer-and-length `hash()` overload is deprecated:
 
