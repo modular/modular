@@ -247,7 +247,7 @@ class TestDefaultMesh:
     def test_a_default_device_resolves_as_a_single_device_mesh(self) -> None:
         with default_device(CPU()):
             mapping = NamedMapping(spec=("tp",))
-        assert mapping.mesh.is_single
+        assert mapping.mesh.num_devices == 1
         assert mapping.placements == (Replicated(),)
 
     def test_no_mesh_and_no_context_raises(self) -> None:
