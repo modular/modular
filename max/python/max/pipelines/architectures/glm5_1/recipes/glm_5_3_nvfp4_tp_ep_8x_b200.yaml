@@ -31,6 +31,8 @@ speculative:
 
 runtime:
   ep_size: 8
+  # Off because perf benchmarks measured it degrading prefill and decode.
+  ep_fuse_ffn_combine_send: false
   max_batch_input_tokens: 8192
   max_batch_size: 32
 

@@ -150,6 +150,7 @@ NIGHTLY_MODELS = frozenset(
         "amd/MiniMax-M3-MXFP4",
         "modularai/MiniMax-M3-MXFP6",
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
+        "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
         "amd/Kimi-K2.7-Code-MXFP4",
         "nvidia/Kimi-K2.7-Code-NVFP4",
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3",
