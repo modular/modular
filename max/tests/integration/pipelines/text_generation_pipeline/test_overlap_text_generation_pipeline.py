@@ -277,6 +277,40 @@ def test_warmup_graph_capture_batch_size(
         )
 
 
+def test_warmup_graph_capture_passes_the_table_up_to_the_capture_cap() -> None:
+    """Batch sizes past the capture cap run eager, so their rows are dropped."""
+    pipeline = OverlapTextGenerationPipeline.__new__(
+        OverlapTextGenerationPipeline
+    )
+    mock_model = MagicMock()
+    mock_model.model = MagicMock()
+    mock_model.max_seq_len = 2048
+    pipeline._pipeline_model = mock_model
+    pipeline._pipeline_config = MagicMock()
+    pipeline._max_batch_size = 3
+    pipeline._kv_manager = MagicMock()
+    mock_kv_params = MagicMock()
+    mock_kv_params.page_size = 128
+    mock_kv_params.num_draft_tokens = 3
+    mock_kv_params.num_draft_tokens_per_step = 1
+    pipeline._kv_manager.params = mock_kv_params
+    pipeline._kv_manager.effective_max_seq_length = 100 * 128
+    pipeline._kv_manager.num_caches = 1
+    pipeline._spec_decode_state = MagicMock()
+    pipeline._spec_decode_state.num_speculative_tokens = 3
+    pipeline._widths_by_batch_size = [[3], [3], [1, 3], [1, 3]]
+
+    module = "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+    with (
+        patch(f"{module}._MAX_GRAPH_CAPTURE_BATCH_SIZE", 2),
+        patch(f"{module}.ServeGraphCaptureRunner") as MockRunner,
+    ):
+        pipeline.warmup_graph_capture()
+
+    call_kwargs = MockRunner.call_args.kwargs
+    assert call_kwargs["widths_by_batch_size"] == [[3], [3], [1, 3]]
+
+
 def _make_effective_cache_length_pipeline(
     *,
     max_seq_len: int,
