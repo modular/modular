@@ -27,7 +27,9 @@ from .quant_strategy import (
     Nvfp4Scales,
     NvMxf4f8Strategy,
     QuantStrategy,
+    interleaved_block_scales_shape,
 )
+from .sigmoid_router import SigmoidTopKRouter
 from .stacked_moe import (
     GateUpFormat,
     StackedMoE,
@@ -43,8 +45,10 @@ __all__ = [
     "NvMxf4f8Strategy",
     "Nvfp4Scales",
     "QuantStrategy",
+    "SigmoidTopKRouter",
     "StackedMoE",
     "forward_moe_sharded_layers",
+    "interleaved_block_scales_shape",
     "make_concatenated_gated_activation_fn",
     "make_interleaved_gated_activation_fn",
     "make_stacked_gated_activation_fn",

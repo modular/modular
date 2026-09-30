@@ -38,7 +38,6 @@ from max.pipelines.architectures.mimo_v2.weight_adapters import (
     QkvChunkLayout,
     convert_safetensor_state_dict,
     fp8_block_scaled_from_float32,
-    interleaved_scale_shape,
     qkv_chunk_layout,
 )
 from max.pipelines.weights._fp8 import e4m3fn_lut
@@ -283,7 +282,7 @@ def _checkpoint() -> tuple[Tensors, dict[str, tuple[DType, np.ndarray]]]:
                 if stack.endswith("_scale")
                 else DType.uint8
             )
-            expected[f"layers.{layer}.mlp.experts_{stack}"] = (
+            expected[f"layers.{layer}.mlp.experts.{stack}"] = (
                 dtype,
                 np.stack(arrays),
             )
@@ -387,7 +386,7 @@ def _interleaved(
     return {
         name: (
             (dtype, _kernel_layout(array))
-            if ".mlp.experts_" in name and name.endswith("_scale")
+            if ".mlp.experts." in name and name.endswith("_scale")
             else (dtype, array)
         )
         for name, (dtype, array) in expected.items()
@@ -397,12 +396,6 @@ def _interleaved(
 def test_adapts_export_to_upstream_bytes(tmp_path: Path) -> None:
     tensors, expected = _checkpoint()
     _assert_adapted(_adapt(tmp_path, tensors), _interleaved(expected))
-
-
-@pytest.mark.parametrize("rows, cols", [(64, 4), (128, 2)])
-def test_interleave_needs_whole_granules(rows: int, cols: int) -> None:
-    with pytest.raises(ValueError, match="interleave granules"):
-        interleaved_scale_shape(rows, cols)
 
 
 def test_qkv_chunk_layout_matches_the_real_checkpoint() -> None:

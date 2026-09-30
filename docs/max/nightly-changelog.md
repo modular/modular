@@ -341,6 +341,15 @@ This version is still a work in progress.
 - `max.experimental.custom.declare` now raises `ValueError` if the op's own
   `custom_extensions` (or the process-wide defaults) don't register the
   kernel.
+- `max.nn.moe.StackedMoE` can now run MXFP4 experts W4A8 on SM100 GPUs,
+  including under tensor parallelism: pass `mxfp8_activations=True` with an
+  MXFP4 `quant_config`. The expert scales are then declared in the grouped
+  matmul's interleaved layout (see
+  `max.nn.moe.interleaved_block_scales_shape`). The new `router_dtype` and
+  `combine_dtype` options run the router and the weighted combine in float32.
+- Added `max.nn.moe.SigmoidTopKRouter`, the sigmoid top-k router with an
+  expert score correction bias (`noaux_tc` with one expert group) that
+  MiniMax-M2, HY-V3, and MiMo-V2 share.
 
 ### C API
 
