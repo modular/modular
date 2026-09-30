@@ -49,6 +49,9 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `max.profiler.oneshot.cuda_profiler_region()`, a context manager that
+  brackets a region with `cudaProfilerStart`/`cudaProfilerStop` so `nsys`/`ncu`
+  capture only the wrapped region.
 - Added the `pre-jit` debug option (`MODULAR_DEBUG=pre-jit`,
   `[max-debug] pre-jit`, or `InferenceSession.debug.pre_jit`). It stops graph
   compilation once the Mojo for the graph has been emitted into

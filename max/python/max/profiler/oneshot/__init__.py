@@ -25,6 +25,7 @@ Powers the ``--profile`` flag on ``max pipelines generate`` and
 
 from ._backend import ProfileBackend as ProfileBackend
 from ._backend import detect_backend as detect_backend
+from ._cuda import cuda_profiler_region as cuda_profiler_region
 from ._nsys import render_nsys_kernel_summary as render_nsys_kernel_summary
 from ._runner import OneShotCapture as OneShotCapture
 from ._runner import default_profile_output as default_profile_output
