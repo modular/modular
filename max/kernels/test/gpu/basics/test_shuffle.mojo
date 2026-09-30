@@ -340,7 +340,7 @@ def _warp_reduce_launch_helper[
         return x + y
 
     def do_warp_reduce(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-        return warp.reduce[shuffle_down, reduce_add](val)
+        return warp.reduce[shuffle_down](val, reduce_add)
 
     _kernel_launch_helper[dtype, simd_width, do_warp_reduce](
         host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
@@ -532,8 +532,8 @@ def _lane_group_reduce_launch_helper[
             return warp.lane_group_sum[num_lanes=num_lanes, stride=stride](val)
         else:
             return warp.lane_group_reduce[
-                shuffle_down, reduce_add, num_lanes=num_lanes, stride=stride
-            ](val)
+                shuffle_down, num_lanes=num_lanes, stride=stride
+            ](val, reduce_add)
 
     _kernel_launch_helper[dtype, simd_width, do_lane_group_reduce](
         host_ptr.unsafe_ptr(), buffer_size, block_size, ctx

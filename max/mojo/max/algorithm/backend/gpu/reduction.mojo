@@ -150,7 +150,7 @@ def block_reduce[
             ]:
                 return reduce_fn[dtype, width, i](lhs, rhs)
 
-            result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](val[i])
+            result[i] = warp.reduce[warp.shuffle_down](val[i], reduce_wrapper)
 
         return result
 
@@ -520,13 +520,13 @@ def small_reduce_kernel[
                     @inline(.always)
                     def reduce_wrapper[
                         dtype: DType, width: SIMDLength
-                    ](
-                        x: SIMD[dtype, width], y: SIMD[dtype, width]
-                    ) capturing -> SIMD[dtype, width]:
+                    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+                        dtype, width
+                    ]:
                         return reduce_fn[dtype, width, i](x, y)
 
-                    result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](
-                        val[i]
+                    result[i] = warp.reduce[warp.shuffle_down](
+                        val[i], reduce_wrapper
                     )
 
                 if lane_id() == 0:

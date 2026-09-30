@@ -355,6 +355,19 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.gpu.primitives.warp.reduce()` and `lane_group_reduce()` now take the
+  reduction function as a runtime closure argument instead of a compile-time
+  `capturing` parameter. The shuffle function stays a compile-time parameter:
+
+  ```mojo
+  def add[dtype: DType, width: SIMDLength](
+      x: SIMD[dtype, width], y: SIMD[dtype, width]
+  ) -> SIMD[dtype, width]:
+      return x + y
+
+  warp.reduce[shuffle_down](val, add)  # was: warp.reduce[shuffle_down, add](val)
+  ```
+
 - Text generation now stops on every `eos_token_id` in a model's
   `generation_config.json`, as Hugging Face `generate` does, in addition to
   the tokenizer's EOS token and the `eos_token_id` in `config.json`. This

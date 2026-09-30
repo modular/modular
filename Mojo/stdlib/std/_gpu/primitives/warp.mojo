@@ -64,6 +64,15 @@ comptime _ReduceFn = def[dtype: DType, width: SIMDLength](
     SIMD[dtype, width], SIMD[dtype, width]
 ) capturing -> SIMD[dtype, width]
 
+comptime _reduce_fn_signature = def[dtype: DType, width: SIMDLength](
+    SIMD[dtype, width], SIMD[dtype, width]
+) -> SIMD[dtype, width]
+
+# Value form of `_ReduceFn`, taken as a runtime closure argument.
+comptime _ReduceClosure = (
+    ImplicitlyCopyable & RegisterPassable & _reduce_fn_signature
+)
+
 
 # ===-----------------------------------------------------------------------===#
 # AMD DPP (Data Parallel Primitives) intrinsics
@@ -156,10 +165,10 @@ def _dpp_move[
 def _dpp_reduce_and_broadcast[
     dtype: DType,
     simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
     //,
-    func: _ReduceFn,
     num_lanes: Int = WARP_SIZE,
-](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+](val: SIMD[dtype, simd_width], func: FuncType) -> SIMD[dtype, simd_width]:
     """Performs a DPP-based reduction and broadcast on AMD GPUs.
 
     Uses AMD DPP instructions for intra-row (16-lane) reduction and shuffle_xor
@@ -182,12 +191,13 @@ def _dpp_reduce_and_broadcast[
     Parameters:
         dtype: The data type of the SIMD elements.
         simd_width: The number of elements in the SIMD vector.
-        func: Binary reduction function (e.g. add, max, min).
+        FuncType: The type of the reduction closure.
         num_lanes: Number of lanes in the reduction group (must be power of 2,
             2..WARP_SIZE).
 
     Args:
         val: The value to reduce across the lane group.
+        func: Binary reduction function (e.g. add, max, min).
 
     Returns:
         The reduction result across the lane group, broadcast to every lane
@@ -230,7 +240,7 @@ def _dpp_reduce_and_broadcast[
     @inline(.always)
     def _cross_row_step[
         shuffle_width: Int
-    ](v: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    ](v: SIMD[dtype, simd_width]) {imm func} -> SIMD[dtype, simd_width]:
         comptime if _cdna_4_or_newer() and size_of[
             SIMD[dtype, simd_width]
         ]() == 4:
@@ -876,15 +886,17 @@ def shuffle_xor[
 def lane_group_reduce[
     val_type: DType,
     simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
     //,
     shuffle: def[dtype: DType, simd_width: SIMDLength](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) thin -> SIMD[dtype, simd_width],
-    func: _ReduceFn,
     num_lanes: Int,
     *,
     stride: Int = 1,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+](val: SIMD[val_type, simd_width], func: FuncType) -> SIMD[
+    val_type, simd_width
+]:
     """Performs a generic warp-level reduction operation using shuffle operations.
 
     This function implements a parallel reduction across threads in a warp using a butterfly
@@ -893,15 +905,16 @@ def lane_group_reduce[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
+        FuncType: The type of the reduction closure.
         shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
                 offset and returns the shuffled result.
-        func: A binary function that combines two SIMD values during reduction. This defines
-              the reduction operation (e.g. add, max, min).
         num_lanes: The number of lanes in a group. The reduction is done within each group. Must be a power of 2.
         stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
 
     Returns:
         A SIMD value containing the reduction result.
@@ -915,7 +928,7 @@ def lane_group_reduce[
             def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
             var val = SIMD[.float32, 16](42.0)
-            var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
+            var result = lane_group_reduce[shuffle_down, num_lanes=16](val, add)
         ```
     """
     var res = val
@@ -933,12 +946,14 @@ def lane_group_reduce[
 def reduce[
     val_type: DType,
     simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
     //,
     shuffle: def[dtype: DType, simd_width: SIMDLength](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) thin -> SIMD[dtype, simd_width],
-    func: _ReduceFn,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+](val: SIMD[val_type, simd_width], func: FuncType) -> SIMD[
+    val_type, simd_width
+]:
     """Performs a generic warp-wide reduction operation using shuffle operations.
 
     This is a convenience wrapper around lane_group_reduce that operates on the entire warp.
@@ -947,13 +962,14 @@ def reduce[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
+        FuncType: The type of the reduction closure.
         shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
                 offset and returns the shuffled result.
-        func: A binary function that combines two SIMD values during reduction. This defines
-              the reduction operation (e.g. add, max, min).
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
 
     Returns:
         A SIMD value containing the reduction result broadcast to all lanes in the warp.
@@ -964,14 +980,14 @@ def reduce[
         from max.gpu.primitives.warp import reduce, shuffle_down
 
         # Compute warp-wide sum using shuffle down
-        def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
+        def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
             return x + y
 
         val = SIMD[.float32, 4](2.0, 4.0, 6.0, 8.0)
-        result = reduce[shuffle_down, add](val)
+        result = reduce[shuffle_down](val, add)
     ```
     """
-    return lane_group_reduce[shuffle, func, num_lanes=WARP_SIZE](val)
+    return lane_group_reduce[shuffle, num_lanes=WARP_SIZE](val, func)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -983,11 +999,13 @@ def reduce[
 def _lane_group_broadcast_reduce[
     val_type: DType,
     simd_width: SIMDLength,
+    FuncType: _ReduceClosure,
     //,
-    func: _ReduceFn,
     num_lanes: Int,
     stride: Int = 1,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+](val: SIMD[val_type, simd_width], func: FuncType) -> SIMD[
+    val_type, simd_width
+]:
     """Shared broadcast-reduce dispatch: CDNA4 permlane, AMD DPP, or
     shuffle_xor fallback."""
     comptime if (
@@ -1007,11 +1025,11 @@ def _lane_group_broadcast_reduce[
         and Bool(num_lanes.is_power_of_two())
         and is_amd_gpu()
     ):
-        return _dpp_reduce_and_broadcast[func, num_lanes=num_lanes](val)
+        return _dpp_reduce_and_broadcast[num_lanes=num_lanes](val, func)
     else:
         return lane_group_reduce[
-            shuffle_xor, func, num_lanes=num_lanes, stride=stride
-        ](val)
+            shuffle_xor, num_lanes=num_lanes, stride=stride
+        ](val, func)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1050,9 +1068,9 @@ def lane_group_sum[
     def _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
-    return _lane_group_broadcast_reduce[
-        _reduce_add, num_lanes=num_lanes, stride=stride
-    ](val)
+    return _lane_group_broadcast_reduce[num_lanes=num_lanes, stride=stride](
+        val, _reduce_add
+    )
 
 
 @inline(.always)
@@ -1202,9 +1220,9 @@ def lane_group_max[
     def _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
-    return _lane_group_broadcast_reduce[
-        _reduce_max, num_lanes=num_lanes, stride=stride
-    ](val)
+    return _lane_group_broadcast_reduce[num_lanes=num_lanes, stride=stride](
+        val, _reduce_max
+    )
 
 
 @inline(.always)
@@ -1266,9 +1284,9 @@ def lane_group_min[
     def _reduce_min(x: SIMD, y: type_of(x)) -> type_of(x):
         return _min(x, y)
 
-    return _lane_group_broadcast_reduce[
-        _reduce_min, num_lanes=num_lanes, stride=stride
-    ](val)
+    return _lane_group_broadcast_reduce[num_lanes=num_lanes, stride=stride](
+        val, _reduce_min
+    )
 
 
 @inline(.always)
