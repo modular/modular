@@ -101,6 +101,16 @@ def _verbs_usable() -> bool:
         return False
 
 
+def _plugin_lacks_ib() -> bool:
+    """Returns whether NIXL selected the plain ``cuda`` UCX plugin flavor.
+
+    That flavor has no IB transports; ``Support/lib/NixlPluginDir.cpp`` picks
+    it whenever ``cuda-verbs`` cannot load, so pinning ``rc`` would leave none.
+    """
+    plugin_dir = os.environ.get("NIXL_PLUGIN_DIR")
+    return plugin_dir is not None and Path(plugin_dir).name == "cuda"
+
+
 def default_ucx_tls(*, gdr_copy: bool | None = None) -> str:
     """Returns the default ``UCX_TLS`` transport list for GPU transfers.
 
@@ -252,6 +262,14 @@ def configure_ucx_env(device: _UcxDevice) -> None:
     # a non-IB host or a sandbox with a sysfs-only device — leave UCX to its
     # defaults so its tcp/cuda_ipc transports keep intra-node transfers working.
     if not _verbs_usable():
+        return
+    if _plugin_lacks_ib():
+        logger.warning(
+            "InfiniBand devices are present but NIXL loaded the UCX plugin "
+            "without IB transports (%s); leaving UCX_TLS/UCX_NET_DEVICES "
+            "unset so UCX falls back to its defaults, including tcp.",
+            os.environ["NIXL_PLUGIN_DIR"],
+        )
         return
     try:
         bus_id = _gpu_pci_bus_id(device)
