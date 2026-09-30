@@ -475,7 +475,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     if use_initial:
         # Read initial state from ssm_pool[slot, h, p, n].
         comptime for n in range(DSTATE):
-            var off = UInt32(
+            var off = Int(
                 slot * ssm_pool_strides[0]
                 + h * ssm_pool_strides[1]
                 + p * ssm_pool_strides[2]
@@ -538,7 +538,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
 
     # Write final state directly into ssm_pool at slot cache_indices[b].
     comptime for n in range(DSTATE):
-        var off = UInt32(
+        var off = Int(
             slot * ssm_pool_strides[0]
             + h * ssm_pool_strides[1]
             + p * ssm_pool_strides[2]
@@ -760,7 +760,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         # from ssm_pool[slot, h, p, n_base ..].
         if pool_contig:
             state = ssm_pool.raw_load[width=L, alignment=pool_align](
-                UInt32(
+                Int(
                     slot * ssm_pool_strides[0]
                     + h * ssm_pool_strides[1]
                     + p * ssm_pool_strides[2]
@@ -769,7 +769,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
             )
         else:
             comptime for i in range(L):
-                var off = UInt32(
+                var off = Int(
                     slot * ssm_pool_strides[0]
                     + h * ssm_pool_strides[1]
                     + p * ssm_pool_strides[2]
@@ -868,7 +868,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     if active:
         if pool_contig:
             ssm_pool.raw_store[width=L, alignment=pool_align](
-                UInt32(
+                Int(
                     slot * ssm_pool_strides[0]
                     + h * ssm_pool_strides[1]
                     + p * ssm_pool_strides[2]
@@ -878,7 +878,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
             )
         else:
             comptime for i in range(L):
-                var off = UInt32(
+                var off = Int(
                     slot * ssm_pool_strides[0]
                     + h * ssm_pool_strides[1]
                     + p * ssm_pool_strides[2]
@@ -998,7 +998,7 @@ struct DStateVecLoader[
     def load_state(
         self,
         mut state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],
-        pool_base: UInt32,
+        pool_base: Int,
     ):
         """Fill fp32 ``state`` from ``ssm_pool[.., pool_base + n]`` (widening).
 
@@ -1010,14 +1010,13 @@ struct DStateVecLoader[
             comptime for c in range(Self.NCHUNK):
                 state[c] = self.ssm_pool.raw_load[
                     width=Self.VEC, alignment=pool_align
-                ](pool_base + UInt32(c * Self.VEC)).cast[.float32]()
+                ](pool_base + c * Self.VEC).cast[.float32]()
         else:
             comptime for c in range(Self.NCHUNK):
                 var chunk = SIMD[.float32, Self.VEC](0.0)
                 comptime for i in range(Self.VEC):
                     chunk[i] = self.ssm_pool.raw_load(
-                        pool_base
-                        + UInt32((c * Self.VEC + i) * self.pool_dstate_stride)
+                        pool_base + (c * Self.VEC + i) * self.pool_dstate_stride
                     ).cast[.float32]()
                 state[c] = chunk
 
@@ -1063,7 +1062,7 @@ struct DStateVecLoader[
     def store_state(
         self,
         state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],
-        pool_wb: UInt32,
+        pool_wb: Int,
     ):
         """Round fp32 ``state`` to ``state_dtype`` and write back to ``ssm_pool``.
 
@@ -1074,15 +1073,14 @@ struct DStateVecLoader[
         if self.pool_contig:
             comptime for c in range(Self.NCHUNK):
                 self.ssm_pool.raw_store[width=Self.VEC, alignment=pool_align](
-                    pool_wb + UInt32(c * Self.VEC),
+                    pool_wb + c * Self.VEC,
                     state[c].cast[Self.state_dtype](),
                 )
         else:
             comptime for c in range(Self.NCHUNK):
                 comptime for i in range(Self.VEC):
                     self.ssm_pool.raw_store(
-                        pool_wb
-                        + UInt32((c * Self.VEC + i) * self.pool_dstate_stride),
+                        pool_wb + (c * Self.VEC + i) * self.pool_dstate_stride,
                         state[c][i].cast[Self.state_dtype](),
                     )
 
@@ -1295,7 +1293,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     if has_init_tensor:
         use_initial = Bool(has_initial_state.raw_load(b))
     if use_initial:
-        var pool_base = UInt32(
+        var pool_base = Int(
             slot * ssm_pool_strides[0]
             + h * ssm_pool_strides[1]
             + p * ssm_pool_strides[2]
@@ -1363,7 +1361,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         )
 
     # Write final state back into ssm_pool at slot cache_indices[b].
-    var pool_wb = UInt32(
+    var pool_wb = Int(
         slot * ssm_pool_strides[0]
         + h * ssm_pool_strides[1]
         + p * ssm_pool_strides[2]
@@ -1508,7 +1506,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
         if use_initial:
             # Read initial state from ssm_pool[slot, h, p, n].
             comptime for n in range(DSTATE):
-                var off = UInt32(
+                var off = Int(
                     slot * ssm_pool_strides[0]
                     + h * ssm_pool_strides[1]
                     + p * ssm_pool_strides[2]
@@ -1573,7 +1571,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
 
         # Write final state into ssm_pool at slot cache_indices[b].
         comptime for n in range(DSTATE):
-            var off = UInt32(
+            var off = Int(
                 slot * ssm_pool_strides[0]
                 + h * ssm_pool_strides[1]
                 + p * ssm_pool_strides[2]

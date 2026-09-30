@@ -47,8 +47,6 @@ nemotron_h_modulev3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: convert_nemotron_h_state_dict,
     },
-    # Resuming the Mamba state from a prefix hit is not validated yet.
-    required_arguments={"enable_prefix_caching": False},
     checkpoints_recurrent_state=True,
     config=NemotronHConfig,
     batching=NemotronHModel.batch_processor_cls,
