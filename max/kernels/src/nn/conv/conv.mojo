@@ -4147,14 +4147,16 @@ def _conv_cudnn[
 
         # Use ALLOW_CONVERSION only for half-precision types to enable tensor
         # core acceleration. For float32, use DEFAULT_MATH to avoid incorrect
-        # results on some GPU architectures (e.g., B200).
+        # results on some GPU architectures (e.g., B200). Set it on every
+        # descriptor update: the descriptor is cached per device, so a float32
+        # call after a half-precision one would otherwise inherit
+        # ALLOW_CONVERSION.
+        var math_type = cudnnMathType_t.CUDNN_DEFAULT_MATH
         comptime if input_type == .float16 or input_type == .bfloat16:
-            check_cudnn_error(
-                cudnnSetConvolutionMathType(
-                    ptr_meta[].ptr_conv_desc,
-                    cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION,
-                )
-            )
+            math_type = cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION
+        check_cudnn_error(
+            cudnnSetConvolutionMathType(ptr_meta[].ptr_conv_desc, math_type)
+        )
 
         # Algorithm Autotuning.
         # The Mojo binding cudnnConvolutionFwdAlgoPerfStruct has incorrect
