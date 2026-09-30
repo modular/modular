@@ -60,6 +60,7 @@ from .grouped_1d1d_matmul_kernel import (
     NullSwiGLUOutput,
     SwiGLUOutput,
 )
+from ..structured_kernels.row_scales import NullRowScales, RowScales
 
 
 # Regime thresholds on avg_m = estimated_total_m / num_active_experts. Rows
@@ -135,6 +136,7 @@ def _launch_grouped_block_scaled[
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c: TileTensor,
     a: TileTensor,
@@ -149,6 +151,7 @@ def _launch_grouped_block_scaled[
     ctx: DeviceContext,
     swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Build config and launch grouped block-scaled matmul kernel.
 
@@ -179,6 +182,8 @@ def _launch_grouped_block_scaled[
         swiglu_use_inplace: When True, the fused epilogue uses the
             in-place register path (no SMEM scratch) on decode shapes.
             Default False keeps the cooperative path.
+        RowScalesT: Per-row output scales type. Defaults to the no-op
+            `NullRowScales`.
     """
     # `grouped_matmul_block_scaled` feeds the weights into the kernel's A slot
     # when `AB_swapped`, so the config's per-operand dtypes have to follow the
@@ -226,6 +231,7 @@ def _launch_grouped_block_scaled[
         swiglu_enable_trace=swiglu_enable_trace,
         TraceBufT=TraceBufT,
         swiglu_use_inplace=_swiglu_use_inplace,
+        RowScalesT=RowScalesT,
     ](
         c,
         a,
@@ -240,6 +246,7 @@ def _launch_grouped_block_scaled[
         ctx,
         swiglu_out,
         trace_buf,
+        a_row_scales,
     )
 
 
@@ -259,6 +266,7 @@ def grouped_matmul_nvfp4_dispatch[
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c: TileTensor,
     a: TileTensor,
@@ -274,6 +282,7 @@ def grouped_matmul_nvfp4_dispatch[
     ctx: DeviceContext,
     swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Dispatch grouped NVFP4 matmul with shape-tuned configuration.
 
@@ -312,6 +321,8 @@ def grouped_matmul_nvfp4_dispatch[
         swiglu_use_inplace: When True, the fused SwiGLU+NVFP4 epilogue
             uses the in-place register-only path (no SMEM scratch).
             Default False keeps the original scatter+cooperative path.
+        RowScalesT: Per-row output scales type. Defaults to the no-op
+            `NullRowScales`.
 
     Args:
         c: Output tensor (total_tokens, N).
@@ -330,6 +341,9 @@ def grouped_matmul_nvfp4_dispatch[
             NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
         trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
             `NullTrace()` otherwise.
+        a_row_scales: Per-row output scales: output row `m` is scaled by
+            `expert_scales[e] * a_row_scales[m]`, before SwiGLU when
+            `fuse_swiglu`. `NullRowScales()` for none.
     """
     comptime if override:
         # Ablation/benchmarking: use caller's explicit parameters.
@@ -350,6 +364,7 @@ def grouped_matmul_nvfp4_dispatch[
             swiglu_enable_trace=swiglu_enable_trace,
             TraceBufT=TraceBufT,
             swiglu_use_inplace=swiglu_use_inplace,
+            RowScalesT=RowScalesT,
         ](
             c,
             a,
@@ -364,6 +379,7 @@ def grouped_matmul_nvfp4_dispatch[
             ctx,
             swiglu_out,
             trace_buf,
+            a_row_scales,
         )
     else:
         # Production: tuning table keyed on (N, K).
@@ -397,6 +413,7 @@ def grouped_matmul_nvfp4_dispatch[
                 swiglu_enable_trace=swiglu_enable_trace,
                 TraceBufT=TraceBufT,
                 swiglu_use_inplace=swiglu_use_inplace,
+                RowScalesT=RowScalesT,
             ](
                 c,
                 a,
@@ -411,6 +428,7 @@ def grouped_matmul_nvfp4_dispatch[
                 ctx,
                 swiglu_out,
                 trace_buf,
+                a_row_scales,
             )
 
         # Kimi K2.5 TP=8 up-proj: (N=512, K=7168) has an unusually small N
@@ -438,6 +456,7 @@ def grouped_matmul_nvfp4_dispatch[
                 swiglu_enable_trace=swiglu_enable_trace,
                 TraceBufT=TraceBufT,
                 swiglu_use_inplace=swiglu_use_inplace,
+                RowScalesT=RowScalesT,
             ](
                 c,
                 a,
@@ -452,6 +471,7 @@ def grouped_matmul_nvfp4_dispatch[
                 ctx,
                 swiglu_out,
                 trace_buf,
+                a_row_scales,
             )
 
         comptime if N == 512 and K == 7168:
@@ -651,6 +671,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c: TileTensor,
     a: TileTensor,
@@ -664,6 +685,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Dispatch grouped block-scaled matmul based on input dtypes.
 
@@ -674,6 +696,8 @@ def grouped_matmul_block_scaled_sm100_dispatch[
         transpose_b: Whether B is transposed (must be True).
         target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
+        RowScalesT: Per-row output scales type. Defaults to the no-op
+            `NullRowScales`; only NVFP4 supports others.
 
     Args:
         c: Output tensor (total_tokens, N).
@@ -688,10 +712,15 @@ def grouped_matmul_block_scaled_sm100_dispatch[
         num_active_experts: Number of active experts.
         estimated_total_m: Estimated number of total non-padded tokens.
         ctx: Device context.
+        a_row_scales: Per-row output scales, one per `a` row (NVFP4 only).
     """
     comptime scaling_kind = block_scaled_umma_kind[
         a.dtype, b.dtype, a_scales.dtype
     ]()
+    comptime assert not RowScalesT.Enabled or (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        and not is_w4a8_operand_pair[a.dtype, b.dtype]()
+    ), "per-row input scales are only supported for NVFP4"
 
     # W4A8 lands in shared memory with the same byte geometry as MXFP8 -- the
     # FP4 TMA copy pads the weights on the way in -- so it takes the same
@@ -712,7 +741,9 @@ def grouped_matmul_block_scaled_sm100_dispatch[
             ctx,
         )
     elif scaling_kind == UMMAKind.KIND_MXF4NVF4:
-        grouped_matmul_nvfp4_dispatch[transpose_b, target, pdl_level=pdl_level](
+        grouped_matmul_nvfp4_dispatch[
+            transpose_b, target, pdl_level=pdl_level, RowScalesT=RowScalesT
+        ](
             c,
             a,
             b,
@@ -725,6 +756,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
             num_active_experts,
             estimated_total_m,
             ctx,
+            a_row_scales=a_row_scales,
         )
     elif scaling_kind == UMMAKind.KIND_MXF4:
         _launch_grouped_block_scaled[

@@ -18,17 +18,21 @@ on (N, K) shape. Verifies correctness against vendor_blas reference for:
   decode-only entry N=2048,K=4096
 - Fallback path (auto-computed config for unknown shapes)
 - Various active expert counts, token patterns, and -1 expert IDs
+- Per-row input scales (`a_row_scales`) in every dispatch regime
 """
 from std.math import align_up, ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from std.memory import alloc
+from std.memory import Pointer, alloc
 from internal_utils import assert_almost_equal
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
-from std.random import random_ui64, seed, rand
+from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
+    RealRowScales,
+)
+from std.random import random_float64, random_ui64, seed, rand
 from std.simd import _convert_f32_to_float8_scalar
 from layout import (
     Coord,
@@ -50,6 +54,7 @@ def _test_dispatch[
     num_experts: Int,
     N: Int,
     K: Int,
+    check_row_scales: Bool = False,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -61,6 +66,12 @@ def _test_dispatch[
     Follows the same reference-computation pattern as
     test_grouped_matmul_sm100_block_fp4.mojo but calls the dispatch function
     which selects all config parameters based on (N, K).
+
+    With `check_row_scales`, also runs the dispatch with bf16 per-row input
+    scales twice. Power-of-two scales commute with every rounding step, so
+    that output must equal the unscaled output times the row scale exactly.
+    Arbitrary scales are then checked against the vendor reference scaled
+    per row on the host.
     """
     seed(1234)
     comptime a_type = DType.uint8
@@ -446,6 +457,101 @@ def _test_dispatch[
         atol=1e-2,
         rtol=1e-2,
     )
+
+    comptime if check_row_scales:
+        var row_scales_host = ctx.enqueue_create_host_buffer[.bfloat16](M)
+        var row_scales_device = ctx.enqueue_create_buffer[.bfloat16](M)
+        var c_rs_host = ctx.enqueue_create_host_buffer[c_type](c_size)
+        var c_expected = ctx.enqueue_create_host_buffer[c_type](c_size)
+        var row_scales = RealRowScales(
+            rebind[Pointer[BFloat16, ImmutAnyOrigin]](
+                row_scales_device.unsafe_ptr()
+            )
+        )
+        comptime for pass_idx in range(2):
+            comptime pow2 = pass_idx == 0
+            for m in range(M):
+                comptime if pow2:
+                    row_scales_host[m] = (
+                        (1 << random_ui64(0, 6)).cast[.float32]() / 8
+                    ).cast[.bfloat16]()
+                else:
+                    row_scales_host[m] = random_float64(0.25, 4.0).cast[
+                        .bfloat16
+                    ]()
+            ctx.enqueue_copy(row_scales_device, row_scales_host)
+            grouped_matmul_nvfp4_dispatch[
+                transpose_b=transpose_b, RowScalesT=type_of(row_scales)
+            ](
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                a_scales_tt,
+                b_scales_tt,
+                a_offsets_tensor,
+                a_scale_offsets_tensor,
+                expert_ids_tensor,
+                expert_scales_tt,
+                num_active_experts,
+                total_num_tokens,
+                ctx,
+                a_row_scales=row_scales,
+            )
+            ctx.enqueue_copy(c_rs_host, c_device)
+            ctx.synchronize()
+
+            for i in range(num_active_experts):
+                var start = Int(a_offsets_host_ptr[i])
+                var end = Int(a_offsets_host_ptr[i + 1])
+                var skip = expert_ids_host_ptr[i] < 0
+                for m in range(start, end):
+                    for n in range(N):
+                        var idx = m * N + n
+                        if skip:
+                            c_rs_host[idx] = 0
+                            c_expected[idx] = 0
+                            continue
+                        var base: Scalar[c_type]
+                        comptime if pow2:
+                            base = c_host_ptr[idx]
+                        else:
+                            base = c_host_ref_ptr[idx]
+                        c_expected[idx] = (
+                            base.cast[.float32]()
+                            * row_scales_host[m].cast[.float32]()
+                        ).cast[c_type]()
+
+            comptime if pow2:
+                var mismatches = 0
+                for idx in range(c_size):
+                    if c_rs_host[idx] != c_expected[idx]:
+                        if mismatches < 8:
+                            print(
+                                "    row-scale mismatch at row",
+                                idx // N,
+                                "col",
+                                idx % N,
+                                ":",
+                                c_rs_host[idx],
+                                "vs",
+                                c_expected[idx],
+                            )
+                        mismatches += 1
+                if mismatches != 0:
+                    raise Error(
+                        String(mismatches, " power-of-two row-scale mismatches")
+                    )
+            else:
+                assert_almost_equal(
+                    c_rs_host.unsafe_ptr(),
+                    c_expected.unsafe_ptr(),
+                    c_size,
+                    atol=5e-2,
+                    rtol=2e-2,
+                )
+        print("    row scales PASSED")
+        _ = row_scales_device^
+
     print("    PASSED")
 
     # --- Cleanup ---
@@ -480,7 +586,7 @@ def main() raises:
 
         # 1b: Small token counts (MoE decode regime)
         print("  1b: 4 experts, very small tokens (2 each)")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             4,
             [2, 2, 2, 2],
             [0, 1, 2, 3],
@@ -498,7 +604,7 @@ def main() raises:
 
         # 1d: Unaligned token counts
         print("  1d: unaligned tokens")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             3,
             [65, 129, 257],
             [2, 0, 1],
@@ -507,7 +613,7 @@ def main() raises:
 
         # 1e: -1 expert IDs (inactive experts skipped by kernel)
         print("  1e: -1 expert IDs")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             3,
             [128, 256, 512],
             [-1, 0, 2],
@@ -660,7 +766,7 @@ def main() raises:
 
         # 5c: Mixed -1 IDs and zero tokens on tuned shape
         print("  5c: -1 IDs + zero tokens on tuned shape")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             4,
             [0, 64, 128, 0],
             [-1, 2, 4, -1],
@@ -714,7 +820,7 @@ def main() raises:
 
         # 6d: Unaligned tokens on prefill path
         print("  6d: N=4096, K=7168, unaligned tokens")
-        _test_dispatch[6, 4096, 7168](
+        _test_dispatch[6, 4096, 7168, True](
             3,
             [129, 257, 193],
             [2, 0, 1],
@@ -837,7 +943,7 @@ def main() raises:
 
         # 8b: Decode with -1 masking (id<0 experts skipped by kernel)
         print("  8b: N=512, K=7168, decode with -1 IDs mixed")
-        _test_dispatch[8, 512, 7168](
+        _test_dispatch[8, 512, 7168, True](
             8,
             [1, 1, 1, 1, 1, 1, 1, 1],
             [0, -1, 2, -1, 4, -1, 6, -1],
@@ -855,7 +961,7 @@ def main() raises:
 
         # 8d: Small prefill regime (8 < avg_m <= 64): 8 experts @ 40 tok
         print("  8d: N=512, K=7168, small prefill 8 experts @ 40 tok")
-        _test_dispatch[8, 512, 7168](
+        _test_dispatch[8, 512, 7168, True](
             8,
             [40, 40, 40, 40, 40, 40, 40, 40],
             [0, 1, 2, 3, 4, 5, 6, 7],
@@ -942,6 +1048,54 @@ def main() raises:
             4,
             [128, 128, 128, 128],
             [0, 1, 2, 3],
+            ctx,
+        )
+
+        # ============================================================
+        # 10. Per-row input scales: prime and ragged token counts in each
+        #     regime. The regime is picked at runtime, so one shape covers
+        #     every row-scale epilogue. The N=512, K=7168 cases above cover
+        #     the dispatch's separate launch path.
+        # ============================================================
+        print("\n=== Row scales: prime token counts ===")
+
+        print("  10a: N=4096, K=7168, decode primes")
+        _test_dispatch[6, 4096, 7168, True](
+            4,
+            [3, 7, 1, 5],
+            [2, 0, 5, 1],
+            ctx,
+        )
+
+        print("  10b: N=4096, K=7168, decode ragged, 6 experts")
+        _test_dispatch[6, 4096, 7168, True](
+            6,
+            [5, 3, 1, 7, 2, 11],
+            [0, 1, 2, 3, 4, 5],
+            ctx,
+        )
+
+        print("  10c: N=4096, K=7168, small prefill primes")
+        _test_dispatch[6, 4096, 7168, True](
+            3,
+            [31, 97, 61],
+            [3, 0, 1],
+            ctx,
+        )
+
+        print("  10d: N=4096, K=7168, large prefill primes with -1 IDs")
+        _test_dispatch[6, 4096, 7168, True](
+            5,
+            [97, 13, 211, 5, 131],
+            [3, 0, -1, 1, 4],
+            ctx,
+        )
+
+        print("  10e: N=4096, K=7168, large prefill primes")
+        _test_dispatch[6, 4096, 7168, True](
+            3,
+            [131, 257, 61],
+            [5, 2, 4],
             ctx,
         )
 

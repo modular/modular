@@ -89,6 +89,7 @@ from .epilogue_components import (
     tma_wait_pipelined,
 )
 from structured_kernels.pipeline import ProducerConsumerPipeline
+from .row_scales import NullRowScales, RowScales, TileRowScales
 from .tmem import TmemArrayType
 
 # Fixed upper bound on the P2P rank count, so `P3PeerSendConfig.recv_buf_ptrs`
@@ -815,6 +816,7 @@ struct TileWriter[
     def write_absolute_with_bounds_check[
         c_tensor_layout: TensorLayout,
         c_tensor_engine: TensorEngine,
+        RowScalesT: RowScales = NullRowScales,
     ](
         self,
         c_tiles: Self.CTileArray,
@@ -837,6 +839,7 @@ struct TileWriter[
         p3_control: Int = -1,
         p3_expert_id: Int32 = 0,
         p3_cfg: P3PeerSendConfig = P3PeerSendConfig.disabled(),
+        row_scales: RowScalesT = NullRowScales(),
     ):
         """Write with absolute coordinates and bounds checking.
 
@@ -845,6 +848,8 @@ struct TileWriter[
         Parameters:
             c_tensor_layout: Layout of the C tensor in GMEM (inferred).
             c_tensor_engine: Engine of the C tensor in GMEM (inferred).
+            RowScalesT: Per-row output scales type. Defaults to the no-op
+                `NullRowScales`.
 
         Args:
             c_tiles: SMEM tile array for the C output.
@@ -860,8 +865,12 @@ struct TileWriter[
                 destination resolve keys its counter lookup on it.
             p3_cfg: Bundled peer-send configuration (buffers, geometry and
                 the destination-resolve tables).
+            row_scales: Per-row output scales, multiplied into each token
+                row together with `expert_scale`.
         """
-        self._write_absolute_with_bounds_check[c_tensor_layout](
+        self._write_absolute_with_bounds_check[
+            c_tensor_layout, RowScalesT=RowScalesT
+        ](
             c_tiles,
             output_stage,
             m_abs,
@@ -872,6 +881,7 @@ struct TileWriter[
             p3_control=p3_control,
             p3_expert_id=p3_expert_id,
             p3_cfg=p3_cfg,
+            row_scales=row_scales,
         )
 
     @inline(.always)
@@ -1442,6 +1452,7 @@ struct TileWriter[
     def _write_absolute_with_bounds_check[
         c_tensor_layout: TensorLayout,
         c_tensor_engine: TensorEngine,
+        RowScalesT: RowScales = NullRowScales,
     ](
         self,
         c_tiles: Self.CTileArray,
@@ -1460,12 +1471,18 @@ struct TileWriter[
         p3_control: Int = -1,
         p3_expert_id: Int32 = 0,
         p3_cfg: P3PeerSendConfig = P3PeerSendConfig.disabled(),
+        row_scales: RowScalesT = NullRowScales(),
     ):
         """Internal implementation of write with absolute coordinates and bounds checking.
 
         For 1D-1D grouped kernels where M coordinate is absolute (not tile index).
         Handles partial tiles that cross expert boundaries by using element-by-element
         stores for rows that would exceed m_end.
+
+        Parameters:
+            c_tensor_layout: Layout of the C tensor in GMEM (inferred).
+            c_tensor_engine: Engine of the C tensor in GMEM (inferred).
+            RowScalesT: Per-row output scales type.
 
         Args:
             c_tiles: SMEM tile array for C output (TileTensor-based).
@@ -1480,7 +1497,14 @@ struct TileWriter[
                 destination resolve keys its counter lookup on it.
             p3_cfg: Bundled peer-send configuration (buffers, geometry and
                 the destination-resolve tables).
+            row_scales: Per-row output scales, multiplied into each token
+                row together with `expert_scale`.
         """
+        # `TileRowScales` reads output rows off the fragment columns, which
+        # every epilogue warp spans in full in these layouts.
+        comptime assert not RowScalesT.Enabled or (
+            Self.transpose_c and (Self.MMA_M == 256 or Self.cta_group == 1)
+        ), "row scales need transpose_c with whole-stage epilogue warps"
         # Dropping the local store leaves the epilogue's peer send as the
         # only output path, so a build without it would publish nothing.
         comptime assert (
@@ -1499,7 +1523,6 @@ struct TileWriter[
         # thread 0) and correct if the pool ever moves.
         var warp_id = Self.WarpRole.epilogue_role_index()
         var lane = lane_id()
-        var scale = expert_scale.cast[Self.accum_type]()
 
         comptime SMEMWriter = TMEMToSMemWriter[
             Self.c_type,
@@ -1568,7 +1591,18 @@ struct TileWriter[
                     Self.stage_contiguous_size,
                 )
 
+        # Issued before the first TMEM load so the GMEM latency overlaps it.
+        var tile_scales = TileRowScales[
+            RowScalesT, Self.num_stages * Self.stageN
+        ](row_scales, m_abs, m_end, UInt32(lane), expert_scale)
+
         comptime for loop_stage in range(Self.num_stages):
+            var frag_scale = rebind[SIMD[Self.accum_type, Self.rep_frag_size]](
+                tile_scales.fragment[Self.rep, loop_stage * Self.stageN](
+                    UInt32(lane)
+                )
+            )
+
             # Phase 1: TMEM Load
             var frags = accum_tiles[loop_stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
@@ -1600,7 +1634,9 @@ struct TileWriter[
                 var src = SIMD[Self.accum_type, cast_width_e]()
                 comptime for _j in range(cast_width_e):
                     src[_j] = upper_frag_partial[offset + _j]
-                var dst = (src * scale).cast[Self.epilogue_dtype]()
+                var dst = (
+                    src * frag_scale.slice[cast_width_e, offset=offset]()
+                ).cast[Self.epilogue_dtype]()
                 comptime for _j in range(cast_width_e):
                     upper_frag_casted[offset + _j] = dst[_j]
 
@@ -1612,7 +1648,9 @@ struct TileWriter[
                     var src = SIMD[Self.accum_type, cast_width_e]()
                     comptime for _j in range(cast_width_e):
                         src[_j] = lower_frag_partial[offset + _j]
-                    var dst = (src * scale).cast[Self.epilogue_dtype]()
+                    var dst = (
+                        src * frag_scale.slice[cast_width_e, offset=offset]()
+                    ).cast[Self.epilogue_dtype]()
                     comptime for _j in range(cast_width_e):
                         lower_frag_casted[offset + _j] = dst[_j]
 

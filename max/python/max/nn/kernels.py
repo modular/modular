@@ -6635,6 +6635,32 @@ def grouped_dynamic_scaled_mxfp6_matmul(
     )[0].tensor
 
 
+def _check_a_row_scales(
+    a_row_scales: TensorValue,
+    hidden_states: TensorValue,
+    a_scales: TensorValue,
+) -> None:
+    """Validates per-row input scales for the grouped NVFP4 matmuls."""
+    _check_rank(1, a_row_scales=a_row_scales)
+    _check_dtype(DType.bfloat16, a_row_scales=a_row_scales)
+    _check_same_device(hidden_states=hidden_states, a_row_scales=a_row_scales)
+    if a_row_scales.shape[0] != hidden_states.shape[0]:
+        raise ValueError(
+            "a_row_scales must have one entry per hidden_states row, but got"
+            f" shape {a_row_scales.shape} for hidden_states of shape"
+            f" {hidden_states.shape}"
+        )
+    if (
+        hidden_states.dtype != DType.uint8
+        or a_scales.dtype != DType.float8_e4m3fn
+    ):
+        raise TypeError(
+            "a_row_scales is only supported for NVFP4 (uint8 hidden_states"
+            f" with float8_e4m3fn a_scales), but got {hidden_states.dtype}"
+            f" with {a_scales.dtype}"
+        )
+
+
 def grouped_matmul_block_scaled(
     hidden_states: TensorValueLike,
     weight: TensorValueLike,
@@ -6647,6 +6673,7 @@ def grouped_matmul_block_scaled(
     expert_usage_stats_host: TensorValueLike,
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorValueLike | None = None,
+    a_row_scales: TensorValueLike | None = None,
 ) -> TensorValue:
     """Performs a grouped block-scaled matmul for MoE layers.
 
@@ -6705,6 +6732,11 @@ def grouped_matmul_block_scaled(
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
         estimated_total_m: The estimated total number of tokens.
+        a_row_scales: Optional per-row input scales with shape
+            ``[total_tokens]``. Dtype must be bfloat16. Output row ``m`` is
+            multiplied by ``a_row_scales[m]`` together with its expert scale,
+            which undoes a per-token tensor scale applied when quantizing
+            ``hidden_states``. NVFP4 only.
 
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
@@ -6720,6 +6752,9 @@ def grouped_matmul_block_scaled(
     expert_usage_stats_host = TensorValue(expert_usage_stats_host)
     if estimated_total_m:
         estimated_total_m = TensorValue(estimated_total_m)
+    if a_row_scales is not None:
+        a_row_scales = TensorValue(a_row_scales)
+        _check_a_row_scales(a_row_scales, hidden_states, a_scales)
 
     _check_rank(2, hidden_states=hidden_states)
     _check_rank(3, weight=weight)
@@ -6840,8 +6875,11 @@ def grouped_matmul_block_scaled(
         expert_ids,
         a_scale_offsets,
         expert_scales,
+        # Unread placeholder when there are no row scales.
+        a_row_scales if a_row_scales is not None else expert_scales,
         estimated_total_m or expert_usage_stats_host[0],
         expert_usage_stats_host[1],
+        has_a_row_scales=builtin.BoolAttr(a_row_scales is not None),
     )[0].tensor
 
     return output
@@ -6862,6 +6900,7 @@ def grouped_matmul_blocked_swiglu(
     clamp_activation: bool = False,
     swiglu_alpha: float = 0.0,
     swiglu_limit: float = 0.0,
+    a_row_scales: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Performs fused grouped block-scaled matmul + SwiGLU for NVIDIA MoE.
 
@@ -6898,6 +6937,10 @@ def grouped_matmul_blocked_swiglu(
         expert_usage_stats_host: A tensor containing [max_tokens_per_expert,
             num_active_experts].
         estimated_total_m: The estimated total number of tokens.
+        a_row_scales: Optional per-row input scales with shape
+            ``[total_tokens]``. Dtype must be bfloat16. Row ``m``'s gate and up
+            values are multiplied by ``a_row_scales[m]`` together with the
+            expert scale before the SwiGLU. NVFP4 only.
 
     Returns:
         Tuple ``(c_packed, c_swiglu_scales)`` where ``c_packed`` is packed
@@ -6929,6 +6972,8 @@ def grouped_matmul_blocked_swiglu(
         expert_scales = dummy_scale
     if c_input_scales is None:
         c_input_scales = dummy_scale
+    if a_row_scales is not None:
+        _check_a_row_scales(a_row_scales, hidden_states, a_scales)
 
     _check_same_device(
         hidden_states=hidden_states,
@@ -7019,12 +7064,15 @@ def grouped_matmul_blocked_swiglu(
         expert_ids,
         a_scale_offsets,
         expert_scales,
+        # Unread placeholder when there are no row scales.
+        a_row_scales if a_row_scales is not None else expert_scales,
         c_input_scales,
         estimated_total_m or expert_usage_stats_host[0],
         expert_usage_stats_host[1],
         ops.constant(swiglu_alpha, DType.float32, device=DeviceRef.CPU()),
         ops.constant(swiglu_limit, DType.float32, device=DeviceRef.CPU()),
         clamp_activation=builtin.BoolAttr(clamp_activation),
+        has_a_row_scales=builtin.BoolAttr(a_row_scales is not None),
     )
 
     return results[0].tensor, results[1].tensor

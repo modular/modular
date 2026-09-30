@@ -80,6 +80,9 @@ from linalg.grouped_matmul_block_scaled_dispatch import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_block_scaled_swiglu_sm100_dispatch,
 )
+from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
+    RealRowScales,
+)
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
 )
@@ -525,7 +528,9 @@ struct Struct_grouped_matmul_block_scaled:
         a_type: DType,
         b_type: DType,
         scales_type: DType,
+        row_scales_type: DType,
         //,
+        has_a_row_scales: Bool,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2, ...],
@@ -537,6 +542,7 @@ struct Struct_grouped_matmul_block_scaled:
         expert_ids: InputTensor[dtype=.int32, rank=1, ...],
         a_scale_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         expert_scales: InputTensor[dtype=.float32, rank=1, ...],
+        a_row_scales: InputTensor[dtype=row_scales_type, rank=1, ...],
         estimated_total_m: UInt32,
         num_active_experts: UInt32,
         context: DeviceContext,
@@ -560,6 +566,10 @@ struct Struct_grouped_matmul_block_scaled:
             scales_type: The scale factor data type.
                 Constraints: Must be `float8_e4m3fn` (NVFP4) or
                 `float8_e8m0fnu` (MXFP4/MXFP8/W4A8).
+            row_scales_type: The per-row input scale data type.
+                Constraints: Must be `bfloat16` when `has_a_row_scales`.
+            has_a_row_scales: Whether `a_row_scales` holds per-row input
+                scales. Constraints: NVFP4 only.
             target: The target GPU device.
 
         Args:
@@ -574,6 +584,9 @@ struct Struct_grouped_matmul_block_scaled:
             expert_ids: The expert ID for each group.
             a_scale_offsets: The starting scale index for each expert.
             expert_scales: The per-expert scaling factors for the epilogue.
+            a_row_scales: Per-row input scales of shape (total_tokens,),
+                multiplied into each output row with its expert scale.
+                Unread unless `has_a_row_scales`.
             estimated_total_m: The estimated total number of tokens.
             num_active_experts: The number of active experts.
             context: The device context pointer.
@@ -583,20 +596,51 @@ struct Struct_grouped_matmul_block_scaled:
         ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        grouped_matmul_block_scaled_dispatch[transpose_b=True, target=target](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            a_scales.to_tile_tensor[.int64](),
-            b_scales.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            a_scale_offsets.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_scales.to_tile_tensor[.int64](),
-            Int(num_active_experts),
-            Int(estimated_total_m),
-            context,
-        )
+        comptime if has_a_row_scales:
+            comptime assert (
+                row_scales_type == DType.bfloat16
+            ), "per-row input scales must be bfloat16"
+            grouped_matmul_block_scaled_dispatch[
+                transpose_b=True,
+                target=target,
+                RowScalesT=RealRowScales,
+            ](
+                c.to_tile_tensor[.int64](),
+                a.to_tile_tensor[.int64](),
+                b.to_tile_tensor[.int64](),
+                a_scales.to_tile_tensor[.int64](),
+                b_scales.to_tile_tensor[.int64](),
+                expert_start_indices.to_tile_tensor[.int64](),
+                a_scale_offsets.to_tile_tensor[.int64](),
+                expert_ids.to_tile_tensor[.int64](),
+                expert_scales.to_tile_tensor[.int64](),
+                Int(num_active_experts),
+                Int(estimated_total_m),
+                context,
+                a_row_scales=RealRowScales(
+                    rebind[Pointer[BFloat16, ImmutAnyOrigin]](
+                        a_row_scales.unsafe_ptr()
+                    )
+                ),
+            )
+        else:
+            _ = a_row_scales
+            grouped_matmul_block_scaled_dispatch[
+                transpose_b=True, target=target
+            ](
+                c.to_tile_tensor[.int64](),
+                a.to_tile_tensor[.int64](),
+                b.to_tile_tensor[.int64](),
+                a_scales.to_tile_tensor[.int64](),
+                b_scales.to_tile_tensor[.int64](),
+                expert_start_indices.to_tile_tensor[.int64](),
+                a_scale_offsets.to_tile_tensor[.int64](),
+                expert_ids.to_tile_tensor[.int64](),
+                expert_scales.to_tile_tensor[.int64](),
+                Int(num_active_experts),
+                Int(estimated_total_m),
+                context,
+            )
 
 
 @extensibility.register("mo.composite.grouped_matmul_swiglu_nvfp4")
@@ -616,8 +660,10 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         a_type: DType,
         b_type: DType,
         scales_type: DType,
+        row_scales_type: DType,
         //,
         clamp_activation: Bool,
+        has_a_row_scales: Bool,
         target: StaticString,
     ](
         c_packed: OutputTensor[dtype=c_type, rank=2, ...],
@@ -630,6 +676,7 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         expert_ids: InputTensor[dtype=.int32, rank=1, ...],
         a_scale_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         expert_scales: InputTensor[dtype=.float32, rank=1, ...],
+        a_row_scales: InputTensor[dtype=row_scales_type, rank=1, ...],
         c_input_scales: InputTensor[dtype=.float32, rank=1, ...],
         estimated_total_m: UInt32,
         num_active_experts: UInt32,
@@ -651,7 +698,11 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             b_type: The input B data type. Constraints: Must be `uint8`.
             scales_type: The scale factor data type.
                 Constraints: Must be `float8_e4m3fn`.
+            row_scales_type: The per-row input scale data type.
+                Constraints: Must be `bfloat16` when `has_a_row_scales`.
             clamp_activation: Whether to clamp the activation (swigluoai).
+            has_a_row_scales: Whether `a_row_scales` holds per-row input
+                scales.
             target: The target GPU device.
 
         Args:
@@ -665,6 +716,9 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             expert_ids: The expert ID for each group.
             a_scale_offsets: The starting scale index for each expert.
             expert_scales: The per-expert scaling factors for the epilogue.
+            a_row_scales: Per-row input scales of shape (total_tokens,),
+                multiplied into each row with its expert scale before the
+                SwiGLU. Unread unless `has_a_row_scales`.
             c_input_scales: Per-expert SiLU input scale (= 1/output_inv_scale).
             estimated_total_m: The estimated total number of tokens.
             num_active_experts: The number of active experts.
@@ -677,26 +731,62 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         ](), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        grouped_matmul_block_scaled_swiglu_sm100_dispatch[
-            transpose_b=True, target=target, clamp_activation=clamp_activation
-        ](
-            c_packed.to_tile_tensor[.int64](),
-            c_swiglu_scales.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            a_scales.to_tile_tensor[.int64](),
-            b_scales.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            a_scale_offsets.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_scales.to_tile_tensor[.int64](),
-            c_input_scales.to_tile_tensor[.int64](),
-            Int(num_active_experts),
-            Int(estimated_total_m),
-            context,
-            swiglu_alpha,
-            swiglu_limit,
-        )
+        comptime if has_a_row_scales:
+            comptime assert (
+                row_scales_type == DType.bfloat16
+            ), "per-row input scales must be bfloat16"
+            grouped_matmul_block_scaled_swiglu_sm100_dispatch[
+                transpose_b=True,
+                target=target,
+                clamp_activation=clamp_activation,
+                RowScalesT=RealRowScales,
+            ](
+                c_packed.to_tile_tensor[.int64](),
+                c_swiglu_scales.to_tile_tensor[.int64](),
+                a.to_tile_tensor[.int64](),
+                b.to_tile_tensor[.int64](),
+                a_scales.to_tile_tensor[.int64](),
+                b_scales.to_tile_tensor[.int64](),
+                expert_start_indices.to_tile_tensor[.int64](),
+                a_scale_offsets.to_tile_tensor[.int64](),
+                expert_ids.to_tile_tensor[.int64](),
+                expert_scales.to_tile_tensor[.int64](),
+                c_input_scales.to_tile_tensor[.int64](),
+                Int(num_active_experts),
+                Int(estimated_total_m),
+                context,
+                swiglu_alpha,
+                swiglu_limit,
+                RealRowScales(
+                    rebind[Pointer[BFloat16, ImmutAnyOrigin]](
+                        a_row_scales.unsafe_ptr()
+                    )
+                ),
+            )
+        else:
+            _ = a_row_scales
+            grouped_matmul_block_scaled_swiglu_sm100_dispatch[
+                transpose_b=True,
+                target=target,
+                clamp_activation=clamp_activation,
+            ](
+                c_packed.to_tile_tensor[.int64](),
+                c_swiglu_scales.to_tile_tensor[.int64](),
+                a.to_tile_tensor[.int64](),
+                b.to_tile_tensor[.int64](),
+                a_scales.to_tile_tensor[.int64](),
+                b_scales.to_tile_tensor[.int64](),
+                expert_start_indices.to_tile_tensor[.int64](),
+                a_scale_offsets.to_tile_tensor[.int64](),
+                expert_ids.to_tile_tensor[.int64](),
+                expert_scales.to_tile_tensor[.int64](),
+                c_input_scales.to_tile_tensor[.int64](),
+                Int(num_active_experts),
+                Int(estimated_total_m),
+                context,
+                swiglu_alpha,
+                swiglu_limit,
+            )
 
 
 @extensibility.register("mo.grouped.matmul.dynamic.scaled.fp8")

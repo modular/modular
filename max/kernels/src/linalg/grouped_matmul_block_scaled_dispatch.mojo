@@ -25,12 +25,17 @@ from layout import TileTensor
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_block_scaled_sm100_dispatch,
 )
+from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
+    NullRowScales,
+    RowScales,
+)
 
 
 def grouped_matmul_block_scaled_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c: TileTensor,
     a: TileTensor,
@@ -44,6 +49,7 @@ def grouped_matmul_block_scaled_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Dispatch grouped block-scaled matmul to format-specific implementation.
 
@@ -53,6 +59,8 @@ def grouped_matmul_block_scaled_dispatch[
         transpose_b: Whether B is transposed (must be True).
         target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
+        RowScalesT: Per-row output scales type. Defaults to the no-op
+            `NullRowScales`; only NVFP4 supports others.
 
     Args:
         c: Output tensor (total_tokens, N).
@@ -67,13 +75,14 @@ def grouped_matmul_block_scaled_dispatch[
         num_active_experts: Number of active experts.
         estimated_total_m: Estimated number of total non-padded tokens.
         ctx: Device context.
+        a_row_scales: Per-row output scales, one per `a` row (NVFP4 only).
     """
     comptime assert _is_sm10x_gpu(
         ctx.default_device_info
     ), "Only support SM100 for grouped block-scaled matmul"
 
     grouped_matmul_block_scaled_sm100_dispatch[
-        transpose_b, target, pdl_level=pdl_level
+        transpose_b, target, pdl_level=pdl_level, RowScalesT=RowScalesT
     ](
         c,
         a,
@@ -87,4 +96,5 @@ def grouped_matmul_block_scaled_dispatch[
         num_active_experts,
         estimated_total_m,
         ctx,
+        a_row_scales=a_row_scales,
     )

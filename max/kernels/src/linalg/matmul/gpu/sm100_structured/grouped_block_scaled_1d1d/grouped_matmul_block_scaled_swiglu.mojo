@@ -20,6 +20,7 @@ from layout import TileTensor
 from linalg.fp4_utils import block_scaled_umma_kind, is_w4a8_operand_pair
 from .grouped_matmul_swiglu_nvfp4 import grouped_matmul_swiglu_nvfp4_dispatch
 from .grouped_matmul_swiglu_mxfp8 import grouped_matmul_swiglu_mxfp8_dispatch
+from ..structured_kernels.row_scales import NullRowScales, RowScales
 
 
 def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
@@ -27,6 +28,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     clamp_activation: Bool = False,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c: TileTensor,
     c_swiglu_scales: TileTensor,
@@ -44,6 +46,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     ctx: DeviceContext,
     alpha: Float32 = Float32(0.0),
     limit: Float32 = Float32(0.0),
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Dispatches grouped block-scaled matmul with fused SwiGLU by dtype.
 
@@ -59,6 +62,8 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         clamp_activation: Activation flavor. `False` for plain SwiGLU
             (`silu(g)·u`), `True` for the clamped `swigluoai` form. When
             `True`, pass the `alpha`/`limit` runtime args.
+        RowScalesT: Per-row input scales type. Defaults to the no-op
+            `NullRowScales`; only NVFP4 supports others.
 
     Args:
         c: Packed SwiGLU output tensor. NVFP4: packed `uint8`, shape
@@ -99,6 +104,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         limit: Runtime L for the clamped activation. Ignored when
             `clamp_activation=False`. For `swigluoai` models pass the
             HF config `swiglu_limit` value.
+        a_row_scales: Per-row input scales, one per `a` row (NVFP4 only).
     """
 
     # Neither fused epilogue builds the padded FP4 TMA copy that a packed B
@@ -111,6 +117,9 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     comptime scaling_kind = block_scaled_umma_kind[
         a.dtype, b.dtype, a_scales.dtype
     ]()
+    comptime assert (
+        not RowScalesT.Enabled or scaling_kind == UMMAKind.KIND_MXF4NVF4
+    ), "per-row input scales are only supported for NVFP4"
 
     comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_swiglu_nvfp4_dispatch[
@@ -118,6 +127,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             target=target,
             pdl_level=pdl_level,
             clamp_activation=clamp_activation,
+            RowScalesT=RowScalesT,
         ](
             c,
             c_swiglu_scales,
@@ -135,6 +145,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             ctx,
             alpha,
             limit,
+            a_row_scales,
         )
     elif scaling_kind == UMMAKind.KIND_MXF8F6F4:
         grouped_matmul_swiglu_mxfp8_dispatch[

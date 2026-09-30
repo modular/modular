@@ -63,6 +63,7 @@ from .grouped_1d1d_matmul_kernel import (
     NullSwiGLUOutput,
     SwiGLUOutput,
 )
+from ..structured_kernels.row_scales import NullRowScales, RowScales
 from std.memory import UnsafePointer
 
 
@@ -92,6 +93,7 @@ def grouped_matmul_block_scaled[
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -106,6 +108,7 @@ def grouped_matmul_block_scaled[
     ctx: DeviceContext,
     swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
+    row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Launch grouped 1D-1D block-scaled matmul kernel.
 
@@ -145,6 +148,8 @@ def grouped_matmul_block_scaled[
         swiglu_use_inplace: When `True`, the SwiGLU epilogue writes
             packed output in place via `store_packed_word` instead of
             a separate store path (defaults to `False`).
+        RowScalesT: Per-row output scales type. Defaults to the no-op
+            `NullRowScales`.
 
     Args:
         c_device: Output tensor (total_tokens, N).
@@ -162,6 +167,8 @@ def grouped_matmul_block_scaled[
             NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
         trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
             `NullTrace()` otherwise.
+        row_scales: Per-row output scales, one per `a_device` row, applied
+            with `expert_scales`. `NullRowScales()` for none.
     """
     # Early-exit for empty inputs to avoid creating invalid TMA descriptors: a
     # tensor map rejects `globalDim == 0` (while accepting
@@ -326,6 +333,7 @@ def grouped_matmul_block_scaled[
         a_scale_offsets_engine=type_of(a_scale_offsets).Engine,
         expert_ids_engine=type_of(expert_ids).Engine,
         expert_scales_engine=type_of(expert_scales).Engine,
+        RowScalesT=RowScalesT,
     ]
     comptime KernelType = type_of(matmul_kernel)
 
@@ -543,6 +551,7 @@ def grouped_matmul_block_scaled[
             Int32(Int(a_scales.layout.shape[1]().value())),
             swiglu_out,
             trace_buf,
+            row_scales,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(
@@ -618,6 +627,7 @@ def grouped_matmul_block_scaled[
             Int32(Int(_b_scales.layout.shape[2]().value())),
             swiglu_out,
             trace_buf,
+            row_scales,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(

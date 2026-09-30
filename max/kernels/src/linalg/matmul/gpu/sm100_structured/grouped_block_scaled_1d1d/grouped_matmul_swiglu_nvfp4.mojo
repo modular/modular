@@ -34,6 +34,7 @@ from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
 from .dispatch import grouped_matmul_nvfp4_dispatch
 from .grouped_1d1d_matmul_kernel import RealSwiGLUOutput
+from ..structured_kernels.row_scales import NullRowScales, RowScales
 
 
 def grouped_matmul_swiglu_nvfp4_dispatch[
@@ -62,6 +63,7 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     # `hidden_act = "swigluoai"` set True and pass `alpha`/`limit`
     # runtime args.
     clamp_activation: Bool = False,
+    RowScalesT: RowScales = NullRowScales,
 ](
     c_packed: TileTensor,
     c_swiglu_scales: TileTensor,
@@ -82,6 +84,7 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     # ABI stable for standard-SwiGLU callers that omit them.
     alpha: Float32 = Float32(0.0),
     limit: Float32 = Float32(0.0),
+    a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """SwiGLU + NVFP4 fused MoE up-projection dispatch.
 
@@ -122,6 +125,8 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
             `hidden_act = "silu"` models leave False; for `hidden_act =
             "swigluoai"` set True and pass the `alpha`/`limit` runtime
             args.
+        RowScalesT: Per-row input scales type. Defaults to the no-op
+            `NullRowScales`.
 
     Args:
         c_packed: Output, packed NVFP4 (uint8). Shape `(M_total, D/2)` where
@@ -158,6 +163,9 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
         limit: Runtime L for the clamped activation. Ignored when
             `clamp_activation=False`. For `swigluoai` models pass the
             HF config `swiglu_limit` value.
+        a_row_scales: Per-row input scales, one per `a` row. Token `m`'s
+            gate and up are scaled by `expert_scales[e] * a_row_scales[m]`
+            before SwiGLU.
     """
     comptime c_type = DType.bfloat16
     comptime N = type_of(b).static_shape[1]
@@ -211,6 +219,7 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
         SwiGLUOutputT=type_of(swiglu_out),
         swiglu_match_bf16=match_bf16,
         swiglu_use_inplace=use_inplace,
+        RowScalesT=RowScalesT,
     ](
         dummy_c_tensor,
         a,
@@ -225,4 +234,5 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
         estimated_total_m,
         ctx,
         swiglu_out,
+        a_row_scales=a_row_scales,
     )

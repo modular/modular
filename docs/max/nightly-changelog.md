@@ -346,6 +346,13 @@ This version is still a work in progress.
 - Deprecated `TileTensor.as_immut()` in favor of `TileTensor.as_imm()`, which
   returns the same immutable view and matches the naming of `Pointer.as_imm()`.
 
+- `max.nn.kernels.grouped_matmul_block_scaled` and
+  `max.nn.kernels.grouped_matmul_blocked_swiglu` accept an optional
+  `a_row_scales`: one `bfloat16` scale per activation row, multiplied into
+  that row's output together with its expert scale (before the SwiGLU in the
+  fused op). It dequantizes NVFP4 activations that were quantized with a
+  per-token tensor scale. NVFP4 on SM100 only.
+
 ## Breaking changes
 
 - Text generation now stops on every `eos_token_id` in a model's

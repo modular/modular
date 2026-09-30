@@ -578,6 +578,9 @@ modular_py_test(
     # structural, so their graph would otherwise be a cache hit off the
     # compiles-and-runs test's identical graph and skip the pipeline (no dump).
     env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    # Every case compiles its own graphs, so unsharded the file runs close to
+    # the CI timeout. One case per shard runs the compiles in parallel.
+    shard_count = 5,
     # B200-only: the fused MegaFFN NVFP4 kernel the fusion lowers to is SM100a
     # (Blackwell) specific. Off SM100 the pattern does not fire and the legs
     # run as standalone kernels, so there is nothing to exercise.
