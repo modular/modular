@@ -3924,6 +3924,118 @@ def test_xml_nested_any_value_unchanged_on_other_styles(
     assert _accepts(compiled, _xml_frame(style, runaway))
 
 
+def _pattern_keyed(pattern: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "patternProperties": {pattern: {"type": "string"}},
+    }
+
+
+def _compile_xml_arguments(
+    schema: dict[str, Any],
+    *,
+    style: _XmlStyle = "qwen_xml",
+    xml_tag_prefix: str = "",
+    reject_unsupported: bool = True,
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema,
+            style=style,
+            xml_tag_prefix=xml_tag_prefix,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    return _qwen_compiler().compile_structural_tag(tag)
+
+
+def _one_parameter(parameter: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"m": parameter},
+        "required": ["m"],
+    }
+
+
+def test_xml_pattern_properties_below_the_parameter_compile() -> None:
+    # Below a qwen_xml parameter tag an object's keys are JSON, so a key
+    # pattern compiles as it does for the json style.
+    compiled = _compile_xml_arguments(
+        _one_parameter(_pattern_keyed("^[a-z_]+$"))
+    )
+    assert _accepts(compiled, '<parameter=m>\n{"abc_def":"x"}\n</parameter>')
+    assert not _accepts(compiled, '<parameter=m>{"ABC":"x"}</parameter>')
+    assert not _accepts(compiled, '<parameter=m>{"abc":1}</parameter>')
+    assert not _accepts(
+        compiled, '<parameter=m>{"</parameter>":"x"}</parameter>'
+    )
+
+
+def test_xml_pattern_properties_on_xml_keys_stay_refused() -> None:
+    refusal = "patternProperties with empty properties on an XML object"
+    with pytest.raises(Exception, match=refusal):
+        _compile_xml_arguments(_pattern_keyed("^[a-z_]+$"))
+    # MiniMax-M3 spells an object's keys as tags at every depth.
+    with pytest.raises(Exception, match=refusal):
+        _compile_xml_arguments(
+            _one_parameter(_pattern_keyed("^[a-z_]+$")),
+            style="minimax_m3_xml",
+            xml_tag_prefix=_M3_PREFIX,
+        )
+
+
+@pytest.mark.parametrize("style", ["qwen_xml", "minimax_xml", "glm_xml"])
+def test_xml_properties_beside_pattern_properties_unchanged(
+    style: _XmlStyle,
+) -> None:
+    # Declared keys beside a key pattern need a per-key intersection, so the
+    # schema parser refuses them at any depth before the XML converter runs.
+    both = _pattern_keyed("^[a-z_]+$")
+    both["properties"] = {"a": {"type": "string"}}
+    for schema in (both, _one_parameter(both)):
+        with pytest.raises(Exception, match="declared or required properties"):
+            _compile_xml_arguments(schema, style=style)
+        compiled = _compile_xml_arguments(
+            schema, style=style, reject_unsupported=False
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+@pytest.mark.parametrize("pattern", ["^.+$", "^[^/]+$", "^[a-z</>]+$"])
+def test_xml_nested_key_pattern_that_can_spell_the_close_is_refused(
+    pattern: str,
+) -> None:
+    # A reader may scan a parameter's value to its first `</parameter>`, so
+    # no key below the tag may spell it.
+    with pytest.raises(Exception, match="closing delimiter"):
+        _compile_xml_arguments(_one_parameter(_pattern_keyed(pattern)))
+
+
+@pytest.mark.parametrize(
+    "pattern,key",
+    [("\\wcole", "xcole"), ("[a-z]cole", "ecole"), ("^[A-Z_]+$", "ABC")],
+)
+def test_xml_closed_pattern_keyed_any_values_hold_every_key(
+    pattern: str, key: str
+) -> None:
+    # JSON-Schema-Test-Suite ecmascript-regex cases 16 and 17, plus an
+    # anchored pattern: every key of a closed object is held, not just the
+    # first.
+    compiled = _compile_one_parameter(
+        {
+            "type": "object",
+            "patternProperties": {pattern: True},
+            "additionalProperties": False,
+        },
+        "qwen_xml",
+    )
+    assert _accepts(compiled, _xml_frame("qwen_xml", f'{{"{key}": [1]}}'))
+    assert not _accepts(compiled, _xml_frame("qwen_xml", '{"value": 1}'))
+    assert not _accepts(
+        compiled, _xml_frame("qwen_xml", f'{{"{key}": 1, "value": 2}}')
+    )
+
+
 def test_xml_bare_value_bound_counts_code_points() -> None:
     # JSON Schema counts code points; the automaton counts UTF-8 lead bytes.
     compiled = _compile_xml_length(2, 2)
