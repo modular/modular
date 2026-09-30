@@ -44,7 +44,7 @@ onto their substrate:
 
 from layout.tma_async import SharedMemBarrier
 from std.atomic import Atomic
-from std.gpu import lane_id
+from max.gpu import lane_id
 from std.sys._assembly import inlined_assembly
 
 comptime MbarPtr = UnsafePointer[

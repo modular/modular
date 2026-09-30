@@ -43,9 +43,9 @@ data-before-signal ordering that `AmdCounterBackend` delegates to the caller;
 """
 
 from std.atomic import Ordering, fence
-from std.gpu import barrier, lane_id, thread_idx, WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from max.gpu import barrier, lane_id, thread_idx, WARP_SIZE
+from max.gpu.host import DeviceContext
+from max.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from std.sys import has_amd_gpu_accelerator
 from std.testing import assert_equal
@@ -68,7 +68,7 @@ def _produced_value(i: Int) -> Int32:
 def pingpong_kernel[
     num_stages: Int,
     Backend: PipelineBackend,
-](result: UnsafePointer[Scalar[DType.int32], MutAnyOrigin], n_items: Int):
+](result: UnsafePointer[Scalar[DType.int32], MutAnyOrigin], n_items: Int32):
     """Hand `n_items` values from one producer warp to one consumer warp."""
     comptime n_bar = 2 * num_stages  # full[0..num_stages) then empty[0..)
 
@@ -96,7 +96,7 @@ def pingpong_kernel[
     var warp = Int(thread_idx.x) // WARP_SIZE
 
     if warp == 0:
-        for i in range(n_items):
+        for i in range(Int(n_items)):
             pipeline.wait_consumer()
             var slot = pipeline.producer_stage()
             if is_leader:
@@ -107,7 +107,7 @@ def pingpong_kernel[
                 pipeline.backend.arrive_full(slot)
             pipeline.producer_step()
     elif warp == 1:
-        for i in range(n_items):
+        for i in range(Int(n_items)):
             pipeline.wait_producer()
             var slot = pipeline.consumer_stage()
             fence[ordering=Ordering.ACQUIRE, scope=StaticString("")]()
@@ -133,11 +133,11 @@ def _run_config[num_stages: Int](ctx: DeviceContext, n_items: Int) raises:
     comptime if has_amd_gpu_accelerator():
         ctx.enqueue_function[
             pingpong_kernel[num_stages, AmdCounterBackend[1, 1]]
-        ](result, n_items, grid_dim=1, block_dim=block_dim)
+        ](result, Int32(n_items), grid_dim=1, block_dim=block_dim)
     else:
         ctx.enqueue_function[
             pingpong_kernel[num_stages, NvidiaMbarBackend[num_stages]]
-        ](result, n_items, grid_dim=1, block_dim=block_dim)
+        ](result, Int32(n_items), grid_dim=1, block_dim=block_dim)
 
     var host = ctx.enqueue_create_host_buffer[DType.int32](n_items)
     ctx.enqueue_copy(host, result)
