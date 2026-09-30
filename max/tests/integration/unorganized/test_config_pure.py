@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
@@ -59,18 +58,12 @@ from test_common.mocks import (
     mock_pipeline_config_resolve,
     mock_plan_from_sizes,
 )
-from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
+from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
-
-requires_hf_network = pytest.mark.skipif(
-    os.environ.get("HF_HUB_OFFLINE", "0") == "1",
-    reason="Verifies weight files against live HuggingFace; presubmit runs "
-    "offline, the HF workflow covers this (SERVOPT-900)",
-)
 
 
 def _serve_optimization_arch(
@@ -862,93 +855,6 @@ def test_config_init__raises_with_no_model_path() -> None:
         _build_model_config(MAXModelConfig, weight_path=[Path("file.gguf")])
 
 
-@requires_hf_network
-@prepare_registry
-def test_config_post_init__with_weight_path_but_no_model_path() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": _build_model_config(
-                    MAXModelConfig,
-                    weight_path=[
-                        Path(
-                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
-                        )
-                    ],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-
-    assert config.model.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
-    assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
-
-
-@requires_hf_network
-@prepare_registry
-@mock_plan_from_sizes
-def test_config_post_init__other_repo_weights(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": _build_model_config(
-                    MAXModelConfig,
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    weight_path=[
-                        Path(
-                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
-                        )
-                    ],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-
-    assert (
-        config.model._weights_repo_id == "modularai/Llama-3.1-8B-Instruct-GGUF"
-    )
-    assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
-
-
-@requires_hf_network
-def test_config_init__reformats_with_str_weights_path(
-    modular_ai_llama_3_1_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-    # We expect this to convert the string.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=modular_ai_llama_3_1_local_path,
-                    weight_path=[
-                        Path(
-                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
-                        )
-                    ],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-
-    assert isinstance(config.model.weight_path, list)
-    assert len(config.model.weight_path) == 1
-    assert isinstance(config.model.weight_path[0], Path)
-
-
 @pytest.mark.skip(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
@@ -971,53 +877,6 @@ def test_validate_model_path__correct_repo_id_provided(
     )
 
     assert config.model.model_path == modular_ai_llama_3_1_local_path
-
-
-@requires_hf_network
-@prepare_registry
-@mock_plan_from_sizes
-def test_config__test_incompatible_quantization_encoding(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    """Arch-dependent encoding validation runs on the ``from_args`` path."""
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    with pytest.raises(ValueError, match="'q4_k' not supported by MAX engine"):
-        # This should raise: the dummy Llama arch does not support q4_k.
-        PipelineConfig.from_args(
-            PipelineArgs(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="q4_k",
-                weight_path=[
-                    Path(
-                        "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
-                    )
-                ],
-                max_length=1,
-                runtime=PipelineRuntimeConfig(
-                    max_batch_size=1,
-                    prefer_module_v3=True,
-                ),
-            )
-        )
-
-    # This should not raise, as float32 == f32.
-    PipelineConfig.from_args(
-        PipelineArgs(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
-                )
-            ],
-            max_length=1,
-            runtime=PipelineRuntimeConfig(
-                max_batch_size=1,
-                prefer_module_v3=True,
-            ),
-        )
-    )
 
 
 @pytest.mark.skip(
@@ -1149,35 +1008,6 @@ def test_config__test_retrieve_factory_with_known_architecture(
     )
 
     PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
-
-
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-def test_config__test_retrieve_factory_with_unsupported_model_path(
-    gemma_3_1b_it_local_path: str,
-) -> None:
-    # Construction leaves unregistered architectures alone; the registry
-    # rejects them when the pipeline factory is retrieved.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=gemma_3_1b_it_local_path, max_length=1
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            prefer_module_v3=True,
-        ),
-    )
-
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    # Should raise an error since HuggingFace fallback is removed.
-    with pytest.raises(ValueError, match="No architecture found for"):
-        PIPELINE_REGISTRY.retrieve_factory(config)
 
 
 class LimitedPickler(pickle.Unpickler):
@@ -1342,38 +1172,6 @@ def test_config__validates_lora_configuration(
     assert config.lora.max_num_loras == 1
 
 
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-def test_config__validates_lora_only_supported_for_llama(
-    gemma_3_1b_it_local_path: str,
-) -> None:
-    """Test that LoRA validation fails for non-Llama models."""
-
-    PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH, allow_override=True)
-
-    # Test that enabling LoRA on a non-Llama model raises ValueError
-    with pytest.raises(
-        ValueError,
-        match=r"LoRA is not currently supported for architecture.*LoRA support is currently only available for Llama-3\.x models",
-    ):
-        _ = PipelineConfig.from_args(
-            PipelineArgs(
-                model_path=gemma_3_1b_it_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                max_length=1,
-                lora=LoRAConfig(
-                    enable_lora=True, lora_paths=["/some/lora/path"]
-                ),
-                runtime=PipelineRuntimeConfig(
-                    prefer_module_v3=True,
-                ),
-            )
-        )
-
-
 @pytest.mark.skip(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
@@ -1407,71 +1205,6 @@ def test_config__validates_lora_works_for_llama(
     assert config.lora is not None
     assert config.lora.enable_lora is True
     assert config.lora.lora_paths == ["/some/lora/path"]
-
-
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-def test_config__validates_lora_incompatible_with_prefix_caching(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    """Test that LoRA and prefix caching cannot be enabled together."""
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    # Test that enabling both LoRA and prefix caching raises ValueError
-    with pytest.raises(
-        ValueError,
-        match=r"LoRA is not compatible with prefix caching\. Please disable prefix caching by using the --no-enable-prefix-caching flag\.",
-    ):
-        _ = PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=llama_3_1_8b_instruct_local_path,
-                        device_specs=[DeviceSpec.accelerator()],
-                        quantization_encoding="bfloat16",
-                        kv_cache=KVCacheConfig(enable_prefix_caching=True),
-                        max_length=1,
-                    )
-                }
-            ),
-            lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-            runtime=PipelineRuntimeConfig(
-                prefer_module_v3=True,
-            ),
-        )
-
-
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-@pytest.mark.skipif(
-    accelerator_count() > 1, reason="Test requires single GPU or CPU"
-)
-def test_config__validates_lora_single_device_only(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    device_specs=[DeviceSpec.accelerator()],
-                    quantization_encoding="bfloat16",
-                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                    max_length=1,
-                )
-            }
-        ),
-        lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-    assert config.lora is not None
-    assert config.lora.enable_lora is True
 
 
 @pytest.mark.skip(

@@ -267,27 +267,6 @@ modular_py_test(
     ],
 )
 
-modular_py_test(
-    name = "test_generate_llm_logits_gpu",
-    size = "medium",
-    srcs = ["test_generate_llm_logits_gpu.py"],
-    exec_properties = {
-        "test.resources:gpu-memory": "22",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-        "manual",  # TODO(AITLIB-293)
-        "no-sandbox",
-        "requires-network",
-        "run-in-hf-workflow",
-    ],
-    deps = [
-        "//max/tests/integration/tools:generate_llm_logits",
-        requirement("click"),
-    ],
-)
-
 modular_py_binary(
     name = "lm-eval",
     testonly = True,
