@@ -382,7 +382,6 @@ def modular_py_test(
         # modular_py_test, so depending back on it would cycle.
         py_library(
             name = name + ".mypy_library",
-            data = data + extra_data,
             tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
             deps = deps + [
                 requirement("pytest"),
