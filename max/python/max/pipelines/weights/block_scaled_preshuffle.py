@@ -34,7 +34,7 @@ import logging
 import re
 import time
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -449,6 +449,117 @@ def preshuffle_block_scaled_b_scales(
         "" if permute else " (dummy op under virtual compilation)",
         n_total,
         len(groups),
+        time.perf_counter() - t0,
+    )
+    return n_total
+
+
+def preshuffle_block_scaled_b_stacked(
+    state_dict: dict[str, WeightData], names: Iterable[str]
+) -> int:
+    """MXFP4 B preshuffle of already-stacked ``[E, N, K]`` expert tensors.
+
+    The expert helpers above group per-expert tensors by FQN, which assumes a
+    checkpoint that stores one weight per expert. Some adapters stack the
+    experts before the model ever sees them -- Kimi K3 emits
+    ``experts_gate_up_proj`` of shape ``[E, N, K // 2]`` with its
+    ``_scale`` sibling -- and those names match neither the strict patterns nor
+    the loose tripwire, so :func:`preshuffle_block_scaled_b_experts` returns 0
+    on them without raising. Flipping ``block_scaled_preshuffled_b`` after that
+    silently serves row-major weights to the preb kernel. This is the entry
+    point for that layout.
+
+    Each name's expert slices are permuted independently and its
+    ``f"{name}_scale"`` sibling is permuted alongside, so weight and scale
+    layouts cannot drift apart.
+
+    Only permute a weight whose tensor-parallel split is on ``N``. The 5D
+    layout is ``(N0, K0, KLane, NLane, KPack)`` with ``N0`` outermost, so an
+    ``N`` slice on a 16-row boundary stays a contiguous run of whole tiles and
+    the split commutes with the permutation. A split on the packed-``K`` axis
+    does not: it would slice across ``K0`` inside every tile.
+
+    Args:
+        state_dict: Weights to permute in place.
+        names: Names of stacked ``[E, N, K_BYTES]`` uint8 expert weights. Each
+            name's ``f"{name}_scale"`` sibling must be a stacked E8M0
+            ``[E, N, K_SCALES]`` tensor.
+
+    Returns:
+        How many expert slices were permuted, counting weights and scales
+        separately. Counted under virtual devices too, where the byte copy is
+        skipped, so a caller can tell "matched nothing" from "did the work" in
+        both modes.
+
+    Raises:
+        ValueError: If a name is absent, is not rank 3, has a dtype or dims the
+            permutation cannot address, or has no ``_scale`` sibling. Raising
+            is the point: the caller flips the flag for the whole config, so a
+            skipped tensor would be read as if it had been permuted. Nothing
+            in ``state_dict`` is replaced when this raises.
+    """
+    t0 = time.perf_counter()
+    permute = not is_virtual_device_mode()
+
+    # Validated in full before any tensor is replaced, so a bad name anywhere
+    # in `names` raises with the state dict as it was handed in, rather than
+    # with some weights permuted and their scales still row-major.
+    to_permute: list[tuple[str, Callable[[np.ndarray, np.ndarray], None]]] = []
+    for name in names:
+        scale_name = f"{name}_scale"
+        for tensor_name, shuffle, cells in (
+            (name, _shuffle_b_5d, (_MFMA_MN_LANES, _MFMA_K_LANES * 16)),
+            (scale_name, _shuffle_scale_4d, (32, 8)),
+        ):
+            if tensor_name not in state_dict:
+                raise ValueError(
+                    f"stacked MX B preshuffle: {tensor_name!r} is not in the "
+                    "state dict; weight and scale must be permuted together."
+                )
+            wd = state_dict[tensor_name]
+            dims = wd.shape.static_dims
+            mn_cell, k_cell = cells
+            if (
+                len(dims) != 3
+                or dims[1] % mn_cell != 0
+                or dims[2] % k_cell != 0
+            ):
+                raise ValueError(
+                    f"stacked MX B preshuffle: {tensor_name!r} has shape "
+                    f"{dims}, which is not a rank-3 [E, N, K] whose N is a "
+                    f"multiple of {mn_cell} and K a multiple of {k_cell}."
+                )
+            expected = (
+                DType.float8_e8m0fnu
+                if tensor_name == scale_name
+                else DType.uint8
+            )
+            if wd.dtype != expected:
+                raise ValueError(
+                    f"stacked MX B preshuffle: {tensor_name!r} has dtype "
+                    f"{wd.dtype}, expected {expected}."
+                )
+            to_permute.append((tensor_name, shuffle))
+
+    n_total = 0
+    for tensor_name, shuffle_expert in to_permute:
+        wd = state_dict[tensor_name]
+        dims = wd.shape.static_dims
+        n_total += dims[0]
+        if not permute:
+            continue
+        src = np.from_dlpack(wd.to_buffer().view(DType.uint8, dims))
+        dst = np.empty_like(src)
+        for e in range(dims[0]):
+            shuffle_expert(src[e], dst[e])
+        state_dict[tensor_name] = dataclasses.replace(
+            WeightData.from_numpy(dst, name=wd.name), dtype=wd.dtype
+        )
+
+    logger.info(
+        "MXFP4 stacked B preshuffle%s: %d expert slices in %.1fs",
+        "" if permute else " (dummy op under virtual compilation)",
+        n_total,
         time.perf_counter() - t0,
     )
     return n_total

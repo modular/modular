@@ -6239,6 +6239,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
     preshuffled_b: bool = False,
     a_scales_preshuffled: bool = False,
     a_scales_max_padded_m: int = 0,
+    a_scales_max_rows_per_expert: int | None = None,
     decode_grid_m_cap: int = 0,
     decode_grid_m_rows: int = 0,
 ) -> TensorValue:
@@ -6270,6 +6271,11 @@ def grouped_dynamic_block_scaled_matmul_amd(
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
         estimated_total_m: The estimated total number of tokens.
+        a_scales_max_rows_per_expert: Graph-build-time bound on the unpadded
+            rows one expert can hold, sizing the per-step A-scale slot buffer.
+            ``None`` falls back to the post-expansion row count, which
+            over-allocates each slot roughly ``top_k``-fold. Must be positive
+            when given. Ignored unless ``preshuffled_b``.
         decode_grid_m_cap: Decode-band gate on the AMD preb path; 0 disables.
             Selects the band; `decode_grid_m_rows` bounds the grid.
         decode_grid_m_rows: Rows grid.y must cover per expert on the decode
@@ -6372,9 +6378,13 @@ def grouped_dynamic_block_scaled_matmul_amd(
     # `estimated_total_m` defaults to 0 (unknown). When `preshuffled_b` is
     # True, the AMD preb kernel uses it to choose between persistent (small)
     # and direct 3D-grid (large) dispatch paths. Ignored on the dense path.
+    #
+    # Host-resident, like every caller's own `estimated_total_m`: the kernel
+    # takes it as a scalar operand, so building the default on the activation's
+    # device fails custom-op verification rather than defaulting.
     if estimated_total_m is None:
         estimated_total_m_arg = ops.constant(
-            0, dtype=DType.uint32, device=hidden_states.device
+            0, dtype=DType.uint32, device=DeviceRef.CPU()
         )
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
@@ -6395,6 +6405,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
             expert_usage_stats_host[0].cast(DType.uint32),
             expert_usage_stats_host[1].cast(DType.uint32),
             num_experts=int(weight.shape[0]),
+            max_rows_per_expert=a_scales_max_rows_per_expert,
         )
 
     # The matmul derives the A-scale per-expert slot stride as
@@ -6576,9 +6587,11 @@ def grouped_dynamic_scaled_mxfp6_matmul(
             f" {b_scales_dim_2}] but got {b_scales.shape}"
         )
 
+    # Host-resident for the same reason as the MXFP4 sibling: the kernel takes
+    # it as a scalar operand.
     if estimated_total_m is None:
         estimated_total_m_arg = ops.constant(
-            0, dtype=DType.uint32, device=hidden_states.device
+            0, dtype=DType.uint32, device=DeviceRef.CPU()
         )
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
@@ -9011,6 +9024,7 @@ def block_scaled_preshuffle_grouped_scale_4d(
     max_num_tokens_per_expert: TensorValue,
     num_active_experts: TensorValue,
     num_experts: int,
+    max_rows_per_expert: int | None = None,
 ) -> TensorValue:
     """Applies the per-step A-scale preshuffle for the AMD CDNA4 preb kernel.
 
@@ -9034,11 +9048,21 @@ def block_scaled_preshuffle_grouped_scale_4d(
         num_active_experts: Scalar ``uint32`` number of active expert slots.
         num_experts: Graph-build-time upper bound on ``num_active_experts``
             (e.g. ``weight.shape[0]``). Used to size the output buffer.
+        max_rows_per_expert: Graph-build-time upper bound on the UNPADDED rows
+            one expert can hold, used to size its slot. Padded here to the
+            kernel's 32-row stride, so pass a token count rather than a padded
+            one. ``None`` falls back to ``total_tokens``, which is correct but
+            roughly ``top_k``-fold larger per slot than anything the matmul
+            reads. Must be positive and bound ``max_num_tokens_per_expert`` at
+            every step: too small is silent corruption, since the matmul
+            strides past the allocation.
 
     Returns:
-        Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * total_tokens,
-        K_SCALES]``. The first ``num_active_experts * max_padded_M`` rows
-        are written; the rest is left untouched but accessible.
+        Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * slot_rows,
+        K_SCALES]``, where ``slot_rows`` is ``align_up(max_rows_per_expert,
+        32)`` or ``total_tokens``. The first ``num_active_experts *
+        max_padded_M`` rows are written; the rest is left untouched but
+        accessible, and is what ``max_rows_per_expert`` bounds.
     """
     if a_scales.rank != 2:
         raise ValueError(
@@ -9054,8 +9078,26 @@ def block_scaled_preshuffle_grouped_scale_4d(
             "expert_start_indices must be rank 1, got rank"
             f" {expert_start_indices.rank}"
         )
+    if max_rows_per_expert is not None and max_rows_per_expert <= 0:
+        raise ValueError(
+            "max_rows_per_expert must be > 0 when given, got"
+            f" {max_rows_per_expert}"
+        )
 
-    out_rows = num_experts * a_scales.shape[0]
+    # The default is not a loose worst case, it is the wrong QUANTITY:
+    # `a_scales.shape[0]` counts rows POST-expansion (tokens * top_k), while an
+    # expert holds at most the PRE-expansion token count, because a token's
+    # top_k picks are distinct. Sizing `num_experts` slots by the former is
+    # invisible at decode and fatal at prefill -- 896 experts x 105,760 rows x
+    # 112 B is 10.6 GB where 665 MB is addressed, on a model with ~4 GB of
+    # headroom. Padded to 32 here rather than at the call site so a caller
+    # cannot hand over an unpadded bound and read past the slot.
+    slot_rows = (
+        a_scales.shape[0]
+        if max_rows_per_expert is None
+        else ((max_rows_per_expert + 31) // 32) * 32
+    )
+    out_rows = num_experts * slot_rows
 
     return ops.custom(
         "mo.block.scaled.preshuffle.scale.4d_per_expert",
