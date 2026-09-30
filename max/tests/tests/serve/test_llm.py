@@ -783,6 +783,7 @@ async def test_next_token_chunk_without_reasoning_parser_keeps_all_tokens() -> (
         LogProbabilities(
             token_log_probabilities=[value],
             top_log_probabilities=[],
+            sampled_token_ids=[token],
         )
         for value, token in zip(values, tokens, strict=True)
     ]
