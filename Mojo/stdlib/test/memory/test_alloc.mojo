@@ -224,21 +224,6 @@ def test_alloc_count_0() raises:
     dealloc(int_alloc^)
 
 
-def _alloc_count_0_round_trip[T: AnyType]() -> Int:
-    var allocation = alloc(Layout[T](count=0))
-    var count = allocation.layout().count()
-    dealloc(allocation^)
-    return count
-
-
-def test_alloc_count_0_at_comptime() raises:
-    comptime int_count = _alloc_count_0_round_trip[Int]()
-    comptime zst_count = _alloc_count_0_round_trip[Array[Int, 0]]()
-
-    assert_equal(int_count, 0)
-    assert_equal(zst_count, 0)
-
-
 def test_alloc_free_single_zst() raises:
     comptime ZST = Array[Int, 0]
     comptime assert (

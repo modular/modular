@@ -31,6 +31,7 @@ from std.memory.alloc import (
     alloc,
     dealloc,
     Allocation,
+    ThinAllocation,
     Layout,
 )
 from std.memory import (
@@ -407,7 +408,8 @@ struct List[T: AnyType, /](
     @stable(since="1.0")
     def __init__(out self):
         """Constructs an empty list."""
-        self = Self(capacity=0)
+        self._storage = Self._dangling_storage()
+        self._len = 0
 
     @stable(since="1.0")
     def __init__(out self, *, capacity: Int):
@@ -416,7 +418,10 @@ struct List[T: AnyType, /](
         Args:
             capacity: The requested capacity of the list.
         """
-        self._storage = alloc(Layout[Self.T](count=capacity))
+        if capacity:
+            self._storage = alloc(Layout[Self.T](count=capacity))
+        else:
+            self._storage = Self._dangling_storage()
         self._len = 0
         self._annotate_new()
 
@@ -522,11 +527,29 @@ struct List[T: AnyType, /](
         self = Self(capacity=copy.capacity())
         self.extend(Span(copy))
 
+    @staticmethod
+    @inline(.always)
+    def _dangling_storage() -> Allocation[Self.T]:
+        return ThinAllocation(
+            unsafe_owned_ptr=Self._PointerType.unsafe_dangling()
+        ).unsafe_with_layout(Layout[Self.T](count=0))
+
+    @staticmethod
+    @inline(.always)
+    def _dealloc_storage(var storage: Allocation[Self.T]):
+        # Zero-capacity storage is the placeholder from `_dangling_storage`,
+        # which never came from the allocator, so it must not reach `dealloc`.
+        if len(storage) > 0:
+            dealloc(storage^)
+        else:
+            _ = storage^.unsafe_leak()
+
     def _unsafe_assume_destroyed_and_deallocate(deinit self):
         """Assumes self's values are already destroyed and deallocate the backing storage.
         """
-        self._annotate_delete()
-        dealloc(self._storage^)
+        if self.capacity() > 0:
+            self._annotate_delete()
+        Self._dealloc_storage(self._storage^)
 
     @stable(since="1.0")
     def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
@@ -817,12 +840,17 @@ struct List[T: AnyType, /](
         mut self, new_capacity: Int
     ) where conforms_to(Self.T, Movable):
         var new_storage = alloc(Layout[Self.T](count=new_capacity))
-        _ = new_storage.storage()[: len(self)].unsafe_init_move_from(Span(self))
+        _ = (
+            new_storage.storage()
+            ._unchecked_subspan(start=0, end=len(self))
+            .unsafe_init_move_from(Span(self))
+        )
 
-        self._annotate_delete()
+        if self.capacity() > 0:
+            self._annotate_delete()
         var old_storage = self._storage^
         self._storage = new_storage^
-        dealloc(old_storage^)
+        Self._dealloc_storage(old_storage^)
         self._annotate_new()
 
     @inline(.always)
@@ -910,7 +938,7 @@ struct List[T: AnyType, /](
             src=data.unsafe_offset(i),
             count=old_len - i,
         )
-        self._storage.storage()[i].unsafe_write(value^)
+        data.unsafe_offset(i).unsafe_write(value^)
         self._len = old_len + 1
 
     @stable(since="1.0")
@@ -937,9 +965,11 @@ struct List[T: AnyType, /](
         self._grow_amortized(final_size)
         self._annotate_increase(other_len)
 
-        _ = self._storage.storage()[
-            self._len : final_size
-        ].unsafe_init_move_from(Span(other))
+        _ = (
+            self._storage.storage()
+            ._unchecked_subspan(start=self._len, end=final_size)
+            .unsafe_init_move_from(Span(other))
+        )
 
         # Update the size now since all elements have been moved into this list.
         self._len = final_size
@@ -971,9 +1001,11 @@ struct List[T: AnyType, /](
         self._grow_amortized(new_num_elts)
         self._annotate_increase(elements_len)
 
-        _ = self._storage.storage()[
-            self._len : new_num_elts
-        ].unsafe_init_copy_from(elements)
+        _ = (
+            self._storage.storage()
+            ._unchecked_subspan(start=self._len, end=new_num_elts)
+            .unsafe_init_copy_from(elements)
+        )
         self._len = new_num_elts
 
     @__allow_legacy_custom_self_type
@@ -1145,8 +1177,10 @@ struct List[T: AnyType, /](
 
         self._grow_amortized(new_length)
         self._annotate_increase(new_length - self._len)
-        _ = self._storage.storage()[self._len : new_length].unsafe_init_with(
-            lambda (_i: Int) -> Self.T: fill.copy()
+        _ = (
+            self._storage.storage()
+            ._unchecked_subspan(start=self._len, end=new_length)
+            .unsafe_init_with(lambda (_i: Int) -> Self.T: fill.copy())
         )
         self._len = new_length
 
@@ -1376,7 +1410,7 @@ struct List[T: AnyType, /](
         """
         self._annotate_delete()
         var storage = self._storage^
-        self._storage = alloc[Self.T]({count = 0})
+        self._storage = Self._dangling_storage()
         self._len = 0
         return storage^
 
@@ -1535,7 +1569,7 @@ struct List[T: AnyType, /](
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        Span(self)[idx] = value^
+        Span(self)._unchecked_get(idx) = value^
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):
         """Counts the number of occurrences of a value in the list.

@@ -855,8 +855,7 @@ def alloc[
     the `Allocation` is destroyed on every path — by passing it to `dealloc`,
     or by explicitly leaking it with `unsafe_leak()`.
 
-    An allocation of zero bytes - a zero-sized `T`, or a `layout` with a
-    count of zero - returns a sentinel value.
+    When `size_of[T]() == 0`, this function returns a sentinel value.
 
     Parameters:
         T: The type of the elements to allocate storage for.
@@ -883,22 +882,21 @@ def alloc[
     dealloc(allocation^)
     ```
     """
+    comptime size_of_t = size_of[T]()
+
     if unlikely(layout.count() < 0):
         abort("alloc: `Layout.count()` must be >= 0")
 
-    var byte_layout = layout.as_byte_layout()
-
-    # TODO: We should configure this per chosen allocator. If the allocator
-    # returns a non-null sentinel value we can use that, otherwise we need
-    # to manually return our own sentinel (dangling) pointer.
-    if byte_layout.count() == 0:
+    comptime if size_of_t == 0:
         return ThinAllocation[T](
             unsafe_owned_ptr=Pointer[T, MutUntrackedOrigin].unsafe_dangling()
         ).unsafe_with_layout(layout)
-
-    return ThinAllocation[T](
-        unsafe_owned_ptr=_alloc_bytes(byte_layout).unsafe_bitcast[T]()
-    ).unsafe_with_layout(layout)
+    else:
+        return ThinAllocation[T](
+            unsafe_owned_ptr=_alloc_bytes(
+                layout.as_byte_layout()
+            ).unsafe_bitcast[T]()
+        ).unsafe_with_layout(layout)
 
 
 def dealloc[T: AnyType, /](var allocation: Allocation[T, alignment=_], /):
@@ -925,13 +923,10 @@ def dealloc[T: AnyType, /](var allocation: Allocation[T, alignment=_], /):
     dealloc(allocation^)
     ```
     """
-    var is_empty = allocation.layout().as_byte_layout().count() == 0
-    var pointer = allocation^.unsafe_leak()
-
-    # A zero-byte `Allocation` stands in a dangling pointer that never came
-    # from the allocator, so it must not reach `free`. See `alloc`.
-    if not is_empty:
-        _free(pointer)
+    comptime if size_of[T]() == 0:
+        _ = allocation^.unsafe_leak()
+    else:
+        _free(allocation^.unsafe_leak())
 
 
 struct Layout[T: AnyType, *, alignment: Alignment = .of[T]()](
