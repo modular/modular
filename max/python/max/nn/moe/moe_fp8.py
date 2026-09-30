@@ -378,6 +378,16 @@ class MoEQuantized(MoE):
                 "Custom gated_activation_fn is not supported in the EP"
                 " quantized path due to a specialized fused kernel."
             )
+        # The dynamic dispatch hands back one more tensor than the unpacking
+        # below expects, and the matmuls have no per-row scale to apply it.
+        if (
+            self._ep_batch_manager
+            and self.ep_batch_manager.config.nvfp4_dyn_global_scales
+        ):
+            raise NotImplementedError(
+                "no grouped matmul consumes the per-row global scales that"
+                " nvfp4_dyn_global_scales dispatch produces yet"
+            )
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 

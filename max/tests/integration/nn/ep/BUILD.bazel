@@ -7,6 +7,7 @@ package(default_visibility = [
 ])
 
 _QUANTIZED_TESTS = [
+    "test_ep_dispatch_nvfp4_dyn.py",
     "test_ep_moe_fp4.py",
     "test_ep_moe_fp8.py",
     "test_ep_moe_mxfp8.py",
@@ -130,6 +131,8 @@ modular_py_test(
         "//max:shmem",
     ],
     per_test_shard_count = {
+        # One compiled graph per fused dispatch op.
+        "test_ep_dispatch_nvfp4_dyn.py": 2,
         "test_ep_moe_fp4.py": 2,
     },
     tags = [

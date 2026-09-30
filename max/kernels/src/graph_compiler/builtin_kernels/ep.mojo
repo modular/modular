@@ -100,6 +100,8 @@ struct Struct_ep_init:
         dispatch_fmt_str: StaticString,
         //,
         target: StaticString,
+        *,
+        nvfp4_dyn_global_scales: Bool = False,
     ](
         dev_ptrs: OutputTensor[dtype=.uint64, rank=2, ...],
         my_rank_tensor: OutputTensor[dtype=.int32, rank=1, ...],
@@ -122,6 +124,8 @@ struct Struct_ep_init:
             dispatch_scale_dtype: DType of the dispatch scale.
             dispatch_fmt_str: String indicating the dispatch format.
             target: Target for this kernel.
+            nvfp4_dyn_global_scales: Whether the `BLOCK_SCALED_NV` messages
+                carry a per-token global scale, which makes them larger.
 
         Arguments:
             dev_ptrs: Output tensor to store device pointers. Shape [2, 3] where:
@@ -159,6 +163,7 @@ struct Struct_ep_init:
                 scales_offset_layout=RT_LAYOUT_2D,
                 hidden_size,
                 top_k,
+                nvfp4_dyn_global_scales=nvfp4_dyn_global_scales,
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
 
@@ -1239,6 +1244,162 @@ struct Struct_ep_dispatch_block_scaled_nv:
         )
 
 
+@inline(.always)
+def _check_rowwise_scales_rows(
+    output_rowwise_scales: OutputTensor[dtype=.bfloat16, rank=1, ...],
+    output_tokens: OutputTensor[rank=2, ...],
+) raises:
+    """Rejects a per-row scales output that cannot hold one scale per
+    received row, since the token format sizes it from `output_tokens`."""
+    if output_rowwise_scales.dim_size(0) != output_tokens.dim_size(0):
+        raise Error(
+            "EP dispatch: output_rowwise_scales has ",
+            output_rowwise_scales.dim_size(0),
+            " rows, but output_tokens has ",
+            output_tokens.dim_size(0),
+        )
+
+
+@extensibility.register("ep.dispatch.block.scaled.nv.dyn_global_scales")
+struct Struct_ep_dispatch_block_scaled_nv_dyn_global_scales:
+    """Registers the `ep.dispatch.block.scaled.nv.dyn_global_scales` graph op
+    with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5, ...],
+        output_rowwise_scales: OutputTensor[dtype=.bfloat16, rank=1, ...],
+        row_offsets: OutputTensor[dtype=.uint32, rank=1, ...],
+        scales_offsets: OutputTensor[dtype=.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=.uint64, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        """Execute the fused Expert Parallelism NVFP4 dispatch kernel with
+        dynamic global scales.
+
+        Each token is quantized against its own global scale,
+        `2688 / rowmax`, rather than a caller-supplied input scale. The
+        scale's BF16 inverse travels with the token and lands in
+        `output_rowwise_scales`, so a received row dequantizes as
+        `fp4 * block_scale * rowwise_scale`.
+
+        Parameters:
+            input_dtype: `DType` of the input tokens before dispatch
+                (inferred).
+            dispatch_dtype: `DType` used for the quantized token
+                payload during dispatch (inferred).
+            dispatch_scale_dtype: `DType` of the block scales
+                accompanying the dispatched tokens (inferred).
+            hidden_size: Size of the model's hidden dimension
+                (inferred).
+            top_k: Number of experts each token is routed to
+                (inferred).
+            n_experts: Total number of experts across all GPUs
+                (inferred).
+            max_token_per_rank: Maximum number of tokens per GPU
+                (inferred).
+            n_gpus_per_node: Number of GPUs per node (inferred).
+            n_nodes: Number of physical nodes (inferred).
+            fused_shared_expert: Whether a shared expert is fused
+                into the dispatch kernel (inferred).
+            skip_a2a: Whether to skip the all-to-all communication
+                and send tokens only within the current device
+                (inferred).
+            allreduce_world_size: Number of ranks participating in
+                the allreduce following dispatch (inferred).
+            target: Compile-time device target.
+
+        Args:
+            output_tokens: Output tensor storing the received tokens
+                in NVFP4 format.
+            output_scales: Output tensor storing the NVFP4 block
+                scales for the received tokens.
+            output_rowwise_scales: Output tensor storing each received
+                token's BF16 inverse global scale, `rowmax / 2688`. Shape
+                `[max_recv_tokens]`, one entry per row of `output_tokens`.
+            row_offsets: Output tensor storing the row offsets for
+                the received tokens.
+            scales_offsets: Output tensor storing the offsets into
+                the scales buffer for the received tokens.
+            expert_ids: Output tensor storing the expert ID for
+                each received token.
+            src_info: Output tensor recording the originating rank
+                and token index for each received token. Shape
+                `[num_tokens, 2]`.
+            atomic_counters: Atomic counters coordinating work
+                across thread blocks during the dispatch phase.
+            input_tokens: Input tokens to dispatch to experts. Shape
+                `[num_tokens, hidden_size]`.
+            topk_ids: Input tensor of top-k expert IDs per token.
+                Shape `[num_tokens, top_k]`.
+            send_ptrs: Send buffer pointers for the dispatch phase.
+            recv_ptrs: Receive buffer pointers for the dispatch
+                phase.
+            recv_count_ptrs: Receive count buffer pointers tracking
+                tokens received per expert.
+            context: GPU device context for the current device.
+        """
+        _check_rowwise_scales_rows(output_rowwise_scales, output_tokens)
+
+        var format_handler = NVBlockScaledTokenFormat[
+            hidden_size, top_k, nvfp4_dyn_global_scales=True
+        ](
+            output_tokens.to_tile_tensor[.int64](),
+            output_scales.to_tile_tensor[.int64](),
+            scales_offsets.to_tile_tensor[.int64](),
+            context,
+            output_rowwise_scales.unsafe_ptr(),
+        )
+
+        ep_fused_dispatch_kernel_api[
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            fused_shared_expert,
+            target,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            format_handler,
+            row_offsets.to_tile_tensor[.int64](),
+            expert_ids.to_tile_tensor[.int64](),
+            src_info.to_tile_tensor[.int64](),
+            atomic_counters.to_tile_tensor[.int64](),
+            input_tokens.to_tile_tensor[.int64](),
+            topk_ids.to_tile_tensor[.int64](),
+            send_ptrs.to_tile_tensor[.int64](),
+            recv_ptrs.to_tile_tensor[.int64](),
+            recv_count_ptrs.to_tile_tensor[.int64](),
+            context,
+        )
+
+
 @extensibility.register("ep.dispatch.mxfp4")
 struct Struct_ep_dispatch_mxfp4:
     """Registers the `ep.dispatch.mxfp4` graph op with the graph compiler."""
@@ -1476,6 +1637,172 @@ struct DistributedEPDispatchBlockScaledNV:
                 fused_shared_expert,
                 target,
                 input_scales_wrapper=input_scales_fn,
+            ](
+                format_handler,
+                row_offsets[index].to_tile_tensor[.int64](),
+                expert_ids[index].to_tile_tensor[.int64](),
+                src_info[index].to_tile_tensor[.int64](),
+                atomic_counters[index].to_tile_tensor[.int64](),
+                input_tokens[index].to_tile_tensor[.int64](),
+                topk_ids[index].to_tile_tensor[.int64](),
+                send_ptrs[index].to_tile_tensor[.int64](),
+                recv_ptrs[index].to_tile_tensor[.int64](),
+                recv_count_ptrs[index].to_tile_tensor[.int64](),
+                gpu_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
+
+
+@extensibility.register(
+    "mo.distributed.ep.dispatch.block.scaled.nv.dyn_global_scales"
+)
+struct DistributedEPDispatchBlockScaledNVDynGlobalScales:
+    """Registers the
+    `mo.distributed.ep.dispatch.block.scaled.nv.dyn_global_scales` graph op
+    with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputVariadicTensors[
+            dtype=dispatch_scale_dtype, rank=5, ...
+        ],
+        output_rowwise_scales: OutputVariadicTensors[
+            dtype=DType.bfloat16, rank=1, ...
+        ],
+        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
+        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        atomic_counters: MutableInputVariadicTensors[
+            dtype=DType.int32, rank=1, ...
+        ],
+        dev_ctxs: DeviceContextArray,
+    ) capturing raises:
+        """Multi-device fused Expert Parallelism NVFP4 dispatch with dynamic
+        global scales.
+
+        Launches the EP dispatch kernel on all devices simultaneously via
+        _ep_launch_device_collective. Each device routes its tokens to experts
+        based on top-k IDs, quantizes each token to NVFP4 against its own
+        global scale, `2688 / rowmax`, and sends it to the appropriate peer
+        devices. The receivers store the scales' BF16 inverses in
+        `output_rowwise_scales`.
+
+        Parameters:
+            input_dtype: `DType` of the input tokens before quantization
+                (inferred).
+            dispatch_dtype: `DType` used for the quantized token payload
+                during dispatch (inferred).
+            dispatch_scale_dtype: `DType` of the block scales accompanying
+                the dispatched tokens (inferred).
+            hidden_size: Size of the model's hidden dimension (inferred).
+            top_k: Number of experts each token is routed to (inferred).
+            n_experts: Total number of experts across all GPUs (inferred).
+            max_token_per_rank: Maximum number of tokens per GPU
+                (inferred).
+            n_gpus_per_node: Number of GPUs per node (inferred).
+            n_nodes: Number of physical nodes (inferred).
+            fused_shared_expert: Whether a shared expert is fused into the
+                dispatch kernel (inferred).
+            target: Compile-time device target.
+            _trace_name: Trace label for this op.
+
+        Args:
+            output_tokens: Output variadic tensors storing the dispatched
+                NVFP4-quantized tokens, one per device.
+            output_scales: Output variadic tensors storing the NVFP4 block
+                scales, one per device.
+            output_rowwise_scales: Output variadic tensors storing each
+                received token's BF16 inverse global scale, one per device.
+            row_offsets: Output variadic tensors storing the row offsets for
+                the received tokens, one per device.
+            scales_offsets: Output variadic tensors storing the offsets into
+                the scales buffer, one per device.
+            expert_ids: Output variadic tensors storing the expert ID for
+                each received token, one per device.
+            src_info: Output variadic tensors recording the originating
+                rank and token index for each received token, one per
+                device.
+            input_tokens: Input variadic tensors of tokens to dispatch,
+                one per device.
+            topk_ids: Input variadic tensors of top-k expert IDs per token,
+                one per device.
+            send_ptrs: Send buffer pointers for the dispatch phase, one
+                per device.
+            recv_ptrs: Receive buffer pointers for the dispatch phase,
+                one per device.
+            recv_count_ptrs: Receive count buffer pointers tracking tokens
+                received per expert, one per device.
+            atomic_counters: Atomic counters coordinating work across
+                thread blocks, one per device.
+            dev_ctxs: List of GPU device contexts, one per device.
+        """
+        comptime num_devices = input_tokens.size
+
+        var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
+        comptime for i in range(num_devices):
+            _check_rowwise_scales_rows(
+                output_rowwise_scales[i], output_tokens[i]
+            )
+
+        @inline(.always)
+        def launch_dispatch[
+            index: Int
+        ]() raises {
+            imm output_tokens,
+            imm output_scales,
+            imm output_rowwise_scales,
+            imm row_offsets,
+            imm scales_offsets,
+            imm expert_ids,
+            imm src_info,
+            imm atomic_counters,
+            imm input_tokens,
+            imm topk_ids,
+            imm send_ptrs,
+            imm recv_ptrs,
+            imm recv_count_ptrs,
+            imm gpu_ctxs,
+        }:
+            var format_handler = NVBlockScaledTokenFormat[
+                hidden_size, top_k, nvfp4_dyn_global_scales=True
+            ](
+                output_tokens[index].to_tile_tensor[.int64](),
+                output_scales[index].to_tile_tensor[.int64](),
+                scales_offsets[index].to_tile_tensor[.int64](),
+                gpu_ctxs[index],
+                output_rowwise_scales[index].unsafe_ptr(),
+            )
+
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                fused_shared_expert,
+                target,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.int64](),

@@ -61,6 +61,7 @@ from linalg.fp6_utils import (
 from linalg.mx_format import MXFormat
 from linalg.matmul.gpu.amd import Shuffler
 
+import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 from std.collections import Array, OptionalReg
 from max.gpu import (
@@ -1273,6 +1274,7 @@ struct NVBlockScaledTokenFormat[
     sf_vec4: Bool = False,
     sf_kxg: Int = 0,
     sf_rows_per_expert: Int = 0,
+    nvfp4_dyn_global_scales: Bool = False,
 ](ImplicitlyCopyable, TokenFormat):
     """Token format for NVIDIA block-scaled FP4/FP8 quantization.
 
@@ -1319,6 +1321,13 @@ struct NVBlockScaledTokenFormat[
         sf_rows_per_expert: Rows reserved per expert in the final layout;
             forms the arena row as
             `dst_expert_local_idx * sf_rows_per_expert + final_row`.
+        nvfp4_dyn_global_scales: Whether each NVFP4 token is quantized
+            against its own global scale, `2688 / rowmax`, instead of the
+            kernel-wide `input_scale`. The sender reduces the token's
+            absolute max in a first pass and quantizes in a second; the
+            scale's BF16 inverse travels behind the per-block scales in the
+            message, and the receiver stores it in `output_rowwise_scales`.
+            A token then dequantizes as `fp4 * block_scale * rowwise_scale`.
     """
 
     comptime hid_dim = Self._hid_dim
@@ -1342,6 +1351,11 @@ struct NVBlockScaledTokenFormat[
     ]
     comptime ScalesOffsetTensorType = TileTensor[
         .uint32, Self.scales_offset_layout, MutUntrackedOrigin
+    ]
+    # One scale per received row, so the layout is always 1D with unit
+    # stride and needs no struct parameter of its own.
+    comptime RowwiseScalesTensorType = TileTensor[
+        .bfloat16, type_of(row_major(Int64(1))), MutUntrackedOrigin
     ]
 
     @staticmethod
@@ -1393,6 +1407,7 @@ struct NVBlockScaledTokenFormat[
     var scales_tma_op: Self.ScalesTMATensorTileType
     var output_tokens: Self.TensorType
     var output_scales_offset: Self.ScalesOffsetTensorType
+    var output_rowwise_scales: Self.RowwiseScalesTensorType
 
     comptime device_type: AnyType = Self
 
@@ -1421,6 +1436,8 @@ struct NVBlockScaledTokenFormat[
             String(Self.top_k),
             ", alignment = ",
             String(Self.alignment),
+            # Named only when set, so every existing kernel keeps its symbol.
+            ", nvfp4_dyn_global_scales = True" if Self.nvfp4_dyn_global_scales else "",
             "]",
         )
 
@@ -1437,7 +1454,20 @@ struct NVBlockScaledTokenFormat[
             .uint32, Self.scales_offset_layout, Engine=DefaultEngine[], ...
         ],
         ctx: DeviceContext,
+        output_rowwise_scales: Optional[Pointer[BFloat16, MutAnyOrigin]] = None,
     ):
+        """Wraps the dispatch outputs and builds the scales TMA descriptor.
+
+        Args:
+            output_tokens: Quantized tokens, one row per received token.
+            output_scales: Per-block scale tiles in the grouped matmul's 5D
+                scale-factor layout.
+            output_scales_offset: Per-expert offsets into the scale tiles.
+            ctx: Device context the TMA descriptor is created on.
+            output_rowwise_scales: Per-token inverse global scales, one BF16
+                per row of `output_tokens`. Required with
+                `nvfp4_dyn_global_scales` and ignored otherwise.
+        """
         self.output_tokens = {
             UnsafePointer[Scalar[Self.quant_dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(output_tokens._storage)
@@ -1450,6 +1480,23 @@ struct NVBlockScaledTokenFormat[
             ),
             output_scales_offset.layout,
         }
+        comptime if Self.nvfp4_dyn_global_scales:
+            if not output_rowwise_scales:
+                abort(
+                    "nvfp4_dyn_global_scales requires an output_rowwise_scales"
+                    " buffer"
+                )
+            self.output_rowwise_scales = {
+                UnsafePointer[BFloat16, MutUntrackedOrigin](
+                    unsafe_from_address=Int(output_rowwise_scales.value())
+                ),
+                row_major(Int64(output_tokens.dim(0))),
+            }
+        else:
+            self.output_rowwise_scales = {
+                UnsafePointer[BFloat16, MutUntrackedOrigin].unsafe_dangling(),
+                row_major(Int64(0)),
+            }
 
         # Merge the last two dimensions of the output_scales tensor into a single
         # dimension. This is required by the TMA instructions that the leading
@@ -1489,10 +1536,12 @@ struct NVBlockScaledTokenFormat[
         comptime assert (
             Self.hid_dim % Self.group_size == 0
         ), "hid_dim must be divisible by group_size"
-        return align_up(
-            Self.hid_dim // Self.group_size * size_of[Self.scales_dtype](),
-            Self.alignment,
+        var scales_size = (
+            Self.hid_dim // Self.group_size * size_of[Self.scales_dtype]()
         )
+        comptime if Self.nvfp4_dyn_global_scales:
+            scales_size += size_of[BFloat16]()
+        return align_up(scales_size, Self.alignment)
 
     @inline(.always)
     @staticmethod
@@ -1503,6 +1552,16 @@ struct NVBlockScaledTokenFormat[
     @staticmethod
     def scales_offset() -> Int:
         return Self.quant_size()
+
+    @inline(.always)
+    @staticmethod
+    def global_scale_offset() -> Int:
+        """Returns the message offset of the token's BF16 inverse global
+        scale, which sits directly behind the per-block scales."""
+        return (
+            Self.quant_size()
+            + Self.hid_dim // Self.group_size * size_of[Self.scales_dtype]()
+        )
 
     @inline(.always)
     def pad_expert_offsets[
@@ -1604,6 +1663,45 @@ struct NVBlockScaledTokenFormat[
             block_size, n_items, Self.ep_copy_role_split
         ]
 
+        var global_scale = input_scale
+        comptime if Self.nvfp4_dyn_global_scales:
+            comptime assert (
+                Self.is_nvfp4
+            ), "dynamic global scales are NVFP4-only"
+            comptime assert thread_base == 0, (
+                "the row-max reduction synchronizes the whole CTA, so every"
+                " thread in it must be a comm thread"
+            )
+            var thread_max = Float32(0)
+            for i in range(thread_idx.x, n_items, block_size):
+                var item = src_p.load[
+                    width=src_width, alignment=Self.alignment, invariant=True
+                ](Int(i) * src_width)
+                thread_max = max(
+                    thread_max, abs(item).reduce_max().cast[DType.float32]()
+                )
+            var row_max = block.max[block_size=block_size](thread_max)
+
+            # 2688 is the E2M1 max (6) times the E4M3 max (448), so the global
+            # scale 2688 / rowmax puts the token's largest block at the top of
+            # both ranges. The message carries its BF16 inverse, the factor
+            # the grouped matmul multiplies by, and the payload is quantized
+            # with that inverse's reciprocal so both ends agree. The floor
+            # keeps the reciprocal finite for a vanishing row max; an all-zero
+            # row keeps 1.0, which leaves its zero payload unchanged.
+            var inv_global_scale = BFloat16(1.0)
+            if row_max > 0:
+                inv_global_scale = max(
+                    row_max / Float32(2688.0), Float32(2.0**-126)
+                ).cast[DType.bfloat16]()
+            if thread_idx.x == 0:
+                comptime scale_bytes = size_of[BFloat16]()
+                buf_p.store[alignment=scale_bytes](
+                    Self.global_scale_offset(),
+                    bitcast[DType.uint8, scale_bytes](inv_global_scale),
+                )
+            global_scale = recip(inv_global_scale.cast[DType.float32]())
+
         comptime if Roles.enabled:
             # Role split: the copy role alone carries every item, `n_trips` per
             # thread at `lane`, `lane + n_copy_threads`, `lane + 2 *
@@ -1624,13 +1722,13 @@ struct NVBlockScaledTokenFormat[
                     Self._copy_one_item[src_type, buf_addr_space](
                         buf_p,
                         src_p,
-                        input_scale,
+                        global_scale,
                         lane + t * Roles.n_copy_threads,
                     )
         else:
             for i in range(thread_idx.x - thread_base, n_items, block_size):
                 Self._copy_one_item[src_type, buf_addr_space](
-                    buf_p, src_p, input_scale, Int(i)
+                    buf_p, src_p, global_scale, Int(i)
                 )
 
     @inline(.always)
@@ -2053,6 +2151,17 @@ struct NVBlockScaledTokenFormat[
 
             if k_tile_idx == 0:
                 extract_topk_info_functor(token_ptr, output_pos)
+
+                comptime if Self.nvfp4_dyn_global_scales:
+                    if lane_id() == 0:
+                        comptime scale_bytes = size_of[BFloat16]()
+                        self.output_rowwise_scales[output_pos] = bitcast[
+                            DType.bfloat16, 1
+                        ](
+                            token_ptr.load[
+                                width=scale_bytes, alignment=scale_bytes
+                            ](Self.global_scale_offset())
+                        )
 
         # Filp the mbarrier phase to even if it is odd.
         if is_warp_leader:

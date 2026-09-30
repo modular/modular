@@ -784,6 +784,9 @@ class EPBatchManager:
                 Shape: (max_recv_tokens, hidden_size).
             - For FP8: output_scales: Scales for the FP8 tokens.
                 Shape: (hidden_size // block_size, max_recv_tokens).
+            - With ``nvfp4_dyn_global_scales``: output_rowwise_scales, each
+                received row's inverse global scale.
+                Shape: (max_recv_tokens,).
             - expert_start_indices: Row offsets for grouped matmul.
                 Shape: (n_local_experts + 1,).
             - expert_ids: Local expert IDs for the grouped operation.
