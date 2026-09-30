@@ -1283,6 +1283,16 @@ components:
           type: boolean
           description: |
             Whether to return log probabilities of the output tokens or not.
+        return_token_ids:
+          type: boolean
+          default: false
+          description: |
+            If `true`, adds `token_ids` and `prompt_token_ids` to each
+            choice. `token_ids` contains the generated token IDs, and
+            `prompt_token_ids` contains the prompt token IDs after the chat
+            template is applied. When streaming, each chunk's `token_ids`
+            contains only that chunk's new tokens, and `prompt_token_ids`
+            appears only once.
         cache_salt:
           type: string
           maxLength: 512
@@ -1582,6 +1592,20 @@ components:
         message:
           $ref: '#/components/schemas/ChatCompletionMessage'
           description: The chat completion message
+        token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The generated token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
+        prompt_token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The prompt token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
 
     CreateCompletionRequest:
       type: object
@@ -1621,6 +1645,15 @@ components:
           minimum: 0
           description: |
             Include the log probabilities on the logprobs most likely tokens.
+        return_token_ids:
+          type: boolean
+          default: false
+          description: |
+            If `true`, adds `token_ids` and `prompt_token_ids` to each
+            choice. `token_ids` contains the generated token IDs, and
+            `prompt_token_ids` contains the prompt token IDs. When streaming,
+            each chunk's `token_ids` contains only that chunk's new tokens,
+            and `prompt_token_ids` appears only once.
 
     CreateCompletionResponse:
       type: object
@@ -1670,6 +1703,20 @@ components:
           type: string
           enum: [stop, length, content_filter, null]
           description: The reason the completion finished
+        token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The generated token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
+        prompt_token_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            The prompt token IDs. Only returned when the request sets
+            `return_token_ids` to `true`.
 
     CreateEmbeddingRequest:
       type: object
