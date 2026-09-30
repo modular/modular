@@ -15,8 +15,8 @@
 The hybrid target makes this graph differ from the other unified MTP graphs in
 one structural way: verifying K draft tokens advances 48 Gated DeltaNet
 recurrences that no length pointer can rewind. The verify therefore runs on a
-shadow copy of the state pools and the accepted prefix is replayed into the
-live ones -- see :mod:`.state_rollback` and :mod:`.spec_adapters`.
+shadow copy of the recurrent pool and the accepted prefix is replayed into the
+live one -- see :mod:`.state_rollback` and :mod:`.spec_adapters`.
 
 Two smaller Qwen-specific choices, both declared to the driver here:
 
@@ -43,10 +43,29 @@ from typing_extensions import override
 from ..qwen3_5.model_config import Qwen3_5Config
 from ..qwen3_5.mtp import Qwen3_5MTP
 from ..qwen3_5.qwen3_5 import Qwen3_5
-from ..qwen3_5.state_cache import linear_state_regions
+from ..qwen3_5.state_cache import (
+    linear_state_regions,
+    ring_len_for_window,
+    shadowed_leaf_ids,
+)
 from .spec_adapters import Qwen3_5MTPProposer, Qwen3_5Target
 
-__all__ = ["UnifiedMTPQwen3_5"]
+__all__ = ["UnifiedMTPQwen3_5", "ring_len_for_config"]
+
+
+def ring_len_for_config(speculative_config: SpeculativeConfig | None) -> int:
+    """Returns the verify ring's record capacity, or zero for no ring.
+
+    The ring holds one verify window of ``K + 1`` tokens. A step never
+    verifies more than the configured draft width, and this architecture
+    runs no mixed prefill and decode batch, whose prompt rows would not fit.
+    """
+    if (
+        speculative_config is None
+        or speculative_config.recurrent_state_rollback != "ring"
+    ):
+        return 0
+    return ring_len_for_window(1 + speculative_config.draft_width)
 
 
 class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
@@ -91,6 +110,9 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
             kv_layer_idx=0,
         )
 
+        # Zero selects snapshot-and-replay.
+        ring_len = ring_len_for_config(speculative_config)
+
         # The same geometry the cache declares, so a shadow row is shaped
         # like the live row it holds a copy of.
         num_linear_layers = len(target.linear_layer_indices)
@@ -103,9 +125,10 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
             conv_kernel_dim=config.linear_conv_kernel_dim,
             dtype=config.state_dtype,
             num_devices=len(config.devices),
+            ring_len=ring_len,
         )
 
-        target_adapter = Qwen3_5Target(target, state_regions)
+        target_adapter = Qwen3_5Target(target, state_regions, ring_len)
         super().__init__(
             target_adapter,
             Qwen3_5MTPProposer(draft, target_adapter, config.hidden_size),
@@ -122,6 +145,7 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
         self.config = config
         self.num_linear_layers = num_linear_layers
         self.state_regions = state_regions
+        self.ring_len = ring_len
 
     @override
     @property
@@ -135,12 +159,16 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
     ) -> tuple[TensorType | BufferType, ...]:
         """Canonical spec-decode signature plus the Qwen state-pool tail.
 
-        The tail is, every block region-major and device-minor: the live
-        conv and recurrent pools, the ``[num_layers, batch_size]`` rows each
-        layer of each request occupies in them, then the two shadow pools.
-        One buffer per leaf rather than one per layer, so the caller picks
-        the row layout. When the target runs M-RoPE a shared
+        The tail is, every block region-major and device-minor: a pool per
+        region, the ``[num_layers, batch_size]`` rows each layer of each
+        request occupies in it, then a shadow for each region the verify
+        writes in place. One buffer per leaf rather than one per layer, so
+        the caller picks the row layout. When the target runs M-RoPE a shared
         ``[3, merged_total_seq_len]`` positions tensor follows them.
+
+        The snapshot rollback shadows the recurrent leaf only. On the ring
+        rollback the regions add the ring, a scratch leaf whose rows the
+        engine supplies like the live leaves', and no leaf takes a shadow.
 
         The shadow takes no rows; ``state_rollback.shadow_row_ids`` builds
         them in-graph.
@@ -168,7 +196,10 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
                 )
                 for device in devices
             )
+        shadowed = shadowed_leaf_ids(self.ring_len)
         for region in self.state_regions:
+            if region.leaf_id not in shadowed:
+                continue
             tail.extend(
                 BufferType(
                     region.dtype,

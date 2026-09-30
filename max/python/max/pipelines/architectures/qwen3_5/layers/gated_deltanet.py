@@ -73,10 +73,14 @@ from max.nn.quant_config import QuantConfig
 from max.nn.stacked_linear import StackedLinear
 from max.nn.state_space import (
     gated_delta_conv1d_fwd,
+    gated_delta_conv1d_verify_fwd,
     gated_delta_recurrence_fwd,
+    gated_delta_recurrence_verify_ring_fwd,
     kda_chunk,
     kda_chunk_supports_head_dims,
 )
+
+from ..state_cache import GatedDeltaVerifyAccess
 
 
 class GatedDeltaReplayInputs(NamedTuple):
@@ -98,6 +102,13 @@ class GatedDeltaReplayInputs(NamedTuple):
     """``[total_seq_len, num_value_heads]`` float32 decays."""
     beta: TensorValue
     """``[total_seq_len, num_value_heads]`` float32 beta gates."""
+    conv_output: TensorValue
+    """``[total_seq_len, conv_dim]`` float32 activated conv output.
+
+    The conv is causal and a verify reads the window as it was before it
+    ran, so a replay of the recurrence reads its rows here instead of running
+    the conv again.
+    """
 
 
 def _projection(stack: StackedLinear, name: str) -> Linear:
@@ -441,6 +452,8 @@ class GatedDeltaNet(Module, Shardable):
         recurrent_row_id: TensorValue,
         input_row_offsets: TensorValue,
         replay_capture: list[GatedDeltaReplayInputs] | None = None,
+        ring: GatedDeltaVerifyAccess | None = None,
+        verify_width: TensorValue | None = None,
     ) -> TensorValue:
         """Forward pass through the Gated DeltaNet layer.
 
@@ -460,6 +473,14 @@ class GatedDeltaNet(Module, Shardable):
                 :class:`GatedDeltaReplayInputs` are appended to it so a
                 speculative rollback can re-run the two state kernels over a
                 shorter prefix.
+            ring: When given, the recurrence writes per-token records to
+                this ring instead of writing ``recurrent_pool``. The caller
+                must fold them before the pool is read again.
+            verify_width: The speculative graph's
+                :func:`~max.nn.state_space.verify_width_operand`. A launch at
+                width zero lands the conv window, and with ``ring`` the
+                recurrence, on the live pools. A wider one leaves them for
+                the rollback.
 
         Returns:
             Output hidden states ``[total_seq_len, hidden_size]``.
@@ -519,6 +540,26 @@ class GatedDeltaNet(Module, Shardable):
         rec_slot_uint32 = ops.cast(recurrent_row_id, DType.uint32)
         rec_slot_int32 = ops.cast(recurrent_row_id, DType.int32)
 
+        if verify_width is None:
+            conv_output_ragged = gated_delta_conv1d_fwd(
+                qkv_input_ragged=qkv_f32,
+                conv_weight=conv_weight_flat,
+                conv_state=conv_pool,
+                slot_idx=conv_slot_uint32,
+                input_row_offsets=offsets_uint32,
+            )
+        else:
+            conv_output_ragged = gated_delta_conv1d_verify_fwd(
+                qkv_input_ragged=qkv_f32,
+                conv_weight=conv_weight_flat,
+                conv_state=conv_pool,
+                slot_idx=conv_slot_uint32,
+                input_row_offsets=offsets_uint32,
+                verify_width=verify_width,
+                rollback=False,
+            )
+        conv_output_ragged = ops.silu(conv_output_ragged)
+
         if replay_capture is not None:
             replay_capture.append(
                 GatedDeltaReplayInputs(
@@ -526,17 +567,9 @@ class GatedDeltaNet(Module, Shardable):
                     conv_weight=conv_weight_flat,
                     decay=decay,
                     beta=beta,
+                    conv_output=conv_output_ragged,
                 )
             )
-
-        conv_output_ragged = gated_delta_conv1d_fwd(
-            qkv_input_ragged=qkv_f32,
-            conv_weight=conv_weight_flat,
-            conv_state=conv_pool,
-            slot_idx=conv_slot_uint32,
-            input_row_offsets=offsets_uint32,
-        )
-        conv_output_ragged = ops.silu(conv_output_ragged)
 
         def _prefill_recurrence() -> TensorValue:
             # Split the fused conv output into separate bf16 q/k/v so the KDA
@@ -627,13 +660,29 @@ class GatedDeltaNet(Module, Shardable):
         # The chunk op's kernels are written for NVIDIA GPUs: on any other
         # accelerator even the scan fallback fails to instantiate, so the
         # decision has to happen here rather than inside the launcher.
+        # A speculative verify stays on the sequential recurrence, since its
+        # rollback replays and folds against that kernel's arithmetic.
         chunk_servable = (
-            accelerator_api() == "cuda"
+            verify_width is None
+            and accelerator_api() == "cuda"
             and kda_chunk_supports_head_dims(
                 self.key_head_dim, self.value_head_dim
             )
         )
-        if chunk_servable:
+        if ring is not None:
+            assert verify_width is not None, "a ring verify needs its width"
+            recurrence_output_flat = gated_delta_recurrence_verify_ring_fwd(
+                qkv_conv_output=conv_output_ragged,
+                decay_per_token=decay,
+                beta_per_token=beta,
+                recurrent_state=recurrent_pool,
+                ring=ring.pool,
+                slot_idx=rec_slot_uint32,
+                ring_slot_idx=ring.row_id,
+                input_row_offsets=offsets_uint32,
+                verify_width=verify_width,
+            )
+        elif chunk_servable:
             total_tokens_t = ops.shape_to_tensor(x.shape)[0]
             batch_size_t = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
             is_prefill = total_tokens_t > batch_size_t

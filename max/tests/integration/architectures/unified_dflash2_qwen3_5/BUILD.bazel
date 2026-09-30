@@ -63,6 +63,8 @@ modular_py_test(
 
 modular_py_test(
     name = "test_state_rollback_block",
+    # Each acceptance length compiles its own graph.
+    size = "large",
     srcs = ["test_state_rollback_block.py"],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

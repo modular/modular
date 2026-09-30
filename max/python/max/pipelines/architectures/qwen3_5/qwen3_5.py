@@ -218,6 +218,12 @@ class Qwen3_5LinearAttentionBlock(Module):
     is unchanged.
     """
 
+    verify_width: TensorValue | None = None
+    """The speculative graph's verify width operand, or ``None``.
+
+    Set alongside :attr:`replay_capture`. See :class:`GatedDeltaNet`.
+    """
+
     def __init__(
         self,
         config: Qwen3_5Config,
@@ -295,6 +301,8 @@ class Qwen3_5LinearAttentionBlock(Module):
                         if self.replay_capture is None
                         else self.replay_capture[i]
                     ),
+                    ring=state[i].verify,
+                    verify_width=self.verify_width,
                 )
                 for i, shard in enumerate(self.linear_attn_shards)
             ],

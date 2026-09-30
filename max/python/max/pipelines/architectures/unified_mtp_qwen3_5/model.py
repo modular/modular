@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from max import tree
 from max.driver import Buffer
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, Graph, TensorValue
+from max.graph import Graph, TensorValue
 from max.nn.kv_cache import (
     MultiKVCacheParams,
 )
@@ -39,15 +39,7 @@ from typing_extensions import override
 from ..qwen3_5.model import _SCALE_SUFFIXES, Qwen3_5Model
 from ..qwen3_5.model_config import Qwen3_5Config
 from ..qwen3_5.state_cache import attn_cache
-from .spec_state import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    POSITION_IDS,
-    SHADOW_CONV_POOLS,
-    SHADOW_RECURRENT_POOLS,
-)
+from .spec_state import POSITION_IDS, state_tail
 from .unified_mtp_qwen3_5 import UnifiedMTPQwen3_5
 
 logger = logging.getLogger("max.pipelines")
@@ -79,8 +71,12 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs):
     live_recurrent_pools: list[Buffer]
     live_conv_row_ids: list[Buffer]
     live_recurrent_row_ids: list[Buffer]
-    shadow_conv_pools: list[Buffer]
+    #: Empty on the ring rollback.
     shadow_recurrent_pools: list[Buffer]
+    #: The ring pool per device. Empty on the snapshot rollback.
+    ring_pools: list[Buffer] = field(default_factory=list)
+    #: The ring's ``[num_layers, batch_size]`` rows per device.
+    ring_row_ids: list[Buffer] = field(default_factory=list)
     #: ``[3, merged_total_seq_len]`` M-RoPE positions for the merged
     #: ``[real, draft_1..draft_k]`` window. ``None`` on a text-only graph,
     #: whose rotary stays on the static cache-derived table.
@@ -105,9 +101,10 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs):
             + (
                 *self.live_conv_pools,
                 *self.live_recurrent_pools,
+                *self.ring_pools,
                 *self.live_conv_row_ids,
                 *self.live_recurrent_row_ids,
-                *self.shadow_conv_pools,
+                *self.ring_row_ids,
                 *self.shadow_recurrent_pools,
             )
             + (() if self.position_ids is None else (self.position_ids,))
@@ -253,18 +250,12 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             trailing = iter(graph_inputs.trailing)
 
             # The state tail, in the order ``input_types`` declares it.
-            def per_device_buffers() -> list[BufferValue]:
-                return [next(trailing).buffer for _ in range(num_devices)]
-
-            def per_device_tensors() -> list[TensorValue]:
-                return [next(trailing).tensor for _ in range(num_devices)]
-
-            live_conv_pools = per_device_buffers()
-            live_recurrent_pools = per_device_buffers()
-            live_conv_row_ids = per_device_tensors()
-            live_recurrent_row_ids = per_device_tensors()
-            shadow_conv_pools = per_device_buffers()
-            shadow_recurrent_pools = per_device_buffers()
+            state = state_tail(
+                trailing,
+                nn_model.state_regions,
+                nn_model.ring_len,
+                num_devices,
+            )
 
             # Declared last by ``input_types`` and only when the target runs
             # M-RoPE, so it is consumed after the whole state tail.
@@ -292,15 +283,7 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 pinned_bitmask=graph_inputs.pinned_bitmask,
                 wait_payload=graph_inputs.wait_payload,
                 device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
-                extra={
-                    LIVE_CONV_POOLS: live_conv_pools,
-                    LIVE_RECURRENT_POOLS: live_recurrent_pools,
-                    LIVE_CONV_ROW_IDS: live_conv_row_ids,
-                    LIVE_RECURRENT_ROW_IDS: live_recurrent_row_ids,
-                    SHADOW_CONV_POOLS: shadow_conv_pools,
-                    SHADOW_RECURRENT_POOLS: shadow_recurrent_pools,
-                    POSITION_IDS: position_ids,
-                },
+                extra={**state, POSITION_IDS: position_ids},
             )
             graph.output(*outputs)
 

@@ -35,7 +35,7 @@ from typing_extensions import override
 
 from ..dflash2_qwen3_5 import DFlash2Qwen3_5
 from ..qwen3_5.qwen3_5 import Qwen3_5
-from ..qwen3_5.state_cache import linear_state_regions
+from ..qwen3_5.state_cache import RECURRENT_LEAF_ID, linear_state_regions
 from .model_config import UnifiedDflash2Qwen3_5Config
 from .spec_adapters import DFlash2Qwen3_5Proposer, Qwen3_5BlockTarget
 
@@ -134,11 +134,12 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
     ) -> tuple[TensorType | BufferType, ...]:
         """Canonical spec-decode signature plus the Qwen state-pool tail.
 
-        Byte-for-byte the Qwen3.5 MTP graph's signature: the tail is the live
-        pools, then the rows addressing them, then the shadow pools, every
-        block device-major. Only the draft KV leaf's shapes differ (five
-        drafter layers of 8 x 128 rather than one target-shaped layer), so
-        Mach's Qwen slot layout carries over unchanged.
+        Byte-for-byte the Qwen3.5 MTP graph's signature on its snapshot
+        rollback. The tail is the live pools, then the rows addressing them,
+        then the recurrent leaf's shadow, every block region-major and
+        device-minor. Only the draft KV leaf's shapes differ (five drafter
+        layers of 8 x 128 rather than one target-shaped layer), so Mach's Qwen
+        slot layout carries over unchanged.
 
         The shadow takes no rows; ``state_rollback.shadow_row_ids`` builds
         them in-graph.
@@ -166,6 +167,8 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
                 for device in devices
             )
         for region in self.state_regions:
+            if region.leaf_id != RECURRENT_LEAF_ID:
+                continue
             tail.extend(
                 BufferType(
                     region.dtype,

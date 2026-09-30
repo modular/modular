@@ -110,7 +110,12 @@ from nn.sampling import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
-from state_space.gated_delta import gated_delta_recurrence_fwd_gpu
+from state_space.gated_delta import (
+    gated_delta_recurrence_fwd_gpu,
+    gated_delta_recurrence_verify_ring_gpu,
+    gated_delta_ring_record_elements,
+    gated_delta_state_fold_gpu,
+)
 from state_space.gated_group_rmsnorm import (
     gated_group_rmsnorm_cpu,
     gated_group_rmsnorm_gpu,
@@ -3554,6 +3559,238 @@ def gated_delta_conv1d_fwd_shape(
     )
 
 
+@extensibility.register("gated_delta_conv1d_verify_fwd")
+struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
+    """`gated_delta_conv1d_fwd` in a speculative verify graph.
+
+    The verify width `K` is the length of `verify_width`, whose contents are
+    never read. At `K == 0` the window has no draft to reject, so the forward
+    launch writes it and the rollback launch does nothing. At `K > 0` the
+    forward launch only reads it and the rollback launch places it at the
+    accepted length.
+
+    A rollback launch at `K == 0` leaves `conv_output_ragged` unwritten.
+
+    Parameters:
+        rollback: Whether this is the rollback's launch.
+
+    Tensor Shapes:
+        As `gated_delta_conv1d_fwd`, plus
+        - verify_width       : [K]                                   int64
+    """
+
+    @staticmethod
+    def execute[
+        work_dtype: DType,
+        state_dtype: DType,
+        target: StaticString,
+    ](
+        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        var committed = verify_width.dim_size(0) == 0
+        if Self.rollback and committed:
+            return
+        if committed or Self.rollback:
+            GatedDeltaConv1dFwd[write_state=True].execute[
+                work_dtype, state_dtype, target
+            ](
+                conv_output_ragged,
+                qkv_input_ragged,
+                conv_weight,
+                conv_state,
+                slot_idx,
+                input_row_offsets,
+                ctx,
+            )
+        else:
+            GatedDeltaConv1dFwd[write_state=False].execute[
+                work_dtype, state_dtype, target
+            ](
+                conv_output_ragged,
+                qkv_input_ragged,
+                conv_weight,
+                conv_state,
+                slot_idx,
+                input_row_offsets,
+                ctx,
+            )
+
+
+@extensibility.register_shape_function("gated_delta_conv1d_verify_fwd")
+def gated_delta_conv1d_verify_fwd_shape(
+    qkv_input_ragged: Some[Tensor],
+    conv_weight: Some[Tensor],
+    conv_state: Some[Tensor],
+    slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
+    verify_width: Some[Tensor],
+) -> IndexList[2]:
+    """Computes the output shape for `gated_delta_conv1d_verify_fwd`.
+
+    Args:
+        qkv_input_ragged: Ragged QKV input, `[total_seq_len, conv_dim]`.
+        conv_weight: Convolution filter, `[conv_dim, kernel_size]`.
+        conv_state: Conv-state pool, `[max_slots, conv_dim, kernel_size-1]`.
+        slot_idx: Pool row per batch item, `[batch_size]`.
+        input_row_offsets: Ragged offsets, `[batch_size + 1]`.
+        verify_width: `[K]`, read for its shape only.
+    """
+    comptime assert (
+        type_of(verify_width).rank == 1
+    ), "verify_width must be rank 1"
+    return gated_delta_conv1d_fwd_shape(
+        qkv_input_ragged,
+        conv_weight,
+        conv_state,
+        slot_idx,
+        input_row_offsets,
+    )
+
+
+@fieldwise_init
+struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
+    """The dims and strides a gated-delta recurrence launch reads off its
+    operands."""
+
+    var batch_size: Int
+    var num_value_heads: Int
+    var num_key_heads: Int
+    var key_dim: Int
+    var key_head_dim: Int
+    var value_head_dim: Int
+    var qkv_seqlen_stride: UInt32
+    var qkv_channel_stride: UInt32
+    var per_token_seqlen_stride: UInt32
+    var per_token_head_stride: UInt32
+    var output_seqlen_stride: UInt32
+    var output_valuedim_stride: UInt32
+
+    @staticmethod
+    def of[
+        work_dtype: DType,
+        state_dtype: DType,
+        //,
+        op_name: StaticString,
+    ](
+        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
+        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+    ) raises -> Self:
+        """Validates the operands of a recurrence launch and returns their
+        dims and strides.
+
+        Parameters:
+            work_dtype: `DType` of the per-token tensors.
+            state_dtype: `DType` of the state pool.
+            op_name: The op the errors name.
+
+        Args:
+            recurrence_output: `[total_seq_len, value_dim]` output.
+            qkv_conv_output: `[total_seq_len, conv_dim]` conv output.
+            decay_per_token: `[total_seq_len, nv]` decays.
+            beta_per_token: `[total_seq_len, nv]` beta gates.
+            recurrent_state: `[max_slots, nv, KD, VD]` state pool.
+            slot_idx: `[batch_size]` pool rows.
+            input_row_offsets: `[batch_size + 1]` ragged offsets.
+
+        Returns:
+            The launch's dims and strides.
+
+        Raises:
+            If the operands' shapes disagree.
+        """
+        var total_seq_len = qkv_conv_output.dim_size(0)
+        var conv_dim = qkv_conv_output.dim_size(1)
+        var num_value_heads = decay_per_token.dim_size(1)
+        var batch_size = slot_idx.dim_size(0)
+        var key_head_dim = recurrent_state.dim_size(2)
+        var value_head_dim = recurrent_state.dim_size(3)
+        var value_dim = num_value_heads * value_head_dim
+        # conv_dim = 2 * key_dim + value_dim.
+        var key_dim = (conv_dim - value_dim) // 2
+        if (
+            conv_dim < value_dim
+            or (conv_dim - value_dim) % 2 != 0
+            or key_dim % key_head_dim != 0
+        ):
+            raise Error(
+                op_name,
+                ": conv_dim ",
+                conv_dim,
+                " is not two whole key widths of ",
+                key_head_dim,
+                "-dim heads plus the ",
+                value_dim,
+                "-wide value",
+            )
+        # The kernel indexes the pool by `slot_idx`, whose bounds the cache
+        # guarantees, so only the shapes are checked here.
+        if (
+            input_row_offsets.dim_size(0) != batch_size + 1
+            or recurrent_state.dim_size(0) == 0
+            or recurrent_state.dim_size(1) != num_value_heads
+            or decay_per_token.dim_size(0) != total_seq_len
+            or beta_per_token.dim_size(0) != total_seq_len
+            or beta_per_token.strides() != decay_per_token.strides()
+        ):
+            raise Error(
+                op_name,
+                ": expected batch_size + 1 row offsets, a nonempty pool of ",
+                num_value_heads,
+                " value heads, and decay and beta shaped and strided alike",
+                " over the ",
+                total_seq_len,
+                " tokens",
+            )
+        var qkv_strides = qkv_conv_output.strides()
+        var per_token_strides = decay_per_token.strides()
+        var output_strides = recurrence_output.strides()
+        return Self(
+            batch_size=batch_size,
+            num_value_heads=num_value_heads,
+            num_key_heads=key_dim // key_head_dim,
+            key_dim=key_dim,
+            key_head_dim=key_head_dim,
+            value_head_dim=value_head_dim,
+            qkv_seqlen_stride=UInt32(qkv_strides[0]),
+            qkv_channel_stride=UInt32(qkv_strides[1]),
+            per_token_seqlen_stride=UInt32(per_token_strides[0]),
+            per_token_head_stride=UInt32(per_token_strides[1]),
+            output_seqlen_stride=UInt32(output_strides[0]),
+            output_valuedim_stride=UInt32(output_strides[1]),
+        )
+
+
+def _check_ring_record_stride[
+    KEY_HEAD_DIM: Int, VALUE_HEAD_DIM: Int
+](op_name: StaticString, record_stride: Int, group_size: Int) raises:
+    """Raises unless a ring's records have room for a GQA group's fields."""
+    var needed = gated_delta_ring_record_elements[KEY_HEAD_DIM, VALUE_HEAD_DIM](
+        group_size
+    )
+    if record_stride < needed:
+        raise Error(
+            op_name,
+            ": a ring record for ",
+            group_size,
+            " value heads per key head needs ",
+            needed,
+            " elements, got a stride of ",
+            record_stride,
+        )
+
+
 @extensibility.register("gated_delta_recurrence_fwd")
 struct GatedDeltaRecurrenceFwd:
     """Gated DeltaNet recurrence forward pass (Pass 2 of two-pass prefill).
@@ -3588,69 +3825,14 @@ struct GatedDeltaRecurrenceFwd:
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        var total_seq_len = qkv_conv_output.dim_size(0)
-        var conv_dim = qkv_conv_output.dim_size(1)
-        var num_value_heads = decay_per_token.dim_size(1)
-        var batch_size = slot_idx.dim_size(0)
-        var key_head_dim = recurrent_state.dim_size(2)
-        var value_head_dim = recurrent_state.dim_size(3)
-        var value_dim = num_value_heads * value_head_dim
-        # key_dim = (conv_dim - value_dim) / 2  where conv_dim = 2*key_dim + value_dim
-        var key_dim = (conv_dim - value_dim) // 2
-        # Validate that the config is well-formed (no corruption in input shapes).
-        debug_assert(
-            (conv_dim - value_dim) % 2 == 0,
-            "gated_delta_recurrence_fwd: (conv_dim - value_dim) must be even",
-        )
-        # num_key_heads derived from recurrence_output vs decay shapes:
-        # key_dim = num_key_heads * key_head_dim
-        var num_key_heads = key_dim // key_head_dim
-        debug_assert(
-            key_dim % key_head_dim == 0,
-            (
-                "gated_delta_recurrence_fwd: key_dim must be"
-                " divisible by key_head_dim"
-            ),
-        )
-
-        # Host-side shape sanity checks. The kernel indexes the recurrent_state
-        # pool via `slot = slot_idx[batch_item]`; slot bounds are guaranteed by
-        # the Python-side `GatedDeltaNetStateCache.claim`, so we only validate
-        # tensor shapes here.
-        debug_assert(
-            input_row_offsets.dim_size(0) == batch_size + 1,
-            (
-                "gated_delta_recurrence_fwd: input_row_offsets"
-                " must have batch_size + 1 entries"
-            ),
-        )
-        debug_assert(
-            recurrent_state.dim_size(0) > 0,
-            (
-                "gated_delta_recurrence_fwd: recurrent_state pool"
-                " must have at least one slot"
-            ),
-        )
-        debug_assert(
-            recurrent_state.dim_size(1) == num_value_heads,
-            (
-                "gated_delta_recurrence_fwd: recurrent_state pool"
-                " value-head dim must equal num_value_heads"
-            ),
-        )
-        debug_assert(
-            decay_per_token.dim_size(0) == total_seq_len,
-            (
-                "gated_delta_recurrence_fwd: decay_per_token"
-                " seqlen must equal qkv_conv_output seqlen"
-            ),
-        )
-        debug_assert(
-            beta_per_token.dim_size(0) == total_seq_len,
-            (
-                "gated_delta_recurrence_fwd: beta_per_token"
-                " seqlen must equal qkv_conv_output seqlen"
-            ),
+        var shape = _GatedDeltaRecurrenceShape.of["gated_delta_recurrence_fwd"](
+            recurrence_output,
+            qkv_conv_output,
+            decay_per_token,
+            beta_per_token,
+            recurrent_state,
+            slot_idx,
+            input_row_offsets,
         )
 
         var recurrence_output_tt = recurrence_output.to_tile_tensor[
@@ -3665,44 +3847,17 @@ struct GatedDeltaRecurrenceFwd:
             DType.int64
         ]()
 
-        var qkv_strides = qkv_conv_output.strides()
-        var per_token_decay_strides = decay_per_token.strides()
-        var recurrence_output_strides = recurrence_output.strides()
-
-        debug_assert(
-            beta_per_token.strides() == per_token_decay_strides,
-            (
-                "gated_delta_recurrence_fwd: beta_per_token"
-                " strides must match decay_per_token strides"
-            ),
-        )
-
-        var qkv_conv_output_seqlen_stride = UInt32(qkv_strides[0])
-        var qkv_conv_output_channel_stride = UInt32(qkv_strides[1])
-        var per_token_seqlen_stride = UInt32(per_token_decay_strides[0])
-        var per_token_head_stride = UInt32(per_token_decay_strides[1])
-        var recurrence_output_seqlen_stride = UInt32(
-            recurrence_output_strides[0]
-        )
-        var recurrence_output_valuedim_stride = UInt32(
-            recurrence_output_strides[1]
-        )
-
         comptime assert is_gpu[
             target
         ](), "gated_delta_recurrence_fwd is only supported on GPU."
 
-        var gpu_ctx = ctx
-        # One CTA per (batch_item, value_head); block has value_head_dim threads.
-        var num_blocks = batch_size * num_value_heads
-
         # NOTE: Only (key_head_dim=128, value_head_dim=128) is currently
         # compiled (Qwen3.5 default). To support a new model with different
         # head dims, add a further elif branch here following the same pattern.
-        if key_head_dim == 128 and value_head_dim == 128:
+        if shape.key_head_dim == 128 and shape.value_head_dim == 128:
             comptime kKD = 128
             comptime kVD = 128
-            gpu_ctx.enqueue_function[
+            ctx.enqueue_function[
                 gated_delta_recurrence_fwd_gpu[
                     work_dtype,
                     state_dtype,
@@ -3718,10 +3873,10 @@ struct GatedDeltaRecurrenceFwd:
                     recurrence_output_tt.Engine,
                 ]
             ](
-                Int32(batch_size),
-                Int32(num_value_heads),
-                Int32(num_key_heads),
-                Int32(key_dim),
+                Int32(shape.batch_size),
+                Int32(shape.num_value_heads),
+                Int32(shape.num_key_heads),
+                Int32(shape.key_dim),
                 recurrence_output_tt,
                 recurrent_state_tt,
                 slot_idx_tt,
@@ -3729,22 +3884,23 @@ struct GatedDeltaRecurrenceFwd:
                 decay_per_token_tt,
                 beta_per_token_tt,
                 input_row_offsets_tt,
-                qkv_conv_output_seqlen_stride,
-                qkv_conv_output_channel_stride,
-                per_token_seqlen_stride,
-                per_token_head_stride,
-                recurrence_output_seqlen_stride,
-                recurrence_output_valuedim_stride,
-                grid_dim=(num_blocks,),
+                shape.qkv_seqlen_stride,
+                shape.qkv_channel_stride,
+                shape.per_token_seqlen_stride,
+                shape.per_token_head_stride,
+                shape.output_seqlen_stride,
+                shape.output_valuedim_stride,
+                # One CTA per (batch_item, value_head).
+                grid_dim=(shape.batch_size * shape.num_value_heads,),
                 block_dim=(kVD,),
             )
         else:
             raise Error(
                 "gated_delta_recurrence_fwd: unsupported"
                 + " (key_head_dim, value_head_dim) = ("
-                + String(key_head_dim)
+                + String(shape.key_head_dim)
                 + ", "
-                + String(value_head_dim)
+                + String(shape.value_head_dim)
                 + "). Only (128, 128) is currently compiled; add a new elif"
                 + " branch in kernels to support other sizes."
             )
@@ -3816,6 +3972,362 @@ def gated_delta_recurrence_fwd_shape(
     var value_head_dim = recurrent_state_shape[3]
     var value_dim = num_value_heads * value_head_dim
     return IndexList[2](total_seq_len, value_dim)
+
+
+@extensibility.register("gated_delta_recurrence_verify_ring_fwd")
+struct GatedDeltaRecurrenceVerifyRingFwd:
+    """Gated DeltaNet recurrence over a speculative verify window.
+
+    Produces the same `recurrence_output` as `gated_delta_recurrence_fwd`
+    without writing `recurrent_state`. Each token writes its decay, raw key
+    and delta factor to its request's `ring` row, which
+    `gated_delta_state_fold` applies to the pool once acceptance is known.
+
+    The verify width `K` is the length of `verify_width`, whose contents are
+    never read. At `K == 0` there is no draft to reject, so this runs
+    `gated_delta_recurrence_fwd` on `recurrent_state` instead and writes no
+    ring record. The fold skips at the same width. At `K > 0` every row's
+    window of `K + 1` tokens must fit `RING_LEN`.
+
+    Tensor Shapes:
+        - recurrence_output  : [total_seq_len, value_dim]                 (OUT)
+        - qkv_conv_output    : [total_seq_len, conv_dim]
+        - decay_per_token    : [total_seq_len, num_value_heads]
+        - beta_per_token     : [total_seq_len, num_value_heads]
+        - recurrent_state    : [max_slots, num_value_heads, KD, VD]       (MUT)
+        - ring               : [ring_rows, num_key_heads, RING_LEN,
+                                record_stride]                          (MUT)
+        - slot_idx           : [batch_size]                         uint32
+        - ring_slot_idx      : [batch_size]                         uint32
+        - input_row_offsets  : [batch_size + 1]                     uint32
+        - verify_width       : [K]                                  int64
+    """
+
+    @staticmethod
+    def execute[
+        work_dtype: DType,
+        state_dtype: DType,
+        ring_dtype: DType,
+        target: StaticString,
+    ](
+        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
+        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        ring: MutableInputTensor[dtype=ring_dtype, rank=4, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        ring_slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        var num_draft_tokens = verify_width.dim_size(0)
+        if num_draft_tokens == 0:
+            GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
+                recurrence_output,
+                qkv_conv_output,
+                decay_per_token,
+                beta_per_token,
+                recurrent_state,
+                slot_idx,
+                input_row_offsets,
+                ctx,
+            )
+            return
+
+        var shape = _GatedDeltaRecurrenceShape.of[
+            "gated_delta_recurrence_verify_ring_fwd"
+        ](
+            recurrence_output,
+            qkv_conv_output,
+            decay_per_token,
+            beta_per_token,
+            recurrent_state,
+            slot_idx,
+            input_row_offsets,
+        )
+        var ring_len = ring.dim_size(2)
+        if num_draft_tokens + 1 > ring_len:
+            raise Error(
+                "gated_delta_recurrence_verify_ring_fwd: a verify of ",
+                num_draft_tokens,
+                " drafts needs a ring of at least ",
+                num_draft_tokens + 1,
+                " records, got ",
+                ring_len,
+            )
+        if (
+            ring.dim_size(1) != shape.num_key_heads
+            or ring_slot_idx.dim_size(0) != shape.batch_size
+        ):
+            raise Error(
+                "gated_delta_recurrence_verify_ring_fwd: the ring must hold ",
+                shape.num_key_heads,
+                " key heads and its row table ",
+                shape.batch_size,
+                " rows, got ",
+                ring.dim_size(1),
+                " and ",
+                ring_slot_idx.dim_size(0),
+            )
+
+        var recurrence_output_tt = recurrence_output.to_tile_tensor[.int64]()
+        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[.int64]()
+        var decay_per_token_tt = decay_per_token.to_tile_tensor[.int64]()
+        var beta_per_token_tt = beta_per_token.to_tile_tensor[.int64]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
+        var ring_tt = ring.to_tile_tensor[.int64]()
+        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
+        var ring_slot_idx_tt = ring_slot_idx.to_tile_tensor[.int64]()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.int64]()
+
+        comptime assert is_gpu[
+            target
+        ](), "gated_delta_recurrence_verify_ring_fwd is only supported on GPU."
+
+        var dispatched = False
+        if shape.key_head_dim == 128 and shape.value_head_dim == 128:
+            _check_ring_record_stride[128, 128](
+                "gated_delta_recurrence_verify_ring_fwd",
+                ring.dim_size(3),
+                shape.num_value_heads // shape.num_key_heads,
+            )
+            comptime for shift in range(1, 4):
+                comptime kRING_LEN = 1 << shift
+                if ring_len == kRING_LEN:
+                    dispatched = True
+                    ctx.enqueue_function[
+                        gated_delta_recurrence_verify_ring_gpu[
+                            work_dtype,
+                            state_dtype,
+                            ring_dtype,
+                            128,
+                            128,
+                            kRING_LEN,
+                            recurrence_output_tt.LayoutType,
+                            qkv_conv_output_tt.LayoutType,
+                            decay_per_token_tt.LayoutType,
+                            beta_per_token_tt.LayoutType,
+                            recurrent_state_tt.LayoutType,
+                            slot_idx_tt.LayoutType,
+                            input_row_offsets_tt.LayoutType,
+                            ring_tt.LayoutType,
+                            ring_slot_idx_tt.LayoutType,
+                            recurrence_output_tt.Engine,
+                        ]
+                    ](
+                        Int32(shape.batch_size),
+                        Int32(shape.num_value_heads),
+                        Int32(shape.num_key_heads),
+                        Int32(shape.key_dim),
+                        recurrence_output_tt,
+                        recurrent_state_tt,
+                        slot_idx_tt,
+                        qkv_conv_output_tt,
+                        decay_per_token_tt,
+                        beta_per_token_tt,
+                        input_row_offsets_tt,
+                        ring_tt,
+                        ring_slot_idx_tt,
+                        Int32(ring.dim_size(3)),
+                        shape.qkv_seqlen_stride,
+                        shape.qkv_channel_stride,
+                        shape.per_token_seqlen_stride,
+                        shape.per_token_head_stride,
+                        shape.output_seqlen_stride,
+                        shape.output_valuedim_stride,
+                        grid_dim=(shape.batch_size * shape.num_value_heads,),
+                        block_dim=(128,),
+                    )
+        if not dispatched:
+            raise Error(
+                "gated_delta_recurrence_verify_ring_fwd: unsupported",
+                " (key_head_dim, value_head_dim, ring_len) = (",
+                shape.key_head_dim,
+                ", ",
+                shape.value_head_dim,
+                ", ",
+                ring_len,
+                "). Only (128, 128) at ring_len in {2, 4, 8} is compiled.",
+            )
+
+
+@extensibility.register_shape_function("gated_delta_recurrence_verify_ring_fwd")
+def gated_delta_recurrence_verify_ring_fwd_shape(
+    qkv_conv_output: Some[Tensor],
+    decay_per_token: Some[Tensor],
+    beta_per_token: Some[Tensor],
+    recurrent_state: Some[Tensor],
+    ring: Some[Tensor],
+    slot_idx: Some[Tensor],
+    ring_slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
+    verify_width: Some[Tensor],
+) -> IndexList[2]:
+    """Computes the output shape for `gated_delta_recurrence_verify_ring_fwd`.
+
+    The output is `[total_seq_len, value_dim]`. The ring is written in place.
+
+    Args:
+        qkv_conv_output: Ragged conv output, `[total_seq_len, conv_dim]`.
+        decay_per_token: Per-token decays, `[total_seq_len, nv]`.
+        beta_per_token: Per-token beta gates, `[total_seq_len, nv]`.
+        recurrent_state: Live pool, `[max_slots, nv, KD, VD]`.
+        ring: Ring pool, `[ring_rows, nk, RING_LEN, record_stride]`.
+        slot_idx: Live pool row per batch item, `[batch_size]`.
+        ring_slot_idx: Ring row per batch item, `[batch_size]`.
+        input_row_offsets: Ragged offsets, `[batch_size + 1]`.
+        verify_width: `[K]`, read for its shape only.
+    """
+    comptime assert type_of(ring).rank == 4, "ring must be rank 4"
+    comptime assert (
+        type_of(ring_slot_idx).dtype == .uint32
+    ), "ring_slot_idx dtype must be uint32"
+    comptime assert (
+        type_of(verify_width).rank == 1
+    ), "verify_width must be rank 1"
+    return gated_delta_recurrence_fwd_shape(
+        qkv_conv_output,
+        decay_per_token,
+        beta_per_token,
+        recurrent_state,
+        slot_idx,
+        input_row_offsets,
+    )
+
+
+@extensibility.register("gated_delta_state_fold")
+struct GatedDeltaStateFold:
+    """Applies a speculative verify's accepted records to the state pool.
+
+    Advances `recurrent_state` over the first `num_accepted[b]` records
+    written by `gated_delta_recurrence_verify_ring_fwd`, for every layer in
+    one launch. A row with `num_accepted[b] == 0` is left unchanged.
+
+    The verify width `K` is the length of `verify_width`, whose contents are
+    never read. At `K == 0` the verify wrote no records and landed the state
+    itself, so nothing is launched.
+
+    Tensor Shapes:
+        - recurrent_state  : [max_slots, num_value_heads, KD, VD]         (MUT)
+        - ring             : [ring_rows, num_key_heads, RING_LEN,
+                              record_stride]
+        - row_ids          : [num_layers, batch_size]                uint32
+        - ring_row_ids     : [num_layers, batch_size]                uint32
+        - num_accepted     : [batch_size]                            uint32
+        - verify_width     : [K]                                     int64
+    """
+
+    @staticmethod
+    def execute[
+        state_dtype: DType,
+        ring_dtype: DType,
+        target: StaticString,
+    ](
+        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        # Mutable, though only read, to order the fold after the verify.
+        ring: MutableInputTensor[dtype=ring_dtype, rank=4, ...],
+        row_ids: InputTensor[dtype=.uint32, rank=2, ...],
+        ring_row_ids: InputTensor[dtype=.uint32, rank=2, ...],
+        num_accepted: InputTensor[dtype=.uint32, rank=1, ...],
+        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if verify_width.dim_size(0) == 0:
+            return
+        var num_layers = row_ids.dim_size(0)
+        var batch_size = row_ids.dim_size(1)
+        var num_value_heads = recurrent_state.dim_size(1)
+        var num_key_heads = ring.dim_size(1)
+        var key_head_dim = recurrent_state.dim_size(2)
+        var value_head_dim = recurrent_state.dim_size(3)
+        var ring_len = ring.dim_size(2)
+
+        if (
+            ring_row_ids.dim_size(0) != num_layers
+            or ring_row_ids.dim_size(1) != batch_size
+            or num_accepted.dim_size(0) != batch_size
+        ):
+            raise Error(
+                "gated_delta_state_fold: the ring row table must match the",
+                " state's [",
+                num_layers,
+                ", ",
+                batch_size,
+                "] and num_accepted hold ",
+                batch_size,
+                " entries",
+            )
+        if num_key_heads == 0 or num_value_heads % num_key_heads != 0:
+            raise Error(
+                "gated_delta_state_fold: ",
+                num_value_heads,
+                " value heads do not divide into the ring's ",
+                num_key_heads,
+                " key heads",
+            )
+
+        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
+        var ring_tt = ring.to_tile_tensor[.int64]()
+        var row_ids_tt = row_ids.to_tile_tensor[.int64]()
+        var ring_row_ids_tt = ring_row_ids.to_tile_tensor[.int64]()
+        var num_accepted_tt = num_accepted.to_tile_tensor[.int64]()
+
+        comptime assert is_gpu[
+            target
+        ](), "gated_delta_state_fold is only supported on GPU."
+
+        var dispatched = False
+        if key_head_dim == 128 and value_head_dim == 128:
+            _check_ring_record_stride[128, 128](
+                "gated_delta_state_fold",
+                ring.dim_size(3),
+                num_value_heads // num_key_heads,
+            )
+            comptime for shift in range(1, 4):
+                comptime kRING_LEN = 1 << shift
+                if ring_len == kRING_LEN:
+                    dispatched = True
+                    ctx.enqueue_function[
+                        gated_delta_state_fold_gpu[
+                            state_dtype,
+                            ring_dtype,
+                            128,
+                            128,
+                            kRING_LEN,
+                            recurrent_state_tt.LayoutType,
+                            row_ids_tt.LayoutType,
+                            ring_tt.LayoutType,
+                            ring_row_ids_tt.LayoutType,
+                            num_accepted_tt.LayoutType,
+                            recurrent_state_tt.Engine,
+                        ]
+                    ](
+                        Int32(batch_size),
+                        Int32(num_layers),
+                        Int32(num_value_heads),
+                        Int32(num_key_heads),
+                        recurrent_state_tt,
+                        row_ids_tt,
+                        ring_tt,
+                        ring_row_ids_tt,
+                        Int32(ring.dim_size(3)),
+                        num_accepted_tt,
+                        grid_dim=(batch_size * num_layers * num_value_heads,),
+                        block_dim=(128,),
+                    )
+        if not dispatched:
+            raise Error(
+                "gated_delta_state_fold: unsupported (key_head_dim,",
+                " value_head_dim, ring_len) = (",
+                key_head_dim,
+                ", ",
+                value_head_dim,
+                ", ",
+                ring_len,
+                "). Only (128, 128) at ring_len in {2, 4, 8} is compiled.",
+            )
 
 
 @extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd")

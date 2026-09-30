@@ -55,10 +55,9 @@ unified_dflash2_qwen3_5_arch = SupportedArchitecture(
     multi_gpu_supported=False,
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
-    # The base Qwen3.5 planner, unwrapped onto the target half. It reserves
-    # one pool set even though this graph declares a shadow beside the live
-    # one: `load_model` allocates neither, so a single-pool reservation is
-    # what MAX actually owns here.
+    # The base Qwen3.5 planner, unwrapped onto the target half. It counts one
+    # state set per request and nothing for the recurrent shadow this graph
+    # declares, which MAX does not allocate since it does not serve the graph.
     memory_planner=UnifiedDflash2Qwen3_5MemoryPlanner,
     # Inherited from the MTP graph's rollback: the replay's row count depends
     # on how many tokens were accepted, so shapes change from step to step.

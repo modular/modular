@@ -56,7 +56,6 @@ from ..unified_mtp_qwen3_5.spec_state import (
     LIVE_CONV_ROW_IDS,
     LIVE_RECURRENT_POOLS,
     LIVE_RECURRENT_ROW_IDS,
-    SHADOW_CONV_POOLS,
     SHADOW_RECURRENT_POOLS,
 )
 from .batch_processor import UnifiedDflash2Qwen3_5BatchProcessor
@@ -95,7 +94,6 @@ class UnifiedDflash2Qwen3_5Inputs(UnifiedSpecDecodeInputs):
     live_recurrent_pools: list[Buffer]
     live_conv_row_ids: list[Buffer]
     live_recurrent_row_ids: list[Buffer]
-    shadow_conv_pools: list[Buffer]
     shadow_recurrent_pools: list[Buffer]
 
     @property
@@ -119,7 +117,6 @@ class UnifiedDflash2Qwen3_5Inputs(UnifiedSpecDecodeInputs):
                 *self.live_recurrent_pools,
                 *self.live_conv_row_ids,
                 *self.live_recurrent_row_ids,
-                *self.shadow_conv_pools,
                 *self.shadow_recurrent_pools,
             )
         )
@@ -326,7 +323,6 @@ class UnifiedDflash2Qwen3_5Model(
             live_recurrent_pools = per_device_buffers()
             live_conv_row_ids = per_device_tensors()
             live_recurrent_row_ids = per_device_tensors()
-            shadow_conv_pools = per_device_buffers()
             shadow_recurrent_pools = per_device_buffers()
 
             outputs = nn_model(
@@ -354,7 +350,6 @@ class UnifiedDflash2Qwen3_5Model(
                     LIVE_RECURRENT_POOLS: live_recurrent_pools,
                     LIVE_CONV_ROW_IDS: live_conv_row_ids,
                     LIVE_RECURRENT_ROW_IDS: live_recurrent_row_ids,
-                    SHADOW_CONV_POOLS: shadow_conv_pools,
                     SHADOW_RECURRENT_POOLS: shadow_recurrent_pools,
                 },
             )
