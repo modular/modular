@@ -198,7 +198,6 @@ __extension DeviceFunction:
 
 __extension DeviceExternalFunction:
     @inline(.always)
-    @__parameter
     def _call_with_pack[
         *Ts: AnyType,
     ](
@@ -331,7 +330,6 @@ __extension DeviceContext:
     def _check_supports_default_compile_function(self):
         pass
 
-    @__parameter
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -459,7 +457,6 @@ __extension DeviceContext:
             location=location.or_else(call_location()),
         )
 
-    @__parameter
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -564,7 +561,6 @@ __extension DeviceContext:
             location=location.or_else(call_location()),
         )
 
-    @__parameter
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -674,7 +670,6 @@ __extension DeviceContext:
             location=location.or_else(call_location()),
         )
 
-    @__parameter
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -789,7 +784,6 @@ __extension DeviceContext:
             location=location.or_else(call_location()),
         )
 
-    @__parameter
     @inline(.always)
     def enqueue_function[
         *Ts: DevicePassable
@@ -804,7 +798,7 @@ __extension DeviceContext:
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: Optional[SourceLocation] = None,
-    ) raises:
+    ) capturing raises:
         """Enqueues a pre-compiled checked function for execution on this device.
 
         This overload requires a `DeviceFunction` that was compiled with
