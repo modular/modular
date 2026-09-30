@@ -56,7 +56,6 @@ from std.utils.index import StaticTuple
 
 
 @inline(.always)
-@__parameter
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:

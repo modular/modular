@@ -46,7 +46,6 @@ from std.testing import assert_true
 
 
 @inline(.always)
-@__parameter
 def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
 

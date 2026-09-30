@@ -49,7 +49,6 @@ struct CoordinateTransformationMode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-@__parameter
 @inline(.always)
 def coord_transform[
     mode: CoordinateTransformationMode
@@ -251,7 +250,6 @@ def linear_filter(x: Float32) -> Float32:
     return 0
 
 
-@__parameter
 @inline(.always)
 def interpolate_point_1d[
     InputLayoutType: TensorLayout,

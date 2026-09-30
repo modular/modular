@@ -48,7 +48,6 @@ from std.testing import assert_almost_equal, assert_true
 
 
 @inline(.always)
-@__parameter
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:

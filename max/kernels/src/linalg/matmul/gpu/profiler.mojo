@@ -79,7 +79,6 @@ struct BlackwellWarpProfilingWorkspaceManager[
     comptime entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
 
     @staticmethod
-    @__parameter
     def _get_warp_count[warp_role: UInt32]() -> UInt32:
         comptime if warp_role == 0:
             return Self.load_warps
@@ -91,7 +90,6 @@ struct BlackwellWarpProfilingWorkspaceManager[
             return Self.epilogue_warps
 
     @staticmethod
-    @__parameter
     def _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
         return warp_role * Self.max_entries_per_warp
 
@@ -112,7 +110,6 @@ struct BlackwellWarpProfilingWorkspaceManager[
         )
 
     @staticmethod
-    @__parameter
     def _calculate_buffer_length() -> UInt32:
         return (
             UInt32(Self.sm_count) * Self.entries_per_sm * Self.total_data_points

@@ -311,7 +311,6 @@ def _strided_layout[
 # ============================================================================
 
 
-@__parameter
 def _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
     """Extract static shapes from a TensorLayout into an IndexList.
 

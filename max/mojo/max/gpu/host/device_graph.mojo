@@ -1160,7 +1160,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             return Self.Node(id.value())
         return None
 
-    @__parameter
     @inline(.always)
     def add_function[
         *Ts: DevicePassable

@@ -143,17 +143,6 @@ def merge_ragged_tensors[
 
         dst_idx[0] = dst_row_idx
 
-        # Compute flat offsets for pointer load/store (Horner form).
-        # Inner dimensions are the same across a, b, and c.
-        @inline(.always)
-        @__parameter
-        def _flat_offset[r: Int](index: IndexList[r]) -> Int:
-            comptime assert r == rank
-            var flat = index[0]
-            comptime for i in range(1, rank):
-                flat = flat * Int(c.dim[i]()) + index[i]
-            return flat
-
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
         # this `merge_fn`function with width = 1 for the last few elements.

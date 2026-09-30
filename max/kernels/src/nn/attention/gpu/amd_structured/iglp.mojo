@@ -82,7 +82,6 @@ def _iglp_opt[strategy: AMDIGLPStrategy]() -> None:
 
 
 @inline(.always)
-@__parameter
 def sched_barrier_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
     """Emits `pairs` schedule groups of shape `[1 MFMA, valu_cnt VALU]`.
 
@@ -117,7 +116,6 @@ def sched_barrier_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
 
 
 @inline(.always)
-@__parameter
 def sched_dsread_valu_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
     """Emits `pairs` schedule groups of shape `[1 DS_READ, valu_cnt VALU]`.
 
@@ -147,7 +145,6 @@ def sched_dsread_valu_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
 
 
 @inline(.always)
-@__parameter
 def sched_barrier_exp_pairs[pairs: Int, exp_cnt: Int, group: Int]() -> None:
     """Emits `pairs` schedule groups of shape `[1 MFMA, exp_cnt TRANS]`.
 

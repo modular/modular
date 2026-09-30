@@ -374,7 +374,6 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         return SHMEMBuffer[dtype](self._ctx, size)
 
     @inline(.always)
-    @__parameter
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -461,7 +460,6 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_finalize(gpu_kernel)
 
     @inline(.always)
-    @__parameter
     def enqueue_function_collective_checked[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
