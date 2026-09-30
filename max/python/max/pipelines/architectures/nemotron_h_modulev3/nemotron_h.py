@@ -32,7 +32,7 @@ from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
-    MultiKVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
@@ -137,9 +137,7 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
             )
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
-        assert isinstance(config.kv_params, MultiKVCacheParams)
-        attn_params = config.kv_params.children[ATTN_CACHE_KEY]
-        assert isinstance(attn_params, KVCacheParams)
+        attn_params = config.kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
         self.backbone = NemotronHBackbone(config, attn_params)
         self.lm_head = Linear(config.hidden_size, config.vocab_size, bias=False)
 
@@ -157,7 +155,6 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
         kv_tree = self.kv_params.unflatten_kv_inputs(
             iter(x._graph_value for x in kv_inputs)
         )
-        assert isinstance(kv_tree, dict)
         (kv_collection,) = tree.leaves(
             kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
         )

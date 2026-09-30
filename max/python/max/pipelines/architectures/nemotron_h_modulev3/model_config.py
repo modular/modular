@@ -23,7 +23,6 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
@@ -140,7 +139,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     dtype: DType
     devices: list[DeviceRef]
     max_seq_len: int
-    kv_params: KVCacheParamInterface
+    kv_params: MultiKVCacheParams
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
 
     @property
@@ -164,7 +163,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-    ) -> KVCacheParamInterface:
+    ) -> MultiKVCacheParams:
         """Returns the attention leaf beside the Mamba state.
 
         The attention layers index the KV cache 0, 1, 2, ... in layer order;
@@ -265,7 +264,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         hf: AutoConfig,
         *,
-        kv_params: KVCacheParamInterface,
+        kv_params: MultiKVCacheParams,
         devices: list[DeviceRef],
         max_seq_len: int,
     ) -> Self:

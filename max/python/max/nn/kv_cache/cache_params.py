@@ -26,6 +26,7 @@ from typing import (
     Literal,
     Protocol,
     TypeGuard,
+    TypeVar,
     runtime_checkable,
 )
 
@@ -3222,6 +3223,9 @@ def _agreed_pool(
     return first
 
 
+_Child = TypeVar("_Child", bound=CacheLeafParamInterface)
+
+
 @dataclass(frozen=True)
 class MultiKVCacheParams(KVCacheParamInterface):
     """Aggregates multiple cache parameter sets into a recursive tree.
@@ -3340,6 +3344,21 @@ class MultiKVCacheParams(KVCacheParamInterface):
                             f" declare leaf {region.leaf_id!r}; give each"
                             " state its own leaf ids."
                         )
+
+    def child(self, key: str, kind: type[_Child]) -> _Child:
+        """Returns the child at ``key`` as the ``kind`` it must be.
+
+        Raises:
+            KeyError: If the tree has no child at ``key``.
+            TypeError: If the child at ``key`` is not a ``kind``.
+        """
+        child = self.children[key]
+        if not isinstance(child, kind):
+            raise TypeError(
+                f"Cache child {key!r} is a {type(child).__name__}, but the"
+                f" caller reads it as a {kind.__name__}."
+            )
+        return child
 
     @cached_property
     def _attention_children(self) -> dict[str, KVCacheParamInterface]:

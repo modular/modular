@@ -31,6 +31,7 @@ from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
+    MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
@@ -324,9 +325,7 @@ def attn_cache(params: KVCacheParamInterface) -> KVCacheParams:
         "A Qwen3.5 cache is either an attention leaf or a tree holding one,"
         f" got {type(params).__name__}"
     )
-    attn = params.children[ATTN_CACHE_KEY]
-    assert isinstance(attn, KVCacheParams)
-    return attn
+    return params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
 
 
 def spec_shadow_regions(

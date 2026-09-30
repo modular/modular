@@ -56,8 +56,7 @@ class UnifiedMTPInkling(SequentialDriver[list[TensorValue]]):
         target_config = config
         kv = config.kv_params
         if "target" in kv.children:
-            target_kv = kv.children["target"]
-            assert isinstance(target_kv, MultiKVCacheParams)
+            target_kv = kv.child("target", MultiKVCacheParams)
             target_config = replace(config, kv_params=target_kv)
         target = Inkling(
             target_config,

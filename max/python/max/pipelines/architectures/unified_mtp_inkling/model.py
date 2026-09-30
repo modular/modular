@@ -197,8 +197,7 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
         del state_dict
         assert self.pipeline_config.speculative is not None
         assert isinstance(self.kv_params, MultiKVCacheParams)
-        draft_kv_params = self.kv_params.children["draft"]
-        assert isinstance(draft_kv_params, MultiKVCacheParams)
+        draft_kv_params = self.kv_params.child("draft", MultiKVCacheParams)
         draft = InklingMultiTokenPredictor(
             model_config, self._n_mtp_depths, draft_kv_params
         )
