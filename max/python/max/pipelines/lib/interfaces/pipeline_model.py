@@ -1115,9 +1115,84 @@ class ModuleV3PipelineModelWithKVCache(
     :class:`ModuleV3MultiGraphPipelineModelWithKVCache` (ModuleV3).
     ``ComponentModel`` types and unified spec-decode pipelines should override
     :meth:`load_model` entirely.
+
+    The constructor compiles the model into :attr:`model`, and the default
+    :meth:`execute` feeds it ``model_inputs.buffers``.
     """
 
+    model: Callable[..., Any]
     _modulev3_extra_input_types: list[Any]
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
+    ) -> None:
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
+        )
+        self.model = self.load_model()
+
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs :attr:`model` on ``model_inputs.buffers``.
+
+        Args:
+            model_inputs: The prepared inputs, whose
+                :attr:`~ModelInputs.buffers` match the compiled input order.
+
+        Returns:
+            The outputs mapped by :meth:`_to_model_outputs`.
+        """
+        return self._to_model_outputs(self.model(*model_inputs.buffers))
+
+    def _to_model_outputs(self, model_outputs: Sequence[Any]) -> ModelOutputs:
+        """Maps the compiled model's outputs to :class:`ModelOutputs`.
+
+        The graph returns ``next_token_logits``, then ``logits`` and
+        ``logit_offsets`` when it returns all or variable logits, then
+        ``hidden_states`` when it returns hidden states. With a single logits
+        output, it serves as both ``logits`` and ``next_token_logits``.
+
+        Args:
+            model_outputs: The tensors returned by :attr:`model`.
+
+        Returns:
+            The outputs as driver buffers.
+        """
+        outputs = [
+            cast(Buffer, output.driver_tensor) for output in model_outputs
+        ]
+        hidden_states = outputs[-1] if len(outputs) in (2, 4) else None
+        if len(outputs) >= 3:
+            return ModelOutputs(
+                logits=outputs[1],
+                next_token_logits=outputs[0],
+                logit_offsets=outputs[2],
+                hidden_states=hidden_states,
+            )
+        return ModelOutputs(
+            logits=outputs[0],
+            next_token_logits=outputs[0],
+            hidden_states=hidden_states,
+        )
 
     @traced
     def load_model(self) -> Callable[..., Any]:

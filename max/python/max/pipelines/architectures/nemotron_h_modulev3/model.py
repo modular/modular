@@ -16,22 +16,11 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
-from max.driver import Buffer, Device
-from max.engine import InferenceSession
-from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    KVCacheConfig,
-    ModelInputs,
-    ModelOutputs,
-    ModuleV3PipelineModelWithKVCache,
-    PipelineConfig,
-)
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from .model_config import NemotronHConfig
@@ -50,34 +39,6 @@ class NemotronHModel(
     batch_processor_cls: ClassVar[type[Llama3ModuleV3BatchProcessor]] = (
         Llama3ModuleV3BatchProcessor
     )
-
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        *,
-        memory_plan: MemoryPlan,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        max_batch_size: int = 1,
-    ) -> None:
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter=adapter,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
-        )
-        self.model = self.load_model()
 
     def _create_model_config(
         self, state_dict: dict[str, Any]
@@ -104,16 +65,3 @@ class NemotronHModel(
         nn_model = NemotronH(model_config)
         nn_model.to(self.devices[0])
         return nn_model
-
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        outputs = [
-            cast(Buffer, output.driver_tensor)
-            for output in self.model(*model_inputs.buffers)
-        ]
-        if len(outputs) == 3:
-            return ModelOutputs(
-                logits=outputs[1],
-                next_token_logits=outputs[0],
-                logit_offsets=outputs[2],
-            )
-        return ModelOutputs(logits=outputs[0], next_token_logits=outputs[0])

@@ -15,9 +15,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
-from max.driver import Buffer, Device, is_virtual_device_mode
+from max.driver import Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.sharding import DeviceMesh
@@ -247,14 +247,4 @@ class DeepseekV3Model(DeepseekV2Model):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model."""
-        model_outputs = self.model(*model_inputs.buffers)
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        return ModelOutputs(
-            logits=cast(Buffer, model_outputs[0].driver_tensor),
-            next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-        )
+        return self._to_model_outputs(self.model(*model_inputs.buffers))
