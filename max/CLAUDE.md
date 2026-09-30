@@ -197,6 +197,13 @@ blow-up is in CI, not locally.
   Sharding distributes tests across CI workers via round-robin. Each shard
   runs as its own pytest process, so tests that would serialize locally now
   compile in parallel across separate workers.
+- **Move the compiles off the GPU worker entirely**: a GPU test that compiles
+  its own graphs can set `precompile_mefs = True` on its `modular_py_test`.
+  Bazel then runs the test once as a CPU build action to record what each
+  `session.load` compiles to, and the GPU run initializes those artifacts.
+  Nothing in the test changes. Record without a GPU with
+  `./bazelw build --config=remote-b200 //pkg:my_test.mefs`; see
+  `docs/internal/CompileOnCpuRunOnGpu.md`.
 - **Reference**: see
   `max/tests/integration/architectures/gemma4/test_attention.py` which uses
   `per_test_shard_count = 4` to parallelize bf16 vs fp8-local vs fp8-global
