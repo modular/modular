@@ -1612,6 +1612,90 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
   llvm_unreachable("invalid decl kind");
 }
 
+/// Fold an address space value down to its integer, if it is concrete. This
+/// accepts both the raw index stored on a `!lit.ref` and the stdlib
+/// `AddressSpace` struct, which wraps that index in single-field structs.
+static std::optional<int64_t> getConstantAddressSpace(TypedAttr value) {
+  while (value) {
+    value = KGEN::ParamOperatorAttr::stripRebind(KGEN::SugarAttr::strip(value));
+    if (auto intAttr = dyn_cast<IntegerAttr>(value))
+      return intAttr.getInt();
+    auto structAttr = dyn_cast<LITStructAttr>(value);
+    if (!structAttr || structAttr.getValues().size() != 1)
+      return std::nullopt;
+    value = std::get<1>(structAttr.getValues().front());
+  }
+  return std::nullopt;
+}
+
+/// Return the address space bound to the given type, if exactly one of its
+/// parameters is an `AddressSpace` and that parameter is concrete.
+static std::optional<int64_t> getAddressSpaceFromTypeParams(ASTType type) {
+  TypedAttr addressSpace;
+  for (TypedAttr binding : type.getParamBindings()) {
+    if (!binding)
+      continue;
+    auto structType = KGEN::sugarDynCast<StructType>(binding.getType());
+    if (!structType ||
+        structType.getSymbol().getLeafReference().strref() != "AddressSpace")
+      continue;
+    // With several address spaces there's no single one to report.
+    if (addressSpace)
+      return std::nullopt;
+    addressSpace = binding;
+  }
+  return getConstantAddressSpace(addressSpace);
+}
+
+/// Return the address space of the given symbol, if it has one. This is the
+/// address space of the reference that holds the value, or, for a value in the
+/// generic address space, the address space parameter of its type (e.g.
+/// `UnsafePointer[..., address_space=AddressSpace.SHARED]`). Generic is only
+/// reported from a type parameter; nearly every value lives in a generic
+/// reference, so reporting that would mark everything.
+static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
+  if (!symbol.approximateViewKind)
+    return std::nullopt;
+  switch (*symbol.approximateViewKind) {
+  case PublicDeclKind::DK_PublicArgumentDecl:
+  case PublicDeclKind::DK_PublicParameterDecl:
+  case PublicDeclKind::DK_PublicStructFieldDecl:
+  case PublicDeclKind::DK_PublicVariableDecl:
+    break;
+  default:
+    return std::nullopt;
+  }
+
+  MojoASTDeclRef declRef = symbol.declRef;
+  ASTType type;
+  if (Operation *op = declRef.getIfOperation()) {
+    if (auto varDecl = dyn_cast<VarDeclOp>(op))
+      type = varDecl.getType();
+    else if (auto field = dyn_cast<StructFieldOp>(op))
+      type = field.getType();
+  } else {
+    CValue value = declRef->getIfIRValue();
+    // Memory values report their element type, so look at the underlying
+    // reference to see its address space.
+    if (Value mlirValue = value.getMlirValue())
+      type = mlirValue.getType();
+    else
+      type = value.getType();
+  }
+  if (!type)
+    return std::nullopt;
+
+  if (auto refType = KGEN::sugarDynCast<RefType>(type.mlirType)) {
+    std::optional<int64_t> addressSpace =
+        getConstantAddressSpace(refType.getAddressSpace());
+    if (addressSpace && *addressSpace != 0)
+      return addressSpace;
+    type = refType.getElementType();
+  }
+
+  return getAddressSpaceFromTypeParams(type);
+}
+
 std::optional<std::vector<SemanticToken>>
 MojoDocument::onSemanticTokensSync(SMRange range) {
   if (!context)
@@ -1619,6 +1703,7 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
 
   // Compute the set of semantic tokens in the document.
   std::vector<SemanticToken> tokens;
+  llvm::DenseMap<const Symbol *, std::optional<int64_t>> addressSpaces;
 
   // Compute tokens for known symbol references.
   context->symbolIndex.walkSymbolRefs(range, [&](SymbolRef &ref) {
@@ -1633,9 +1718,15 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
       return;
 
     const Symbol *symbol = ref.symbols.front();
-    tokens.emplace_back(
+    SemanticToken &token = tokens.emplace_back(
         getSemanticTokenKind(symbol->declRef, symbol->approximateViewKind),
         range);
+
+    auto [it, inserted] = addressSpaces.try_emplace(symbol);
+    if (inserted)
+      it->second = getAddressSpace(*symbol);
+    if (it->second)
+      token.setAddressSpace(*it->second);
   });
   llvm::sort(tokens);
 
