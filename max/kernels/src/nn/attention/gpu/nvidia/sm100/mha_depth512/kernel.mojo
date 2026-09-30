@@ -205,9 +205,9 @@ struct SM100MHADepth512[
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            # O output store is row-major SWIZZLE_NONE (decoupled from the
+            # O output store is SWIZZLE_128B (decoupled from the
             # swizzled Q/K/V/S/P buffers governed by `config.swizzle_mode`).
-            TensorMapSwizzle.SWIZZLE_NONE,
+            TensorMapSwizzle.SWIZZLE_128B,
             BM=Self.config.BM,
             BN=Self.config.ov_depth,
             middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
@@ -216,7 +216,7 @@ struct SM100MHADepth512[
             # batched rank-5 TMA. Must match dispatch.mojo's store.
             tma_blocks_per_op=o_store_tma_blocks_per_op[
                 Self.output_type,
-                TensorMapSwizzle.SWIZZLE_NONE,
+                TensorMapSwizzle.SWIZZLE_128B,
                 Self.config.ov_depth,
                 Self.config.group if Self.fuse_gqa else 1,
                 depth_splits=1,

@@ -54,6 +54,7 @@ from layout.tile_layout import (
     Layout as InternalLayout,
     row_major as tt_row_major,
 )
+from layout.swizzle import make_swizzle
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
@@ -363,6 +364,101 @@ def o_store_tma_blocks_per_op[
     comptime K = output_swizzle_mode.bytes() // size_of[output_type]()
     comptime n_blocks = align_up(ov_depth, K) // K
     return ceildiv(n_blocks, depth_splits)
+
+
+@inline(.always)
+def opaque_u32(x: UInt32) -> UInt32:
+    """Returns `x` through a copy LLVM can neither hoist nor merge.
+
+    Epilogue addresses derive only from the thread's row, so LLVM hoists them
+    to the kernel entry (merging them across call sites) and they stay live
+    through the main loop, where ptxas spills them. Deriving them from this
+    copy pins the arithmetic at its use; the 2Q d128 kernel spilled 28 B
+    without it.
+    """
+    return inlined_assembly[
+        "mov.u32 $0, $1;",
+        UInt32,
+        constraints="=r,r",
+        has_side_effect=True,
+    ](x)
+
+
+@inline(.always)
+def o_smem_chunk_offset[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    rows: Int,
+](row: Int, chunk: Int) -> Int:
+    """Element offset of 16 B chunk `chunk` of output row `row` in the O
+    staging tile a per-block `swizzle_mode` O-TMA store reads.
+
+    The tile is block-major `[block, rows, K]`, `K = swizzle_mode.bytes() //
+    size_of[dtype]`, with `swizzle_mode`'s XOR applied within each block, so
+    the 8 rows of one store phase land on 8 distinct 16 B bank groups for every
+    mode. `chunk` counts 16 B units along the row (8 bf16 or 4 f32 columns).
+    SWIZZLE_NONE reduces to one chunk per block, `chunk * rows * K + row * K`.
+    """
+    comptime cw = 16 // size_of[dtype]()
+    comptime K = swizzle_mode.bytes() // size_of[dtype]()
+    comptime cpb = K // cw
+    var blk, c = divmod(chunk, cpb)
+    var r = Int(opaque_u32(UInt32(row)))
+    return blk * rows * K + make_swizzle[dtype, swizzle_mode]()(r * K + c * cw)
+
+
+def _o_split_band[esz: Int](ov: Int, P: Int, block_bytes: Int) -> Int:
+    """Widest partition band (columns) of the 1Q split-K reduce-scatter when
+    its unit is one `block_bytes`-wide O-store block."""
+    var K = block_bytes // esz
+    return ceildiv(ceildiv(ov, K), P) * K
+
+
+def fa4_o_store_swizzle[
+    output_type: DType, config: FA4Config
+]() -> TensorMapSwizzle:
+    """Swizzle of the FA4 O-TMA store, i.e. its block width.
+
+    SWIZZLE_128B (64 bf16 columns per box row) unless split-K reduce-scatters
+    O across the cluster: every partition TMA-stores only its own depth band,
+    so a block must not straddle two partitions' bands. There the widest block
+    is chosen that leaves the widest band no wider than the 16 B-block split
+    would, which keeps the reduce-scatter's critical path unchanged (d128:
+    P=2 -> 128B, P=4 -> 64B, P=6 or 16 -> NONE).
+    """
+    comptime esz = size_of[output_type]()
+    comptime P = config.splitk_partitions
+    comptime ov = config.ov_depth
+    comptime if P <= 1:
+        return TensorMapSwizzle.SWIZZLE_128B
+    elif config.use_ws:
+        # WS split-K: partition `p` owns the contiguous warp bands
+        # `[p*bpp, (p+1)*bpp)` of `ov // m_pack` columns each.
+        comptime cols = ceildiv(config.m_pack, P) * (ov // config.m_pack)
+        comptime if cols % (128 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_128B
+        elif cols % (64 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_64B
+        elif cols % (32 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_32B
+        else:
+            return TensorMapSwizzle.SWIZZLE_NONE
+    else:
+        comptime floor_band = _o_split_band[esz](ov, P, 16)
+        comptime if ov % (128 // esz) == 0 and _o_split_band[esz](
+            ov, P, 128
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_128B
+        elif ov % (64 // esz) == 0 and _o_split_band[esz](
+            ov, P, 64
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_64B
+        elif ov % (32 // esz) == 0 and _o_split_band[esz](
+            ov, P, 32
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_32B
+        else:
+            return TensorMapSwizzle.SWIZZLE_NONE
 
 
 @inline(.always)

@@ -55,7 +55,7 @@ from .attention_utils import (
     clusters_per_wave,
     kv_sub_tile_rows,
     kv_tma_fold_chunks,
-    o_store_tma_blocks_per_op,
+    fa4_o_store_swizzle,
     splitk_p_ladder,
 )
 from .kernel import SM100MHA2Q
@@ -501,11 +501,12 @@ def mha_sm100_dispatch[
             OWorkspaceType.is_null or OWorkspaceType.dtype == output_type
         ), "the O-partial workspace must match the kernel's output dtype"
         comptime swizzle_mode = fa4_config.swizzle_mode
-        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
-        # Q/K/V/S/P buffers governed by `swizzle_mode`). The softmax warp loads
-        # O one-row-per-thread and writes it row-major, avoiding cross-thread
-        # shuffles and swizzling while staying bank-conflict-free.
-        comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
+        # O is staged in 64-column SWIZZLE_128B blocks (narrower only for a
+        # split-K band; see `fa4_o_store_swizzle`), so each TMA line is a full
+        # 128 B row instead of a 16 B SWIZZLE_NONE box.
+        comptime output_swizzle_mode = fa4_o_store_swizzle[
+            output_type, fa4_config
+        ]()
         comptime BM = fa4_config.BM
         comptime fuse_gqa = fa4_config.fuse_gqa
         comptime num_threads = fa4_config.num_threads
@@ -516,25 +517,8 @@ def mha_sm100_dispatch[
         comptime BM_per_mma = fa4_config.MMA_M // fa4_config.cta_group()
         comptime assert BM == 32 or BM == 64 or BM == 128 or BM == 256
 
-        # Batch the O store into one TMA per issuer: the box covers
-        # `ceil(n_blocks/2)` swizzle blocks, so single-issuer writeback emits 2
-        # copies and the 1Q combine 1 per WG (vs `n_blocks` per-block). Fused
-        # GQA batches via the RaggedTMA3DTile merge to stay within the 5D TMA
-        # limit; only swizzled-output callers fall back to per-block (0).
-        # 1Q split-K (reduce-scatter) and the WS (MMA_M=32) combine both
-        # TMA-store from a per-block egress whose band offset isn't a {0, half}
-        # batched box, so they need the per-block (rank-3) descriptor -- `0`
-        # here flags that to `fa4_splitk_combine_write`. Every non-split config
-        # keeps the batched store.
-        comptime store_blocks_per_op = 0 if (
-            fa4_config.splitk_partitions > 1 or fa4_config.use_ws
-        ) else o_store_tma_blocks_per_op[
-            output_type,
-            output_swizzle_mode,
-            fa4_config.ov_depth,
-            fa4_config.group if fuse_gqa else 1,
-            depth_splits=2,
-        ]()
+        # Every O writer issues one copy per swizzle block (rank-3 store).
+        comptime store_blocks_per_op = 0
 
         comptime RaggedStoreType = RaggedTMA3DTile[
             output_type,

@@ -107,7 +107,7 @@ def depth512_scale_write_output[
     tmem_addr: UInt32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        TensorMapSwizzle.SWIZZLE_NONE,
+        TensorMapSwizzle.SWIZZLE_128B,
         BM=config.BM,
         BN=config.ov_depth,
         middle_dim=_,
@@ -165,18 +165,16 @@ def depth512_scale_write_output[
 
     # Output SMEM base (reuses Q buffer).
     var o_smem = smem.o_smem[output_type]()
-    # O SMEM is row-major (SWIZZLE_NONE): the gmem output is row-major and the
-    # O accumulator is loaded one-row-per-thread, so no swizzle is needed and
-    # the per-row writes stay bank-conflict-free (8 rows * 16 B = 128 B = all
-    # 32 banks once). O's TMA store swizzle is decoupled from `config.swizzle_mode`
-    # (which still governs the swizzled Q/K/V/S/P buffers).
-    comptime o_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
-    # O SMEM must match tile_layout_k_major[BM, ov_depth] for TMA store.
-    # Decompose col into k-block + inner offset; SWIZZLE_NONE makes the inner
-    # swizzle the identity, so the layout is plain row-major within each k-block.
+    # O SMEM is staged in 64-column SWIZZLE_128B k-blocks, the layout of the
+    # per-block O store. The O accumulator is loaded one-row-per-thread; each
+    # 16 B chunk goes to its swizzled slot within its k-block, so the 8 rows of
+    # a store phase hit 8 distinct bank groups. O's TMA store swizzle is
+    # decoupled from `config.swizzle_mode` (which still governs the swizzled
+    # Q/K/V/S/P buffers).
+    comptime o_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     comptime o_swizzle = make_swizzle[output_type, o_swizzle_mode]()
     comptime o_sw_K = o_swizzle_mode.bytes() // size_of[output_type]()
-    # ov_depth is a multiple of o_sw_K for every supported head size.
+    # ov_depth (256 or 512) is a multiple of o_sw_K.
     comptime n_blocks = config.ov_depth // o_sw_K
     comptime batched = tma_bpo > 0
     comptime if batched:
@@ -202,8 +200,7 @@ def depth512_scale_write_output[
                 width=batch_size,
             ]((o_tmem + col_offset).addr)
 
-            # Scale+pack each group of 8 into one 16 B row-major (SWIZZLE_NONE)
-            # store (f32x2 compute, wide store; see scale_pack_o_row).
+            # Scale+pack each group of 8 into one 16 B swizzled chunk (f32x2 compute, wide store; see scale_pack_o_row).
             comptime for g in range(batch_size // 8):
                 comptime base = g * 8
                 var packed = scale_pack_o_row[output_type, w=8, start=base](
@@ -287,7 +284,7 @@ def depth512_softmax[
     scale: Float32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        TensorMapSwizzle.SWIZZLE_NONE,
+        TensorMapSwizzle.SWIZZLE_128B,
         BM=config.BM,
         BN=config.ov_depth,
         middle_dim=_,

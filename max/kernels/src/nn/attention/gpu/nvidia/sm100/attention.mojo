@@ -468,6 +468,17 @@ struct FA4Config[
         )
 
     @inline(.always)
+    def ws_epilogue_o_f32_offset(self) -> Int:
+        """F32-slot offset of the WS epilogue's output tile in the carve.
+
+        Past every f32 region, rounded up to 1 KiB: the O-TMA store applies its
+        swizzle by absolute SMEM address while the writers swizzle relative to
+        this base. The key-split epilogue and the empty-partition split-K path
+        must carve the same tile, so both take it from here.
+        """
+        return align_up(self.ws_epilogue_f32_slots(), 1024 // 4)
+
+    @inline(.always)
     def correction_o_cols(self) -> Int:
         """TMEM columns `correction_warp._rescale_o` must walk per accumulator.
 

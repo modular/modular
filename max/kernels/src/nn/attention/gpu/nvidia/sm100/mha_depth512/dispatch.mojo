@@ -159,9 +159,9 @@ def mha_sm100_depth512_dispatch[
     )
     comptime assert d512_config.supported(), d512_config.description()
     comptime swizzle_mode = d512_config.swizzle_mode
-    # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
-    # Q/K/V/S/P buffers governed by `swizzle_mode`).
-    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
+    # O is staged in 64-column SWIZZLE_128B blocks, one TMA copy per block
+    # (`o_store_tma_blocks_per_op` returns 0 for a swizzled store).
+    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     comptime fuse_gqa = d512_config.fuse_gqa
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
@@ -175,8 +175,7 @@ def mha_sm100_depth512_dispatch[
 
     # ---- TMA tile descriptors ------------------------------------------------
 
-    # Output store: BM per CTA, full ov_depth. Single issuer, no combine
-    # (depth_splits=1) -> one batched rank-5 TMA over the full depth (group==1).
+    # Output store: BM per CTA, full ov_depth, single issuer.
     comptime store_blocks_per_op = o_store_tma_blocks_per_op[
         output_type,
         output_swizzle_mode,

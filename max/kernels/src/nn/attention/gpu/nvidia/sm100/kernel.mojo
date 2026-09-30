@@ -45,7 +45,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SM100TensorAccumulator,
     elect,
     kv_sub_tile_rows,
-    o_store_tma_blocks_per_op,
+    fa4_o_store_swizzle,
 )
 from nn.attention.gpu.nvidia.common import (
     get_seq_info,
@@ -260,9 +260,8 @@ struct SM100MHA2Q[
     ]
     comptime OTMAStoreType = RaggedTMA3DTile[
         Self.output_type,
-        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
-        # Q/K/V/S/P buffers governed by `config.swizzle_mode`).
-        TensorMapSwizzle.SWIZZLE_NONE,
+        # Must match dispatch.mojo's store (`fa4_o_store_swizzle`, per-block).
+        fa4_o_store_swizzle[Self.output_type, Self.config](),
         # 2Q: BM=128 (each WG writes one of two Q halves).
         # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
         # disjoint depth-column ranges).
@@ -270,22 +269,7 @@ struct SM100MHA2Q[
         BN=Self.config.ov_depth,
         middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
         group=Self.config.group if Self.fuse_gqa else 1,
-        # Batched rank-5 O store (must match dispatch.mojo's store) for every
-        # non-split config; the 1Q split-K (reduce-scatter) config uses the
-        # PER-BLOCK (rank-3) store because each partition TMA-stores only its own
-        # depth band via `async_copy_from_col` at a non-{0,half} offset (see the
-        # matching conditional + rationale in dispatch.mojo).
-        # WS (MMA_M=32) also uses the per-block WG0 egress (fa4_tma_store_o_smem),
-        # so it takes the rank-3 store like the 1Q split-K path.
-        tma_blocks_per_op=0 if (
-            Self.config.splitk_partitions > 1 or Self.config.use_ws
-        ) else o_store_tma_blocks_per_op[
-            Self.output_type,
-            TensorMapSwizzle.SWIZZLE_NONE,
-            Self.config.ov_depth,
-            Self.config.group if Self.fuse_gqa else 1,
-            depth_splits=2,
-        ](),
+        tma_blocks_per_op=0,
     ]
     comptime PackType = Pack[
         Self.MaskType,
@@ -407,6 +391,10 @@ struct SM100MHA2Q[
                 # matching `num_qk_stages` ⇒ matching `BK0`; per-half BM=128,
                 # BN/depth/group/swizzle already match), but the parser sees
                 # distinct parameter expressions, so `rebind`.
+                comptime assert (
+                    Kernel1Q.OTMAStoreType.swizzle_mode
+                    == Self.OTMAStoreType.swizzle_mode
+                ), "the 1Q switch reuses the 2Q O store and its smem layout"
                 Kernel1Q._kernel_impl(
                     rebind[Kernel1Q.QTMAOpType](q_tma_op),
                     rebind[Kernel1Q.KTMAOpType](k_tma_op),

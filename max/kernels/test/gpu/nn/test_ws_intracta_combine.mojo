@@ -40,7 +40,7 @@ transport differs -- so a flat 8-way host reference verifies the composition):
 This exercises the three new helpers end to end:
   * fa4_ws_level1_combine              (per-WG 4-way unnormalized partial)
   * fa4_ws_level2_reduce_scatter_write (cross-WG reduce-scatter + normalize)
-  * fa4_tma_store_o_smem               (SWIZZLE_NONE TMA egress -> gmem)
+  * fa4_tma_store_o_smem               (SWIZZLE_128B TMA egress -> gmem)
 
 Setup: 256 threads (two warpgroups) allocate TMEM; each warp injects its known
 `O_p` into its WG's C-TMEM band (WG0 -> TMEM_O0 analog, WG1 -> TMEM_O1 analog)
@@ -66,7 +66,7 @@ T>=2 each WG streams >= 1 real key). Cases (each x depth in {64, 128}):
                      equal-per-WG-max cases would mask)
 """
 
-from std.math import exp2, recip, isnan
+from std.math import align_up, exp2, recip, isnan
 from std.random import randn, seed
 from std.sys import size_of
 
@@ -115,6 +115,16 @@ comptime MAX_TMEM_COLS: UInt32 = 512
 comptime C_TMEM_OFFSET_0: UInt32 = 128  # WG0 O band (mirror TMEM_O0)
 comptime META_BYTES = 128  # tmem_addr scratch, padded
 
+
+def o_smem_offset[depth: Int]() -> Int:
+    """F32-slot offset of `o_smem`, rounded up to 1 KiB: the SWIZZLE_128B
+    store swizzles by absolute SMEM address, the writers relative to `o_smem`.
+    """
+    comptime STAGE = M_PACK * ROWS * depth
+    comptime ML = M_PACK * ROWS * 2
+    return align_up(2 * STAGE + 2 * ML + depth * ROWS + ROWS * 2, 1024 // 4)
+
+
 # SCALE_LOG2E = 1.0 makes the helpers' `* scale_log2e` steps no-ops so the host
 # reference is exactly `exp2(m - M)` at both levels (the combine still exercises
 # the use_fma multiply path).
@@ -124,13 +134,14 @@ comptime ATOL: Float32 = 1e-3
 comptime RTOL: Float32 = 1e-3
 
 
-# The SWIZZLE_NONE per-block (tma_blocks_per_op == 0) O store op: gmem is 3D
+# The SWIZZLE_128B per-block (tma_blocks_per_op == 0) O store op: gmem is 3D
 # (rows, middle_dim=1, depth) row-major. `create` offsets the descriptor base
 # back by `depth*ROWS`, so the device buffer needs a ROWS-row front pad and the
 # store lands logical rows [0, ROWS) at physical rows [ROWS, 2*ROWS).
+comptime O_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
 comptime OStoreT[depth: Int] = RaggedTMA3DTile[
     OUT_TYPE,
-    TensorMapSwizzle.SWIZZLE_NONE,
+    O_SWIZZLE,
     BM=ROWS,
     BN=depth,
     middle_dim=1,
@@ -162,13 +173,12 @@ def combine_kernel[
     comptime STAGE = M_PACK * ROWS * depth  # per-WG Level-1 raw-O staging
     comptime ML = M_PACK * ROWS * 2  # per-WG Level-1 (m, l)
     comptime L2STAGE = depth * ROWS  # WG1 -> WG0 O_1 staging
-    comptime L2MS = ROWS * 2  # WG1's (m_1, l_1)
     comptime OSMEM = ROWS * depth
 
     # ---- Dynamic SMEM carve ----
-    # [stage0 | stage1 | maxsum0 | maxsum1 | l2_stage | l2_maxsum | o_smem | meta]
+    # [stage0 | stage1 | maxsum0 | maxsum1 | l2_stage | l2_maxsum | pad | o_smem | meta]
     var smem_base = external_memory[
-        UInt8, address_space=.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=1024
     ]()
     var f32_base = smem_base.bitcast[Scalar[ACC_TYPE]]()
     var stage0 = f32_base
@@ -177,7 +187,7 @@ def combine_kernel[
     var maxsum1 = maxsum0 + ML
     var l2_stage = maxsum1 + ML
     var l2_maxsum = l2_stage + L2STAGE
-    var o_smem = l2_maxsum + L2MS
+    var o_smem = f32_base + o_smem_offset[depth]()
     var ptr_tmem_addr = (o_smem + OSMEM).bitcast[UInt32]()
 
     var tid = thread_idx.x
@@ -231,7 +241,9 @@ def combine_kernel[
     )
 
     # ---- (C) Level 2: cross-WG reduce-scatter + normalize -> o_smem (WG0) ----
-    _ = fa4_ws_level2_reduce_scatter_write[M_PACK, ROWS, depth, use_fma=True](
+    _ = fa4_ws_level2_reduce_scatter_write[
+        M_PACK, ROWS, depth, O_SWIZZLE, use_fma=True
+    ](
         UInt32(row),
         UInt32(g),
         UInt32(wg),
@@ -246,7 +258,7 @@ def combine_kernel[
 
     # ---- (D) TMA egress: WG0 stores the normalized o_smem to gmem ----
     if wg == 0:
-        fa4_tma_store_o_smem[depth, TensorMapSwizzle.SWIZZLE_NONE, ROWS, 1, 1](
+        fa4_tma_store_o_smem[depth, O_SWIZZLE, ROWS, 1, 1](
             UInt32(g),  # local_warp_idx (0..3); warp 0 issues
             UInt32(wg),  # warp_group_idx (0)
             o_smem.as_unsafe_any_origin(),
@@ -269,14 +281,9 @@ def combine_kernel[
 # Test driver
 # ---------------------------------------------------------------------------
 def test_combine[depth: Int, mode: Int](ctx: DeviceContext) raises:
-    comptime STAGE = M_PACK * ROWS * depth
-    comptime ML = M_PACK * ROWS * 2
-    comptime L2STAGE = depth * ROWS
-    comptime L2MS = ROWS * 2
-    comptime OSMEM = ROWS * depth
-    comptime total_smem = (
-        2 * STAGE + 2 * ML + L2STAGE + L2MS + OSMEM
-    ) * size_of[ACC_TYPE]() + META_BYTES
+    comptime total_smem = (o_smem_offset[depth]() + ROWS * depth) * size_of[
+        ACC_TYPE
+    ]() + META_BYTES
 
     var case_name = "uniform" if mode == 0 else (
         "divergent" if mode
