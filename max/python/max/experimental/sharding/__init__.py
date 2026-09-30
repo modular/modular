@@ -68,7 +68,7 @@ from ._auto_reshard import auto_reshard
 from .action import ActionSet, AxisAssignment
 from .cost import build_action_set, force_replicated_action_set
 from .mappings import ConversionError, DeviceMapping, NamedMapping
-from .mesh import DeviceMesh, mesh_context
+from .mesh import DeviceMesh
 from .placements import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
@@ -103,5 +103,4 @@ __all__ = [
     "auto_reshard",
     "build_action_set",
     "force_replicated_action_set",
-    "mesh_context",
 ]

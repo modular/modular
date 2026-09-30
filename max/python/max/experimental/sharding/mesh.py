@@ -15,10 +15,8 @@
 
 from __future__ import annotations
 
-import contextvars
 import math
-from collections.abc import Iterator
-from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from max.driver import Device
@@ -145,50 +143,10 @@ class DeviceMesh:
         return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
 
 
-_active_mesh: contextvars.ContextVar[DeviceMesh | None] = (
-    contextvars.ContextVar("active_mesh", default=None)
-)
+# Set by ``max.experimental.tensor.default_device``.
+_DEFAULT_DEVICE: ContextVar[DeviceMesh] = ContextVar("_DEFAULT_DEVICE")
 
 
-def get_active_mesh() -> DeviceMesh | None:
-    """Returns the mesh from the current :func:`mesh_context`, or ``None``."""
-    return _active_mesh.get(None)
-
-
-@contextmanager
-def mesh_context(mesh: DeviceMesh) -> Iterator[DeviceMesh]:
-    """Publishes ``mesh`` to spec-first :class:`NamedMapping` constructions.
-
-    JAX-style: when a :class:`NamedMapping` is created without an explicit
-    mesh inside this block, it picks up ``mesh`` from this context and
-    resolves the spec against it.
-
-    .. code-block:: python
-
-        from max.driver import CPU
-        from max.experimental.sharding import (
-            DeviceMesh,
-            NamedMapping,
-            mesh_context,
-        )
-
-        mesh = DeviceMesh(
-            devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
-        )
-
-        with mesh_context(mesh):
-            # Resolves against ``mesh`` without naming it.
-            mapping = NamedMapping(spec=("tp",))
-
-    .. invisible-code-block: python
-
-        from max.experimental.sharding import Sharded
-
-        assert mapping.mesh is mesh
-        assert mapping.placements == (Sharded(0),)
-    """
-    token = _active_mesh.set(mesh)
-    try:
-        yield mesh
-    finally:
-        _active_mesh.reset(token)
+def get_default_mesh() -> DeviceMesh | None:
+    """Returns the default device mesh, or ``None`` if none is set."""
+    return _DEFAULT_DEVICE.get(None)

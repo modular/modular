@@ -166,8 +166,8 @@ class Module(Generic[_P, _R]):
         from max.graph import TensorType
 
         model = Linear(5, 10)
-        _, device = defaults()
-        model.to(device)
+        _, mesh = defaults()
+        model.to(mesh.devices[0])
 
         input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
         compiled = model.compile(input_type)
@@ -637,8 +637,10 @@ class Module(Generic[_P, _R]):
                     return x @ self.weight.T + self.bias
 
             linear = Linear(Tensor.zeros([10, 5]), Tensor.zeros([10]))
-            _, device = defaults()
-            run = linear.compile(TensorType(DType.float32, [3, 5], device))
+            _, mesh = defaults()
+            run = linear.compile(
+                TensorType(DType.float32, [3, 5], mesh.devices[0])
+            )
             result = run(Tensor.ones([3, 5], dtype=DType.float32))
 
         .. invisible-code-block: python

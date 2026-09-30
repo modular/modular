@@ -99,6 +99,13 @@ This version is still a work in progress.
   `ReshardBehavior`, `GreedyReshard`, `NoReshard` and `PartialsOnly`; for
   example, `mode(NoReshard())` becomes `auto_reshard(mode="raise")`.
 
+- `max.experimental.tensor.default_device()` accepts a `DeviceMesh` and
+  replaces `max.experimental.sharding.mesh_context()`, which is removed.
+  `defaults()` now returns the device as a `DeviceMesh`.
+
+- `max.experimental.random.uniform()` and `gaussian()` accept a
+  `DeviceMapping`.
+
 - `max.experimental.sharding` no longer re-exports `P`, `R`, `Action`,
   `PerShard`, `PerShardDim`, `Collective`, `ReduceOp`, `get_active_mesh`,
   `as_device_mapping`, `as_layout` or the `*_rule` functions.
