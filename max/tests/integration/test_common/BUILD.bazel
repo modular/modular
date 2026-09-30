@@ -160,7 +160,6 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/graph",
-        requirement("nvitop"),
     ],
 )
 

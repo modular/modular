@@ -22,12 +22,10 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import NamedTuple
 
-# torch is a lazy dep, see BUILD file for details
-import torch  # type: ignore[import-not-found]
+import torch
 from max.dtype import DType
-from max.engine import Model
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
@@ -47,16 +45,45 @@ TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
 
 
-class CompiledAttention(NamedTuple):
+class CompiledAttention:
     """Bundles a compiled attention graph with its dedicated KV-cache manager.
 
     Cached per `(layer_idx, cache_dtype, weight set)` in a `scope="module"`
     fixture (in `conftest.py`) so each unique compile happens once per
     test process.
+
+    The cache is built on the first :meth:`claim_kv_manager`, not here,
+    because allocating needs the GPU and compiling does not: a CPU build
+    action that records this test's compiles gets through every one of them
+    only if nothing has asked for the device yet. See
+    ``docs/internal/CompileOnCpuRunOnGpu.md``.
     """
 
-    compiled: Model
-    kv_manager: PagedKVCacheManager
+    def __init__(
+        self,
+        compiled: Model,
+        session: InferenceSession,
+        kv_params: MHAKVCacheParams,
+    ) -> None:
+        self.compiled = compiled
+        self._session = session
+        self._kv_params = kv_params
+        self._kv_manager: PagedKVCacheManager | None = None
+
+    def claim_kv_manager(self) -> PagedKVCacheManager:
+        """Returns this graph's cache manager, allocating it on first call.
+
+        Returns:
+            The manager, which every call after the first shares.
+        """
+        if self._kv_manager is None:
+            self._kv_manager = PagedKVCacheManager(
+                params=self._kv_params,
+                total_num_pages=8,
+                session=self._session,
+                max_batch_size=128,
+            )
+        return self._kv_manager
 
 
 # ---------------------------------------------------------------------------
