@@ -192,7 +192,27 @@ struct AMDMatmul[
             b: Input B tile of shape `[N, K]` (transposed, `transpose_b`
                 is `True`).
         """
+        Self.run_at_tile(c, a, b, block_idx.y, block_idx.x)
+
+    @staticmethod
+    def run_at_tile[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        tile_m: Int,
+        tile_n: Int,
+    ):
+        """Same as `run`, for a grid whose `block_idx` is not the tile index."""
         comptime assert Self.transpose_b, "transpose_b must be True"
+        var block_m = tile_m
+        var block_n = tile_n
         comptime assert Self.a_type == Self.b_type, "a/b must match"
 
         comptime BM = Self.BM
@@ -247,8 +267,8 @@ struct AMDMatmul[
         )
 
         # Block-row tiles with OOB clamping from the full tensors.
-        var a_blockrow = a_gmem.tile[BM, K](block_idx.y, 0)
-        var b_blockrow = b_gmem.tile[BN, K](block_idx.x, 0)
+        var a_blockrow = a_gmem.tile[BM, K](block_m, 0)
+        var b_blockrow = b_gmem.tile[BN, K](block_n, 0)
         comptime load_layout = row_major[load_thread_rows, load_thread_cols]()
         var a_loader = RegTileLoader[Self.a_type, load_layout](
             a_blockrow,
@@ -412,8 +432,8 @@ struct AMDMatmul[
             # Epilogue path with OOB masking.
             comptime epilogue_fn = Self.elementwise_lambda_fn.value()
             var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)
-            var warp_tile_m = Int(block_idx.y) * BM + warp_m * WM
-            var warp_tile_n = Int(block_idx.x) * BN + warp_n * WN
+            var warp_tile_m = block_m * BM + warp_m * WM
+            var warp_tile_n = block_n * BN + warp_n * WN
 
             comptime for m_mma in range(num_m_mmas):
                 comptime for n_mma in range(num_n_mmas):
@@ -461,8 +481,8 @@ struct AMDMatmul[
         elif N % BN != 0:
             # Boundary path: N not block-aligned, per-element OOB store.
             var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)
-            var warp_tile_m = Int(block_idx.y) * BM + warp_m * WM
-            var warp_tile_n = Int(block_idx.x) * BN + warp_n * WN
+            var warp_tile_m = block_m * BM + warp_m * WM
+            var warp_tile_n = block_n * BN + warp_n * WN
 
             comptime for m_mma in range(num_m_mmas):
                 comptime for n_mma in range(num_n_mmas):
@@ -498,7 +518,7 @@ struct AMDMatmul[
                                 c.raw_store[width=c_frag_size](m * N + n, v)
         else:
             # Fast path: N is block-aligned, no OOB checks needed.
-            var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)
+            var c_block = c.tile[BM, BN](block_m, block_n)
             var c_warp = c_block.tile[WM, WN](warp_m, warp_n)
 
             comptime vec_width = 4 if MMA_M == 32 else c_frag_size

@@ -221,12 +221,29 @@ def grouped_matmul_amd_kernel_launcher[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
-    var M = rebind[UInt32](a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
+    comptime BM = config.block_tile_shape[0]
+
+    # `block_idx.y` indexes a flat list of BM-row tiles over all groups;
+    # the host sizes it with an upper bound in `grouped_matmul_amd`. Find
+    # the group that owns this tile and the tile's index within it.
+    var tile_m = block_idx.y
+    var group = UInt32(0)
+    var M = UInt32(0)
+    while group < UInt32(num_active_experts):
+        M = UInt32(a_offsets[group + 1]) - UInt32(a_offsets[group])
+        var group_tiles = Int(ceildiv(M, UInt32(BM)))
+        if tile_m < group_tiles:
+            break
+        tile_m -= group_tiles
+        group += 1
+    if group == UInt32(num_active_experts):
+        return
+
     comptime N = c_tensor.static_shape[1]
     comptime K = b_tensor.static_shape[1]
 
-    var expert_id = rebind[Int32](expert_ids[block_idx.z])
-    var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
+    var expert_id = rebind[Int32](expert_ids[group])
+    var a_start_row = rebind[UInt32](a_offsets[group])
 
     # 64-bit offsets. B passes Int32 once the bf16 expert stack exceeds 4 GiB
     # (Kimi K3 gate/up at 8 devices), and the wrapped pointer reads out of
@@ -263,16 +280,7 @@ def grouped_matmul_amd_kernel_launcher[
             Optional[elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
-        ].run[
-            type_of(c_tile).LayoutType,
-            type_of(a_tile).LayoutType,
-            type_of(b_tile).LayoutType,
-            type_of(c_tile).Engine,
-            type_of(a_tile).Engine,
-            type_of(b_tile).Engine,
-        ](
-            c_tile, a_tile, b_tile
-        )
+        ].run_at_tile(c_tile, a_tile, b_tile, tile_m, block_idx.x)
 
     # Perform the epilogue function separately if expert_id is -1
     else:
@@ -287,7 +295,7 @@ def grouped_matmul_amd_kernel_launcher[
             comptime vec_width = simd_width_of[c_type]()
             comptime alignment = align_of[SIMD[c_type, vec_width]]()
 
-            var block_m = block_idx.y
+            var block_m = tile_m
             var block_n = block_idx.x
 
             # Early exit if this block is completely outside the matrix bounds
@@ -468,9 +476,9 @@ def grouped_matmul_amd[
     comptime N = b.static_shape[1]
     comptime K = b.static_shape[2]
 
-    var total_M = 0
-    for i in range(num_active_experts):
-        total_M += Int(a_offsets[i + 1] - a_offsets[i])
+    # `a_offsets` lives on the device (stale during graph capture); `a` holds
+    # exactly the routed rows.
+    var total_M = Int(a.dim(0))
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -513,6 +521,14 @@ def grouped_matmul_amd[
             type_of(expert_ids).Engine,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
+        # Flat tile grid; sum_g ceildiv(M_g, BM) is bounded both by
+        # ceildiv(total rows, BM) + groups and by groups * ceildiv(max M, BM).
+        var grid_y = min(
+            ceildiv(Int(a.dim(0)), config.block_tile_shape[0])
+            + num_active_experts,
+            num_active_experts
+            * ceildiv(max_num_tokens_per_expert, config.block_tile_shape[0]),
+        )
         ctx.enqueue_function[kernel](
             c,
             a,
@@ -520,11 +536,7 @@ def grouped_matmul_amd[
             a_offsets,
             expert_ids,
             Int32(num_active_experts),
-            grid_dim=(
-                ceildiv(N, config.block_tile_shape[1]),
-                ceildiv(max_num_tokens_per_expert, config.block_tile_shape[0]),
-                num_active_experts,
-            ),
+            grid_dim=(ceildiv(N, config.block_tile_shape[1]), grid_y, 1),
             block_dim=(block_dim),
         )
 
@@ -677,6 +689,13 @@ def grouped_matmul[
         def resolve_usage_stats() raises -> Tuple[Int, Int]:
             if host_stats:
                 return host_stats.value()
+            # The sync below aborts an in-flight device-graph capture. On AMD
+            # use host-known upper bounds instead: no group has more rows than
+            # `a`, and `moe_create_indices` always reports every expert active.
+            comptime if (
+                has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator()
+            ):
+                return (Int(a.dim(0)), Int(expert_ids.dim(0)))
             var host_buf = ctx.enqueue_create_host_buffer[.uint32](2)
             var dev_buf = DeviceBuffer[.uint32](
                 ctx,
