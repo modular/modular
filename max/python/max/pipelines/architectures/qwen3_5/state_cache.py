@@ -20,10 +20,12 @@ in, and keeping the two apart would put that order in two files.
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Sequence
 
 from max import tree
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
@@ -33,6 +35,9 @@ from max.nn.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
 )
+from max.support.human_readable_formatter import to_human_readable_bytes
+
+logger = logging.getLogger("max.pipelines")
 
 ATTN_CACHE_KEY = "attn"
 STATE_CACHE_KEY = "state"
@@ -321,3 +326,95 @@ def attn_cache(params: KVCacheParamInterface) -> KVCacheParams:
     attn = params.children[ATTN_CACHE_KEY]
     assert isinstance(attn, KVCacheParams)
     return attn
+
+
+def spec_shadow_regions(
+    regions: Sequence[RecurrentStateRegion], ring_len: int
+) -> tuple[RecurrentStateRegion, ...]:
+    """Returns the regions a speculative verify copies to a shadow.
+
+    In the order :meth:`.UnifiedMTPQwen3_5.input_types` declares the shadows
+    in. The ring is not here, since it is a scratch leaf of the state cache.
+
+    Args:
+        regions: The state regions, in declaration order.
+        ring_len: Records one verify-ring row holds, or zero for no ring.
+    """
+    shadowed = shadowed_leaf_ids(ring_len)
+    return tuple(r for r in regions if r.leaf_id in shadowed)
+
+
+def spec_shadow_bytes_per_request(
+    regions: Sequence[RecurrentStateRegion], ring_len: int
+) -> int:
+    """Returns the bytes one request occupies in the shadow pools.
+
+    Pass regions built with ``num_devices=1`` for the total across devices.
+    """
+    return sum(
+        region.bytes_per_page
+        for region in spec_shadow_regions(regions, ring_len)
+    )
+
+
+class Qwen3_5SpecShadowPools:
+    """The verify's shadow pools, allocated outside the state cache.
+
+    Their contents last only one forward. The graph addresses them densely,
+    with request ``r``'s layer ``l`` at row ``l * batch_size + r``, so each
+    pool is allocated ``max_batch_size`` requests deep.
+    """
+
+    def __init__(
+        self,
+        regions: Sequence[RecurrentStateRegion],
+        ring_len: int,
+        max_batch_size: int,
+        devices: Sequence[Device],
+    ) -> None:
+        self._regions = spec_shadow_regions(regions, ring_len)
+        self._rows = max_batch_size * max(
+            (r.num_layers for r in self._regions), default=0
+        )
+        self._by_device: list[dict[str, Buffer]] = [
+            {
+                region.leaf_id: Buffer.zeros(
+                    [self._rows, *region.row_shape], region.dtype, device
+                )
+                for region in self._regions
+            }
+            for device in devices
+        ]
+        logger.info(
+            "Qwen3.5 speculative shadows: %s rows x %d leaves = %s per device"
+            " (%s per request across %d device(s))",
+            self._rows,
+            len(self._regions),
+            to_human_readable_bytes(
+                sum(
+                    self._rows * r.row_elements * r.dtype.size_in_bytes
+                    for r in self._regions
+                )
+            ),
+            to_human_readable_bytes(
+                spec_shadow_bytes_per_request(regions, ring_len)
+            ),
+            len(devices),
+        )
+
+    @property
+    def rows(self) -> int:
+        """Depth of every pool: ``max_batch_size * num_layers``."""
+        return self._rows
+
+    def pool(self, leaf_id: str, device_idx: int) -> Buffer:
+        """Returns one leaf's pool on one device."""
+        return self._by_device[device_idx][leaf_id]
+
+    def shadow_pools(self, leaf_id: str) -> list[Buffer]:
+        """Returns a shadowed leaf's pool per device, or ``[]`` if unshadowed."""
+        return [
+            per_device[leaf_id]
+            for per_device in self._by_device
+            if leaf_id in per_device
+        ]

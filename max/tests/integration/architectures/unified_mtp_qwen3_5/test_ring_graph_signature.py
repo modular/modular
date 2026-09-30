@@ -20,32 +20,47 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    recurrent_leaf,
+)
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.state_cache import (
     COMPILED_RING_LENS,
     CONV_LEAF_ID,
     RECURRENT_LEAF_ID,
     RING_LEAF_ID,
+    STATE_CACHE_KEY,
     attn_cache,
     linear_state_regions,
     ring_len_for_window,
     shadowed_leaf_ids,
 )
+from max.pipelines.architectures.unified_mtp_qwen3_5.model import (
+    UnifiedMTPQwen3_5Model,
+)
+from max.pipelines.architectures.unified_mtp_qwen3_5.model_config import (
+    UnifiedMTPQwen3_5Config,
+)
 from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
     POSITION_IDS,
+    graph_kv_params,
     state_tail,
 )
 from max.pipelines.architectures.unified_mtp_qwen3_5.unified_mtp_qwen3_5 import (
     UnifiedMTPQwen3_5,
 )
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.speculative import RecurrentStateRollback, SpeculativeConfig
 
 NUM_DRAFTS = 3
@@ -305,3 +320,75 @@ def test_the_fused_graph_compiles_on_either_rollback(
     graph, weights = _build_graph(rollback)
     session = InferenceSession(devices=[Accelerator()])
     assert session.load(graph, weights_registry=weights) is not None
+
+
+def _served_kv_params(num_devices: int = 1) -> MultiKVCacheParams:
+    """Returns the allocated cache: the graph's plus the state child."""
+    config = _config(num_devices)
+    attn = attn_cache(config.kv_params)
+    state = RecurrentStateParams(
+        regions=linear_state_regions(
+            num_linear_layers=1,
+            key_head_dim=config.linear_key_head_dim,
+            num_key_heads=config.linear_num_key_heads,
+            value_head_dim=config.linear_value_head_dim,
+            num_value_heads=config.linear_num_value_heads,
+            conv_kernel_dim=config.linear_conv_kernel_dim,
+            dtype=config.state_dtype,
+            num_devices=num_devices,
+        ),
+        devices=attn.devices,
+        data_parallel_degree=attn.data_parallel_degree,
+    )
+    return MultiKVCacheParams.from_params(
+        {
+            "target": attn,
+            "draft": replace(attn, num_layers=1),
+            STATE_CACHE_KEY: state,
+        }
+    )
+
+
+def test_the_graph_drops_the_state_child_the_cache_holds() -> None:
+    """Checks ``graph_kv_params`` drops the allocated cache's state child."""
+    served = _served_kv_params()
+
+    assert recurrent_leaf(served) is not None
+    assert recurrent_leaf(graph_kv_params(served)) is None
+    assert set(graph_kv_params(served).children) == {"target", "draft"}
+
+
+@pytest.mark.parametrize("rollback", ["snapshot", "ring"])
+def test_the_state_child_does_not_move_the_signature(
+    rollback: RecurrentStateRollback,
+) -> None:
+    """Checks the allocated cache yields the attention-only signature."""
+    config = _config(1)
+    driver = UnifiedMTPQwen3_5(
+        config,
+        speculative_config=SpeculativeConfig(
+            speculative_method="mtp",
+            num_speculative_tokens=NUM_DRAFTS,
+            recurrent_state_rollback=rollback,
+        ),
+    )
+
+    view = graph_kv_params(_served_kv_params())
+
+    assert tuple(driver.input_types(view)) == _input_types(rollback)
+
+
+def test_the_model_allocates_its_cache_with_the_ring() -> None:
+    """Checks the model builds its cache from the config that declares the
+    ring, so the cache it allocates holds the leaves the graph reads."""
+    assert UnifiedMTPQwen3_5Model.model_config_cls is UnifiedMTPQwen3_5Config
+    ring = SimpleNamespace(
+        speculative=SpeculativeConfig(
+            speculative_method="mtp",
+            num_speculative_tokens=NUM_DRAFTS,
+            recurrent_state_rollback="ring",
+        )
+    )
+    assert UnifiedMTPQwen3_5Config._verify_ring_len(
+        cast("PipelineConfig", ring)
+    ) == ring_len_for_window(1 + NUM_DRAFTS)

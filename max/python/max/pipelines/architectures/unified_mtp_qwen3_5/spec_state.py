@@ -39,6 +39,8 @@ from typing import Any
 
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
 from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    MultiKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
@@ -51,6 +53,7 @@ from ..qwen3_5.state_cache import (
     CONV_LEAF_ID,
     RECURRENT_LEAF_ID,
     RING_LEAF_ID,
+    STATE_CACHE_KEY,
     shadowed_leaf_ids,
 )
 from .state_rollback import (
@@ -72,6 +75,7 @@ __all__ = [
     "RING_ROW_IDS",
     "SHADOW_RECURRENT_POOLS",
     "Qwen3_5RecurrentState",
+    "graph_kv_params",
     "state_tail",
 ]
 
@@ -96,6 +100,32 @@ cache, so its rows come from the engine like the live leaves'.
 ``SHADOW_RECURRENT_POOLS`` is ``None`` on the ring rollback. There is no conv
 shadow on either rollback.
 """
+
+
+def graph_kv_params(kv_params: KVCacheParamInterface) -> MultiKVCacheParams:
+    """Returns the cache the fused graph's signature is built from.
+
+    This is the allocated cache without its recurrent state child. The KV
+    tree sits in the middle of the spec-decode signature and the state pools
+    are declared in the trailing tail, so keeping the child would shift
+    every later input.
+
+    Args:
+        kv_params: The pipeline's cache, state child included.
+
+    Returns:
+        The same tree with the state child dropped.
+    """
+    assert isinstance(kv_params, MultiKVCacheParams), (
+        f"expected MultiKVCacheParams, got {type(kv_params).__name__}"
+    )
+    return MultiKVCacheParams.from_params(
+        {
+            key: child
+            for key, child in kv_params.children.items()
+            if key != STATE_CACHE_KEY
+        }
+    )
 
 
 def state_tail(

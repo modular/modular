@@ -691,3 +691,37 @@ def test_a_hybrid_hit_settles_on_the_deepest_run_every_group_accepts(
         assert (
             bm._find_longest_device_prefix_cache_hit(keys, 0, False) == expected
         ), f"seed={seed} keys={len(keys)}"
+
+
+# A speculative step commits 1 to K+1 tokens, so with prefix caching on a
+# recurrent group keeps publishing checkpoints at the lagging length the
+# overlap pipeline hands it.
+
+_SPEC_STRIDES = (1, 2, 3, 4) * 10
+"""Tokens committed per step, cycling the counts a K=3 verify produces."""
+
+
+def forward_n(bm: JengaBlockManager, ctx: TextContext, num_tokens: int) -> bool:
+    """Runs one forward of ``num_tokens`` and returns whether it checkpointed."""
+    bm.alloc(ctx)
+    resume(bm, ctx)
+    for _ in range(num_tokens):
+        ctx.update(42)
+    checkpointed = checkpoint(bm, ctx) != {}
+    bm.step(ctx)
+    return checkpointed
+
+
+def count_checkpoints(strides: Sequence[int]) -> int:
+    """Returns how many of ``strides`` forwards published a checkpoint."""
+    bm = make_manager()
+    ctx = make_ctx(BLOCK_SIZE)
+    bm.claim(ctx)
+    fired = 0
+    for num_tokens in strides:
+        fired += forward_n(bm, ctx, num_tokens)
+    return fired
+
+
+def test_a_speculative_stride_keeps_checkpointing_while_caching_is_on() -> None:
+    assert count_checkpoints(_SPEC_STRIDES) > 1
