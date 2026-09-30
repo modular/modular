@@ -2063,7 +2063,7 @@ def mogg_index_reshape[
     # Reindex `index` (a point in the from-shape) to the point in the to-shape
     # with the same row-major linear offset. Backs `mogg.index.reshape`: the
     # per-index (store-side) counterpart of the whole-tensor
-    # `mogg._tensor.create.reshape` view, used for a reshape fused into an
+    # `mogg.tensor.create.reshape` view, used for a reshape fused into an
     # epilogue's store. `from_static_shape`/`to_static_shape` are the compile-time
     # shapes (a dim is `-1`, `UNKNOWN_VALUE`, where dynamic); `from_shape`/
     # `to_shape` are their runtime values, read only where a dim is dynamic.
@@ -2287,7 +2287,7 @@ def foreach[
     ](wrapper, tensor.shape_coord(), ctx)
 
 
-@register_internal("mogg._call.foreach")
+@register_internal("mogg.call.foreach")
 def _foreach[
     Lambda: ImplicitlyCopyable
     & RegisterPassable
@@ -2398,7 +2398,7 @@ def _mogg_slice_view_alignment[
     return alignment
 
 
-@register_internal("mogg._tensor.create.slice")
+@register_internal("mogg.tensor.create.slice")
 def mogg_tensor_create_slice[
     dtype: DType,
     rank: Int,
@@ -2436,7 +2436,7 @@ def mogg_tensor_create_slice[
         ](input.alignment),
     ),
 ]:
-    """Backing primitive for `mogg._tensor.create.slice`: a zero-copy strided
+    """Backing primitive for `mogg.tensor.create.slice`: a zero-copy strided
     view of `input`, offset and re-strided per `starts`/`stops`/`steps`.
     `output_static_shape`/`static_starts`/`static_steps` carry whatever is
     known about the view's shape and bounds at compile time (an entry is
@@ -2504,7 +2504,7 @@ def _mogg_broadcast_view_strides[
     return new_strides
 
 
-@register_internal("mogg._tensor.create.broadcast")
+@register_internal("mogg.tensor.create.broadcast")
 def mogg_tensor_create_broadcast[
     dtype: DType,
     in_rank: Int,
@@ -2525,7 +2525,7 @@ def mogg_tensor_create_broadcast[
         ](),
     ](),
 ]:
-    """Backing primitive for `mogg._tensor.create.broadcast`: a zero-copy
+    """Backing primitive for `mogg.tensor.create.broadcast`: a zero-copy
     reindexed view of `input` that replicates it (numpy broadcasting
     semantics) up to `output_static_shape` -- a leading dimension `input`
     doesn't have, or an aligned dimension where `input`'s size is 1, gets
@@ -2559,7 +2559,7 @@ def mogg_tensor_create_broadcast[
     return {input.unsafe_ptr(), new_shape, new_strides}
 
 
-@register_internal("mogg._tensor.create.reshape")
+@register_internal("mogg.tensor.create.reshape")
 def mogg_tensor_create_reshape[
     dtype: DType,
     in_rank: Int,
@@ -2576,7 +2576,7 @@ def mogg_tensor_create_reshape[
         output_static_shape,
     ](),
 ]:
-    """Backing primitive for `mogg._tensor.create.reshape`: a zero-copy view
+    """Backing primitive for `mogg.tensor.create.reshape`: a zero-copy view
     of `input` reinterpreted under `output_shape` -- valid only because
     `input` is contiguous, so de-linearizing/re-linearizing through one
     shared flat index produces row-major strides for the new shape.
@@ -2644,7 +2644,7 @@ comptime _MoggTransposeStrideTypes[
 ]()
 
 
-@register_internal("mogg._tensor.create.transpose")
+@register_internal("mogg.tensor.create.transpose")
 def mogg_tensor_create_transpose[
     dtype: DType,
     rank: Int,
@@ -2669,7 +2669,7 @@ def mogg_tensor_create_transpose[
         ],
     ](),
 ]:
-    """Backing primitive for `mogg._tensor.create.transpose`: a zero-copy
+    """Backing primitive for `mogg.tensor.create.transpose`: a zero-copy
     reindexed view of `input` that reorders its dimensions -- the view's
     dimension `i` comes from `input`'s dimension `perm[i]`. `perm` is known
     per dimension either at compile time (an entry of `static_permutations`)
