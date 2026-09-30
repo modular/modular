@@ -22,12 +22,10 @@ reconnection, and metrics; this shim only adapts the MAX-side types (device
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import logging
 import math
 import os
-import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
@@ -332,8 +330,6 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 # rather than starting a second one, so what matters is that the budget spans
 # enough attempts to outlast it.
 _DEFAULT_ADMISSION_TIMEOUT_S = 600.0
-_ADMISSION_INITIAL_BACKOFF_S = 1.0
-_ADMISSION_MAX_BACKOFF_S = 10.0
 
 # The Rust client's default per-attempt handshake bound, mirrored from
 # DEFAULT_HANDSHAKE_REQUEST_TIMEOUT in dkv-connector/src/transport.rs, purely to
@@ -628,10 +624,10 @@ def _kv_config_hash(
     per-unit strides either way -- so without the bump a live share would take
     the matching-hash reattach branch in ``prepare_share_slot``, find a
     different geometry, and return ``StorageError::Config``. That surfaces as a
-    ``ValueError``, which ``_is_permanent_admission_error`` treats as permanent,
-    so the pod would crashloop rather than rebuild the share. (``v=2`` was
-    itself the bump for the block layout becoming the concatenation of every
-    buffer unit rather than the value buffer alone.)
+    ``ValueError``, which admission does not retry, so the pod would crashloop
+    rather than rebuild the share. (``v=2`` was itself the bump for the block
+    layout becoming the concatenation of every buffer unit rather than the
+    value buffer alone.)
 
     The bump invalidates EVERY share, not only the multi-unit trees whose
     geometry actually moved: ``v`` is folded for every config, so a
@@ -727,41 +723,6 @@ def _resolve_replica_identities(
     return _kv_config_hash(params, unit_strides), [(0, 0)] * num_replicas
 
 
-# Exception types that always signal a permanent config or programming bug in
-# the admission path, never a transient/connection failure. Retrying these just
-# burns the whole admission budget before a real bug surfaces, so they
-# short-circuit the retry loop. ``ValueError`` also covers the pyo3
-# ``ConnectorError::Config`` mapping and this module's own argument validation;
-# the rest are the shapes a bug inside ``_make_client`` raises (a bad attribute,
-# wrong call signature, undefined name, missing key, or a failed import).
-_PERMANENT_ADMISSION_EXC_TYPES: tuple[type[BaseException], ...] = (
-    ValueError,
-    TypeError,
-    AttributeError,
-    NameError,
-    KeyError,
-    ImportError,
-)
-
-
-def _is_permanent_admission_error(exc: Exception) -> bool:
-    """Returns whether an admission failure will not recover on retry.
-
-    Retrying is worthwhile for a still-starting dKV (connection refused),
-    ``NotReady`` timeouts, and transient transport errors; it is pointless for a
-    caller/config bug or a programming bug. A permanent failure is one of
-    :data:`_PERMANENT_ADMISSION_EXC_TYPES` — a config error (the pyo3
-    ``ConnectorError::Config`` maps to :class:`ValueError`) or a programming bug
-    such as :class:`AttributeError` / :class:`TypeError` raised inside
-    ``_make_client`` — or a runtime error the Rust layer tagged
-    ``[retriable=false]``. Everything else (including an untagged "failed to
-    connect to dKV" error) is treated as transient and retried.
-    """
-    if isinstance(exc, _PERMANENT_ADMISSION_EXC_TYPES):
-        return True
-    return "[retriable=false]" in str(exc)
-
-
 def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
     """Resolves the admission retry budget, raising it to cover several attempts.
 
@@ -816,59 +777,6 @@ def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
         )
         return minimum
     return admission_s
-
-
-def _admit_with_retry(
-    factory: Callable[[], object],
-    *,
-    timeout_s: float,
-    label: str = "",
-    initial_backoff_s: float = _ADMISSION_INITIAL_BACKOFF_S,
-    max_backoff_s: float = _ADMISSION_MAX_BACKOFF_S,
-    monotonic: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
-) -> object:
-    """Calls ``factory`` until it succeeds, retrying transient failures.
-
-    Retries with exponential backoff (capped at ``max_backoff_s``) until
-    ``factory`` returns, a permanent error surfaces
-    (:func:`_is_permanent_admission_error`), or ``timeout_s`` is exhausted (the
-    last exception is then re-raised — the readiness gate: model load fails if a
-    replica never admits). ``monotonic`` and ``sleep`` are injectable for tests.
-
-    Args:
-        factory: Zero-arg callable performing one admission attempt.
-        timeout_s: Total wall-clock retry budget.
-        label: Short identifier for the retry log line (e.g. ``"replica 3"``).
-        initial_backoff_s: First backoff, doubled each retry.
-        max_backoff_s: Backoff ceiling.
-        monotonic: Monotonic clock source (injectable).
-        sleep: Sleep function (injectable).
-
-    Returns:
-        Whatever ``factory`` returns on success.
-    """
-    deadline = monotonic() + timeout_s
-    backoff = initial_backoff_s
-    attempt = 0
-    while True:
-        attempt += 1
-        try:
-            return factory()
-        except Exception as exc:
-            if _is_permanent_admission_error(exc):
-                raise
-            remaining = deadline - monotonic()
-            if remaining <= 0:
-                raise
-            _logger.warning(
-                "dKV admission%s attempt %d failed (%s); retrying",
-                f" ({label})" if label else "",
-                attempt,
-                exc,
-            )
-            sleep(min(backoff, max_backoff_s, remaining))
-            backoff *= 2
 
 
 def _drain(transfers: Sequence[KVTransfer]) -> None:
@@ -1159,10 +1067,11 @@ class DKVConnector(KVConnector):
                 heartbeat_overrides,
             )
 
-        # Each client's connect + handshake ("admission") is retried on transient
-        # failures (dKV still starting); model readiness is gated on ALL clients
-        # admitting, so a client whose retry budget is exhausted raises here and
-        # fails model load rather than serving with a partial dKV.
+        # Each client retries its own connect and handshake ("admission") on
+        # transient failures within ``admission_timeout_s``, on the one NIXL
+        # agent it builds; model readiness is gated on ALL clients admitting, so
+        # a client whose budget runs out raises here and fails model load rather
+        # than serving with a partial dKV.
         # ``self._clients[replica_idx][leaf_id]`` is one client per leaf per DP
         # replica: ``load`` / ``offload`` / ``touch`` index both, and the
         # client-wide fan-outs (wait_for_*, metrics, take_metrics) iterate
@@ -1183,17 +1092,15 @@ class DKVConnector(KVConnector):
         # kv_shard_id/replica_id, so every DP replica of a tenant resolves to
         # ONE store — and the per-block BlockKey tp_shard_id carries the
         # MHA/GQA-vs-MLA distinction.
-        for idx, (
+        for (
             replica_memory,
             replica_devices,
             (kv_shard_id, replica_id),
-        ) in enumerate(
-            zip(
-                replica_kv_memory,
-                devices_per_replica,
-                replica_identities,
-                strict=True,
-            )
+        ) in zip(
+            replica_kv_memory,
+            devices_per_replica,
+            replica_identities,
+            strict=True,
         ):
             clients_for_replica: dict[str, _DkvClient] = {}
             # One geometry per leaf so dKV pages are lcm(each leaf's
@@ -1212,8 +1119,7 @@ class DKVConnector(KVConnector):
                 )
             ]
             for leaf_id in self._leaves:
-                factory = functools.partial(
-                    self._make_client,
+                clients_for_replica[leaf_id] = self._make_client(
                     _DkvConnectorClient,
                     [replica_memory[leaf_id]],
                     local_block_store_endpoint,
@@ -1229,11 +1135,7 @@ class DKVConnector(KVConnector):
                     tenant_gpu_count=tenant_gpu_count,
                     tenant_gpu_device_ids=tenant_gpu_device_ids,
                     heartbeat_overrides=heartbeat_overrides,
-                )
-                clients_for_replica[leaf_id] = _admit_with_retry(
-                    factory,
-                    timeout_s=admission_timeout_s,
-                    label=f"replica {idx}, leaf {leaf_id}",
+                    admission_timeout_s=admission_timeout_s,
                 )
             self._clients.append(clients_for_replica)
         # One client per leaf per DP replica. load/offload index
@@ -1322,6 +1224,7 @@ class DKVConnector(KVConnector):
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
+        admission_timeout_s: float,
     ) -> _DkvClient:
         # Group the per-leaf units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
@@ -1392,6 +1295,7 @@ class DKVConnector(KVConnector):
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            admission_timeout_s=admission_timeout_s,
             **heartbeat_overrides,
         )
 
