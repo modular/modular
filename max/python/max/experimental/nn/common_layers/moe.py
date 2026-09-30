@@ -40,7 +40,6 @@ from max.experimental.sharding import (
     Partial,
 )
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
 from typing_extensions import Self
 
 
@@ -221,10 +220,7 @@ class MoE(Module[[Tensor], Tensor]):
             expert_ids,
             expert_usage_stats,
         )
-        return Tensor.from_shard_values(
-            [TensorValue(s) for s in out.local_shards],
-            mapping=permuted_states.mapping,
-        )
+        return out.rebind_mapping(permuted_states.mapping)
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass for MoE layer.
@@ -372,10 +368,7 @@ class TensorParallelMoE(MoE):
             # device only summed its own ``moe_dim`` slice, so the values are
             # partial. Re-tag as Partial; the caller resolves with an
             # all-reduce.
-            return Tensor.from_shard_values(
-                [TensorValue(s) for s in output.local_shards],
-                mapping=DeviceMapping(self.mesh, (Partial(),)),
-            )
+            return output.rebind_mapping(DeviceMapping(self.mesh, (Partial(),)))
 
 
 def _mesh(target: Device | DeviceMesh | DeviceMapping) -> DeviceMesh:

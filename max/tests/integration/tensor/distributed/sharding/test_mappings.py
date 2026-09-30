@@ -178,62 +178,6 @@ class TestNamedMapping:
         assert ns.placements == (Partial(), Sharded(0))
 
 
-class TestToMesh:
-    """``DeviceMapping.to_mesh`` rebinds by axis-name correspondence.
-
-    This is the single resolve path: it works the same whether the
-    source mapping was built via ``DeviceMapping(...)`` directly or via
-    ``NamedMapping(...)``.
-    """
-
-    def test_identity_same_mesh(self) -> None:
-        mesh = mesh_2d(2, 4)
-        m = DeviceMapping(mesh, (Sharded(0), Sharded(1)))
-        out = m.to_mesh(mesh)
-        assert out.mesh is mesh
-        assert out.placements == m.placements
-
-    def test_drops_axes_missing_on_target(self) -> None:
-        mesh_full = mesh_2d(2, 4)
-        m = DeviceMapping(mesh_full, (Sharded(0), Sharded(1)))
-        mesh_tp_only = mesh_1d(4, name="tp")
-        out = m.to_mesh(mesh_tp_only)
-        assert out.placements == (Sharded(1),)
-
-    def test_replicates_new_axes(self) -> None:
-        mesh_tp = mesh_1d(4, name="tp")
-        m = DeviceMapping(mesh_tp, (Sharded(0),))
-        mesh_full = mesh_2d(2, 4)
-        out = m.to_mesh(mesh_full)
-        # "dp" doesn't exist on source mesh → Replicated; "tp" preserved.
-        assert out.placements == (Replicated(), Sharded(0))
-
-    def test_named_mapping_resolves_via_to_mesh(self) -> None:
-        # A model defined for ("dp", "tp") drops onto a TP-only mesh.
-        full = mesh_2d(2, 4)
-        ns = NamedMapping(full, ("dp", "tp"))
-        tp_only = mesh_1d(4, name="tp")
-        out = ns.to_mesh(tp_only)
-        assert out.placements == (Sharded(1),)
-
-    def test_preserves_partial(self) -> None:
-        mesh_full = mesh_2d(2, 4)
-        m = DeviceMapping(mesh_full, (Partial(), Sharded(0)))
-        # New mesh with same axis names but swapped order.
-        rotated = DeviceMesh(cpu_devices(8), (4, 2), ("tp", "dp"))
-        out = m.to_mesh(rotated)
-        # axis 0 ("tp") preserves "tp"'s placement on source = Sharded(0)
-        # axis 1 ("dp") preserves "dp"'s placement on source = Partial
-        assert out.placements == (Sharded(0), Partial())
-
-    def test_drops_when_no_axis_names_match(self) -> None:
-        """Pure axis-name resolution: no shared name → all Replicated."""
-        source = mesh_1d(4, "tp")
-        m = DeviceMapping(source, (Sharded(0),))
-        target = mesh_1d(4, "other")
-        assert m.to_mesh(target).placements == (Replicated(),)
-
-
 class TestNamedMappingRepr:
     """``NamedMapping.__repr__`` renders placements in spec form."""
 

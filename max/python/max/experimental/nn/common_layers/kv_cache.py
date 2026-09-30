@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import cast
 
 from max.experimental.sharding import DeviceMapping
@@ -105,6 +105,21 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
             mla_num_partitions=mla_num_partitions,
         )
 
+    def to_graph_values(self) -> _PagedCacheValues:
+        """Returns this single-device cache as graph values.
+
+        The blocks and scales become buffers, since attention kernels write
+        them in place.
+        """
+        values = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if isinstance(value, Tensor):
+                is_buffer = f.name in ("kv_blocks", "kv_scales")
+                value = BufferValue(value) if is_buffer else TensorValue(value)
+            values[f.name] = value
+        return _PagedCacheValues(**values)
+
     @property
     def n_devices(self) -> int:
         """Returns the number of devices the paged KV cache is located on."""
@@ -119,39 +134,3 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
         yield self.max_cache_length
         if self.kv_scales is not None:
             yield self.kv_scales
-
-    def for_device(self, i: int) -> _PagedCacheValues:
-        """Returns the local PagedCacheValues for the given device."""
-        return _PagedCacheValues(
-            kv_blocks=BufferValue(self.kv_blocks.local_shards[i]),
-            cache_lengths=TensorValue(self.cache_lengths.local_shards[i]),
-            lookup_table=TensorValue(self.lookup_table.local_shards[i]),
-            max_prompt_length=TensorValue(
-                self.max_prompt_length.local_shards[i]
-            ),
-            max_cache_length=TensorValue(self.max_cache_length.local_shards[i]),
-            kv_scales=BufferValue(self.kv_scales.local_shards[i])
-            if self.kv_scales is not None
-            else None,
-            page_stride=TensorValue(self.page_stride.local_shards[i]),
-            scales_page_stride=TensorValue(
-                self.scales_page_stride.local_shards[i]
-            )
-            if self.scales_page_stride is not None
-            else None,
-            scales_lookup_table=TensorValue(
-                self.scales_lookup_table.local_shards[i]
-            )
-            if self.scales_lookup_table is not None
-            else None,
-            attention_dispatch_metadata=TensorValue(
-                self.attention_dispatch_metadata.local_shards[i]
-            )
-            if self.attention_dispatch_metadata is not None
-            else None,
-            mla_num_partitions=TensorValue(
-                self.mla_num_partitions.local_shards[i]
-            )
-            if self.mla_num_partitions is not None
-            else None,
-        )

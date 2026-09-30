@@ -120,6 +120,7 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
     TensorLayout,
+    Unknown,
 )
 from max.experimental.sharding.per_shard_dim import (
     is_per_shard_dim,
@@ -192,7 +193,9 @@ def _fold_sharded_shape(
         for mesh_axis in range(mesh.ndim - 1, -1, -1):
             n = mesh_shape[mesh_axis]
             p = placements[mesh_axis]
-            localizes_ti = p.localized_axis() == ti
+            # A tensor with Unknown placements has no set way of getting the
+            # global shape; all shapes are device-local.
+            localizes_ti = p.localized_axis() == ti or isinstance(p, Unknown)
             new_cells: list[graph.Dim] = []
             for start in range(0, len(cells), n):
                 block = cells[start : start + n]
@@ -605,6 +608,34 @@ class Tensor(DLPackArray, HasTensorValue):
     def mapping(self) -> DeviceMapping:
         """Returns the device mapping describing where this tensor lives."""
         return self._mapping
+
+    def rebind_mapping(self, mapping: DeviceMapping) -> Tensor:
+        """Returns this tensor's shards under a new placement, moving no data.
+
+        Use it to claim the placement of a per-device result, such as the
+        :class:`~max.experimental.sharding.Unknown` output of an op without a
+        sharding rule. The new placement is a trusted claim; ensure it is
+        correct to prevent incorrect downstream results.
+
+        Args:
+            mapping: The mapping to claim, on this tensor's mesh.
+
+        Returns:
+            A tensor with the same shards and the given mapping.
+
+        Raises:
+            ValueError: If ``mapping`` is on a different mesh.
+        """
+        if mapping.mesh != self.mesh:
+            raise ValueError("rebind_mapping cannot change the device mesh.")
+        if self._state is not None:
+            result = self._state.ctx.create_unrealized(
+                self._state.values, mapping=mapping
+            )
+            # A single-device mesh is not carried by create_unrealized.
+            result._mapping = mapping
+            return result
+        return Tensor._from_shards(self.buffers, mapping)
 
     @property
     def is_distributed(self) -> bool:

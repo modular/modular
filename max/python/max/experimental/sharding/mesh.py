@@ -21,7 +21,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-from max.driver import CPU, Device
+from max.driver import Device
 
 
 @dataclass(frozen=True)
@@ -143,25 +143,6 @@ class DeviceMesh:
     def single(device: Device) -> DeviceMesh:
         """Creates a trivial single-device mesh."""
         return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
-
-    @staticmethod
-    def default() -> DeviceMesh:
-        """Returns a single-device mesh on the default device (CPU)."""
-        return DeviceMesh.single(CPU())
-
-    @property
-    def is_single(self) -> bool:
-        """Returns ``True`` if this mesh contains exactly one device."""
-        return self.num_devices == 1
-
-    @property
-    def is_simulated(self) -> bool:
-        """Returns ``True`` if all mesh slots reference the same device.
-
-        A simulated mesh uses graph-level ops to emulate multi-device
-        collectives on a single CPU or GPU.
-        """
-        return self.num_devices > 1 and len(set(self.devices)) == 1
 
 
 _active_mesh: contextvars.ContextVar[DeviceMesh | None] = (

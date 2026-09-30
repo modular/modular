@@ -325,7 +325,7 @@ def test_payload_bf16_has_no_scales() -> None:
         # The bf16 grouped matmul reads num_active_experts off the host.
         assert payload.usage_stats[0].device.is_host
 
-        assert payload.local_map_tokens(None) == payload.tokens
+        assert payload.per_device_tokens(None) == payload.tokens
 
 
 def test_payload_fp8_carries_activation_scales(
@@ -342,7 +342,7 @@ def test_payload_fp8_carries_activation_scales(
         assert payload.scales_offset is None
         assert payload.usage_stats is not None
 
-        tokens = payload.local_map_tokens(fp8_quant_config)
+        tokens = payload.per_device_tokens(fp8_quant_config)
         assert len(tokens) == 2
         first = tokens[0]
         assert isinstance(first, FP8BlockTensor)
@@ -369,7 +369,7 @@ def test_payload_nvfp4_carries_scales_and_offsets(
         assert payload.usage_stats is None
 
         global_scale = Tensor.zeros((), dtype=DType.float32, device=CPU())
-        tokens = payload.local_map_tokens(
+        tokens = payload.per_device_tokens(
             nvfp4_quant_config, nvfp4_global_scale=global_scale
         )
         assert len(tokens) == 2
@@ -392,4 +392,4 @@ def test_payload_nvfp4_tokens_require_the_uniform_scale(
         )
 
         with pytest.raises(AssertionError, match="uniform scale"):
-            payload.local_map_tokens(nvfp4_quant_config)
+            payload.per_device_tokens(nvfp4_quant_config)

@@ -85,6 +85,10 @@ This version is still a work in progress.
   `DeviceMapping.to_placements()` are removed; use `DeviceMapping` and its
   `placements` attribute, which they aliased.
 
+- `DeviceMesh.default()`, `DeviceMesh.is_single`, `DeviceMesh.is_simulated`
+  and `DeviceMapping.to_mesh()` are removed; use `DeviceMesh.single(CPU())`,
+  `mesh.num_devices == 1` and a new `DeviceMapping` on the target mesh.
+
 - Added `max.experimental.sharding.auto_reshard` to control automatic
   resharding. It replaces `mode()`, `isolated_solver()`, `Solver`,
   `ReshardBehavior`, `GreedyReshard`, `NoReshard` and `PartialsOnly`; for
@@ -94,6 +98,13 @@ This version is still a work in progress.
   `PerShard`, `PerShardDim`, `Collective`, `ReduceOp`, `get_active_mesh`,
   `as_device_mapping`, `as_layout` or the `*_rule` functions.
 
+- Added `max.experimental.sharding.Unknown`, the placement for per-device
+  values with no known relation, and `Tensor.rebind_mapping()`, which
+  relabels a tensor's placements without moving data. Ops on `Unknown` inputs
+  run on each device's own shard and return `Unknown` results.
+  `max.experimental.nn.common_layers.functional_kernels.local_map()` is
+  removed: wrap the per-device function in `F.functional()` and claim its
+  output's placement with `Tensor.rebind_mapping()`.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk

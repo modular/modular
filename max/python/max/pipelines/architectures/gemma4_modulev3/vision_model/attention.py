@@ -112,13 +112,17 @@ class Gemma4VisionAttention(Module[..., Tensor]):
             (-1, self.num_key_value_heads, self.head_dim)
         )
 
-        output = flash_attention_ragged_gpu(
-            xq,
-            xk,
-            xv,
-            input_row_offsets=cu_seqlens,
-            max_seq_len=max_seq_len,
-            mask_variant=MHAMaskVariant.NULL_MASK,
-            scale=1.0,
-        ).reshape((-1, self.num_attention_heads * self.head_dim))
+        output = (
+            flash_attention_ragged_gpu(
+                xq,
+                xk,
+                xv,
+                input_row_offsets=cu_seqlens,
+                max_seq_len=max_seq_len,
+                mask_variant=MHAMaskVariant.NULL_MASK,
+                scale=1.0,
+            )
+            .rebind_mapping(xq.mapping)
+            .reshape((-1, self.num_attention_heads * self.head_dim))
+        )
         return self.o_proj(output)

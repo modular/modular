@@ -128,7 +128,7 @@ class Attention(Module[..., Tensor]):
             value,
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=1.0 / math.sqrt(self.head_dim),
-        )
+        ).rebind_mapping(query.mapping)
         return self.to_out[0](
             F.reshape(attended, [batch, seq, self.heads * self.head_dim])
         )

@@ -137,7 +137,6 @@ class QKVLinear(TransparentModule[[Tensor], Tensor]):
         yield "stacked", self._stacked, False
         yield "bias", self._has_bias, False
 
-    @F.functional
     def forward(self, x: Tensor) -> Tensor:
         """Applies the fused q/k/v projection: ``x @ fused_weight.T + bias``."""
         return x @ self.fused_weight.T + self.fused_bias

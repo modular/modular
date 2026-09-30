@@ -256,8 +256,10 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         self, input_row_offsets: Tensor, kv_collection: PagedCacheValues
     ) -> MLAPrefillMetadata:
         layer_idx = F.constant(0, DType.uint32, device=CPU())
+        replicated = DeviceMapping.replicated(input_row_offsets.mesh)
         buffer_row_offsets, cache_offsets, buffer_lengths = (
-            flare_mla_prefill_plan(
+            value.rebind_mapping(replicated)
+            for value in flare_mla_prefill_plan(
                 self.kv_params,
                 input_row_offsets,
                 kv_collection,
@@ -349,6 +351,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             result = mla_decode_graph(**attn_kwargs)
         else:
             result = mla_prefill_decode_graph(**attn_kwargs)
+        result = result.rebind_mapping(xq.mapping)
 
         return result.reshape([result.shape[0], self.n_heads * self.v_head_dim])
 

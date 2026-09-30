@@ -119,4 +119,7 @@ class DeepseekV3TopKRouter(MoEGate):
             self.norm_topk_prob,
             self.routed_scaling_factor,
         )
-        return topk_idx, topk_weight
+        return (
+            topk_idx.rebind_mapping(scores.mapping),
+            topk_weight.rebind_mapping(scores.mapping),
+        )

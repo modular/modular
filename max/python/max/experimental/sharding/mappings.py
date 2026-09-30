@@ -94,24 +94,6 @@ class DeviceMapping:
         """``True`` when every mesh axis is :class:`Replicated`."""
         return all(isinstance(p, Replicated) for p in self.placements)
 
-    def to_mesh(self, mesh: DeviceMesh) -> DeviceMapping:
-        """Rebinds this mapping onto ``mesh`` by axis-name correspondence.
-
-        For each axis in ``mesh``: if its name exists in
-        :attr:`self.mesh`, copy that axis's placement; otherwise the
-        axis becomes :class:`Replicated`. Axes unique to the source
-        mesh drop away.
-        """
-        old_by_name = dict(
-            zip(self.mesh.axis_names, self.placements, strict=False)
-        )
-        return DeviceMapping(
-            mesh,
-            tuple(
-                old_by_name.get(name, Replicated()) for name in mesh.axis_names
-            ),
-        )
-
     def __repr__(self) -> str:
         placement_str = ", ".join(repr(p) for p in self.placements)
         return f"{type(self).__name__}({self.mesh}, [{placement_str}])"

@@ -34,6 +34,8 @@ from __future__ import annotations
 from typing import ClassVar
 
 import numpy as np
+import pytest
+from max.experimental import functional as F
 from max.experimental import tensor as _tensor_mod
 from max.experimental.functional import transfer_to
 from max.experimental.functional.spmd_ops import (
@@ -47,7 +49,9 @@ from max.experimental.sharding import (
     DeviceMesh,
     Replicated,
     Sharded,
+    ShardingError,
     TensorLayout,
+    Unknown,
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
@@ -225,3 +229,57 @@ class _CustomDispatchManual:
 
 class CustomDispatchTests(_CustomDispatchExplicit, _CustomDispatchManual):
     """Aggregates all custom dispatch test classes."""
+
+    def test_rebind_mapping_moves_no_data(self) -> None:
+        source = transfer_to(
+            Tensor(np.ones(4, dtype=np.float32)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
+        )
+        unknown = source.rebind_mapping(
+            DeviceMapping(self.MESH_2, (Unknown(),))
+        )
+        assert unknown.placements == (Unknown(),)
+        assert all(
+            left is right
+            for left, right in zip(source.buffers, unknown.buffers, strict=True)
+        )
+
+    def test_transfer_to_rejects_unknown(self) -> None:
+        replicated = DeviceMapping(self.MESH_2, (Replicated(),))
+        source = transfer_to(Tensor(np.ones(4, dtype=np.float32)), replicated)
+        unknown = DeviceMapping(self.MESH_2, (Unknown(),))
+        with pytest.raises(ShardingError, match="rebind_mapping"):
+            transfer_to(source, unknown)
+        with pytest.raises(ShardingError, match="rebind_mapping"):
+            transfer_to(source.rebind_mapping(unknown), replicated)
+
+    def test_rule_less_op_rejects_mixed_meshes(self) -> None:
+        other = DeviceMesh(self.MESH_2.devices, (1, 2), ("dp", "tp"))
+        x = transfer_to(
+            Tensor(np.ones(4, dtype=np.float32)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
+        )
+        y = transfer_to(
+            Tensor(np.ones(4, dtype=np.float32)),
+            DeviceMapping(other, (Replicated(), Replicated())),
+        )
+
+        def add(a: TensorValue, b: TensorValue) -> TensorValue:
+            return a + b
+
+        with pytest.raises(ShardingError, match="meshes of one shape"):
+            F.functional(add)(x, y)
+
+    def test_rule_less_op_reads_each_device_rows(self) -> None:
+        rows = np.arange(12, dtype=np.float32).reshape(6, 2)
+        split = transfer_to(
+            Tensor(rows), DeviceMapping(self.MESH_2, (Sharded(0),))
+        )
+
+        def first_row(value: TensorValue) -> TensorValue:
+            return value[:1]
+
+        result = F.functional(first_row)(split)
+        assert result.placements == (Unknown(),)
+        result = result.rebind_mapping(split.mapping)
+        np.testing.assert_array_equal(result.to_numpy(), rows[[0, 3]])

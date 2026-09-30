@@ -22,12 +22,12 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.functional_kernels import (
-    local_map,
     moe_create_indices,
     shard_and_stack,
 )
 from max.experimental.nn.common_layers.moe import MoEGate
 from max.experimental.nn.sequential import ModuleList
+from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -459,23 +459,11 @@ class TensorParallelMoE(QuantizedMoE):
             quant_config=self.quant_config,
             scales_offset=scales_offset,
         )
-        # Combine the experts outputs on each device shard locally, then rejoin
-        # as a distributed tensor with the original mapping.
-        combined_shards = local_map(
-            self._combine_expert_outputs,
-            {
-                "down_projs": down_projs,
-                "restore_token_order": restore_token_order,
-                "router_weight": router_weight,
-            },
-            {
-                "dtype": dtype,
-            },
-        )
-        return Tensor.from_shard_values(
-            [TensorValue(s) for s in combined_shards],
-            mapping=down_projs.mapping,
-        )
+        # The rule-less combine runs on each device's own expert outputs; its
+        # result keeps their placement.
+        return F.functional(self._combine_expert_outputs)(
+            down_projs, restore_token_order, router_weight, dtype
+        ).rebind_mapping(down_projs.mapping)
 
 
 class ExpertParallelMoE(QuantizedMoE):
@@ -601,24 +589,29 @@ class ExpertParallelMoE(QuantizedMoE):
         self, payload: EPDispatchPayload, global_scale: Tensor | None
     ) -> list[TensorValue]:
         """Runs the per-device expert matmuls on dispatched tokens."""
-        local_expert_matmul_args: dict[str, object] = {
-            "tokens": payload.local_map_tokens(
-                self.quant_config, nvfp4_global_scale=global_scale
-            ),
-            "gate_up": self.gate_up_proj,
-            "down": self.down_proj,
-            "expert_start": payload.expert_start,
-            "expert_ids": payload.expert_ids,
-        }
-        if payload.usage_stats is not None:
-            local_expert_matmul_args["usage_stats"] = payload.usage_stats
-
-        down_bundle = local_map(
-            _local_expert_matmul,
-            local_expert_matmul_args,
-            {"quant_config": self.quant_config},
+        # The EP dispatch hands back one bundle per device, so each device's
+        # expert matmuls run on its own entries.
+        tokens = payload.per_device_tokens(
+            self.quant_config, nvfp4_global_scale=global_scale
         )
-        return [TensorValue(t) for t in down_bundle]
+        gate_up = self.gate_up_proj
+        down = self.down_proj
+        usage_stats = payload.usage_stats
+        with ensure_context():
+            return [
+                TensorValue(
+                    _local_expert_matmul(
+                        tokens[i],
+                        gate_up[i],
+                        down[i],
+                        payload.expert_start[i],
+                        payload.expert_ids[i],
+                        usage_stats[i] if usage_stats is not None else None,
+                        quant_config=self.quant_config,
+                    )
+                )
+                for i in range(len(tokens))
+            ]
 
     def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
         """Expert-parallel forward: gate -> dispatch -> local compute -> combine.
