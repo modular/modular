@@ -2053,12 +2053,14 @@ class OverlapTextGenerationPipeline(
                         device=sampler_device_ref,
                         needs_bitmask_input=True,
                         custom_extensions=sampler_extensions,
+                        unpadded_vocab_size=self.vocab_size,
                     )
                 without_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=sampler_device_ref,
                     needs_bitmask_input=False,
                     custom_extensions=sampler_extensions,
+                    unpadded_vocab_size=self.vocab_size,
                 )
                 sampler_timer.mark_build_complete()
                 if with_bitmask_graph is not None:

@@ -383,3 +383,52 @@ def test_top_k_zero_selects_all(
 
     # Control row: top_k=1 deterministically samples the argmax (token 0).
     assert set(batch_sampled_tokens[1]) == {0}
+
+
+PADDED_VOCAB_SIZE = 32
+UNPADDED_VOCAB_SIZE = 24
+
+
+@pytest.fixture(scope="module")
+def padded_vocab_token_sampler(session: InferenceSession) -> Model:
+    """token_sampler for an lm_head padded past the tokenizer vocab."""
+    device_ref = DeviceRef.from_device(session.devices[0])
+    sampling_config = SamplingConfig(
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
+    graph = token_sampler(
+        sampling_config,
+        device=device_ref,
+        unpadded_vocab_size=UNPADDED_VOCAB_SIZE,
+    )
+    return session.load(graph)
+
+
+def test_padded_vocab_tail_never_sampled(
+    session: InferenceSession, padded_vocab_token_sampler: Model
+) -> None:
+    """Padding rows must lose even when they dominate the raw logits."""
+    device = session.devices[0]
+    # Unmasked, the padding would win with probability ~1 - 24 * e^-100.
+    logits_np = np.zeros((2, PADDED_VOCAB_SIZE), dtype=np.float32)
+    logits_np[:, UNPADDED_VOCAB_SIZE:] = 100.0
+    logits_np[:, 5] = 1.0
+
+    # Row 0 is greedy; row 1 samples the whole vocab at temperature 1.
+    top_k_np = np.array([1, PADDED_VOCAB_SIZE], dtype=np.int64)
+    tokens = padded_vocab_token_sampler(
+        Buffer.from_dlpack(logits_np).to(device),
+        Buffer(shape=(2, 0), dtype=DType.int64, device=device),
+        Buffer.from_numpy(top_k_np).to(device),
+        Buffer.from_numpy(np.array(PADDED_VOCAB_SIZE, dtype=np.int64)),
+        Buffer.from_numpy(np.ones(2, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.ones(2, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        Buffer.from_numpy(np.zeros(2, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.zeros(2, dtype=np.uint64)).to(device),
+    )[0]
+    assert isinstance(tokens, Buffer)
+    tokens_np = tokens.to_numpy()
+    assert tokens_np[0] == 5, "greedy row must pick the real argmax"
+    assert (tokens_np < UNPADDED_VOCAB_SIZE).all(), tokens_np
