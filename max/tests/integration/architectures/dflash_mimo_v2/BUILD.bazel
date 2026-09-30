@@ -1,0 +1,84 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_weight_adapters",
+    size = "small",
+    srcs = ["test_weight_adapters.py"],
+    # Importing max.pipelines times out pytest collection on contended macOS
+    # workers, and macOS adds no coverage to these CPU-only tests.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_drafter_gpu",
+    size = "large",
+    srcs = ["test_drafter_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # Postsubmit: an expensive B200 test that presubmit would rerun on any
+    # change to its dependencies.
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+    ],
+)
+
+# Scores the drafter against vLLM's recorded drafts; needs the DFlash fixture
+# and the checkpoint on disk, so it runs by hand on a host that has them,
+# never in CI.
+modular_py_binary(
+    name = "check_dflash_fixture",
+    testonly = True,
+    srcs = ["check_dflash_fixture.py"],
+    # safetensors.torch imports packaging at runtime, which static pydeps
+    # analysis cannot see.
+    ignore_extra_deps = [requirement("packaging")],
+    main = "check_dflash_fixture.py",
+    tags = ["manual"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        requirement("numpy"),
+        requirement("packaging"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)

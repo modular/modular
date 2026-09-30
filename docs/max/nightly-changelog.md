@@ -24,6 +24,11 @@ This version is still a work in progress.
   one B200. Only NVFP4 exports load for now, not Xiaomi's FP8 checkpoint
   (`XiaomiMiMo/MiMo-V2.6-Flash-RL`).
 
+- MiMo-V2.6-Flash (`MiMoV2ForCausalLM`) now supports speculative decoding
+  with the DFlash drafter its checkpoint ships
+  (`UnifiedDflashMiMoV2ForCausalLM`), with greedy and per-row sampled
+  acceptance.
+
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without

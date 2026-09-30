@@ -313,7 +313,10 @@ class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT]):
     def head(
         self, batch: BlockBatch, block_hs: _BlockHiddenT, accepted: Accepted
     ) -> TensorValue:
-        """Turns the block's hidden states into ``[batch_size, K - 1]`` tokens.
+        """Turns the block's hidden states into the next step's proposals.
+
+        ``[batch_size, K - 1]``, or ``[batch_size, num_speculative_tokens]``
+        when the driver verifies fewer proposals than the block holds.
 
         Owns the head entirely: which ``lm_head``, whether the anchor slot is
         sliced off before or after the projection, logit softcapping, and any
@@ -339,6 +342,8 @@ class BlockDriver(
         enable_structured_output: bool = False,
         relaxed_acceptance: bool = False,
         ctx_at_draft_cache_length: bool = False,
+        num_speculative_tokens: int | None = None,
+        use_greedy_acceptance: bool = False,
     ) -> None:
         super().__init__()
         self._target = target
@@ -353,9 +358,20 @@ class BlockDriver(
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
         self.block_size = proposer.block_size
-        self.num_speculative_tokens = self.block_size - (
+        # The block always runs at its trained width; a step may verify fewer
+        # of its proposals than it holds.
+        max_drafts = self.block_size - (
             0 if proposer.samples_from_anchor else 1
         )
+        if num_speculative_tokens is None:
+            num_speculative_tokens = max_drafts
+        elif not 1 <= num_speculative_tokens <= max_drafts:
+            raise ValueError(
+                f"A block of {self.block_size} holds 1 to {max_drafts}"
+                " proposals; got"
+                f" num_speculative_tokens={num_speculative_tokens}."
+            )
+        self.num_speculative_tokens = num_speculative_tokens
 
         relaxed_topk: int | None = None
         relaxed_delta: float | None = None
@@ -365,13 +381,26 @@ class BlockDriver(
         ):
             relaxed_topk = speculative_config.relaxed_topk
             relaxed_delta = speculative_config.relaxed_delta
+        if use_greedy_acceptance and relaxed_topk is not None:
+            raise ValueError(
+                "Greedy acceptance has no relaxed rule; it would silently"
+                " verify strictly."
+            )
+        if (
+            use_greedy_acceptance
+            and speculative_config.synthetic_acceptance_rate is not None
+        ):
+            raise ValueError(
+                "use_greedy_acceptance is incompatible with"
+                " synthetic_acceptance_rate"
+            )
 
         self.acceptance_sampler = AcceptanceSampler(
             synthetic_acceptance_rate=(
                 speculative_config.synthetic_acceptance_rate
             ),
             num_draft_steps=self.num_speculative_tokens,
-            use_stochastic=True,
+            use_stochastic=not use_greedy_acceptance,
             relaxed_topk=relaxed_topk,
             relaxed_delta=relaxed_delta,
         )

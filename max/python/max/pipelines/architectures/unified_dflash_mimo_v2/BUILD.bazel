@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "unified_dflash_mimo_v2",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("huggingface-hub"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)

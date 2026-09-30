@@ -684,6 +684,13 @@ def _apply_speculative_target_architecture(
             target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
         else:
             target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+    # Not a Speculator yet: memory planning would miss the drafter's KV group.
+    if (
+        target_archs[0] == "MiMoV2ForCausalLM"
+        and speculative.is_dflash()
+        and v1_or_eagle
+    ):
+        target_archs[0] = "UnifiedDflashMiMoV2ForCausalLM"
     if target_archs[0] == "KimiK25ForConditionalGeneration" and v1_or_eagle:
         draft_archs = (
             draft_model.huggingface_config.architectures
