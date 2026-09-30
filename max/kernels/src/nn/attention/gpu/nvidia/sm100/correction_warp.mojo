@@ -100,7 +100,6 @@ def fa4_correction[
     # Walks `correction_o_cols()` -- the PHYSICAL extent of one O accumulator,
     # not the logical depth. See its docstring: under shared-key the logical
     # depth runs 4x past the accumulator and silently corrupts.
-    @__parameter
     @inline(.always)
     def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[.float32, 2]):
         comptime o_cols = config.correction_o_cols()

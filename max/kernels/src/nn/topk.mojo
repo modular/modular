@@ -929,7 +929,6 @@ def _warp_reduce_topk[
             p=Int(shuffle_fn(Int32(v.p), UInt32(offset))),  # p is the index
         )
 
-    @__parameter
     def reduce_fn(
         a: TopK_2[T, largest], b: TopK_2[T, largest]
     ) -> TopK_2[T, largest]:

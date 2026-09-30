@@ -25,7 +25,6 @@ def run_func[
 ](
     ctx: DeviceContext, val: Scalar[dtype] = 0
 ) raises where dtype.is_floating_point():
-    @__parameter
     def kernel(
         output: Pointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):

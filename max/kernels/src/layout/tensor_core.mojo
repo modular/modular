@@ -1540,7 +1540,6 @@ struct TiledTensorCore[
             num_n_mmas, num_m_mmas
         ) if swap_a_b else Layout.col_major(num_m_mmas, num_n_mmas)
 
-        @__parameter
         def _inner_loop(
             a_frag: LayoutTensor,
             b_frag: LayoutTensor,

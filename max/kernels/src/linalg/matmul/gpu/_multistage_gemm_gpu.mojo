@@ -306,7 +306,6 @@ def multistage_mma[
         }
 
     @inline(.always)
-    @__parameter
     def _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):

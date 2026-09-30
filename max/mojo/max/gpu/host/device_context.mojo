@@ -3491,7 +3491,6 @@ struct DeviceFunction[
         # We need the total byte size of arguments as a compile time constant,
         # so we break out the calculation into a function executed at compile
         # time.
-        @__parameter
         def calculate_args_size() -> Int:
             var tmp_args_size = 8  # always reserve 8 extra bytes for alignment.
 

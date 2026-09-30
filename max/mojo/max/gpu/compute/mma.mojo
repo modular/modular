@@ -298,7 +298,6 @@ def ld_matrix[
     # Full intrinsic is base + suffix
     comptime base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
-    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".b16.p3"
         if transpose:
@@ -404,7 +403,6 @@ def st_matrix[
 
     comptime base = "stmatrix.sync.aligned"
 
-    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".m8n8"
         if transpose:

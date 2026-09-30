@@ -661,7 +661,6 @@ struct NoMaskFlashAttentionCPU:
                 rebind[IndexList[v.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def mask_input_fn[
             width: Int, _rank: Int

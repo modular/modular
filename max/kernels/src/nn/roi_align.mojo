@@ -208,7 +208,6 @@ def roi_align_nhwc[
         var pool_elemn_num = max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
         # Pooling init/update/finalize functions parameterized by mode
-        @__parameter
         @inline(.always)
         def init_fn[dtype: DType]() -> Scalar[dtype]:
             comptime if mode == "AVG":
@@ -216,7 +215,6 @@ def roi_align_nhwc[
             else:
                 return min_or_neg_inf[dtype]()
 
-        @__parameter
         @inline(.always)
         def update_fn[
             dtype: DType
@@ -226,7 +224,6 @@ def roi_align_nhwc[
             else:
                 return max(a, b)
 
-        @__parameter
         @inline(.always)
         def reduce_fn[
             dtype: DType

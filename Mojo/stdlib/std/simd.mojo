@@ -3020,7 +3020,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
 
         @inline(.always)
-        @__parameter
         def body[
             width: SIMDLength
         ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:

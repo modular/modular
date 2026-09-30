@@ -508,7 +508,6 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     )
 
     # Input lambda: generates data on-the-fly
-    @__parameter
     @inline(.always)
     def input_fn[
         input_index: Int, width: Int, _rank: Int, alignment: Int = 1

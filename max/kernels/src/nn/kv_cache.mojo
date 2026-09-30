@@ -2022,7 +2022,6 @@ def rms_norm_kv_cache_ragged_paged[
         # `Coord` cannot express, so they stay IndexList-form; wrap them to the
         # `Coord` interface here (`coord_to_index_list` recovers the runtime
         # IndexList the cache logic subscripts) and pass `Coord(shape)`.
-        @__parameter
         @inline(.always)
         def key_cache_input_fn_coord[
             width: Int, alignment: Int
@@ -2031,7 +2030,6 @@ def rms_norm_kv_cache_ragged_paged[
                 rebind[IndexList[rank]](coord_to_index_list(coords))
             )
 
-        @__parameter
         @inline(.always)
         def key_cache_output_fn_coord[
             width: SIMDLength, alignment: Int
@@ -2192,7 +2190,6 @@ def rms_norm_value_cache_ragged_paged[
         # See `rms_norm_key_cache_ragged_paged` above: cache lambdas stay
         # IndexList-form (runtime index subscripts) and are wrapped to the
         # `Coord` boundary `_rms_norm_impl` now expects.
-        @__parameter
         @inline(.always)
         def value_cache_input_fn_coord[
             width: Int, alignment: Int
@@ -2201,7 +2198,6 @@ def rms_norm_value_cache_ragged_paged[
                 rebind[IndexList[rank]](coord_to_index_list(coords))
             )
 
-        @__parameter
         @inline(.always)
         def value_cache_output_fn_coord[
             width: SIMDLength, alignment: Int

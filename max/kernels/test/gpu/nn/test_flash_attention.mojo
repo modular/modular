@@ -223,7 +223,6 @@ def test[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     ctx.synchronize()
 
-    @__parameter
     def get_rtol() -> Float64:
         return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
 

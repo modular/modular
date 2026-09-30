@@ -78,7 +78,6 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             a.length, b.length, c.length, d.length
         ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
 
-        @__parameter
         def _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
             return (
                 _AMD_F8F6F4_MATRIX_FORMAT.float8_e4m3 if dtype

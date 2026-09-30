@@ -1296,12 +1296,10 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _VRING = 4  # reference 4-slot rotating V band (v[28:59])
             comptime _VAHEAD = 3  # 3 slots in flight (see C_PV_MFMA notes)
 
-            @__parameter
             @inline(.always)
             def _vstrip(i: Int) -> Int:
                 return i // _N_DEPTH
 
-            @__parameter
             @inline(.always)
             def _vdepth(i: Int) -> Int:
                 return i % _N_DEPTH

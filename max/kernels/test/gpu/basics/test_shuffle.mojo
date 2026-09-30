@@ -133,7 +133,6 @@ def _shuffle_up_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_up(val, UInt32(offset))
 
@@ -203,7 +202,6 @@ def _shuffle_down_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_down(val, UInt32(offset))
 
@@ -273,7 +271,6 @@ def _shuffle_xor_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_xor(val, UInt32(offset))
 
@@ -416,7 +413,6 @@ def _lane_group_sum_broadcast_stride1_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -474,7 +470,6 @@ def _lane_group_max_broadcast_stride1_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -530,7 +525,6 @@ def _lane_group_reduce_launch_helper[
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def do_lane_group_reduce(
         val: SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width]:
@@ -599,7 +593,6 @@ def _lane_group_min_broadcast_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:

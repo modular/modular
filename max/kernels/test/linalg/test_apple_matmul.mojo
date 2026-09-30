@@ -361,7 +361,6 @@ def test_shapes[
     b_packed: Bool,
     mixed_kernels: Bool,
 ]() raises:
-    @__parameter
     def test_shapes_helper[
         transpose_b: Bool = False
     ](m: Int, n: Int, k: Int) raises:

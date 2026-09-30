@@ -299,7 +299,6 @@ def multistage_mma_q[
     comptime b_idx_t = b_iter_arg.linear_idx_type
 
     @inline(.always)
-    @__parameter
     def _async_copy_a_tile(
         dst: LayoutTensor[mut=True, a_type, address_space=.SHARED, ...],
         src: LayoutTensor[a_type, address_space=.GENERIC, ...],
@@ -317,7 +316,6 @@ def multistage_mma_q[
         )
 
     @inline(.always)
-    @__parameter
     def _async_copy_b_tile(
         dst: LayoutTensor[mut=True, b_type, address_space=.SHARED, ...],
         src: LayoutTensor[b_type, address_space=.GENERIC, ...],

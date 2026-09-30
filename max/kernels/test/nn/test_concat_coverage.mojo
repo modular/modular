@@ -236,7 +236,6 @@ def test_fused_concat_cpu() raises:
     var output = TileTensor(out_stack, row_major(Coord(output_shape)))
 
     # Input lambda: generates data based on input index
-    @__parameter
     @inline(.always)
     def input_fn[
         input_index: Int, width: Int, _rank: Int, alignment: Int = 1

@@ -191,7 +191,6 @@ def resize_nearest_neighbor[
             DType.float32
         ]()
 
-    @__parameter
     @inline(.always)
     def round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
         comptime __match round_mode:

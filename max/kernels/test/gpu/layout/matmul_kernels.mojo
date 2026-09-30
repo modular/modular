@@ -96,7 +96,6 @@ def run_cublas[
 
             bencher_iter_custom(m, kernel_launch, ctx)
 
-        @__parameter
         def get_bench_id() -> String:
             comptime if enable_tc:
                 return "cublas_tensorcore"

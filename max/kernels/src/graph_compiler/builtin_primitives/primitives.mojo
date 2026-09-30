@@ -907,7 +907,6 @@ def mgp_buffer_plan[
         - offsets: Offsets for each allocation (static_sizes first, then runtime_sizes).
     """
 
-    @__parameter
     def compute_static_allocations(
         out result: BufferPlanState[
             alignments,

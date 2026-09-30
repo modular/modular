@@ -1126,14 +1126,12 @@ def _dispatch_fused_kernel[
     #   MI355 8GPU:  80 KB non-res,  96 KB residual
     #   B200  4GPU: 512 KB non-res, 256 KB residual
     #   B200  8GPU:  80 KB non-res, 80/100 KB residual (column-aware, see below)
-    @__parameter
     def _rank_4_per_rank_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return 128 * 1024 if not has_residual else 96 * 1024
         else:
             return 512 * 1024 if not has_residual else 256 * 1024
 
-    @__parameter
     def _rank_8_per_rank_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return 80 * 1024 if not has_residual else 96 * 1024

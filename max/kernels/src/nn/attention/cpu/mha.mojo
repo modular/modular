@@ -1252,7 +1252,6 @@ def flash_attention_split_kv[
         var kv_cache_len = v_cache_shape[3]
 
         @inline(.always)
-        @__parameter
         def kv_index[rank: Int](idx: IndexList[rank]) -> IndexList[kv_rank]:
             # Index into the previous kv_cache by unsqueezing dim 0.
             return IndexList[kv_rank](0, idx[0], idx[2], idx[1], idx[3])

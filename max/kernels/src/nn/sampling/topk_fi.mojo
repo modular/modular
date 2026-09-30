@@ -2200,7 +2200,6 @@ def TopKTopPSamplingFromProbKernel[
 
             comptime if coop_size > 1:
 
-                @__parameter
                 @inline(.always)
                 def load_slice(offset: Int) -> SIMD[.float32, vec_size]:
                     return load_dist[vec_size](offset)
@@ -2393,7 +2392,6 @@ def TopKTopPSamplingFromProbKernel[
                         kept_mass = z
                     else:
 
-                        @__parameter
                         @inline(.always)
                         def load_dist_vec(
                             offset: Int,
