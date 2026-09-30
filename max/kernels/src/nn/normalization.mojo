@@ -1487,7 +1487,6 @@ def _rms_norm_impl[
         # Nothing to do.
         return
 
-    @__parameter
     @inline(.always)
     def input_fn_target[width: Int](coords: Coord) -> SIMD[dtype, width]:
         comptime align = _rms_norm_input_alignment[dtype, width, target]()

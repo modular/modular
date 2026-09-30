@@ -516,7 +516,6 @@ def _softmax_3_pass_base[
     # Input function
     # Translate the given input lambda from 1D to n-D because _reduce_generator
     # needs n-D.
-    @__parameter
     @inline(.always)
     def input_fn[
         _dtype: DType, _width: Int, _rank: Int
@@ -1114,7 +1113,6 @@ def _softmax_gpu[
         raise Error("softmax not supported on non-inner axis yet")
 
     @inline(.always)
-    @__parameter
     def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:

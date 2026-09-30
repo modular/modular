@@ -181,7 +181,6 @@ def reduce_inner_test[
     )
 
     @inline(.always)
-    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:

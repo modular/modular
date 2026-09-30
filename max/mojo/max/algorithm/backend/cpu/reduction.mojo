@@ -164,7 +164,6 @@ def _reduce_along_inner_dimension[
     var simd_compatible_size = align_down(reduce_dim_size, simd_width)
 
     @inline(.always)
-    @__parameter
     def simd_reduce_helper_fn[
         in_width: SIMDLength,
         out_width: Int,

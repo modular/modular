@@ -283,7 +283,6 @@ def _reduce_generator[
     comptime num_reductions = 1
 
     @inline(.always)
-    @__parameter
     def output_fn_wrapper[
         dtype: DType, width: SIMDLength, rank: Int
     ](
@@ -293,7 +292,6 @@ def _reduce_generator[
         output_0_fn[dtype, width, rank](indices, val[0])
 
     @inline(.always)
-    @__parameter
     def reduce_fn_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -355,14 +353,12 @@ def max[
     """
 
     @inline(.always)
-    @__parameter
     def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @inline(.always)
-    @__parameter
     def output_fn_wrapper[
         _dtype: DType, width: SIMDLength, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
@@ -419,14 +415,12 @@ def min[
     """
 
     @inline(.always)
-    @__parameter
     def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @inline(.always)
-    @__parameter
     def output_fn_wrapper[
         _dtype: DType, width: SIMDLength, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
@@ -483,14 +477,12 @@ def sum[
     """
 
     @inline(.always)
-    @__parameter
     def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @inline(.always)
-    @__parameter
     def output_fn_wrapper[
         _dtype: DType, width: SIMDLength, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
@@ -546,14 +538,12 @@ def product[
     """
 
     @inline(.always)
-    @__parameter
     def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @inline(.always)
-    @__parameter
     def output_fn_wrapper[
         _dtype: DType, width: SIMDLength, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
@@ -645,7 +635,6 @@ def mean[
             return v1 + v2
 
         @inline(.always)
-        @__parameter
         def input_fn_wrapper[
             _dtype: DType, width: Int, rank: Int
         ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
@@ -900,7 +889,6 @@ def reduce[
         out = value._refine[init.dtype, 1]()
 
     @inline(.always)
-    @__parameter
     def reduce_fn_wrapper[
         _dtype: DType, width: SIMDLength
     ](acc: SIMD[_dtype, width], val: SIMD[_dtype, width]) -> SIMD[
@@ -1096,7 +1084,6 @@ def sum[
     """
 
     @inline(.always)
-    @__parameter
     def input_fn_nd[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:

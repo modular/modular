@@ -90,7 +90,6 @@ def run_reduce[
     ctx.enqueue_copy(cb_in.device_buffer(), in_host)
 
     @inline(.always)
-    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:

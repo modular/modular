@@ -29,7 +29,6 @@ def run_func[
 
     var out = ctx.enqueue_create_buffer[dtype](1)
 
-    @__parameter
     def kernel(
         out_dev: Pointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):

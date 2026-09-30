@@ -1027,7 +1027,6 @@ def _flash_attention[
         return output.ptr + idx
 
     @inline(.always)
-    @__parameter
     def mask_fn[
         simd_width: SIMDLength, rank: Int
     ](
