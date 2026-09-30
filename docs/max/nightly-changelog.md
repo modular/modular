@@ -280,6 +280,12 @@ This version is still a work in progress.
   `llguidance` backend has been removed; `--structured-output-backend`
   no longer accepts `llguidance` as a value.
 
+- `/v1/completions` now honors `reasoning_split`. By default the server's
+  reasoning parser still hides the reasoning span from `text` and counts it in
+  `usage.completion_tokens_details.reasoning_tokens`. A request that sends
+  `reasoning_split: false` skips the parser, so `text` and `logprobs` cover
+  every generated token, reasoning span included, as in vLLM.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured

@@ -116,6 +116,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
 )
 from PIL import Image
 from pydantic import AnyUrl, ValidationError
+from sse_starlette.sse import AppStatus
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -1847,7 +1848,7 @@ async def _run_completion_stream(
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
@@ -2250,7 +2251,7 @@ async def test_openai_completion_stream_accounts_reasoning_tokens_for_metrics() 
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
@@ -4042,14 +4043,14 @@ def _token_id_pipeline(chunks: list[TokenGeneratorOutput]) -> Mock:
     pipeline.model_name = "test-model"
     pipeline.all_tokens = AsyncMock(return_value=chunks)
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
 
         return _gen()
 
-    pipeline.next_token_chunk = mock_next_token_chunk
+    pipeline.next_token_chunk = AsyncMock(side_effect=mock_next_token_chunk)
     return pipeline
 
 
@@ -4122,6 +4123,63 @@ def _turn_with_a_suppressed_chunk() -> list[TokenGeneratorOutput]:
             token_ids=[13, 14],
         ),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("extra", "parse_reasoning"),
+    [
+        ({}, True),
+        ({"reasoning_split": True}, True),
+        ({"reasoning_split": False}, False),
+    ],
+)
+async def test_completion_reasoning_split_controls_reasoning_parser(
+    app,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    extra: dict[str, bool],
+    parse_reasoning: bool,
+) -> None:
+    """``/v1/completions`` keeps the reasoning parser unless the request sends
+    ``reasoning_split=False``."""
+    # sse-starlette binds this event to the first streaming test's loop
+    # (sysid/sse-starlette#59).
+    monkeypatch.setattr(AppStatus, "should_exit_event", None)
+    method = "next_token_chunk" if stream else "all_tokens"
+    original = getattr(TokenGeneratorPipeline, method)
+    calls: list[dict[str, Any]] = []
+
+    async def spy(self, request, **kwargs):  # noqa: ANN001, ANN202
+        calls.append(kwargs)
+        return await original(self, request, **kwargs)
+
+    with patch.object(TokenGeneratorPipeline, method, spy):
+        async with AsyncTestClient(app) as client:
+            response = await client.post(
+                "/v1/completions",
+                json={"model": "echo", "prompt": "hi", "stream": stream}
+                | extra,
+            )
+
+    assert response.status_code == 200
+    assert calls == [{"parse_reasoning": parse_reasoning}]
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_keeps_reasoning_parser(
+    patch_openai_metrics: None,
+) -> None:
+    pipeline = _token_id_pipeline(_content_only_turn())
+    request = _make_mock_request()
+    generator = OpenAIChatResponseGenerator(pipeline)
+
+    await _raw_stream_payloads(generator, request)
+    await generator.complete([request])
+
+    pipeline.next_token_chunk.assert_awaited_once_with(request)
+    pipeline.all_tokens.assert_awaited_once_with(request)
 
 
 def test_return_token_ids_defaults_to_off() -> None:

@@ -300,7 +300,7 @@ class TokenGeneratorPipeline(
         return top_log_probabilities
 
     async def next_token_chunk(
-        self, request: TextGenerationRequest
+        self, request: TextGenerationRequest, *, parse_reasoning: bool = True
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Tokenizes and submits ``request``, returning a token-chunk generator.
 
@@ -315,6 +315,9 @@ class TokenGeneratorPipeline(
         worker response. Benefits:
         - Single tokenizer.decode() call per chunk instead of per token
         - Callers can amortize Pydantic/SSE overhead across the chunk
+
+        With ``parse_reasoning=False`` no reasoning parser runs, so every
+        generated token, with its log probabilities, is returned as content.
         """
         itl = StopWatch()
         # TTFT runs from the arrival timestamp stamped by the HTTP middleware,
@@ -347,7 +350,9 @@ class TokenGeneratorPipeline(
         # We also do not support reasoning spans that are not at the very start of the response
         # This is consistent with vLLM
         # TODO: (MODELS-1115) assume that the reasoning tokens are at the start of the reasoning section
-        reasoning_parser = await self._reasoning_parser()
+        reasoning_parser = (
+            await self._reasoning_parser() if parse_reasoning else None
+        )
         if reasoning_parser is not None:
             reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
@@ -668,10 +673,12 @@ class TokenGeneratorPipeline(
         return _generate()
 
     async def all_tokens(
-        self, request: TextGenerationRequest
+        self, request: TextGenerationRequest, *, parse_reasoning: bool = True
     ) -> list[TokenGeneratorOutput]:
         """Generates all token chunks for the provided request."""
-        generator = await self.next_token_chunk(request)
+        generator = await self.next_token_chunk(
+            request, parse_reasoning=parse_reasoning
+        )
         return [chunk async for chunk in generator]
 
     async def encode(
