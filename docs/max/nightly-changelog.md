@@ -252,6 +252,15 @@ This version is still a work in progress.
   a deployment that set the latter for traces now sends metrics there too,
   and loses them if that endpoint is gRPC.
 
+- MAX Serve can now export spans over OTLP/gRPC. Set
+  `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` (or the generic
+  `OTEL_EXPORTER_OTLP_PROTOCOL`) to `grpc`, and set
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to a gRPC receiver such as
+  `http://<host>:4317`. Keep the `http://` scheme for a plaintext
+  collector: without it the OTel SDK dials TLS. The protocol defaults to
+  `http/protobuf`, so existing deployments are unchanged, and metrics and
+  logs still export over HTTP.
+
 - Added `--prefill-schedule-interval` (default 1, every step): admit prefill
   work only on every Nth scheduler step, leaving the steps in between entirely
   to decode. Data-parallel ranks advance in lockstep, so prefill on any one

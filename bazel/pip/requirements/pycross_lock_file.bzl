@@ -94,6 +94,7 @@ PINS = {
     "openai": "openai@2.11.0",
     "opencv-python": "opencv-python@4.11.0.86",
     "opentelemetry-api": "opentelemetry-api@1.35.0",
+    "opentelemetry-exporter-otlp-proto-grpc": "opentelemetry-exporter-otlp-proto-grpc@1.35.0",
     "opentelemetry-exporter-otlp-proto-http": "opentelemetry-exporter-otlp-proto-http@1.35.0",
     "opentelemetry-exporter-prometheus": "opentelemetry-exporter-prometheus@0.56b0",
     "opentelemetry-proto": "opentelemetry-proto@1.35.0",
@@ -6918,54 +6919,14 @@ def targets():
     )
 
     _opentelemetry_exporter_otlp_proto_grpc_1_35_0_deps = [
-    ] + select({
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":googleapis-common-protos@1.70.0",
-            ":grpcio@1.80.0",
-            ":opentelemetry-api@1.35.0",
-            ":opentelemetry-exporter-otlp-proto-common@1.35.0",
-            ":opentelemetry-proto@1.35.0",
-            ":opentelemetry-sdk@1.35.0",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":googleapis-common-protos@1.70.0",
-            ":grpcio@1.80.0",
-            ":opentelemetry-api@1.35.0",
-            ":opentelemetry-exporter-otlp-proto-common@1.35.0",
-            ":opentelemetry-proto@1.35.0",
-            ":opentelemetry-sdk@1.35.0",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":googleapis-common-protos@1.70.0",
-            ":grpcio@1.80.0",
-            ":opentelemetry-api@1.35.0",
-            ":opentelemetry-exporter-otlp-proto-common@1.35.0",
-            ":opentelemetry-proto@1.35.0",
-            ":opentelemetry-sdk@1.35.0",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":googleapis-common-protos@1.70.0",
-            ":grpcio@1.80.0",
-            ":opentelemetry-api@1.35.0",
-            ":opentelemetry-exporter-otlp-proto-common@1.35.0",
-            ":opentelemetry-proto@1.35.0",
-            ":opentelemetry-sdk@1.35.0",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":googleapis-common-protos@1.70.0",
-            ":grpcio@1.80.0",
-            ":opentelemetry-api@1.35.0",
-            ":opentelemetry-exporter-otlp-proto-common@1.35.0",
-            ":opentelemetry-proto@1.35.0",
-            ":opentelemetry-sdk@1.35.0",
-            ":typing-extensions@4.15.0",
-        ],
-        "//conditions:default": [],
-    })
+        ":googleapis-common-protos@1.70.0",
+        ":grpcio@1.80.0",
+        ":opentelemetry-api@1.35.0",
+        ":opentelemetry-exporter-otlp-proto-common@1.35.0",
+        ":opentelemetry-proto@1.35.0",
+        ":opentelemetry-sdk@1.35.0",
+        ":typing-extensions@4.15.0",
+    ]
 
     native.alias(
         name = "_wheel_opentelemetry-exporter-otlp-proto-grpc@1.35.0",
