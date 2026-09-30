@@ -1003,13 +1003,14 @@ class TextAndVisionTokenizer(
         return encoded_prompt
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
+        self,
+        encoded: npt.NDArray[np.integer[Any]] | Sequence[int] | int,
+        **kwargs,
     ) -> str:
         """Transforms a provided encoded token array back into readable text."""
-        # Log-probability responses decode one token id (a plain int) at a
-        # time; match the text tokenizer's handling.
-        if isinstance(encoded, int):
-            encoded = np.array(encoded)
+        # Log-probability responses decode one token id (a plain int) and the
+        # CLI passes a token list; match the text tokenizer's handling.
+        encoded = np.asarray(encoded)
         try:
             return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:

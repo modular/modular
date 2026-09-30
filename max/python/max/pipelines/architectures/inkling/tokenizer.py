@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -98,14 +99,17 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         ) - {tool_call_json_id}
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
+        self,
+        encoded: npt.NDArray[np.integer[Any]] | Sequence[int] | int,
+        **kwargs,
     ) -> str:
         """Decodes tokens, dropping every special id except the tool-call marker.
 
         ``skip_special_tokens=True`` would drop the marker too, so filter by id
         here and decode with the flag off.
         """
-        # Log-probability responses decode a single token id (a plain int).
+        # Log-probability responses decode one token id (a plain int) and the
+        # CLI passes a token list; normalize both to a rank-1 array.
         token_ids = np.atleast_1d(np.asarray(encoded))
 
         if not kwargs.get("skip_special_tokens", True):

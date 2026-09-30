@@ -508,6 +508,10 @@ This version is still a work in progress.
 - Fixed `max generate` crashing after the first token for Gemma 4 and
   Idefics3 models, whose tokenizers rejected the CLI's token list on decode.
 
+- Fixed the same `max generate` decode crash for the other vision-language
+  models: Gemma 3 multimodal, InternVL, Kimi K2.5, Pixtral, Qwen2.5-VL and
+  Qwen3-VL.
+
 - The functional kernel wrappers in `max.experimental.nn.common_layers` now
   open a realization context, so eager attention with a paged KV cache runs.
 
