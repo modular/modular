@@ -41,7 +41,15 @@ export XML_OUTPUT_FILE="$XML"
 export MODULAR_DERIVED_PATH="$SCRATCH/derived"
 export PRECOMPILE_MEFS_RECORD_DIR="$OUT"
 cd "${EXE}.runfiles/_main"
-"$EXE" "$@"
+# A whole pytest transcript per shard is more than a build log should carry,
+# and bazel prints whatever an action writes -- including the header naming
+# the action -- so a shard that recorded what it was asked to says nothing at
+# all. A failure hands over the transcript. What each shard recorded is in
+# the junit XML the rule declares and in `record.json` beside the artifacts.
+if ! "$EXE" "$@" > "$SCRATCH/record.log" 2>&1; then
+    cat "$SCRATCH/record.log" >&2
+    exit 1
+fi
 rm -rf "$SCRATCH"
 """
 
