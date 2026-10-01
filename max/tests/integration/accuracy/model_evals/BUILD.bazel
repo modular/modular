@@ -196,16 +196,31 @@ modular_py_library(
     imports = ["."],
 )
 
+# OpenRouter's GPQA sample construction, ported from its benchmark harness.
+# Stdlib only, so it is tested here and imported by exacto_gpqa_task.py inside
+# the harness venv.
+modular_py_library(
+    name = "exacto_gpqa_openrouter",
+    testonly = True,
+    srcs = ["exacto_gpqa_openrouter.py"],
+    imports = ["."],
+)
+
 # One-command GPQA-Diamond run at OpenRouter AutoExacto parity. A shell runner
-# because openbench is a third-party harness with its own pinned dependency
-# tree, the same reason omnidocbench_eval_local is one.
+# because the task runs in openbench's pinned venv, a third-party dependency
+# tree, the same reason omnidocbench_eval_local is one. exacto_gpqa_task.py is
+# plain data: it imports inspect_ai and openbench, which only that venv has.
 #   ./bazelw run //max/tests/integration/accuracy/model_evals:exacto_gpqa_local -- \
 #     --url http://localhost:8000 --limit 4 --epochs 1
 sh_binary(
     name = "exacto_gpqa_local",
     testonly = True,
     srcs = ["run_exacto_gpqa_local.sh"],
-    data = [":exacto_report"],
+    data = [
+        "exacto_gpqa_task.py",
+        ":exacto_gpqa_openrouter",
+        ":exacto_report",
+    ],
     tags = ["manual"],
 )
 
@@ -236,6 +251,15 @@ modular_py_test(
     srcs = ["test_exacto_summary.py"],
     deps = [
         ":exacto_summary",
+    ],
+)
+
+modular_py_test(
+    name = "test_exacto_gpqa_openrouter",
+    size = "small",
+    srcs = ["test_exacto_gpqa_openrouter.py"],
+    deps = [
+        ":exacto_gpqa_openrouter",
     ],
 )
 

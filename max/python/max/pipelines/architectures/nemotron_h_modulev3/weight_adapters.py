@@ -13,14 +13,17 @@
 """Weight loading for Nemotron-H checkpoints.
 
 The module tree uses the checkpoint's names, so tensors pass through as
-stored; :func:`dequantize_to_bf16` expands the quantized ones to BF16.
+stored; :func:`dequantize_to_bf16` expands the quantized ones to BF16, except
+the NVFP4 routed experts that :func:`stack_nvfp4_experts` keeps 4-bit for the
+W4A4 grouped matmul.
 """
 
 from __future__ import annotations
 
 import functools
 import os
-from collections.abc import Mapping
+import re
+from collections.abc import Collection, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import numpy as np
@@ -35,6 +38,7 @@ from max.pipelines.weights.fp4_quantization import (
     FP4Format,
     e2m1_decode_table,
 )
+from max.support.math import ceildiv
 
 from .quantization import NVFP4_GROUP_SIZE, ModuleFormat
 
@@ -178,3 +182,124 @@ def dequantize_to_bf16(
             shape=Shape(bits.shape),
         )
     return weights
+
+
+_ROUTED_EXPERT = re.compile(
+    r"^(?P<mixer>.*\.mixer)\.experts\.(?P<expert>\d+)\.(?P<proj>up_proj|down_proj)$"
+)
+
+# The SM100 block-scaled matmul reads its scales in granules of 128 rows by 4
+# scale columns.
+_SF_GRANULE_ROWS = 128
+_SF_ATOM_ROWS = 32
+_SF_ATOM_COLS = 4
+
+
+def interleave_nvfp4_scales(
+    scales: npt.NDArray[np.uint8],
+) -> npt.NDArray[np.uint8]:
+    """Permutes one expert's E4M3 block scales into the kernel layout.
+
+    Element ``(r, c)`` lands at ``[r // 128, c // 4, r % 32, (r % 128) // 32,
+    c % 4]``, where ``set_scale_factor`` in
+    ``max/kernels/src/linalg/fp4_utils.mojo`` stores it. Rows are zero-padded
+    to a whole granule.
+
+    Args:
+        scales: The ``[N, K / 16]`` scales as bytes. ``K / 16`` must be a
+            multiple of 4.
+
+    Returns:
+        The ``[ceil(N / 128), K / 64, 32, 4, 4]`` scales.
+    """
+    rows, cols = scales.shape
+    if cols % _SF_ATOM_COLS:
+        raise ValueError(f"cannot interleave NVFP4 scales {scales.shape}")
+    granules = ceildiv(rows, _SF_GRANULE_ROWS)
+    padded = granules * _SF_GRANULE_ROWS
+    if padded != rows:
+        scales = np.pad(scales, ((0, padded - rows), (0, 0)))
+    atoms = scales.reshape(
+        granules,
+        _SF_GRANULE_ROWS // _SF_ATOM_ROWS,
+        _SF_ATOM_ROWS,
+        cols // _SF_ATOM_COLS,
+        _SF_ATOM_COLS,
+    )
+    return np.ascontiguousarray(atoms.transpose(0, 3, 2, 1, 4))
+
+
+def stack_nvfp4_experts(
+    state_dict: Mapping[str, WeightData],
+    modules: Mapping[str, ModuleFormat],
+    mixers: Collection[str],
+) -> tuple[dict[str, WeightData], dict[str, ModuleFormat]]:
+    """Stacks the NVFP4 routed experts of ``mixers`` for the W4A4 matmul.
+
+    Each mixer's per-expert ``up_proj`` and ``down_proj`` tensors become
+    ``{mixer}.up_weight`` (packed E2M1, ``[experts, N, K / 2]``),
+    ``{mixer}.up_block_scale`` (E4M3 in the kernel's interleaved layout,
+    ``[experts, ceil(N / 128), K / 64, 32, 4, 4]``), ``{mixer}.up_scale``
+    (float32 ``weight_scale_2``, ``[experts]``) and the three ``down_``
+    tensors. Nothing is dequantized.
+
+    Args:
+        state_dict: The checkpoint's tensors.
+        modules: The quantized modules and their formats.
+        mixers: The MoE mixers to stack (see
+            :meth:`NemotronHConfig.w4a4_mixers`).
+
+    Returns:
+        A new state dict, and the modules left to dequantize.
+    """
+    weights = dict(state_dict)
+    remaining = dict(modules)
+    experts: dict[tuple[str, str], dict[int, str]] = {}
+    for module, fmt in modules.items():
+        match = _ROUTED_EXPERT.match(module)
+        if (
+            match is None
+            or match["mixer"] not in mixers
+            or fmt is not ModuleFormat.NVFP4_WEIGHT_ONLY
+        ):
+            continue
+        key = (match["mixer"], match["proj"])
+        experts.setdefault(key, {})[int(match["expert"])] = module
+        del remaining[module]
+
+    def load(
+        module: str,
+    ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8], np.float32]:
+        codes = _bytes(weights.pop(f"{module}.weight"))
+        scales = _bytes(weights.pop(f"{module}.weight_scale"))
+        global_scale = _scalar(weights.pop(f"{module}.weight_scale_2"))
+        return codes, interleave_nvfp4_scales(scales), global_scale
+
+    with ThreadPoolExecutor(max_workers=min(32, os.cpu_count() or 1)) as pool:
+        for (mixer, proj), by_expert in experts.items():
+            ids = sorted(by_expert)
+            if ids != list(range(len(ids))):
+                raise ValueError(f"'{mixer}' is missing routed experts")
+            loaded = list(pool.map(load, (by_expert[e] for e in ids)))
+            prefix = f"{mixer}.{proj.removesuffix('_proj')}"
+            for suffix, array, dtype in (
+                ("weight", np.stack([c for c, _, _ in loaded]), DType.uint8),
+                (
+                    "block_scale",
+                    np.stack([s for _, s, _ in loaded]),
+                    DType.float8_e4m3fn,
+                ),
+                (
+                    "scale",
+                    np.array([g for _, _, g in loaded], dtype=np.float32),
+                    DType.float32,
+                ),
+            ):
+                name = f"{prefix}_{suffix}"
+                weights[name] = WeightData(
+                    data=Buffer.from_numpy(array).view(dtype, array.shape),
+                    name=name,
+                    dtype=dtype,
+                    shape=Shape(array.shape),
+                )
+    return weights, remaining

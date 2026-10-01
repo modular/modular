@@ -517,8 +517,7 @@ struct TiledMmaLoader[
         comptime simd_w = simd_width_of[Self.in_type]()
 
         @inline(.always)
-        @__parameter
-        def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
+        def _load_keys[key_base: Int]() {imm} -> SIMD[Self.in_type, 8]:
             var key = row_offset + key_base + rel_key + hw_key_shift
             var byte_offset = key * BK + d_in_blk + depth_base
             comptime if Self.swizzle:
@@ -638,8 +637,7 @@ struct TiledMmaLoader[
         var depth_base = d_in_blk + is_odd * 8
 
         @inline(.always)
-        @__parameter
-        def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
+        def _load_keys[key_base: Int]() {imm} -> SIMD[Self.in_type, 8]:
             var key = row_offset + key_group * 32 + key_base + pair_idx
             var byte_offset = key * block_width + depth_base
             comptime if Self.swizzle:

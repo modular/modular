@@ -183,7 +183,7 @@ def test_the_regions_and_both_graphs_agree_on_the_pool_dtype(
     spec_types = UnifiedMTPQwen3_5(config).input_types(spec_kv)
     live = _pool_buffer_dtypes(spec_types, live_dims)
     shadow = _pool_buffer_dtypes(spec_types, shadow_dims)
-    assert len(live) == 2 and len(shadow) == 2
+    assert len(live) == 2 and len(shadow) == 1
     assert set(live) == set(shadow) == {expected}, (
         "the spec graph's pools must match the base graph's: the engine wires"
         " one pool allocation into both MEFs"

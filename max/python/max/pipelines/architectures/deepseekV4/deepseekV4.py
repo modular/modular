@@ -32,10 +32,10 @@ trunk states :meth:`DeepseekV4.trunk` collects, and
 :meth:`DeepseekV4.dspark_block` / :meth:`DeepseekV4.dspark_head` draft a block
 per request (``layers/dspark.py``).
 
-The mHC weights are declared flat on the block (``hc_attn_fn``, not
-``hc_attn.fn``) because that is how the checkpoint names them. Grouping them
-into a submodule would read better and cost a rename in the adapter, which is
-the thing this file is arranged to avoid.
+The block's two mHC sites are :class:`~max.nn.HyperConnection` submodules
+(``hc_attn.hc_fn``), which the checkpoint stores flat on the block
+(``hc_attn_fn``); the weight adapter renames them. The head's contraction has
+no Sinkhorn step and keeps the checkpoint's flat ``hc_head_*`` names.
 """
 
 from __future__ import annotations
@@ -53,6 +53,7 @@ from max.graph import (
     ops,
 )
 from max.nn.embedding import Embedding
+from max.nn.hyper_connection import HyperConnection
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
@@ -68,9 +69,7 @@ from .layers import (
     RaggedRows,
     expand_copies,
     hc_head,
-    hc_mix_width,
     hc_post,
-    hc_pre,
 )
 from .layers.quantization import linear_for
 from .model_config import DeepseekV4Config
@@ -102,37 +101,40 @@ def _adopt_shards(
         )
 
 
-def _hc_parameters(
-    config: DeepseekV4Config, device: DeviceRef, site: str
-) -> tuple[Weight, Weight, Weight]:
-    """The ``fn`` / ``base`` / ``scale`` triple for one mHC site.
+def _hyper_connection(
+    config: DeepseekV4Config, device: DeviceRef
+) -> HyperConnection:
+    """One per-block mHC site, ``attn`` or ``ffn``.
 
-    All three are float32 in the checkpoint and stay float32: the mixer runs in
-    fp32 in the reference, and the Sinkhorn division chain is not safe in bf16.
-    ``site`` is ``attn`` or ``ffn``; the head's triple is narrower and is
-    declared on the model.
+    Its weights are float32 in the checkpoint and stay float32: the mixer runs
+    in fp32 in the reference, and the Sinkhorn division chain is not safe in
+    bf16. The head's triple is narrower and is declared on the model.
     """
-    mix_hc = hc_mix_width(config.hc_mult)
-    hc_dim = config.hc_mult * config.hidden_size
+    return HyperConnection(
+        config.hidden_size,
+        config.hc_mult,
+        device,
+        DType.float32,
+        hc_sinkhorn_iters=config.hc_sinkhorn_iters,
+        hc_eps=config.hc_eps,
+        rms_norm_eps=config.rms_norm_eps,
+    )
+
+
+def _hc_pre(
+    x: TensorValue, hc: HyperConnection
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Contract ``[b, s, hc, d]`` to ``[b, s, d]``, and hand back post and comb.
+
+    ``post`` and ``comb`` are consumed by ``hc_post`` after the sublayer runs:
+    they are read off the state *before* the sublayer, not after it.
+    """
+    b, s = x.shape[0], x.shape[1]
+    post, comb, y = hc(ops.reshape(x, [-1, hc.hc_mult, hc.hidden_size]))
     return (
-        Weight(
-            name=f"hc_{site}_fn",
-            dtype=DType.float32,
-            shape=(mix_hc, hc_dim),
-            device=device,
-        ),
-        Weight(
-            name=f"hc_{site}_base",
-            dtype=DType.float32,
-            shape=(mix_hc,),
-            device=device,
-        ),
-        Weight(
-            name=f"hc_{site}_scale",
-            dtype=DType.float32,
-            shape=(3,),
-            device=device,
-        ),
+        ops.reshape(y, [b, s, hc.hidden_size]),
+        ops.reshape(post, [b, s, hc.hc_mult]),
+        ops.reshape(comb, [b, s, hc.hc_mult, hc.hc_mult]),
     )
 
 
@@ -162,18 +164,9 @@ class DeepseekV4Block(Module):
         )
         self.hc_mult = config.hc_mult
         self.hc_eps = config.hc_eps
-        self.sinkhorn_iters = config.hc_sinkhorn_iters
         self.norm_eps = config.rms_norm_eps
-        (
-            self.hc_attn_fn,
-            self.hc_attn_base,
-            self.hc_attn_scale,
-        ) = _hc_parameters(config, device, "attn")
-        (
-            self.hc_ffn_fn,
-            self.hc_ffn_base,
-            self.hc_ffn_scale,
-        ) = _hc_parameters(config, device, "ffn")
+        self.hc_attn = _hyper_connection(config, device)
+        self.hc_ffn = _hyper_connection(config, device)
 
     @staticmethod
     def tensor_parallel(
@@ -194,9 +187,7 @@ class DeepseekV4Block(Module):
         all-reduces their sum (:meth:`DeepseekV4MoE.tensor_parallel`).
         """
         contracted = [
-            block._contract(
-                x, block.hc_attn_fn, block.hc_attn_scale, block.hc_attn_base
-            )
+            _hc_pre(x, block.hc_attn)
             for block, x in zip(blocks, xs, strict=True)
         ]
         states = [
@@ -234,9 +225,7 @@ class DeepseekV4Block(Module):
         ]
 
         contracted = [
-            block._contract(
-                x, block.hc_ffn_fn, block.hc_ffn_scale, block.hc_ffn_base
-            )
+            _hc_pre(x, block.hc_ffn)
             for block, x in zip(blocks, xs, strict=True)
         ]
         moved = DeepseekV4MoE.tensor_parallel(
@@ -253,20 +242,6 @@ class DeepseekV4Block(Module):
             for h, x, (_, post, comb) in zip(moved, xs, contracted, strict=True)
         ]
 
-    def _contract(
-        self, x: TensorValue, fn: Weight, scale: Weight, base: Weight
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        return hc_pre(
-            x,
-            fn,
-            scale,
-            base,
-            self.hc_mult,
-            self.norm_eps,
-            self.hc_eps,
-            self.sinkhorn_iters,
-        )
-
     def __call__(
         self,
         x: TensorValue,
@@ -281,16 +256,12 @@ class DeepseekV4Block(Module):
         stream, not the outgoing one.
         """
         residual = x
-        h, post, comb = self._contract(
-            x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base
-        )
+        h, post, comb = _hc_pre(x, self.hc_attn)
         h = self.attn(self.attn_norm(h), rows, cache)
         x = hc_post(h, residual, post, comb)
 
         residual = x
-        h, post, comb = self._contract(
-            x, self.hc_ffn_fn, self.hc_ffn_scale, self.hc_ffn_base
-        )
+        h, post, comb = _hc_pre(x, self.hc_ffn)
         h = self.ffn(self.ffn_norm(h), token_ids)
         return hc_post(h, residual, post, comb)
 
@@ -397,17 +368,13 @@ class DSparkBlock(DeepseekV4Block):
             block_ids: ``[1, b * K]`` the block's token ids.
         """
         residual = x
-        h, post, comb = self._contract(
-            x, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base
-        )
+        h, post, comb = _hc_pre(x, self.hc_attn)
         assert isinstance(self.attn, DSparkAttention)
         h = self.attn.decode(self.attn_norm(h), rows, cache, self.block_size)
         x = hc_post(h, residual, post, comb)
 
         residual = x
-        h, post, comb = self._contract(
-            x, self.hc_ffn_fn, self.hc_ffn_scale, self.hc_ffn_base
-        )
+        h, post, comb = _hc_pre(x, self.hc_ffn)
         # The gate on an MTP stage is score-routed, so block_ids goes unread.
         h = self.ffn(self.ffn_norm(h), block_ids)
         return hc_post(h, residual, post, comb)
@@ -429,9 +396,7 @@ class DSparkBlock(DeepseekV4Block):
         merge.
         """
         contracted = [
-            stage._contract(
-                x, stage.hc_attn_fn, stage.hc_attn_scale, stage.hc_attn_base
-            )
+            _hc_pre(x, stage.hc_attn)
             for stage, x in zip(stages, xs, strict=True)
         ]
         partials = []
@@ -453,9 +418,7 @@ class DSparkBlock(DeepseekV4Block):
         ]
 
         contracted = [
-            stage._contract(
-                x, stage.hc_ffn_fn, stage.hc_ffn_scale, stage.hc_ffn_base
-            )
+            _hc_pre(x, stage.hc_ffn)
             for stage, x in zip(stages, xs, strict=True)
         ]
         moved = DeepseekV4MoE.tensor_parallel(

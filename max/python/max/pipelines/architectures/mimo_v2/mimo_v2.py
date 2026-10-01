@@ -29,6 +29,7 @@ from max.nn.embedding import Embedding
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.moe import StackedMoE
 from max.nn.norm.rms_norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.nn.transformer import ReturnHiddenStates
@@ -38,7 +39,7 @@ from max.nn.transformer.distributed_transformer import (
 )
 
 from .layers.attention import MiMoV2Attention
-from .layers.moe import MiMoV2MoE
+from .layers.moe import mimo_v2_moe
 from .model_config import FULL, SLIDING, MiMoV2Config
 
 TapHook = Callable[
@@ -62,7 +63,7 @@ class MiMoV2DecoderLayer(Module):
     def __init__(
         self,
         attention: MiMoV2Attention,
-        mlp: MLP | MiMoV2MoE,
+        mlp: MLP | StackedMoE,
         input_layernorm: RMSNorm,
         post_attention_layernorm: RMSNorm,
         devices: list[DeviceRef],
@@ -188,9 +189,9 @@ class MiMoV2(DistributedLogitsPostprocessMixin, Module):
                 devices=config.devices,
             )
             group_layer_counts[group] += 1
-            mlp: MLP | MiMoV2MoE
+            mlp: MLP | StackedMoE
             if i in config.moe_layers:
-                mlp = MiMoV2MoE(
+                mlp = mimo_v2_moe(
                     hidden_dim=config.hidden_size,
                     num_experts=config.n_routed_experts,
                     num_experts_per_tok=config.num_experts_per_tok,

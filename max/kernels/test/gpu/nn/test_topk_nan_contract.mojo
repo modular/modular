@@ -26,9 +26,11 @@ heap's eviction threshold) and the maximum on its ninth insert, once the heap
 is full. Any NaN-unaware eviction rule silently drops the maximum there.
 """
 
+from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.topk import topk_gpu
+from std.sys.info import has_apple_gpu_accelerator
 from std.testing import assert_equal
 from std.utils.numerics import nan
 
@@ -39,7 +41,9 @@ comptime NUM_BLOCKS = 8
 comptime N = 32768
 comptime STRIDE = BLOCK_SIZE * NUM_BLOCKS
 comptime NAN_IDX = 0
-comptime MAX_IDX = 8 * STRIDE  # ninth element of the NaN thread's scan
+# Ninth element of the NaN thread's scan. Apple runs one-simdgroup blocks over
+# contiguous ranges, so there the NaN thread steps by `WARP_SIZE`.
+comptime MAX_IDX = 8 * (WARP_SIZE if has_apple_gpu_accelerator() else STRIDE)
 
 
 def check_nan_does_not_hide_max(ctx: DeviceContext, batch_size: Int) raises:

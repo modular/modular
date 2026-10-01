@@ -391,8 +391,10 @@ class _MaxRequestExtensions(BaseModel):
     repetition_penalty: float | None = None
     thinking_temperature: float | None = None
 
-    # MiniMax M3 only: ``False`` folds reasoning into ``content`` wrapped in
-    # ``<think>...</think>``; ``True`` (default) keeps it in the ``reasoning`` field.
+    # ``False`` on chat completions (MiniMax M3 only) folds reasoning into
+    # ``content`` wrapped in ``<think>...</think>``; on completions it skips the
+    # reasoning parser, so ``text`` and ``logprobs`` cover every generated
+    # token. ``True`` (default) keeps reasoning out of ``content``/``text``.
     reasoning_split: bool = True
 
     # Generation control.

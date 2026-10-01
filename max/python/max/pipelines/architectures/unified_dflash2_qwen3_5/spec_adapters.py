@@ -64,7 +64,7 @@ class Qwen3_5BlockTarget:
 
     def verify(self, batch: BlockBatch) -> Verified[TensorValue]:
         shadow_state = self.state.snapshot(batch.extra, batch.devices)
-        with self.state.capturing(batch.n_devs):
+        with self.state.capturing(batch.n_devs, batch.num_draft_tokens):
             outputs = self.target(
                 batch.merged_tokens,
                 batch.kv_collections,

@@ -189,7 +189,7 @@ def varlen_selective_state_update_gpu[
             var dB = B_val * dt_val
 
             # Load current state
-            var state_offset = UInt32(
+            var state_offset = Int(
                 Int(state_batch_idx) * state_strides[0]
                 + pid_h * state_strides[1]
                 + m * state_strides[2]
@@ -384,7 +384,7 @@ def varlen_selective_scan_fwd_gpu[
 
     if use_initial_state:
         comptime for n in range(DSTATE):
-            var state_offset = UInt32(
+            var state_offset = Int(
                 cache_idx * ssm_states_strides[0]
                 + d * ssm_states_strides[1]
                 + n * ssm_states_strides[2]
@@ -480,7 +480,7 @@ def varlen_selective_scan_fwd_gpu[
 
     # Store final state to cache
     comptime for n in range(DSTATE):
-        var state_offset = UInt32(
+        var state_offset = Int(
             cache_idx * ssm_states_strides[0]
             + d * ssm_states_strides[1]
             + n * ssm_states_strides[2]
@@ -603,7 +603,7 @@ def varlen_selective_state_update_cpu[
             var dB = B_val * dt_val
 
             # Load current state
-            var state_offset = UInt32(
+            var state_offset = Int(
                 Int(state_batch_idx) * state_strides[0]
                 + h * state_strides[1]
                 + m * state_strides[2]
@@ -760,7 +760,7 @@ def varlen_selective_scan_fwd_cpu[
 
             if use_initial_state:
                 comptime for n in range(DSTATE):
-                    var state_offset = UInt32(
+                    var state_offset = Int(
                         cache_idx * ssm_states_strides[0]
                         + d * ssm_states_strides[1]
                         + n * ssm_states_strides[2]
@@ -851,7 +851,7 @@ def varlen_selective_scan_fwd_cpu[
 
             # Store final state
             comptime for n in range(DSTATE):
-                var state_offset = UInt32(
+                var state_offset = Int(
                     cache_idx * ssm_states_strides[0]
                     + d * ssm_states_strides[1]
                     + n * ssm_states_strides[2]

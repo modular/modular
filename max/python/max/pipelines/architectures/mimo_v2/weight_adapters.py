@@ -54,6 +54,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
+from max.nn.moe import interleaved_block_scales_shape
 from max.pipelines.weights._fp8 import e4m3fn_lut
 from max.pipelines.weights.fp4_quantization import (
     MAX_E4M3,
@@ -78,11 +79,6 @@ _IGNORED_PREFIXES = (
 _LAYER = re.compile(r"^model\.layers\.(\d+)\.")
 # E8M0 byte 255 is NaN.
 _E8M0_MAX = 254
-# The block-scaled matmul's scale granule: 128 rows (4 atoms of 32) by 4
-# scale columns.
-_SF_ATOM_ROWS = 32
-_SF_ATOM_COLS = 4
-_SF_GRANULE_ROWS = 4 * _SF_ATOM_ROWS
 
 
 @dataclass(frozen=True)
@@ -237,26 +233,6 @@ def e8m0_scales_from_nvfp4(
     return biased.astype(np.uint8)[first]
 
 
-def interleaved_scale_shape(rows: int, cols: int) -> list[int]:
-    """Returns the kernel-layout shape of one expert's ``[rows, cols]`` scales.
-
-    Raises:
-        ValueError: If the block is not whole 128-row by 4-column granules.
-    """
-    if rows % _SF_GRANULE_ROWS or cols % _SF_ATOM_COLS:
-        raise ValueError(
-            f"MiMo-V2: expert scales [{rows}, {cols}] are not whole "
-            f"{_SF_GRANULE_ROWS}x{_SF_ATOM_COLS} interleave granules."
-        )
-    return [
-        rows // _SF_GRANULE_ROWS,
-        cols // _SF_ATOM_COLS,
-        _SF_ATOM_ROWS,
-        _SF_GRANULE_ROWS // _SF_ATOM_ROWS,
-        _SF_ATOM_COLS,
-    ]
-
-
 def interleave_e8m0(block: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
     """Permutes one expert's row-major E8M0 scales into the kernel layout.
 
@@ -274,7 +250,7 @@ def interleave_e8m0(block: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
         The ``[N/128, K/128, 32, 4, 4]`` scales.
     """
     rows, cols = block.shape
-    shape = interleaved_scale_shape(rows, cols)
+    shape = interleaved_block_scales_shape(rows, cols)
     atoms = block.reshape(shape[0], shape[3], shape[2], shape[1], shape[4])
     return np.ascontiguousarray(atoms.transpose(0, 3, 2, 1, 4))
 
@@ -429,8 +405,8 @@ def _stack_experts(
 ) -> dict[str, WeightData]:
     """Stacks one layer's routed experts in the W4A8 MoE layout.
 
-    ``mlp.experts_gate_up_proj`` is ``uint8 [E, 2 * I, H / 2]``, each expert's
-    gate rows then its up rows, and ``mlp.experts_down_proj`` is
+    ``mlp.experts.gate_up_proj`` is ``uint8 [E, 2 * I, H / 2]``, each expert's
+    gate rows then its up rows, and ``mlp.experts.down_proj`` is
     ``uint8 [E, H, I / 2]``. Each has an E8M0 ``_scale`` twin with ``/ 32`` in
     place of ``/ 2``. Expert ``e``'s slices hold its checkpoint codes
     verbatim and :func:`e8m0_scales_from_nvfp4` of its scales, so a loader can
@@ -454,7 +430,7 @@ def _stack_experts(
         "down_proj_scale": (hidden, inter // MXFP4_BLOCK, DType.float8_e8m0fnu),
     }
     shapes = {
-        name: interleaved_scale_shape(rows, cols)
+        name: interleaved_block_scales_shape(rows, cols)
         if dtype == DType.float8_e8m0fnu
         else [rows, cols]
         for name, (rows, cols, dtype) in stacks.items()
@@ -500,7 +476,7 @@ def _stack_experts(
             scales[...] = interleave_e8m0(scales).reshape(scales.shape)
     adapted = {}
     for name, (_, _, dtype) in stacks.items():
-        max_name = f"layers.{layer}.mlp.experts_{name}"
+        max_name = f"layers.{layer}.mlp.experts.{name}"
         shape = [experts, *shapes[name]]
         adapted[max_name] = WeightData(
             buffers[name].view(dtype, shape), max_name, dtype, Shape(shape)
@@ -523,7 +499,7 @@ def convert_safetensor_state_dict(
         The weights keyed by MAX name: the checkpoint name without
         ``model.``, with the router's ``mlp.gate.weight`` as
         ``mlp.gate.gate_score.weight`` and each MoE layer's experts stacked
-        as ``mlp.experts_{gate_up,down}_proj[_scale]``. FP8 projections carry
+        as ``mlp.experts.{gate_up,down}_proj[_scale]``. FP8 projections carry
         a ``weight_scale`` beside their ``weight``.
 
     Raises:

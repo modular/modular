@@ -88,7 +88,6 @@ comptime epilogue_func_type = def[
 
 
 @inline(.always)
-@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,

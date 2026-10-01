@@ -984,8 +984,7 @@ struct RegisterToGMemWriter[
                         Self.c_type
                     ]()
 
-                    @__parameter
-                    def epilogue_coordinates() -> Tuple[Int, Int]:
+                    def epilogue_coordinates() {imm} -> Tuple[Int, Int]:
                         comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (

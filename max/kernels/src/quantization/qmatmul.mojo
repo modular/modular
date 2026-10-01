@@ -369,9 +369,8 @@ def _scale_and_accumulate[
         ](col * simd_width).cast[.float32]()
     )
 
-    @__parameter
     @inline(.always)
-    def apply_a_scale[row: Int](a_scale: Float32):
+    def apply_a_scale[row: Int](a_scale: Float32) {mut c_float, imm}:
         comptime for col in range(tile_n):
             var dot = c_int32[row, col]
 
@@ -1314,8 +1313,7 @@ def matmul_qint4[
         ctx: Optional device context for parallel execution.
     """
 
-    @__parameter
-    def kernel_dispatch[kernel: _MatmulQInt4Kernel]():
+    def kernel_dispatch[kernel: _MatmulQInt4Kernel]() {imm}:
         return _matmul_qint4[
             kernel,
             group_size=group_size,

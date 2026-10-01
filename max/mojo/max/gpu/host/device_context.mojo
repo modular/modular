@@ -835,8 +835,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         writer.write("HostBuffer")
         writer.write("(")
 
-        @__parameter
-        def serialize[T: Writable](val: T):
+        def serialize[T: Writable](val: T) {mut writer}:
             writer.write(val)
 
         var size = len(self)
@@ -846,14 +845,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
 
         if size < 1000:
             writer.write("[")
-            _serialize_elements[serialize_fn=serialize](
-                serialize_ptr, len(self)
-            )
+            _serialize_elements(serialize_ptr, len(self), serialize)
             writer.write("]")
         else:
-            _serialize_elements[serialize_fn=serialize, compact=True](
-                serialize_ptr, size
-            )
+            _serialize_elements[compact=True](serialize_ptr, size, serialize)
         writer.write(")")
 
     @inline(.always)
@@ -2183,8 +2178,7 @@ struct DeviceBuffer[dtype: DType](
                 writer.write("DeviceBuffer")
                 writer.write("(")
 
-                @__parameter
-                def serialize[T: Writable](val: T):
+                def serialize[T: Writable](val: T) {mut writer}:
                     writer.write(val)
 
                 var size = len(self)
@@ -2198,13 +2192,11 @@ struct DeviceBuffer[dtype: DType](
 
                 if size < 1000:
                     writer.write("[")
-                    _serialize_elements[serialize_fn=serialize](
-                        serialize_ptr, len(self)
-                    )
+                    _serialize_elements(serialize_ptr, len(self), serialize)
                     writer.write("]")
                 else:
-                    _serialize_elements[serialize_fn=serialize, compact=True](
-                        serialize_ptr, size
+                    _serialize_elements[compact=True](
+                        serialize_ptr, size, serialize
                     )
                 writer.write(")")
         except e:
@@ -4119,7 +4111,6 @@ struct DeviceExternalFunction[
         )
 
     @inline(.always)
-    @__parameter
     def get_attribute(self, attr: Attribute) raises -> Int:
         """Retrieves a specific attribute of this device function.
 

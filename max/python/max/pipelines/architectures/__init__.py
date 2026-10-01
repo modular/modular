@@ -246,6 +246,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("MambaForCausalLM", ".mamba", "mamba_arch"),
         _LazyArch("MiMoV2ForCausalLM", ".mimo_v2", "mimo_v2_arch"),
+        _LazyArch(
+            "MiMoV2DFlashContextForCausalLM",
+            ".unified_dflash_mimo_v2",
+            "mimo_v2_dflash_context_arch",
+        ),
         _LazyArch("MiniMaxM2ForCausalLM", ".minimax_m2", "minimax_m2_arch"),
         _LazyArch(
             "MiniMaxMusic3ModularPipeline",
@@ -347,6 +352,11 @@ def register_all_models() -> None:
             "unified_dflash_llama3_arch",
         ),
         _LazyArch(
+            "UnifiedDflashMiMoV2ForCausalLM",
+            ".unified_dflash_mimo_v2",
+            "unified_dflash_mimo_v2_arch",
+        ),
+        _LazyArch(
             "UnifiedDSparkDeepseekV4ForCausalLM",
             ".unified_dspark_deepseekV4",
             "unified_dspark_deepseekV4_speculator",
@@ -416,6 +426,16 @@ def register_all_models() -> None:
     except ModuleNotFoundError:
         pass
 
+    # Optional: import the unified Kimi K3 + DSpark draft model if available.
+    try:
+        from unified_dspark_kimi_k3 import (  # type: ignore[import-not-found]
+            unified_dspark_kimi_k3_arch,
+        )
+
+        PIPELINE_REGISTRY.register(unified_dspark_kimi_k3_arch)
+    except ModuleNotFoundError:
+        pass
+
     # Optional: import the Qwen4-Exp model if available.
     try:
         from qwen4_exp import qwen4_exp_arch  # type: ignore[import-not-found]
@@ -459,6 +479,18 @@ def register_all_models() -> None:
         )
 
         PIPELINE_REGISTRY.register(eagle3_mha_minimax_m3_arch)
+    except ModuleNotFoundError:
+        pass
+
+    # Optional: import the DSpark + MiniMax-M3 unified model if available.
+    try:
+        from minimax_m3_dspark import (  # type: ignore[import-not-found]
+            dspark_minimax_m3_draft_arch,
+            unified_dspark_minimax_m3_arch,
+        )
+
+        PIPELINE_REGISTRY.register(unified_dspark_minimax_m3_arch)
+        PIPELINE_REGISTRY.register(dspark_minimax_m3_draft_arch)
     except ModuleNotFoundError:
         pass
 

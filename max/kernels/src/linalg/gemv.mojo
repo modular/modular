@@ -622,9 +622,8 @@ def gemv_split_k[
         wait_on_dependent_grids()
 
     # Each thread sums local data in K.
-    @__parameter
     @inline(.always)
-    def _k_iter_body():
+    def _k_iter_body() {mut iteration, mut tile_w, mut acc, imm}:
         """Single K-iteration: load weights, load activations, accumulate."""
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
@@ -830,8 +829,7 @@ def router_gate_mixed_gemv[
     if m == 0 or n == 0:
         return
 
-    @__parameter
-    def _launch[tile_n: Int]() raises:
+    def _launch[tile_n: Int]() raises {imm}:
         comptime kernel = gemv_split_k[
             DType.float32,
             DType.bfloat16,
@@ -1185,13 +1183,12 @@ def gemv_gpu_dispatch[
     case GEMVAlgorithm.GemvSplitK:
         logger.info("Executing: GEMV_SPLIT_K kernel")
 
-        @__parameter
         def _gemv_split_k_dispatch[
             num_threads: Int,
             tile_n: Int,
             unroll_factor: Int = 2,
             weight_non_temporal: Bool = True,
-        ]() raises:
+        ]() raises {imm}:
             comptime kernel = gemv_split_k[
                 c_type,
                 a_type,
@@ -1332,8 +1329,7 @@ def gemv_gpu_dispatch[
                 )
         elif m == 1:
 
-            @__parameter
-            def _one_row_per_warp() raises:
+            def _one_row_per_warp() raises {imm}:
                 comptime kernel = gemv_kernel_vector[
                     c_type,
                     b_type,
@@ -1362,8 +1358,7 @@ def gemv_gpu_dispatch[
                     attributes=pdl_launch_attributes(pdl_level),
                 )
 
-            @__parameter
-            def _rows_per_warp[rows: Int]() raises:
+            def _rows_per_warp[rows: Int]() raises {imm}:
                 logger.info("Rows per warp: ", rows)
                 # 128-thread blocks measured slightly ahead of 256 and stay
                 # clear of the 64K-register-per-block ceiling that a wide row
@@ -1398,8 +1393,7 @@ def gemv_gpu_dispatch[
                     attributes=pdl_launch_attributes(pdl_level),
                 )
 
-            @__parameter
-            def _grid_outruns_chip() -> Bool:
+            def _grid_outruns_chip() {imm} -> Bool:
                 # One warp per output row needs `n` resident warps. Once that
                 # is several times what the chip can hold, the grid drains at
                 # the CTA launch/retire rate and never reaches HBM bandwidth,

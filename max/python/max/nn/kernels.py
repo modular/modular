@@ -6239,6 +6239,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
     preshuffled_b: bool = False,
     a_scales_preshuffled: bool = False,
     a_scales_max_padded_m: int = 0,
+    a_scales_max_rows_per_expert: int | None = None,
     decode_grid_m_cap: int = 0,
     decode_grid_m_rows: int = 0,
 ) -> TensorValue:
@@ -6270,6 +6271,11 @@ def grouped_dynamic_block_scaled_matmul_amd(
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
         estimated_total_m: The estimated total number of tokens.
+        a_scales_max_rows_per_expert: Graph-build-time bound on the unpadded
+            rows one expert can hold, sizing the per-step A-scale slot buffer.
+            ``None`` falls back to the post-expansion row count, which
+            over-allocates each slot roughly ``top_k``-fold. Must be positive
+            when given. Ignored unless ``preshuffled_b``.
         decode_grid_m_cap: Decode-band gate on the AMD preb path; 0 disables.
             Selects the band; `decode_grid_m_rows` bounds the grid.
         decode_grid_m_rows: Rows grid.y must cover per expert on the decode
@@ -6372,9 +6378,13 @@ def grouped_dynamic_block_scaled_matmul_amd(
     # `estimated_total_m` defaults to 0 (unknown). When `preshuffled_b` is
     # True, the AMD preb kernel uses it to choose between persistent (small)
     # and direct 3D-grid (large) dispatch paths. Ignored on the dense path.
+    #
+    # Host-resident, like every caller's own `estimated_total_m`: the kernel
+    # takes it as a scalar operand, so building the default on the activation's
+    # device fails custom-op verification rather than defaulting.
     if estimated_total_m is None:
         estimated_total_m_arg = ops.constant(
-            0, dtype=DType.uint32, device=hidden_states.device
+            0, dtype=DType.uint32, device=DeviceRef.CPU()
         )
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
@@ -6395,6 +6405,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
             expert_usage_stats_host[0].cast(DType.uint32),
             expert_usage_stats_host[1].cast(DType.uint32),
             num_experts=int(weight.shape[0]),
+            max_rows_per_expert=a_scales_max_rows_per_expert,
         )
 
     # The matmul derives the A-scale per-expert slot stride as
@@ -6576,9 +6587,11 @@ def grouped_dynamic_scaled_mxfp6_matmul(
             f" {b_scales_dim_2}] but got {b_scales.shape}"
         )
 
+    # Host-resident for the same reason as the MXFP4 sibling: the kernel takes
+    # it as a scalar operand.
     if estimated_total_m is None:
         estimated_total_m_arg = ops.constant(
-            0, dtype=DType.uint32, device=hidden_states.device
+            0, dtype=DType.uint32, device=DeviceRef.CPU()
         )
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
@@ -9011,6 +9024,7 @@ def block_scaled_preshuffle_grouped_scale_4d(
     max_num_tokens_per_expert: TensorValue,
     num_active_experts: TensorValue,
     num_experts: int,
+    max_rows_per_expert: int | None = None,
 ) -> TensorValue:
     """Applies the per-step A-scale preshuffle for the AMD CDNA4 preb kernel.
 
@@ -9034,11 +9048,21 @@ def block_scaled_preshuffle_grouped_scale_4d(
         num_active_experts: Scalar ``uint32`` number of active expert slots.
         num_experts: Graph-build-time upper bound on ``num_active_experts``
             (e.g. ``weight.shape[0]``). Used to size the output buffer.
+        max_rows_per_expert: Graph-build-time upper bound on the UNPADDED rows
+            one expert can hold, used to size its slot. Padded here to the
+            kernel's 32-row stride, so pass a token count rather than a padded
+            one. ``None`` falls back to ``total_tokens``, which is correct but
+            roughly ``top_k``-fold larger per slot than anything the matmul
+            reads. Must be positive and bound ``max_num_tokens_per_expert`` at
+            every step: too small is silent corruption, since the matmul
+            strides past the allocation.
 
     Returns:
-        Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * total_tokens,
-        K_SCALES]``. The first ``num_active_experts * max_padded_M`` rows
-        are written; the rest is left untouched but accessible.
+        Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * slot_rows,
+        K_SCALES]``, where ``slot_rows`` is ``align_up(max_rows_per_expert,
+        32)`` or ``total_tokens``. The first ``num_active_experts *
+        max_padded_M`` rows are written; the rest is left untouched but
+        accessible, and is what ``max_rows_per_expert`` bounds.
     """
     if a_scales.rank != 2:
         raise ValueError(
@@ -9054,8 +9078,26 @@ def block_scaled_preshuffle_grouped_scale_4d(
             "expert_start_indices must be rank 1, got rank"
             f" {expert_start_indices.rank}"
         )
+    if max_rows_per_expert is not None and max_rows_per_expert <= 0:
+        raise ValueError(
+            "max_rows_per_expert must be > 0 when given, got"
+            f" {max_rows_per_expert}"
+        )
 
-    out_rows = num_experts * a_scales.shape[0]
+    # The default is not a loose worst case, it is the wrong QUANTITY:
+    # `a_scales.shape[0]` counts rows POST-expansion (tokens * top_k), while an
+    # expert holds at most the PRE-expansion token count, because a token's
+    # top_k picks are distinct. Sizing `num_experts` slots by the former is
+    # invisible at decode and fatal at prefill -- 896 experts x 105,760 rows x
+    # 112 B is 10.6 GB where 665 MB is addressed, on a model with ~4 GB of
+    # headroom. Padded to 32 here rather than at the call site so a caller
+    # cannot hand over an unpadded bound and read past the slot.
+    slot_rows = (
+        a_scales.shape[0]
+        if max_rows_per_expert is None
+        else ((max_rows_per_expert + 31) // 32) * 32
+    )
+    out_rows = num_experts * slot_rows
 
     return ops.custom(
         "mo.block.scaled.preshuffle.scale.4d_per_expert",
@@ -11534,75 +11576,126 @@ def latent_sparse_attention_ragged(
     )[0].tensor
 
 
-def mhc_split_sinkhorn(
-    mixes: TensorValue,
-    scale: TensorValue,
-    base: TensorValue,
-    *,
+def hyper_connection_gates(
+    hc_proj: TensorValue,
+    pre_post_comb_b: TensorValue,
+    pre_post_comb_scale: TensorValue,
     hc_mult: int,
-    sinkhorn_iters: int,
-    eps: float,
-    post_mult: float = 2.0,
+    hc_eps: float,
+    hc_sinkhorn_iters: int,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Splits mHC mixing logits and Sinkhorn-projects the combination block.
+    r"""Computes the Manifold-Constrained Hyper-Connections (mHC) gates.
 
-    ``mixes[t]`` holds ``(2 + hc) * hc`` logits: ``hc`` pre, ``hc`` post, then
-    an ``hc x hc`` combination in row-major order. Each part is scaled by its
-    entry of ``scale`` and offset by ``base``; ``pre`` is
-    ``sigmoid(.) + eps``, ``post`` is ``post_mult * sigmoid(.)``, and the
-    combination is row-softmaxed plus ``eps``, column-normalized, then
-    ``sinkhorn_iters - 1`` times row- and column-normalized, every normalizer
-    being ``sum + eps``. One kernel launch computes all of it.
+    Fuses everything an mHC site does between its stream projection and its
+    stream collapse into one kernel: the ``pre`` and ``post`` sigmoids, the
+    softmax that seeds the ``comb`` mixer, and the ``hc_sinkhorn_iters``
+    Sinkhorn-Knopp steps that project ``comb`` onto the doubly-stochastic
+    manifold. Reference: Xie et al. 2026, section 2.2 equation 8.
+
+    ``hc_proj`` is the projection of the normalized residual streams, split
+    along its last axis into a ``pre`` band, a ``post`` band, and a flattened
+    ``hc_mult x hc_mult`` ``comb`` band. ``pre_post_comb_b`` is the matching
+    concatenated bias and ``pre_post_comb_scale`` holds one scale per band. All
+    three are ``float32``, as are all three outputs.
+
+    Rows are independent, so a ragged batch needs no row offsets: fold the
+    batch and sequence axes into ``hc_proj``'s leading axis.
 
     Args:
-        mixes: ``[tokens, (2 + hc_mult) * hc_mult]`` float32 logits.
-        scale: ``[3]`` float32 per-part scales.
-        base: ``[(2 + hc_mult) * hc_mult]`` float32 bias.
-        hc_mult: The number of residual copies ``hc``.
-        sinkhorn_iters: Sinkhorn rounds, at least one.
-        eps: Floor added to ``pre``, the softmax and every normalizer.
-        post_mult: Multiplier on the ``post`` sigmoid.
+        hc_proj: The projected residual streams. Shape:
+            ``[total_seq_len, 2 * hc_mult + hc_mult ** 2]``.
+        pre_post_comb_b: Per-output bias, concatenated in ``pre``, ``post``,
+            ``comb`` order. Shape: ``[2 * hc_mult + hc_mult ** 2]``.
+        pre_post_comb_scale: Per-output scale, in ``pre``, ``post``, ``comb``
+            order. Shape: ``[3]``.
+        hc_mult: The number of parallel residual streams. Must be a power of
+            two whose square fits in one warp.
+        hc_eps: Epsilon guarding the Sinkhorn divisions.
+        hc_sinkhorn_iters: Number of Sinkhorn-Knopp iterations.
 
     Returns:
-        ``pre`` ``[tokens, hc]``, ``post`` ``[tokens, hc]`` and ``comb``
-        ``[tokens, hc, hc]``, all float32.
-    """
-    _check_rank(2, mixes=mixes)
-    _check_rank(1, scale=scale, base=base)
-    _check_dtype(DType.float32, mixes=mixes, scale=scale, base=base)
-    width = (2 + hc_mult) * hc_mult
-    if int(mixes.shape[1]) != width or int(base.shape[0]) != width:
-        raise ValueError(
-            f"expected mixes/base width {width} for hc_mult={hc_mult}, got"
-            f" {mixes.shape[1]} / {base.shape[0]}"
-        )
-    if int(scale.shape[0]) != 3:
-        raise ValueError(
-            f"expected scale to have 3 entries, got {scale.shape[0]}"
-        )
-    if sinkhorn_iters < 1:
-        raise ValueError(f"sinkhorn_iters must be >= 1, got {sinkhorn_iters}")
+        A tuple of three tensors:
 
-    tokens = mixes.shape[0]
-    device = mixes.device
-    pre, post, comb = ops.custom(
-        "mo.mhc.split_sinkhorn",
-        device=device,
-        values=[mixes, scale, base],
+        - ``pre``: stream-collapse weights. Shape: ``[total_seq_len,
+          hc_mult]``.
+        - ``post``: sublayer-output placement weights in ``[0, 2]``. Shape:
+          ``[total_seq_len, hc_mult]``.
+        - ``comb``: the row-major stream mixer. Shape: ``[total_seq_len,
+          hc_mult ** 2]``.
+
+    Raises:
+        ValueError: If a dtype, rank, or width does not match ``hc_mult``, or
+            if ``hc_mult`` / ``hc_sinkhorn_iters`` are out of range.
+    """
+    _check_dtype(
+        DType.float32,
+        hc_proj=hc_proj,
+        pre_post_comb_b=pre_post_comb_b,
+        pre_post_comb_scale=pre_post_comb_scale,
+    )
+    _check_rank(2, hc_proj=hc_proj)
+    _check_rank(
+        1,
+        pre_post_comb_b=pre_post_comb_b,
+        pre_post_comb_scale=pre_post_comb_scale,
+    )
+
+    if hc_mult < 1 or hc_mult & (hc_mult - 1):
+        raise ValueError(
+            f"expected hc_mult to be a power of two, got {hc_mult}"
+        )
+    if hc_sinkhorn_iters < 1:
+        raise ValueError(
+            f"expected hc_sinkhorn_iters >= 1, got {hc_sinkhorn_iters}"
+        )
+
+    mix_width = 2 * hc_mult + hc_mult**2
+    if hc_proj.shape[1] != mix_width:
+        raise ValueError(
+            f"expected hc_proj of width {mix_width} for hc_mult {hc_mult}, got"
+            f" {hc_proj.shape[1]}"
+        )
+    if pre_post_comb_b.shape[0] != mix_width:
+        raise ValueError(
+            f"expected pre_post_comb_b of size {mix_width} for hc_mult"
+            f" {hc_mult}, got {pre_post_comb_b.shape[0]}"
+        )
+    if pre_post_comb_scale.shape[0] != 3:
+        raise ValueError(
+            "expected pre_post_comb_scale of size 3, got"
+            f" {pre_post_comb_scale.shape[0]}"
+        )
+
+    rows = hc_proj.shape[0]
+    results = ops.custom(
+        "mo.hyper_connection.gates",
+        device=hc_proj.device,
+        values=[
+            hc_proj,
+            pre_post_comb_b,
+            pre_post_comb_scale,
+            ops.constant(hc_eps, DType.float32, device=DeviceRef.CPU()),
+        ],
         out_types=[
-            TensorType(DType.float32, [tokens, hc_mult], device),
-            TensorType(DType.float32, [tokens, hc_mult], device),
-            TensorType(DType.float32, [tokens, hc_mult * hc_mult], device),
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult],
+                device=hc_proj.device,
+            ),  # pre
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult],
+                device=hc_proj.device,
+            ),  # post
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult**2],
+                device=hc_proj.device,
+            ),  # comb
         ],
         parameters={
             "hc_mult": hc_mult,
-            "sinkhorn_iters": sinkhorn_iters,
-            "eps": repr(float(eps)),
-            "post_mult": repr(float(post_mult)),
+            "hc_sinkhorn_iters": hc_sinkhorn_iters,
         },
     )
-    return (
-        pre.tensor,
-        post.tensor,
-        ops.reshape(comb.tensor, [tokens, hc_mult, hc_mult]),
-    )
+    return (results[0].tensor, results[1].tensor, results[2].tensor)

@@ -47,7 +47,9 @@ Outputs:
   (conv_state is mutated in place; there is no separate state-out
    tensor.  Window slot j ends up holding the raw input at position
    seq_len - (kernel_size-1) + j within the sequence, carrying forward
-   from the old window when seq_len is shorter.)
+   from the old window when seq_len is shorter.  Under
+   WRITE_STATE = False the window is left alone and the only result is
+   the conv output.)
 
 Thread mapping (GPU)
 --------------------
@@ -78,6 +80,7 @@ def gated_delta_conv1d_fwd_gpu[
     state_dtype: DType,  # for the conv_state pool (typically bf16)
     KERNEL_SIZE: Int,
     CONV1D_BLOCK_DIM: Int,
+    WRITE_STATE: Bool,
     qkv_input_ragged_LT: TensorLayout,
     conv_weight_LT: TensorLayout,
     conv_state_LT: TensorLayout,
@@ -125,6 +128,9 @@ def gated_delta_conv1d_fwd_gpu[
     in-place mutation is safe. One thread handles one (batch_item,
     conv_channel) pair for the entire sequence; the channel's K weights live
     in registers across the token loop.
+
+    With `WRITE_STATE` False the kernel computes the output and leaves
+    `conv_state` unchanged.
     """
     var _batch_size = Int(batch_size)
     var _total_seq_len = Int(total_seq_len)
@@ -223,6 +229,9 @@ def gated_delta_conv1d_fwd_gpu[
         conv_output_ragged.raw_store(
             output_flat_offset, Scalar[work_dtype](conv_sum)
         )
+
+    comptime if not WRITE_STATE:
+        return
 
     # ── Update conv_state: the last KERNEL_SIZE-1 raw input tokens ──────────
     # slot j should hold the raw input at position seq_len - (KERNEL_SIZE-1) + j.

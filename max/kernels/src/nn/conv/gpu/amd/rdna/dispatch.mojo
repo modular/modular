@@ -303,11 +303,10 @@ def dispatch_rdna_conv2d[
         comptime BLOCK_K = 32
 
         # --- Helper to launch the implicit GEMM kernel ---
-        @__parameter
         @inline(.always)
         def _launch_implicit_gemm[
             _epilogue: Optional[elementwise_epilogue_type] = None,
-        ]() raises:
+        ]() raises {imm}:
             comptime NUM_WARPS = 16  # 8x2 warp grid
             comptime BLOCK_M = 128
             comptime BLOCK_N = 128
@@ -348,11 +347,10 @@ def dispatch_rdna_conv2d[
             )
 
         # --- Helper to launch explicit im2col + matmul fallback ---
-        @__parameter
         @inline(.always)
         def _launch_explicit_im2col[
             _epilogue: Optional[elementwise_epilogue_type] = None,
-        ]() raises:
+        ]() raises {imm}:
             var im2col_size = M * K
             var im2col_buf = ctx.enqueue_create_buffer[input_type](im2col_size)
             var im2col_ptr = im2col_buf.unsafe_ptr()

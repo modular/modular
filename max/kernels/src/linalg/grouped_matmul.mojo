@@ -410,12 +410,11 @@ def dispatch_amd_matmul_by_block_shape[
 
     # Fallback to default config
     @inline(.always)
-    @__parameter
     def default_config_launcher[
         block_m: Int,
         block_n: Int,
         block_k: Int,
-    ]() raises:
+    ]() raises {imm}:
         comptime default_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
@@ -685,8 +684,7 @@ def grouped_matmul[
         # `expert_usage_stats` (device->host + sync). The SM100 persistent path
         # reads the device tensor directly and never calls this.
         @inline(.always)
-        @__parameter
-        def resolve_usage_stats() raises -> Tuple[Int, Int]:
+        def resolve_usage_stats() raises {imm} -> Tuple[Int, Int]:
             if host_stats:
                 return host_stats.value()
             # The sync below aborts an in-flight device-graph capture. On AMD

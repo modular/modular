@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.experimental import functional as F
 from max.experimental import random
 from max.experimental.tensor import Tensor
 from max.graph import Dim, DimLike
@@ -84,7 +83,6 @@ class Linear(Module[[Tensor], Tensor]):
         yield "out_dim", self.out_dim
         yield "bias", isinstance(self.bias, Tensor), True
 
-    @F.functional
     def forward(self, x: Tensor) -> Tensor:
         """Applies a linear transformation to the input tensor.
 

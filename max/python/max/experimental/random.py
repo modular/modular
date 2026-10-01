@@ -35,18 +35,32 @@ from __future__ import annotations
 
 from max.driver import Device
 from max.dtype import DType
-from max.experimental.functional import functional
+from max.experimental import functional as F
 from max.experimental.realization_context import seed, set_seed
-from max.experimental.tensor import TensorType, defaults
-from max.graph import DeviceRef, ShapeLike, ops
+from max.experimental.sharding import DeviceMapping, DeviceMesh, Partial
+from max.experimental.tensor import Tensor, defaults
+from max.graph import ShapeLike
 
 __all__ = ["gaussian", "normal", "seed", "set_seed", "uniform"]
 
 
-# The graph ops take a ``TensorType``, so these stay private: a creation op's
-# signature describes a shape, and the graph type is built on the way down.
-_uniform_like = functional(ops.random.uniform)
-_gaussian_like = functional(ops.random.gaussian)
+def _resolve_tensor_placement(
+    dtype: DType | None, device: Device | DeviceMesh | DeviceMapping | None
+) -> tuple[DType, DeviceMesh, DeviceMapping | None]:
+    """Splits ``device`` into the mesh to generate on and the mapping to end in."""
+    if not isinstance(device, DeviceMapping):
+        dtype, mesh = defaults(dtype, device)
+        return dtype, mesh, None
+    if any(isinstance(p, Partial) for p in device.placements):
+        raise ValueError(
+            f"random values cannot be created with a Partial placement: {device}"
+        )
+    dtype, mesh = defaults(dtype, device.mesh)
+    return dtype, mesh, device
+
+
+def _place_tensor(tensor: Tensor, mapping: DeviceMapping | None) -> Tensor:
+    return tensor if mapping is None else tensor.to(mapping)
 
 
 def uniform(  # noqa: ANN201
@@ -54,7 +68,7 @@ def uniform(  # noqa: ANN201
     range: tuple[float, float] = (0, 1),
     *,
     dtype: DType | None = None,
-    device: Device | None = None,
+    device: Device | DeviceMesh | DeviceMapping | None = None,
 ):
     """Creates a tensor filled with random values from a uniform distribution.
 
@@ -91,11 +105,13 @@ def uniform(  # noqa: ANN201
 
     Raises:
         ValueError: If the range tuple does not contain exactly two values
-            or if min >= max.
+            or if min >= max, or if ``device`` is a ``DeviceMapping`` with a
+            ``Partial`` placement.
     """
-    dtype, device = defaults(dtype, device)
-    type = TensorType(dtype, shape, device=DeviceRef.from_device(device))
-    return _uniform_like(type, range=range)
+    dtype, mesh, mapping = _resolve_tensor_placement(dtype, device)
+    return _place_tensor(
+        F.uniform(shape, range, dtype=dtype, device=mesh), mapping
+    )
 
 
 def gaussian(  # noqa: ANN201
@@ -104,7 +120,7 @@ def gaussian(  # noqa: ANN201
     std: float = 1.0,
     *,
     dtype: DType | None = None,
-    device: Device | None = None,
+    device: Device | DeviceMesh | DeviceMapping | None = None,
 ):
     """Creates a tensor filled with random values from a Gaussian (normal) distribution.
 
@@ -140,11 +156,13 @@ def gaussian(  # noqa: ANN201
         the Gaussian distribution.
 
     Raises:
-        ValueError: If std <= 0.
+        ValueError: If std <= 0, or if ``device`` is a ``DeviceMapping`` with
+        ``Partial`` placement.
     """
-    dtype, device = defaults(dtype, device)
-    type = TensorType(dtype, shape, device=DeviceRef.from_device(device))
-    return _gaussian_like(type, mean=mean, std=std)
+    dtype, mesh, mapping = _resolve_tensor_placement(dtype, device)
+    return _place_tensor(
+        F.gaussian(shape, mean, std, dtype=dtype, device=mesh), mapping
+    )
 
 
 #: Alias for :func:`gaussian`.

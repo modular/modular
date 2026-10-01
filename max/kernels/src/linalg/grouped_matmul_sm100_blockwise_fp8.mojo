@@ -464,7 +464,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     )
 
     var c_by_expert = c_gmem_type(
-        c_ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
+        c_ptr + Int(a_start_row) * N, c_gmem_runtime_layout
     )
 
     var ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](

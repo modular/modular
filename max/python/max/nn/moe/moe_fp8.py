@@ -132,6 +132,15 @@ class MoEQuantized(MoE):
             return [shared] + values
         return values
 
+    @property
+    def _nvfp4_dyn_global_scales(self) -> bool:
+        """Whether the EP dispatch quantizes each token against its own
+        global scale."""
+        return bool(
+            self._ep_batch_manager
+            and self.ep_batch_manager.config.nvfp4_dyn_global_scales
+        )
+
     def _nvfp4_scales(self) -> Nvfp4Scales:
         """Collects NVFP4 input and expert scales for matmuls."""
         gate_up_input = self._collect_input_scale("gate_proj", collect_all=True)
@@ -146,11 +155,15 @@ class MoEQuantized(MoE):
             gate_up_max_scale, down_input.shape
         )
 
+        gate_up_expert = self._collect_scale_2("gate_proj")
+        # A per-token dispatch scale stands in for the static input scale.
+        if not self._nvfp4_dyn_global_scales:
+            gate_up_expert = gate_up_expert * local_gate_up_input
+
         return Nvfp4Scales(
             gate_up_input=gate_up_input,
             down_input=down_input,
-            gate_up_expert=self._collect_scale_2("gate_proj")
-            * local_gate_up_input,
+            gate_up_expert=gate_up_expert,
             down_expert=self._collect_scale_2("down_proj") * down_input,
         )
 
@@ -378,16 +391,17 @@ class MoEQuantized(MoE):
                 "Custom gated_activation_fn is not supported in the EP"
                 " quantized path due to a specialized fused kernel."
             )
-        # The dynamic dispatch hands back one more tensor than the unpacking
-        # below expects, and the matmuls have no per-row scale to apply it.
-        if (
-            self._ep_batch_manager
-            and self.ep_batch_manager.config.nvfp4_dyn_global_scales
-        ):
-            raise NotImplementedError(
-                "no grouped matmul consumes the per-row global scales that"
-                " nvfp4_dyn_global_scales dispatch produces yet"
-            )
+        # The dynamic dispatch's per-row global scales belong to the gate/up
+        # matmul alone; everything after it reads the usual tuple.
+        a_row_scales: TensorValue | None = None
+        if self._nvfp4_dyn_global_scales:
+            if not self._can_fuse_swiglu_nvfp4():
+                raise NotImplementedError(
+                    "nvfp4_dyn_global_scales needs the fused SwiGLU+NVFP4"
+                    " grouped matmul"
+                )
+            hidden, hidden_scales, a_row_scales, *rest = expert_inputs
+            expert_inputs = (hidden, hidden_scales, *rest)
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
@@ -503,6 +517,7 @@ class MoEQuantized(MoE):
                 use_swigluoai=self.use_swigluoai,
                 swiglu_alpha=self.swiglu_alpha,
                 swiglu_limit=self.swiglu_limit,
+                a_row_scales=a_row_scales,
             )
         else:
             if isinstance(strategy, (BlockScaledStrategy, Mxfp6Strategy)):

@@ -17,12 +17,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import numpy.typing as npt
 from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
     resolve_single_special_token,
 )
+from max.pipelines.modeling.types import TokenIds
 from transformers import AutoTokenizer
 
 from .model_config import InklingVisionConfig
@@ -97,15 +97,14 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
             self.delegate.all_special_ids
         ) - {tool_call_json_id}
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decodes tokens, dropping every special id except the tool-call marker.
 
         ``skip_special_tokens=True`` would drop the marker too, so filter by id
         here and decode with the flag off.
         """
-        # Log-probability responses decode a single token id (a plain int).
+        # Log-probability responses decode one token id (a plain int) and the
+        # CLI passes a token list; normalize both to a rank-1 array.
         token_ids = np.atleast_1d(np.asarray(encoded))
 
         if not kwargs.get("skip_special_tokens", True):

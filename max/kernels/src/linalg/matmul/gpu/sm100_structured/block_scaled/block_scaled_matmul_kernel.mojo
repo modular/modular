@@ -73,7 +73,6 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
-from linalg.utils import elementwise_compute_lambda_type
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -146,9 +145,6 @@ struct BlackwellBlockScaledMatmulKernel[
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ]:
@@ -169,8 +165,6 @@ struct BlackwellBlockScaledMatmulKernel[
             group configuration for the kernel.
         cluster_shape: CTA cluster dimensions `(M, N, batch)` for LLVM
             cluster metadata (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Optional fused elementwise compute
-            lambda applied during the epilogue (defaults to `None`).
         pdl_level: Programmatic dependency launch level controlling
             inter-grid synchronization (defaults to `PDLLevel.OFF`).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per
@@ -913,13 +907,7 @@ struct BlackwellBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    @__name(
-        StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
-    )
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,

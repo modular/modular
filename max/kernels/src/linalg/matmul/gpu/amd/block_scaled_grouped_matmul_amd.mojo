@@ -1269,7 +1269,6 @@ def block_scaled_grouped_matmul_amd_preb[
 
     # One launch per band; only the comptime config differs, so capture the
     # runtime args once and let each band be a single line.
-    @__parameter
     def run_kernel[
         BM: Int,
         BN: Int,
@@ -1285,7 +1284,7 @@ def block_scaled_grouped_matmul_amd_preb[
         scale_group: Int = 1,
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
-    ]() raises:
+    ]() raises {imm}:
         # The kernels' `@__name` spells only these values, and the schedule
         # knobs are not otherwise part of the symbol -- a new value here would
         # make two bands share a symbol and silently alias in an .amdgcn dump

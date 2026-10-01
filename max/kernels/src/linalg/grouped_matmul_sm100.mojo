@@ -1128,9 +1128,9 @@ def multi_stage_store_C[
                             c_type, simd_size, alignment=alignment
                         ](Index(n, m), val_vec)
                     else:
-                        (c_ptr + n * UInt32(cN) + m).store[alignment=alignment](
-                            val_vec
-                        )
+                        (c_ptr + Int(n) * cN + Int(m)).store[
+                            alignment=alignment
+                        ](val_vec)
 
         comptime if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
@@ -1180,7 +1180,7 @@ def zero_output[
 
     # Note that output_tile_shape is always the proper C tile shape independent of transpose_c.
     comptime output_N = output_tile_shape[1]
-    var ptr = c_ptr + coord[1] * UInt32(c_stride) + coord[0]
+    var ptr = c_ptr + Int(coord[1]) * c_stride + Int(coord[0])
     comptime assert thread_num * simd_size >= output_N, (
         "output_N must be less than thread_num * simd_size. Got "
         + String(output_N)

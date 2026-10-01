@@ -92,6 +92,15 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Tuple` gained `first_of[T]()`, which returns a reference to the first
+  element of type `T`. The lookup is resolved at compile time, and it is a
+  compile-time error if the tuple has no element of that type:
+
+  ```mojo
+  var t = (1, String("two"), 3.0)
+  t.first_of[String]() += "!"
+  ```
+
 - Hashing a byte sequence is now spelled `hash_bytes()`, which takes an
   `ImmSpan[Byte]`. The pointer-and-length `hash()` overload is deprecated:
 
@@ -199,6 +208,20 @@ This version is still a work in progress.
       collected[idx] = elt.data
 
   t^.consume_elements(handler)  # was: t^.consume_elements[handler]()
+  ```
+
+- `SIMD.reduce()` now takes a closure reduction function as a runtime
+  argument instead of a compile-time `capturing` parameter. The `thin`
+  function-pointer form is unchanged:
+
+  ```mojo
+  def add[width: SIMDLength](
+      lhs: SIMD[DType.int32, width], rhs: SIMD[DType.int32, width]
+  ) -> SIMD[DType.int32, width]:
+      return lhs + rhs
+
+  v.reduce(add)          # was: v.reduce[add]()
+  v.reduce[2](add)       # was: v.reduce[add, 2]()
   ```
 
 ## Tooling changes

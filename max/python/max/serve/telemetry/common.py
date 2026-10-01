@@ -25,6 +25,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from time import time
+from urllib.parse import urlparse
 
 import numpy as np
 import requests
@@ -68,7 +69,7 @@ from opentelemetry.sdk.metrics.export import (
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
@@ -719,8 +720,103 @@ def configure_metrics(settings: Settings) -> None:
         logger.info("Metrics initialized.")
 
 
-def _span_exporter() -> OTLPSpanExporter:
+_HTTP_PROTOBUF = "http/protobuf"
+_GRPC = "grpc"
+
+
+def _traces_protocol() -> str:
+    """Returns the OTLP protocol to export spans over.
+
+    Reads OTel's own ``OTEL_EXPORTER_OTLP_PROTOCOL`` convention, so an
+    operator configures MAX Serve the way they configure anything else
+    speaking OTLP, and the traces-specific variable wins over the generic
+    one. Unset leaves MAX Serve on ``http/protobuf``, which is the only
+    protocol it has ever spoken. ``http/json`` is in the specification but
+    has no exporter in the Python SDK, so it is rejected with everything
+    else unrecognised.
+    """
+    configured = os.environ.get(
+        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
+    ) or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL")
+    protocol = (configured or _HTTP_PROTOBUF).strip().lower()
+    if protocol in (_GRPC, _HTTP_PROTOBUF):
+        return protocol
+    logging.getLogger(__name__).warning(
+        "Unsupported OTLP traces protocol %r; exporting over %s.",
+        protocol,
+        _HTTP_PROTOBUF,
+    )
+    return _HTTP_PROTOBUF
+
+
+def _tls_by_omission() -> str | None:
+    """Returns the traces endpoint that gRPC will dial over TLS unasked.
+
+    The SDK infers a plaintext channel only from an explicit ``http://``
+    scheme, and ``urlparse`` reads a bare ``agent:4317`` as a URL whose
+    scheme is the hostname — so the obvious in-cluster spelling is dialled
+    over TLS and fails against a plaintext collector. An operator who set
+    the insecure variable chose their transport, so leave them alone.
+    """
+    if os.environ.get("OTEL_EXPORTER_OTLP_TRACES_INSECURE") or os.environ.get(
+        "OTEL_EXPORTER_OTLP_INSECURE"
+    ):
+        return None
+    endpoint = os.environ.get(
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    ) or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint or urlparse(endpoint).scheme in ("http", "https"):
+        return None
+    return endpoint
+
+
+def _grpc_span_exporter() -> SpanExporter:
+    """Builds the gRPC span exporter, tolerating an HTTP-shaped environment.
+
+    The imports are function-local, against the repository's top-level
+    import rule, because they cost approximately 0.6s of cold start and 7MB
+    of resident memory. Every import of this module pays that, while only a
+    deployment that asks for gRPC needs it.
+    """
+    from grpc import Compression
+    from opentelemetry.exporter.otlp.proto.grpc.exporter import (
+        InvalidCompressionValueException,
+    )
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+        OTLPSpanExporter as OTLPGrpcSpanExporter,
+    )
+
+    logger = logging.getLogger(__name__)
+    endpoint = _tls_by_omission()
+    if endpoint is not None:
+        logger.warning(
+            "OTLP traces endpoint %r has no http:// or https:// scheme, so "
+            "spans will be exported over TLS. Write it as http://%s for a "
+            "plaintext collector, or set OTEL_EXPORTER_OTLP_TRACES_INSECURE.",
+            endpoint,
+            endpoint,
+        )
+
+    try:
+        return OTLPGrpcSpanExporter()
+    except InvalidCompressionValueException:
+        # gRPC accepts only gzip, where HTTP also takes none and deflate.
+        # The generic variable is shared with metrics and logs, which stay
+        # on HTTP, so a setting that is valid for them must not take the
+        # server down when traces move to gRPC.
+        logger.warning(
+            "OTLP traces compression %r is unavailable over gRPC, which "
+            "accepts only gzip; exporting spans uncompressed.",
+            os.environ.get("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
+            or os.environ.get("OTEL_EXPORTER_OTLP_COMPRESSION"),
+        )
+        return OTLPGrpcSpanExporter(compression=Compression.NoCompression)
+
+
+def _span_exporter() -> SpanExporter:
     """Builds the span exporter, leaving the endpoint to the SDK."""
+    if _traces_protocol() == _GRPC:
+        return _grpc_span_exporter()
     return OTLPSpanExporter()
 
 

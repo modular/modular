@@ -64,7 +64,6 @@ from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
     LIVE_CONV_ROW_IDS,
     LIVE_RECURRENT_POOLS,
     LIVE_RECURRENT_ROW_IDS,
-    SHADOW_CONV_POOLS,
     SHADOW_RECURRENT_POOLS,
 )
 from max.pipelines.speculative.config import (
@@ -222,11 +221,11 @@ def _build() -> Step:
             next(it).tensor for _ in range(7)
         )
         pin = wait = scratch = None
-        # One pool per device per leaf, then the rows addressing them, then
-        # the shadows -- the order `input_types` lays the tail out in.
+        # The order `input_types` declares: pools, row tables, then the
+        # recurrent shadow.
         live_conv, live_rec = next(it).buffer, next(it).buffer
         conv_rows, rec_rows = next(it).tensor, next(it).tensor
-        shadow_conv, shadow_rec = next(it).buffer, next(it).buffer
+        shadow_rec = next(it).buffer
         out = nn(
             tokens=tokens.tensor,
             input_row_offsets=row_offsets.tensor,
@@ -254,7 +253,6 @@ def _build() -> Step:
                 LIVE_RECURRENT_POOLS: [live_rec],
                 LIVE_CONV_ROW_IDS: [conv_rows],
                 LIVE_RECURRENT_ROW_IDS: [rec_rows],
-                SHADOW_CONV_POOLS: [shadow_conv],
                 SHADOW_RECURRENT_POOLS: [shadow_rec],
             },
         )
@@ -357,7 +355,7 @@ def _build() -> Step:
                 .T
             )
         )
-        args += [conv_pool(), rec_pool(), rows, rows, conv_pool(), rec_pool()]
+        args += [conv_pool(), rec_pool(), rows, rows, rec_pool()]
         o = model.execute(*args)
         return [np.array(x.to(CPU()).to_numpy()) for x in o]
 

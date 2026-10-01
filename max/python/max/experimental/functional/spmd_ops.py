@@ -27,6 +27,7 @@ import inspect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
+from max import tree
 from max.driver import CPU, Buffer
 from max.experimental import tensor
 from max.experimental.realization_context import ensure_context
@@ -35,10 +36,18 @@ from max.experimental.sharding import (
     DeviceMesh,
     Replicated,
     TensorLayout,
+    Unknown,
 )
 from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
-from max.graph import ShapeLike, TensorValue, TensorValueLike, Type, ops
+from max.graph import (
+    BufferValue,
+    ShapeLike,
+    TensorValue,
+    TensorValueLike,
+    Type,
+    ops,
+)
 from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 from max.graph.quantization import QuantizationEncoding
@@ -237,31 +246,78 @@ def per_shard_dispatch(
         return type(first)(outputs) if multi else outputs[0]
 
 
+def _graph_value(t: Tensor) -> TensorValue | BufferValue:
+    """Returns ``t``'s value in the current graph.
+
+    A buffer, such as a KV cache's blocks, stays a buffer so that ops can
+    write to it.
+    """
+    if isinstance(t._backing_value, BufferValue):
+        return BufferValue(t)
+    return TensorValue(t)
+
+
+def _map_tree_nodes(value: Any, fn: Callable[[Tensor], Any]) -> Any:
+    """Applies ``fn`` to the tensors inside tree nodes such as a KV cache.
+
+    Covers the tree nodes other than lists, tuples and dicts, for example a
+    dataclass. Ops read such a node's tensors by attribute, so they cannot
+    convert them the way they convert a tensor passed to them directly, also
+    inside a list, tuple or dict; those are left for the op.
+    """
+    if isinstance(value, list):
+        return [_map_tree_nodes(v, fn) for v in value]
+    if type(value) is tuple:
+        return tuple(_map_tree_nodes(v, fn) for v in value)
+    if type(value) is dict:
+        return {k: _map_tree_nodes(v, fn) for k, v in value.items()}
+    if hasattr(value, "to_graph_values"):
+        return value.to_graph_values()
+    if not isinstance(value, Tensor) and tree.is_node(value):
+        return tree.map(fn, value, leaf=Tensor)
+    return value
+
+
 def _run_per_shard(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     num_devices: int,
     filtered_kwargs: Mapping[str, Any] | None = None,
 ) -> list[Any]:
-    """Calls ``graph_op`` once per shard with per-rank arg unwrapping."""
+    """Calls ``graph_op`` once per shard with each argument's own shard.
+
+    Tensors are found anywhere in the arguments, keyword arguments and tree
+    nodes such as a KV cache included.
+    """
     per_shard: list[Any] = []
     if filtered_kwargs is None:
         filtered_kwargs = {}
 
     for i in builtins.range(num_devices):
 
-        def _per_rank(t: Tensor, _i: int = i) -> TensorValue:
-            return (
-                TensorValue(t.local_shards[_i])
-                if t.is_distributed
-                else TensorValue(t)
-            )
+        def _shard(value: Any, _i: int = i) -> Any:
+            if isinstance(value, Tensor) and value.is_distributed:
+                return value.local_shards[_i]
+            return value
 
-        shard_args = map_tensors(_per_rank, args)
-        shard_args = tuple(
-            a[i] if isinstance(a, PerShard) else a for a in shard_args
+        def _per_rank(value: Any, _i: int = i) -> Any:
+            if isinstance(value, PerShard):
+                return value[_i]
+            if hasattr(value, "to_graph_values"):
+                return tree.map(_shard, value, leaf=Tensor).to_graph_values()
+            if not isinstance(value, Tensor):
+                return value
+            return _graph_value(_shard(value))
+
+        shard_args, shard_kwargs = tree.map(
+            _per_rank,
+            (args, dict(filtered_kwargs)),
+            leaf=lambda v: (
+                isinstance(v, (Tensor, PerShard))
+                or hasattr(v, "to_graph_values")
+            ),
         )
-        per_shard.append(graph_op(*shard_args, **filtered_kwargs))
+        per_shard.append(graph_op(*shard_args, **shard_kwargs))
     return per_shard
 
 
@@ -294,7 +350,26 @@ def functional(
         active_rule = getattr(wrapper, "rule", None)
         if any_distributed(args) and active_rule is not None:
             return _local_dispatch(graph_op, active_rule, args, kwargs)
+        meshes = [
+            t.mesh
+            for t in tree.leaves((args, kwargs), leaf=Tensor)
+            if isinstance(t, Tensor) and t.is_distributed
+        ]
+        # Device i of every input pairs with device i of the others, e.g. a
+        # CPU mesh's scalars with the accelerator mesh's shards.
+        if len({m.mesh_shape for m in meshes}) > 1:
+            raise ShardingError(
+                "An op without a sharding rule needs all its distributed "
+                f"inputs on meshes of one shape, got {meshes}."
+            )
+        if meshes:
+            mesh = meshes[0]
+            # Without a rule nothing relates the per-device results, so the op
+            # runs on each device's own shards and its result is Unknown.
+            unknown = DeviceMapping(mesh, (Unknown(),) * mesh.ndim)
+            return per_shard_dispatch(graph_op, args, (unknown,), kwargs)
         with ensure_context():
+            args, kwargs = _map_tree_nodes((args, kwargs), _graph_value)
             return to_tensors(graph_op(*args, **kwargs))
 
     # ``Any``-typed alias so attribute writes are dynamic;

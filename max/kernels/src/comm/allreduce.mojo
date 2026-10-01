@@ -1610,7 +1610,6 @@ def _allreduce_p2p[
         )
 
 
-@__parameter
 def allreduce[
     dtype: DType,
     ngpus: Int,

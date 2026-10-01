@@ -19,11 +19,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
-    Any,
     ClassVar,
     Generic,
     Protocol,
-    TypeVar,
     cast,
     runtime_checkable,
 )
@@ -50,6 +48,7 @@ from max.pipelines.lib.interfaces.pipeline_model import (
 )
 from max.pipelines.lora import LoRAManagerV3
 from max.pipelines.modeling.dataprocessing import collate_batch
+from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
@@ -57,6 +56,9 @@ if TYPE_CHECKING:
 ContextT = TypeVar("ContextT", bound=BaseContext)
 InputsT = TypeVar("InputsT", bound=ModelInputs)
 SpecDecodeInputsT = TypeVar("SpecDecodeInputsT", bound=UnifiedSpecDecodeInputs)
+ArchConfigT_co = TypeVar(
+    "ArchConfigT_co", bound=ArchConfig, default=ArchConfig, covariant=True
+)
 
 
 @runtime_checkable
@@ -171,12 +173,12 @@ def ragged_token_descriptors(
     ]
 
 
-class BatchProcessor(ABC, Generic[ContextT, InputsT]):
+class BatchProcessor(ABC, Generic[ContextT, InputsT, ArchConfigT_co]):
     """Batches pipeline contexts into model inputs and parses execution outputs."""
 
     def __init__(
         self,
-        config: ArchConfig,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
         inputs: Sequence[InputDescriptor] = (),
     ) -> None:
@@ -211,12 +213,12 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
         """Maps raw ``Model.execute`` buffers to :class:`ModelOutputs`."""
 
 
-class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT]):
+class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT, ArchConfigT_co]):
     """Base for ragged KV text batching."""
 
     def __init__(
         self,
-        config: ArchConfig,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
         inputs: Sequence[InputDescriptor] = (),
     ) -> None:
@@ -258,7 +260,7 @@ def build_single_replica_ragged_token_arrays(
 
 
 class SingleReplicaRaggedBatchProcessor(
-    RaggedBatchProcessor[ContextT, InputsT]
+    RaggedBatchProcessor[ContextT, InputsT, ArchConfigT_co]
 ):
     """Single-replica ragged KV batching for Graph-path models (no DP / LoRA).
 
@@ -518,13 +520,14 @@ def modulev3_ragged_kv_symbolic_inputs(
 
 
 class UnifiedSpecDecodeBatchProcessor(
-    BatchProcessor[TextContext, SpecDecodeInputsT], Generic[SpecDecodeInputsT]
+    BatchProcessor[TextContext, SpecDecodeInputsT, ArchConfigT_co],
+    Generic[SpecDecodeInputsT, ArchConfigT_co],
 ):
     """Ragged batching with persistent buffers and seed for unified spec-decode graphs."""
 
     def __init__(
         self,
-        config: Any,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
     ) -> None:
         super().__init__(config, runtime, ragged_token_descriptors(runtime))

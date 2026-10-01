@@ -36,10 +36,6 @@ from max.pipelines.lib.arch_lookup import (
     import_custom_architectures,
     select_speculator,
 )
-from max.pipelines.lib.host_memory import (
-    _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY,
-    _host_memory_limit,
-)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     arch_has_vision_tower,
@@ -57,6 +53,7 @@ from max.pipelines.sampling import (
     SamplingConfig,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.support.host_memory import host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     BaseModel,
@@ -79,6 +76,10 @@ from .model_config import (
 from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
+
+# The preprocessed-media caches live in host memory, and their multi-GiB
+# defaults can OOM a small container.
+_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY = 0.25
 
 # ModelManifest is a dict[str, MAXModelConfig] subclass with extra methods.
 # cyclopts (CLI framework) only recognizes plain dict types via typing.get_origin(),
@@ -459,7 +460,7 @@ def _resolve_preprocess_cache_budgets(
     ):
         return configured
 
-    host_bytes = _host_memory_limit()
+    host_bytes = host_memory_limit()
     if host_bytes is None:
         logger.debug(
             "Could not determine host memory; leaving the preprocessed-"
@@ -684,6 +685,13 @@ def _apply_speculative_target_architecture(
             target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
         else:
             target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+    # Not a Speculator yet: memory planning would miss the drafter's KV group.
+    if (
+        target_archs[0] == "MiMoV2ForCausalLM"
+        and speculative.is_dflash()
+        and v1_or_eagle
+    ):
+        target_archs[0] = "UnifiedDflashMiMoV2ForCausalLM"
     if target_archs[0] == "KimiK25ForConditionalGeneration" and v1_or_eagle:
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -732,6 +740,22 @@ def _apply_speculative_target_architecture(
         )
         if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
             target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
+    # Kimi K3's speculators-format DSpark drafter (
+    # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
+    # architectures: ["DSparkDraftModel"] the Gemma4 arm keys on; the
+    # verifier it names is what picks the fused graph apart.
+    if target_archs[0] == "KimiK3ForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if (
+            speculative.speculative_method == "dflash"
+            and draft_archs
+            and draft_archs[0] == "DSparkDraftModel"
+        ):
+            target_archs[0] = "UnifiedDSparkKimiK3ForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -746,6 +770,18 @@ def _apply_speculative_target_architecture(
             # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
             # path forbids block-sparse attention.
             target_archs[0] = "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
+        elif draft_archs and draft_archs[0] == "DSparkMiniMaxDraftModel":
+            # The fused graph verifies one DSpark block per step, which only
+            # the v1 dflash harness drives; Eagle, MTP and DFlash2 would load
+            # it against a draft loop that does not match.
+            if not speculative.is_dflash() or speculative.is_dflash2():
+                raise ValueError(
+                    "The MiniMax-M3 DSpark draft requires"
+                    " --speculative-method dflash"
+                )
+            target_archs[0] = (
+                "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
+            )
     if target_archs[0] == "Qwen3_5ForConditionalGeneration":
         # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
         # there is no separate draft model. Qwen3.5 shares the arch name

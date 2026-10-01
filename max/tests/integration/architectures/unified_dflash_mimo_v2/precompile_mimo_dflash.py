@@ -10,29 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""CPU producer: compile one row-wise reduction graph to a MEF with no GPU.
+"""CPU producer: compiles one of the tiny MiMo-V2 DFlash model's graphs to a
+MEF with no GPU, for the GPU tests to initialize instead of compiling.
 
-Run as a Bazel build action by the ``precompiled_mefs`` macro (see the package
-``BUILD.bazel``). All the compile/export/virtual-device machinery lives in the
-shared :func:`~test_common.mef_precompile.precompile_entrypoint`; this file only
-names the graph builder to use (:func:`build_graph`, keyed by spec name).
+Run as a build action by the ``precompiled_mefs`` macro; see the package's
+``BUILD.bazel``.
 """
 
 from __future__ import annotations
 
-from _rowwise_reduction_specs import SPECS_BY_NAME, build_graph
-from max.graph import Graph
+from mimo_dflash_harness import PRECOMPILED_DEVICES, named_graph
 from test_common.mef_precompile import precompile_entrypoint
 
-
-def _build(spec_name: str) -> Graph:
-    spec = SPECS_BY_NAME.get(spec_name)
-    if spec is None:
-        raise SystemExit(
-            f"unknown spec {spec_name!r}; known: {sorted(SPECS_BY_NAME)}"
-        )
-    return build_graph(spec)
-
-
 if __name__ == "__main__":
-    precompile_entrypoint(_build)
+    precompile_entrypoint(named_graph, device_count=PRECOMPILED_DEVICES)

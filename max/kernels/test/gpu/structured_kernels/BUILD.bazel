@@ -22,6 +22,7 @@ _EXTRA_CONSTRAINTS = {
         "//:has_gpu",
         "//:amd_gpu",
     ],
+    "test_producer_consumer_pipeline.mojo": ["//:has_gpu"],
 }
 
 # Per-file compile defines. The test compiles the reference-cadence /

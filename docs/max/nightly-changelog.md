@@ -24,6 +24,11 @@ This version is still a work in progress.
   one B200. Only NVFP4 exports load for now, not Xiaomi's FP8 checkpoint
   (`XiaomiMiMo/MiMo-V2.6-Flash-RL`).
 
+- MiMo-V2.6-Flash (`MiMoV2ForCausalLM`) now supports speculative decoding
+  with the DFlash drafter its checkpoint ships
+  (`UnifiedDflashMiMoV2ForCausalLM`), with greedy and per-row sampled
+  acceptance.
+
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without
@@ -85,15 +90,33 @@ This version is still a work in progress.
   `DeviceMapping.to_placements()` are removed; use `DeviceMapping` and its
   `placements` attribute, which they aliased.
 
+- `DeviceMesh.default()`, `DeviceMesh.is_single`, `DeviceMesh.is_simulated`
+  and `DeviceMapping.to_mesh()` are removed; use `DeviceMesh.single(CPU())`,
+  `mesh.num_devices == 1` and a new `DeviceMapping` on the target mesh.
+
 - Added `max.experimental.sharding.auto_reshard` to control automatic
   resharding. It replaces `mode()`, `isolated_solver()`, `Solver`,
   `ReshardBehavior`, `GreedyReshard`, `NoReshard` and `PartialsOnly`; for
   example, `mode(NoReshard())` becomes `auto_reshard(mode="raise")`.
 
+- `max.experimental.tensor.default_device()` accepts a `DeviceMesh` and
+  replaces `max.experimental.sharding.mesh_context()`, which is removed.
+  `defaults()` now returns the device as a `DeviceMesh`.
+
+- `max.experimental.random.uniform()` and `gaussian()` accept a
+  `DeviceMapping`.
+
 - `max.experimental.sharding` no longer re-exports `P`, `R`, `Action`,
   `PerShard`, `PerShardDim`, `Collective`, `ReduceOp`, `get_active_mesh`,
   `as_device_mapping`, `as_layout` or the `*_rule` functions.
 
+- Added `max.experimental.sharding.Unknown`, the placement for per-device
+  values with no known relation, and `Tensor.rebind_mapping()`, which
+  relabels a tensor's placements without moving data. Ops on `Unknown` inputs
+  run on each device's own shard and return `Unknown` results.
+  `max.experimental.nn.common_layers.functional_kernels.local_map()` is
+  removed: wrap the per-device function in `F.functional()` and claim its
+  output's placement with `Tensor.rebind_mapping()`.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk
@@ -197,6 +220,14 @@ This version is still a work in progress.
   Metal also requires a page-aligned base and a page-multiple length.
 - Added an eager usage validator for `ModuleV3` and eager `Tensor` code. Can
   be enabled with a new `--eager-usage-validator` flag in the MAX CLI.
+- Added `max.nn.HyperConnection` and `max.experimental.nn.HyperConnection`,
+  the ModuleV2 and ModuleV3 forms of a manifold-constrained hyper-connection
+  (mHC) site. The layer generalizes the residual connection: `hc_mult`
+  residual streams run in parallel, and a learned gate collapses them into
+  the sublayer's input and decides how the sublayer's output is written back
+  across them. It owns the `hc_fn`, `hc_base`, and `hc_scale` weights, and
+  returns `(post, comb, collapsed)` so the caller drives the residual update.
+  Float32, GPU-only.
 
 ### Inference server
 
@@ -233,6 +264,15 @@ This version is still a work in progress.
   a deployment that set the latter for traces now sends metrics there too,
   and loses them if that endpoint is gRPC.
 
+- MAX Serve can now export spans over OTLP/gRPC. Set
+  `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` (or the generic
+  `OTEL_EXPORTER_OTLP_PROTOCOL`) to `grpc`, and set
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to a gRPC receiver such as
+  `http://<host>:4317`. Keep the `http://` scheme for a plaintext
+  collector: without it the OTel SDK dials TLS. The protocol defaults to
+  `http/protobuf`, so existing deployments are unchanged, and metrics and
+  logs still export over HTTP.
+
 - Added `--prefill-schedule-interval` (default 1, every step): admit prefill
   work only on every Nth scheduler step, leaving the steps in between entirely
   to decode. Data-parallel ranks advance in lockstep, so prefill on any one
@@ -246,6 +286,12 @@ This version is still a work in progress.
 - Structured and constrained output now uses xgrammar exclusively. The
   `llguidance` backend has been removed; `--structured-output-backend`
   no longer accepts `llguidance` as a value.
+
+- `/v1/completions` now honors `reasoning_split`. By default the server's
+  reasoning parser still hides the reasoning span from `text` and counts it in
+  `usage.completion_tokens_details.reasoning_tokens`. A request that sends
+  `reasoning_split: false` skips the parser, so `text` and `logprobs` cover
+  every generated token, reasoning span included, as in vLLM.
 
 ### Server metrics
 
@@ -295,6 +341,15 @@ This version is still a work in progress.
 - `max.experimental.custom.declare` now raises `ValueError` if the op's own
   `custom_extensions` (or the process-wide defaults) don't register the
   kernel.
+- `max.nn.moe.StackedMoE` can now run MXFP4 experts W4A8 on SM100 GPUs,
+  including under tensor parallelism: pass `mxfp8_activations=True` with an
+  MXFP4 `quant_config`. The expert scales are then declared in the grouped
+  matmul's interleaved layout (see
+  `max.nn.moe.interleaved_block_scales_shape`). The new `router_dtype` and
+  `combine_dtype` options run the router and the weighted combine in float32.
+- Added `max.nn.moe.SigmoidTopKRouter`, the sigmoid top-k router with an
+  expert score correction bias (`noaux_tc` with one expert group) that
+  MiniMax-M2, HY-V3, and MiMo-V2 share.
 
 ### C API
 
@@ -348,6 +403,15 @@ This version is still a work in progress.
 
 - Deprecated `TileTensor.as_immut()` in favor of `TileTensor.as_imm()`, which
   returns the same immutable view and matches the naming of `Pointer.as_imm()`.
+
+- Added `max.nn.kernels.hyper_connection_gates`, a fused kernel for the
+  Manifold-Constrained Hyper-Connections (mHC) gate computation. It replaces
+  the sigmoids, the softmax, and the Sinkhorn-Knopp projection an mHC site
+  runs between its stream projection and its stream collapse -- roughly 40
+  small elementwise and reduction launches at 20 Sinkhorn iterations -- with
+  a single launch that keeps the whole `hc_mult` x `hc_mult` mixer in one
+  warp's registers. Float32, GPU-only. It supersedes
+  `max.nn.kernels.mhc_split_sinkhorn`, which is removed.
 
 - `max.nn.kernels.grouped_matmul_block_scaled` and
   `max.nn.kernels.grouped_matmul_blocked_swiglu` accept an optional
@@ -466,6 +530,10 @@ This version is still a work in progress.
 - Fixed `max generate` crashing after the first token for Gemma 4 and
   Idefics3 models, whose tokenizers rejected the CLI's token list on decode.
 
+- Fixed the same `max generate` decode crash for the other vision-language
+  models: Gemma 3 multimodal, InternVL, Kimi K2.5, Pixtral, Qwen2.5-VL and
+  Qwen3-VL.
+
 - The functional kernel wrappers in `max.experimental.nn.common_layers` now
   open a realization context, so eager attention with a paged KV cache runs.
 
@@ -569,5 +637,23 @@ This version is still a work in progress.
 
 - Fixed the scheduler refusing to admit queued prefill on models with a
   recurrent state cache while KV cache memory was still free.
+
+- Fixed `top_k` on Apple GPUs returning stale memory past the 32nd output of a
+  row that a single threadgroup reduces, which a large `k` forces. Tied values
+  in rows of up to 2048 elements also come back smallest index first now, as on
+  other GPUs, instead of grouped by threadgroup.
+
+- Fixed KV cache transfers over NIXL on InfiniBand hosts aborting the process
+  when a NIXL agent shut down, on glibc's `mutex->__data.__owner == 0`
+  assertion. The CUDA and ROCm verbs builds of the NIXL UCX plugin bound part
+  of the mlx5 API to an outdated compatibility ABI, so UCX's completion queue
+  doorbell writes landed on a mutex inside libmlx5. The plugins now link
+  libmlx5 and bind its current ABI.
+
+- Fixed PyTorch raising `HIP error: peer access is already enabled` on AMD GPUs
+  in a process that had set up MAX across several GPUs more than once, for
+  example by creating a second multi-GPU `InferenceSession`. MAX accepted the
+  repeat as success but left HIP's last error set, and PyTorch reported it from
+  its next kernel launch. MAX now clears that error.
 
 ## Mojo language

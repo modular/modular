@@ -406,9 +406,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
         var num_orig_blocks = ceildiv(topk, Self.config.BN_QK)
 
-        @__parameter
         @inline(.always)
-        def _pdl_early_exit_all_q():
+        def _pdl_early_exit_all_q() {imm}:
             comptime if Self.fold_shared_index:
                 comptime for q_local in range(Self.q_len_fold):
                     Self.Common_MLA_Op.pdl_early_exit[fold_q=True](

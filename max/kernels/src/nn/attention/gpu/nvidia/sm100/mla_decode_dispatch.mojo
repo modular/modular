@@ -1074,9 +1074,8 @@ def mla_decode_sm100_dispatch[
     # For example, bs=64/cl=256 gets 5 pages at page_size=64 (vs 3 at 128),
     # allowing np=2 with 2-3 pages per split instead of 1-2.
     # =========================================================================
-    @__parameter
     @inline(.always)
-    def launch_impl[split_page_size_param: Int]() raises:
+    def launch_impl[split_page_size_param: Int]() raises {imm}:
         _mla_decode_sm100_dispatch_impl[
             q_type=q_type,
             k_t=k_t,
@@ -1283,8 +1282,7 @@ def _mla_decode_sm100_dispatch_impl[
         # the decode kernel and combine kernel at compile time. The runtime
         # branch on attn_sink_ptr happens once (below) to select the right
         # compile-time specialization.
-        @__parameter
-        def _launch_split_k_path[_has_attn_sink: Bool]() raises:
+        def _launch_split_k_path[_has_attn_sink: Bool]() raises {imm}:
             # Launch main MLA decode kernel (writes partial results to accumulators)
             mla_decode_sm100_sink_split_k[
                 q_type=q_type,
@@ -1336,8 +1334,7 @@ def _mla_decode_sm100_dispatch_impl[
 
             # Dispatch to specialized kernel based on num_partitions for compile-time unrolling.
             # Supports up to sm_count//2 splits to allow higher SM utilization.
-            @__parameter
-            def launch_combine[n_splits: Int, wph: Int]() raises:
+            def launch_combine[n_splits: Int, wph: Int]() raises {imm}:
                 mla_decode_combine_partial_outputs[
                     output_type=output_type,
                     accum_type=AccumType,
@@ -1358,8 +1355,7 @@ def _mla_decode_sm100_dispatch_impl[
                     ctx,
                 )
 
-            @__parameter
-            def launch_combine_split_parallel[n_splits: Int]() raises:
+            def launch_combine_split_parallel[n_splits: Int]() raises {imm}:
                 mla_decode_combine_partial_outputs[
                     output_type=output_type,
                     accum_type=AccumType,
@@ -1381,8 +1377,7 @@ def _mla_decode_sm100_dispatch_impl[
                     ctx,
                 )
 
-            @__parameter
-            def dispatch_combine[wph: Int]() raises:
+            def dispatch_combine[wph: Int]() raises {imm}:
                 """Dispatch the combine kernel with the given warps_per_head,
                 matching num_partitions to the correct compile-time bucket.
 
@@ -1404,8 +1399,7 @@ def _mla_decode_sm100_dispatch_impl[
                 if not launched:
                     raise _unbucketed_split_error(num_partitions)
 
-            @__parameter
-            def dispatch_combine_split_parallel() raises:
+            def dispatch_combine_split_parallel() raises {imm}:
                 """Dispatch the split-parallel combine kernel, matching
                 num_partitions to the correct compile-time bucket.
 
@@ -1544,8 +1538,7 @@ def _mla_decode_sm100_dispatch_impl[
         comptime SplitAccumType = NullPointer[AccumType]
         var lse_accum_split_ptr: SplitAccumType = {}
 
-        @__parameter
-        def _launch_no_split_path[_has_attn_sink: Bool]() raises:
+        def _launch_no_split_path[_has_attn_sink: Bool]() raises {imm}:
             mla_decode_sm100_sink_split_k[
                 q_type=q_type,
                 k_t=k_t,
@@ -1919,14 +1912,13 @@ def mla_decode_sm100_sink_split_k[
                 # layout in SMEM instead of TMA hardware doing it directly,
                 # so no separate SW64/FP8 gather4 descriptor is needed here.
 
-                @__parameter
                 @inline(.always)
                 def _launch_sparse_qkv_fp8[
                     _has_extra_kv: Bool,
                     _has_variable_topk: Bool,
                     _fold_shared_index_val: Bool = False,
                     _q_len_fold_val: Int = 1,
-                ]() raises:
+                ]() raises {imm}:
                     if ragged:
                         comptime ValidLengthType = NonNullPointer[.uint32]
                         var valid_len: ValidLengthType = {
@@ -2065,14 +2057,13 @@ def mla_decode_sm100_sink_split_k[
                     depth=mla_config.input_q_depth,
                 ](ctx, q_ptr, num_rows_q)
 
-                @__parameter
                 @inline(.always)
                 def _launch_sparse_kv_fp8[
                     _has_extra_kv: Bool,
                     _has_variable_topk: Bool,
                     _fold_shared_index: Bool = False,
                     _q_len_fold: Int = 1,
-                ]() raises:
+                ]() raises {imm}:
                     if ragged:
                         comptime ValidLengthType = NonNullPointer[.uint32]
                         var valid_len: ValidLengthType = {
@@ -2547,13 +2538,12 @@ def mla_decode_sm100_sink_split_k[
                 valid_length.ptr.as_imm().as_unsafe_any_origin()
             }
 
-            @__parameter
             @inline(.always)
             def _launch_r[
                 _fold_q: Bool,
                 _q_len_fold: Int,
                 _layout_g: Bool = False,
-            ]() raises:
+            ]() raises {imm}:
                 comptime if _layout_g:
                     launch_mla_sm100_decode_native_fp8_layout_g[
                         q_type=q_type,
@@ -2645,13 +2635,12 @@ def mla_decode_sm100_sink_split_k[
             comptime ValidLengthType = NullPointer[.uint32]
             var valid_len: ValidLengthType = {}
 
-            @__parameter
             @inline(.always)
             def _launch_n[
                 _fold_q: Bool,
                 _q_len_fold: Int,
                 _layout_g: Bool = False,
-            ]() raises:
+            ]() raises {imm}:
                 comptime if _layout_g:
                     launch_mla_sm100_decode_native_fp8_layout_g[
                         q_type=q_type,

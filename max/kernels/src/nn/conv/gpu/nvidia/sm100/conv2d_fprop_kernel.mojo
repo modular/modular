@@ -100,7 +100,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import 
 )
 from linalg.utils import (
     ElementwiseComputeFn,
-    elementwise_compute_lambda_type,
     elementwise_epilogue_type,
     identity_compute_fn,
 )
@@ -127,9 +126,6 @@ struct Conv2dFpropKernel[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional epilogue lambda for fusion (bias, activation, residual add)
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     register_based_epilogue: Bool = True,
 ]:
     """SM100 Conv2D forward propagation kernel.
@@ -152,8 +148,6 @@ struct Conv2dFpropKernel[
         cluster_shape: CUDA cluster dimensions.
         elementwise_lambda_fn: Optional void epilogue lambda applied after
             output write. Signature: `def(IndexList[2], SIMD) -> None`.
-        elementwise_compute_lambda_fn: Optional epilogue lambda for fusion
-            (bias add, activation functions, residual connections).
         register_based_epilogue: Whether to apply the lambda in registers.
     """
 
@@ -423,7 +417,6 @@ struct Conv2dFpropKernel[
         num_output_warps=Self.num_output_warps,
         # Epilogue lambda for fusion (bias, activation, residual add)
         elementwise_lambda_fn=Self.elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
     ]
 
@@ -881,8 +874,7 @@ struct Conv2dFpropKernel[
         Parameters:
             ComputeFnType: Type of `compute_fn` (inferred).
             has_residual: Whether to load source C and apply residual add.
-            has_compute_fn: Whether to apply `compute_fn` in the epilogue
-                instead of the kernel's `elementwise_compute_lambda_fn`.
+            has_compute_fn: Whether to apply `compute_fn` in the epilogue.
             _src_rank: Rank of source C TMA tile/descriptor shapes (internal,
                 set by entry points).
             _src_tile_shape: Source C TMA tile shape (internal, set by

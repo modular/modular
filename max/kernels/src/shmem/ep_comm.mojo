@@ -476,7 +476,6 @@ struct EPRoleSplit[block_size: Int, n_items: Int, flag: Bool = False]:
 
 
 @inline(.always)
-@__parameter
 def ep_signal_completion[
     p2p_world_size: Int,
     //,

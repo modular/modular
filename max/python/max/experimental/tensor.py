@@ -94,8 +94,8 @@ with randomly initialized weights before loading weights
     # Or compile directly without ever initializing weights.
     # Derive the input type from the same defaults the module used, so the
     # module, its weights, and the input type agree on dtype and device.
-    dtype, device = defaults()
-    input_spec = TensorLayout(dtype, ["batch", 2], device)
+    dtype, mesh = defaults()
+    input_spec = TensorLayout(dtype, ["batch", 2], mesh)
     model = model.compile(input_spec, weights=weights)
 """
 
@@ -120,7 +120,9 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
     TensorLayout,
+    Unknown,
 )
+from max.experimental.sharding.mesh import _DEFAULT_DEVICE
 from max.experimental.sharding.per_shard_dim import (
     is_per_shard_dim,
     local_shape_at,
@@ -192,7 +194,9 @@ def _fold_sharded_shape(
         for mesh_axis in range(mesh.ndim - 1, -1, -1):
             n = mesh_shape[mesh_axis]
             p = placements[mesh_axis]
-            localizes_ti = p.localized_axis() == ti
+            # A tensor with Unknown placements has no set way of getting the
+            # global shape; all shapes are device-local.
+            localizes_ti = p.localized_axis() == ti or isinstance(p, Unknown)
             new_cells: list[graph.Dim] = []
             for start in range(0, len(cells), n):
                 block = cells[start : start + n]
@@ -221,7 +225,6 @@ def _fold_sharded_shape(
 
 
 _CONTEXT: ContextVar[RealizationContext] = ContextVar("_CONTEXT")
-_DEFAULT_DEVICE: ContextVar[Device] = ContextVar("_DEFAULT_DEVICE")
 _DEFAULT_DTYPE: ContextVar[DType] = ContextVar("_DEFAULT_DTYPE")
 
 current_realization_context = _CONTEXT.get
@@ -405,45 +408,55 @@ class RealizationContext(
         """
 
 
-def _default_dtype(device: Device) -> DType:
+def _as_mesh(device: Device | DeviceMesh) -> DeviceMesh:
+    if isinstance(device, Device):
+        return DeviceMesh.single(device)
+    return device
+
+
+def _default_dtype(device: Device | DeviceMesh) -> DType:
     if dtype := _DEFAULT_DTYPE.get(None):
         return dtype
+    device = _as_mesh(device).devices[0]
     return DType.float32 if isinstance(device, CPU) else DType.bfloat16
 
 
-def _default_device() -> Device:
-    if device := _DEFAULT_DEVICE.get(None):
-        return device
-    return Accelerator() if accelerator_count() else CPU()
+def _default_device() -> DeviceMesh:
+    if mesh := _DEFAULT_DEVICE.get(None):
+        return mesh
+    return DeviceMesh.single(Accelerator() if accelerator_count() else CPU())
 
 
 def defaults(
-    dtype: DType | None = None, device: Device | None = None
-) -> tuple[DType, Device]:
+    dtype: DType | None = None, device: Device | DeviceMesh | None = None
+) -> tuple[DType, DeviceMesh]:
     """Gets the default dtype and device for tensor creation.
 
     Returns a tuple containing the dtype and device to use for tensor creation,
     applying defaults when values are not specified. If no dtype is provided,
     defaults to :obj:`DType.float32` for CPU and :obj:`DType.bfloat16` for
-    accelerators. If no device is provided, defaults to an accelerator if
-    available, otherwise CPU.
+    accelerators. If no device is provided, defaults to the one set by
+    :func:`default_device`, or else an accelerator if available, otherwise CPU.
 
     Args:
         dtype: The data type to use. If not specified, a default dtype based
             on the device is returned.
-        device: The device to use. If not specified, defaults to an available
+        device: The device or mesh to use. If not specified, defaults to the
+            one set by :func:`default_device`, or else an available
             accelerator or CPU.
 
     Returns:
-        tuple[DType, Device]: A tuple containing the resolved dtype and device.
+        tuple[DType, DeviceMesh]: A tuple containing the resolved dtype and
+        device mesh. A single device is returned as a one-device mesh; use
+        ``mesh.devices[0]`` where a :class:`~max.driver.Device` is needed.
     """
-    device = device or _default_device()
-    return (dtype or _default_dtype(device)), device
+    mesh = _default_device() if device is None else _as_mesh(device)
+    return (dtype or _default_dtype(mesh)), mesh
 
 
 def default_device(
-    device: Device | graph.DeviceRef,
-) -> contextlib.AbstractContextManager[Device]:
+    device: Device | DeviceMesh | graph.DeviceRef,
+) -> contextlib.AbstractContextManager[DeviceMesh]:
     """Context manager for setting the default device for tensor creation.
 
     Sets the default device used for tensor creation within the context. All
@@ -460,16 +473,21 @@ def default_device(
             x = tensor.Tensor.ones((2, 3))  # Created on CPU
             y = tensor.Tensor.zeros((2, 3))  # Also on CPU
 
+    The default can also be a
+    :class:`~max.experimental.sharding.DeviceMesh`. Tensors created inside
+    the block are then replicated across the mesh.
+
     Args:
-        device: The device to use as the default for tensor creation within
-            the context.
+        device: The device or mesh to use as the default for tensor creation
+            within the context.
 
     Returns:
-        A context manager that sets the default device.
+        A context manager that sets the default device, and yields it as a
+        :class:`~max.experimental.sharding.DeviceMesh`.
     """
     if isinstance(device, graph.DeviceRef):
         device = device.to_device()
-    return contextvar_context(_DEFAULT_DEVICE, device)
+    return contextvar_context(_DEFAULT_DEVICE, _as_mesh(device))
 
 
 def default_dtype(dtype: DType) -> contextlib.AbstractContextManager[DType]:
@@ -520,12 +538,12 @@ def defaults_like(like: Tensor) -> Generator[None]:
             z = tensor.Tensor.zeros((2, 3), dtype=DType.float32)  # float32, cpu
 
     Args:
-        like: The tensor whose dtype and device to use as defaults.
+        like: The tensor whose dtype and device mesh to use as defaults.
 
     Returns:
         A context manager that sets the default dtype and device.
     """
-    with default_dtype(like.dtype), default_device(like.device):
+    with default_dtype(like.dtype), default_device(like.mesh):
         yield
 
 
@@ -605,6 +623,34 @@ class Tensor(DLPackArray, HasTensorValue):
     def mapping(self) -> DeviceMapping:
         """Returns the device mapping describing where this tensor lives."""
         return self._mapping
+
+    def rebind_mapping(self, mapping: DeviceMapping) -> Tensor:
+        """Returns this tensor's shards under a new placement, moving no data.
+
+        Use it to claim the placement of a per-device result, such as the
+        :class:`~max.experimental.sharding.Unknown` output of an op without a
+        sharding rule. The new placement is a trusted claim; ensure it is
+        correct to prevent incorrect downstream results.
+
+        Args:
+            mapping: The mapping to claim, on this tensor's mesh.
+
+        Returns:
+            A tensor with the same shards and the given mapping.
+
+        Raises:
+            ValueError: If ``mapping`` is on a different mesh.
+        """
+        if mapping.mesh != self.mesh:
+            raise ValueError("rebind_mapping cannot change the device mesh.")
+        if self._state is not None:
+            result = self._state.ctx.create_unrealized(
+                self._state.values, mapping=mapping
+            )
+            # A single-device mesh is not carried by create_unrealized.
+            result._mapping = mapping
+            return result
+        return Tensor._from_shards(self.buffers, mapping)
 
     @property
     def is_distributed(self) -> bool:
@@ -722,7 +768,7 @@ class Tensor(DLPackArray, HasTensorValue):
         data: DLPackArray | NestedArray | Number | None = None,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMesh | None = None,
         storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ) -> Tensor:
@@ -758,7 +804,7 @@ class Tensor(DLPackArray, HasTensorValue):
         data: DLPackArray | NestedArray | Number | None = None,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMesh | None = None,
         storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ):
@@ -1113,7 +1159,7 @@ class Tensor(DLPackArray, HasTensorValue):
         value: Number,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with a specified value.
 
@@ -1139,9 +1185,10 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device or device mapping where the tensor will be
-                allocated. If not specified, defaults to an accelerator if
-                available, otherwise CPU. Pass a
+            device: The device, mesh, or device mapping where the tensor
+                will be allocated. A mesh replicates the tensor. If not
+                specified, defaults to the one set by :func:`default_device`,
+                or else an accelerator if available, otherwise CPU. Pass a
                 :class:`~max.experimental.sharding.DeviceMapping` to create
                 a distributed tensor.
 
@@ -1188,7 +1235,7 @@ class Tensor(DLPackArray, HasTensorValue):
         shape: ShapeLike,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with zeros.
 
@@ -1214,9 +1261,10 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device or device mapping where the tensor will be
-                allocated. If not specified, defaults to an accelerator if
-                available, otherwise CPU.
+            device: The device, mesh, or device mapping where the tensor
+                will be allocated. A mesh replicates the tensor. If not
+                specified, defaults to the one set by :func:`default_device`,
+                or else an accelerator if available, otherwise CPU.
 
         Returns:
             Tensor: A new tensor with the specified shape filled with zeros.
@@ -1259,7 +1307,7 @@ class Tensor(DLPackArray, HasTensorValue):
         shape: ShapeLike,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with ones.
 
@@ -1278,9 +1326,10 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device or device mapping where the tensor will be
-                allocated. If not specified, defaults to an accelerator if
-                available, otherwise CPU.
+            device: The device, mesh, or device mapping where the tensor
+                will be allocated. A mesh replicates the tensor. If not
+                specified, defaults to the one set by :func:`default_device`,
+                or else an accelerator if available, otherwise CPU.
 
         Returns:
             Tensor: A new tensor with the specified shape filled with ones.
@@ -1326,7 +1375,7 @@ class Tensor(DLPackArray, HasTensorValue):
         out_dim: DimLike | None = None,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor with evenly spaced values within a given interval.
 
@@ -1869,8 +1918,8 @@ class Tensor(DLPackArray, HasTensorValue):
             x = tensor.Tensor.ones((2, 3), device=CPU())
             print(x.device)
 
-            _, device = defaults()
-            y = x.to(device)
+            _, mesh = defaults()
+            y = x.to(mesh.devices[0])
             print(y.device)
 
             z = y.to(y.device)

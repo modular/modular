@@ -15,16 +15,12 @@
 
 The Qwen3.5 MTP rollback is reused verbatim by the DFlash2 graph, so what
 needs proving is that it is K-agnostic in fact and not only in argument. These
-tests run the two real state kernels over an 8-row verify window and check the
-live pools land exactly where a forward over the accepted prefix alone would
-have left them.
+tests run the two real state kernels over a verify window and check the live
+pools match a forward over the accepted prefix alone, bit for bit.
 
-The failure this guards is silent. transformers' ``LinearAttentionLayer.crop``
-is a no-op, so the obvious port of DFlash v1's loop rolls back the 16
-full-attention layers, leaves the 48 gated-DeltaNet layers advanced over the
-whole block, and raises nothing -- it just generates text the target did not
-choose. ``test_leaving_the_pools_advanced_is_detectable`` is that bug, asserted
-to be visible.
+The verify runs the conv with ``write_state=False`` and the replay writes the
+window, so these tests also cover the conv rollback for both graphs. The
+recurrence replays over the verify's own conv output.
 """
 
 from __future__ import annotations
@@ -38,6 +34,7 @@ from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
 from max.nn.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,
+    verify_width_operand,
 )
 from max.pipelines.architectures.qwen3_5.layers.gated_deltanet import (
     GatedDeltaReplayInputs,
@@ -61,6 +58,9 @@ NUM_K_HEADS = 1
 NUM_V_HEADS = 2
 CONV_DIM = 2 * NUM_K_HEADS * KEY_HEAD_DIM + NUM_V_HEADS * VALUE_HEAD_DIM
 CONV_KERNEL = 4
+CARRY_FORWARD_BELOW = CONV_KERNEL - 1
+"""Accepted lengths below this carry window slots from the pre-verify window."""
+
 MAX_SLOTS = 4
 
 
@@ -69,15 +69,25 @@ def _rand(rng: np.random.Generator, *shape: int) -> np.ndarray:
 
 
 def _run(
-    batch: int, accepted: list[int], *, replay_full_window: bool = False
+    accepted: list[int],
+    *,
+    replay_full_window: bool = False,
+    verify_writes_conv_window: bool = False,
 ) -> dict[str, np.ndarray]:
-    """Verifies a block, rolls back, and independently replays the prefix.
+    """Verifies a window, rolls back, and independently replays the prefix.
 
     Returns the live, shadow and reference pools. ``live`` is what the
     rollback produced; ``reference`` is what the same kernels produce over a
     host-sliced accepted prefix, built without ``accepted_row_plan``, so the
     two agreeing is not a tautology.
+
+    Args:
+        accepted: Drafts each request accepted.
+        replay_full_window: Replay every verified row instead of the
+            accepted prefix.
+        verify_writes_conv_window: Let the verify write the conv window.
     """
+    batch = len(accepted)
     rng = np.random.default_rng(7)
     total = batch * BLOCK
     qkv = _rand(rng, total, CONV_DIM)
@@ -118,7 +128,6 @@ def _run(
         TensorType(DType.uint32, [batch + 1], device=gpu),
         conv_pool_type,  # live conv
         rec_pool_type,  # live recurrent
-        conv_pool_type,  # shadow conv
         rec_pool_type,  # shadow recurrent
         conv_pool_type,  # reference conv
         rec_pool_type,  # reference recurrent
@@ -136,7 +145,7 @@ def _run(
             ref_rows_v,
             ref_offsets_v,
         ) = (v.tensor for v in graph.inputs[:9])
-        live_conv, live_rec, shadow_conv, shadow_rec, ref_conv, ref_rec = (
+        live_conv, live_rec, shadow_rec, ref_conv, ref_rec = (
             v.buffer for v in graph.inputs[9:]
         )
 
@@ -145,9 +154,6 @@ def _run(
         # block's rows are the block itself and the span the snapshot fills
         # is just the batch.
         live_rows = ops.unsqueeze(slots_v, 0)
-        snapshot_state_pools(
-            [live_conv], [shadow_conv], [live_rows], batch_scalar
-        )
         snapshot_state_pools(
             [live_rec], [shadow_rec], [live_rows], batch_scalar
         )
@@ -159,13 +165,14 @@ def _run(
             dtype=DType.uint32,
         )
 
-        # The verify: the whole block, on the shadow pools.
+        # The recurrence runs on the shadow, the conv on the live pool.
         verify_conv = gated_delta_conv1d_fwd(
             qkv_input_ragged=qkv_v,
             conv_weight=conv_w,
-            conv_state=shadow_conv,
-            slot_idx=shadow_slots,
+            conv_state=live_conv,
+            slot_idx=slots_v,
             input_row_offsets=offsets_v,
+            write_state=verify_writes_conv_window,
         )
         gated_delta_recurrence_fwd(
             qkv_conv_output=ops.silu(verify_conv),
@@ -193,7 +200,13 @@ def _run(
             )
             replay_offsets = offsets_v.cast(DType.int64)
         replay_state_pools(
-            [[GatedDeltaReplayInputs(qkv_v, conv_w, decay_v, beta_v)]],
+            [
+                [
+                    GatedDeltaReplayInputs(
+                        qkv_v, conv_w, decay_v, beta_v, ops.silu(verify_conv)
+                    )
+                ]
+            ],
             [live_conv],
             [live_rec],
             [live_rows],
@@ -201,6 +214,7 @@ def _run(
             rows,
             replay_offsets,
             [],
+            verify_width_operand(NUM_DRAFTS),
         )
 
         # The independent reference: the same kernels over the host-sliced
@@ -232,7 +246,6 @@ def _run(
     buffers = {
         "live_conv": pool(init_conv),
         "live_rec": pool(init_rec),
-        "shadow_conv": pool(np.zeros_like(init_conv)),
         "shadow_rec": pool(np.zeros_like(init_rec)),
         "ref_conv": pool(init_conv),
         "ref_rec": pool(init_rec),
@@ -255,43 +268,58 @@ def _run(
     }
 
 
-@pytest.mark.parametrize("accepted", [[0], [3], [NUM_DRAFTS]])
-def test_the_block_rollback_lands_on_the_accepted_prefix(
-    accepted: list[int],
-) -> None:
-    """Bit-exact, at every acceptance length a block of 8 can produce."""
-    pools = _run(1, accepted)
+def _assert_rolled_back(pools: dict[str, np.ndarray]) -> None:
+    """Asserts both live pools match the reference replay exactly."""
     np.testing.assert_array_equal(pools["live_conv"], pools["ref_conv"])
     np.testing.assert_array_equal(pools["live_rec"], pools["ref_rec"])
+
+
+@pytest.mark.parametrize("accepted", [0, 1, 2, 3, NUM_DRAFTS])
+def test_the_block_rollback_lands_on_the_accepted_prefix(
+    accepted: int,
+) -> None:
+    """Checks the rollback matches the reference at each accepted length.
+
+    Accepted lengths 0 and 1 carry window slots forward from the pool, and 2
+    is the boundary.
+    """
+    _assert_rolled_back(_run([accepted]))
 
 
 def test_each_request_rolls_back_to_its_own_length() -> None:
-    """Three requests accepting 7 / 3 / 0 of their seven drafts."""
-    pools = _run(3, [NUM_DRAFTS, 3, 0])
-    np.testing.assert_array_equal(pools["live_conv"], pools["ref_conv"])
-    np.testing.assert_array_equal(pools["live_rec"], pools["ref_rec"])
+    """Checks four requests on both sides of the carry-forward boundary."""
+    _assert_rolled_back(_run([NUM_DRAFTS, 3, 1, 0]))
 
 
 def test_leaving_the_pools_advanced_is_detectable() -> None:
-    """The ``crop``-is-a-no-op bug, asserted to be visible.
-
-    The shadow pools hold the state after all eight verified rows. If a port
-    left the live pools there -- which is exactly what happens when a rollback
-    that works for the 16 full-attention layers is applied to the 48
-    gated-DeltaNet ones -- the state would differ from the accepted prefix's.
-    A partial acceptance that did *not* differ would mean this test measures
-    nothing.
-    """
-    pools = _run(1, [3])
+    """Checks the state after the whole window differs from the reference."""
+    pools = _run([3])
     assert not np.array_equal(pools["shadow_rec"], pools["ref_rec"])
-    assert not np.array_equal(pools["shadow_conv"], pools["ref_conv"])
+
+
+@pytest.mark.parametrize("accepted", [0, 1, 3, NUM_DRAFTS])
+def test_a_verify_that_writes_the_conv_window_is_detectable(
+    accepted: int,
+) -> None:
+    """Checks a verify that writes the conv window breaks the conv rollback.
+
+    The conv window differs only below ``CARRY_FORWARD_BELOW``, since longer
+    lengths rebuild it from input rows. The recurrent pool matches, since
+    its replay reads the verify's conv output rather than the conv replay's.
+    """
+    pools = _run([accepted], verify_writes_conv_window=True)
+    np.testing.assert_array_equal(pools["live_rec"], pools["ref_rec"])
+    keep = 1 + accepted
+    if keep < CARRY_FORWARD_BELOW:
+        assert not np.array_equal(pools["live_conv"], pools["ref_conv"])
+    else:
+        np.testing.assert_array_equal(
+            pools["live_conv"],
+            pools["ref_conv"],
+        )
 
 
 def test_replaying_the_whole_window_is_detectable() -> None:
-    """Replaying all eight rows instead of the accepted prefix must not pass.
-
-    The mirror of the test above: it is the replay's *offsets*, not merely the
-    fact that a replay happened, that carries the accepted length.
-    """
-    pools = _run(1, [3], replay_full_window=True)
+    """Checks replaying the whole window differs from the reference."""
+    pools = _run([3], replay_full_window=True)
     assert not np.array_equal(pools["live_rec"], pools["ref_rec"])

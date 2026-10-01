@@ -409,7 +409,7 @@ class EPDispatchPayload:
                 scales=columns[1] if fp8_dispatch else None,
             )
 
-    def local_map_tokens(
+    def per_device_tokens(
         self,
         quant_config: QuantConfig | None,
         *,
@@ -1126,8 +1126,8 @@ def grouped_silu(
             scales_offsets=scales_offset,
         )
         return NVFP4Activation(
-            data=data,
-            scales=scales,
+            data=data.rebind_mapping(x.mapping),
+            scales=scales.rebind_mapping(x.mapping),
             input_scale=out_weight.input_scale,
             scales_offset=scales_offset,
         )
@@ -1138,8 +1138,8 @@ def grouped_silu(
             x, expert_start_indices, quant_config, DType.float8_e4m3fn
         )
         return FP8BlockTensor(
-            data=data,
-            weight_scale_inv=weight_scale_inv,
+            data=data.rebind_mapping(x.mapping),
+            weight_scale_inv=weight_scale_inv.rebind_mapping(x.mapping),
             block_size=(1, block_k),
         )
     # Exhaustive: a new quantized down-weight must not silently skip its

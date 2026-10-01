@@ -498,8 +498,7 @@ def matmul_dispatch_sm100[
     comptime if has_precise_f32_gemv:
         # tile_m is a comptime kernel param, so each bucket instantiates a
         # distinct gemv_split_k; the runtime `m` selects the bucket.
-        @__parameter
-        def _dispatch_split_k[tile_m: Int]() raises:
+        def _dispatch_split_k[tile_m: Int]() raises {imm}:
             gemv_gpu_dispatch[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
@@ -540,8 +539,7 @@ def matmul_dispatch_sm100[
 
         comptime if has_split_k_band:
 
-            @__parameter
-            def _dispatch_unaligned_n_split_k[tile_m: Int]() raises:
+            def _dispatch_unaligned_n_split_k[tile_m: Int]() raises {imm}:
                 logger.info(
                     (
                         "------ Dispatching to SM100 unaligned-N split-K GEMV"
@@ -818,26 +816,6 @@ def matmul_dispatch_sm100_fp8[
 
     # TODO(KERN-2084): Enable default matmul for large shapes to increase
     # accuracy.
-    # #fallback to default matmul for large shapes
-    # alias block_tile_shape = Index(128, 128, BK)
-    # alias umma_shape = Index(
-    # block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-    # )
-    # alias cluster_shape = Index(2, 1, 1)
-    # alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-    # block_tile_shape = block_tile_shape,
-    # mma_shape = umma_shape,
-    # cluster_shape = cluster_shape,
-    # )
-    # blackwell_matmul_tma_umma_warp_specialized[
-    # transpose_b = transpose_b,
-    # config = config,
-    # elementwise_lambda_fn = elementwise_lambda_fn,
-    # elementwise_compute_lambda_fn = elementwise_compute_lambda_fn,
-    # pdl_level = pdl_level,
-    # block_swizzle_size = 0,
-    # ](c, a, b, ctx)
-    # return DISPATCH_HIT
 
     # Untuned (N, K): fall through to the existing heuristic config-set
     # dispatch (the same tail the bf16 dispatcher uses at

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from max.driver import Device
 from max.graph import DeviceRef
 
-from .mesh import DeviceMesh, get_active_mesh
+from .mesh import DeviceMesh, get_default_mesh
 from .placements import (
     Partial,
     Placement,
@@ -94,24 +94,6 @@ class DeviceMapping:
         """``True`` when every mesh axis is :class:`Replicated`."""
         return all(isinstance(p, Replicated) for p in self.placements)
 
-    def to_mesh(self, mesh: DeviceMesh) -> DeviceMapping:
-        """Rebinds this mapping onto ``mesh`` by axis-name correspondence.
-
-        For each axis in ``mesh``: if its name exists in
-        :attr:`self.mesh`, copy that axis's placement; otherwise the
-        axis becomes :class:`Replicated`. Axes unique to the source
-        mesh drop away.
-        """
-        old_by_name = dict(
-            zip(self.mesh.axis_names, self.placements, strict=False)
-        )
-        return DeviceMapping(
-            mesh,
-            tuple(
-                old_by_name.get(name, Replicated()) for name in mesh.axis_names
-            ),
-        )
-
     def __repr__(self) -> str:
         placement_str = ", ".join(repr(p) for p in self.placements)
         return f"{type(self).__name__}({self.mesh}, [{placement_str}])"
@@ -156,14 +138,14 @@ class NamedMapping(DeviceMapping):
     a regular :class:`DeviceMapping`; the spec is forgotten.
 
     Args:
-        mesh: The target device mesh, or :obj:`None` to take the one published
-            by :func:`~max.experimental.sharding.mesh_context`.
+        mesh: The target device mesh, or :obj:`None` to take the one set by
+            :func:`~max.experimental.tensor.default_device`.
         spec: One entry per tensor dimension.
         unreduced: Mesh axes carrying pending reductions.
 
     Raises:
         ValueError: If ``mesh`` is :obj:`None` and no
-            :func:`~max.experimental.sharding.mesh_context` is active, leaving
+            :func:`~max.experimental.tensor.default_device` is active, leaving
             the spec with nothing to resolve against.
     """
 
@@ -179,10 +161,10 @@ class NamedMapping(DeviceMapping):
         unreduced: Iterable[str] = (),
     ) -> None:
         if mesh is None:
-            if (mesh := get_active_mesh()) is None:
+            if (mesh := get_default_mesh()) is None:
                 raise ValueError(
                     "NamedMapping needs a mesh to resolve its spec against: "
-                    "pass one, or construct inside a mesh_context()."
+                    "pass one, or construct inside a default_device()."
                 )
         unreduced_t = tuple(unreduced)
         placements = _spec_to_placements(mesh, spec, unreduced_t)

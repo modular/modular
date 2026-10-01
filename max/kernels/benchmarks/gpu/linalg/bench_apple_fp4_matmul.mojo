@@ -129,8 +129,7 @@ def _bench_fp4_shape(
 
     # --- fused: the cooperative-SMEM kernel directly (BM/BK by M, like the
     # dispatch: BM=128/BK=64 for M>=256, BM=64/BK=32 below). ---
-    @__parameter
-    def _run_fused() raises:
+    def _run_fused() raises {imm}:
         if m >= 256:
             _launch_apple_fp4_matmul[
                 DType.float32, None, BM=128, BK=64, coalesce_scales=True

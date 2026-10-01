@@ -256,9 +256,8 @@ struct _Accumulator[
         comptime assert is_load or origin.mut, "ahhh"
         comptime column_step = min(column_count, Self.simd_width)
 
-        @__parameter
         @inline(.always)
-        def body(row: Int, col: Int):
+        def body(row: Int, col: Int) {mut self, imm}:
             comptime if is_load:
                 comptime if CompilationTarget.has_neon():
                     var data = row_ptrs[row].load[width=column_step](col)

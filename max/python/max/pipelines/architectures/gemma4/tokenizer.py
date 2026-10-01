@@ -48,6 +48,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    TokenIds,
     VisionPreprocessCacheStats,
 )
 from max.support.image import find_contiguous_ranges, hash_image
@@ -314,11 +315,7 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
 
         return templated_message
 
-    async def decode(
-        self,
-        encoded: npt.NDArray[np.integer[Any]] | Sequence[int] | int,
-        **kwargs,
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decode tokens, preserving tool-related special tokens.
 
         Gemma4 marks tool tokens as special (unlike Kimi), so we need

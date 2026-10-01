@@ -32,8 +32,7 @@ def _launch_device_collective[
 
     # Wrap the launch function in a Mojo async function which does not raise.
     @inline(.always)
-    @__parameter
-    async def wrapper[index: Int]() -> None:
+    async def wrapper[index: Int]() {mut errors, imm} -> None:
         try:
             func[index]()
         except e:

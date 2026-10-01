@@ -245,6 +245,7 @@ def compute_log_probabilities_ragged(
                     compute_top(i, batch_top_n[batch_index])
                     for i in range(start, end)
                 ],
+                sampled_token_ids=list(map(int, lp_tokens[start:end, -1])),
             )
         )
     return outputs

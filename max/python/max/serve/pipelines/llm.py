@@ -76,6 +76,8 @@ class TokenGeneratorOutput:
     # TODO: (MODELS-1118) determine whether to include logprobs for reasoning tokens in the response delta
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
+    sampled_tokens: list[str] | None = None
+    """Decoded sampled token at each ``token_log_probabilities`` position."""
     prompt_token_count: int | None = None
     cached_token_count: int | None = None
     reasoning_token_count: int | None = None
@@ -119,6 +121,9 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
         if c.top_log_probabilities
         for p in c.top_log_probabilities
     ]
+    sampled_tokens = [
+        t for c in chunks if c.sampled_tokens for t in c.sampled_tokens
+    ]
     token_ids = [t for c in chunks if c.token_ids for t in c.token_ids]
 
     def _first_not_none(attr: str) -> Any:
@@ -142,6 +147,7 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
         token_count=sum(c.token_count for c in chunks),
         token_log_probabilities=token_log_probs or None,
         top_log_probabilities=top_log_probs or None,
+        sampled_tokens=sampled_tokens or None,
         prompt_token_count=_first_not_none("prompt_token_count"),
         cached_token_count=_first_not_none("cached_token_count"),
         reasoning_token_count=sum(c.reasoning_token_count or 0 for c in chunks)
@@ -300,7 +306,7 @@ class TokenGeneratorPipeline(
         return top_log_probabilities
 
     async def next_token_chunk(
-        self, request: TextGenerationRequest
+        self, request: TextGenerationRequest, *, parse_reasoning: bool = True
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Tokenizes and submits ``request``, returning a token-chunk generator.
 
@@ -315,6 +321,9 @@ class TokenGeneratorPipeline(
         worker response. Benefits:
         - Single tokenizer.decode() call per chunk instead of per token
         - Callers can amortize Pydantic/SSE overhead across the chunk
+
+        With ``parse_reasoning=False`` no reasoning parser runs, so every
+        generated token, with its log probabilities, is returned as content.
         """
         itl = StopWatch()
         # TTFT runs from the arrival timestamp stamped by the HTTP middleware,
@@ -347,7 +356,9 @@ class TokenGeneratorPipeline(
         # We also do not support reasoning spans that are not at the very start of the response
         # This is consistent with vLLM
         # TODO: (MODELS-1115) assume that the reasoning tokens are at the start of the reasoning section
-        reasoning_parser = await self._reasoning_parser()
+        reasoning_parser = (
+            await self._reasoning_parser() if parse_reasoning else None
+        )
         if reasoning_parser is not None:
             reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
@@ -606,9 +617,11 @@ class TokenGeneratorPipeline(
                         top_token_log_prob_values: (
                             list[dict[str, float]] | None
                         ) = None
+                        sampled_token_values: list[str] | None = None
                         if token_log_probs is not None:
                             token_log_prob_values = []
                             top_token_log_prob_values = []
+                            sampled_token_values = []
                             for log_prob in token_log_probs:
                                 with Tracer("collect_log_probs"):
                                     token_probs = (
@@ -619,6 +632,13 @@ class TokenGeneratorPipeline(
                                     )
                                     token_log_prob_values.extend(token_probs)
                                     top_token_log_prob_values.extend(top_probs)
+                                    for token_id in log_prob.sampled_token_ids:
+                                        sampled_token_values.append(
+                                            await self.tokenizer.decode(
+                                                token_id,
+                                                skip_special_tokens=skip_special_tokens,
+                                            )
+                                        )
 
                         # Record metrics - one TTFT/ITL per chunk
                         is_first_chunk = not first_chunk_yielded
@@ -638,6 +658,7 @@ class TokenGeneratorPipeline(
                             token_count=token_count,
                             token_log_probabilities=token_log_prob_values,
                             top_log_probabilities=top_token_log_prob_values,
+                            sampled_tokens=sampled_token_values,
                             prompt_token_count=context.tokens.prompt_length,
                             cached_token_count=response.num_cached_tokens
                             if is_first_chunk
@@ -668,10 +689,12 @@ class TokenGeneratorPipeline(
         return _generate()
 
     async def all_tokens(
-        self, request: TextGenerationRequest
+        self, request: TextGenerationRequest, *, parse_reasoning: bool = True
     ) -> list[TokenGeneratorOutput]:
         """Generates all token chunks for the provided request."""
-        generator = await self.next_token_chunk(request)
+        generator = await self.next_token_chunk(
+            request, parse_reasoning=parse_reasoning
+        )
         return [chunk async for chunk in generator]
 
     async def encode(

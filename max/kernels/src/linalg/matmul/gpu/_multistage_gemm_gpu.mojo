@@ -911,8 +911,7 @@ def multistage_gemm_kernel[
     )
 
     @inline(.always)
-    @__parameter
-    def apply_epilogue():
+    def apply_epilogue() {imm}:
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
@@ -964,8 +963,7 @@ def multistage_gemm_kernel[
                             )
 
     @inline(.always)
-    @__parameter
-    def store_c_scalar():
+    def store_c_scalar() {imm}:
         """Writes C one element at a time, bounded by the real (row, col).
 
         Used for the C tiles the vectorized stores cannot handle: an odd fp32 N

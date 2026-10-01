@@ -659,7 +659,6 @@ def grouped_reducescatter_test[
     _ = res_bufs_list^
 
 
-@__parameter
 def run_reducescatter_sweep[use_multimem: Bool]() raises:
     """Run reduce-scatter tests across 1D and 2D configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)

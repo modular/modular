@@ -48,12 +48,10 @@ namespace M {
 /// NIXL is legitimately unused — so it must not hard-error.
 ///
 /// `allowVerbsFlavor` (default true) selects the verbs flavor when the host
-/// warrants it. Pass false to force the plain flavor even on an IB host: two
-/// NIXL agents in ONE process open two mlx5 device contexts on the same HCA,
-/// which host rdma-core cannot tear down cleanly (a reserved-QPN mutex
-/// assertion in mlx5_free_context). Production creates one agent per process
-/// and is unaffected, but in-process loopback tests must opt out. The real IB
-/// transport is covered instead by the cross-process cross-node smoke.
+/// warrants it. Pass false to stay on the plain flavor even on an IB host, so
+/// in-process loopback tests measure the intra-host transports their latency
+/// assertions assume rather than IB endpoint wireup. The IB transport itself
+/// is covered by the cross-process cross-node smoke.
 std::optional<std::filesystem::path>
 resolveNixlPluginDir(const std::filesystem::path &base,
                      bool allowVerbsFlavor = true);

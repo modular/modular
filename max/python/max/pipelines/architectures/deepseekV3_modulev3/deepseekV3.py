@@ -23,7 +23,6 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module, as_subgraph
 from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.functional_kernels import local_map
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.common_layers.mesh_axis import DP
@@ -34,6 +33,7 @@ from max.experimental.sharding import (
     DeviceMesh,
     Replicated,
     Sharded,
+    Unknown,
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
@@ -57,21 +57,18 @@ def gather_last_tokens(h: Tensor, input_row_offsets: Tensor) -> Tensor:
 
     Under data parallelism ``input_row_offsets`` is rebased into each replica's
     local frame, so its values only address that replica's own rows; the gather
-    runs shard-locally via ``local_map``, never through the auto-sharded
+    runs on each device's own rows, never through the auto-sharded
     ``F.gather``.
     """
 
-    def _body(h: Tensor, offsets: Tensor) -> TensorValue:
-        return ops.gather(TensorValue(h), TensorValue(offsets)[1:] - 1, axis=0)
+    def _body(h: TensorValue, offsets: TensorValue) -> TensorValue:
+        return ops.gather(h, offsets[1:] - 1, axis=0)
 
     if not h.is_distributed:
         return F.gather(h, input_row_offsets[1:] - 1, axis=0)
-    outs = local_map(_body, {"h": h, "offsets": input_row_offsets}, {})
-    # Placements-only mapping: the body changes the sharded extent (token
-    # rows -> request rows), so a dim-carrying mapping would disagree.
-    return Tensor.from_shard_values(
-        outs, mapping=DeviceMapping(h.mesh, h.placements)
-    )
+    # The rule-less body runs on each device's own rows; its result keeps h's
+    # placements.
+    return F.functional(_body)(h, input_row_offsets).rebind_mapping(h.mapping)
 
 
 def split_replicated_batch(
@@ -318,11 +315,19 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
         )
 
         # Combine the per-device upstream KV collections into a single
-        # mesh-distributed PagedCacheValues (one shard per device).
+        # mesh-distributed PagedCacheValues (one shard per device). Replicas
+        # serve different requests, so their caches vary; tensor-parallel
+        # devices all store the same latent cache.
         if mesh is not None:
             kv_collection = PagedCacheValues.from_upstream(
                 kv_collections,
-                DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
+                DeviceMapping(
+                    mesh,
+                    tuple(
+                        Unknown() if name == DP else Replicated()
+                        for name in mesh.axis_names
+                    ),
+                ),
             )
         else:
             raise ValueError("Mesh must be define")

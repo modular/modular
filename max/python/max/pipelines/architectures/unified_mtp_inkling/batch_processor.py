@@ -21,10 +21,10 @@ from max.driver import Buffer
 from max.engine import Model
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 
 from ..inkling.batch_processor import InklingBatchProcessor
+from ..inkling.model_config import InklingConfig
 from ..inkling.state_cache import InklingConvScratchPools
 
 if TYPE_CHECKING:
@@ -39,7 +39,7 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
     """
 
     def __init__(
-        self, config: ArchConfig, runtime: BatchProcessorRuntime
+        self, config: InklingConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
         self._draft_conv_pools: list[Buffer] = []

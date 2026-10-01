@@ -25,12 +25,16 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
     _host_mirror_realized_drafts,
     _mixed_verify_width,
     _reachable_verify_widths,
-    _verify_width_lookup,
+    _verify_width_candidates,
+    _verify_widths_by_batch_size,
 )
 from max.pipelines.modeling.types.pipeline_variants.text_generation import (
     BatchType,
@@ -89,6 +93,24 @@ def _mixed_batch(decode_rows: int, prefill_rows: int = 1) -> _Inputs:
     )
 
 
+def _pipeline(
+    *,
+    configured: int,
+    lookup: list[int] | None,
+    mixed_width: int | None = None,
+    allow_mixed: bool = False,
+) -> OverlapTextGenerationPipeline[Any]:
+    pipeline = object.__new__(OverlapTextGenerationPipeline)
+    spec_state = type("_S", (), {"num_speculative_tokens": configured})()
+    pipeline._spec_decode_state = cast(Any, spec_state)
+    pipeline._widths_by_batch_size = (
+        [[configured]] if lookup is None else [[width] for width in lookup]
+    )
+    pipeline._mixed_verify_width = mixed_width
+    pipeline._allow_mixed_verify = allow_mixed
+    return pipeline
+
+
 def _width(
     inputs: _Inputs,
     *,
@@ -97,12 +119,12 @@ def _width(
     mixed_width: int | None = None,
     allow_mixed: bool = False,
 ) -> int:
-    pipeline = object.__new__(OverlapTextGenerationPipeline)
-    spec_state = type("_S", (), {"num_speculative_tokens": configured})()
-    pipeline._spec_decode_state = spec_state
-    pipeline._width_lookup = lookup
-    pipeline._mixed_verify_width = mixed_width
-    pipeline._allow_mixed_verify = allow_mixed
+    pipeline = _pipeline(
+        configured=configured,
+        lookup=lookup,
+        mixed_width=mixed_width,
+        allow_mixed=allow_mixed,
+    )
     return OverlapTextGenerationPipeline._verify_width(
         pipeline, cast(Any, inputs)
     )
@@ -283,10 +305,11 @@ def _config(
     *,
     method: str = "eagle",
     mixed_width: int | None = None,
+    configured: int = 3,
 ) -> SpeculativeConfig:
     return SpeculativeConfig(
         speculative_method=cast(Any, method),
-        num_speculative_tokens=3,
+        num_speculative_tokens=configured,
         num_speculative_tokens_mixed_batch=mixed_width,
         num_speculative_tokens_per_batch_size=(
             None
@@ -302,14 +325,20 @@ def _config(
 
 
 def test_no_schedule_leaves_the_width_at_the_configured_depth() -> None:
-    assert _verify_width_lookup(_config(None), 3, 8) is None
+    assert _verify_widths_by_batch_size(_config(None), 3, 2) == [[3]] * 3
     # A schedule set on a pipeline that does not speculate at all.
-    assert _verify_width_lookup(_config([(1, 8, 1)]), 0, 8) is None
+    assert _verify_widths_by_batch_size(_config([(1, 8, 1)]), 0, 2) == [[0]] * 3
 
 
 def test_schedule_builds_a_dense_lookup() -> None:
     config = _config([(1, 2, 3), (3, 8, 1)])
-    assert _verify_width_lookup(config, 3, 8) == [0, 3, 3, 1, 1, 1, 1, 1, 1]
+    assert _verify_widths_by_batch_size(config, 3, 4) == [
+        [0],
+        [3],
+        [3],
+        [1],
+        [1],
+    ]
 
 
 def test_block_drafters_apply_the_schedule_too() -> None:
@@ -319,7 +348,13 @@ def test_block_drafters_apply_the_schedule_too() -> None:
     """
     config = _config([(1, 2, 3), (3, 8, 1)], method="dflash")
     assert config.num_speculative_tokens_per_batch_size is not None
-    assert _verify_width_lookup(config, 3, 8) == [0, 3, 3, 1, 1, 1, 1, 1, 1]
+    assert _verify_widths_by_batch_size(config, 3, 4) == [
+        [0],
+        [3],
+        [3],
+        [1],
+        [1],
+    ]
 
 
 def test_config_rejects_a_schedule_with_a_gap_at_the_front() -> None:
@@ -368,3 +403,65 @@ def test_mirror_of_a_zero_verify_width_is_an_empty_array() -> None:
         np.array([[11, 12, 13], [21, 22, 23]], dtype=np.int64),
     )
     assert realized.shape == (2, 0)
+
+
+def _prepare_synthesis(
+    *,
+    configured: int,
+    schedule: list[tuple[int, int, int]] | None = None,
+    max_batch: int = 4,
+) -> OverlapTextGenerationPipeline[Any]:
+    """Runs ``prepare_graph_synthesis_buckets`` against a real aligner."""
+    config = _config(schedule, configured=configured)
+    pipeline = object.__new__(OverlapTextGenerationPipeline)
+    pipeline._spec_decode_state = cast(
+        Any, type("_S", (), {"num_speculative_tokens": configured})()
+    )
+    pipeline._pipeline_config = cast(
+        Any, type("_P", (), {"speculative": config})()
+    )
+    pipeline._max_batch_size = max_batch
+    pipeline._verify_widths = _verify_width_candidates(
+        config, configured, max_batch
+    )
+    pipeline._kv_manager = cast(
+        Any,
+        type(
+            "_KV",
+            (),
+            {
+                "params": MHAKVCacheParams(
+                    dtype=DType.bfloat16,
+                    head_dim=64,
+                    num_layers=2,
+                    devices=[DeviceRef.GPU()],
+                    n_kv_heads=8,
+                ),
+                "effective_max_seq_length": None,
+            },
+        )(),
+    )
+    pipeline._pipeline_model = cast(
+        Any, type("_M", (), {"max_seq_len": 2048})()
+    )
+    OverlapTextGenerationPipeline.prepare_graph_synthesis_buckets(pipeline)
+    return pipeline
+
+
+def test_synthesis_names_every_unservable_width() -> None:
+    with pytest.raises(
+        ValueError, match=r"a step verifying \[1, 2\] cannot be served"
+    ):
+        _prepare_synthesis(
+            configured=3, schedule=[(1, 1, 3), (2, 2, 2), (3, 4, 1)]
+        )
+
+
+@pytest.mark.parametrize(
+    "schedule", [[(1, 4, 3)], None], ids=["unnarrowed", "unscheduled"]
+)
+def test_synthesis_accepts_an_unnarrowed_schedule(
+    schedule: list[tuple[int, int, int]] | None,
+) -> None:
+    pipeline = _prepare_synthesis(configured=3, schedule=schedule)
+    assert pipeline._synthesis_aligner is not None

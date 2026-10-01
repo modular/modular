@@ -120,9 +120,8 @@ def _launch[
 ) raises:
     comptime if unordered:
 
-        @__parameter
         @inline(.always)
-        def resident[res_vecs: Int]() raises:
+        def resident[res_vecs: Int]() raises {imm}:
             ctx.enqueue_function[
                 _histsel_resident_kernel[
                     GmemTrace,

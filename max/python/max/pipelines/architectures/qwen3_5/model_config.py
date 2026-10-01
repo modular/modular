@@ -48,6 +48,7 @@ from .state_cache import (
     STATE_CACHE_KEY,
     attn_cache,
     linear_state_regions,
+    spec_shadow_bytes_per_request,
 )
 
 _POOL_DTYPE_MAP = {
@@ -423,11 +424,13 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         num_linear_layers: int,
         dtype: DType,
         num_devices: int,
+        ring_len: int = 0,
     ) -> tuple[RecurrentStateRegion, ...]:
         """Returns the state leaves this checkpoint's linear layers keep.
 
         The fallbacks are the published Qwen3.5 geometry, left implicit by a
-        config predating these fields.
+        config predating these fields. A nonzero ``ring_len`` adds the
+        speculative verify's ring leaf.
         """
         return linear_state_regions(
             num_linear_layers=num_linear_layers,
@@ -438,7 +441,17 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             conv_kernel_dim=getattr(text_config, "linear_conv_kernel_dim", 4),
             dtype=dtype,
             num_devices=num_devices,
+            ring_len=ring_len,
         )
+
+    @classmethod
+    def _verify_ring_len(cls, pipeline_config: PipelineConfig) -> int:
+        """Returns the verify ring length the state cache must hold, or zero.
+
+        Only an architecture whose graph folds a verify ring declares one.
+        """
+        del pipeline_config
+        return 0
 
     @classmethod
     def construct_kv_params(  # type: ignore[override]  # TODO(SERVOPT-1607)
@@ -480,6 +493,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
                     text_config, kv_cache_config
                 ),
                 num_devices=len(devices),
+                ring_len=cls._verify_ring_len(pipeline_config),
             ),
             devices=attn.devices,
             data_parallel_degree=attn.data_parallel_degree,
@@ -505,6 +519,30 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 
+    def _linear_regions(
+        self, ring_len: int = 0
+    ) -> tuple[RecurrentStateRegion, ...]:
+        """Returns this config's state regions at full width, unsharded.
+
+        Byte counts summed over these are totals across devices.
+        """
+        num_linear = sum(
+            1 for lt in self.layer_types if lt == "linear_attention"
+        )
+        if num_linear == 0:
+            return ()
+        return linear_state_regions(
+            num_linear_layers=num_linear,
+            key_head_dim=self.linear_key_head_dim,
+            num_key_heads=self.linear_num_key_heads,
+            value_head_dim=self.linear_value_head_dim,
+            num_value_heads=self.linear_num_value_heads,
+            conv_kernel_dim=self.linear_conv_kernel_dim,
+            dtype=self.state_dtype,
+            num_devices=1,
+            ring_len=ring_len,
+        )
+
     def _per_request_state_bytes(self) -> int:
         """Returns GPU bytes one request's linear-attention state occupies.
 
@@ -512,23 +550,26 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         declares its leaves from, so a shape cannot be right in one and wrong
         in the other.
         """
-        num_linear = sum(
-            1 for lt in self.layer_types if lt == "linear_attention"
+        return sum(region.bytes_per_page for region in self._linear_regions())
+
+    def _per_request_shadow_bytes(self, ring_len: int) -> int:
+        """Returns the per-request bytes of a verify's shadow pools.
+
+        These pools are allocated outside the state cache.
+        """
+        return spec_shadow_bytes_per_request(
+            self._linear_regions(ring_len), ring_len
         )
-        if num_linear == 0:
-            return 0
+
+    def _per_request_ring_bytes(self, ring_len: int) -> int:
+        """Returns the per-request bytes of a verify's ring, padding included.
+
+        The ring is a scratch leaf of the state cache, drawn per request.
+        """
         return sum(
             region.bytes_per_page
-            for region in linear_state_regions(
-                num_linear_layers=num_linear,
-                key_head_dim=self.linear_key_head_dim,
-                num_key_heads=self.linear_num_key_heads,
-                value_head_dim=self.linear_value_head_dim,
-                num_value_heads=self.linear_num_value_heads,
-                conv_kernel_dim=self.linear_conv_kernel_dim,
-                dtype=self.state_dtype,
-                num_devices=1,
-            )
+            for region in self._linear_regions(ring_len)
+            if region.scratch
         )
 
     def infer_optimal_batch_size(

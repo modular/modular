@@ -840,7 +840,6 @@ struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@__parameter
 @inline(.always)
 def _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
@@ -2309,8 +2308,7 @@ struct ManagedTensorSlice[
         """
         writer.write("ManagedTensorSlice(")
 
-        @__parameter
-        def serialize[T: Writable](val: T):
+        def serialize[T: Writable](val: T) {mut writer}:
             writer.write(val)
 
         var shape = List[Int]()
@@ -2323,9 +2321,7 @@ struct ManagedTensorSlice[
             self._ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
         )
         # TODO(1937): make this work with all valid strides
-        _serialize[serialize_fn=serialize, serialize_end_line=False](
-            serialize_ptr, shape
-        )
+        _serialize[serialize_end_line=False](serialize_ptr, shape, serialize)
 
         writer.write("){")
         writer.write("static_shape = ", self._static_shape_tuple)

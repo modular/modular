@@ -60,10 +60,12 @@ from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.utils.static_tuple import StaticTuple
+from ..argmaxmin_gpu import _argmaxmin_block_partial
 from ..normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,
     _APPLE_STATIC_SHMEM_MAX_BYTES,
 )
+from ..topk import _block_reduce_topk
 from .coop_row import (
     COOP_SLOT_FLOATS,
     CoopRow,
@@ -454,8 +456,7 @@ def topk_mask_logits[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int]() raises:
+        def launch_kernel[vec_size: Int]() raises {imm}:
             comptime kernel = TopKMaskLogitsKernel[
                 block_size,
                 vec_size,
@@ -1208,8 +1209,7 @@ def topk_sampling_from_prob[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+        def launch_kernel[vec_size: Int, deterministic: Bool]() raises {imm}:
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmOrigin(probs.origin),
@@ -1236,8 +1236,7 @@ def topk_sampling_from_prob[
             )
 
         # Runtime dispatch to compile-time parameter.
-        @__parameter
-        def dispatch_vec_size[deterministic: Bool]() raises:
+        def dispatch_vec_size[deterministic: Bool]() raises {imm}:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
                     return launch_kernel[param_vec_size, deterministic]()
@@ -1308,19 +1307,16 @@ comptime _COOP_STATS_WIDTH = 8
 
 
 @inline(.always)
-@__parameter
 def _coop_max(x: SIMD, y: type_of(x)) -> type_of(x):
     return max(x, y)
 
 
 @inline(.always)
-@__parameter
 def _coop_sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 
 @inline(.always)
-@__parameter
 def _coop_cutoff_stats(x: SIMD, y: type_of(x)) -> type_of(x):
     """Combines cutoff statistics.
 
@@ -2459,6 +2455,46 @@ def TopKTopPSamplingFromProbKernel[
                         (Idx[0], i * vec_size), masked.cast[dist_dtype]()
                     )
 
+        # Temperature 0 arrives as top_k=1. Every token tied at the row
+        # maximum passes the accept test, so the seed would pick among exact
+        # ties; greedy decoding is argmax with the lowest index, the rule of
+        # `argmaxmin_gpu`, whose block reduction this reuses.
+        if k == 1:
+            comptime if is_apple_gpu():
+                if tx == 0:
+                    var best = probs_row.load[width=1]((Idx[0], 0))
+                    sampled_id = 0
+                    for j in range(1, _d):
+                        var v = probs_row.load[width=1]((Idx[0], j))
+                        if v > best:
+                            best = v
+                            sampled_id = j
+            else:
+                var best = _block_reduce_topk[ascending=True](
+                    _argmaxmin_block_partial[dtype, True, vec_size, 1](
+                        probs_ptr.as_unsafe_any_origin(),
+                        vec_begin * vec_size,
+                        (vec_end - vec_begin) * vec_size,
+                        False,
+                        Int(tx),
+                        block_size,
+                    )
+                )
+                sampled_id = best.p
+                comptime if coop_size > 1:
+                    # Only the blocks holding the row maximum offer an index;
+                    # Float32 holds every vocabulary index exactly.
+                    var offer = Float32(_d)
+                    if best.u.cast[.float32]() == row_max:
+                        offer = Float32(best.p)
+                    sampled_id = Int(
+                        -coop.combine[1, _coop_max](
+                            coop_ws.unsafe_value(),
+                            coop_table,
+                            SIMD[.float32, 1](-offer),
+                        )[0]
+                    )
+
         if tx == 0 and rank == 0:
             output[bx] = Scalar[out_idx_type](sampled_id)
 
@@ -2709,10 +2745,9 @@ def topk_topp_sampling_from_prob[
             ctx.enqueue_memset(coop_buf, 0)
             coop_ptr = coop_buf.unsafe_ptr().as_unsafe_any_origin()
 
-        @__parameter
         def launch_kernel[
             vec_size: Int, deterministic: Bool, coop_size: Int
-        ]() raises:
+        ]() raises {imm}:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmOrigin(probs.origin),
@@ -2750,8 +2785,7 @@ def topk_topp_sampling_from_prob[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        @__parameter
-        def dispatch_vec_size[deterministic: Bool]() raises:
+        def dispatch_vec_size[deterministic: Bool]() raises {imm}:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
                     comptime if coop_capable:
@@ -3127,8 +3161,7 @@ def topk_softmax_sample[
         if seed:
             seed_ptr = seed.unsafe_value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int]() raises:
+        def launch_kernel[vec_size: Int]() raises {imm}:
             comptime kernel = topk_softmax_sample_kernel[
                 block_size,
                 vec_size,
@@ -3507,8 +3540,7 @@ def topk_topp_masked_probs[
             ctx.enqueue_memset(coop_buf, 0)
             coop_ptr = coop_buf.unsafe_ptr().as_unsafe_any_origin()
 
-        @__parameter
-        def launch_kernel[vec_size: Int, coop_size: Int]() raises:
+        def launch_kernel[vec_size: Int, coop_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,
                 vec_size,

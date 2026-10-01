@@ -19,6 +19,7 @@ __all__ = [
     "PipelineTokenizer",
     "PreprocessCacheStatsProbe",
     "PreprocessedImageProbe",
+    "TokenIds",
     "TokenizerEncoded",
     "UnboundContextType",
     "VisionPreprocessCacheStats",
@@ -26,8 +27,17 @@ __all__ = [
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    runtime_checkable,
+)
 
+import numpy as np
+import numpy.typing as npt
 from max.pipelines.request import RequestType
 
 if TYPE_CHECKING:
@@ -38,6 +48,10 @@ if TYPE_CHECKING:
 # TODO: Bound this to TextContext, after we've audited the class.
 UnboundContextType = TypeVar("UnboundContextType", covariant=True)
 TokenizerEncoded = TypeVar("TokenizerEncoded")
+
+# Decode is typed independently of the encode output: serving decodes arrays,
+# log-probability responses decode one id, and the CLI decodes a token list.
+TokenIds: TypeAlias = npt.NDArray[np.integer[Any]] | Sequence[int] | int
 
 
 @runtime_checkable
@@ -218,11 +232,12 @@ class PipelineTokenizer(
         """
         ...
 
-    async def decode(self, encoded: TokenizerEncoded, **kwargs) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decodes response tokens to text.
 
         Args:
-            encoded: Encoded response tokens.
+            encoded: Response token ids, as an array, a sequence, or a single
+                id.
             **kwargs: Additional decoder options (for example, ``skip_special_tokens``).
 
         Returns:

@@ -14,8 +14,11 @@
 
 The checkpoint carries no ``model.`` prefix and names every module after the
 reference ``inference/model.py`` attributes, so the MAX modules are named to
-match. What the adapter does change is the *storage* of the quantized
-tensors, which the reference's ``convert.py`` step would otherwise do:
+match. The one exception is a block's mHC triple: the checkpoint stores
+``hc_attn_fn`` flat on the block, and the model holds it in a
+:class:`~max.nn.HyperConnection` as ``hc_attn.hc_fn``. Beyond that, the
+adapter changes the *storage* of the quantized tensors, which the reference's
+``convert.py`` step would otherwise do:
 
 * fp8 projections (attention, ``indexer.wq_b``, the shared expert) keep their
   ``float8_e4m3fn`` weight; the ``<proj>.scale`` companion (e8m0, one per
@@ -64,6 +67,12 @@ _MAX_SCALE_SUFFIX = ".weight_scale"
 _EXPERT_TENSOR = re.compile(
     r"^(?P<prefix>.*\.ffn\.experts)\.(?P<expert>\d+)\.(?P<proj>w[123])\."
     r"(?P<kind>weight|scale)$"
+)
+
+# ``<block>.hc_<attn|ffn>_<fn|base|scale>``; ``hc_head_*`` is not a
+# ``HyperConnection`` and keeps its name.
+_HC_SITE_TENSOR = re.compile(
+    r"^(?P<prefix>.*)\.hc_(?P<site>attn|ffn)_(?P<part>fn|base|scale)$"
 )
 
 GATE_UP_PROJ = "gate_up_proj"
@@ -217,6 +226,13 @@ def convert_weight_data(
     packed_experts: dict[str, dict[int, dict[str, np.ndarray]]] = {}
 
     for name, data in state_dict.items():
+        hc_site = _HC_SITE_TENSOR.match(name)
+        if hc_site is not None:
+            new_state_dict[
+                f"{hc_site['prefix']}.hc_{hc_site['site']}.hc_{hc_site['part']}"
+            ] = data
+            continue
+
         expert = _EXPERT_TENSOR.match(name)
         if expert is not None:
             # Routed experts are packed fp4 in the checkpoint (int8 storage).

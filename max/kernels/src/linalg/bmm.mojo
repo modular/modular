@@ -878,8 +878,7 @@ def _batched_matmul_gpu[
     elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
 
         @inline(.always)
-        @__parameter
-        def kernel_helper[block_m: Int, block_n: Int]() raises:
+        def kernel_helper[block_m: Int, block_n: Int]() raises {imm}:
             comptime block_k = 64
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(block_m, block_n, block_k),

@@ -16,6 +16,7 @@
 #include "ClosureEmitter.h"
 #include "ModuleStore.h"
 
+#include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/Lexer.h"
@@ -1317,6 +1318,15 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   origin.sourceMgr = sourceMgr;
   origin.tmpModule = tmpModule;
   origin.bytecodeImportLoc = loc;
+
+  // The package's references to the universal closure trait resolve against
+  // the top-level module, but each compilation synthesizes that trait lazily.
+  // Create it here, after the package state is registered, because creation
+  // imports `std.prelude` and may re-enter this package.
+  if (llvm::any_of(tmpModule.getOps<TraitDeclOp>(), [](TraitDeclOp trait) {
+        return trait.getSymName() == UNI_CLOSURE_TRAIT_NAME;
+      }))
+    shared.getUniversalParametricClosureTrait();
 
   return moduleState;
 }

@@ -186,10 +186,10 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(q_tt, k_tt, out_tt, scalar_args_buf_tt)
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         # CAUSAL only (production MLA mask). See main() — every cell is CAUSAL.
         flare_mla_decoding[
             config=MHAConfig[q_type](num_heads, depth),

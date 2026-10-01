@@ -443,8 +443,9 @@ def smallm_streaming_matmul[
     if m < 1 or m > 128:
         raise Error("smallm_streaming_matmul serves 1 <= m <= 128")
 
-    @__parameter
-    def _launch[m_tiles: Int, a_in_regs: Bool, col_tiles: Int = 1]() raises:
+    def _launch[
+        m_tiles: Int, a_in_regs: Bool, col_tiles: Int = 1
+    ]() raises {imm}:
         comptime shuffle_kernel = _smallm_shuffle_a_kernel[
             a_type,
             a_layout,

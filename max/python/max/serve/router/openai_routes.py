@@ -3027,9 +3027,11 @@ def _process_chat_log_probabilities(
             or not output.top_log_probabilities
         ):
             continue
+        assert output.sampled_tokens is not None
 
         # Iterate through each token's log probs
-        for token_logprob, top_logprobs_dict in zip(
+        for sampled_token, token_logprob, top_logprobs_dict in zip(
+            output.sampled_tokens,
             output.token_log_probabilities,
             output.top_log_probabilities,
             strict=True,
@@ -3050,22 +3052,11 @@ def _process_chat_log_probabilities(
             # Sort by logprob descending
             top_logprobs_list.sort(key=lambda x: x.logprob, reverse=True)
 
-            # Get the token string - it should be in top_logprobs_dict
-            # The token with the highest logprob that matches token_logprob is the sampled token
-            token_str = ""
-            for t, lp in top_logprobs_dict.items():
-                if abs(lp - token_logprob) < 1e-6:
-                    token_str = t
-                    break
-            # Fallback: use the first token if no exact match found
-            if not token_str and top_logprobs_list:
-                token_str = top_logprobs_list[0].token
-
             content.append(
                 ChatCompletionTokenLogprob(
-                    token=token_str,
+                    token=sampled_token,
                     logprob=token_logprob,
-                    bytes=list(token_str.encode("utf-8")),
+                    bytes=list(sampled_token.encode("utf-8")),
                     top_logprobs=top_logprobs_list,
                 )
             )
@@ -3142,10 +3133,12 @@ class OpenAICompletionResponseGenerator(
         pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptionsParam | None = None,
         return_token_ids: bool = False,
+        parse_reasoning: bool = True,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
         self.return_token_ids = return_token_ids
+        self.parse_reasoning = parse_reasoning
 
     async def stream(
         self, request: TextGenerationRequest
@@ -3155,7 +3148,9 @@ class OpenAICompletionResponseGenerator(
         # worker, so a failed submission (e.g. a dead worker) raises here —
         # before the SSE 200 headers are sent — and the route maps it to an
         # HTTP error status.
-        token_generator = await self.pipeline.next_token_chunk(request)
+        token_generator = await self.pipeline.next_token_chunk(
+            request, parse_reasoning=self.parse_reasoning
+        )
         return self._stream(request, token_generator)
 
     async def _stream(
@@ -3379,7 +3374,12 @@ class OpenAICompletionResponseGenerator(
 
         try:
             req_output_list = await asyncio.gather(
-                *[self.pipeline.all_tokens(request) for request in requests]
+                *[
+                    self.pipeline.all_tokens(
+                        request, parse_reasoning=self.parse_reasoning
+                    )
+                    for request in requests
+                ]
             )
             response_choices = []
             for i, req_outputs in enumerate(req_output_list):
@@ -3570,6 +3570,7 @@ async def openai_create_completion(
             pipeline,
             stream_options=completion_request.stream_options,
             return_token_ids=completion_request.return_token_ids,
+            parse_reasoning=completion_request.reasoning_split,
         )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []

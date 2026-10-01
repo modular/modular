@@ -24,7 +24,6 @@ Functions
    flash_attention_ragged_gpu
    fused_silu
    grouped_matmul_ragged
-   local_map
    moe_create_indices
    moe_router_group_limited
    rms_norm_key_cache

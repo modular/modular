@@ -122,6 +122,8 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": _8xB200,
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": _8xB200,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": _2xB200,
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp": _1xB200,
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp_ring": _1xB200,
     "MiniMaxAI/MiniMax-M3-MXFP8__mtp": _8xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": _2xB200,
 }
@@ -150,6 +152,7 @@ NIGHTLY_MODELS = frozenset(
         "amd/MiniMax-M3-MXFP4",
         "modularai/MiniMax-M3-MXFP6",
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
+        "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
         "amd/Kimi-K2.7-Code-MXFP4",
         "nvidia/Kimi-K2.7-Code-NVFP4",
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3",

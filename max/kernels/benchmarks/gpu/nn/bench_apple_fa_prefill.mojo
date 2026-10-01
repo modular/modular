@@ -117,12 +117,19 @@ def _bench_prefill[
     ]
     var sink_opt = SinkOpt(None)
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(
-        q_t, k_t, v_t, o_t, k_op, v_op, vl_t, sink_opt, scale, seq, num_keys
-    )
-    def _launch() raises:
+    def _launch() raises {
+        var q_t,
+        var o_t,
+        var k_op,
+        var v_op,
+        var vl_t,
+        var sink_opt,
+        var scale,
+        var seq,
+        var num_keys,
+        imm,
+    }:
         comptime if naive:
             mha_gpu_naive[
                 ragged=False,

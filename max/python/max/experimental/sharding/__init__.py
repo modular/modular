@@ -15,9 +15,9 @@
 
 Describes, for every op, what redistribution to perform before the op runs.
 The pipeline is deliberately local: per-op rules over a placement vocabulary
-(:class:`Replicated`, :class:`Sharded`, :class:`Partial`), scored by a single
-cost model, with the cheapest plan picked at each dispatch. There is no
-whole-graph trace.
+(:class:`Replicated`, :class:`Sharded`, :class:`Partial`,
+:class:`Unknown`), scored by a single cost model, with the cheapest plan
+picked at each dispatch. There is no whole-graph trace.
 
 An op redistributes its inputs whenever the plan it picks needs it, so a
 model can contain collectives it never wrote. Inside an
@@ -68,7 +68,7 @@ from ._auto_reshard import auto_reshard
 from .action import ActionSet, AxisAssignment
 from .cost import build_action_set, force_replicated_action_set
 from .mappings import ConversionError, DeviceMapping, NamedMapping
-from .mesh import DeviceMesh, mesh_context
+from .mesh import DeviceMesh
 from .placements import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
@@ -78,6 +78,7 @@ from .placements import (
     Sharded,
     ShardingError,
     Transition,
+    Unknown,
 )
 from .types import BufferLayout, TensorLayout
 
@@ -98,8 +99,8 @@ __all__ = [
     "ShardingError",
     "TensorLayout",
     "Transition",
+    "Unknown",
     "auto_reshard",
     "build_action_set",
     "force_replicated_action_set",
-    "mesh_context",
 ]

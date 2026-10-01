@@ -15,8 +15,7 @@ Scenario: Provider endpoint baseline
 Target: Validate functional correctness of standard OpenAI API features.
 
 Covers all 49 text-only tests from OpenRouter's 59-template provider
-endpoint validation suite, plus 3 function-name-accuracy tests (weather tool
-variants for auto tool_choice). 10 multimodal templates are skipped
+endpoint validation suite. 10 multimodal templates are skipped
 (text-only LLM endpoint). Plus bonus streaming and misc tests.
 
 Validation logic, prompts, and request shapes are aligned with OR's actual
@@ -27,11 +26,11 @@ OR-equivalent test groups (49 tests, 1:1 with OR dashboard slugs):
     A. Basic Chat (4)         — yes-no, multi-turn, multipart-content, max-tokens
     B. System Prompt (2)      — multi-system-prompt, system-prompt-only
     C. Logprobs (1)           — top-logprobs
-    D. Tools (7)              — tool-call-step-1/5, tool-choice-{auto,auto-weather,none,required,function}
+    D. Tools (6)              — tool-call-step-1/5, tool-choice-{auto,none,required,function}
     E. Structured Output (2)  — structured-output, response-format-json-object
     F. Reasoning (4)          — reasoning, reasoning-usage, reasoning-disabled, reasoning-max-tokens
     G. Reasoning Effort (6)   — reasoning-effort-{none,minimal,low,medium,high,xhigh}
-    H. Reasoning+Tools (14)   — 7 tool variants x {reasoning-enabled, reasoning-disabled}
+    H. Reasoning+Tools (12)   — 6 tool variants x {reasoning-enabled, reasoning-disabled}
     I. Reasoning+JSON (4)     — {structured-output, response-format-json-object} x {reasoning-enabled, reasoning-disabled}
     J. Verbosity (4)          — verbosity-{low,medium,high,max}
     K. Misc (4)               — large-prompt, developer-role, assistant-prefill, fast-apply
@@ -280,8 +279,8 @@ def _validate_tool_args_json(tool_calls: list[Any]) -> str | None:
 # Shared test fixtures
 # ---------------------------------------------------------------------------
 
-# OR uses get_current_weather for tool-choice-none/function tests where the
-# prompt naturally triggers tool use, exposing tool_choice enforcement bugs.
+# OR uses get_current_weather for most tool tests: the prompt naturally
+# triggers tool use, exposing tool_choice enforcement bugs.
 WEATHER_TOOL = {
     "type": "function",
     "function": {
@@ -308,7 +307,7 @@ WEATHER_TOOL = {
 
 WEATHER_PROMPT = "What is the weather like in Boston, MA in fahrenheit?"
 
-# OR uses a calculate tool for tool-call-step and tool-choice-required tests.
+# OR uses a calculate tool for the tool-choice-required/function tests.
 CALCULATE_TOOL = {
     "type": "function",
     "function": {
@@ -357,9 +356,9 @@ WEATHER_SCHEMA = {
     },
 }
 
-# OR's multi-step tool conversation fixture
+# OR's multi-step tool conversation fixture: the step-1 weather call, answered.
 TOOL_RESULT_MESSAGES = [
-    {"role": "user", "content": "What is 2 + 2?"},
+    {"role": "user", "content": WEATHER_PROMPT},
     {
         "role": "assistant",
         "content": None,
@@ -368,13 +367,17 @@ TOOL_RESULT_MESSAGES = [
                 "id": "call_001",
                 "type": "function",
                 "function": {
-                    "name": "calculate",
-                    "arguments": '{"expression": "2 + 2"}',
+                    "name": "get_current_weather",
+                    "arguments": '{"location": "Boston, MA", "unit": "fahrenheit"}',
                 },
             }
         ],
     },
-    {"role": "tool", "tool_call_id": "call_001", "content": '{"result": 4}'},
+    {
+        "role": "tool",
+        "tool_call_id": "call_001",
+        "content": '{"temperature": 52, "unit": "fahrenheit", "description": "cloudy"}',
+    },
 ]
 
 # OR's reasoning test prompt (multi-turn apple riddle)
@@ -1039,7 +1042,8 @@ class ProviderBaseline(BaseScenario):
             results.append(self.make_result(self.name, test, verdict, **kw))
 
         # OR: ToolCallStep1 — tool_calls_present + function name matches + valid args
-        pl_t1 = self._with_tools(model, "What is 2 + 2?")
+        # OR sends the weather prompt here; step-5 continues this call.
+        pl_t1 = self._req(model, WEATHER_PROMPT, tools=[WEATHER_TOOL])
         resp = await client.post_json(pl_t1)
         data, _ = parse_json(resp.body) if resp.status == 200 else (None, None)
         if resp.status == 200 and data:
@@ -1050,10 +1054,10 @@ class ProviderBaseline(BaseScenario):
                 actual_name = tc[0].get("function", {}).get("name")
                 args_err = _validate_tool_args_json(tc)
                 marker_err = _check_no_markers(str(tc))
-                if actual_name != "calculate":
+                if actual_name != "get_current_weather":
                     v, d = (
                         Verdict.FAIL,
-                        f"Wrong function name: {actual_name!r} (expected 'calculate')",
+                        f"Wrong function name: {actual_name!r} (expected 'get_current_weather')",
                     )
                 elif args_err:
                     v, d = Verdict.FAIL, args_err
@@ -1079,7 +1083,7 @@ class ProviderBaseline(BaseScenario):
             model,
             None,
             messages=TOOL_RESULT_MESSAGES,
-            tools=[CALCULATE_TOOL],
+            tools=[WEATHER_TOOL],
         )
         resp = await client.post_json(pl_t5)
         data, _ = parse_json(resp.body) if resp.status == 200 else (None, None)
@@ -1097,17 +1101,23 @@ class ProviderBaseline(BaseScenario):
         )
 
         # OR: ToolChoiceAuto — status_ok + function name validation
-        pl_tca = self._with_tools(model, tool_choice="auto")
+        # OR sends the weather prompt here too.
+        pl_tca = self._req(
+            model,
+            WEATHER_PROMPT,
+            tools=[WEATHER_TOOL],
+            tool_choice="auto",
+        )
         resp = await client.post_json(pl_tca)
         data, _ = parse_json(resp.body) if resp.status == 200 else (None, None)
         if resp.status == 200 and data:
             tc = _get_tool_calls(data)
             if tc:
                 actual_name = tc[0].get("function", {}).get("name")
-                if actual_name != "calculate":
+                if actual_name != "get_current_weather":
                     v, d = (
                         Verdict.FAIL,
-                        f"Wrong function name: {actual_name!r} (expected 'calculate')",
+                        f"Wrong function name: {actual_name!r} (expected 'get_current_weather')",
                     )
                 else:
                     v, d = (
@@ -1124,42 +1134,6 @@ class ProviderBaseline(BaseScenario):
             status_code=resp.status,
             detail=d,
             **self._exchange_verbose(pl_tca, resp),
-        )
-
-        # OR: ToolChoiceAuto with weather tool — function name accuracy
-        # Matches OR's weather-tool variant that validates returned function name.
-        pl_tca_w = self._req(
-            model,
-            WEATHER_PROMPT,
-            tools=[WEATHER_TOOL],
-            tool_choice="auto",
-        )
-        resp = await client.post_json(pl_tca_w)
-        data, _ = parse_json(resp.body) if resp.status == 200 else (None, None)
-        if resp.status == 200 and data:
-            tc = _get_tool_calls(data)
-            if not tc:
-                v, d = Verdict.FAIL, "tool_calls absent for weather prompt"
-            else:
-                actual_name = tc[0].get("function", {}).get("name")
-                if actual_name != "get_current_weather":
-                    v, d = (
-                        Verdict.FAIL,
-                        f"Wrong function name: {actual_name!r} (expected 'get_current_weather')",
-                    )
-                else:
-                    v, d = (
-                        Verdict.PASS,
-                        "tool_calls present with correct function name",
-                    )
-        else:
-            v, d = self._core_verdict(resp.status, data)
-        result(
-            "tool-choice-auto-weather",
-            v,
-            status_code=resp.status,
-            detail=d,
-            **self._exchange_verbose(pl_tca_w, resp),
         )
 
         # OR: ToolChoiceNone — content_not_matches_regex("<[^>]+>")
@@ -1473,7 +1447,10 @@ class ProviderBaseline(BaseScenario):
             rkw = _reasoning_kwargs(enabled=reasoning_on)
 
             # Step-1: single tool call — tool_calls_present + function name matches
-            pl_rt1 = self._with_tools(model, "What is 2 + 2?", **rkw)
+            # OR sends the weather prompt here; step-5 continues this call.
+            pl_rt1 = self._req(
+                model, WEATHER_PROMPT, tools=[WEATHER_TOOL], **rkw
+            )
             resp = await client.post_json(
                 pl_rt1, timeout=self._fuzz_config.timeout * 2
             )
@@ -1486,10 +1463,10 @@ class ProviderBaseline(BaseScenario):
                     v, d = Verdict.FAIL, "tool_calls absent"
                 else:
                     actual_name = tc[0].get("function", {}).get("name")
-                    if actual_name != "calculate":
+                    if actual_name != "get_current_weather":
                         v, d = (
                             Verdict.FAIL,
-                            f"Wrong function name: {actual_name!r} (expected 'calculate')",
+                            f"Wrong function name: {actual_name!r} (expected 'get_current_weather')",
                         )
                     else:
                         v, d = (
@@ -1511,7 +1488,7 @@ class ProviderBaseline(BaseScenario):
                 model,
                 None,
                 messages=TOOL_RESULT_MESSAGES,
-                tools=[CALCULATE_TOOL],
+                tools=[WEATHER_TOOL],
                 **rkw,
             )
             resp = await client.post_json(
@@ -1530,7 +1507,14 @@ class ProviderBaseline(BaseScenario):
             )
 
             # ToolChoiceAuto — status_ok + function name validation
-            pl_rta = self._with_tools(model, tool_choice="auto", **rkw)
+            # OR sends the weather prompt here too.
+            pl_rta = self._req(
+                model,
+                WEATHER_PROMPT,
+                tools=[WEATHER_TOOL],
+                tool_choice="auto",
+                **rkw,
+            )
             resp = await client.post_json(
                 pl_rta, timeout=self._fuzz_config.timeout * 2
             )
@@ -1541,10 +1525,10 @@ class ProviderBaseline(BaseScenario):
                 tc = _get_tool_calls(data)
                 if tc:
                     actual_name = tc[0].get("function", {}).get("name")
-                    if actual_name != "calculate":
+                    if actual_name != "get_current_weather":
                         v, d = (
                             Verdict.FAIL,
-                            f"Wrong function name: {actual_name!r} (expected 'calculate')",
+                            f"Wrong function name: {actual_name!r} (expected 'get_current_weather')",
                         )
                     else:
                         v, d = (
@@ -1561,47 +1545,6 @@ class ProviderBaseline(BaseScenario):
                 status_code=resp.status,
                 detail=d,
                 **self._exchange_verbose(pl_rta, resp),
-            )
-
-            # ToolChoiceAuto with weather tool — function name accuracy
-            # Matches OR's weather-tool variant (reasoning + auto + weather).
-            pl_rta_w = self._req(
-                model,
-                WEATHER_PROMPT,
-                tools=[WEATHER_TOOL],
-                tool_choice="auto",
-                **rkw,
-            )
-            resp = await client.post_json(
-                pl_rta_w, timeout=self._fuzz_config.timeout * 2
-            )
-            data, _ = (
-                parse_json(resp.body) if resp.status == 200 else (None, None)
-            )
-            if resp.status == 200 and data:
-                tc = _get_tool_calls(data)
-                if not tc:
-                    v, d = Verdict.FAIL, "tool_calls absent for weather prompt"
-                else:
-                    actual_name = tc[0].get("function", {}).get("name")
-                    if actual_name != "get_current_weather":
-                        v, d = (
-                            Verdict.FAIL,
-                            f"Wrong function name: {actual_name!r} (expected 'get_current_weather')",
-                        )
-                    else:
-                        v, d = (
-                            Verdict.PASS,
-                            "tool_calls present with correct function name",
-                        )
-            else:
-                v, d = self._probe_verdict(resp.status, data)
-            result(
-                f"{prefix}-tool-choice-auto-weather",
-                v,
-                status_code=resp.status,
-                detail=d,
-                **self._exchange_verbose(pl_rta_w, resp),
             )
 
             # ToolChoiceNone — content_not_matches_regex("<[^>]+>")
@@ -2058,7 +2001,7 @@ class ProviderBaseline(BaseScenario):
             model,
             None,
             messages=TOOL_RESULT_MESSAGES,
-            tools=[CALCULATE_TOOL],
+            tools=[WEATHER_TOOL],
         )
         resp = await client.post_streaming(pl_t5s)
         if resp.status == 200 and resp.chunks:

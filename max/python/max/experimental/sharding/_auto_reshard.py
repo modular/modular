@@ -518,7 +518,7 @@ def _format_layout(layout: TensorLayout) -> str:
     dtype = str(layout.dtype).removeprefix("DType.")
     shape = ", ".join(str(d) for d in layout.shape)
     mesh = layout.mapping.mesh
-    if mesh.is_single:
+    if mesh.num_devices == 1:
         device = mesh.devices[0]
         return f"{dtype}[{shape}]@{device.label}:{device.id}"
     grid = ", ".join(

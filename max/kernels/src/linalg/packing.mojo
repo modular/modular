@@ -462,8 +462,7 @@ struct PackMatrixCols[
         comptime unroll_factor = get_packB_unroll_factor()
 
         @inline(.always)
-        @__parameter
-        def pack_vector(row_idx: Int, col_idx: Int):
+        def pack_vector(row_idx: Int, col_idx: Int) {imm}:
             var global_idx = Index(
                 Int(self.global_offset[0].value()) + row_idx,
                 Int(self.global_offset[1].value()) + col_idx,
@@ -501,13 +500,11 @@ struct PackMatrixCols[
             )
 
         @inline(.always)
-        @__parameter
-        def pack_body[idx: Int]():
+        def pack_body[idx: Int]() {imm}:
             pack_vector(row_start + idx, col_start)
 
         @inline(.always)
-        @__parameter
-        def prefetch_body[idx: Int]():
+        def prefetch_body[idx: Int]() {imm}:
             var global_row_idx = (
                 Int(self.global_offset[0].value())
                 + row_start

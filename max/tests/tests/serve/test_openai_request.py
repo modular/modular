@@ -1700,7 +1700,7 @@ def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
 @pytest.mark.parametrize("strict", [True, False, None, "absent"])
 def test_tool_strict_passes_through_only_when_set(strict: object) -> None:
     """``strict`` reaches the tool dict only when the client set it; ``null``
-    counts as unset."""
+    counts as unset, so the converted value is never ``None``."""
     function: dict[str, Any] = {
         "name": "computer",
         "description": "Control the desktop.",
@@ -1725,7 +1725,7 @@ def test_tool_strict_passes_through_only_when_set(strict: object) -> None:
     if strict in ("absent", None):
         assert "strict" not in converted
     else:
-        assert converted["strict"] == strict
+        assert converted["strict"] is strict
     assert list(converted) == [k for k in function if function[k] is not None]
 
 

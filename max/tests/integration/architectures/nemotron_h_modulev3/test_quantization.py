@@ -27,6 +27,8 @@ from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
 )
 from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
     dequantize_to_bf16,
+    interleave_nvfp4_scales,
+    stack_nvfp4_experts,
 )
 
 # E4M3 encodings of 0.5, 1, 2 and 4.
@@ -135,3 +137,66 @@ def test_fp8_drops_the_input_scale() -> None:
 
     assert list(out) == ["m.weight"]
     np.testing.assert_array_equal(_values(out["m.weight"]), values * 0.5)
+
+
+def test_interleave_puts_each_scale_where_the_kernel_reads_it() -> None:
+    rows, cols = 130, 8
+    scales = (
+        (np.arange(rows * cols) % 251 + 1).astype(np.uint8).reshape(rows, cols)
+    )
+
+    out = interleave_nvfp4_scales(scales)
+
+    assert out.shape == (2, 2, 32, 4, 4)
+    for r in range(rows):
+        for c in range(cols):
+            got = out[r // 128, c // 4, r % 32, (r % 128) // 32, c % 4]
+            assert got == scales[r, c]
+    # The two real rows of the second granule, and zero padding after them.
+    assert np.count_nonzero(out[1]) == 2 * cols
+
+
+def test_stacking_keeps_the_routed_experts_in_nvfp4() -> None:
+    rng = np.random.default_rng(0)
+    mixer = "backbone.layers.1.mixer"
+    modules = {
+        f"{mixer}.experts.{e}.{proj}": ModuleFormat.NVFP4_WEIGHT_ONLY
+        for e in range(2)
+        for proj in ("up_proj", "down_proj")
+    }
+    modules["lm_head"] = ModuleFormat.NVFP4_WEIGHT_ONLY
+    state_dict = {}
+    for module in modules:
+        state_dict[f"{module}.weight"] = _weight(
+            rng.integers(0, 256, (128, 32), dtype=np.uint8), DType.uint8
+        )
+        state_dict[f"{module}.weight_scale"] = _weight(
+            np.full((128, 4), _E4M3[1.0], dtype=np.uint8), DType.float8_e4m3fn
+        )
+        state_dict[f"{module}.weight_scale_2"] = _weight(
+            np.array(0.25, dtype=np.float32), DType.float32
+        )
+
+    out, remaining = stack_nvfp4_experts(state_dict, modules, {mixer})
+
+    assert remaining == {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
+    assert sorted(n for n in out if n.startswith(mixer)) == [
+        f"{mixer}.{p}_{s}"
+        for p in ("down", "up")
+        for s in ("block_scale", "scale", "weight")
+    ]
+    up = out[f"{mixer}.up_weight"]
+    assert up.dtype == DType.uint8 and tuple(up.shape) == (2, 128, 32)
+    np.testing.assert_array_equal(
+        np.from_dlpack(up.to_buffer())[1],
+        np.from_dlpack(
+            state_dict[f"{mixer}.experts.1.up_proj.weight"].to_buffer()
+        ),
+    )
+    block = out[f"{mixer}.up_block_scale"]
+    assert block.dtype == DType.float8_e4m3fn
+    assert tuple(block.shape) == (2, 1, 1, 32, 4, 4)
+    scale = out[f"{mixer}.up_scale"]
+    np.testing.assert_array_equal(
+        np.from_dlpack(scale.to_buffer()), [0.25, 0.25]
+    )

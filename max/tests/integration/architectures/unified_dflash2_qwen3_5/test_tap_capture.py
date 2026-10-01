@@ -28,12 +28,14 @@ makes the test meaningful.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 import pytest
 from max import tree
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
@@ -169,12 +171,27 @@ def _create_kv_manager(
     )
 
 
-def _run(
+class Tapped(NamedTuple):
+    """A compiled tap graph and what running it needs."""
+
+    compiled: Model
+    device: Device
+    kv_params: MultiKVCacheParams
+
+
+def _build(
     target_layer_ids: list[int] | None,
     *,
     return_all_hidden_states: bool = False,
-) -> list[np.ndarray]:
-    """Runs a tiny Qwen3.5 with fixed weights and returns its tap outputs."""
+) -> Tapped:
+    """Compiles a tiny Qwen3.5 with fixed weights, tapping ``target_layer_ids``.
+
+    Compiling only, with nothing placed on the device: a test that builds every
+    graph it needs before running any of them can have all of those compiles
+    recorded by a CPU build action (``precompile_mefs`` in the BUILD file, and
+    ``docs/internal/CompileOnCpuRunOnGpu.md``). Interleaving the two hides
+    every compile after the first from the recording.
+    """
     config = _with_state_regions(_config(target_layer_ids))
     model = Qwen3_5(config)
     model.return_logits = ReturnLogits.LAST_TOKEN
@@ -234,11 +251,28 @@ def _run(
 
     compiled = session.load(graph, weights_registry=registry)
 
+    kv_params = config.kv_params
+    assert isinstance(kv_params, MultiKVCacheParams)
+    return Tapped(compiled, device, kv_params)
+
+
+def _execute(tapped: Tapped) -> list[np.ndarray]:
+    """Runs a built tap graph and returns its tap outputs.
+
+    Everything here needs the device: the input buffers, the cache manager's
+    pages, and the signal buffers.
+
+    Args:
+        tapped: What :func:`_build` compiled.
+
+    Returns:
+        One capture per tapped layer, in ascending layer order.
+    """
+    compiled, device, kv_params = tapped
+
     def buf(x: np.ndarray) -> Buffer:
         return Buffer.from_numpy(np.ascontiguousarray(x)).to(device)
 
-    kv_params = config.kv_params
-    assert isinstance(kv_params, MultiKVCacheParams)
     kv_manager = _create_kv_manager(kv_params)
     ctx = create_text_context(
         np.arange(SEQ_LEN, dtype=np.int64), max_length=128
@@ -260,7 +294,7 @@ def _run(
 
 def test_no_taps_requested_means_no_captures() -> None:
     """The base graph is unchanged: the hook costs nothing when unused."""
-    assert _run(None) == []
+    assert _execute(_build(None)) == []
 
 
 @pytest.mark.parametrize("order", [[1, 3], [3, 1]])
@@ -272,9 +306,11 @@ def test_captures_come_out_in_ascending_layer_order(
     ``fc`` consumes one column block per tap in ascending layer order, so a
     list-ordered capture would feed every block the wrong layer.
     """
-    ascending = _run([1, 3])
+    # Both graphs before either run, so a record run sees both compiles.
+    in_order, as_written = _build([1, 3]), _build(order)
+    ascending = _execute(in_order)
     assert len(ascending) == 2
-    got = _run(order)
+    got = _execute(as_written)
     for a, b in zip(ascending, got, strict=True):
         np.testing.assert_array_equal(a, b)
 
@@ -282,9 +318,10 @@ def test_captures_come_out_in_ascending_layer_order(
 def test_a_tap_reads_its_own_layer() -> None:
     """Distinct layers, and each capture equal to that layer's own single-tap
     run -- so the list is a per-layer read, not the same tensor N times."""
-    both = _run([1, 3])
-    (only_1,) = _run([1])
-    (only_3,) = _run([3])
+    pair, first, second = _build([1, 3]), _build([1]), _build([3])
+    both = _execute(pair)
+    (only_1,) = _execute(first)
+    (only_3,) = _execute(second)
     np.testing.assert_array_equal(both[0], only_1)
     np.testing.assert_array_equal(both[1], only_3)
     assert not np.array_equal(only_1, only_3)
@@ -293,7 +330,7 @@ def test_a_tap_reads_its_own_layer() -> None:
 def test_both_layer_kinds_are_tappable() -> None:
     """Layer 0 is linear-attention and layer 1 is full-attention; one hook
     covers both, which is what makes taps 5/19/33/47/61 free."""
-    captures = _run([0, 1])
+    captures = _execute(_build([0, 1]))
     assert len(captures) == 2
     assert captures[0].shape == captures[1].shape == (SEQ_LEN, HIDDEN)
     assert not np.array_equal(captures[0], captures[1])
@@ -309,6 +346,8 @@ def test_a_tap_captures_the_layers_output_not_its_input() -> None:
     would still pass.
     """
     last = len(LAYER_TYPES) - 1
-    (tapped,) = _run([last])
-    (final,) = _run(None, return_all_hidden_states=True)
+    tap_of_last = _build([last])
+    every_layer = _build(None, return_all_hidden_states=True)
+    (tapped,) = _execute(tap_of_last)
+    (final,) = _execute(every_layer)
     np.testing.assert_array_equal(tapped, final)

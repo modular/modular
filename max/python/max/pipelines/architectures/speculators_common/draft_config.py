@@ -190,6 +190,19 @@ class DSparkSpeculatorsDraftConfig:
     def num_context_features(self) -> int:
         return len(self.aux_hidden_state_layer_ids)
 
+    @property
+    def has_d2t(self) -> bool:
+        """Whether the checkpoint carries a draft-to-target vocabulary map.
+
+        ``d2t`` exists to undo vocabulary pruning, so a drafter trained on
+        the full target vocabulary ships none and its draft ids are already
+        target ids. Both cases occur in published checkpoints:
+        ``RedHatAI/gemma-4-31B-it-speculator.dspark`` prunes 262144 to 32000
+        and carries ``d2t``; ``RedHatAI/Kimi-K3-speculator.dspark`` keeps all
+        163840 and carries none.
+        """
+        return self.draft_vocab_size < self.vocab_size
+
     @classmethod
     def from_huggingface_config(
         cls,

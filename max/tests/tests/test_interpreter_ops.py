@@ -3171,10 +3171,10 @@ class TestRandomUniformOp:
 class TestShapeChangeOps:
     """Tests for shape change operations (squeeze, unsqueeze, reshape variants).
 
-    These test the reshape semantics that SqueezeShapeOp, UnsqueezeShapeOp,
-    AddSingletonDimOp, SplitDimOp, and MergeDimOp implement. Since these ops
-    are emitted by MLIR lowering passes rather than the Python API directly,
-    we test through the Tensor API methods that produce equivalent reshapes.
+    These test the reshape semantics that SqueezeShapeOp and UnsqueezeShapeOp
+    implement, along with the reshape variants (add-singleton, split, and
+    merge) that the Tensor API expresses. We test through the Tensor API
+    methods that produce these reshapes.
     """
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
@@ -3287,7 +3287,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_split_dim(self, dtype: DType) -> None:
-        """Test reshape that splits a dimension (equivalent to SplitDimOp).
+        """Test reshape that splits a dimension.
 
         E.g., [12, 3] -> [3, 4, 3] splits dimension 0 into (3, 4).
         """
@@ -3308,7 +3308,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_merge_dims(self, dtype: DType) -> None:
-        """Test reshape that merges adjacent dimensions (equivalent to MergeDimOp).
+        """Test reshape that merges adjacent dimensions.
 
         E.g., [2, 3, 4] -> [6, 4] merges dimensions 0 and 1.
         """
@@ -3329,7 +3329,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_add_singleton(self, dtype: DType) -> None:
-        """Test reshape that adds a singleton dimension (equiv to AddSingletonDimOp).
+        """Test reshape that adds a singleton dimension.
 
         E.g., [3, 4] -> [3, 1, 4] adds a dimension of size 1.
         """

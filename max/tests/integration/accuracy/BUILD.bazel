@@ -14,6 +14,13 @@ exports_files(
     visibility = ["//utils:__pkg__"],
 )
 
+# Read by //utils/benchmarking/llm-fuzz:test_entrypoint, which checks that the
+# Mammoth llm-fuzz overlay excludes this exact list.
+exports_files(
+    ["llm_fuzz/configs/minimax-m3-known-failures.txt"],
+    visibility = ["//utils/benchmarking/llm-fuzz:__pkg__"],
+)
+
 modular_py_test(
     name = "test_debug_utils",
     size = "small",

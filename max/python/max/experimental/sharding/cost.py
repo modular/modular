@@ -32,6 +32,8 @@ from .placements import (
     ReduceOp,
     Replicated,
     Sharded,
+    ShardingError,
+    Unknown,
 )
 from .types import TensorLayout
 
@@ -274,6 +276,13 @@ def feasible_rows_at_axis(
 ) -> tuple[AxisAssignment, ...]:
     """Rows of ``menu`` feasible at ``mesh_axis``."""
     actuals = input_placements_at_axis(per_input_placements, mesh_axis)
+    if any(isinstance(placement, Unknown) for placement in actuals):
+        if any(isinstance(placement, Partial) for placement in actuals):
+            raise ShardingError(
+                "Resolve Partial inputs before mixing them with Unknown inputs, "
+                "or rebind them as Unknown."
+            )
+        return (AxisAssignment(actuals, Unknown()),)
     ctx = _FeasibilityContext(
         layouts=menu.layouts,
         mesh=menu.mesh,

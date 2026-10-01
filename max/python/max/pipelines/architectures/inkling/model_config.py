@@ -348,8 +348,7 @@ def nest_inkling_mtp_kv_params(
     ):
         if count == 0:
             continue
-        child = target.children[key]
-        assert isinstance(child, MHAKVCacheParams)
+        child = target.child(key, MHAKVCacheParams)
         draft_children[key] = replace(child, num_layers=count)
     if not draft_children:
         raise ValueError("Inkling MTP built zero draft attention layers")

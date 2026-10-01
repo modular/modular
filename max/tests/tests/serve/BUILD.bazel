@@ -28,6 +28,7 @@ modular_py_test(
     ],
     imports = ["../.."],
     per_test_tags = {
+        "test_otel_config.py": ["requires-network"],
         "test_reset_prefix_cache.py": ["external-exclusive"],
         "test_eplb_rebalance.py": ["no-mypy"],
     },
@@ -70,7 +71,10 @@ modular_py_test(
         requirement("httpx"),
         requirement("openai"),
         requirement("opentelemetry-api"),
+        requirement("grpcio"),
+        requirement("opentelemetry-exporter-otlp-proto-grpc"),
         requirement("opentelemetry-exporter-otlp-proto-http"),
+        requirement("opentelemetry-proto"),
         requirement("opentelemetry-sdk"),
         requirement("numpy"),
         requirement("prometheus-client"),

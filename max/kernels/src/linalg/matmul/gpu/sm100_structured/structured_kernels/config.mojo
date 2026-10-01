@@ -930,9 +930,10 @@ def choose_config[
     # For large M, use 2xSM mma
     else:
 
-        @__parameter
         @inline(.always)
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             for bm in [64, 128]:
                 var N_aligned = align_up(N, 16)
                 var MMA_N_GRANULARITY = 16
@@ -1528,9 +1529,10 @@ def choose_block_scaled_config[
     # For large M, use 2xSM mma
     else:
 
-        @__parameter
         @inline(.always)
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             var N_alignby64 = align_up(N, 64)
             var max_mma_n = min(N_alignby64, 256)
             # In practice 64x16 mma creates too many ctas and increase L2

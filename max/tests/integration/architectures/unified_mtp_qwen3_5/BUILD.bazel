@@ -26,6 +26,77 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_ring_graph_signature",
+    size = "large",
+    srcs = ["test_ring_graph_signature.py"],
+    # Building the driver constructs an `Accelerator`, which aborts on a
+    # host with no GPU.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_test(
+    name = "test_state_rollback_ring",
+    size = "large",
+    srcs = ["test_state_rollback_ring.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_commit_on_forward",
+    size = "large",
+    srcs = ["test_commit_on_forward.py"],
+    # The 280 MB signal buffer is a single allocation, so the default
+    # per-test GPU budget cannot serve it whatever the model size.
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_weight_registry",
     srcs = ["test_weight_registry.py"],
     # Same constraint as test_state_pool_dtype: constructing the fused model
@@ -84,5 +155,78 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+    ],
+)
+
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_scratch_pools",
+    srcs = ["test_spec_scratch_pools.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_merged_positions",
+    srcs = ["test_merged_positions.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_batch_inputs",
+    srcs = ["test_batch_inputs.py"],
+    # Building the driver constructs an `Accelerator`.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines:graph_input_stager",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
     ],
 )

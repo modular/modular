@@ -883,7 +883,6 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
 
 # Function to perform warp-level reduction to find the maximum TopK_2
 @inline(.always)
-@__parameter
 def _warp_reduce_topk[
     T: DType,
     largest: Bool,
@@ -914,7 +913,6 @@ def _warp_reduce_topk[
     var res = val
 
     # Shuffle function for TopK_2 structure
-    @__parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
         comptime fn_type = def[dtype: DType, simd_width: SIMDLength](
             val: SIMD[dtype, simd_width], offset: UInt32
@@ -1094,7 +1092,22 @@ def _topk_stage1[
     var batch_id, block_lane = udivmod(bid, _num_blocks_per_input)
 
     var block_offset = block_lane * block_size
+    var block_end = _num_elements
     var stride = block_size * _num_blocks_per_input
+    comptime if is_apple_gpu():
+        # Stage 2 breaks ties between equal values by candidate slot, which is
+        # block-major, so ties come out smallest index first only when each
+        # block owns one ascending range of the row. The strided partition
+        # holds that up to `block_size * num_blocks_per_input` elements, and
+        # Apple's one-simdgroup blocks (see `topk_gpu`) pass that bound at row
+        # lengths `_topk_warp` also serves, so give each block a contiguous
+        # range there.
+        var block_len = align_up(
+            ceildiv(_num_elements, _num_blocks_per_input), block_size
+        )
+        block_offset = block_lane * block_len
+        block_end = min(block_offset + block_len, _num_elements)
+        stride = block_size
 
     var _in_buffer_tmp = in_buffer_tmp + batch_id * _num_elements
 
@@ -1120,7 +1133,7 @@ def _topk_stage1[
     with PDL():
         # Phase 1: Single scan to build per-thread register heap.
         var heap = TopKHeap[T, largest, HEAP_SIZE]()
-        for i in range(tid + block_offset, _num_elements, stride):
+        for i in range(tid + block_offset, block_end, stride):
             heap.insert(_in_buffer_tmp[i], i)
 
         # Phase 2: Extract winners from heaps without re-scanning.
@@ -1132,7 +1145,7 @@ def _topk_stage1[
             var partial = heap.best()
             if partial.p < 0:
                 partial = TopK_2[T, largest]()
-                for i in range(tid + block_offset, _num_elements, stride):
+                for i in range(tid + block_offset, block_end, stride):
                     partial.insert(_in_buffer_tmp[i], i)
 
             var total = _block_reduce_topk[ascending=largest](partial)
@@ -1155,7 +1168,7 @@ def _topk_stage1[
         for k in range(heap_iters, k_batch):
             var partial = TopK_2[T, largest]()
 
-            for i in range(tid + block_offset, _num_elements, stride):
+            for i in range(tid + block_offset, block_end, stride):
                 var val = _in_buffer_tmp[i]
                 partial.insert(val, i)
 
@@ -1288,14 +1301,15 @@ def _topk_stage2[
             k_batch = num_elem_reduced
 
         if _num_blocks_per_input == 1 and not sampling:
-            if tid < k_batch:
-                batch_i_topk_vals[tid] = _local_topk_vals[tid]
-                # cast to out_idx_type
-                batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-            elif tid >= k_batch and tid < _max_k:
-                # Fill unused positions with sentinel values
-                batch_i_topk_vals[tid] = _topk_dead_val[T, largest]()
-                batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)
+            # Strided because `max_k` can exceed the block, which on Apple is
+            # a single simdgroup.
+            for i in range(tid, _max_k, block_dim.x):
+                if i < k_batch:
+                    batch_i_topk_vals[i] = _local_topk_vals[i]
+                    batch_i_topk_idxs[i] = _local_topk_idxs[i]
+                else:
+                    batch_i_topk_vals[i] = _topk_dead_val[T, largest]()
+                    batch_i_topk_idxs[i] = Scalar[out_idx_type](-1)
             return
 
         comptime if sampling:

@@ -487,11 +487,11 @@ cc_binary(
 # cuda_ipc/shm). The plain cuda flavor above lacks uct_ib and falls back to
 # TCP/IPoIB on IB hosts; the CUDA inter-node path historically went through
 # libfabric/EFA on AWS, so verbs was never needed there. On a pure-IB fabric
-# (no EFA) this flavor is what makes NIXL transfer RDMA. Like the rocm-verbs
-# flavor it links libibverbs.so.1 alone, so its mlx5dv_* symbols rest on the
-# RTLD_GLOBAL preload in _nixl_plugin_deps.py rather than on a DT_NEEDED;
-# max._core selects this flavor only when both libibverbs.so.1 and
-# libmlx5.so.1 resolve, and otherwise falls back to the plain cuda flavor.
+# (no EFA) this flavor is what makes NIXL transfer RDMA. max._core selects
+# this flavor only when both libibverbs.so.1 and libmlx5.so.1 resolve, and
+# otherwise falls back to the plain cuda flavor. The resolved libraries must
+# define IBVERBS_1.12 and MLX5_1.11, or the plugin fails to load with no
+# fallback.
 cc_binary(
     name = "cuda-verbs/libplugin_UCX.so",
     linkopts = [
@@ -512,6 +512,11 @@ cc_binary(
         # zero RDMA devices. The DT_NEEDED this adds is the verbs flavor's
         # intended hard dependency on rdma-core.
         "@efa_libfabric_prebuilt//:libibverbs_import",
+        # Same for mlx5dv_*: unversioned, mlx5dv_init_obj binds to its MLX5_1.0
+        # compat definition, which returns a pointer into the device context as
+        # the CQ doorbell. UCX's doorbell writes then corrupt the context and
+        # closing it aborts the process.
+        "@efa_libfabric_prebuilt//:libmlx5_import",
     ],
 )
 
@@ -587,11 +592,10 @@ cc_binary(
 
 # ROCm + verbs flavor: a strict superset of the rocm flavor that adds the
 # uct_ib RDMA transports for internode transfers (UCX picks transports per
-# connection at runtime — same-node peers still use rocm_ipc/shm). It links
-# libibverbs.so.1 alone, so its mlx5dv_* symbols rest on the RTLD_GLOBAL
-# preload in _nixl_plugin_deps.py rather than on a DT_NEEDED; max._core
+# connection at runtime; same-node peers still use rocm_ipc/shm). max._core
 # selects this flavor only when both libibverbs.so.1 and libmlx5.so.1
-# resolve, and otherwise falls back to the plain rocm flavor above.
+# resolve, and otherwise falls back to the plain rocm flavor above. As with
+# cuda-verbs, the resolved libraries must define IBVERBS_1.12 and MLX5_1.11.
 cc_binary(
     name = "rocm-verbs/libplugin_UCX.so",
     linkopts = [
@@ -612,6 +616,8 @@ cc_binary(
         # zero RDMA devices. The DT_NEEDED this adds is the verbs flavor's
         # intended hard dependency on rdma-core.
         "@efa_libfabric_prebuilt//:libibverbs_import",
+        # Versions the mlx5dv_* symbols; see cuda-verbs above.
+        "@efa_libfabric_prebuilt//:libmlx5_import",
     ],
 )
 

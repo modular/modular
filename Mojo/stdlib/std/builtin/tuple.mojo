@@ -247,6 +247,39 @@ struct Tuple[*Ts: Movable](
 
         return False
 
+    @staticmethod
+    def _first_index_of[T: Movable]() -> Int:
+        comptime for i in range(Self.Ts.length):
+            comptime if Self.Ts[i] == T:
+                return i
+        return -1
+
+    @inline(.nodebug)
+    def first_of[T: Movable](ref self) -> ref[self] T:
+        """Get a reference to the first element whose type is `T`.
+
+        The lookup is resolved at compile time, and it is a compile-time error
+        if the tuple has no element of type `T`. For example:
+
+        ```mojo
+        var t = (String("one"), 2, String("three"))
+        t.first_of[String]() += "!"
+        print(t.first_of[String]())  # one!
+        ```
+
+        Parameters:
+            T: The element type to look up.
+
+        Returns:
+            A reference to the first element of type `T`, propagating the
+            mutability of `self`.
+        """
+        comptime idx = Self._first_index_of[T]()
+        comptime assert idx >= 0, String(
+            "the tuple has no element of type: ", reflect[T].name()
+        )
+        return rebind[T](self[idx])
+
     @inline(.always)
     def __eq__(
         self, other: Self

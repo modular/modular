@@ -68,7 +68,7 @@ class TextGenerationRequestFunction(TypedDict):
     parameters: dict[str, Any]
     """A dictionary describing the function's parameters, typically following a JSON schema."""
 
-    strict: NotRequired[bool | None]
+    strict: NotRequired[bool]
     """Whether constrained decoding enforces ``parameters`` for this tool.
 
     Absent or ``True`` enforces the schema; ``False`` constrains only the

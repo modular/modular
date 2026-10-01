@@ -32,6 +32,7 @@ from max.graph.weights import WeightData
 from max.pipelines.weights.block_scaled_preshuffle import (
     preshuffle_block_scaled_b_experts,
     preshuffle_block_scaled_b_scales,
+    preshuffle_block_scaled_b_stacked,
 )
 
 _N, _K_BYTES = 16, 64
@@ -181,3 +182,150 @@ def test_preshuffle_b_experts_counts_matches_under_virtual_devices(
 
     assert preshuffle_block_scaled_b_experts(state_dict) == 1
     assert state_dict[name] is before, "virtual mode must not permute bytes"
+
+
+# Kimi K3's routed gate/up shard at TP8: `[E, N, K_BYTES]` stacked by the
+# weight adapter rather than stored per expert, with gate and up stacked along
+# N so each half splits on its own.
+_K3_E, _K3_N, _K3_KB, _K3_KS = 2, 6144, 1792, 112
+_K3_TP, _K3_INTER = 8, 3072
+
+
+def _k3_gate_up_rows(device: int) -> np.ndarray:
+    """The two disjoint N runs `ShardingStrategy.gate_up(axis=1)` hands device i."""
+    half = _K3_INTER // _K3_TP
+    return np.r_[
+        device * half : (device + 1) * half,
+        _K3_INTER + device * half : _K3_INTER + (device + 1) * half,
+    ]
+
+
+def _stacked_state_dict(name: str, seed: int) -> dict[str, WeightData]:
+    weight = _weight_bytes(seed, (_K3_E * _K3_N, _K3_KB)).reshape(
+        _K3_E, _K3_N, _K3_KB
+    )
+    scale_raw = _weight_bytes(seed + 1, (_K3_E * _K3_N, _K3_KS)).reshape(
+        _K3_E, _K3_N, _K3_KS
+    )
+    return {
+        name: WeightData.from_numpy(weight, name),
+        f"{name}_scale": _f8_weight_data(
+            f"{name}_scale", scale_raw, DType.float8_e8m0fnu
+        ),
+    }
+
+
+def test_preshuffle_b_stacked_matches_per_expert_layout() -> None:
+    """Each expert slice of a stacked tensor gets the same bytes as a lone one."""
+    name = "layers.0.block_sparse_moe.experts_gate_up_proj"
+    state_dict = _stacked_state_dict(name, 10)
+    src = _result_bytes(state_dict[name]).copy()
+    src_scale = _result_bytes(state_dict[f"{name}_scale"]).copy()
+
+    assert preshuffle_block_scaled_b_stacked(state_dict, [name]) == 2 * _K3_E
+
+    got = _result_bytes(state_dict[name])
+    got_scale = _result_bytes(state_dict[f"{name}_scale"])
+    for e in range(_K3_E):
+        np.testing.assert_array_equal(got[e], _expected_b_5d(src[e]))
+        np.testing.assert_array_equal(
+            got_scale[e], _expected_scale_4d(src_scale[e])
+        )
+    assert state_dict[f"{name}_scale"].dtype == DType.float8_e8m0fnu
+
+
+def test_preshuffle_b_stacked_commutes_with_the_gate_up_shard() -> None:
+    """Permuting then sharding on N must equal sharding then permuting.
+
+    This is what makes the K3 gate/up flip safe: the model permutes whole
+    `[E, N, K]` tensors at load and `ShardingStrategy.gate_up(axis=1)` slices
+    them afterwards. The 5D layout puts `N0` outermost, so an N run on a
+    16-row boundary stays a contiguous run of whole tiles -- but only on N,
+    which is why the down projection cannot follow (see the K-axis case below).
+    """
+    name = "layers.0.block_sparse_moe.experts_gate_up_proj"
+    state_dict = _stacked_state_dict(name, 20)
+    src = _result_bytes(state_dict[name]).copy()
+
+    preshuffle_block_scaled_b_stacked(state_dict, [name])
+    permuted = _result_bytes(state_dict[name])
+
+    for device in range(_K3_TP):
+        rows = _k3_gate_up_rows(device)
+        for e in range(_K3_E):
+            np.testing.assert_array_equal(
+                permuted[e][rows],
+                _expected_b_5d(src[e][rows]),
+                err_msg=f"gate/up shard {device} does not commute",
+            )
+
+
+def test_preshuffle_b_stacked_does_not_commute_with_a_k_axis_shard() -> None:
+    """The negative control, without which the test above proves nothing.
+
+    K3's down projection splits on the packed-K axis, and a K slice of
+    `(N0, K0, KLane, NLane, KPack)` is strided rather than contiguous. If this
+    ever starts passing, the layout changed and the gate/up-only restriction in
+    `_preshuffle_gate_up_for_amd` needs revisiting rather than trusting.
+
+    Sliced in half rather than at K3's real TP8 boundary, because 1536/8 = 192
+    packed bytes is not a whole 64-byte MFMA K tile and would fail the reshape
+    before it could fail the comparison -- a second, independent reason the down
+    projection cannot take this path.
+    """
+    name = "layers.0.block_sparse_moe.experts_gate_up_proj"
+    state_dict = _stacked_state_dict(name, 30)
+    src = _result_bytes(state_dict[name]).copy()
+
+    preshuffle_block_scaled_b_stacked(state_dict, [name])
+    permuted = _result_bytes(state_dict[name])
+
+    k_shard = slice(0, _K3_KB // 2)
+    assert not np.array_equal(
+        permuted[0][:, k_shard], _expected_b_5d(src[0][:, k_shard])
+    )
+
+
+def test_preshuffle_b_stacked_rejects_a_missing_scale() -> None:
+    """A weight permuted without its scale is a wrong-logits bug, not a warning."""
+    name = "layers.0.block_sparse_moe.experts_gate_up_proj"
+    state_dict = _stacked_state_dict(name, 40)
+    del state_dict[f"{name}_scale"]
+
+    with pytest.raises(ValueError, match="permuted together"):
+        preshuffle_block_scaled_b_stacked(state_dict, [name])
+
+
+def test_preshuffle_b_stacked_raises_before_replacing_anything() -> None:
+    """A later bad name must not leave earlier weights half permuted.
+
+    The first name is valid and the second is missing its scale, so the
+    error comes after one weight/scale pair and the second weight have
+    already passed validation.
+    """
+    good = "layers.0.block_sparse_moe.experts_gate_up_proj"
+    bad = "layers.1.block_sparse_moe.experts_gate_up_proj"
+    state_dict = _stacked_state_dict(good, 60) | _stacked_state_dict(bad, 62)
+    del state_dict[f"{bad}_scale"]
+    before = dict(state_dict)
+
+    with pytest.raises(ValueError, match="permuted together"):
+        preshuffle_block_scaled_b_stacked(state_dict, [good, bad])
+
+    for tensor_name, wd in before.items():
+        assert state_dict[tensor_name] is wd, f"{tensor_name!r} was replaced"
+
+
+def test_preshuffle_b_stacked_rejects_an_unstacked_weight() -> None:
+    """The per-expert layout must not silently fall through this entry point."""
+    name = "layers.0.block_sparse_moe.experts_gate_up_proj"
+    raw = _weight_bytes(50, (_N, _K_BYTES))
+    state_dict = {
+        name: WeightData.from_numpy(raw, name),
+        f"{name}_scale": WeightData.from_numpy(
+            _weight_bytes(51, (_MN, _K_SCALES)), f"{name}_scale"
+        ),
+    }
+
+    with pytest.raises(ValueError, match="rank-3"):
+        preshuffle_block_scaled_b_stacked(state_dict, [name])

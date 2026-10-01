@@ -464,6 +464,7 @@ class NvMxf4f8Strategy:
         use_swigluoai: bool = False,
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
+        a_row_scales: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the fused quantized grouped matmul + SwiGLU + quant kernel.
 
@@ -494,6 +495,8 @@ class NvMxf4f8Strategy:
                 function.
             swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
             swiglu_limit: The limit value for the clamped SwiGLU activation function.
+            a_row_scales: Optional BF16 scale per ``hidden`` row, applied with
+                the expert scale before the SwiGLU. NVFP4 only.
 
         Returns:
             Tuple ``(c_packed, c_swiglu_scales)`` matching the chained
@@ -521,6 +524,7 @@ class NvMxf4f8Strategy:
             clamp_activation=use_swigluoai,
             swiglu_alpha=swiglu_alpha,
             swiglu_limit=swiglu_limit,
+            a_row_scales=a_row_scales,
         )
 
 
@@ -782,6 +786,49 @@ class Mxfp6Strategy:
             swiglu_alpha=swiglu_alpha,
             swiglu_limit=swiglu_limit,
         )
+
+
+# The SM100 block-scaled matmuls read scales in 128-row by 4-column granules,
+# each stored as a [32, 4, 4] atom: see `set_scale_factor` in
+# `linalg/fp4_utils.mojo`.
+_SF_ATOM_ROWS = 32
+_SF_GRANULE_ROWS = 128
+_SF_ATOM_COLS = 4
+
+
+def interleaved_block_scales_shape(rows: int, cols: int) -> list[int]:
+    """Returns the SM100 interleaved layout's shape for ``[rows, cols]`` scales.
+
+    The layout is ``[rows / 128, cols / 4, 32, 4, 4]``, the shape
+    :func:`~max.nn.kernels.block_scales_interleave` produces. Scale row ``r``,
+    column ``c`` is stored at
+    ``[r // 128, c // 4, r % 32, (r % 128) // 32, c % 4]``, so a range of whole
+    row granules or whole column granules of the interleaved tensor is the
+    interleave of the matching slice of the row-major scales.
+
+    Args:
+        rows: The number of scale rows, one per weight output row.
+        cols: The number of scale columns, one per 32-element block.
+
+    Returns:
+        The rank-5 interleaved shape.
+
+    Raises:
+        ValueError: If ``rows`` is not a multiple of 128 or ``cols`` is not a
+            multiple of 4.
+    """
+    if rows % _SF_GRANULE_ROWS or cols % _SF_ATOM_COLS:
+        raise ValueError(
+            f"block scales [{rows}, {cols}] are not whole "
+            f"{_SF_GRANULE_ROWS}x{_SF_ATOM_COLS} interleave granules"
+        )
+    return [
+        rows // _SF_GRANULE_ROWS,
+        cols // _SF_ATOM_COLS,
+        _SF_ATOM_ROWS,
+        _SF_GRANULE_ROWS // _SF_ATOM_ROWS,
+        _SF_ATOM_COLS,
+    ]
 
 
 def _nv_interleave_block_scales(

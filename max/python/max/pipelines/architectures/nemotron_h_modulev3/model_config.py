@@ -20,10 +20,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
+from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
@@ -97,6 +97,17 @@ def parse_layer_kinds(block_types: Sequence[str]) -> list[str]:
     return kinds
 
 
+def _runs_w4a4_experts(device_specs: Sequence[DeviceSpec]) -> bool:
+    """Returns whether NVFP4 routed experts run the W4A4 grouped matmul.
+
+    The kernel is SM100-only.
+    """
+    return all(
+        device.api == "cuda" and device.architecture_name.startswith("sm_10")
+        for device in load_devices(device_specs)
+    )
+
+
 @dataclass(kw_only=True)
 class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Configuration for a Nemotron-H hybrid decoder.
@@ -140,8 +151,27 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     dtype: DType
     devices: list[DeviceRef]
     max_seq_len: int
-    kv_params: KVCacheParamInterface
+    kv_params: MultiKVCacheParams
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    w4a4_experts: bool = False
+    """Whether NVFP4 routed experts run the W4A4 grouped matmul, with their
+    activations quantized to NVFP4, instead of being dequantized to BF16."""
+
+    def w4a4_mixers(self) -> frozenset[str]:
+        """Returns the MoE mixers whose routed experts run W4A4.
+
+        A mixer qualifies when every one of its routed projections is NVFP4.
+        """
+        if not self.w4a4_experts:
+            return frozenset()
+        return frozenset(
+            mixer
+            for i, kind in enumerate(self.layer_kinds)
+            if kind == "moe"
+            and self.quant_scheme.has_nvfp4_routed_experts(
+                mixer := f"backbone.layers.{i}.mixer", self.num_experts
+            )
+        )
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -164,7 +194,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-    ) -> KVCacheParamInterface:
+    ) -> MultiKVCacheParams:
         """Returns the attention leaf beside the Mamba state.
 
         The attention layers index the KV cache 0, 1, 2, ... in layer order;
@@ -251,6 +281,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         config = cls.from_huggingface(
             hf, kv_params=kv_params, devices=devices, max_seq_len=max_seq_len
         )
+        config.w4a4_experts = _runs_w4a4_experts(model_config.device_specs)
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}
         if hf_quant_config.get("kv_cache_scheme") and kv_cache_format is None:
             logger.info(
@@ -265,7 +296,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         hf: AutoConfig,
         *,
-        kv_params: KVCacheParamInterface,
+        kv_params: MultiKVCacheParams,
         devices: list[DeviceRef],
         max_seq_len: int,
     ) -> Self:

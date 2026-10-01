@@ -947,10 +947,9 @@ struct AppleM5MatMul[
         # view of C -- no pointer arithmetic. The lambda contract matches AMD's:
         # it receives `SIMD[c_type, width]` at absolute (row, col).
         @inline(.always)
-        @__parameter
         def _apply_epilogue[
             bounded: Bool
-        ](tile_row_base: Int, tile_col_base: Int):
+        ](tile_row_base: Int, tile_col_base: Int) {imm}:
             var c_sub = TileTensor[linear_idx_type=Self.linear_idx_type](
                 c_ptr, row_major(m, n)
             ).tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
@@ -961,14 +960,13 @@ struct AppleM5MatMul[
             var c_vec = c_sub.vectorize[1, 4]()
 
             @inline(.always)
-            @__parameter
             def _write4(
                 lrow: Int,
                 lcol: Int,
                 arow: Int,
                 acol: Int,
                 v_fp32: SIMD[.float32, 4],
-            ):
+            ) {imm}:
                 # `lrow,lcol`: coords inside the simdgroup tile (C store).
                 # `arow,acol`: absolute coords (bounds + the lambda contract).
                 var y = v_fp32.cast[Self.c_type]()
@@ -1046,10 +1044,9 @@ struct AppleM5MatMul[
         # is only entered when `c_type == fp32` (use_epilogue_path is False),
         # so the rebind is a no-op at runtime.
         @inline(.always)
-        @__parameter
         def _fast_path_store[
             bounded: Bool
-        ](valid_rows: Int = 0, valid_cols: Int = 0):
+        ](valid_rows: Int = 0, valid_cols: Int = 0) {imm}:
             var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](
                 c_ptr_shifted
             )
@@ -1111,8 +1108,9 @@ struct AppleM5MatMul[
         else:
 
             @inline(.always)
-            @__parameter
-            def _full_strip(k_strip: Int32):
+            def _full_strip(
+                k_strip: Int32,
+            ) {mut loader, mut mma_op, mut accum, imm}:
                 var b_sub = b_slab.tile[BK, SG_N](Int(k_strip), 0)
                 loader.accumulate_strip[bounded=False](
                     mma_op,
@@ -1606,8 +1604,7 @@ struct AppleM5MatMul[
         else:
 
             @inline(.always)
-            @__parameter
-            def _full_strip(gstrip: Int32):
+            def _full_strip(gstrip: Int32) {mut accum, imm}:
                 var a_sub = a_slab.tile[SG_M, BK](0, Int(gstrip))
                 var b_sub = b_slab.tile[BK, SG_N](Int(gstrip), 0)
                 comptime if Self.use_x2:
@@ -2074,8 +2071,7 @@ def enqueue_apple_conv2d[
     # alignment can be lifted to a comptime kernel parameter without a per-shape
     # recompile. `c_aligned` lets the kernel DCE the per-element slow gather on
     # the interior strips (see `_load_a_im2col_fragment_x2`).
-    @__parameter
-    def _launch[c_aligned: Bool]() raises:
+    def _launch[c_aligned: Bool]() raises {imm}:
         comptime kernel = MM.run_conv[
             type_of(c).LayoutType,
             type_of(input).LayoutType,

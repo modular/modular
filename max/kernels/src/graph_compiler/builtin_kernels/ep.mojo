@@ -436,7 +436,6 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -1110,7 +1109,6 @@ struct Struct_ep_dispatch_block_scaled_nv:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -1406,7 +1404,6 @@ struct Struct_ep_dispatch_mxfp4:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -2475,7 +2472,6 @@ struct Struct_ep_combine_async:
 struct Struct_ep_combine_wait:
     """Registers the `ep.combine_wait` graph op with the graph compiler."""
 
-    @__parameter
     @inline(.always)
     @staticmethod
     def execute[
@@ -2595,7 +2591,6 @@ struct Struct_ep_combine:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,
@@ -2734,7 +2729,6 @@ struct Struct_ep_combine_skip_a2a:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,

@@ -94,7 +94,9 @@ class DeepseekV4Inputs(ModelInputs):
 
 
 class DeepseekV4BatchProcessor(
-    SingleReplicaRaggedBatchProcessor[TextContext, DeepseekV4Inputs]
+    SingleReplicaRaggedBatchProcessor[
+        TextContext, DeepseekV4Inputs, DeepseekV4Config
+    ]
 ):
     """Ragged single-replica batching; the stock ragged KV input order."""
 
@@ -123,7 +125,6 @@ class DeepseekV4BatchProcessor(
 
     @property
     def _window_ratios(self) -> Sequence[int]:
-        assert isinstance(self.config, DeepseekV4Config)
         return self.config.window_ratios
 
     def prepare_initial_token_inputs(

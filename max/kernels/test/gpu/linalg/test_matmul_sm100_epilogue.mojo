@@ -267,7 +267,6 @@ def main() raises:
 
                 comptime for register_based_epilogue in [True, False]:
                     # Helper to run test with varying cluster/k_group/sizes
-                    @__parameter
                     def run[
                         MType: CoordLike,
                         NType: CoordLike,
@@ -276,7 +275,7 @@ def main() raises:
                         cluster_m: Int,
                         cluster_n: Int,
                         k_group: Int = 1,
-                    ](m: MType, n: NType, k: KType) raises:
+                    ](m: MType, n: NType, k: KType) raises {imm}:
                         test_matmul_sm100_epilogue[
                             dtype,
                             dtype,

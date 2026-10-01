@@ -27,7 +27,11 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major, coord_to_index_list
-from nn.concat import _concat_gpu_elementwise, _concat_inner_most_single_dim
+from nn.concat import (
+    _concat_gpu_elementwise,
+    _concat_inner_most_single_dim,
+    _no_epilogue,
+)
 
 from std.utils import IndexList, StaticTuple
 
@@ -136,8 +140,12 @@ def bench_concat[
     ) raises {mut output_device, imm}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {mut output_device, imm}:
-            _concat_gpu_elementwise[epilogue_fn=None](
-                output_device.as_unsafe_any_origin(), axis, inputs, ctx
+            _concat_gpu_elementwise[has_epilogue=False](
+                output_device.as_unsafe_any_origin(),
+                axis,
+                inputs,
+                _no_epilogue,
+                ctx,
             )
 
         bencher_iter_custom(b, kernel_launch, ctx)
@@ -248,11 +256,13 @@ def bench_concat_inner_most_single_dim[
                     dtype=dtype,
                     num_inputs=num_inputs,
                     block_size=B_SIZE,
-                    epilogue_fn=None,
+                    has_epilogue=False,
+                    EpilogueFnType=type_of(_no_epilogue),
                 ]
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
+                    host_arg=_no_epilogue,
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )
@@ -288,11 +298,13 @@ def bench_concat_inner_most_single_dim[
                     dtype=dtype,
                     num_inputs=num_inputs,
                     block_size=B_SIZE,
-                    epilogue_fn=None,
+                    has_epilogue=False,
+                    EpilogueFnType=type_of(_no_epilogue),
                 ]
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
+                    host_arg=_no_epilogue,
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )

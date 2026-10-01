@@ -15,7 +15,7 @@
 Mach's spec-step executor binds this signature positionally, so a reordering
 or an added slot is an ABI break that the engine can only report as an arity
 mismatch (or, worse, cannot report at all when the count happens to match).
-The MTP graph is asserted from Mach's side at 223 slots; this asserts the
+The MTP graph is asserted from Mach's side; this asserts the
 DFlash2 graph from MAX's side, and asserts that the two agree slot for slot
 apart from the draft leaf's geometry, which is the one thing that differs.
 
@@ -164,17 +164,16 @@ def _signature(
 
 
 def test_slot_count_matches_the_declared_formula() -> None:
-    """``15 + 23D`` at ``D = 1``.
+    """``15 + 22D`` at ``D = 1``.
 
     The same formula the Qwen3.5 MTP graph satisfies: five ragged/host inputs,
     signals, two 7-slot KV leaves, batch_context_lengths, the eight-entry
-    sampling tail, the bitmask triple, then three slots for each of the two
-    state leaves -- its pool, the rows addressing it, and its shadow pool.
-    The layer count no longer enters: a leaf is one pool however many layers
-    index it.
+    sampling tail, the bitmask triple, then a pool and a row table for each
+    of the two state leaves plus the recurrent shadow. The layer count does
+    not enter.
     """
     types = _signature()
-    assert len(types) == 15 + 23 * 1
+    assert len(types) == 15 + 22 * 1
 
 
 def test_the_prefix_and_sampling_tail_are_the_canonical_ones() -> None:
@@ -272,8 +271,7 @@ def test_a_quantized_target_leaf_does_not_quantize_the_draft_leaf() -> None:
 
 
 def test_the_state_pool_tail_matches_the_mtp_graphs() -> None:
-    """Each state leaf's live pool, the rows addressing it, then its shadow
-    pool -- the order Mach's Qwen slot layout already binds."""
+    """Checks the state tail matches the MTP graph's, slot for slot."""
     config = _fused_config()
     module = UnifiedDflash2Qwen3_5(config, enable_structured_output=True)
     fused = module.input_types(config.get_kv_params())
@@ -293,9 +291,8 @@ def test_the_state_pool_tail_matches_the_mtp_graphs() -> None:
         "the two graphs must present the same slot count, so Mach's Qwen"
         " layout binds both"
     )
-    # A leaf contributes its pool, its rows and its shadow pool, per device,
-    # so the tail is sized by the state leaves rather than by the layers.
-    tail_start = len(fused) - 3 * len(module.state_regions)
+    # A pool and a row table per state leaf, then the recurrent shadow.
+    tail_start = len(fused) - (2 * len(module.state_regions) + 1)
     for a, b in zip(fused[tail_start:], mtp[tail_start:], strict=True):
         assert a.dtype == b.dtype
         assert [str(d) for d in a.shape] == [str(d) for d in b.shape]

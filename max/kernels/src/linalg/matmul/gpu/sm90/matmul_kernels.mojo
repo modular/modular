@@ -805,10 +805,9 @@ struct HopperMatmulSM90Kernel[
         b_tiles: Self.SMem.BTileArray,
     ):
         @inline(.always)
-        @__parameter
         def producer_loop[
             num_pipeline_stages_to_unroll: Int,
-        ](k_iter: Int):
+        ](k_iter: Int) {mut pipeline, imm}:
             comptime for j in range(num_pipeline_stages_to_unroll):
                 var k_offset = k_coord + (
                     k_iter * Self.num_pipeline_stages + (j * Self.k_group_size)
@@ -1489,7 +1488,7 @@ struct HopperMatmulSM90Kernel[
 
             # C tile for current expert.
             var c_by_expert = TileTensor(
-                c._offset_storage(Coord(a_start_row * UInt32(N))),
+                c._offset_storage(Coord(Int(a_start_row) * N)),
                 row_major(Coord(Int(M), Idx[N])),
             )
 
@@ -1571,10 +1570,9 @@ struct HopperMatmulSM90Kernel[
         comptime num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
 
         @inline(.always)
-        @__parameter
         def consumer_loop[
             num_pipeline_stages_to_unroll: Int,
-        ]():
+        ]() {mut pipeline, mut fp8_promotion_iter, imm}:
             comptime for _ in range(num_pipeline_stages_to_unroll):
                 # Acquire consumer stage (waits for producer)
                 var stage = pipeline.acquire_consumer()
@@ -1620,10 +1618,10 @@ struct HopperMatmulSM90Kernel[
                         fp8_promotion_iter -= Self.promotion_frequency
 
         comptime if num_remaining_k_iters == 0:
-            for k_iter in range(num_full_k_iters):
+            for _ in range(num_full_k_iters):
                 consumer_loop[Self.adjusted_num_pipeline_stages]()
         else:
-            for k_iter in range(num_full_k_iters - 1):
+            for _ in range(num_full_k_iters - 1):
                 consumer_loop[Self.adjusted_num_pipeline_stages]()
             consumer_loop[num_remaining_k_iters // Self.k_group_size]()
 

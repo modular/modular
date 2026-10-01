@@ -1619,9 +1619,9 @@ def launch[
             sm_count * _SM_OVERPROVISION,
         )
 
-        @__parameter
-        @__copy_capture(shape_il, num_blocks, body)
-        def dispatch_warp[sw: Int]() raises:
+        def dispatch_warp[
+            sw: Int
+        ]() raises {var shape_il, var num_blocks, var body, imm}:
             comptime warp_params = ContextParams(
                 axis=axis,
                 emit_tile_width=1,

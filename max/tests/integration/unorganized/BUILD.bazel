@@ -66,7 +66,6 @@ modular_py_test(
         "test_config_vision_budgets.py",
         "test_context.py",
         "test_dtype.py",
-        "test_host_memory.py",
         "test_logits_processor.py",
         "test_memory_estimation.py",
         "test_speculative_config.py",

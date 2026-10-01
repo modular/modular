@@ -259,12 +259,11 @@ def dispatch_sm100_conv2d[
         # compiles a separately-instantiated kernel.
         var in_c_bytes = in_c * size_of[input_type]()
 
-        @__parameter
         @inline(.always)
         def _launch[
             swizzle: TensorMapSwizzle,
             num_pipeline_stages_override: Int = 0,
-        ]() raises:
+        ]() raises {imm}:
             comptime config = Conv2dConfig[
                 input_type, filter_type, output_type
             ].default_bf16_1sm[

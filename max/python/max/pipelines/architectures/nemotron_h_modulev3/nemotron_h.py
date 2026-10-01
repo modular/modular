@@ -32,7 +32,7 @@ from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
-    MultiKVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
@@ -62,6 +62,7 @@ class NemotronHBackbone(Module[..., Tensor]):
         self.embeddings = Embedding(config.vocab_size, dim=config.hidden_size)
         self.layer_kinds = tuple(config.layer_kinds)
         layers: list[NemotronHBlock] = []
+        w4a4_mixers = config.w4a4_mixers()
         for i, kind in enumerate(self.layer_kinds):
             mixer: Module[..., Tensor]
             if kind == "mamba":
@@ -70,7 +71,10 @@ class NemotronHBackbone(Module[..., Tensor]):
                 attn_idx = self.layer_kinds[:i].count("attention")
                 mixer = NemotronHAttention(config, attn_params, attn_idx)
             elif kind == "moe":
-                mixer = NemotronHMoE(config)
+                mixer = NemotronHMoE(
+                    config,
+                    w4a4_experts=f"backbone.layers.{i}.mixer" in w4a4_mixers,
+                )
             else:
                 mixer = NemotronHMLP(
                     config.hidden_size, config.intermediate_size
@@ -137,9 +141,7 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
             )
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
-        assert isinstance(config.kv_params, MultiKVCacheParams)
-        attn_params = config.kv_params.children[ATTN_CACHE_KEY]
-        assert isinstance(attn_params, KVCacheParams)
+        attn_params = config.kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
         self.backbone = NemotronHBackbone(config, attn_params)
         self.lm_head = Linear(config.hidden_size, config.vocab_size, bias=False)
 
@@ -157,7 +159,6 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
         kv_tree = self.kv_params.unflatten_kv_inputs(
             iter(x._graph_value for x in kv_inputs)
         )
-        assert isinstance(kv_tree, dict)
         (kv_collection,) = tree.leaves(
             kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
         )

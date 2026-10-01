@@ -24,9 +24,10 @@ legitimately decline to call a tool, which counts as a pass.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from helpers import budget_exhausted, make_tool
@@ -41,6 +42,9 @@ _env_choice = os.environ.get("TC_SCHEMA_TOOL_CHOICE")
 _TOOL_CHOICE_MODES: tuple[str, ...] = (
     (_env_choice,) if _env_choice else ("required", "auto")
 )
+# Most subtests in flight at once, across both modes; --max-concurrency
+# lowers it.
+_MAX_CONCURRENCY = 8
 
 if TYPE_CHECKING:
     from client import FuzzClient, RunConfig
@@ -138,7 +142,7 @@ class TCSchemaEnforcement(BaseScenario):
     requires_validator = True
     scenario_type = "validation"
 
-    # Set per-mode pass in run().
+    # Set per mode by _with_tool_choice().
     _tool_choice: str = "required"
 
     def _nocall_ok(self, err: str) -> bool:
@@ -161,88 +165,107 @@ class TCSchemaEnforcement(BaseScenario):
                 )
             ]
         loop = asyncio.get_running_loop()
-        all_results: list[ScenarioResult] = []
-        # Run every test under each tool_choice mode. Tag each result so the
-        # auto and required variants stay distinct in the report.
-        for mode in _TOOL_CHOICE_MODES:
-            self._tool_choice = mode
-            mode_results = await self._run_all_tests(v, loop)
-            for r in mode_results:
+        sem = asyncio.Semaphore(min(config.max_concurrency, _MAX_CONCURRENCY))
+
+        async def run_one(
+            test: Callable[[Any, Any], Awaitable[list[ScenarioResult]]],
+            mode: str,
+        ) -> list[ScenarioResult]:
+            async with sem:
+                results = await test(v, loop)
+            # Tag each result so the auto and required variants stay distinct
+            # in the report.
+            for r in results:
                 r.test_name = f"{r.test_name}[tool_choice={mode}]"
-            all_results.extend(mode_results)
-        return all_results
+            return results
 
-    async def _run_all_tests(self, v: Any, loop: Any) -> list[ScenarioResult]:
-        results: list[ScenarioResult] = []
-        results.extend(await self._required_fields(v, loop))
-        results.extend(await self._enum_enforcement(v, loop))
-        results.extend(await self._integer_vs_number(v, loop))
-        results.extend(await self._nested_object_typed(v, loop))
-        results.extend(await self._many_properties(v, loop))
-        results.extend(await self._required_consistency(v, loop))
-        results.extend(await self._scientific_notation(v, loop))
-        results.extend(await self._null_value(v, loop))
-        results.extend(await self._multiline_string(v, loop))
-        results.extend(await self._hyphenated_keys_freeform(v, loop))
-        results.extend(await self._enum_with_object_value(v, loop))
-        results.extend(await self._integer_scientific_notation(v, loop))
-        results.extend(await self._no_type_field(v, loop))
-        results.extend(await self._type_array_number_null(v, loop))
-        results.extend(await self._ref_defs_fail_open(v, loop))
-        results.extend(await self._const_value_fail_open(v, loop))
-        results.extend(await self._nullable_type_list(v, loop))
-        results.extend(await self._null_type_standalone(v, loop))
-        results.extend(await self._anyof_nullable_string(v, loop))
-        results.extend(await self._anyof_multi_object(v, loop))
-        results.extend(await self._oneof_string_int(v, loop))
-        results.extend(await self._enum_mixed_with_null(v, loop))
-        results.extend(await self._enum_bool_null(v, loop))
-        results.extend(await self._additional_properties_true(v, loop))
-        results.extend(await self._deep_nesting_5_levels(v, loop))
-        results.extend(await self._required_optional_mix(v, loop))
-        results.extend(await self._all_optional_empty_args(v, loop))
-        results.extend(await self._additional_properties_false(v, loop))
-        results.extend(await self._ref_defs_recursive(v, loop))
-        results.extend(await self._type_list_object_with_properties(v, loop))
-        results.extend(await self._type_list_array_with_items(v, loop))
-        results.extend(await self._properties_without_type_object(v, loop))
-        results.extend(await self._enum_dict_literal_exact(v, loop))
-        results.extend(await self._additional_properties_typed_values(v, loop))
-        results.extend(await self._ref_defs_array_enforcement(v, loop))
-        results.extend(await self._ref_defs_enum_enforced(v, loop))
-        results.extend(await self._ref_defs_chain_a_b_c(v, loop))
-        results.extend(await self._ref_defs_reused_same_def(v, loop))
-        results.extend(await self._ref_defs_anyof_nullable(v, loop))
-        results.extend(await self._ref_defs_required_propagation(v, loop))
-        results.extend(await self._ref_defs_nested_array_in_object(v, loop))
-        results.extend(await self._ref_defs_additional_props_false(v, loop))
-        results.extend(await self._ref_defs_cross_referencing(v, loop))
-        results.extend(await self._ref_defs_adversarial_extra_fields(v, loop))
-        results.extend(await self._ref_defs_array_of_enums(v, loop))
-        results.extend(await self._ref_defs_integer_enforcement(v, loop))
-        results.extend(await self._ref_defs_recursive_enum_leaf(v, loop))
-        results.extend(await self._ref_defs_boolean_type(v, loop))
-        results.extend(await self._ref_defs_type_array_nullable(v, loop))
-        results.extend(await self._anyof_nullable_integer(v, loop))
-        results.extend(await self._anyof_nullable_boolean(v, loop))
-        results.extend(await self._anyof_nullable_number(v, loop))
-        results.extend(await self._anyof_nullable_array(v, loop))
-        results.extend(await self._anyof_nullable_object(v, loop))
-        results.extend(await self._anyof_string_or_integer(v, loop))
-        results.extend(await self._anyof_nested_in_array_items(v, loop))
-        results.extend(await self._anyof_multiple_required_fields(v, loop))
-        results.extend(await self._anyof_with_enum_branch(v, loop))
-        results.extend(await self._anyof_with_ref_and_null(v, loop))
-        results.extend(await self._anyof_deeply_nested(v, loop))
-        results.extend(
-            await self._ref_defs_adversarial_all_constraints(v, loop)
+        # gather keeps argument order, so results come out in the same order
+        # as a one-at-a-time loop over the modes and tests.
+        batches = await asyncio.gather(
+            *(
+                run_one(test, mode)
+                for mode in _TOOL_CHOICE_MODES
+                for test in self._with_tool_choice(mode)._tests()
+            )
         )
-        results.extend(await self._ref_defs_required_only_minimal(v, loop))
-        results.extend(
-            await self._ref_defs_nested_items_type_enforcement(v, loop)
-        )
+        return [r for batch in batches for r in batch]
 
-        return results
+    def _with_tool_choice(self, mode: str) -> TCSchemaEnforcement:
+        # Subtests read the mode from self._tool_choice, and both modes run at
+        # once, so each mode gets its own copy. Any mutable state added to this
+        # class is shared between the copies.
+        scenario = copy.copy(self)
+        scenario._tool_choice = mode
+        return scenario
+
+    def _tests(
+        self,
+    ) -> tuple[Callable[[Any, Any], Awaitable[list[ScenarioResult]]], ...]:
+        return (
+            self._required_fields,
+            self._enum_enforcement,
+            self._integer_vs_number,
+            self._nested_object_typed,
+            self._many_properties,
+            self._required_consistency,
+            self._scientific_notation,
+            self._null_value,
+            self._multiline_string,
+            self._hyphenated_keys_freeform,
+            self._enum_with_object_value,
+            self._integer_scientific_notation,
+            self._no_type_field,
+            self._type_array_number_null,
+            self._ref_defs_fail_open,
+            self._const_value_fail_open,
+            self._nullable_type_list,
+            self._null_type_standalone,
+            self._anyof_nullable_string,
+            self._anyof_multi_object,
+            self._oneof_string_int,
+            self._enum_mixed_with_null,
+            self._enum_bool_null,
+            self._additional_properties_true,
+            self._deep_nesting_5_levels,
+            self._required_optional_mix,
+            self._all_optional_empty_args,
+            self._additional_properties_false,
+            self._ref_defs_recursive,
+            self._type_list_object_with_properties,
+            self._type_list_array_with_items,
+            self._properties_without_type_object,
+            self._enum_dict_literal_exact,
+            self._additional_properties_typed_values,
+            self._ref_defs_array_enforcement,
+            self._ref_defs_enum_enforced,
+            self._ref_defs_chain_a_b_c,
+            self._ref_defs_reused_same_def,
+            self._ref_defs_anyof_nullable,
+            self._ref_defs_required_propagation,
+            self._ref_defs_nested_array_in_object,
+            self._ref_defs_additional_props_false,
+            self._ref_defs_cross_referencing,
+            self._ref_defs_adversarial_extra_fields,
+            self._ref_defs_array_of_enums,
+            self._ref_defs_integer_enforcement,
+            self._ref_defs_recursive_enum_leaf,
+            self._ref_defs_boolean_type,
+            self._ref_defs_type_array_nullable,
+            self._anyof_nullable_integer,
+            self._anyof_nullable_boolean,
+            self._anyof_nullable_number,
+            self._anyof_nullable_array,
+            self._anyof_nullable_object,
+            self._anyof_string_or_integer,
+            self._anyof_nested_in_array_items,
+            self._anyof_multiple_required_fields,
+            self._anyof_with_enum_branch,
+            self._anyof_with_ref_and_null,
+            self._anyof_deeply_nested,
+            self._ref_defs_adversarial_all_constraints,
+            self._ref_defs_required_only_minimal,
+            self._ref_defs_nested_items_type_enforcement,
+        )
 
     def _tc(
         self,

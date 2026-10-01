@@ -21,6 +21,16 @@
 # on. OpenRouter uses the AWS-AGI verified variant of the dataset, so this pins
 # amazon-agi/tau2-bench-verified rather than Sierra's original.
 #
+# OpenRouter benchmarks with its own harness,
+# https://github.com/OpenRouterTeam/benchmark-harness
+# (src/benchmarks/tau-bench-airline), a TypeScript port that only talks to the
+# OpenRouter API. Its 50 airline tasks and database are identical to this pin's.
+# This runner matches its settings: agent temperature 0 and reasoning effort
+# "high", simulator temperature 0 and reasoning effort "medium", 200-step cap,
+# no request timeout, and up to 6 retries of a failed request.
+# On GLM-5.3 the chat template renders a missing effort as "Max", so an agent
+# run without one reasons longer than the harness asks for.
+#
 # The score is the mean binary reward over num_tasks x num_trials simulations,
 # where each reward is the database-state check AND the communication checks,
 # and a run that blows the 200-step cap scores 0.
@@ -33,8 +43,10 @@
 # the endpoint under test plays the customer as well as the agent — which needs
 # no new secret and matches how the HLE, AA-LCR and AA-Omniscience steps handle
 # the same missing key. That number tracks our own runs over time but is NOT
-# comparable to OpenRouter's leaderboard; pass --user-llm gemini/gemini-2.5-flash
-# (with GEMINI_API_KEY or GOOGLE_API_KEY set) for a directly comparable score.
+# comparable to OpenRouter's leaderboard. For a comparable score, pass
+# --user-llm openrouter/google/gemini-2.5-flash with OPENROUTER_API_KEY set
+# (the route the harness itself uses), or gemini/gemini-2.5-flash with
+# GEMINI_API_KEY or GOOGLE_API_KEY.
 #
 # Self-simulation is a weaker measurement than a pinned third-party simulator:
 # one model plays both sides of the conversation, and it holds the scenario
@@ -53,8 +65,19 @@
 #                       auto-detect via GET {url}/v1/models.
 #   --user-llm LLM     litellm name for the user simulator. Default: empty,
 #                       meaning self-simulate with the endpoint under test (no
-#                       extra credential). Pass gemini/gemini-2.5-flash for
-#                       OpenRouter parity; needs GEMINI_API_KEY/GOOGLE_API_KEY.
+#                       extra credential). For OpenRouter parity pass
+#                       openrouter/google/gemini-2.5-flash (needs
+#                       OPENROUTER_API_KEY) or gemini/gemini-2.5-flash (needs
+#                       GEMINI_API_KEY/GOOGLE_API_KEY).
+#   --reasoning-effort E
+#                      reasoning_effort sent with every agent request (default:
+#                       high, the harness's). "unset" sends none, which leaves
+#                       the choice to the chat template.
+#   --user-reasoning-effort E
+#                      reasoning_effort for the user simulator. Default: medium
+#                       (the harness's) for a third-party simulator; under
+#                       self-simulation, the agent's effort, since one endpoint
+#                       plays both sides. "unset" sends none.
 #   --num-trials N     Runs per task (default: 4, the published tau2 leaderboard
 #                       convention, giving 200 graded simulations). Do not lower
 #                       this to save time and then read the verdict: reward is
@@ -101,7 +124,8 @@
 #   ./bazelw run //max/tests/integration/accuracy/model_evals:exacto_taubench_local
 #
 # Env overrides: EXACTO_CACHE, EXACTO_TAU2_PIN, EXACTO_TAU2_PYTHON,
-#               EXACTO_REFERENCE_USER_LLM, EXACTO_API_KEY, GEMINI_API_KEY.
+#               EXACTO_REFERENCE_USER_LLM, EXACTO_API_KEY, GEMINI_API_KEY,
+#               OPENROUTER_API_KEY.
 
 set -euo pipefail
 
@@ -125,6 +149,8 @@ url="http://localhost:8000"
 api_key="${EXACTO_API_KEY:-${OPENAI_API_KEY:-}}"
 model=""
 user_llm=""
+reasoning_effort="high"
+user_reasoning_effort=""
 num_trials=4
 num_tasks=""
 task_split="base"
@@ -137,7 +163,7 @@ serve_config=""
 out_dir="/tmp/exacto-taubench-results"
 refresh=0
 
-usage() { sed -n '15,105p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '15,128p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -145,6 +171,8 @@ while [[ $# -gt 0 ]]; do
     --api-key) api_key="$2"; shift 2 ;;
     --model) model="$2"; shift 2 ;;
     --user-llm) user_llm="$2"; shift 2 ;;
+    --reasoning-effort) reasoning_effort="$2"; shift 2 ;;
+    --user-reasoning-effort) user_reasoning_effort="$2"; shift 2 ;;
     --num-trials) num_trials="$2"; shift 2 ;;
     --num-tasks) num_tasks="$2"; shift 2 ;;
     --task-split) task_split="$2"; shift 2 ;;
@@ -193,6 +221,19 @@ fi
 # simulation (the default) needs nothing beyond the endpoint itself.
 resolve_user_key() {
   case "$user_llm" in
+    openrouter/*)
+      if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+        cat >&2 <<'MSG'
+ERROR: --user-llm asks for a simulator through OpenRouter but
+       OPENROUTER_API_KEY is not set.
+
+       Drop --user-llm to self-simulate with the endpoint under test instead.
+       That needs no credential, but the score is not comparable to
+       OpenRouter's leaderboard.
+MSG
+        exit 1
+      fi
+      ;;
     gemini/*)
       if [[ -z "${GEMINI_API_KEY:-}" && -n "${GOOGLE_API_KEY:-}" ]]; then
         export GEMINI_API_KEY="$GOOGLE_API_KEY"
@@ -214,6 +255,26 @@ MSG
   esac
 }
 
+# tau2 raises on an agent turn with neither text nor tool calls (a generation
+# that ran to the context cap, for one), and nothing catches it per task, so a
+# single such turn aborts the whole run. The OpenRouter harness hands the empty
+# text to the user simulator and carries on; this patch makes tau2 do the same.
+patch_empty_agent_turn() {
+  vpy - "$CHECKOUT/src/tau2/orchestrator/orchestrator.py" <<'PYPATCH'
+import sys
+path = sys.argv[1]
+anchor = "            agent_msg.validate()\n"
+replacement = (
+    "            if not (agent_msg.has_text_content() or agent_msg.is_tool_call()):\n"
+    "                agent_msg.content = \"\"\n"
+)
+src = open(path).read()
+if src.count(anchor) != 1:
+    sys.exit(f"ERROR: tau2 changed; cannot patch the empty-agent-turn check in {path}")
+open(path, "w").write(src.replace(anchor, replacement))
+PYPATCH
+}
+
 ensure_checkout() {
   local uv; uv="$(find_uv)"
   if [[ "$refresh" == 1 ]]; then rm -rf "$CHECKOUT"; fi
@@ -223,7 +284,9 @@ ensure_checkout() {
     git clone -q "$HARNESS_REPO" "$CHECKOUT"
   fi
   git -C "$CHECKOUT" fetch -q origin "$PIN" 2>/dev/null || git -C "$CHECKOUT" fetch -q origin
-  git -C "$CHECKOUT" checkout -q "$PIN"
+  # -f discards the patch below from a previous run, so it applies to a clean
+  # tree even when the pin moves.
+  git -C "$CHECKOUT" checkout -q -f "$PIN"
   if [[ ! -x "$VENV/bin/tau2" ]]; then
     echo "[exacto] provisioning harness venv in $VENV"
     # Python 3.12, not the system interpreter: tau2 declares
@@ -234,6 +297,7 @@ ensure_checkout() {
     "$uv" venv --python "$HARNESS_PYTHON" "$VENV" >/dev/null
     (cd "$CHECKOUT" && "$uv" pip install --python "$VENV/bin/python" -q -e .)
   fi
+  patch_empty_agent_turn
 }
 
 detect_model() {
@@ -400,20 +464,38 @@ rm -f "$RESULTS_JSON"
 
 # litellm reaches our endpoint through the openai provider, which takes the base
 # URL as an api_base kwarg rather than a flag.
-agent_args="$(vpy -c '
+# "unset" leaves reasoning_effort out, so the chat template's default applies.
+#
+# The OpenRouter harness sets no request timeout and retries a retryable error
+# up to 6 times. Left alone, litellm gives up after 600 s and tau2 resends up to
+# 3 times; a request still generating (a repetition loop runs to the context
+# cap) is resent at temperature 0, loops again, and the server keeps decoding
+# the abandoned copy, since it does not cancel on disconnect. litellm treats
+# "no timeout" as 600 s, so a day stands in for none.
+llm_args() {
+  vpy -c '
 import json, sys
-print(json.dumps({"temperature": 0.0, "api_base": sys.argv[1]}))
-' "$url/v1")"
+args = {"temperature": 0.0, "timeout": 86400, "num_retries": 6}
+if sys.argv[1] != "unset":
+    args["reasoning_effort"] = sys.argv[1]
+if sys.argv[2]:
+    args["api_base"] = sys.argv[2]
+print(json.dumps(args))
+' "$1" "$2"
+}
+agent_args="$(llm_args "$reasoning_effort" "$url/v1")"
 
 # Default: the endpoint under test plays the customer too, so the simulator
-# needs the same api_base. A third-party simulator (gemini) resolves through
-# its own provider credential and must NOT be handed our base URL.
+# needs the same api_base. A third-party simulator resolves through its own
+# provider credential and must NOT be handed our base URL.
 if [[ -z "$user_llm" ]]; then
   user_llm="openai/$model"
-  user_args="$agent_args"
+  user_reasoning_effort="${user_reasoning_effort:-$reasoning_effort}"
+  user_args="$(llm_args "$user_reasoning_effort" "$url/v1")"
   self_simulated=1
 else
-  user_args='{"temperature": 0.0}'
+  user_reasoning_effort="${user_reasoning_effort:-medium}"
+  user_args="$(llm_args "$user_reasoning_effort" "")"
   self_simulated=0
 fi
 
@@ -432,7 +514,7 @@ args=(
 )
 [[ -n "$num_tasks" ]] && args+=(--num-tasks "$num_tasks")
 
-echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(all)} user=$user_llm$([[ "$self_simulated" == 1 ]] && echo " (self-simulated)")"
+echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(all)} reasoning_effort=$reasoning_effort user=$user_llm$([[ "$self_simulated" == 1 ]] && echo " (self-simulated)") user_reasoning_effort=$user_reasoning_effort"
 (
   cd "$CHECKOUT"
   # Pin the data directory explicitly. tau2 otherwise derives it from the
@@ -485,15 +567,33 @@ vpy "$REPORT" \
   --metric-prefix EXACTO_TAUBENCH
 
 # Comparability guard: report, don't fail.
-vpy - "$out_dir/score.json" "$num_tasks" <<'PYWARN'
+vpy - "$out_dir/score.json" "$num_tasks" "$self_simulated" <<'PYWARN'
 import json, sys
-score_path, num_tasks = sys.argv[1], sys.argv[2]
+score_path, num_tasks, self_simulated = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
 s = json.load(open(score_path))
-if s.get("user_llm") != s.get("reference_user_llm"):
+
+
+def model_name(llm):
+    # gemini/gemini-2.5-flash and openrouter/google/gemini-2.5-flash are the same
+    # simulator reached through different litellm providers.
+    return str(llm).rsplit("/", 1)[-1]
+
+
+def effort(args):
+    return (args or {}).get("reasoning_effort")
+
+
+if model_name(s.get("user_llm")) != model_name(s.get("reference_user_llm")):
     print(f"::warning::user simulator is {s.get('user_llm')}, not OpenRouter's "
           f"pinned {s.get('reference_user_llm')}, so this score is a regression signal "
           "for our own runs and NOT our AutoExacto standing. Self-simulation in "
           "particular has one model on both sides of the conversation.")
+if effort(s.get("agent_llm_args")) != "high":
+    print(f"::warning::agent reasoning_effort is {effort(s.get('agent_llm_args'))}, "
+          "not the harness's high, so this score is not comparable to OpenRouter's.")
+if not self_simulated and effort(s.get("user_llm_args")) != "medium":
+    print(f"::warning::simulator reasoning_effort is "
+          f"{effort(s.get('user_llm_args'))}, not the harness's medium.")
 if s.get("max_steps") != 200:
     print(f"::warning::max_steps is {s.get('max_steps')}, expected 200.")
 graded = s.get("total") or 0

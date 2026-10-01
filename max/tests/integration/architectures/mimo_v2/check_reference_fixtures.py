@@ -479,7 +479,7 @@ def beacon_gate(
 
 
 _EXPERT_STACK = re.compile(
-    r"layers\.\d+\.mlp\.experts_(gate_up|down)_proj(_scale)?"
+    r"layers\.\d+\.mlp\.experts\.(gate_up|down)_proj(_scale)?"
 )
 _PER_EXPERT = re.compile(r"\.experts\.\d+\.")
 

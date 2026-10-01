@@ -4147,14 +4147,16 @@ def _conv_cudnn[
 
         # Use ALLOW_CONVERSION only for half-precision types to enable tensor
         # core acceleration. For float32, use DEFAULT_MATH to avoid incorrect
-        # results on some GPU architectures (e.g., B200).
+        # results on some GPU architectures (e.g., B200). Set it on every
+        # descriptor update: the descriptor is cached per device, so a float32
+        # call after a half-precision one would otherwise inherit
+        # ALLOW_CONVERSION.
+        var math_type = cudnnMathType_t.CUDNN_DEFAULT_MATH
         comptime if input_type == .float16 or input_type == .bfloat16:
-            check_cudnn_error(
-                cudnnSetConvolutionMathType(
-                    ptr_meta[].ptr_conv_desc,
-                    cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION,
-                )
-            )
+            math_type = cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION
+        check_cudnn_error(
+            cudnnSetConvolutionMathType(ptr_meta[].ptr_conv_desc, math_type)
+        )
 
         # Algorithm Autotuning.
         # The Mojo binding cudnnConvolutionFwdAlgoPerfStruct has incorrect
@@ -5108,11 +5110,10 @@ def conv_gpu[
                 )
             ):
 
-                @__parameter
                 @inline(.always)
                 def _sm100_dispatch[
                     _epilogue: Optional[elementwise_epilogue_type] = None,
-                ]() raises:
+                ]() raises {imm}:
                     dispatch_sm100_conv2d[
                         filter_is_fcrs,
                         elementwise_lambda_fn=_epilogue,
@@ -5278,11 +5279,10 @@ def conv_gpu[
             from nn.conv.gpu.amd.dispatch import dispatch_amd_4wave_conv2d
             from linalg.utils import elementwise_epilogue_type as _ew_2d_t
 
-            @__parameter
             @inline(.always)
             def _amd_4wave_dispatch[
                 _epilogue_2d: Optional[_ew_2d_t] = None,
-            ]() raises -> Bool:
+            ]() raises {imm} -> Bool:
                 return dispatch_amd_4wave_conv2d[
                     input_type,
                     filter_type,

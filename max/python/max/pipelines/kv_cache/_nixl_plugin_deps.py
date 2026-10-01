@@ -30,13 +30,15 @@ logger = logging.getLogger("max.pipelines")
 # GPU runtime libraries that the upstream UCX plugin (libplugin_UCX.so, in
 # its per-vendor flavors) references but does not itself dlopen. The upstream
 # plugin manager loads plugins with ``dlopen(..., RTLD_NOW | RTLD_LOCAL)``;
-# ``RTLD_NOW`` requires every undefined symbol (CUDA driver, NVML, HSA,
-# optionally RDMA verbs) to be resolvable at load time, and ``RTLD_LOCAL``
-# means the plugin cannot see symbols unless they were already loaded
-# ``RTLD_GLOBAL`` into the process.
+# ``RTLD_NOW`` requires every undefined symbol (CUDA driver, NVML, HSA) to be
+# resolvable at load time, and ``RTLD_LOCAL`` means the plugin cannot see
+# symbols unless they were already loaded ``RTLD_GLOBAL`` into the process.
 _NIXL_PLUGIN_DEP_LIBS: tuple[str, ...] = (
-    # RDMA verbs (only needed by the *-verbs UCX flavors); harmless if absent,
-    # except on an InfiniBand host -- see _warn_if_verbs_unusable.
+    # RDMA verbs: the *-verbs UCX flavors link these. Under `bazel run` and
+    # `bazel test` their rpath also reaches the prebuilt copies staged in the
+    # runfiles, so loading the host copies here first keeps the plugin on the
+    # host's rdma-core. On an InfiniBand host a failed load is also reported.
+    # See _warn_if_verbs_unusable.
     "libibverbs.so.1",
     "libmlx5.so.1",
     # CUDA driver + NVML: required by the CUDA-flavor UCX plugin.
@@ -108,8 +110,8 @@ def preload_nixl_plugin_deps() -> None:
 
     The upstream NIXL plugin manager ``dlopen``s ``libplugin_UCX.so`` with
     ``RTLD_NOW | RTLD_LOCAL``. The vendored plugin flavor (selected per host
-    GPU vendor via ``NIXL_PLUGIN_DIR``) references CUDA/NVML, HSA, or RDMA
-    verbs symbols; ``RTLD_LOCAL`` prevents the plugin from resolving them
+    GPU vendor via ``NIXL_PLUGIN_DIR``) references CUDA/NVML or HSA
+    symbols; ``RTLD_LOCAL`` prevents the plugin from resolving them
     against the process unless they were previously loaded with
     ``RTLD_GLOBAL``. Without this, ``get_plugin_params("UCX")`` returns
     ``NIXL_ERR_NOT_FOUND`` because the plugin fails to load, or — on the dKV

@@ -123,7 +123,6 @@ def test_epilogue[
 
 
 @inline(.always)
-@__parameter
 def add_two[
     dtype: DType,
     width: SIMDLength,

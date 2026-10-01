@@ -1138,7 +1138,6 @@ def _reducescatter_p2p[
     )
 
 
-@__parameter
 def reducescatter[
     dtype: DType,
     ngpus: Int,

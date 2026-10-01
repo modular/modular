@@ -420,6 +420,7 @@ class TestSpeculativeArchitectureOverride:
             SimpleNamespace(
                 is_dflash=lambda: is_dflash or is_dflash2,
                 is_dflash2=lambda: is_dflash2,
+                is_mtp=lambda: False,
             )
             if speculative
             else None
@@ -478,6 +479,28 @@ class TestSpeculativeArchitectureOverride:
         assert (
             self._resolved_arch(cfg) == "Gemma4UnifiedForConditionalGeneration"
         )
+
+    def test_minimax_m3_dspark(self) -> None:
+        cfg = self._make_config(
+            "MiniMaxM3SparseForConditionalGeneration",
+            is_dflash=True,
+            draft_arch="DSparkMiniMaxDraftModel",
+        )
+        assert (
+            self._resolved_arch(cfg)
+            == "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
+        )
+
+    def test_minimax_m3_dspark_rejects_other_methods(self) -> None:
+        """The DSpark graph only runs under the v1 dflash harness."""
+        for kwargs in ({}, {"is_dflash2": True}):
+            cfg = self._make_config(
+                "MiniMaxM3SparseForConditionalGeneration",
+                draft_arch="DSparkMiniMaxDraftModel",
+                **kwargs,
+            )
+            with pytest.raises(ValueError, match="dflash"):
+                self._resolved_arch(cfg)
 
     def test_no_speculative_is_noop(self) -> None:
         cfg = self._make_config(
