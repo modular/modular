@@ -13,16 +13,14 @@
 """Greedy (effective top_k == 1) rows of `fused_token_sampling_gpu`.
 
 A k=1 draw must return a row maximum whatever the temperature, top-p or
-min-p. The only freedom is which maximum when several tie: the rejection
-sampler draws among them with the row's seed, so on most targets the test
-accepts any tied maximum. On Apple, greedy rows take an argmax, and the test
-pins its rules exactly: the lowest tied index wins (`numpy.argmax`), NaN never
-wins, and an all-NaN or all -inf row returns 0. Rows with k > 1 in the same
-batch must still land inside their top-k set.
+min-p. Greedy rows take an argmax on every target, and the test pins its rules
+exactly: the lowest tied index wins (`numpy.argmax`), NaN never wins, and an
+all-NaN or all -inf row returns 0. On AMD, the large-vocabulary cases split
+each row across several blocks. Rows with k > 1 in the same batch must still
+land inside their top-k set.
 """
 
 from std.random import random_float64, seed
-from std.sys.info import has_apple_gpu_accelerator
 from std.utils.numerics import inf, nan, neg_inf
 
 from max.gpu.host import DeviceContext
@@ -38,15 +36,6 @@ comptime FILL_NON_FINITE = 3
 comptime FILL_ALL_NAN = 4
 comptime FILL_ALL_NEG_INF = 5
 comptime FILL_NAN_FIRST = 6
-
-
-def _is_non_finite_fill(kind: Int) -> Bool:
-    return (
-        kind == FILL_NON_FINITE
-        or kind == FILL_ALL_NAN
-        or kind == FILL_ALL_NEG_INF
-        or kind == FILL_NAN_FIRST
-    )
 
 
 def _fill_row(
@@ -206,17 +195,8 @@ def _check[
                 raise Error(desc + " is outside the top-k set")
             continue
         var expected = _first_argmax(in_rows, b)
-        comptime if has_apple_gpu_accelerator():
-            if got != expected:
-                raise Error(
-                    desc + " expected the first argmax " + String(expected)
-                )
-        else:
-            # The sampler's softmax cannot rank a non-finite row.
-            if _is_non_finite_fill(kinds[b]):
-                continue
-            if in_rows[b, got][0] != in_rows[b, expected][0]:
-                raise Error(desc + " is not a row maximum")
+        if got != expected:
+            raise Error(desc + " expected the first argmax " + String(expected))
 
     _ = in_dev^
     _ = k_dev^
