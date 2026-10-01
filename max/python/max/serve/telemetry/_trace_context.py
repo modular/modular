@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextvars import ContextVar
 
 from max.pipelines.context import BaseContextType, TextContext
@@ -26,6 +27,11 @@ _phase_parent_ctx: ContextVar[OtelContext | None] = ContextVar(
     "max.serve.phase_parent_ctx", default=None
 )
 """The OTel context whose span parents the worker's phase spans."""
+
+
+def extract_inbound_context(headers: Mapping[str, str]) -> OtelContext:
+    """Returns the trace context the client sent in ``headers``."""
+    return otel_propagate.extract(headers)
 
 
 def set_phase_parent(span: otel_trace.Span) -> None:

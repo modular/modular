@@ -322,9 +322,9 @@ def test_only_the_traces_endpoint_turns_tracing_on(
     monkeypatch: pytest.MonkeyPatch, env: Mapping[str, str], installed: bool
 ) -> None:
     """With no provider installed the global stays OTel's
-    ProxyTracerProvider, so spans are no-ops and ``_tracing_enabled`` skips
-    its bookkeeping. The generic endpoint must not count: a deployment may
-    set it for metrics."""
+    ProxyTracerProvider, so spans are no-ops and the scheduler's
+    ``_tracing_enabled`` skips its bookkeeping. The generic endpoint must
+    not count: a deployment may set it for metrics."""
     captured: list[TracerProvider] = []
     monkeypatch.setattr(common, "set_tracer_provider", captured.append)
     for name, value in env.items():

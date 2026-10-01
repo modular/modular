@@ -173,7 +173,6 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
-from opentelemetry import propagate as otel_propagate
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -2219,7 +2218,6 @@ async def openai_create_chat_completion(
     request: Request,
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, request_id, CreateChatCompletionRequest
@@ -2721,7 +2719,6 @@ async def openai_create_embeddings(
     request: Request,
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # First try-catch: request parsing (client fault → 400)
     try:
@@ -2911,7 +2908,6 @@ async def openai_create_speech(request: Request) -> Response:
     no streaming.
     """
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # Request parsing and validation (client fault -> 400).
     try:
@@ -3548,7 +3544,6 @@ async def openai_create_completion(
     Public benchmarking such as vLLM use this endpoint.
     """
     http_req_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, http_req_id, CreateCompletionRequest

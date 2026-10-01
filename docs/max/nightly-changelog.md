@@ -331,6 +331,12 @@ This version is still a work in progress.
   `reasoning_split: false` skips the parser, so `text` and `logprobs` cover
   every generated token, reasoning span included, as in vLLM.
 
+- Added correlation IDs to structured log records on every route:
+  `request_id`, previously always empty, and, while tracing is enabled with
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set, `dd.trace_id` when the request
+  carries a `traceparent`. Structured logging is on by default in the MAX
+  container images; elsewhere, set `MODULAR_STRUCTURED_LOGGING=1`.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured

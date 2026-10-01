@@ -13,6 +13,9 @@
 """Tests for the request-session middleware, especially that the
 ``maxserve.request_count`` metric is labeled with the real HTTP status code."""
 
+import os
+import subprocess
+import sys
 from unittest import mock
 
 import pytest
@@ -124,3 +127,15 @@ def test_skips_probe_endpoints(request_count: mock.Mock) -> None:
 )
 def test_should_count_request(path: str, expected: bool) -> None:
     assert _should_count_request(path) is expected
+
+
+def test_telemetry_common_does_not_import_propagate() -> None:
+    # The metrics worker imports common.py but not the routes, and importing
+    # opentelemetry.propagate scans entry points, so the extract lives in
+    # _trace_context, which only the API process imports.
+    code = (
+        "import sys, max.serve.telemetry.common; "
+        "assert 'opentelemetry.propagate' not in sys.modules"
+    )
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    subprocess.run([sys.executable, "-c", code], env=env, check=True)

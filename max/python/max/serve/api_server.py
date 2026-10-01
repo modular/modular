@@ -449,7 +449,7 @@ def fastapi_app(
 
     app.state.media_data_uri_fetcher = fetch_media_data_uri_for_app
 
-    register_request(app)
+    register_request(app, structured_logging=settings.structured_logging)
 
     app.add_exception_handler(HTTPException, _openai_http_exception_handler)
     app.add_exception_handler(

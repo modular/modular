@@ -264,8 +264,10 @@ class ModelWorker:
                 process took to start (Python imports + driver init), which
                 can dominate first-run startup on cold filesystem caches.
         """
-        configure_logging(settings)
+        # Tracing first: configure_logging adds the dd.trace_id field only
+        # when tracing is on.
         configure_tracing(settings)
+        configure_logging(settings)
         configure_kernel_tracing(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)

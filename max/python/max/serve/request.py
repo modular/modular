@@ -20,6 +20,12 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from max.serve._error_envelope import openai_error_body
+from max.serve.telemetry._trace_context import extract_inbound_context
+from max.serve.telemetry.common import (
+    _capture_request_context,
+    _request_id_ctx,
+    _tracing_enabled,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
 
@@ -36,7 +42,12 @@ def _should_count_request(path: str) -> bool:
     return _UNCOUNTED_PATH_RE.fullmatch(path) is None
 
 
-def register_request(app: FastAPI) -> None:
+def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
+    # Read once: the server configures tracing before it builds the app.
+    # Structured logs read the request ID. Only spans, directly or through
+    # the worker's trace carrier, and dd.trace_id read the trace context.
+    tracing = _tracing_enabled()
+
     @app.middleware("http")
     async def request_session(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -44,6 +55,12 @@ def register_request(app: FastAPI) -> None:
         request_id = uuid.uuid4().hex
         request.state.request_id = request_id
         request.state.request_timer = StopWatch()
+        if tracing:
+            _capture_request_context(
+                request_id, extract_inbound_context(request.headers)
+            )
+        elif structured_logging:
+            _request_id_ctx.set(request_id)
         # Record the request against the final HTTP status code. This is the
         # authoritative place to label ``maxserve.request_count`` with the
         # return code: it sees the status of every request, including failures
