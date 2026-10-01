@@ -172,6 +172,40 @@ def test_chat_session_driver_constrains_only_the_marked_turns() -> None:
     ]
 
 
+def test_chat_session_driver_disable_ignore_eos_covers_every_turn() -> None:
+    """With the flag, no turn ignores EOS. The session reuses one
+    ``RequestFuncInput``, so each value is snapshotted when sent."""
+    sent: list[bool] = []
+
+    class SnapshottingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            sent.append(request_func_input.ignore_eos)
+            return RequestFuncOutput(
+                success=True, latency=0.1, ttft=0.05, generated_text="ok"
+            )
+
+    async def run_test() -> None:
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=SnapshottingDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=_make_4turn_session(delay_ms=0.0),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            disable_ignore_eos=True,
+        )
+
+    asyncio.run(run_test())
+
+    assert sent == [False, False, False, False]
+
+
 @pytest.mark.parametrize(
     ("completion_tokens", "second_prompt_len"),
     [(2, 22), (None, 70)],

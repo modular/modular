@@ -18,8 +18,13 @@ import time
 
 import numpy as np
 import pytest
+from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets import SampledRequest
-from max.benchmark.benchmark_shared.single_turn import get_request
+from max.benchmark.benchmark_shared.request import RequestFuncInput
+from max.benchmark.benchmark_shared.single_turn import (
+    build_single_turn_request_input,
+    get_request,
+)
 
 
 async def generate_test_intervals(
@@ -228,3 +233,34 @@ async def test_request_intervals_burstiness_variations() -> None:
 
     assert std_05 != std_10
     assert std_10 != std_20
+
+
+@pytest.mark.parametrize(
+    ("disable_ignore_eos", "expected"), [(False, True), (True, False)]
+)
+def test_disable_ignore_eos_lets_a_forced_request_stop(
+    disable_ignore_eos: bool, expected: bool
+) -> None:
+    """The flag drops ``ignore_eos``; the target length still caps output."""
+    request = SampledRequest(
+        prompt_formatted="Test prompt",
+        prompt_len=10,
+        output_len=20,
+        encoded_images=[],
+        ignore_eos=True,
+    )
+
+    built = build_single_turn_request_input(
+        benchmark_task="text-generation",
+        request=request,
+        model_id="test-model",
+        lora_id=None,
+        api_url="http://localhost:8000/v1/chat/completions",
+        sampling=SamplingConfig(),
+        max_output_len=None,
+        disable_ignore_eos=disable_ignore_eos,
+    )
+
+    assert isinstance(built, RequestFuncInput)
+    assert built.ignore_eos is expected
+    assert built.max_tokens == 20

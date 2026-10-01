@@ -118,6 +118,7 @@ def build_single_turn_request_input(
     max_output_len: int | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    disable_ignore_eos: bool = False,
 ) -> BaseRequestFuncInput:
     request_model_id = model_id if lora_id is None else lora_id
     if benchmark_task == "text-generation":
@@ -139,7 +140,7 @@ def build_single_turn_request_input(
             api_url=api_url,
             prompt_len=prompt_len,
             max_tokens=max_tokens,
-            ignore_eos=request.ignore_eos,
+            ignore_eos=request.ignore_eos and not disable_ignore_eos,
             response_format=request.response_format,
             tools=request.tools,
         )
@@ -245,6 +246,7 @@ async def run_single_turn_benchmark(
     lora_manager: LoRABenchmarkManager | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    disable_ignore_eos: bool = False,
 ) -> list[BaseRequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
@@ -305,6 +307,7 @@ async def run_single_turn_benchmark(
             max_output_len=max_output_len,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
+            disable_ignore_eos=disable_ignore_eos,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
