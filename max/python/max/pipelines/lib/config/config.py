@@ -740,6 +740,22 @@ def _apply_speculative_target_architecture(
         )
         if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
             target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
+    # Kimi K3's speculators-format DSpark drafter (
+    # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
+    # architectures: ["DSparkDraftModel"] the Gemma4 arm keys on; the
+    # verifier it names is what picks the fused graph apart.
+    if target_archs[0] == "KimiK3ForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if (
+            speculative.speculative_method == "dflash"
+            and draft_archs
+            and draft_archs[0] == "DSparkDraftModel"
+        ):
+            target_archs[0] = "UnifiedDSparkKimiK3ForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
             draft_model.huggingface_config.architectures

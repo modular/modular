@@ -14,6 +14,8 @@ modular_py_library(
         "tool_parsers",
         # Private Kimi K3 arch is imported at runtime, not directly
         "kimi_k3",
+        # Private unified Kimi K3 + DSpark arch is imported at runtime
+        "unified_dspark_kimi_k3",
         # Private MiniMax-M3 arch is imported at runtime, not directly
         "minimax_m3",
         # Private unified MiniMax-M3 + MTP arch is imported at runtime
