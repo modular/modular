@@ -294,6 +294,11 @@ This version is still a work in progress.
   `http/protobuf`, so existing deployments are unchanged, and metrics and
   logs still export over HTTP.
 
+- The scheduler's `max.phase.prefill` and `max.phase.decode` spans now nest
+  under the request's `max.request` span on non-streaming chat and completions
+  requests, instead of beside it or, without a `traceparent`, in a trace of
+  their own.
+
 - Added `--prefill-schedule-interval` (default 1, every step): admit prefill
   work only on every Nth scheduler step, leaving the steps in between entirely
   to decode. Data-parallel ranks advance in lockstep, so prefill on any one

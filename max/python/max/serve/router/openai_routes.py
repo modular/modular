@@ -154,6 +154,7 @@ from max.serve.schemas.openai import (
 from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+from max.serve.telemetry.trace_context import set_phase_parent
 from max.serve.worker_interface import RequestQueueFull
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDeltaToolCall,
@@ -1172,6 +1173,7 @@ class OpenAIChatResponseGenerator(
                 "max.request_id": str(request.request_id),
             },
         )
+        set_phase_parent(request_span)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
@@ -3387,6 +3389,7 @@ class OpenAICompletionResponseGenerator(
                 "max.request_id": str(requests[0].request_id),
             },
         )
+        set_phase_parent(request_span)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0

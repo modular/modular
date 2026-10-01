@@ -8,6 +8,7 @@ modular_py_library(
     test_docstring_examples = True,
     deps = [
         "//max/python/max:_core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve:process_control",

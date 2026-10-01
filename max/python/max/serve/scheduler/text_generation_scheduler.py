@@ -72,12 +72,14 @@ def _tracing_enabled() -> bool:
 
 
 def _parent_trace_context(context: TextContext) -> OtelContext | None:
-    """Re-extract the caller's OTel context from ``context.trace_carrier``.
+    """Re-extracts the phase spans' parent from ``context.trace_carrier``.
 
-    ``trace_carrier`` was serialized by the API process (see
-    ``llm._inject_trace_carrier``) since a live ``Context`` can't cross the
-    process boundary. Returns None (a root span) when the request carried no
-    inbound traceparent, or arrived before this propagation existed.
+    That is the request's ``max.request`` span where the handler set one,
+    otherwise the inbound caller's context. ``trace_carrier`` was serialized
+    by the API process (see ``trace_context.inject_trace_carrier``) since a
+    live ``Context`` can't cross the process boundary. Returns None (a root
+    span) when neither was present, or the request arrived before this
+    propagation existed.
     """
     if context.trace_carrier is None:
         return None
