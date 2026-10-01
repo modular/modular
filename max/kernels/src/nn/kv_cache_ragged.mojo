@@ -5241,16 +5241,22 @@ def kv_cache_store_ragged[
         width: Int,
         alignment: Int = 1,
     ](idx: Coord) capturing:
+        var row = Int(idx[0].value())
+        # Rows past the last offset belong to no request. A producer whose
+        # output row count is only an upper bound on a data-dependent one
+        # (`kpool_compress_kernel`, say, whose pool count is a sum of
+        # per-request floors) hands us those rows, and the batch search below
+        # answers with the last request for every one of them, which would
+        # write them past the end of that request's span and into whatever
+        # pages follow.
+        if row >= Int(input_row_offsets[input_row_offsets.size() - 1]):
+            return
         var input_idx = IndexList[3](
-            Int(idx[0].value()), Int(idx[1].value()), Int(idx[2].value())
+            row, Int(idx[1].value()), Int(idx[2].value())
         )
         var loaded_val = input_fn[width=width, alignment=alignment](input_idx)
-        var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, Int(idx[0].value())
-        )
-        var token_idx = Int(
-            UInt32(idx[0].value()) - input_row_offsets[batch_idx]
-        )
+        var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
+        var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
         var h_idx = Int(idx[1].value())
         var hd_idx = Int(idx[2].value())
         var cache_length = cache.cache_length(batch_idx)

@@ -104,12 +104,403 @@ from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
+from nn.attention.gpu.mla_index_kpool import (
+    kpool_compress_kernel,
+    kpool_expand_topk_kernel,
+    kpool_ring_close_kernel,
+    kpool_seed_tail_kernel,
+    kpool_tail_update_kernel,
+)
+
 from .kernels import (
     _execute_mha_ragged_paged_rel_logits,
     _execute_mha_ragged_paged_scalar_args,
     _unmarshal_mha_decode_dispatch_metadata,
     _unsafe_str_to_coord,
 )
+
+
+@extensibility.register("mo.mla.kpool.expand_topk")
+struct MLAKPoolExpandTopK:
+    """Registers the `mo.mla.kpool.expand_topk` graph op with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        kpool: Int,
+        pool_topk: Int,
+        always_select_tail: Bool,
+    ](
+        out_indices: OutputTensor[dtype=.int32, rank=2, ...],
+        pool_ids: InputTensor[dtype=.int32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        """Turns selected pool ids back into the token positions they cover.
+
+        The indexer selects pools; attention reads tokens. Pool `p` covers
+        positions `[p * kpool, (p + 1) * kpool)`, so the selection widens from
+        `pool_topk` to `pool_topk * kpool`. An unselected slot expands to `-1`
+        in every one of its positions rather than to a clamped valid one, which
+        would point attention at a token the indexer did not choose.
+
+        Parameters:
+            kpool: Tokens per pool.
+            pool_topk: Pools selected per query; the width of `pool_ids`.
+            always_select_tail: Append the `kpool - 1` positions after the last
+                complete pool -- the query's most recent tokens.
+
+        Args:
+            out_indices: Output `[total_seq_len, pool_topk * kpool + tail]`
+                token positions, `-1` where unused.
+            pool_ids: Selected pool ids `[total_seq_len, pool_topk]`.
+            input_row_offsets: Token row offsets per request, `[batch + 1]`.
+            cache_lengths: Cached tokens per request, `[batch]`.
+            ctx: Device context for GPU execution.
+        """
+        var out_tt = out_indices.to_tile_tensor[.int64]()
+        var pool_tt = pool_ids.to_tile_tensor[.int64]()
+        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
+        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
+
+        var total_seq_len = pool_ids.dim_size(0)
+        if total_seq_len == 0:
+            # The architecture sets `supports_empty_batches`, so a step with
+            # no tokens reaches here, and a zero-width grid is a launch error.
+            # The sibling kpool registrations guard the same way.
+            return
+
+        ctx.enqueue_function[
+            kpool_expand_topk_kernel[
+                out_tt.LayoutType,
+                out_tt.origin,
+                type_of(pool_tt.as_imm()).LayoutType,
+                ImmOrigin(pool_tt.origin),
+                type_of(iro_tt.as_imm()).LayoutType,
+                ImmOrigin(iro_tt.origin),
+                type_of(clen_tt.as_imm()).LayoutType,
+                out_tt.Engine,
+                type_of(pool_tt.as_imm()).Engine,
+                type_of(iro_tt.as_imm()).Engine,
+                type_of(clen_tt.as_imm()).Engine,
+                kpool,
+                pool_topk,
+                always_select_tail,
+            ]
+        ](
+            out_tt,
+            pool_tt.as_imm(),
+            iro_tt.as_imm(),
+            clen_tt.as_imm(),
+            Int32(total_seq_len),
+            grid_dim=(total_seq_len, 1, 1),
+            block_dim=(128, 1, 1),
+        )
+
+
+@extensibility.register("mo.mla.kpool.compress")
+struct MLAKPoolCompress:
+    """Registers the `mo.mla.kpool.compress` graph op with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        head_dim: Int,
+        kpool: Int,
+    ](
+        pooled: OutputTensor[rank=2, ...],
+        k: InputTensor[rank=2, ...],
+        gate: InputTensor[rank=2, ...],
+        ape: InputTensor[dtype=.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        pool_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        """Compresses each complete k-pool into one candidate key.
+
+        Parameters:
+            head_dim: Channels per key; also the kernel's block width.
+            kpool: Tokens per pool.
+
+        Args:
+            pooled: Output `[total_pools, head_dim]` pooled keys.
+            k: Layer-normed indexer keys `[total_tokens, head_dim]`.
+            gate: Per-token gate scores `[total_tokens, head_dim]`.
+            ape: Within-pool position embedding `[kpool, head_dim]`, float32.
+            input_row_offsets: Token row offsets `[batch + 1]`.
+            pool_row_offsets: Pool row offsets `[batch + 1]`.
+            cache_lengths: Cached-prefix length per request `[batch]`. A pool
+                covers absolute positions, so this is what places the call's
+                tokens on the pool grid.
+            ctx: Device context for GPU execution.
+        """
+        var pooled_tt = pooled.to_tile_tensor[.int64]()
+        var k_tt = k.to_tile_tensor[.int64]()
+        var gate_tt = gate.to_tile_tensor[.int64]()
+        var ape_tt = ape.to_tile_tensor[.int64]()
+        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
+        var pro_tt = pool_row_offsets.to_tile_tensor[.int64]()
+        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
+
+        var total_pools = pooled.dim_size(0)
+        if total_pools == 0:
+            # A step can legitimately close no pool: a decode step carries one
+            # token per request, and a pool needs `kpool` of them. There is
+            # nothing to compress, and a zero-width grid is a launch error.
+            return
+
+        ctx.enqueue_function[
+            kpool_compress_kernel[
+                k.dtype,
+                type_of(k_tt.as_imm()).LayoutType,
+                ImmOrigin(k_tt.origin),
+                type_of(gate_tt.as_imm()).LayoutType,
+                ImmOrigin(gate_tt.origin),
+                type_of(ape_tt.as_imm()).LayoutType,
+                ImmOrigin(ape_tt.origin),
+                type_of(iro_tt.as_imm()).LayoutType,
+                ImmOrigin(iro_tt.origin),
+                type_of(pro_tt.as_imm()).LayoutType,
+                ImmOrigin(pro_tt.origin),
+                type_of(clen_tt.as_imm()).LayoutType,
+                pooled_tt.LayoutType,
+                pooled_tt.origin,
+                type_of(k_tt.as_imm()).Engine,
+                type_of(gate_tt.as_imm()).Engine,
+                type_of(ape_tt.as_imm()).Engine,
+                type_of(iro_tt.as_imm()).Engine,
+                type_of(pro_tt.as_imm()).Engine,
+                type_of(clen_tt.as_imm()).Engine,
+                pooled_tt.Engine,
+                head_dim,
+                kpool,
+            ]
+        ](
+            pooled_tt,
+            k_tt.as_imm(),
+            gate_tt.as_imm(),
+            ape_tt.as_imm(),
+            iro_tt.as_imm(),
+            pro_tt.as_imm(),
+            clen_tt.as_imm(),
+            grid_dim=(total_pools, 1, 1),
+            block_dim=(head_dim, 1, 1),
+        )
+
+
+@extensibility.register("mo.mla.kpool.seed_tail")
+struct MLAKPoolSeedTail:
+    """Registers the `mo.mla.kpool.seed_tail` graph op with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        head_dim: Int,
+        kpool: Int,
+    ](
+        # `tail` is a slot-indexed ring, read+written in place at
+        # `slot_idx[r]`. It must be a `MutableInputTensor` (not an
+        # `OutputTensor`) so the graph binds the caller's persistent ring
+        # rather than treating it as a freshly-produced output -- mirroring
+        # the `state_pool` precedent in `kda.mojo`.
+        tail: MutableInputTensor[rank=4, ...],
+        k: InputTensor[rank=2, ...],
+        gate: InputTensor[rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        """Stashes a prefill chunk's trailing tokens into the tail ring.
+
+        Whole pools compress directly from `k`/`gate`; the tokens after the
+        last complete pool are that request's in-progress pool and have
+        nowhere else to go until later tokens complete it, so they seed this
+        per-request ring. `mo.mla.kpool.ring_close` reads them back and
+        closes the pool once it fills.
+
+        Parameters:
+            head_dim: Channels per key; also the kernel's block width.
+            kpool: Tokens per pool.
+
+        Args:
+            tail: Persistent slot-indexed ring `[max_slots, 2, kpool,
+                head_dim]`, mutated in place.
+            k: Layer-normed indexer keys `[total_tokens, head_dim]`.
+            gate: Per-token gate scores `[total_tokens, head_dim]`.
+            input_row_offsets: Token row offsets per request `[batch + 1]`.
+            cache_lengths: Cached tokens per request `[batch]`.
+            slot_idx: Ring slot per request `[batch]`.
+            ctx: Device context for GPU execution.
+        """
+        var tail_tt = tail.to_tile_tensor[.int64]()
+        var k_tt = k.to_tile_tensor[.int64]()
+        var gate_tt = gate.to_tile_tensor[.int64]()
+        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
+        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
+        var slot_tt = slot_idx.to_tile_tensor[.int64]()
+
+        var batch_size = input_row_offsets.dim_size(0) - 1
+        if batch_size == 0:
+            # A step can legitimately carry no requests, and a zero-width
+            # grid is a launch error.
+            return
+
+        ctx.enqueue_function[
+            kpool_seed_tail_kernel[
+                k.dtype,
+                tail_tt.LayoutType,
+                tail_tt.origin,
+                type_of(k_tt.as_imm()).LayoutType,
+                ImmOrigin(k_tt.origin),
+                type_of(gate_tt.as_imm()).LayoutType,
+                ImmOrigin(gate_tt.origin),
+                type_of(iro_tt.as_imm()).LayoutType,
+                ImmOrigin(iro_tt.origin),
+                type_of(clen_tt.as_imm()).LayoutType,
+                type_of(slot_tt.as_imm()).LayoutType,
+                ImmOrigin(slot_tt.origin),
+                tail_tt.Engine,
+                type_of(k_tt.as_imm()).Engine,
+                type_of(gate_tt.as_imm()).Engine,
+                type_of(iro_tt.as_imm()).Engine,
+                type_of(clen_tt.as_imm()).Engine,
+                type_of(slot_tt.as_imm()).Engine,
+                head_dim,
+                kpool,
+            ]
+        ](
+            tail_tt,
+            k_tt.as_imm(),
+            gate_tt.as_imm(),
+            iro_tt.as_imm(),
+            clen_tt.as_imm(),
+            slot_tt.as_imm(),
+            Int32(batch_size),
+            grid_dim=(batch_size, 1, 1),
+            block_dim=(head_dim, 1, 1),
+        )
+
+
+@extensibility.register("mo.mla.kpool.ring_close")
+struct MLAKPoolRingClose:
+    """Registers the `mo.mla.kpool.ring_close` graph op with the graph
+    compiler.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        head_dim: Int,
+        kpool: Int,
+    ](
+        pooled: OutputTensor[rank=2, ...],
+        closed_pool: OutputTensor[dtype=.int32, rank=1, ...],
+        # `tail` is only read here, but `mo.mla.kpool.seed_tail` mutates the
+        # same buffer in this same step (to extend whatever pool this op
+        # leaves pending), so it must stay a `MutableInputTensor` to get
+        # correct ordering against that writer -- mirroring how
+        # `MLAIndexerRaggedFloat8Paged` above reads `k_blocks`/`k_scales`
+        # through `MutableInputTensor` even though it never writes them,
+        # because `mo.kv_cache.store.paged.ragged` does.
+        tail: MutableInputTensor[rank=4, ...],
+        k: InputTensor[rank=2, ...],
+        gate: InputTensor[rank=2, ...],
+        ape: InputTensor[dtype=.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        """Closes each request's pending tail-ring pool, ragged and
+        unconditional -- see `kpool_ring_close_kernel`'s docstring for the
+        pool-splitting semantics this implements.
+
+        Parameters:
+            head_dim: Channels per key; also the kernel's block width.
+            kpool: Tokens per pool.
+
+        Args:
+            pooled: Output `[batch, head_dim]` pooled keys, meaningful only
+                where `closed_pool` is non-negative.
+            closed_pool: Output `[batch]` pool id closed this call, or -1.
+            tail: Persistent slot-indexed ring `[max_slots, 2, kpool,
+                head_dim]`. Read only.
+            k: This call's layer-normed keys `[total_tokens, head_dim]`.
+            gate: This call's gate scores `[total_tokens, head_dim]`.
+            ape: Within-pool position embedding `[kpool, head_dim]`, float32.
+            input_row_offsets: Token row offsets per request `[batch + 1]`.
+            cache_lengths: Cached-prefix length per request `[batch]`.
+            slot_idx: Ring slot per request `[batch]`.
+            ctx: Device context for GPU execution.
+        """
+        var pooled_tt = pooled.to_tile_tensor[.int64]()
+        var closed_tt = closed_pool.to_tile_tensor[.int64]()
+        var tail_tt = tail.to_tile_tensor[.int64]()
+        var k_tt = k.to_tile_tensor[.int64]()
+        var gate_tt = gate.to_tile_tensor[.int64]()
+        var ape_tt = ape.to_tile_tensor[.int64]()
+        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
+        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
+        var slot_tt = slot_idx.to_tile_tensor[.int64]()
+
+        var batch_size = pooled.dim_size(0)
+        if batch_size == 0:
+            # A step can legitimately carry no requests, and a zero-width
+            # grid is a launch error.
+            return
+
+        ctx.enqueue_function[
+            kpool_ring_close_kernel[
+                k.dtype,
+                pooled_tt.LayoutType,
+                pooled_tt.origin,
+                closed_tt.LayoutType,
+                closed_tt.origin,
+                type_of(tail_tt.as_imm()).LayoutType,
+                ImmOrigin(tail_tt.origin),
+                type_of(k_tt.as_imm()).LayoutType,
+                ImmOrigin(k_tt.origin),
+                type_of(gate_tt.as_imm()).LayoutType,
+                ImmOrigin(gate_tt.origin),
+                type_of(ape_tt.as_imm()).LayoutType,
+                ImmOrigin(ape_tt.origin),
+                type_of(iro_tt.as_imm()).LayoutType,
+                ImmOrigin(iro_tt.origin),
+                type_of(clen_tt.as_imm()).LayoutType,
+                type_of(slot_tt.as_imm()).LayoutType,
+                ImmOrigin(slot_tt.origin),
+                pooled_tt.Engine,
+                closed_tt.Engine,
+                type_of(tail_tt.as_imm()).Engine,
+                type_of(k_tt.as_imm()).Engine,
+                type_of(gate_tt.as_imm()).Engine,
+                type_of(ape_tt.as_imm()).Engine,
+                type_of(iro_tt.as_imm()).Engine,
+                type_of(clen_tt.as_imm()).Engine,
+                type_of(slot_tt.as_imm()).Engine,
+                head_dim,
+                kpool,
+            ]
+        ](
+            pooled_tt,
+            closed_tt,
+            tail_tt.as_imm(),
+            k_tt.as_imm(),
+            gate_tt.as_imm(),
+            ape_tt.as_imm(),
+            iro_tt.as_imm(),
+            clen_tt.as_imm(),
+            slot_tt.as_imm(),
+            Int32(batch_size),
+            grid_dim=(batch_size, 1, 1),
+            block_dim=(head_dim, 1, 1),
+        )
 
 
 @extensibility.register("mo.mla.indexer.ragged.float8.paged")

@@ -27,7 +27,7 @@ from ..comm.ep.ep_kernels import (
     uses_mx_ep_token_format,
 )
 from ..kernels import moe_create_indices
-from .moe import MoE, _InterleavedGatedActivation
+from .moe import ClampedSwiGLU, MoE, _InterleavedGatedActivation
 from .quant_strategy import (
     BlockScaledStrategy,
     Fp8Strategy,
@@ -386,10 +386,17 @@ class MoEQuantized(MoE):
         the output went straight to the peers and there is no local tensor for
         the caller to hand to a combine.
         """
-        if self.gated_activation_fn is not None:
+        clamped = (
+            self.gated_activation_fn
+            if isinstance(self.gated_activation_fn, ClampedSwiGLU)
+            else None
+        )
+        if self.gated_activation_fn is not None and clamped is None:
             raise ValueError(
                 "Custom gated_activation_fn is not supported in the EP"
-                " quantized path due to a specialized fused kernel."
+                " quantized path due to a specialized fused kernel, except"
+                " ClampedSwiGLU, which the fused kernel implements"
+                " natively."
             )
         # The dynamic dispatch's per-row global scales belong to the gate/up
         # matmul alone; everything after it reads the usual tuple.
@@ -527,6 +534,20 @@ class MoEQuantized(MoE):
                 # down-proj A-scale folds (KS64) when it's on OR, for OAI-SwiGLU,
                 # via the local down-slot stride; else the standalone preshuffle
                 # runs.
+                #
+                # ClampedSwiGLU is not wired into this kernel's fused
+                # epilogue (only plain SiLU and swigluoai are). Rather than
+                # silently running plain SiLU, fail loudly. A
+                # `BLOCKSCALED_FP8` checkpoint resolves to `Fp8Strategy` and
+                # never reaches here; an MXFP4 or MXFP6 model that wants this
+                # activation needs the epilogue extended first.
+                if clamped is not None:
+                    raise NotImplementedError(
+                        "ClampedSwiGLU is not supported on the MXFP4 EP"
+                        " fused activation+quantize kernel"
+                        " (BlockScaledStrategy/Mxfp6Strategy); only plain"
+                        " SiLU and swigluoai are wired there today."
+                    )
                 gate_up = strategy.grouped_matmul(
                     self.gate_up_proj,
                     gate_up_scales,
@@ -557,8 +578,12 @@ class MoEQuantized(MoE):
                     estimated_total_m=estimated_total_m,
                 )
 
-                if self.use_swigluoai:
-                    gate_up = self._swigluoai_activation(gate_up)
+                if self.use_swigluoai or clamped is not None:
+                    if self.use_swigluoai:
+                        gate_up = self._swigluoai_activation(gate_up)
+                    else:
+                        assert clamped is not None
+                        gate_up = clamped(gate_up, self.moe_dim)
                     if self._uses_nvidia_block_scaled_ep_layout:
                         _, _, expert_start, scales_offset, expert_ids, _ = (
                             expert_inputs

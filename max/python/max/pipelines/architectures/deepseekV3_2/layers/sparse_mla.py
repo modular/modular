@@ -134,6 +134,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         index_topk: int = 2048,
         skip_topk: bool = False,
         indexer_rope_interleave: bool = False,
+        kv_b_proj_dtype: DType | None = None,
     ):
         super().__init__(
             rope=rope,
@@ -153,6 +154,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             buffer_size=buffer_size,
             graph_mode=graph_mode,
             norm_dtype=norm_dtype,
+            kv_b_proj_dtype=kv_b_proj_dtype,
         )
 
         self.index_n_heads = index_n_heads
@@ -462,7 +464,13 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             devices
         )
         kv_b_proj_shards = self.kv_b_proj.shard(devices)
-        kv_b_proj_scale_shards = self.kv_b_proj_scale.shard(devices)
+        # `None` when the checkpoint leaves `kv_b_proj` unquantized; the absorb
+        # then needs no scale to shard alongside it.
+        kv_b_proj_scale_shards = (
+            self.kv_b_proj_scale.shard(devices)
+            if self.kv_b_proj_scale is not None
+            else None
+        )
         o_proj_shards = self.o_proj.shard(devices)
 
         if self.indexer is not None:
@@ -493,6 +501,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 v_head_dim=self.v_head_dim,
                 buffer_size=self.BUFFER_TOK_SIZE,
                 norm_dtype=self.norm_dtype,
+                kv_b_proj_dtype=self.kv_b_proj.dtype,
                 index_n_heads=self.index_n_heads,
                 index_head_dim=self.index_head_dim,
                 index_topk=self.index_topk,
@@ -514,7 +523,8 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 shard_idx
             ]
             replica.kv_b_proj = kv_b_proj_shards[shard_idx]
-            replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
+            if kv_b_proj_scale_shards is not None:
+                replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
             replica.o_proj = o_proj_shards[shard_idx]
 
             if self.indexer is not None:

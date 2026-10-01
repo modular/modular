@@ -492,7 +492,14 @@ AutoConfig.register("inkling_mm_model", _InklingMMHFConfig, exist_ok=True)
 
 
 class _Glm5NextHFConfig(PretrainedConfig):
-    """Shim for GLM-5.3-Flash's ``glm5_next`` model type."""
+    """Shim for GLM-5.3-Flash's ``glm5_next`` model type.
+
+    The enablement PR (huggingface/transformers#48342) is unmerged, so no
+    released transformers recognises this checkpoint and ``AutoConfig`` raises
+    before MAX sees it. The nested ``text_config`` / ``vision_config`` are the
+    only structure MAX reads; everything else on the top level -- the media
+    token ids and ``quantization_config`` -- stays a plain attribute.
+    """
 
     model_type = "glm5_next"
 
@@ -505,6 +512,26 @@ class _Glm5NextHFConfig(PretrainedConfig):
         self.text_config = PretrainedConfig(**(text_config or {}))
         self.vision_config = PretrainedConfig(**(vision_config or {}))
         super().__init__(**kwargs)
+
+    def __getattr__(self, key: str) -> Any:
+        """Falls back to ``text_config`` for a decoder field asked for flatly.
+
+        GLM-5.2's config is flat and GLM-5.3-Flash's is nested, so the shared
+        DeepSeek-V3.2 code path reads ``topk_method``, ``scoring_func`` and
+        friends off the top level and raises here. Delegating is what the
+        multimodal configs in transformers do for the same reason, and it keeps
+        the difference from leaking into every flat reader.
+
+        Deliberately not a substitute for reading ``text_config`` explicitly:
+        ``Glm5NextConfig.initialize`` does that, because a field present on
+        both levels with different values would resolve silently here.
+        """
+        text_config = self.__dict__.get("text_config")
+        if text_config is not None and hasattr(text_config, key):
+            return getattr(text_config, key)
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{key}'"
+        )
 
 
 AutoConfig.register("glm5_next", _Glm5NextHFConfig, exist_ok=True)

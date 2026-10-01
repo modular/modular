@@ -226,6 +226,7 @@ class DeepseekV3_2DecoderLayer(Module):
                     skip_allreduce=True,
                     norm_dtype=config.norm_dtype,
                     quant_config=config.quant_config,
+                    kv_b_proj_dtype=config.kv_b_proj_dtype,
                     **sparse_attn_kwargs,
                 )
             else:
@@ -240,6 +241,7 @@ class DeepseekV3_2DecoderLayer(Module):
             self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
                 norm_dtype=config.norm_dtype,
                 quant_config=config.quant_config,
+                kv_b_proj_dtype=config.kv_b_proj_dtype,
                 **sparse_attn_kwargs,
             )
         else:

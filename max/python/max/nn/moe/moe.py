@@ -117,6 +117,47 @@ def _swigluoai_activation(
     return (up + 1.0) * gate * ops.sigmoid(gate * float(alpha))
 
 
+def _clamped_swiglu_activation(
+    gate_up: TensorValue,
+    moe_dim: int,
+    limit: float,
+) -> TensorValue:
+    """Applies a clamped SwiGLU: ``silu(min(gate, limit)) *
+    clamp(up, -limit, limit)``.
+
+    Clamps before the activation, like ``_swigluoai_activation``, but omits
+    its GPT-OSS ``+1`` bias on ``up`` and its ``alpha`` scale inside the
+    sigmoid (equivalent to ``alpha=1``).
+    """
+    gate = gate_up[:, :moe_dim]
+    up = gate_up[:, moe_dim:]
+
+    lim = ops.constant(limit, gate.dtype, device=gate.device)
+    neg_lim = ops.constant(-limit, up.dtype, device=up.device)
+
+    gate = ops.min(gate, lim)
+    up = ops.min(ops.max(up, neg_lim), lim)
+    return ops.silu(gate) * up
+
+
+@dataclass(frozen=True)
+class ClampedSwiGLU:
+    """Declarative marker for the clamped SwiGLU activation.
+
+    Set as a :class:`MoE` or :class:`MoEQuantized` ``gated_activation_fn`` to
+    select ``silu(min(gate, limit)) * clamp(up, -limit, limit)``. A named type
+    rather than a bare callable so the EP quantized path can recognize it by
+    ``isinstance`` and allow it where it rejects an arbitrary one, which it
+    must because the fused grouped-matmul epilogue cannot express a callable
+    it has never seen.
+    """
+
+    limit: float
+
+    def __call__(self, gate_up: TensorValue, moe_dim: int) -> TensorValue:
+        return _clamped_swiglu_activation(gate_up, moe_dim, self.limit)
+
+
 class MoEGate(Module):
     """Gate module for MoE."""
 

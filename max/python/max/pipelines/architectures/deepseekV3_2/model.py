@@ -41,6 +41,16 @@ class DeepseekV3_2Model(DeepseekV3Model):
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
 
+    def _first_mla_layer(self) -> int:
+        """Index of the first layer that actually has multi-latent attention.
+
+        Zero for an all-MLA decoder, which is every model on this path today.
+        A hybrid schedule that interleaves another attention family overrides
+        this: probing layer 0 for an MLA-only tensor raises ``KeyError`` when
+        layer 0 belongs to the other family.
+        """
+        return 0
+
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
     ) -> DeepseekV3_2Config:
@@ -119,7 +129,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             ep_config = EPConfig(**ep_kwargs)
 
         norm_dtype = state_dict[
-            "layers.0.self_attn.kv_a_layernorm.weight"
+            f"layers.{self._first_mla_layer()}.self_attn.kv_a_layernorm.weight"
         ].dtype
 
         if config.topk_method == "noaux_tc":

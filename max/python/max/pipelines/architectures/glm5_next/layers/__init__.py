@@ -11,6 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .clamped_swiglu import (
+    clamped_swiglu,
+    clamped_swiglu_interleaved,
+    clamped_swiglu_split,
+)
 from .kda import KdaReplayInputs, KdaSublayerInputs
 from .kimi_delta_attention import Glm5NextKdaSublayer, KimiDeltaAttention
 
@@ -19,4 +24,7 @@ __all__ = [
     "KdaReplayInputs",
     "KdaSublayerInputs",
     "KimiDeltaAttention",
+    "clamped_swiglu",
+    "clamped_swiglu_interleaved",
+    "clamped_swiglu_split",
 ]

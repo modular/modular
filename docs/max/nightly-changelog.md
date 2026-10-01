@@ -29,6 +29,13 @@ This version is still a work in progress.
   (`UnifiedDflashMiMoV2ForCausalLM`), with greedy and per-row sampled
   acceptance.
 
+- GLM-5.3-Flash (`Glm5NextForConditionalGeneration`) now serves
+  `/v1/chat/completions` on 8 B200s, text-only. It pairs Kimi Delta Attention
+  with sparse MLA whose indexer scores pools of four tokens rather than single
+  tokens, and manifold-constrained hyper-connections in place of a plain
+  residual add. Only the blockwise-FP8 checkpoint
+  (`zai-org/GLM-5.3-Flash`) is supported.
+
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without

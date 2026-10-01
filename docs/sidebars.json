@@ -485,6 +485,7 @@
                 "api/python/pipelines.architectures.gemma4",
                 "api/python/pipelines.architectures.gemma4_assistant",
                 "api/python/pipelines.architectures.glm5_1",
+                "api/python/pipelines.architectures.glm5_next",
                 "api/python/pipelines.architectures.gpt_oss",
                 "api/python/pipelines.architectures.granite",
                 "api/python/pipelines.architectures.hy_v3",
