@@ -241,6 +241,10 @@ This version is still a work in progress.
 
 ### Inference server
 
+- A speculative architecture that can't sample its draft now refuses
+  `--draft-proposal sampled` at startup rather than silently drafting by
+  argmax.
+
 - Added `--prefill-coalesce-min-pending` (default 0, off): under in-flight
   batching, hold pending fresh prefills until that many can share one mixed
   step instead of admitting them one by one. With data parallelism the count

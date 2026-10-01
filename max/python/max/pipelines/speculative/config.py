@@ -385,8 +385,8 @@ class SpeculativeConfig(ConfigFileModel):
             "its own proposal and keep the distribution it drew from, so "
             "verification runs true speculative sampling instead of "
             "typical acceptance. Incompatible with "
-            "``use_relaxed_acceptance_for_thinking``. Inert unless the "
-            "serving architecture supports it."
+            "``use_relaxed_acceptance_for_thinking``. An architecture that "
+            "cannot sample its draft refuses 'sampled' at startup."
         ),
     )
 
