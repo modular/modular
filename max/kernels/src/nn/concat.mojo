@@ -104,7 +104,6 @@ comptime _no_epilogue = _as_epilogue_fn(_no_epilogue_body)
 
 
 @inline(.always)
-@__parameter
 def preferred_simd_width[dtype: DType]() -> Int:
     """SIMD scalar count for fused GPU concat vectorization.
 

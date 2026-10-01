@@ -20,7 +20,6 @@ from std.utils import Index, IndexList
 from std.utils.coord import Coord
 
 
-@__parameter
 def run_exp_approx_test[
     simd_width: Int
 ](ctx: DeviceContext, *, half_range: Float32, rtol: Float64) raises:

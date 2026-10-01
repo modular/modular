@@ -2650,7 +2650,6 @@ struct Struct_mla_prefill_graph_paged:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -2800,7 +2799,6 @@ struct Struct_mla_decode_graph_paged_fp8:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -2897,7 +2895,6 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -3040,7 +3037,6 @@ struct Struct_mla_prefill_graph_bf16_paged:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -3121,7 +3117,6 @@ struct Struct_mla_decode_graph_bf16_paged:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -3206,7 +3201,6 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -3320,7 +3314,6 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -3429,7 +3422,6 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -3577,7 +3569,6 @@ struct Struct_mla_prefill_sparse_paged:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         cache_dtype: DType,
@@ -3692,7 +3683,6 @@ struct Struct_mla_prefill_sparse_paged_fp8:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         //,
@@ -3800,7 +3790,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -3891,7 +3880,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 struct Struct_mla_prefill_graph_decode_paged_sparse:
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -4017,7 +4005,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,

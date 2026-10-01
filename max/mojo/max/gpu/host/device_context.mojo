@@ -4111,7 +4111,6 @@ struct DeviceExternalFunction[
         )
 
     @inline(.always)
-    @__parameter
     def get_attribute(self, attr: Attribute) raises -> Int:
         """Retrieves a specific attribute of this device function.
 

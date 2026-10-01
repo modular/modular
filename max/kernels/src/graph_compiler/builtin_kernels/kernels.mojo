@@ -2025,7 +2025,6 @@ struct Struct_moe_router_group_limited:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2111,7 +2110,6 @@ struct Struct_moe_single_group_router_eplb:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2176,7 +2174,6 @@ struct Struct_moe_single_group_router:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2227,7 +2224,6 @@ struct Struct_moe_sink_gate_router:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         dtype: DType,
         bias_type: DType,
@@ -2269,7 +2265,6 @@ struct Struct_moe_eplb_remap:
 
     @inline(.always)
     @staticmethod
-    @__parameter
     def execute[
         num_log: Int,
         max_replicas: Int,

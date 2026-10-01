@@ -1310,19 +1310,16 @@ comptime _COOP_STATS_WIDTH = 8
 
 
 @inline(.always)
-@__parameter
 def _coop_max(x: SIMD, y: type_of(x)) -> type_of(x):
     return max(x, y)
 
 
 @inline(.always)
-@__parameter
 def _coop_sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 
 @inline(.always)
-@__parameter
 def _coop_cutoff_stats(x: SIMD, y: type_of(x)) -> type_of(x):
     """Combines cutoff statistics.
 

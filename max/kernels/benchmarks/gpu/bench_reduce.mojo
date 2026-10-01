@@ -173,7 +173,6 @@ def run_reduce[
     _ = res_host^
 
 
-@__parameter
 def reduce_add[
     dtype: DType,
     width: SIMDLength,
