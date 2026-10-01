@@ -458,6 +458,32 @@ This version is still a work in progress.
   fused op). It dequantizes NVFP4 activations that were quantized with a
   per-token tensor scale. NVFP4 on SM100 only.
 
+- Added `layout.tmem_engine.TMemEngine`, a `TensorEngine` that lets a
+  `TileTensor` view Blackwell Tensor Memory (TMEM). A TMEM tile's layout places
+  elements on the 128-lane by 512-column grid lane-first: a lane stride of `1`
+  and a column stride of `TMEM_NUM_LANES` (`128`), so the whole accumulator is
+  `(128, 512):(1, 128)` and nested layouts express the lane placement of other
+  MMA shapes. The engine encodes grid positions into the hardware's
+  lane-and-column addresses itself. TMEM has no pointer, so the engine's data
+  path is `TileTensor.copy_from` in either direction: a copy between a TMEM row
+  and a register or shared-memory tile moves consecutive columns of the lane the
+  calling thread owns through the warp-collective `tcgen05.ld` or `tcgen05.st`
+  in the `32x32b` shape, one instruction per power-of-two chunk of at most 64
+  registers, and one wait per 64-column slice. The `copy_from_async` and
+  `copy_to_async` engine methods and the tile-level `tmem_copy_async` issue the
+  same instructions without waiting, so several copies can share one
+  `TMemEngine.wait_store` or `wait_load`; an async row is capped at 64 columns,
+  so a wider row is tiled into one copy per slice. A thread's view of a warp's
+  `(32, N)` tile is its row 0, since the hardware adds the lane to the warp base
+  address. The engine supports 4-byte element types and requires an SM100
+  target.
+
+- Added `TensorEngine.copy_to`, the source side of a copy.
+  `TileTensor.copy_from` now calls it on the source tensor's engine, and its
+  default forwards to the destination engine's `copy_from`, so existing
+  engines are unaffected. An engine whose storage has no pointer, such as
+  `TMemEngine`, overrides it to run its own load loop.
+
 ## Breaking changes
 
 - `max.gpu.primitives.warp.reduce()` and `lane_group_reduce()` now take the

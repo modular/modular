@@ -1729,8 +1729,11 @@ struct TileTensor[
         the copy widens to SIMD load + cast + SIMD store,
         using the narrower of the two dtypes' native SIMD widths.
 
-        The copy loop lives in the engine (`Self.Engine.copy_from`);
-        this forwards `self` and `other` as `(storage, layout)` pairs.
+        The copy loop lives in the engines. This forwards `self` and
+        `other` as `(storage, layout)` pairs to the source engine's
+        `copy_to`, which by default hands them to `Self.Engine.copy_from`;
+        an engine whose storage has no pointer, such as `TMemEngine`,
+        overrides `copy_to` to run its own load loop.
 
         Constraints:
 
@@ -1745,9 +1748,9 @@ struct TileTensor[
         """
         # `other` may carry a different (e.g. offset-derived) engine;
         # the storage-level copy takes it as a distinct `OtherEngine` operand.
-        Self.Engine.copy_from(
-            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+        type_of(other).Engine.copy_to(
             (other._storage, other.layout),
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
         )
 
     @inline(.always)

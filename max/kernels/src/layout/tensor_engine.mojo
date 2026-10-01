@@ -27,18 +27,21 @@ def _layout_row_major[L: TensorLayout]() -> Bool:
     """Returns True if `L` has fully static, gap-free row-major strides.
 
     Checks the flattened dimensions: the layout is row-major when each flat
-    stride equals the product of all trailing flat shapes (rightmost stride 1).
-    Used to decide whether `copy_from` can widen its loads/stores into a
-    contiguous raw-scalar walk.
+    stride equals the product of all trailing flat shapes (rightmost stride 1),
+    so flat index `i` lands at offset `i`. A dimension of extent 1 is skipped,
+    since its stride never contributes to an offset; a `(1, N)` row view of a
+    larger tile is row-major whatever its leading stride. Used to decide
+    whether `copy_from` can widen its loads/stores into a contiguous
+    raw-scalar walk.
     """
     comptime if not L.all_dims_known:
         return False
-    comptime for i in range(L.flat_rank):
-        var expected = 1
-        comptime for j in range(i + 1, L.flat_rank):
-            expected *= L.static_shape[j]
-        if L.static_stride[i] != expected:
-            return False
+    var expected = 1
+    comptime for i in range(L.flat_rank - 1, -1, -1):
+        comptime if L.static_shape[i] != 1:
+            if L.static_stride[i] != expected:
+                return False
+            expected *= L.static_shape[i]
     return True
 
 
@@ -294,6 +297,10 @@ trait TensorEngine:
         scalar logical element, the copy widens to SIMD load + cast + SIMD
         store using the narrower of the two dtypes' native SIMD widths.
 
+        `TileTensor.copy_from` reaches this through the source engine's
+        `copy_to`, whose default forwards here; the source is read through
+        `OtherEngine.unsafe_ptr`.
+
         Parameters:
             SelfLayoutType: The layout type of the destination storage.
             self_origin: The origin of the destination storage.
@@ -322,6 +329,61 @@ trait TensorEngine:
             other: A tuple of the source storage and its layout.
         """
         ...
+
+    @staticmethod
+    @inline(.always)
+    def copy_to[
+        SelfLayoutType: TensorLayout,
+        self_mut: Bool,
+        self_origin: Origin[mut=self_mut],
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_origin: MutOrigin,
+        other_address_space: AddressSpace,
+        //,
+        src_dtype: DType,
+        dst_dtype: DType,
+        OtherEngine: TensorEngine,
+    ](
+        storage: Tuple[
+            Self.StorageType[src_dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            OtherEngine.StorageType[
+                dst_dtype, other_origin, other_address_space
+            ],
+            OtherLayoutType,
+        ],
+    ):
+        """Copies the elements of `storage` into `other`, in place.
+
+        This is the source side of a copy. `TileTensor.copy_from` calls it on
+        the source tensor's engine, and the default forwards to
+        `OtherEngine.copy_from`, so an engine only overrides it when reading
+        its storage takes more than `unsafe_ptr`: an engine with no pointer
+        representation runs its own load loop here and stores through the
+        destination's pointer.
+
+        Parameters:
+            SelfLayoutType: The layout type of the source storage.
+            self_mut: The mutability of the source storage.
+            self_origin: The origin of the source storage.
+            self_address_space: The address space of the source storage.
+            OtherLayoutType: The layout type of the destination storage.
+            other_origin: The origin of the destination storage.
+            other_address_space: The address space of the destination
+                storage.
+            src_dtype: The element data type of the source storage.
+            dst_dtype: The element data type of the destination storage.
+            OtherEngine: The engine of the destination.
+
+        Args:
+            storage: A tuple of the source storage and its layout.
+            other: A tuple of the destination storage (modified in place)
+                and its layout.
+        """
+        OtherEngine.copy_from(other, storage)
 
     @staticmethod
     def distance[
