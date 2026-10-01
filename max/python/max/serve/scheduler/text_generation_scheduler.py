@@ -76,7 +76,7 @@ def _parent_trace_context(context: TextContext) -> OtelContext | None:
 
     That is the request's ``max.request`` span where the handler set one,
     otherwise the inbound caller's context. ``trace_carrier`` was serialized
-    by the API process (see ``trace_context.inject_trace_carrier``) since a
+    by the API process (see ``_trace_context.inject_trace_carrier``) since a
     live ``Context`` can't cross the process boundary. Returns None (a root
     span) when neither was present, or the request arrived before this
     propagation existed.

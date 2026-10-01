@@ -34,12 +34,12 @@ from max.serve.router.openai_routes import (
 from max.serve.scheduler.text_generation_scheduler import (
     _parent_trace_context,
 )
-from max.serve.telemetry.common import request_trace_ctx
-from max.serve.telemetry.trace_context import (
+from max.serve.telemetry._trace_context import (
     _phase_parent_ctx,
     inject_trace_carrier,
     set_phase_parent,
 )
+from max.serve.telemetry.common import request_trace_ctx
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider

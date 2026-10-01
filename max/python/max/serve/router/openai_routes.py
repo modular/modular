@@ -151,10 +151,10 @@ from max.serve.schemas.openai import (
     TopLogprob,
     UnloadLoraRequest,
 )
+from max.serve.telemetry._trace_context import set_phase_parent
 from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
-from max.serve.telemetry.trace_context import set_phase_parent
 from max.serve.worker_interface import RequestQueueFull
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDeltaToolCall,

@@ -44,9 +44,9 @@ from max.serve.pipelines.incremental_detokenizer import (
 from max.serve.pipelines.preprocess_cache_stats import (
     PreprocessCacheStatsRecorder,
 )
+from max.serve.telemetry._trace_context import inject_trace_carrier
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
-from max.serve.telemetry.trace_context import inject_trace_carrier
 from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
 
