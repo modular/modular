@@ -569,12 +569,12 @@ class ServeGraphCaptureRunner:
         for index, (src_value, dst_value) in enumerate(
             zip(input_buffers, captured_inputs, strict=True)
         ):
-            if dst_value.device.is_host:
+            # Replay runs no host code, so host and pinned inputs were only
+            # read at capture and there is nothing to refresh. Copying into a
+            # pinned one would also sync the stream on HIP.
+            if dst_value.device.is_host or dst_value.pinned:
                 if self._host_input_guard_mode is not None:
-                    # Before the copy: `dst_value` still holds the value the
-                    # graph was captured with.
                     self._guard_host_input(index, dst_value, src_value)
-                dst_value.inplace_copy_from(src_value)
                 continue
             assert src_value.device == dst_value.device, (
                 "Graph-capture replay refresh must be a same-device copy "
