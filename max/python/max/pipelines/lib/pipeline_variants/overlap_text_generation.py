@@ -458,6 +458,15 @@ def _host_mirror_realized_drafts(
     return realized
 
 
+def _is_constrained(ctx: TextGenerationContextType) -> bool:
+    """Whether a request decodes under a grammar or JSON schema."""
+    return (
+        ctx.matcher is not None
+        or ctx.grammar is not None
+        or ctx.json_schema is not None
+    )
+
+
 def _should_verify_drafts(
     inputs: TextGenerationInputs[TextGenerationContextType],
     *,
@@ -470,12 +479,7 @@ def _should_verify_drafts(
         return False
     has_decode_row = False
     for ctx in inputs.flat_batch:
-        if (
-            ctx.matcher is not None
-            or ctx.grammar is not None
-            or ctx.json_schema is not None
-            or getattr(ctx, "needs_vision_encoding", False)
-        ):
+        if _is_constrained(ctx) or getattr(ctx, "needs_vision_encoding", False):
             return False
         has_decode_row = has_decode_row or ctx.tokens.generated_length > 0
     return has_decode_row
@@ -3895,7 +3899,9 @@ class OverlapTextGenerationPipeline(
             and self._prev_batch.spec_decode.num_draft_tokens_to_verify > 0
         )
 
-    def _should_early_sync_prev_batch(self) -> bool:
+    def _should_early_sync_prev_batch(
+        self, curr_flat_batch: Sequence[TextGenerationContextType]
+    ) -> bool:
         """Return True iff the previous batch must be early-synced.
 
         Checked at the head of `execute`, just after
@@ -3932,6 +3938,11 @@ class OverlapTextGenerationPipeline(
         callback is ever enqueued, so `fsm_advanced_by_callback` is always
         False. Without this gate the guard would fire every decode step.
 
+        Also gated on a constrained request in the previous or current batch.
+        With none, there is no FSM to advance and every bitmask row allows
+        every token, so syncing would only stall the GPU at each prefill
+        boundary.
+
         IMPORTANT: even when this returns True, `_prev_batch` is NOT cleared
         by the caller. `_run_forward` needs it so `realize_future_tokens` can
         scatter the previous batch's GPU-side EAGLE draft tokens into the
@@ -3949,6 +3960,13 @@ class OverlapTextGenerationPipeline(
             and self._prev_batch is not None
             and self._prev_batch.spec_decode is not None
             and not self._prev_batch.spec_decode.fsm_advanced_by_callback
+            and any(
+                _is_constrained(ctx)
+                for ctx in (
+                    *self._prev_batch.inputs.flat_batch,
+                    *curr_flat_batch,
+                )
+            )
         )
 
     @traced
@@ -4056,7 +4074,7 @@ class OverlapTextGenerationPipeline(
                     curr_verify_width=curr_verify_width,
                 )
 
-                if self._should_early_sync_prev_batch():
+                if self._should_early_sync_prev_batch(inputs.flat_batch):
                     assert self._prev_batch is not None
                     _early_sync_start_monotonic = time.monotonic()
                     _early_sync_outputs = (
