@@ -57,10 +57,12 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
+from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
     _INDEX_SWIZZLE,
@@ -82,14 +84,19 @@ from std.utils.index import IndexList
 # a TYPE parameter, makes their origins provably disjoint -- the test's
 # `_score_paged_sm100` does the same -- so the scorer call lives here.
 def _launch_scorer[
+    o_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    //,
     num_heads: Int,
     depth: Int,
     KCollectionT: KVCollectionT,
 ](
-    o_tile: TileTensor[.float32, ...],
-    q_tile: TileTensor[mut=False, KCollectionT.CacheType.dtype, ...],
-    qs_tile: TileTensor[mut=False, .float32, ...],
-    input_row_offsets_tile: TileTensor[mut=False, .uint32, ...],
+    o_tile: MutTileTensor[.float32, o_layout, _],
+    q_tile: ImmTileTensor[KCollectionT.CacheType.dtype, q_layout, _],
+    qs_tile: ImmTileTensor[.float32, qs_layout, _],
+    input_row_offsets_tile: ImmTileTensor[.uint32, iro_layout, _],
     k_collection: KCollectionT,
     batch_size: Int,
     seq_len: Int,

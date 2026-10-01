@@ -101,6 +101,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import row_major as tt_row_major
+from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -806,6 +807,11 @@ def _fp8_index_score_kernel_sm100_split[
 
 @inline(.always)
 def fp8_index_score_sm100[
+    output_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    vl_layout: TensorLayout,
+    //,
     dtype: DType,
     KOperand: MHAOperand,
     KSOperand: MHAOperand,
@@ -815,13 +821,13 @@ def fp8_index_score_sm100[
     N_TOKENS_ALT: Int = 0,
     kpool: Int = 1,
 ](
-    output: TileTensor[.float32, ...],
-    q: TileTensor[mut=False, dtype, ...],
-    q_s: TileTensor[mut=False, .float32, ...],
+    output: MutTileTensor[.float32, output_layout, _],
+    q: ImmTileTensor[dtype, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
     k_operand: KOperand,
     ks_operand: KSOperand,
     k_tma: KTMATileT[dtype, _BM_KEY, depth],
-    valid_length: TileTensor[mut=False, .uint32, ...],
+    valid_length: ImmTileTensor[.uint32, vl_layout, _],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -837,6 +843,10 @@ def fp8_index_score_sm100[
     caller's `-inf` fill covers them).
 
     Parameters:
+        output_layout: Layout of the score buffer.
+        q_layout: Layout of the query tensor.
+        qs_layout: Layout of the query scales.
+        vl_layout: Layout of the ragged query-token offsets.
         dtype: FP8 element type of Q and K (float8_e4m3fn).
         KOperand: `MHAOperand` type for the K values.
         KSOperand: `MHAOperand` type for the per-token K scales.
@@ -919,7 +929,7 @@ def fp8_index_score_sm100[
     var win_seq_len = min(max_seq_len, out_rows)
 
     var num_q_tokens = Int(q.dim[0]())
-    var q_ptr = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr)
+    var q_ptr = q.unsafe_ptr().as_unsafe_any_origin()
 
     # Prefill route: the warp-specialized K-streaming kernel (Q resident, causal
     # triangle trim) vs the K-resident scorer. Both fold the same (token, key, head)
@@ -1058,9 +1068,6 @@ def fp8_index_score_sm100[
                         N_ALT,
                         _is_cache_length_accurate,
                         kpool,
-                        VLEngine=type_of(valid_length.as_imm()).Engine,
-                        QSEngine=q_s.Engine,
-                        OutEngine=output.Engine,
                     ](
                         q_ptr,
                         num_q_tokens,
@@ -1088,9 +1095,6 @@ def fp8_index_score_sm100[
                 N_TOKENS,
                 _is_cache_length_accurate,
                 kpool,
-                VLEngine=type_of(valid_length.as_imm()).Engine,
-                QSEngine=q_s.Engine,
-                OutEngine=output.Engine,
             ](
                 q_ptr,
                 num_q_tokens,
@@ -1123,42 +1127,36 @@ def fp8_index_score_sm100[
             _INDEX_SWIZZLE,
         ](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
+            q_ptr,
             num_q_tokens * num_heads,
         )
         comptime kernel_flat = _fp8_index_score_kernel_sm100[
             dtype,
             KOperand,
             KSOperand,
-            type_of(valid_length.as_imm()).LayoutType,
-            type_of(q_s).LayoutType,
-            type_of(output).LayoutType,
+            vl_layout,
+            qs_layout,
+            output_layout,
             num_heads,
             depth,
             BM_key,
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
-            VLEngine=type_of(valid_length.as_imm()).Engine,
-            QSEngine=q_s.Engine,
-            OutEngine=output.Engine,
         ]
         comptime kernel_split = _fp8_index_score_kernel_sm100_split[
             dtype,
             KOperand,
             KSOperand,
-            type_of(valid_length.as_imm()).LayoutType,
-            type_of(q_s).LayoutType,
-            type_of(output).LayoutType,
+            vl_layout,
+            qs_layout,
+            output_layout,
             num_heads,
             depth,
             BM_key,
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
-            VLEngine=type_of(valid_length.as_imm()).Engine,
-            QSEngine=q_s.Engine,
-            OutEngine=output.Engine,
         ]
 
         comptime q1_offset = _Q1SmemOffset[dtype, BM_key, MMA_N, depth]
@@ -1198,7 +1196,7 @@ def fp8_index_score_sm100[
                 rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                 k_operand,
                 ks_operand,
-                valid_length.as_imm(),
+                valid_length,
                 q_s,
                 output,
                 Int32(max_num_keys),
@@ -1222,7 +1220,7 @@ def fp8_index_score_sm100[
                 rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                 k_operand,
                 ks_operand,
-                valid_length.as_imm(),
+                valid_length,
                 q_s,
                 output,
                 Int32(max_num_keys),

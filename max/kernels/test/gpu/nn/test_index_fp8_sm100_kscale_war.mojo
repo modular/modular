@@ -36,7 +36,8 @@ from std.random import rand, random_float64, seed
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import create_flat_kv_tma_tile
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
     _INDEX_SWIZZLE,
@@ -54,15 +55,20 @@ comptime FILL = Float32(-7.0)
 
 
 def _score[
-    KOp: MHAOperand, KSOp: MHAOperand
+    output_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    vl_layout: TensorLayout,
+    KOp: MHAOperand,
+    KSOp: MHAOperand,
 ](
-    output: TileTensor[.float32, ...],
-    q: TileTensor[mut=False, .float8_e4m3fn, ...],
-    q_s: TileTensor[mut=False, .float32, ...],
+    output: MutTileTensor[.float32, output_layout, _],
+    q: ImmTileTensor[.float8_e4m3fn, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
     k_op: KOp,
     ks_op: KSOp,
     k_tma: KTMATileT[DType.float8_e4m3fn, _BM_KEY, DEPTH],
-    valid_length: TileTensor[mut=False, .uint32, ...],
+    valid_length: ImmTileTensor[.uint32, vl_layout, _],
     batch_size: Int,
     seq_len: Int,
     num_keys: Int,

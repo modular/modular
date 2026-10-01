@@ -42,24 +42,31 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
+from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from std.utils.index import IndexList
 from std.testing import assert_almost_equal, assert_true
 from std.collections import Set
 
 
 def _score_paged_sm100[
+    output_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    //,
     num_heads: Int,
     depth: Int,
     KCollectionT: KVCollectionT,
 ](
-    output: TileTensor[.float32, ...],
-    q: TileTensor[mut=False, .float8_e4m3fn, ...],
-    q_s: TileTensor[mut=False, .float32, ...],
-    input_row_offsets: TileTensor[mut=False, .uint32, ...],
+    output: MutTileTensor[.float32, output_layout, _],
+    q: ImmTileTensor[.float8_e4m3fn, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
     k_collection: KCollectionT,
     batch_size: Int,
     max_seq_len: Int,
