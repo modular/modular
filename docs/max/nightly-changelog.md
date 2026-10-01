@@ -113,6 +113,9 @@ This version is still a work in progress.
 - `max.experimental.random.uniform()` and `gaussian()` accept a
   `DeviceMapping`.
 
+- `max.experimental.nn.Module.to()` now only moves a module to one device.
+  Build a multi-device module inside `default_device(mesh)` instead.
+
 - `max.experimental.sharding` no longer re-exports `P`, `R`, `Action`,
   `PerShard`, `PerShardDim`, `Collective`, `ReduceOp`, `get_active_mesh`,
   `as_device_mapping`, `as_layout` or the `*_rule` functions.

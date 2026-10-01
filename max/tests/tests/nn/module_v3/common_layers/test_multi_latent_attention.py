@@ -34,7 +34,7 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_device
 from max.graph import (
     BufferType,
     BufferValue,
@@ -200,9 +200,10 @@ def test_tensor_parallel_layer(
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
-        layer = tensor_parallel_latent_attention_with_rope(
-            _make_layer(kv_params, q_lora_rank=q_lora_rank)
-        ).to(mesh)
+        with default_device(mesh):
+            layer = tensor_parallel_latent_attention_with_rope(
+                _make_layer(kv_params, q_lora_rank=q_lora_rank)
+            )
 
         x = Tensor.zeros(
             [total_seq_len, _HIDDEN_SIZE], device=replicated_mapping
@@ -241,7 +242,8 @@ def test_data_parallel_layer(
         replicated_mapping = DeviceMapping(mesh, (Replicated(),))
         data_parallel_mapping = DeviceMapping(mesh, (Sharded(0),))
 
-        layer = _make_layer(kv_params, q_lora_rank=q_lora_rank).to(mesh)
+        with default_device(mesh):
+            layer = _make_layer(kv_params, q_lora_rank=q_lora_rank)
 
         x = Tensor.zeros(
             [total_seq_len, _HIDDEN_SIZE], device=data_parallel_mapping

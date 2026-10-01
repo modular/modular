@@ -31,7 +31,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
 )
-from max.experimental.tensor import Tensor, default_dtype
+from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.nn.comm.ep import EPConfig
 from max.nn.comm.ep.ep_config import NUM_GROUPS
 from max.nn.comm.ep.ep_manager import (
@@ -108,12 +108,13 @@ def test_tensor_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
         replicated = DeviceMapping(mesh, (Replicated(),))
 
         with default_dtype(DType.bfloat16):
-            layer = TensorParallelMoE(
-                hidden_dim=_HIDDEN_DIM,
-                num_experts=_NUM_EXPERTS,
-                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-                moe_dim=_MOE_DIM,
-            ).to(mesh)
+            with default_device(mesh):
+                layer = TensorParallelMoE(
+                    hidden_dim=_HIDDEN_DIM,
+                    num_experts=_NUM_EXPERTS,
+                    num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                    moe_dim=_MOE_DIM,
+                )
 
             gate_up = layer.gate_up_proj
             assert len(gate_up) == num_devices
@@ -161,14 +162,15 @@ def test_tensor_parallel_moe_bf16_shared_experts(
         replicated = DeviceMapping(mesh, (Replicated(),))
 
         with default_dtype(DType.bfloat16):
-            layer = TensorParallelMoE(
-                hidden_dim=_HIDDEN_DIM,
-                num_experts=_NUM_EXPERTS,
-                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-                moe_dim=_MOE_DIM,
-                has_shared_experts=True,
-                shared_experts_dim=_MOE_DIM,
-            ).to(mesh)
+            with default_device(mesh):
+                layer = TensorParallelMoE(
+                    hidden_dim=_HIDDEN_DIM,
+                    num_experts=_NUM_EXPERTS,
+                    num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                    moe_dim=_MOE_DIM,
+                    has_shared_experts=True,
+                    shared_experts_dim=_MOE_DIM,
+                )
 
             x = Tensor.zeros(
                 [_SEQ_LEN, _HIDDEN_DIM],
@@ -195,13 +197,14 @@ def test_tensor_parallel_moe_fp8_weights(
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
 
-        layer = TensorParallelMoE(
-            hidden_dim=_FP8_HIDDEN_DIM,
-            num_experts=_NUM_EXPERTS,
-            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-            moe_dim=_FP8_MOE_DIM,
-            quant_config=fp8_quant_config,
-        ).to(mesh)
+        with default_device(mesh):
+            layer = TensorParallelMoE(
+                hidden_dim=_FP8_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_FP8_MOE_DIM,
+                quant_config=fp8_quant_config,
+            )
 
         gate_up = layer.gate_up_proj
         assert isinstance(gate_up, list)
@@ -321,13 +324,14 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
         )
 
         with default_dtype(DType.bfloat16):
-            layer = ExpertParallelMoE(
-                hidden_dim=_HIDDEN_DIM,
-                num_experts=_NUM_EXPERTS,
-                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-                moe_dim=_MOE_DIM,
-                ep_batch_manager=ep_batch_manager,
-            ).to(mesh)
+            with default_device(mesh):
+                layer = ExpertParallelMoE(
+                    hidden_dim=_HIDDEN_DIM,
+                    num_experts=_NUM_EXPERTS,
+                    num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                    moe_dim=_MOE_DIM,
+                    ep_batch_manager=ep_batch_manager,
+                )
 
             gate_up = layer.gate_up_proj
             assert len(gate_up) == num_devices
@@ -380,14 +384,15 @@ def test_expert_parallel_moe_fp8_weights(
             devices,
         )
 
-        layer = ExpertParallelMoE(
-            hidden_dim=_HIDDEN_DIM,
-            num_experts=_NUM_EXPERTS,
-            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-            moe_dim=_MOE_DIM,
-            quant_config=fp8_quant_config,
-            ep_batch_manager=ep_batch_manager,
-        ).to(mesh)
+        with default_device(mesh):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=fp8_quant_config,
+                ep_batch_manager=ep_batch_manager,
+            )
 
         gate_up = layer.gate_up_proj
         assert len(gate_up) == num_devices
@@ -420,13 +425,14 @@ def test_tensor_parallel_moe_nvfp4_weights(
         num_devices = len(devices)
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
 
-        layer = TensorParallelMoE(
-            hidden_dim=_HIDDEN_DIM,
-            num_experts=_NUM_EXPERTS,
-            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-            moe_dim=_MOE_DIM,
-            quant_config=nvfp4_quant_config,
-        ).to(mesh)
+        with default_device(mesh):
+            layer = TensorParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=nvfp4_quant_config,
+            )
 
         gate_up = layer.gate_up_proj
         assert len(gate_up) == num_devices
@@ -475,13 +481,14 @@ def test_tensor_parallel_moe_nvfp4_forward(
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
 
-        layer = TensorParallelMoE(
-            hidden_dim=_HIDDEN_DIM,
-            num_experts=_NUM_EXPERTS,
-            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-            moe_dim=_MOE_DIM,
-            quant_config=nvfp4_quant_config,
-        ).to(mesh)
+        with default_device(mesh):
+            layer = TensorParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=nvfp4_quant_config,
+            )
 
         x = Tensor.zeros(
             [_SEQ_LEN, _HIDDEN_DIM],
@@ -514,14 +521,15 @@ def test_expert_parallel_moe_nvfp4_weights(
             devices,
         )
 
-        layer = ExpertParallelMoE(
-            hidden_dim=_HIDDEN_DIM,
-            num_experts=_NUM_EXPERTS,
-            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-            moe_dim=_MOE_DIM,
-            quant_config=nvfp4_quant_config,
-            ep_batch_manager=ep_batch_manager,
-        ).to(mesh)
+        with default_device(mesh):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=nvfp4_quant_config,
+                ep_batch_manager=ep_batch_manager,
+            )
 
         gate_up = layer.gate_up_proj
         assert len(gate_up) == num_devices
@@ -578,14 +586,15 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
                 ),
                 devices,
             )
-            return ExpertParallelMoE(
-                hidden_dim=_HIDDEN_DIM,
-                num_experts=_NUM_EXPERTS,
-                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-                moe_dim=_MOE_DIM,
-                quant_config=quant_config,
-                ep_batch_manager=ep_batch_manager,
-            ).to(mesh)
+            with default_device(mesh):
+                return ExpertParallelMoE(
+                    hidden_dim=_HIDDEN_DIM,
+                    num_experts=_NUM_EXPERTS,
+                    num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                    moe_dim=_MOE_DIM,
+                    quant_config=quant_config,
+                    ep_batch_manager=ep_batch_manager,
+                )
 
         chained = _build(nvfp4_quant_config)
         assert not chained._uses_fused_swiglu

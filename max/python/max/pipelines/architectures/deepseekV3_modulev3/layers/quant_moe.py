@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 
 from max.driver import CPU, Device
@@ -33,7 +34,12 @@ from max.experimental.sharding import (
     DeviceMesh,
     Sharded,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import (
+    Tensor,
+    default_device,
+    default_dtype,
+    defaults,
+)
 from max.graph import DimLike, TensorValue
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.quant_config import QuantConfig
@@ -122,6 +128,17 @@ def _local_expert_matmul(
     )
 
 
+def _new_expert(
+    hidden_dim: int, moe_dim: int, quant_config: QuantConfig | None
+) -> QuantizedMLP:
+    """Create a new quantized MLP expert."""
+    return QuantizedMLP(
+        hidden_dim=hidden_dim,
+        feed_forward_length=moe_dim,
+        quant_config=quant_config,
+    )
+
+
 class QuantizedMoE(Module[..., Tensor]):
     """Mixture of Experts with quantize-aware expert weights."""
 
@@ -170,16 +187,22 @@ class QuantizedMoE(Module[..., Tensor]):
                 quant_config=shared_experts_quant_config,
             )
 
-        self.experts = ModuleList(
+        _, self.mesh = defaults()
+        self.experts = self._init_experts()
+
+    def _init_experts(self) -> ModuleList[QuantizedMLP]:
+        return ModuleList(
             [
-                QuantizedMLP(
-                    hidden_dim=hidden_dim,
-                    feed_forward_length=moe_dim,
-                    quant_config=quant_config,
-                )
-                for _ in range(num_experts)
+                _new_expert(self.hidden_dim, self.moe_dim, self.quant_config)
+                for _ in range(self.num_experts)
             ]
         )
+
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        """Moves the MoE layer to a single device."""
+        super().to(target)
+        self.mesh = _mesh(target)
+        return self
 
     @property
     def gate_up_proj(self) -> list[QuantAwareTensor]:
@@ -192,13 +215,7 @@ class QuantizedMoE(Module[..., Tensor]):
                     expert.gate_proj.weight, expert.up_proj.weight, axis=0
                 )
             )
-        return [
-            _stack_experts(
-                per_expert,
-                shard_axis=None,
-                mesh=DeviceMesh.single(self.device),
-            )
-        ]
+        return [_stack_experts(per_expert, shard_axis=None, mesh=self.mesh)]
 
     @property
     def down_proj(self) -> list[QuantAwareTensor]:
@@ -207,13 +224,7 @@ class QuantizedMoE(Module[..., Tensor]):
         for expert in self.experts:
             assert isinstance(expert, QuantizedMLP)
             per_expert.append(expert.down_proj.weight)
-        return [
-            _stack_experts(
-                per_expert,
-                shard_axis=None,
-                mesh=DeviceMesh.single(self.device),
-            )
-        ]
+        return [_stack_experts(per_expert, shard_axis=None, mesh=self.mesh)]
 
     def _combine_expert_outputs(
         self,
@@ -333,39 +344,44 @@ class TensorParallelMoE(QuantizedMoE):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._initial_moe_dim = self.moe_dim
-        self.mesh = DeviceMesh.single(self.device)
+        self._set_mesh(self.mesh)
         if self.shared_experts is not None:
             self.shared_experts = tensor_parallel_mlp(self.shared_experts)
         for n, expert in enumerate(self.experts):
             assert isinstance(expert, QuantizedMLP)
             self.experts[n] = tensor_parallel_mlp(expert)
 
-    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
-        """Transfer the MoE layer to the target device mesh."""
-        self.mesh = _mesh(target)
-        if self.mesh.ndim != 1:
+    def _init_experts(self) -> ModuleList[QuantizedMLP]:
+        dtype, mesh = defaults()
+        # With multiple devices, build the experts on CPU. Experts are sharded,
+        # stacked, and moved to the mesh later.
+        placement = (
+            contextlib.nullcontext()
+            if mesh.num_devices == 1
+            else default_device(CPU())
+        )
+        with placement, default_dtype(dtype):
+            return super()._init_experts()
+
+    def _set_mesh(self, mesh: DeviceMesh) -> None:
+        if mesh.ndim != 1:
             raise ValueError(
                 "Mesh used with TensorParallelMoE must have exactly one device"
-                f" axis, but got {self.mesh}"
+                f" axis, but got {mesh}"
             )
-        if self._initial_moe_dim % self.mesh.num_devices != 0:
+        if self._initial_moe_dim % mesh.num_devices != 0:
             raise ValueError(
                 f"moe_dim ({self._initial_moe_dim}) must be divisible by the "
-                f"number of devices ({self.mesh.num_devices}) for tensor "
+                f"number of devices ({mesh.num_devices}) for tensor "
                 "parallelism"
             )
-        self.moe_dim = self._initial_moe_dim // self.mesh.num_devices
+        self.mesh = mesh
+        self.moe_dim = self._initial_moe_dim // mesh.num_devices
 
-        self.gate.to(target)
-        if self.shared_experts is not None:
-            self.shared_experts.to(target)
-
-        # With multiple devices, keep expert weights on CPU because they are
-        # transferred (sharded) via the ``shard_and_stack`` operation. On a
-        # single device, place them directly.
-        device = CPU() if self.mesh.num_devices > 1 else self.mesh.devices[0]
-        for expert in self.experts:
-            expert.to(device)
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        """Moves the MoE layer to a single device."""
+        super().to(target)
+        self._set_mesh(self.mesh)
         return self
 
     def _shard_stack_tensors(
@@ -475,6 +491,10 @@ class ExpertParallelMoE(QuantizedMoE):
     Each device owns ``num_experts / n_devices`` routed experts. Tokens are
     routed per device, dispatched to the device owning their assigned expert,
     computed locally, and combined back at the end.
+
+    Places the experts round-robin across the mesh from
+    :func:`~max.experimental.tensor.default_device` at construction; the
+    gate and shared experts are replicated.
     """
 
     def __init__(
@@ -482,11 +502,13 @@ class ExpertParallelMoE(QuantizedMoE):
     ) -> None:
         super().__init__(*args, **kwargs)
         self.ep_batch_manager = ep_batch_manager
-        self.mesh = DeviceMesh.single(self.device)
 
-    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
-        """Distribute routed experts round-robin across the mesh devices."""
-        mesh = _mesh(target)
+    @property
+    def _num_local_experts(self) -> int:
+        return self.num_experts // self.mesh.num_devices
+
+    def _init_experts(self) -> ModuleList[QuantizedMLP]:
+        dtype, mesh = defaults()
         if mesh.ndim != 1:
             raise ValueError(
                 "Mesh used with ExpertParallelMoE must have exactly one device"
@@ -497,18 +519,17 @@ class ExpertParallelMoE(QuantizedMoE):
                 f"num_experts ({self.num_experts}) must be divisible by the "
                 f"number of devices ({mesh.num_devices}) for expert parallelism"
             )
-        self.mesh = mesh
-
-        # Gate and shared experts stay replicated.
-        self.gate.to(target)
-        if self.shared_experts is not None:
-            self.shared_experts.to(target)
-
         num_local_experts = self.num_experts // mesh.num_devices
-        for i in range(mesh.num_devices):
-            for j in range(num_local_experts):
-                self.experts[i * num_local_experts + j].to(mesh.devices[i])
-        return self
+        experts: list[QuantizedMLP] = []
+        for device in mesh.devices:
+            with default_device(device), default_dtype(dtype):
+                experts.extend(
+                    _new_expert(
+                        self.hidden_dim, self.moe_dim, self.quant_config
+                    )
+                    for _ in range(num_local_experts)
+                )
+        return ModuleList(experts)
 
     # ----- EP weight stacking ------------------------------------------------
 
@@ -523,7 +544,6 @@ class ExpertParallelMoE(QuantizedMoE):
     @property
     def gate_up_proj(self) -> list[QuantAwareTensor]:
         """Per-device stacked ``[gate, up]`` weight bundle for local experts."""
-        device_to_idx = {d: i for i, d in enumerate(self.mesh.devices)}
         per_device: list[list[QuantAwareTensor]] = [
             [] for _ in self.mesh.devices
         ]
@@ -539,9 +559,9 @@ class ExpertParallelMoE(QuantizedMoE):
                     )
                 )
 
-        for expert in self.experts:
+        for n, expert in enumerate(self.experts):
             assert isinstance(expert, QuantizedMLP)
-            idx = device_to_idx[expert.device]
+            idx = n // self._num_local_experts
             per_device[idx].append(
                 quant_ops.concat_weights(
                     expert.gate_proj.weight, expert.up_proj.weight, axis=0
@@ -559,7 +579,6 @@ class ExpertParallelMoE(QuantizedMoE):
     @property
     def down_proj(self) -> list[QuantAwareTensor]:
         """Per-device stacked down-projection weight bundle for local experts."""
-        device_to_idx = {d: i for i, d in enumerate(self.mesh.devices)}
         per_device: list[list[QuantAwareTensor]] = [
             [] for _ in self.mesh.devices
         ]
@@ -571,9 +590,9 @@ class ExpertParallelMoE(QuantizedMoE):
                 per_device[i].append(
                     self.shared_experts.down_proj.weight.local_shards[i]
                 )
-        for expert in self.experts:
+        for n, expert in enumerate(self.experts):
             assert isinstance(expert, QuantizedMLP)
-            idx = device_to_idx[expert.device]
+            idx = n // self._num_local_experts
             per_device[idx].append(expert.down_proj.weight)
         return [quant_ops.stack(local, axis=0) for local in per_device]
 

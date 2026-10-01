@@ -18,6 +18,7 @@ from typing import Any, ClassVar
 
 from max import tree
 from max.experimental.sharding import DeviceMesh
+from max.experimental.tensor import default_device
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     ModelInputs,
@@ -82,9 +83,8 @@ class Gemma3Model(
     def _instantiate_module(self, model_config: Any) -> Any:
         n_devices = len(self.devices)
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
-        nn_model = Gemma3(model_config, self.kv_params)
-        nn_model.to(mesh)
-        return nn_model
+        with default_device(mesh):
+            return Gemma3(model_config, self.kv_params)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Gemma3 model with the prepared inputs."""

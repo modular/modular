@@ -23,7 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_dtype
+from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
@@ -214,9 +214,12 @@ class Gemma4Model(
     ) -> Callable[..., Any]:
         n_devices = len(self.devices)
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
-        with F.lazy(), default_dtype(model_config.dtype):
+        with (
+            F.lazy(),
+            default_dtype(model_config.dtype),
+            default_device(mesh),
+        ):
             language_nn = Gemma4(model_config, self.kv_params, mesh)
-            language_nn.to(mesh)
 
         assert isinstance(self._batch_processor, Gemma4ModuleV3BatchProcessor)
         input_types = self._batch_processor.get_language_symbolic_inputs(

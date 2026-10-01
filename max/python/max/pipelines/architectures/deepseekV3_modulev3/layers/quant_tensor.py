@@ -51,6 +51,10 @@ class QTensor(Module[[], None]):
     def local_shards(self) -> tuple[Self, ...]:
         raise NotImplementedError("QTensor does not support local_shards")
 
+    @property
+    def mesh(self) -> DeviceMesh:
+        raise NotImplementedError("mesh is not implemented for QTensor")
+
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
         raise NotImplementedError("to() is not implemented for QTensor")
 
