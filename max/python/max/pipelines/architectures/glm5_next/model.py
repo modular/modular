@@ -169,7 +169,7 @@ class Glm5NextModel(DeepseekV3_2Model):
             (
                 tokens,
                 device_input_row_offsets,
-                _host_input_row_offsets,
+                host_input_row_offsets,
                 return_n_logits,
                 _data_parallel_splits,
                 *variadic,
@@ -216,6 +216,7 @@ class Glm5NextModel(DeepseekV3_2Model):
                 indexer_kv,
                 return_n_logits.tensor,
                 device_input_row_offsets.tensor,
+                host_input_row_offsets.tensor,
                 state,
                 ep_inputs,
             )

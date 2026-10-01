@@ -95,8 +95,9 @@ glm5_next_arch = SupportedArchitecture(
     # grammar GLM's content-bearing continuations are masked at the first array
     # decision and the schema's shortest terminator wins.
     default_structured_output_any_whitespace=True,
-    # TODO(GLM53-KDA): the KDA state pools have the same warmup-slot problem
-    # Qwen3.5 solved with `release_warmup_state`; graph capture stays off until
-    # the kda-layer lane implements it.
-    supports_device_graph_capture=False,
+    # The KDA state is a leaf of the paged cache tree rather than a pool the
+    # model owns, so releasing the warmup batch's cache entries releases it
+    # too and there is nothing for `SupportsSSMStateWarmup` to do -- the same
+    # reason Qwen3.5 captures without implementing it.
+    supports_device_graph_capture=True,
 )

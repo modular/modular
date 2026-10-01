@@ -134,9 +134,13 @@ class Glm5NextMlpSublayerInputs:
     """Collective synchronization buffers, for the all-gather that puts the
     MoE's per-rank outputs back together."""
 
-    input_row_offsets: list[TensorValue]
-    """``[batch_size + 1]`` exclusive prefix offsets over the packed tokens.
-    Only the last entry is read, as the row count the token split divides."""
+    host_input_row_offsets: TensorValue
+    """``[batch_size + 1]`` exclusive prefix offsets over the packed tokens,
+    on CPU. Only the last entry is read, as the row count the token split
+    divides. The host copy rather than the device one because
+    :func:`~max.graph.ops.slice_tensor` wants its bounds on CPU, and reading
+    them off the device tensor would put a synchronizing device-to-host copy
+    in every step -- which no captured device graph can record."""
 
 
 class Glm5NextMlpSublayer(Module):
@@ -215,13 +219,9 @@ class Glm5NextMlpSublayer(Module):
             self.ep_manager.fetch_buffers(inputs.ep_buffers)
         if self.token_shards == 1:
             return forward_moe_sharded_layers(list(self.shards), xs)
-        # The last row offset is the packed token count. On CPU because
-        # that is where `slice_tensor` wants its bounds.
-        total = (
-            inputs.input_row_offsets[0][-1]
-            .cast(DType.int64)
-            .to(DeviceRef.CPU())
-        )
+        # The last row offset is the packed token count, already on CPU --
+        # which is where `slice_tensor` wants its bounds.
+        total = inputs.host_input_row_offsets[-1].cast(DType.int64)
         shards = [
             token_shard(x, i, self.token_shards, total)
             for i, x in enumerate(xs)

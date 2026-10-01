@@ -493,6 +493,7 @@ class Glm5Next(Module):
         indexer_kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
+        host_input_row_offsets: TensorValue,
         state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
         ep_inputs: Sequence[Any] | None = None,
     ) -> tuple[TensorValue, ...]:
@@ -522,7 +523,7 @@ class Glm5Next(Module):
         mlp_inputs = Glm5NextMlpSublayerInputs(
             ep_buffers=list(ep_inputs) if ep_inputs is not None else [],
             signal_buffers=signal_buffers,
-            input_row_offsets=row_offsets,
+            host_input_row_offsets=host_input_row_offsets,
         )
         streams = [expand_streams(x, hc_mult=config.hc_mult) for x in h]
 

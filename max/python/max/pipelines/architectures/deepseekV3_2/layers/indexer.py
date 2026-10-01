@@ -58,6 +58,30 @@ from max.nn.quant_config import (
 from .transforms import HadamardTransform
 
 
+def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
+    """Returns ``[0, x[0], x[0] + x[1], ...]``, one entry longer than ``x``.
+
+    A masked row sum rather than :func:`~max.graph.ops.cumsum`, which has no
+    GPU kernel (KERN-1095) and so runs the scan on the host. The host round
+    trip that reaches it lowers to a device-to-host copy plus an ``mgp.sync``,
+    and a blocking sync cannot be recorded into a captured device graph, which
+    takes capture off the table for the whole model.
+
+    ``x`` holds one entry per request, so the ``[n + 1, n]`` selection mask
+    this materializes is batch-sized rather than token-sized.
+    """
+    n = x.shape[0]
+    device = x.device
+    rows = ops.range(
+        0, n + 1, 1, out_dim=n + 1, dtype=DType.int64, device=device
+    )
+    cols = ops.range(0, n, 1, out_dim=n, dtype=DType.int64, device=device)
+    below = ops.unsqueeze(cols, 0) < ops.unsqueeze(rows, -1)
+    return ops.squeeze(
+        ops.sum(ops.where(below, ops.unsqueeze(x, 0), 0), axis=-1), -1
+    )
+
+
 def act_quant(
     x: TensorValue, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[TensorValue, TensorValue]:
@@ -389,10 +413,7 @@ class Indexer(Module, Shardable):
         closed = (closed_pool >= 0).cast(DType.int32)
 
         # `[num_rows + 1]`, entry `i` = closed rows strictly before row `i`.
-        zero = ops.constant(0, DType.int32, device=device).reshape((1,))
-        closed_before = ops.concat(
-            [zero, ops.cumsum(closed, axis=0).cast(DType.int32)], axis=0
-        )
+        closed_before = exclusive_prefix_sum(closed)
         ranks = closed_before[:-1]
 
         # Compact the closing rows to the front, order preserved. A skipped
@@ -578,10 +599,7 @@ class Indexer(Module, Shardable):
             ).cast(DType.int64),
             ops.constant(0, DType.int64, device=device),
         )
-        zero = ops.constant(0, DType.int64, device=device).reshape((1,))
-        pool_row_offsets = ops.concat(
-            [zero, ops.cumsum(full_pools, axis=0)], axis=0
-        ).cast(DType.uint32)
+        pool_row_offsets = exclusive_prefix_sum(full_pools).cast(DType.uint32)
 
         pooled = mla_kpool_compress(
             k,

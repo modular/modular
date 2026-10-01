@@ -90,6 +90,8 @@ modular_py_test(
             "test_hadamard_transform.py",
             # Construction-only smoke; runs on CPU (own target below).
             "test_mla_prefill_decode_graph_construction.py",
+            # Device-independent arithmetic; runs on CPU (own target below).
+            "test_indexer_prefix_sum.py",
         ],
     ),
     env = {
@@ -151,6 +153,27 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
+    ],
+)
+
+# The prefix sum the pooled-key cache derives its row offsets from is plain
+# integer arithmetic over graph ops, so this compiles and executes on CPU.
+modular_py_test(
+    name = "test_indexer_prefix_sum",
+    size = "medium",
+    srcs = ["test_indexer_prefix_sum.py"],
+    imports = ["."],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
+        requirement("numpy"),
     ],
 )
 
