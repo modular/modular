@@ -164,16 +164,16 @@ def _signature(
 
 
 def test_slot_count_matches_the_declared_formula() -> None:
-    """``15 + 22D`` at ``D = 1``.
+    """``15 + 23D`` at ``D = 1``.
 
     The same formula the Qwen3.5 MTP graph satisfies: five ragged/host inputs,
     signals, two 7-slot KV leaves, batch_context_lengths, the eight-entry
     sampling tail, the bitmask triple, then a pool and a row table for each
-    of the two state leaves plus the recurrent shadow. The layer count does
-    not enter.
+    of the three state leaves, the ring included. The layer count does not
+    enter.
     """
     types = _signature()
-    assert len(types) == 15 + 22 * 1
+    assert len(types) == 15 + 23 * 1
 
 
 def test_the_prefix_and_sampling_tail_are_the_canonical_ones() -> None:
@@ -291,8 +291,8 @@ def test_the_state_pool_tail_matches_the_mtp_graphs() -> None:
         "the two graphs must present the same slot count, so Mach's Qwen"
         " layout binds both"
     )
-    # A pool and a row table per state leaf, then the recurrent shadow.
-    tail_start = len(fused) - (2 * len(module.state_regions) + 1)
+    # A pool and a row table per state leaf, the ring included.
+    tail_start = len(fused) - 2 * len(module.state_regions)
     for a, b in zip(fused[tail_start:], mtp[tail_start:], strict=True):
         assert a.dtype == b.dtype
         assert [str(d) for d in a.shape] == [str(d) for d in b.shape]

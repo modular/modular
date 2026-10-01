@@ -14,7 +14,6 @@
 
 from .config import (
     MAGIC_DRAFT_TOKEN_ID,
-    RecurrentStateRollback,
     RejectionSamplingStrategy,
     SpeculativeConfig,
     SpeculativeMethod,
@@ -40,7 +39,6 @@ __all__ = [
     "NO_ALIASES",
     "DraftAliases",
     "RaggedTokenMerger",
-    "RecurrentStateRollback",
     "RejectionSamplingStrategy",
     "SpecDecodeGraphInputs",
     "SpecDecodeInputTypeSpec",

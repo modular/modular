@@ -224,10 +224,6 @@ class Qwen3_5LinearAttentionBlock(Module):
     Set alongside :attr:`replay_capture`. See :class:`GatedDeltaNet`.
     """
 
-    verify_ring: bool = False
-    """Whether the verify records into a ring rather than running on a
-    shadow. Set alongside :attr:`verify_width`."""
-
     def __init__(
         self,
         config: Qwen3_5Config,
@@ -305,8 +301,7 @@ class Qwen3_5LinearAttentionBlock(Module):
                         if self.replay_capture is None
                         else self.replay_capture[i]
                     ),
-                    ring=state[i].verify if self.verify_ring else None,
-                    shadow=None if self.verify_ring else state[i].verify,
+                    ring=state[i].ring,
                     verify_width=self.verify_width,
                 )
                 for i, shard in enumerate(self.linear_attn_shards)

@@ -31,8 +31,8 @@ class UnifiedMTPQwen3_5Config(Qwen3_5Config):
     per-entry estimate would make memory planning reserve a slice of the KV
     pool for an encoder cache this graph can never fill.
 
-    On the ring rollback the state cache also holds each request's verify
-    ring, as a scratch leaf.
+    The state cache also holds each request's verify ring, as a scratch
+    leaf.
     """
 
     @classmethod

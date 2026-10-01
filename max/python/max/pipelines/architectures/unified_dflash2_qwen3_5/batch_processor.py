@@ -27,11 +27,10 @@ from ..qwen3_5.batch_processor import Qwen3_5BatchProcessor
 class UnifiedDflash2Qwen3_5BatchProcessor(Qwen3_5BatchProcessor):
     """Compiles and exports the fused graph; refuses to drive a decode step.
 
-    Like the Qwen3.5 MTP graph, this one is executed by Mach's spec-step
-    executor, which owns the live and shadow state pools. MAX allocates
-    neither and has no code that fills that tail, so serving here would fail
-    deep inside the base processor rather than at the boundary where the
-    support actually stops.
+    The graph is executed by Mach's spec-step executor. MAX allocates none of
+    the state pools its tail declares, the verify ring included, and has no
+    code that fills them, so serving here would fail deep inside the base
+    processor rather than at the boundary where the support actually stops.
     """
 
     def prepare_initial_token_inputs(
@@ -42,8 +41,8 @@ class UnifiedDflash2Qwen3_5BatchProcessor(Qwen3_5BatchProcessor):
     ) -> NoReturn:
         raise NotImplementedError(
             "UnifiedDflash2Qwen3_5 cannot be served by MAX: the fused graph's"
-            " live and shadow state pools are owned by the serving engine, and"
-            " MAX allocates neither. Export the graph to a MEF with"
+            " state pools, verify ring included, belong to the serving engine,"
+            " and MAX allocates none of them. Export the graph to a MEF with"
             " mach/tools/gen-mef (--speculative-method dflash2 --draft-model"
             " z-lab/Qwen3.8-27B-DFlash2 --spec-graph-name"
             " qwen3_5_with_dflash2_graph) and serve it through Mach. To serve"

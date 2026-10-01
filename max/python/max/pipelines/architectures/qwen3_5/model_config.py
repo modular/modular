@@ -48,7 +48,6 @@ from .state_cache import (
     STATE_CACHE_KEY,
     attn_cache,
     linear_state_regions,
-    spec_shadow_bytes_per_request,
 )
 
 _POOL_DTYPE_MAP = {
@@ -552,15 +551,6 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         """
         return sum(region.bytes_per_page for region in self._linear_regions())
 
-    def _per_request_shadow_bytes(self, ring_len: int) -> int:
-        """Returns the per-request bytes of a verify's shadow pools.
-
-        These pools are allocated outside the state cache.
-        """
-        return spec_shadow_bytes_per_request(
-            self._linear_regions(ring_len), ring_len
-        )
-
     def _per_request_ring_bytes(self, ring_len: int) -> int:
         """Returns the per-request bytes of a verify's ring, padding included.
 
@@ -596,7 +586,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             device_memory_utilization: Headroom factor.
             extra_per_request_bytes: Per-request state the architecture holds
                 beyond the pool set this config declares -- a speculative
-                arch's shadow set, for one. Added to the divisor so the
+                arch's verify ring, for one. Added to the divisor so the
                 inferred batch fits what will really be allocated.
         """
         per_req = self._per_request_state_bytes() + extra_per_request_bytes

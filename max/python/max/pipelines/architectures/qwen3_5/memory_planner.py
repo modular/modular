@@ -31,13 +31,12 @@ class Qwen3_5MemoryPlanner(PagedMemoryPlanner):
 
     _always_signal_buffers = True
 
-    def shadow_state_bytes(self, pipeline_config: PipelineConfig) -> int:
+    def spec_state_bytes(self, pipeline_config: PipelineConfig) -> int:
         """Returns the bytes a request holds beyond its live state, or 0.
 
         An unspeculated arch allocates one pool set, so nothing here. A
         speculative one prices what its verify holds per request, such as a
-        shadow copy of the state pools or a ring. Counted only when a batch
-        size is inferred.
+        ring. Counted only when a batch size is inferred.
         """
         del pipeline_config
         return 0
@@ -60,6 +59,6 @@ class Qwen3_5MemoryPlanner(PagedMemoryPlanner):
             device_memory_utilization=(
                 pipeline_config.model.kv_cache.device_memory_utilization
             ),
-            extra_per_request_bytes=self.shadow_state_bytes(pipeline_config),
+            extra_per_request_bytes=self.spec_state_bytes(pipeline_config),
         )
         return inferred

@@ -60,11 +60,7 @@ from max.pipelines.architectures.unified_dflash2_qwen3_5.unified_dflash2_qwen3_5
     UnifiedDflash2Qwen3_5,
 )
 from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    SHADOW_RECURRENT_POOLS,
+    state_tail,
 )
 from max.pipelines.speculative.config import (
     MAGIC_DRAFT_TOKEN_ID,
@@ -200,6 +196,7 @@ def _build() -> Step:
         override_quantization_encoding=True,
     )
     registry = nn.state_dict()
+    ring_row_shape = nn.state_regions[2].row_shape
 
     kvp = cfg.get_kv_params()
     assert isinstance(kvp, MultiKVCacheParams)
@@ -221,11 +218,7 @@ def _build() -> Step:
             next(it).tensor for _ in range(7)
         )
         pin = wait = scratch = None
-        # The order `input_types` declares: pools, row tables, then the
-        # recurrent shadow.
-        live_conv, live_rec = next(it).buffer, next(it).buffer
-        conv_rows, rec_rows = next(it).tensor, next(it).tensor
-        shadow_rec = next(it).buffer
+        state = state_tail(it, nn.state_regions, 1)
         out = nn(
             tokens=tokens.tensor,
             input_row_offsets=row_offsets.tensor,
@@ -248,13 +241,7 @@ def _build() -> Step:
             pinned_bitmask=pin,
             wait_payload=wait,
             device_bitmask_scratch=scratch,
-            extra={
-                LIVE_CONV_POOLS: [live_conv],
-                LIVE_RECURRENT_POOLS: [live_rec],
-                LIVE_CONV_ROW_IDS: [conv_rows],
-                LIVE_RECURRENT_ROW_IDS: [rec_rows],
-                SHADOW_RECURRENT_POOLS: [shadow_rec],
-            },
+            extra=state,
         )
         g.output(*out)
 
@@ -347,6 +334,11 @@ def _build() -> Step:
                 np.zeros((SLOTS * NUM_LINEAR, LV, LKD, LVD), np.float32)
             ).to(dev)
 
+        def ring_pool() -> Buffer:
+            return Buffer.from_numpy(
+                np.zeros((SLOTS * NUM_LINEAR, *ring_row_shape), np.float32)
+            ).to(dev)
+
         # Request i holds block i, whose layers are rows i*L..i*L+L-1.
         rows = b(
             np.ascontiguousarray(
@@ -355,7 +347,7 @@ def _build() -> Step:
                 .T
             )
         )
-        args += [conv_pool(), rec_pool(), rows, rows, rec_pool()]
+        args += [conv_pool(), rec_pool(), ring_pool(), rows, rows, rows]
         o = model.execute(*args)
         return [np.array(x.to(CPU()).to_numpy()) for x in o]
 

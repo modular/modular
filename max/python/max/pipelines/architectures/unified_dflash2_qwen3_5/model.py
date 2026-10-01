@@ -23,7 +23,7 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, DeviceRef, Graph, TensorValue
+from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -51,13 +51,7 @@ from ..llama3.weight_adapters import _convert_safetensor_with_model_config
 from ..qwen3_5.model import _SCALE_SUFFIXES
 from ..qwen3_5.model_config import Qwen3_5Config
 from ..qwen3_5.state_cache import attn_cache
-from ..unified_mtp_qwen3_5.spec_state import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    SHADOW_RECURRENT_POOLS,
-)
+from ..unified_mtp_qwen3_5.spec_state import state_tail
 from .batch_processor import UnifiedDflash2Qwen3_5BatchProcessor
 from .model_config import (
     UnifiedDflash2Qwen3_5Config,
@@ -94,7 +88,8 @@ class UnifiedDflash2Qwen3_5Inputs(UnifiedSpecDecodeInputs):
     live_recurrent_pools: list[Buffer]
     live_conv_row_ids: list[Buffer]
     live_recurrent_row_ids: list[Buffer]
-    shadow_recurrent_pools: list[Buffer]
+    ring_pools: list[Buffer]
+    ring_row_ids: list[Buffer]
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -117,9 +112,10 @@ class UnifiedDflash2Qwen3_5Inputs(UnifiedSpecDecodeInputs):
             + (
                 *self.live_conv_pools,
                 *self.live_recurrent_pools,
+                *self.ring_pools,
                 *self.live_conv_row_ids,
                 *self.live_recurrent_row_ids,
-                *self.shadow_recurrent_pools,
+                *self.ring_row_ids,
             )
         )
 
@@ -312,20 +308,9 @@ class UnifiedDflash2Qwen3_5Model(
             graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
             # Qwen3.5 declares no sparse-attention budget, so
             # batch_context_lengths goes unread.
-            trailing = iter(graph_inputs.trailing)
-
-            # The state tail, in the order ``input_types`` declares it.
-            def per_device_buffers() -> list[BufferValue]:
-                return [next(trailing).buffer for _ in range(num_devices)]
-
-            def per_device_tensors() -> list[TensorValue]:
-                return [next(trailing).tensor for _ in range(num_devices)]
-
-            live_conv_pools = per_device_buffers()
-            live_recurrent_pools = per_device_buffers()
-            live_conv_row_ids = per_device_tensors()
-            live_recurrent_row_ids = per_device_tensors()
-            shadow_recurrent_pools = per_device_buffers()
+            state = state_tail(
+                iter(graph_inputs.trailing), nn_model.state_regions, num_devices
+            )
 
             outputs = nn_model(
                 tokens=graph_inputs.tokens,
@@ -348,13 +333,7 @@ class UnifiedDflash2Qwen3_5Model(
                 pinned_bitmask=graph_inputs.pinned_bitmask,
                 wait_payload=graph_inputs.wait_payload,
                 device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
-                extra={
-                    LIVE_CONV_POOLS: live_conv_pools,
-                    LIVE_RECURRENT_POOLS: live_recurrent_pools,
-                    LIVE_CONV_ROW_IDS: live_conv_row_ids,
-                    LIVE_RECURRENT_ROW_IDS: live_recurrent_row_ids,
-                    SHADOW_RECURRENT_POOLS: shadow_recurrent_pools,
-                },
+                extra=state,
             )
             graph.output(*outputs)
 

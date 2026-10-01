@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# 1x B200 recipe for Qwen3.8-27B NVFP4 with MTP (K=3), ring rollback of the
-# recurrent state.
+# 1x B200 recipe for Qwen3.8-27B NVFP4 with MTP (K=3).
 model:
   model_path: RadixArk/Qwen3.8-27B-NVFP4
   device_specs: [0]
@@ -28,4 +27,3 @@ runtime:
 speculative:
   speculative_method: mtp
   num_speculative_tokens: 3
-  recurrent_state_rollback: ring

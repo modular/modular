@@ -56,7 +56,7 @@ unified_dflash2_qwen3_5_arch = SupportedArchitecture(
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
     # The base Qwen3.5 planner, unwrapped onto the target half. It counts one
-    # state set per request and nothing for the recurrent shadow this graph
+    # state set per request and nothing for the verify ring this graph
     # declares, which MAX does not allocate since it does not serve the graph.
     memory_planner=UnifiedDflash2Qwen3_5MemoryPlanner,
     # MAX does not serve this graph, since `batch_processor` refuses to

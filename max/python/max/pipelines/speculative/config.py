@@ -36,7 +36,6 @@ from .depth_schedule import DepthScheduleEntry, normalize_depth_schedule
 
 __all__ = [
     "MAGIC_DRAFT_TOKEN_ID",
-    "RecurrentStateRollback",
     "RejectionSamplingStrategy",
     "SpeculativeConfig",
     "SpeculativeMethod",
@@ -55,17 +54,6 @@ draft slots before any real draft exists. Defined here so the graph side
 
 SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2"]
 """The supported methods for speculative decoding."""
-
-RecurrentStateRollback = Literal["snapshot", "ring"]
-"""How a target with recurrent state rolls it back after a verify.
-
-- ``snapshot``: verify on a shadow copy of the state, then replay the
-  accepted tokens into the live pool.
-- ``ring``: verify from the live pool without writing it, recording each
-  token's update, then apply the accepted records in one launch.
-
-Both produce the same state. Targets without recurrent state ignore this.
-"""
 
 _ONE_TOKEN_PER_STEP: tuple[SpeculativeMethod, ...] = ("eagle", "mtp")
 """Methods that draft one token per step, and so default to a width of 2."""
@@ -363,17 +351,6 @@ class SpeculativeConfig(ConfigFileModel):
             "fused speculative graph can be CUDA-graph captured. Valid only "
             "for greedy serving (temperature 0, top_k 1); incompatible with "
             "relaxed and synthetic acceptance."
-        ),
-    )
-
-    recurrent_state_rollback: RecurrentStateRollback = Field(
-        default="snapshot",
-        description=(
-            "How a target with recurrent state rolls it back after a "
-            "verify. 'snapshot' (default) verifies on a shadow copy and "
-            "replays the accepted tokens. 'ring' verifies from the live "
-            "state, records each token's update, and applies the accepted "
-            "records afterwards."
         ),
     )
 

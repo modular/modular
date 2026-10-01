@@ -49,8 +49,7 @@ unified_mtp_qwen3_5_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
-    # Reserves the verify's shadows, which sit outside the cache, and counts
-    # the shadows and the ring per request when it infers a batch size.
+    # Counts the verify ring per request when it infers a batch size.
     memory_planner=UnifiedMTPQwen3_5MemoryPlanner,
     # Off until validated. The rollback is shape-stable, since
     # `accepted_row_plan` never sizes a gather by the accepted count, but

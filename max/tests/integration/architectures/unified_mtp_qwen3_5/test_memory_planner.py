@@ -17,8 +17,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import cast
 
-import pytest
-from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MHAKVCacheParams
@@ -74,79 +72,19 @@ def _config() -> Qwen3_5Config:
     )
 
 
-def _pipeline_config(
-    rollback: str, max_batch_size: int | None = 16
-) -> PipelineConfig:
+def _pipeline_config() -> PipelineConfig:
     """Returns the fields of a pipeline config the planner reads."""
     return cast(
         "PipelineConfig",
-        SimpleNamespace(
-            runtime=SimpleNamespace(max_batch_size=max_batch_size),
-            model=SimpleNamespace(
-                kv_cache=SimpleNamespace(device_memory_utilization=0.9)
-            ),
-            speculative=SimpleNamespace(
-                recurrent_state_rollback=rollback, draft_width=NUM_DRAFTS
-            ),
-        ),
+        SimpleNamespace(speculative=SimpleNamespace(draft_width=NUM_DRAFTS)),
     )
 
 
-def _devices(free_memory: int) -> list[Device]:
-    return cast(
-        "list[Device]", [SimpleNamespace(stats={"free_memory": free_memory})]
-    )
-
-
-def test_the_ring_arm_shadows_far_less_than_the_snapshot() -> None:
-    """Checks the ring arm reserves less shadow than the snapshot arm."""
-    planner = UnifiedMTPQwen3_5MemoryPlanner(_config())
-
-    ring = planner.shadow_bytes_per_request(_pipeline_config("ring"))
-    snapshot = planner.shadow_bytes_per_request(_pipeline_config("snapshot"))
-
-    assert ring < snapshot / 4
-
-
-@pytest.mark.parametrize("rollback", ["snapshot", "ring"])
-def test_the_shadows_are_reserved_outside_the_pool(rollback: str) -> None:
-    """Checks activation memory reserves only the shadow pools."""
-    planner = UnifiedMTPQwen3_5MemoryPlanner(_config())
-    pipeline_config = _pipeline_config(rollback, max_batch_size=16)
-
-    reserved = planner.estimate_activation_memory(pipeline_config, None)
-
-    assert reserved == 16 * planner.shadow_bytes_per_request(pipeline_config)
-
-
-def test_an_unset_batch_size_reserves_what_inference_chose() -> None:
-    """Checks the shadows are reserved at the inferred batch size."""
-    planner = UnifiedMTPQwen3_5MemoryPlanner(_config())
-    pipeline_config = _pipeline_config("ring", max_batch_size=None)
-
-    inferred = planner.infer_max_batch_size(
-        pipeline_config, _devices(free_memory=40 * 1024**3), 1024**3
-    )
-    reserved = planner.estimate_activation_memory(pipeline_config, None)
-
-    assert inferred is not None and inferred >= 1
-    assert reserved == inferred * planner.shadow_bytes_per_request(
-        pipeline_config
-    )
-
-
-@pytest.mark.parametrize(
-    ("rollback", "ring_len"), [("snapshot", 0), ("ring", NUM_DRAFTS + 1)]
-)
-def test_a_request_is_priced_its_shadow_and_ring(
-    rollback: str, ring_len: int
-) -> None:
-    """Checks a request's extra bytes are its shadows and ring alone."""
+def test_a_request_is_priced_its_ring() -> None:
+    """Checks a request's extra bytes are its verify ring alone."""
     config = _config()
     planner = UnifiedMTPQwen3_5MemoryPlanner(config)
-    pipeline_config = _pipeline_config(rollback)
 
-    assert planner.shadow_state_bytes(pipeline_config) == (
-        planner.shadow_bytes_per_request(pipeline_config)
-        + config._per_request_ring_bytes(ring_len)
-    )
+    ring_bytes = config._per_request_ring_bytes(NUM_DRAFTS + 1)
+    assert ring_bytes > 0
+    assert planner.spec_state_bytes(_pipeline_config()) == ring_bytes

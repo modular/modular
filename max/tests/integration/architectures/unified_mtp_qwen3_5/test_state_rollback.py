@@ -13,8 +13,8 @@
 
 """The accepted-row plan behind the Qwen3.5 speculative state rollback.
 
-The plan decides which rows of the verify pass's per-token tensors the state
-kernels re-run over, so an off-by-one here rewinds the recurrence to the wrong
+The plan decides which rows of the verify pass's per-token tensors the conv
+replay re-runs over, so an off-by-one here lands the conv window at the wrong
 length -- which produces a slightly wrong generation rather than an error. The
 bit-exactness gate on the real kernels needs a GPU and lives in
 ``mach/docs/qwen38_27b/mtp-serving.md``; these are the arithmetic's own
@@ -31,7 +31,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.unified_mtp_qwen3_5.state_rollback import (
     accepted_row_plan,
-    shadow_row_ids,
 )
 
 CPU = DeviceRef.CPU()
@@ -101,24 +100,6 @@ def test_rows_past_the_accepted_total_stay_in_bounds() -> None:
     assert len(rows) == 12
     assert rows.max() < 12
     assert rows.min() >= 0
-
-
-def test_shadow_rows_match_the_snapshots_layer_major_flatten() -> None:
-    # The snapshot stores ``reshape(live_rows, [-1])`` from shadow row 0, so
-    # request ``r``'s layer ``l`` has to come back as ``l * batch + r``.
-    num_layers, batch = 3, 4
-    types = [TensorType(DType.uint32, ["batch_size"], device=CPU)]
-    with Graph("shadow_row_ids", input_types=types) as graph:
-        graph.output(shadow_row_ids(num_layers, CPU))
-
-    model = InferenceSession().load(graph)
-    (rows,) = model.execute(Buffer.from_numpy(np.zeros(batch, dtype=np.uint32)))
-
-    expected = np.arange(num_layers * batch, dtype=np.uint32).reshape(
-        num_layers, batch
-    )
-    assert rows.dtype == DType.uint32
-    assert np.array_equal(rows.to_numpy(), expected)
 
 
 def test_prefill_replays_the_whole_prompt() -> None:

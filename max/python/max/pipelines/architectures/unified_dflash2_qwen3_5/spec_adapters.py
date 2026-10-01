@@ -13,7 +13,7 @@
 """Qwen3.5's hybrid target and the DFlash2 block drafter, as adapters.
 
 Two precedents meet here and each supplies the half it already solved. The
-target side is the Qwen3.5 shadow verify and accepted-prefix replay of
+target side is the Qwen3.5 ring verify and accepted-prefix rollback of
 :mod:`..unified_mtp_qwen3_5.spec_state`, which is parameterized in the
 accepted length rather than in the draft width and so carries to a block of 8
 unchanged. The draft side is the block shape of
@@ -53,7 +53,7 @@ __all__ = ["DFlash2Qwen3_5Proposer", "Qwen3_5BlockTarget"]
 
 
 class Qwen3_5BlockTarget:
-    """The Qwen3.5 verify behind a block draft, on shadow state pools."""
+    """The Qwen3.5 verify behind a block draft, recording into the ring."""
 
     def __init__(
         self,
@@ -64,7 +64,7 @@ class Qwen3_5BlockTarget:
         self.state = Qwen3_5RecurrentState(target, state_regions)
 
     def verify(self, batch: BlockBatch) -> Verified[TensorValue]:
-        shadow_state = self.state.snapshot(batch.extra, batch.devices)
+        verify_state = self.state.verify_state(batch.extra, batch.n_devs)
         with self.state.capturing(batch.n_devs, batch.num_draft_tokens):
             outputs = self.target(
                 batch.merged_tokens,
@@ -72,7 +72,7 @@ class Qwen3_5BlockTarget:
                 batch.return_n_logits,
                 batch.merged_offsets,
                 batch.signal_buffers,
-                shadow_state,
+                verify_state,
             )
 
         # VARIABLE logits + SELECTED_LAYERS ->
@@ -115,7 +115,7 @@ class DFlash2Qwen3_5Proposer:
         ctx_kv: list[PagedCacheValues],
     ) -> None:
         # The first phase after the accepted count settles and the last before
-        # anything reads the live state pools, so the replay belongs here.
+        # anything reads the live state pools, so the rollback belongs here.
         assert batch.num_accepted is not None
         self.target.state.roll_forward(
             batch.extra,
