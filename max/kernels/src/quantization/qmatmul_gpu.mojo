@@ -886,8 +886,7 @@ def multistage_qgemm_kernel[
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     @inline(.always)
-    @__parameter
-    def apply_epilogue():
+    def apply_epilogue() {imm}:
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication

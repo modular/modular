@@ -18,12 +18,15 @@ from std.testing import TestSuite, assert_equal
 
 
 def vec_func[
-    op: def(Float32, Float32) capturing[_] -> Float32
+    OpType: ImplicitlyCopyable
+    & RegisterPassable
+    & def(Float32, Float32) -> Float32
 ](
     in0: Pointer[Float32, MutAnyOrigin],
     in1: Pointer[Float32, MutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
+    op: OpType,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var len = Int(len_dev)
@@ -63,20 +66,20 @@ def run_captured_func(ctx: DeviceContext, captured: Float32) raises:
             in0_host[i] = Float32(i)
             out_host[i] = Float32(length + i)
 
-    @__parameter
-    def add_with_captured(left: Float32, right: Float32) -> Float32:
+    def add_with_captured(
+        left: Float32, right: Float32
+    ) {var captured} -> Float32:
         return left + right + captured
 
     var block_dim = 32
 
-    comptime kernel = vec_func[add_with_captured]
-    var kernel_func = ctx.compile_function[kernel]()
-    ctx.enqueue_function(
-        kernel_func,
+    comptime kernel = vec_func[OpType=type_of(add_with_captured)]
+    ctx.enqueue_function[kernel](
         in0,
         in1,
         out,
         Int32(length),
+        host_arg=add_with_captured,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

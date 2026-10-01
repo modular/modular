@@ -498,8 +498,7 @@ def matmul_dispatch_sm100[
     comptime if has_precise_f32_gemv:
         # tile_m is a comptime kernel param, so each bucket instantiates a
         # distinct gemv_split_k; the runtime `m` selects the bucket.
-        @__parameter
-        def _dispatch_split_k[tile_m: Int]() raises:
+        def _dispatch_split_k[tile_m: Int]() raises {imm}:
             gemv_gpu_dispatch[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
@@ -540,8 +539,7 @@ def matmul_dispatch_sm100[
 
         comptime if has_split_k_band:
 
-            @__parameter
-            def _dispatch_unaligned_n_split_k[tile_m: Int]() raises:
+            def _dispatch_unaligned_n_split_k[tile_m: Int]() raises {imm}:
                 logger.info(
                     (
                         "------ Dispatching to SM100 unaligned-N split-K GEMV"

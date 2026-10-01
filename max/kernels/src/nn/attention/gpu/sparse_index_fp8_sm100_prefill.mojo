@@ -1384,9 +1384,8 @@ def _fp8_index_score_prefill_kernel_sm100[
         comptime if DISTINCT_Q:
             stage_tid = tid & (_NUM_SOFTMAX_THREADS - 1)
 
-        @__parameter
         @inline(.always)
-        def stage_qs(col: Int):
+        def stage_qs(col: Int) {imm}:
             var qs_tok: Int32
             var qs_head: Int
             comptime if Q_INTERLEAVE:
@@ -1588,14 +1587,13 @@ def _fp8_index_score_prefill_kernel_sm100[
             # never straddles a token partway and the completion test stays
             # comptime. A *runtime* token index would spill `acc` to local
             # memory.
-            @__parameter
             @inline(.always)
             def consume_group[
                 col: Int
             ](
                 frag: Array[Scalar[AT], EPI_CHUNK],
                 mut acc: Array[SIMD[AT, ACCW], ACC_SLICES],
-            ):
+            ) {mut qs_reg, imm}:
                 # Read FOUR scales at a time: adjacent scalar reads coalesce
                 # into one 16-byte access and an explicit width-2 load does not
                 # re-merge. Every index MUST stay comptime -- a runtime index
@@ -1847,11 +1845,10 @@ def _fp8_index_score_prefill_kernel_sm100[
             # the guarded form and both shapes emit the same SASS at the issue. It is
             # worth 8 fewer instructions of uniform-datapath setup per sidecar, and
             # consistency with every other SM100 producer.
-            @__parameter
             @inline(.always)
             def issue_k[
                 with_q: Bool = False
-            ](it: Int32, state: PipelineState[NSTAGE]):
+            ](it: Int32, state: PipelineState[NSTAGE]) {imm}:
                 var s = state.index()
                 # Split rather than folded: the fold spans the whole shared
                 # slab and leaves the signed 32-bit TMA coordinate on a large
@@ -1921,9 +1918,8 @@ def _fp8_index_score_prefill_kernel_sm100[
             # specifically and the two land independently. Riding `k_full[0]`
             # the way the 1Q path does would make warp 1 wait on a K tile it
             # does not need yet.
-            @__parameter
             @inline(.always)
-            def issue_q(m: Int):
+            def issue_q(m: Int) {imm}:
                 var q_dst = TileTensor[
                     dtype, type_of(q_flat_layout), address_space=.SHARED
                 ](q_smem + m * q_elems, q_flat_layout)
@@ -1986,9 +1982,8 @@ def _fp8_index_score_prefill_kernel_sm100[
             var n_pre_ks = min(Int32(NSTAGE), n_tiles_local)
             var e = elect()
 
-            @__parameter
             @inline(.always)
-            def issue_ks(it: Int32, state: PipelineState[NSTAGE]):
+            def issue_ks(it: Int32, state: PipelineState[NSTAGE]) {imm}:
                 var s = state.index()
                 # Same rounded-down, block-resolved coordinate the co-located
                 # path uses -- a paged scale pool strides by its own pitch and

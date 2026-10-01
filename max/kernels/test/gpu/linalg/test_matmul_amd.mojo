@@ -345,14 +345,13 @@ def test_float8[fp8_type: DType](ctx: DeviceContext) raises:
 def test_block_k(ctx: DeviceContext) raises:
     print("=== test_block_k")
 
-    @__parameter
     def test_block_k[
         in_type: DType,
         out_type: DType,
         block_k: Int,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int) raises:
+    ](m: Int, n: Int, k: Int) raises {imm}:
         comptime config = MatmulConfig[in_type, in_type, out_type, True](
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
@@ -370,13 +369,12 @@ def test_block_k(ctx: DeviceContext) raises:
 def test_warp_k_partitions(ctx: DeviceContext) raises:
     print("=== test_warp_k_partitions")
 
-    @__parameter
     def test_warp_k_partitions[
         in_type: DType,
         out_type: DType,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int) raises:
+    ](m: Int, n: Int, k: Int) raises {imm}:
         comptime config_type = MatmulConfig[in_type, in_type, out_type, True]
         comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
@@ -667,8 +665,9 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
     comptime for block_m in block_sizes:
         comptime for block_n in block_sizes:
 
-            @__parameter
-            def test_block_shape[block_m: Int, block_n: Int, k: Int]() raises:
+            def test_block_shape[
+                block_m: Int, block_n: Int, k: Int
+            ]() raises {imm}:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
                 ](Index(block_m, block_n))

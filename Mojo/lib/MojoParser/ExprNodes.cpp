@@ -1588,7 +1588,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                                                  spelling, expr->getLoc());
           if (!decl)
             return {};
-        } else if (emitter.builder) {
+        } else if (emitter.builder && dest.getContext() != EC_TypeOf) {
           // There is no default set nor this capture was registered already.
           // This is an error.
           emitter.shared.emitError(
@@ -5131,7 +5131,7 @@ AnyValue MagicFunctionNode::emitTypeOf(ExprDest &dest,
   // TypeOf can reference dynamic values even when in a parameter context.
   ASTType resultType;
   emitter.emitExpressionWithoutEvaluatingIt(
-      subExprs.front(), EC_Origin, [&](CValue result, IREmitter &emitter) {
+      subExprs.front(), EC_TypeOf, [&](CValue result, IREmitter &emitter) {
         resultType = result.getRValueType();
       });
 

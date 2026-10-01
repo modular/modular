@@ -883,7 +883,6 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
 
 # Function to perform warp-level reduction to find the maximum TopK_2
 @inline(.always)
-@__parameter
 def _warp_reduce_topk[
     T: DType,
     largest: Bool,
@@ -914,7 +913,6 @@ def _warp_reduce_topk[
     var res = val
 
     # Shuffle function for TopK_2 structure
-    @__parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
         comptime fn_type = def[dtype: DType, simd_width: SIMDLength](
             val: SIMD[dtype, simd_width], offset: UInt32

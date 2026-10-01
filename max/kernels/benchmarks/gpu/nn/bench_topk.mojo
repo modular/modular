@@ -920,8 +920,7 @@ def main() raises:
         else:
             if masked_probs:
 
-                @__parameter
-                def run_masked[in_dtype: DType]() raises:
+                def run_masked[in_dtype: DType]() raises {mut m, imm}:
                     bench_topk_topp_masked[in_dtype](
                         ctx,
                         m,
@@ -940,8 +939,7 @@ def main() raises:
 
             if use_dist:
 
-                @__parameter
-                def run_dist[in_dtype: DType, emit: Bool]() raises:
+                def run_dist[in_dtype: DType, emit: Bool]() raises {mut m, imm}:
                     bench_topk_topp_dist[in_dtype, DType.int64, emit](
                         ctx,
                         m,
@@ -954,8 +952,7 @@ def main() raises:
                 # The pipeline feeds this kernel f32 logits today; bf16
                 # halves the bytes every pass of the search re-reads, so
                 # both are benchmarked.
-                @__parameter
-                def run_dist_emit[emit: Bool]() raises:
+                def run_dist_emit[emit: Bool]() raises {imm}:
                     if in_dtype_name == "bfloat16":
                         run_dist[.bfloat16, emit]()
                     else:

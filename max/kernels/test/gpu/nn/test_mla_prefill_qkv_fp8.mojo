@@ -219,18 +219,19 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(
-        q_device,
-        k_device,
-        v_device,
-        cache_device,
-        input_row_offsets_device,
-        cache_row_offsets_device,
-        output_device,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {
+        var q_device,
+        var k_device,
+        var v_device,
+        var cache_device,
+        var input_row_offsets_device,
+        var cache_row_offsets_device,
+        var output_device,
+        imm,
+    }:
         flare_mla_prefill[rank=3](
             output_device,
             q_device,

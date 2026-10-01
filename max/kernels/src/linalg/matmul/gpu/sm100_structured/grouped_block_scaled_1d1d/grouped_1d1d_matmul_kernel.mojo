@@ -3859,12 +3859,11 @@ struct Grouped1D1DMatmulKernel[
         # bf16 SMEM scratchpad is byte-identical to the standalone
         # matmul's BF16 GMEM output (chain reference).
         @inline(.always)
-        @__parameter
         def store_scaled_pair(
             smem_idx_a: UInt32,
             smem_idx_b: UInt32,
             pair_fp32: SIMD[Self.accum_type, 2],
-        ):
+        ) {imm}:
             var pair_bf = pair_fp32.cast[.bfloat16]()
             smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_a)), pair_bf[0])
             smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_b)), pair_bf[1])

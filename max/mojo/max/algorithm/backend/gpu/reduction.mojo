@@ -134,7 +134,6 @@ def block_reduce[
     ), "block size must be a multiple of the warp size"
 
     @inline(.always)
-    @__parameter
     def do_warp_reduce(
         val: StaticTuple[SIMD[dtype, simd_width], num_reductions]
     ) -> StaticTuple[SIMD[dtype, simd_width], num_reductions]:

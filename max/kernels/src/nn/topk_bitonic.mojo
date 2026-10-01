@@ -3370,9 +3370,8 @@ def persistent_topk_block_split[
         # leaves one block per SM where the streaming path's fits two -- and the
         # wider the payload the more that is true, which is why the width below is
         # chosen by `N` rather than fixed at the widest that fits.
-        @__parameter
         @inline(.always)
-        def launch_resident[res_vecs: Int]() raises:
+        def launch_resident[res_vecs: Int]() raises {imm}:
             comptime if not ordered:
                 # With no rank to feed there is no reason to hand over a superset
                 # and no reason for the per-bin digit -- both exist only to make

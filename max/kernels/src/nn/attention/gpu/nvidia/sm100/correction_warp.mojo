@@ -292,9 +292,10 @@ def fa4_correction[
     # of the main loop (i=0 then i=1) for the WG0+WG1-paired tail, and
     # once more after the main loop for any extra c0-only iter (1Q
     # odd-T case where WG0 has one more main-loop commit than WG1).
-    @__parameter
     @inline(.always)
-    def _correction_step[i: Int]():
+    def _correction_step[
+        i: Int
+    ]() {mut pipeline_c0, mut pipeline_c1, mut pipeline_o, imm}:
         # correct
         var c_scalar: Scalar[accum_type]
 

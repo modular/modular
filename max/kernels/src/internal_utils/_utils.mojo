@@ -361,8 +361,7 @@ def init_vector_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @__parameter
-    def apply(values: SIMD[dtype, 4]):
+    def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
             comptime if i == 3:
                 if tid >= _len:
@@ -436,8 +435,7 @@ def _init_block_scaled_scales_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @__parameter
-    def apply(values: SIMD[dtype, 4]):
+    def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
             comptime if i == 3:
                 if tid >= _len:

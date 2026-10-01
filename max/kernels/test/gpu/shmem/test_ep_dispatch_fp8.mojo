@@ -286,8 +286,7 @@ def test_dispatch[
         run_dispatch_async_wait(ctx)
 
     @inline(.always)
-    @__parameter
-    def clean_up(ctx: DeviceContext) raises:
+    def clean_up(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     for i in range(num_iters):

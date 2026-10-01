@@ -189,8 +189,7 @@ def _reduce_along_inner_dimension[
         return out_acc_tup
 
     @inline(.always)
-    @__parameter
-    def reduce_rows_unrolled(start_row: Int, end_row: Int):
+    def reduce_rows_unrolled(start_row: Int, end_row: Int) {imm}:
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
             # In normal elementwise get_nd_indices skips the last dimension as
@@ -201,14 +200,15 @@ def _reduce_along_inner_dimension[
             )
 
             @inline(.always)
-            @__parameter
             def unrolled_reduce_helper_fn[
                 width: SIMDLength,
             ](
                 start: Int,
                 finish: Int,
                 init: StaticTuple[SIMD[init_type, width], num_reductions],
-            ) -> StaticTuple[SIMD[init_type, width], num_reductions]:
+            ) {mut indices, imm} -> StaticTuple[
+                SIMD[init_type, width], num_reductions
+            ]:
                 var acc = init
                 for idx in range(start, finish, width):
                     indices[reduce_dim] = idx

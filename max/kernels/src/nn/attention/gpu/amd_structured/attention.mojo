@@ -832,8 +832,7 @@ struct Attention[
         not_last_iter: Bool,
     ):
         @inline(.always)
-        @__parameter
-        def _mask_apply_impl(masked: Bool):
+        def _mask_apply_impl(masked: Bool) {imm}:
             MaskTileOp[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,

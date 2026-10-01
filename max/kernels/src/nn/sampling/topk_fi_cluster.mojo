@@ -89,13 +89,11 @@ def _stage_smem_bytes(d: Int, vec_size: Int, cluster_size: Int) -> Int:
 
 
 @inline(.always)
-@__parameter
 def _max(x: SIMD, y: type_of(x)) -> type_of(x):
     return max(x, y)
 
 
 @inline(.always)
-@__parameter
 def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
@@ -415,9 +413,8 @@ def TopKTopPMaskedProbsClusterKernel[
         Float32(block.max[block_size=block_size, broadcast=False](thread_max)),
     )[0]
 
-    @__parameter
     @inline(.always)
-    def load_e(offset: Int) -> SIMD[.float32, vec_size]:
+    def load_e(offset: Int) {imm} -> SIMD[.float32, vec_size]:
         var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
             DType.float32
         ]()
@@ -628,8 +625,7 @@ def topk_topp_masked_probs_cluster[
             ):
                 cluster_size = c
 
-        @__parameter
-        def launch_cluster[vec_size: Int, cluster_size: Int]() raises:
+        def launch_cluster[vec_size: Int, cluster_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsClusterKernel[
                 block_size,
                 vec_size,
@@ -659,8 +655,7 @@ def topk_topp_masked_probs_cluster[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        @__parameter
-        def launch_single[vec_size: Int]() raises:
+        def launch_single[vec_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,
                 vec_size,

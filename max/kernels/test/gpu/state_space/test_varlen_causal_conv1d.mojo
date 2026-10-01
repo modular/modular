@@ -578,9 +578,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
 
     comptime TILE_SEQ = 128
 
-    @__parameter
     @inline(.always)
-    def launch_seqpar_gpu[kWidth: Int]() raises:
+    def launch_seqpar_gpu[kWidth: Int]() raises {imm}:
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_fwd_seqparallel_gpu[
                 dtype,

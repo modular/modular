@@ -1323,7 +1323,6 @@ def mma_tile_buffers[
     var warp_k, warp_m = udivmod(warp_km, num_warps_m)
 
     # Helper function for thread layout
-    @__parameter
     def get_thread_layout() -> Layout:
         # TODO: Document the logic behind this layout
         # Define a layout that corresponds to the below pattern:
@@ -1357,7 +1356,6 @@ def mma_tile_buffers[
         return materialize[blocked_product(base_layout, tiler_layout)]()
 
     # Helper function for shared memory layout
-    @__parameter
     def get_smem_layout[block_rows: Int]() -> Layout:
         # Shared memory layout
         #
@@ -1441,20 +1439,17 @@ def mma_tile_buffers[
 
     # Helper functions for matrix operations
     @inline(.always)
-    @__parameter
-    def load_tiles_from_dram():
+    def load_tiles_from_dram() {mut a_tiles, mut b_tiles}:
         a_tiles.load_from_dram()
         b_tiles.load_from_dram()
 
     @inline(.always)
-    @__parameter
-    def copy_tiles_to_shared():
+    def copy_tiles_to_shared() {imm}:
         a_tiles.copy_to_shared()
         b_tiles.copy_to_shared()
 
     @inline(.always)
-    @__parameter
-    def load_tiles_from_shared[k_tile_idx: Int]():
+    def load_tiles_from_shared[k_tile_idx: Int]() {imm}:
         a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
         b_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
 

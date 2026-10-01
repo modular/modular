@@ -270,9 +270,8 @@ def amd_4wave_split_k_matmul[
         mma_shape=Index(16, 16, _mma_k),
     )
 
-    @__parameter
     @inline(.always)
-    def launch_split_k[config: KernelConfig]() raises:
+    def launch_split_k[config: KernelConfig]() raises {imm}:
         # Workspace is row-major (num_splits * M, N) — split_id selects
         # the M-band inside the kernel via `pid_m + split_id*num_pid_m`.
         var ws_tile = TileTensor(

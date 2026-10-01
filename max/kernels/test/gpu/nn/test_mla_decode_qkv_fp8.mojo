@@ -302,15 +302,10 @@ def test[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(
-        q_fp8_tt,
-        k_fp8_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[config=config](
@@ -835,15 +830,10 @@ def test_sw[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(
-        q_fp8_tt,
-        k_fp8_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
             out_tt.as_unsafe_any_origin(),

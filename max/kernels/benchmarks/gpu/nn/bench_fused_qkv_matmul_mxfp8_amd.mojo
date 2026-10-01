@@ -439,14 +439,13 @@ def bench_shape[
         )
 
         # Q band: the only wide one (N=2048); the rest are N=128.
-        @__parameter
         @inline(.always)
         def band[
             band_n: Int
         ](
             col_off: Int,
             out_ptr: MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin],
-        ) raises:
+        ) raises {mut cb_w, mut cb_bsf, imm}:
             var w = TileTensor(
                 cb_w.offset_ptr(iteration) + col_off * hidden,
                 row_major(Coord(Idx[band_n], Idx[hidden])),

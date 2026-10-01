@@ -886,8 +886,7 @@ struct Matmul2dFp4[
         var is_m_edge = tg_m_end > M
 
         @inline(.always)
-        @__parameter
-        def _kloop[bounded: Bool]():
+        def _kloop[bounded: Bool]() {mut accs, imm}:
             var k0 = 0
             while k0 < K:
                 # ---- cooperative coalesced decode of (BN, BK) -> b_view ----

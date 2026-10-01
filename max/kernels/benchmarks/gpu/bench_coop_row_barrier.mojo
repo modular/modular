@@ -31,7 +31,6 @@ comptime BLOCK_SIZE = 1024
 
 
 @inline(.always)
-@__parameter
 def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
@@ -76,8 +75,7 @@ def main() raises:
 
         @inline(.always)
         def launch(ctx: DeviceContext) raises {mut workspace, mut sink, imm}:
-            @__parameter
-            def go[g: Int]() raises:
+            def go[g: Int]() raises {imm}:
                 ctx.enqueue_function[coop_combine_kernel[g]](
                     workspace.unsafe_ptr(),
                     sink.unsafe_ptr(),

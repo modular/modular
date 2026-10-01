@@ -68,8 +68,7 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime fp8_dtype = get_amd_fp8_dtype().value()
     comptime bf8_dtype = get_amd_bf8_dtype().value()
 
-    @__parameter
-    def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.length]:
+    def _f8f6f4_intrinsic() {imm} -> SIMD[d.dtype, d.length]:
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
         comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[

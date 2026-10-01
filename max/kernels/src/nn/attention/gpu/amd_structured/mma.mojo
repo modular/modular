@@ -494,8 +494,9 @@ struct KVMmaOp[
                         Self.MMA_K, Self.MMA_M, Self.BN, Self.BK
                     ](bk_tile, Int(k), Int(i))
 
-                    @__parameter
-                    def _read_half[half_idx: Int]() -> SIMD[Self.in_type, 4]:
+                    def _read_half[
+                        half_idx: Int
+                    ]() {imm} -> SIMD[Self.in_type, 4]:
                         comptime half_off = (
                             half_idx * (Self.MMA_K // 2) * Self.BK
                         )

@@ -172,9 +172,8 @@ def bench_shape[
     var gy = ceildiv(H_out, block_size)
     var gz = N
 
-    @__parameter
     @inline(.always)
-    def run_naive() raises:
+    def run_naive() raises {imm}:
         ctx.enqueue_function[naive](
             input_lt,
             filter_lt,

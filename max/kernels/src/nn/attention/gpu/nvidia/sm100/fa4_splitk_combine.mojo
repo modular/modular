@@ -476,9 +476,8 @@ def fa4_splitk_combine[
     # 37 through the sweep, then decaying). Those shapes land on the fallback.
     comptime sm_count = ctx.default_device_info.sm_count
 
-    @__parameter
     @inline(.always)
-    def enqueue[P_STATIC: Int]() raises:
+    def enqueue[P_STATIC: Int]() raises {imm}:
         comptime kernel = _fa4_splitk_combine_kernel[
             output_type, ov_depth, intermediate_type, P_STATIC=P_STATIC
         ]
