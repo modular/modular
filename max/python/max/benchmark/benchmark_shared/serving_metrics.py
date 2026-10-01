@@ -63,6 +63,24 @@ def compute_output_len(
     tokenizer: PreTrainedTokenizerBase,
     output: RequestFuncOutput,
 ) -> int:
+    """Returns the number of tokens the server generated for ``output``.
+
+    Prefers the server's ``usage.completion_tokens``. Re-tokenizing the
+    streamed text undercounts whenever generated tokens stream no text, such
+    as special tokens past a forced EOS, or merge into fewer tokens on
+    re-encoding; the text count is the fallback for servers that report no
+    usage.
+
+    Args:
+        tokenizer: The tokenizer used to count tokens in the streamed text.
+        output: One request's output.
+
+    Returns:
+        The generated token count.
+    """
+    completion_tokens = output.server_token_stats.completion_tokens
+    if completion_tokens is not None:
+        return completion_tokens
     return len(
         tokenizer.encode(output.generated_text, add_special_tokens=False)
     )

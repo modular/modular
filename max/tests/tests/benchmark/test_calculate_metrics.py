@@ -34,6 +34,7 @@ from max.benchmark.benchmark_shared.serving_metrics import (
     build_text_generation_result,
     calculate_metrics,
     calculate_pixel_generation_metrics,
+    compute_output_len,
 )
 from max.profiler.cpu import CPUMetrics
 from max.profiler.gpu import GPUStats, MemoryStats, UtilizationStats
@@ -170,6 +171,54 @@ def test_tpot_both_definitions() -> None:
     assert math.isclose(
         metrics.text_data.step_tpot_ms.mean, 125.0, rel_tol=1e-6
     )
+
+
+def test_output_len_prefers_server_completion_tokens() -> None:
+    """The server's completion count drives TPOT, not the re-tokenized text.
+
+    With ``ignore_eos``, tokens past EOS can stream no text, so the text
+    re-tokenizes to fewer tokens than the server generated.
+    """
+    # 10 generated tokens whose text re-tokenizes to 4, latency 1.0s, ttft
+    # 0.1s -> tpot = 0.9 / 9 = 0.1 s.
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="four tok",
+        itl=[0.1] * 9,
+        tpot=[0.1] * 9,
+        server_token_stats=ServerTokenStats(completion_tokens=10),
+    )
+    tokenizer = _make_mock_tokenizer({"four tok": 4})
+
+    metrics = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+    )
+
+    assert metrics.text_data is not None
+    assert metrics.text_data.total_output == 10
+    assert metrics.text_data.tpot_ms is not None
+    assert math.isclose(metrics.text_data.tpot_ms.mean, 100.0, rel_tol=1e-6)
+
+
+def test_output_len_falls_back_to_text_without_usage() -> None:
+    """A server that reports no usage is counted from its text."""
+    output = RequestFuncOutput(success=True, generated_text="four tok")
+    tokenizer = _make_mock_tokenizer({"four tok": 4})
+
+    assert compute_output_len(tokenizer, output) == 4
 
 
 def test_tpot_zero_decode_tokens() -> None:
