@@ -3467,21 +3467,19 @@ struct DivOperandInfo {
       for (auto [n, d] : llvm::zip_equal(numerator.constant.getValues(),
                                          denominator.constant.getValues())) {
 
-        bool isSigned = n.getDType().isSInt();
-        APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
-            isSigned ? n.getData().abs() : n.getData(),
-            isSigned ? d.getData().abs() : d.getData());
+        const APSInt &nData = n.getData();
+        const APSInt &dData = d.getData();
+        APSInt gcdTerm(llvm::APIntOps::GreatestCommonDivisor(
+                           nData.isNegative() ? -nData : nData,
+                           dData.isNegative() ? -dData : dData),
+                       nData.isUnsigned());
 
-        if (isSigned && n.getData().isNegative() && d.getData().isNegative())
+        // A negative divisor for two negative terms cancels both signs.
+        if (nData.isNegative() && dData.isNegative())
           gcdTerm = -gcdTerm;
 
-        APInt nLane =
-            isSigned ? n.getData().sdiv(gcdTerm) : n.getData().udiv(gcdTerm);
-        APInt dLane =
-            isSigned ? d.getData().sdiv(gcdTerm) : d.getData().udiv(gcdTerm);
-
-        nC.push_back(DTypeValue(nLane, n.getDType()));
-        dC.push_back(DTypeValue(dLane, d.getDType()));
+        nC.push_back(DTypeValue(nData / gcdTerm, n.getDType()));
+        dC.push_back(DTypeValue(dData / gcdTerm, d.getDType()));
       }
 
       numerator.constant = SIMDAttr::get(nC, numerator.constant.getType());
@@ -5442,14 +5440,15 @@ TypedAttr KGEN::stripIdentityWrappers(TypedAttr attr) {
 // DTypeValue
 //===----------------------------------------------------------------------===//
 
-DTypeValue::DTypeValue(APInt data, KGENDType dtype)
-    : data(std::move(data)), dtype(dtype) {
+DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
+    : data(std::move(value)), dtype(dtype) {
+  data.setIsUnsigned(dtype.isUInt());
   assert(dtype.isAddress() || dtype.isIndex() || dtype.isUIndex() ||
-         this->data.getBitWidth() == dtype.getWidthInBits());
+         data.getBitWidth() == dtype.getWidthInBits());
 }
 
-DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
-    : DTypeValue(APInt(std::move(value)), dtype) {}
+DTypeValue::DTypeValue(APInt data, KGENDType dtype)
+    : DTypeValue(APSInt(std::move(data), dtype.isUInt()), dtype) {}
 
 DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
     : DTypeValue(value.bitcastToAPInt(), dtype) {
@@ -5466,7 +5465,7 @@ DTypeValue::DTypeValue(int64_t value, KGENDType dtype)
 
 APSInt DTypeValue::getIntVal() const {
   assert(dtype.isIntLike());
-  return APSInt(data, /*isUnsigned=*/dtype.isUInt());
+  return data;
 }
 
 APFloat DTypeValue::getFloatVal() const {
@@ -5488,11 +5487,10 @@ int64_t DTypeValue::getIndexVal() const {
 namespace M::KGEN {
 /// Provide the ability to hash values for attribute uniquing.
 inline llvm::hash_code hash_value(const DTypeValue &value) {
-  // Must be consistent with operator==. Normalize so equal values of different
-  // bit widths hash equally: sign-extend signed types to 64 bits, zero-extend
-  // unsigned types to minimal width.
-  const APInt &data = value.getData();
-  APInt normalized = value.getDType().isSInt()
+  // operator== ignores bit width, so equal values of different widths must
+  // hash equally.
+  const APSInt &data = value.getData();
+  APInt normalized = data.isSigned()
                          ? data.sextOrTrunc(64)
                          : data.zextOrTrunc(std::max(data.getActiveBits(), 1u));
   return hash_combine(normalized, value.getDType().getValue());
