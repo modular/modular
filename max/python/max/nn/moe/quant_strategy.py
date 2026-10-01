@@ -91,7 +91,7 @@ class QuantStrategy(Protocol):
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations with per-expert scales and padding."""
@@ -139,11 +139,26 @@ class Fp8Strategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
-        """Falls back to ungrouped FP8 quantization."""
-        return self.quantize(tensor, group_size)
+        """Quantizes to FP8, stopping at the last row ``expert_start`` covers.
+
+        FP8 needs no per-expert scale padding, so this differs from
+        :meth:`quantize` only in what it skips: ``tensor`` is the EP receive
+        buffer, sized for the worst-case dispatch, and ``expert_start`` ends at
+        the row count this step actually received. The rows below that count
+        quantize identically either way.
+        """
+        return quantize_dynamic_scaled_float8(
+            tensor,
+            self.config.input_scale,
+            self.config.weight_scale,
+            group_size_or_per_token=group_size,
+            out_type=self.dtype,
+            scales_type=self.config.weight_scale.dtype,
+            row_offsets=expert_start,
+        )
 
     def grouped_matmul(
         self,
@@ -255,13 +270,18 @@ class NvMxf4f8Strategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
         indices: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations per-expert with padded scale alignment."""
         if self.is_nvfp4 and input_scale is None:
             raise ValueError("NVFP4 requires input_scale")
+        if scales_offset is None:
+            raise ValueError(
+                "block-scaled grouped quantize needs scales_offset to place"
+                " each expert's padded scale tile"
+            )
         sf_tensor = (
             (1.0 / input_scale).to(tensor.device)
             if input_scale is not None
@@ -576,7 +596,7 @@ class BlockScaledStrategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Falls back to ungrouped MXFP4 quantization."""
@@ -690,7 +710,7 @@ class Mxfp6Strategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Falls back to ungrouped MXFP6 quantization."""

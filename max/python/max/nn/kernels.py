@@ -7963,6 +7963,7 @@ def quantize_dynamic_scaled_float8(
     out_type: DType = DType.float8_e4m3fn,
     scales_type: DType = DType.bfloat16,
     amax_floor: float = 0.0,
+    row_offsets: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Dynamically quantize the input tensor to fp8.
 
@@ -7971,6 +7972,12 @@ def quantize_dynamic_scaled_float8(
         scale_ub: The upper bound of the scale factor.
         group_size_or_per_token: The group size for quantization. When set to -1,
             the quantization is column-wise.
+        row_offsets: Optional grouped-matmul row prefix sum, whose last entry is
+            the number of rows that carry data. Supply it when ``input`` is a
+            worst-case-sized buffer that the producer only partly filled, such
+            as the EP dispatch receive buffer; rows past that count are left
+            untouched rather than quantized. The quantized values and scales of
+            the rows below it are identical either way.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
         amax_floor: Lower bound applied to a group's max-abs before the scale
@@ -7998,6 +8005,12 @@ def quantize_dynamic_scaled_float8(
         raise ValueError(
             "amax_floor is only supported with float8_e8m0fnu scales, got"
             f" {scales_type}"
+        )
+
+    if amax_floor > 0.0 and row_offsets is not None:
+        raise ValueError(
+            "amax_floor and row_offsets cannot be combined: the row-bounded"
+            " op takes no amax_floor parameter"
         )
 
     if not isinstance(input.shape[1], StaticDim):
@@ -8029,6 +8042,23 @@ def quantize_dynamic_scaled_float8(
             (input.shape[0] + padding_size - 1) // padding_size
         ) * padding_size
 
+    values: list[Value[Any]] = [
+        input,
+        ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+    ]
+    op_name = "mo.quantize_dynamic_scaled_float8"
+    if row_offsets is not None:
+        if row_offsets.dtype != DType.uint32 or row_offsets.rank != 1:
+            raise ValueError(
+                "row_offsets must be a rank-1 uint32 tensor, but got"
+                f" {row_offsets.rank}-D {row_offsets.dtype}"
+            )
+        # A distinct symbol, not a third operand: the graph compiler's
+        # RMS-norm and all-reduce fusion patterns match the unbounded op on
+        # its two-operand signature.
+        op_name += ".row_bounded"
+        values.append(row_offsets)
+
     # The kernel takes the floor string-encoded (the extensibility bridge has no
     # float parameter), and the RMS-norm fusion pattern only matches a quantize
     # op carrying exactly one parameter, so leave it off at the default.
@@ -8039,12 +8069,9 @@ def quantize_dynamic_scaled_float8(
         parameters["amax_floor"] = repr(amax_floor)
 
     result = ops.custom(
-        "mo.quantize_dynamic_scaled_float8",
+        op_name,
         device=input.device,
-        values=[
-            input,
-            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
-        ],
+        values=values,
         out_types=[
             TensorType(
                 dtype=out_type,

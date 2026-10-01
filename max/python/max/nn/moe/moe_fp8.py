@@ -584,22 +584,27 @@ class MoEQuantized(MoE):
                     else:
                         assert clamped is not None
                         gate_up = clamped(gate_up, self.moe_dim)
+                    # Both dispatch layouts put the row prefix sum third; only
+                    # the block-scaled one also carries per-expert scale
+                    # offsets. Going through `grouped_quantize` either way
+                    # keeps the quantize bounded by the rows the dispatch
+                    # actually received, instead of the worst-case height of
+                    # the receive buffer.
+                    scales_offset: TensorValue | None = None
                     if self._uses_nvidia_block_scaled_ep_layout:
                         _, _, expert_start, scales_offset, expert_ids, _ = (
                             expert_inputs
                         )
-                        down_in, silu_scales = strategy.grouped_quantize(
-                            gate_up,
-                            self._token_group_size,
-                            nvfp4.down_input if nvfp4 else None,
-                            expert_start,
-                            scales_offset,
-                            expert_ids,
-                        )
                     else:
-                        down_in, silu_scales = strategy.quantize(
-                            gate_up, self._token_group_size
-                        )
+                        _, _, expert_start, expert_ids, _ = expert_inputs
+                    down_in, silu_scales = strategy.grouped_quantize(
+                        gate_up,
+                        self._token_group_size,
+                        nvfp4.down_input if nvfp4 else None,
+                        expert_start,
+                        scales_offset,
+                        expert_ids,
+                    )
                 else:
                     down_in, silu_scales = strategy.fused_silu_quantize(
                         gate_up,
