@@ -28,6 +28,12 @@ the binding constraint depending on context length:
   8192. Folded in here rather than discovered as an out-of-memory error at the
   first long prefill.
 
+Everything the V3 family already accounts for -- the MLA up-projection, the
+expert-parallel routing buffers and the persistent EP SHMEM buffers -- comes
+from :class:`~..deepseekV3.memory_planner.DeepseekV3MemoryPlanner`, which this
+extends rather than replaces. Deriving from :class:`PagedMemoryPlanner`
+instead reserved nothing for any of them, because that base returns ``0``.
+
 Above roughly 12K context the KV cache dominates instead: 11 KiB per token
 across the 11 sparse-MLA layers, 11.8 GB for a 1M-token sequence.
 """
@@ -37,18 +43,18 @@ from __future__ import annotations
 from typing import Any
 
 from max.driver import Device
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override
 
+from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from .model_config import Glm5NextConfig
 
 __all__ = ["Glm5NextMemoryPlanner"]
 
 
-class Glm5NextMemoryPlanner(PagedMemoryPlanner):
-    """Accounts for the KDA state pools and the widened mHC residual."""
+class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
+    """Adds the KDA state pools and the widened mHC residual to V3's estimate."""
 
     _always_signal_buffers = True
 
@@ -82,7 +88,7 @@ class Glm5NextMemoryPlanner(PagedMemoryPlanner):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
     ) -> int:
-        """Reserves the widened residual, and nothing for the KDA state.
+        """Adds the widened residual to V3's estimate, and nothing else.
 
         The conv and recurrent pools are leaves of the multi-cache, so the
         cache allocation already pays for their pages --
@@ -94,14 +100,23 @@ class Glm5NextMemoryPlanner(PagedMemoryPlanner):
 
         What is left is the mHC residual, which is genuinely an activation:
         ``hc_mult`` copies of the hidden state, live for the whole stack and
-        owned by no cache.
+        owned by no cache. It is replicated, so it is sized from the whole
+        batch. The EP dispatch buffers are not: the feed-forward sublayer
+        splits the token axis, which is what makes the inherited per-rank
+        estimate right without an override here.
         """
         config = self._config
         assert isinstance(config, Glm5NextConfig)
 
-        return (
+        residual_bytes = (
             pipeline_config.runtime.max_batch_input_tokens
             * config.activation_bytes_per_token()
+        )
+        return (
+            super().estimate_activation_memory(
+                pipeline_config, huggingface_config
+            )
+            + residual_bytes
         )
 
     def describe(self) -> dict[str, Any]:

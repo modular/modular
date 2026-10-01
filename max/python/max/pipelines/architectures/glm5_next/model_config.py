@@ -182,6 +182,27 @@ class Glm5NextVisionConfig:
         )
 
 
+def token_shard_degree(num_devices: int, data_parallel_degree: int) -> int:
+    """Devices the token axis is split across, or 1 if it is not split.
+
+    The feed-forward sublayer splits its token axis exactly when attention is
+    sharded by head, which is the condition DeepSeek-V3.2 calls
+    ``tp_attention``. Returning 1 means each rank already owns a distinct
+    batch shard, so there is nothing to split.
+
+    Args:
+        num_devices: Devices the model runs on.
+        data_parallel_degree: Batch shards. Equal to ``num_devices`` under
+            data-parallel attention, 1 under tensor-parallel attention.
+
+    Returns:
+        The number of token shards.
+    """
+    if num_devices > 1 and data_parallel_degree == 1:
+        return num_devices
+    return 1
+
+
 @dataclass(kw_only=True)
 class Glm5NextConfig(DeepseekV3_2Config):
     """Configuration for GLM-5.3-Flash."""

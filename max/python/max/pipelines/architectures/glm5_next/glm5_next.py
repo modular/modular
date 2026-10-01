@@ -83,7 +83,12 @@ from .layers.decoder import Glm5NextDecoderLayer
 from .layers.hyper_connection import expand_streams, mean_collapse_streams
 from .layers.kda import kda_sublayer_inputs
 from .layers.kimi_delta_attention import Glm5NextKdaSublayer
-from .layers.mlp import Glm5NextMLP, Glm5NextMlpSublayer, Glm5NextMoE
+from .layers.mlp import (
+    Glm5NextMLP,
+    Glm5NextMlpSublayer,
+    Glm5NextMlpSublayerInputs,
+    Glm5NextMoE,
+)
 from .layers.sparse_mla import (
     Glm5NextSparseMLASublayer,
     SparseMLASublayerInputs,
@@ -287,7 +292,7 @@ class Glm5Next(Module):
         """
         config = self.config
         mlp = self._mlp_module(layer_idx)
-        return Glm5NextMlpSublayer(mlp, config.devices, self.ep_manager)
+        return Glm5NextMlpSublayer(mlp, config.devices, config, self.ep_manager)
 
     def _mlp_module(self, layer_idx: int) -> Glm5NextMLP | Glm5NextMoE:
         """Returns the unwrapped dense MLP or MoE block for ``layer_idx``.
@@ -506,15 +511,18 @@ class Glm5Next(Module):
                 "ep_config is set, so the EP communication buffers must be "
                 "passed through from the graph inputs."
             )
+        h = self.embed_tokens(tokens, signal_buffers)
+        row_offsets = ops.distributed_broadcast(
+            input_row_offsets.to(devices[0]), signal_buffers
+        )
         # Handed to every feed-forward sublayer rather than bound once on the
         # shared manager here: the MoE shards read the buffers off it while
         # they are traced, and under subgraphs that trace happens inside a
         # subgraph that cannot reference an outer-graph value.
-        mlp_inputs = list(ep_inputs) if ep_inputs is not None else []
-
-        h = self.embed_tokens(tokens, signal_buffers)
-        row_offsets = ops.distributed_broadcast(
-            input_row_offsets.to(devices[0]), signal_buffers
+        mlp_inputs = Glm5NextMlpSublayerInputs(
+            ep_buffers=list(ep_inputs) if ep_inputs is not None else [],
+            signal_buffers=signal_buffers,
+            input_row_offsets=row_offsets,
         )
         streams = [expand_streams(x, hc_mult=config.hc_mult) for x in h]
 

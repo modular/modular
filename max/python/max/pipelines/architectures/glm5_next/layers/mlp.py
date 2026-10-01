@@ -42,8 +42,15 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from max import tree
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, Value
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    TensorValue,
+    TensorValueLike,
+    Value,
+)
 from max.nn import MLP
 from max.nn.comm.ep import EPBatchManager
 from max.nn.layer import Module
@@ -51,11 +58,14 @@ from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.moe.moe import ClampedSwiGLU
 from max.pipelines.architectures.deepseekV3_2.layers.moe import DeepseekV3_2MoE
 
+from ..model_config import Glm5NextConfig, token_shard_degree
 from .clamped_swiglu import clamped_swiglu
+from .token_parallel import gather_token_shards, token_shard
 
 __all__ = [
     "Glm5NextMLP",
     "Glm5NextMlpSublayer",
+    "Glm5NextMlpSublayerInputs",
     "Glm5NextMoE",
 ]
 
@@ -106,6 +116,29 @@ class Glm5NextMoE(DeepseekV3_2MoE):
         self.swiglu_limit = swiglu_limit
 
 
+@tree.dataclass(frozen=True, kw_only=True)
+class Glm5NextMlpSublayerInputs:
+    """The feed-forward sublayer's per-step inputs, one entry per device.
+
+    A bundle rather than the bare buffer list the other feed-forward paths
+    take, because the expert-parallel MoE now runs on one rank's share of the
+    tokens and needs the collective buffers to gather the result back.
+    """
+
+    ep_buffers: list[Value[Any]]
+    """Expert-parallel communication buffers, empty without EP. Bound per
+    sublayer rather than once for the stack because a subgraph body cannot
+    reference a value the outer graph owns."""
+
+    signal_buffers: list[BufferValue]
+    """Collective synchronization buffers, for the all-gather that puts the
+    MoE's per-rank outputs back together."""
+
+    input_row_offsets: list[TensorValue]
+    """``[batch_size + 1]`` exclusive prefix offsets over the packed tokens.
+    Only the last entry is read, as the row count the token split divides."""
+
+
 class Glm5NextMlpSublayer(Module):
     """The feed-forward sublayer as the decoder layer calls it.
 
@@ -126,11 +159,18 @@ class Glm5NextMlpSublayer(Module):
         self,
         mlp: Glm5NextMLP | Glm5NextMoE,
         devices: Sequence[DeviceRef],
+        config: Glm5NextConfig,
         ep_manager: EPBatchManager | None = None,
     ) -> None:
         super().__init__()
         self.mlp = mlp
         self.ep_manager = ep_manager
+        # The MoE is per-token, so under tensor-parallel attention each rank
+        # runs the experts over its own slice of the rows instead of over
+        # every rank's copy of the whole sequence.
+        self.token_shards = token_shard_degree(
+            len(devices), config.data_parallel_degree
+        )
         # Typed as callables rather than as the module union: that is exactly
         # what `forward_moe_sharded_layers` takes, and `shard()` returns
         # `Sequence[Self]`, which does not narrow to a union of two subclasses.
@@ -152,21 +192,39 @@ class Glm5NextMlpSublayer(Module):
         return True
 
     def __call__(
-        self, xs: list[TensorValue], inputs: Sequence[Value[Any]] = ()
+        self, xs: list[TensorValue], inputs: Glm5NextMlpSublayerInputs
     ) -> list[TensorValue]:
         """Runs the feed-forward block on every device.
 
+        Every rank is handed the same ``xs`` here, because the residual is
+        replicated. When attention is tensor-parallel that would have each
+        rank dispatch every token to the experts, so instead each takes a
+        distinct slice of the rows, runs the block on that, and the outputs
+        are gathered back. That is also what makes the shared EP dispatch cap
+        correct without an architecture-specific override, since a rank now
+        really does send at most ``ceildiv(total_tokens, degree)``.
+
         Args:
             xs: ``[total_tokens, hidden_size]`` per device, normalized.
-            inputs: The expert-parallel communication buffers, empty when the
-                model runs without EP. They are bound here rather than once
-                for the whole stack because a subgraph body cannot reference a
-                value the outer graph owns, so each MoE has to re-bind them on
-                its own side of the boundary.
+            inputs: This layer's communication buffers.
 
         Returns:
             ``[total_tokens, hidden_size]`` per device.
         """
-        if self.ep_manager is not None and inputs:
-            self.ep_manager.fetch_buffers(inputs)
-        return forward_moe_sharded_layers(list(self.shards), xs)
+        if self.ep_manager is not None and inputs.ep_buffers:
+            self.ep_manager.fetch_buffers(inputs.ep_buffers)
+        if self.token_shards == 1:
+            return forward_moe_sharded_layers(list(self.shards), xs)
+        # The last row offset is the packed token count. On CPU because
+        # that is where `slice_tensor` wants its bounds.
+        total = (
+            inputs.input_row_offsets[0][-1]
+            .cast(DType.int64)
+            .to(DeviceRef.CPU())
+        )
+        shards = [
+            token_shard(x, i, self.token_shards, total)
+            for i, x in enumerate(xs)
+        ]
+        outs = forward_moe_sharded_layers(list(self.shards), shards)
+        return gather_token_shards(outs, xs, inputs.signal_buffers)
