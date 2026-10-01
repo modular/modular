@@ -682,4 +682,9 @@ This version is still a work in progress.
   repeat as success but left HIP's last error set, and PyTorch reported it from
   its next kernel launch. MAX now clears that error.
 
+- Fixed `max.phase.prefill` spans never ending and `max.phase.decode` spans
+  never starting, so with tracing enabled neither was exported for a completed
+  request and the model worker kept every such request's prefill span in
+  memory.
+
 ## Mojo language

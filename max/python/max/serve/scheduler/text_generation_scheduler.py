@@ -295,12 +295,21 @@ class TokenGenerationScheduler(Scheduler):
         batch_id = self._batch_counter
         self._batch_counter += 1
 
-        # Capture which requests are currently in the CE (prefill) phase so we
-        # can detect the CE→TG transition and end their prefill spans below.
+        # Capture which of this batch's requests are in the CE (prefill) phase
+        # so we can detect the CE→TG transition and end their prefill spans
+        # below. They are the ones not already decoding; all_ce_reqs no longer
+        # holds them, as construct_batch() popped them off the CE queue.
         # Skipped when tracing is disabled: computing this set costs real
         # CPU every batch even though the spans it feeds would be no-ops.
         ce_ids_before = (
-            set(self.batch_constructor.all_ce_reqs.keys())
+            {
+                ctx.request_id
+                for batch, replica in zip(
+                    inputs.batches, self.batch_constructor.replicas, strict=True
+                )
+                for ctx in batch
+                if ctx.request_id not in replica.tg_reqs
+            }
             if tracing_enabled
             else None
         )
@@ -342,10 +351,9 @@ class TokenGenerationScheduler(Scheduler):
 
             # Any request that was CE before and is now TG just completed
             # prefill. Skipped when tracing is disabled: see ce_ids_before.
-            if tracing_enabled:
-                assert ce_ids_before is not None
-                tg_ids_after = set(self.batch_constructor.all_tg_reqs.keys())
-                for req_id in ce_ids_before & tg_ids_after:
+            if ce_ids_before:
+                tg_reqs_after = self.batch_constructor.all_tg_reqs
+                for req_id in ce_ids_before & tg_reqs_after.keys():
                     if req_id in self._prefill_spans:
                         span = self._prefill_spans.pop(req_id)
                         span.set_attribute("max.batch_id", batch_id)
@@ -358,9 +366,7 @@ class TokenGenerationScheduler(Scheduler):
                         self._decode_spans.pop(req_id).end()
                     self._decode_spans[req_id] = _tracer.start_span(
                         "max.phase.decode",
-                        context=_parent_trace_context(
-                            self.batch_constructor.all_tg_reqs[req_id]
-                        ),
+                        context=_parent_trace_context(tg_reqs_after[req_id]),
                         attributes={
                             "max.request_id": str(req_id),
                             "max.batch_id": batch_id,
