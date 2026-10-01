@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import atexit
 import dataclasses
 import json
 import logging
@@ -20,11 +21,13 @@ import logging.handlers
 import math
 import os
 import platform
+import signal
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from time import time
+from types import FrameType
 from urllib.parse import urlparse
 
 import numpy as np
@@ -860,13 +863,23 @@ def batch_spans_enabled() -> bool:
     return _kernel_trace_level >= KernelTraceLevel.BATCH
 
 
+def _exit_on_sigterm(signum: int, frame: FrameType | None) -> None:
+    """Raises ``SystemExit`` so that SIGTERM runs the process's exit hooks.
+
+    The profiler plugin writes the libkineto trace from an exit hook, which
+    SIGTERM's default action skips.
+    """
+    raise SystemExit(128 + signum)
+
+
 def configure_kernel_tracing(settings: Settings) -> None:
     """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
 
     Must be called in the model worker process before ``InferenceSession``
     is constructed so that the libkineto auto-start picks up the enabled
     flag. Also records the level read by :func:`batch_spans_enabled`, so it
-    must run before the scheduler starts.
+    must run before the scheduler starts. At ``kernel`` level it installs a
+    SIGTERM handler, so it must run on the main thread.
 
     Args:
         settings: Server settings carrying ``kernel_trace_level``.
@@ -882,6 +895,10 @@ def configure_kernel_tracing(settings: Settings) -> None:
         # the libkineto auto-start that fires on InferenceSession construction.
         set_gpu_profiling_state("detailed")
         os.environ.setdefault("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "true")
+        signal.signal(signal.SIGTERM, _exit_on_sigterm)
+        # Once exit starts, SIGTERM must not interrupt the trace write.
+        # Finalization resets a Python handler to SIG_DFL but keeps SIG_IGN.
+        atexit.register(signal.signal, signal.SIGTERM, signal.SIG_IGN)
     else:
         # OP level: op-level NVTX user-annotation ranges only.
         set_gpu_profiling_state("on")

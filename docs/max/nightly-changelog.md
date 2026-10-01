@@ -568,6 +568,10 @@ This version is still a work in progress.
   applies the floor correction for the promoted signed dtype, so `7 // -2`
   returns `-4` instead of `-3`.
 
+- Fixed `max serve` with `MAX_SERVE_KERNEL_TRACE_LEVEL=kernel` never writing
+  its libkineto kernel trace. The trace is now written when the server stops,
+  provided the model worker shuts down within its 5 second grace period.
+
 - Fixed a regression where indexing a buffer -- loading it and then gathering
   rows out of it, as a paged KV cache does -- allocated and copied the entire
   source buffer on every execution instead of reading only the rows requested.
