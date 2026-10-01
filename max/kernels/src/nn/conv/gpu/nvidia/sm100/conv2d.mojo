@@ -55,7 +55,6 @@ from layout import TileTensor
 from layout.tile_layout import Coord, row_major
 from linalg.utils import (
     ElementwiseComputeFn,
-    elementwise_compute_lambda_type,
     elementwise_epilogue_type,
     identity_compute_fn,
 )
@@ -80,9 +79,6 @@ def conv2d_fprop[
         act_type, filter_type, out_type
     ].default_bf16(),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     register_based_epilogue: Bool = True,
 ](
     output: TileTensor[mut=True, out_type, ...],  # NHWC
@@ -119,9 +115,6 @@ def conv2d_fprop[
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
         elementwise_lambda_fn: Optional void epilogue lambda applied after
             output write. Signature: `def(IndexList[2], SIMD) -> None`.
-        elementwise_compute_lambda_fn: Optional element-wise lambda function
-            for epilogue fusion (bias add, activation, residual connection).
-            Signature: `def(coords: IndexList[2], val: SIMD) -> SIMD`.
         register_based_epilogue: If True, apply lambda in registers (faster).
             If False, apply lambda after SMEM write (more flexible).
 
@@ -138,7 +131,6 @@ def conv2d_fprop[
     _conv2d_fprop_impl[
         config=config,
         elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
         has_compute_fn=False,
     ](output, activation, filter, problem, identity_compute_fn, ctx)
@@ -166,8 +158,7 @@ def conv2d_fprop[
 ) raises:
     """Launch Conv2D forward propagation with a compute epilogue closure.
 
-    Same as the `elementwise_compute_lambda_fn` form, but the epilogue is a
-    runtime unified closure. Its captures, and the origins they carry, stay
+    The epilogue is a runtime unified closure. Its captures, and the origins they carry, stay
     live until the launch is enqueued, so a buffer the epilogue reads cannot
     be destroyed before the kernel runs. The epilogue is applied in
     registers.
@@ -207,9 +198,6 @@ def _conv2d_fprop_impl[
     *,
     config: Conv2dConfig[act_type, filter_type, out_type],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     register_based_epilogue: Bool = True,
     has_compute_fn: Bool,
 ](
@@ -318,7 +306,6 @@ def _conv2d_fprop_impl[
             Int32(config.cluster_shape[2]),
         ),
         elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ]
     comptime KernelType = type_of(conv_kernel)
@@ -434,9 +421,6 @@ def conv2d_fprop_with_residual[
         act_type, filter_type, out_type
     ].default_bf16(),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     register_based_epilogue: Bool = True,
     has_residual: Bool = False,
 ](
@@ -473,8 +457,6 @@ def conv2d_fprop_with_residual[
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
         elementwise_lambda_fn: Optional void epilogue lambda applied after
             output write. Signature: `def(IndexList[2], SIMD) -> None`.
-        elementwise_compute_lambda_fn: Optional element-wise lambda function
-            for epilogue fusion (bias add, activation). Applied before residual.
         register_based_epilogue: If True, apply lambda in registers (faster).
         has_residual: If True, apply residual add. If False, source is ignored.
 
@@ -501,7 +483,6 @@ def conv2d_fprop_with_residual[
     comptime if not has_residual:
         conv2d_fprop[
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             register_based_epilogue=register_based_epilogue,
         ](output, activation, filter, problem, ctx)
         return
@@ -509,7 +490,6 @@ def conv2d_fprop_with_residual[
     if beta == 0.0:
         conv2d_fprop[
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             register_based_epilogue=register_based_epilogue,
         ](output, activation, filter, problem, ctx)
         return
@@ -562,7 +542,6 @@ def conv2d_fprop_with_residual[
             Int32(config.cluster_shape[2]),
         ),
         elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ]
     comptime KernelType = type_of(conv_kernel)

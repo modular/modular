@@ -40,7 +40,6 @@ from structured_kernels.kernel_common import _to_batched_3d
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
-from linalg.utils import elementwise_compute_lambda_type
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.profiler import MatmulWarpSpecializationWorkSpaceManager
 from linalg.fp4_utils import (
@@ -142,9 +141,6 @@ def _create_tma_and_launch[
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
@@ -195,7 +191,6 @@ def _create_tma_and_launch[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -357,9 +352,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -383,7 +375,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     Parameters:
         transpose_b: Whether B is transposed (must be True).
         config: Block-scaled matmul configuration.
-        elementwise_compute_lambda_fn: Optional epilogue lambda.
         pdl_level: Programmatic dependent launch level.
         max_profiled_tiles_per_SM: Optional profiling tile count.
 
@@ -410,7 +401,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=new_config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](
@@ -426,7 +416,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](
@@ -444,9 +433,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -506,7 +492,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime if is_batched_matmul:
         _create_tma_and_launch[
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
@@ -522,7 +507,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     else:
         _create_tma_and_launch[
             config=config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,

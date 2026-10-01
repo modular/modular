@@ -117,8 +117,6 @@ from linalg.fp4_utils import (
     cast_fp32_to_fp4e2m1,
     set_scale_factor,
 )
-from linalg.utils import elementwise_compute_lambda_type
-
 from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
@@ -679,10 +677,6 @@ struct Grouped1D1DMatmulKernel[
     static_N: Int,
     # Cluster shape
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
-    # Epilogue fusion
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     # Programmatic dependent launch level.
     pdl_level: PDLLevel = PDLLevel(),
     # When True, treats adjacent matmul-N column pairs (2i, 2i+1) as
@@ -756,8 +750,6 @@ struct Grouped1D1DMatmulKernel[
             time for TMA descriptor construction.
         cluster_shape: 3D `(x, y, z)` cluster shape passed to the
             `nvvm.cluster_dim` metadata (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Optional fused elementwise lambda
-            applied in the epilogue (defaults to `None`).
         pdl_level: Programmatic dependent launch level controlling
             cross-grid ordering fences (defaults to `PDLLevel()`).
         fuse_swiglu: When `True`, treats adjacent matmul-N column pairs
@@ -1540,13 +1532,7 @@ struct Grouped1D1DMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    @__name(
-        StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
-    )
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run(
         # Grid-constant TMA descriptors
         a_tma_op: Self.ATmaOp,
