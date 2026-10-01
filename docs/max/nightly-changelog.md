@@ -558,6 +558,11 @@ This version is still a work in progress.
 - The functional kernel wrappers in `max.experimental.nn.common_layers` now
   open a realization context, so eager attention with a paged KV cache runs.
 
+- Fixed streaming `/v1/completions` sending an unreadable frame, or ending
+  the response abruptly, when a request failed part-way through a stream.
+  The error now arrives as an `error` object the OpenAI client surfaces as
+  an `APIError`, matching `/v1/chat/completions`.
+
 - Fixed `sampling_params.seed` not reproducing. The batch-slot fix above
   briefly salted each request's RNG key with a hash of its request id, which
   the server mints fresh per HTTP request, so two identical requests carrying
