@@ -650,4 +650,10 @@ This version is still a work in progress.
   doorbell writes landed on a mutex inside libmlx5. The plugins now link
   libmlx5 and bind its current ABI.
 
+- Fixed PyTorch raising `HIP error: peer access is already enabled` on AMD GPUs
+  in a process that had set up MAX across several GPUs more than once, for
+  example by creating a second multi-GPU `InferenceSession`. MAX accepted the
+  repeat as success but left HIP's last error set, and PyTorch reported it from
+  its next kernel launch. MAX now clears that error.
+
 ## Mojo language
