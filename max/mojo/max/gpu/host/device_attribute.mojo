@@ -89,6 +89,10 @@ struct DeviceAttribute(TrivialRegisterPassable):
     """Number of multiprocessors on device.
     """
 
+    comptime L2_CACHE_SIZE = Self(38)
+    """Size of the L2 cache in bytes.
+    """
+
     comptime MAX_THREADS_PER_MULTIPROCESSOR = Self(39)
     """Maximum resident threads per multiprocessor.
     """

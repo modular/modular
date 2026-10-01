@@ -84,6 +84,7 @@ from std.utils.index import IndexList
 # a TYPE parameter, makes their origins provably disjoint -- the test's
 # `_score_paged_sm100` does the same -- so the scorer call lives here.
 def _launch_scorer[
+    out_dtype: DType,
     o_layout: TensorLayout,
     q_layout: TensorLayout,
     qs_layout: TensorLayout,
@@ -93,7 +94,7 @@ def _launch_scorer[
     depth: Int,
     KCollectionT: KVCollectionT,
 ](
-    o_tile: MutTileTensor[.float32, o_layout, _],
+    o_tile: MutTileTensor[out_dtype, o_layout, _],
     q_tile: ImmTileTensor[KCollectionT.CacheType.dtype, q_layout, _],
     qs_tile: ImmTileTensor[.float32, qs_layout, _],
     input_row_offsets_tile: ImmTileTensor[.uint32, iro_layout, _],
@@ -142,6 +143,7 @@ def _run_name[
     num_heads: Int,
     depth: Int,
     page_size: Int,
+    out_dtype: DType,
 ](
     batch_size: Int,
     seq_len: Int,
@@ -163,7 +165,8 @@ def _run_name[
         "seq_len=", seq_len, ", ",
         "cache_len=", cache_len, ", ",
         "max_num_keys=", max_num_keys, ", ",
-        "spread=", spread,
+        "spread=", spread, ", ",
+        "out_dtype=", out_dtype,
     )
     # fmt: on
 
@@ -172,6 +175,7 @@ def execute_fp8_index_prefill[
     num_heads: Int,
     depth: Int,
     page_size: Int,
+    out_dtype: DType = DType.float32,
 ](
     ctx: DeviceContext,
     mut m: Bench,
@@ -340,7 +344,7 @@ def execute_fp8_index_prefill[
     )
 
     var o_size = total_seq_len * max_num_keys
-    var o_device = ctx.enqueue_create_buffer[.float32](o_size)
+    var o_device = ctx.enqueue_create_buffer[out_dtype](o_size)
     var o_tile = TileTensor(o_device, row_major(total_seq_len, max_num_keys))
     var q_tile = TileTensor(
         q_device, row_major(total_seq_len, num_heads, depth)
@@ -350,13 +354,12 @@ def execute_fp8_index_prefill[
         input_row_offsets_device, row_major(batch_size + 1)
     )
 
-    # Score buffer must start filled (the scorer leaves forbidden slots
-    # untouched; a benchmark that reuses the buffer across iters relies on a
-    # defined baseline). Pre-fill with -inf, the production convention.
+    # The scorer leaves forbidden slots untouched, so a buffer reused across
+    # iters needs a defined baseline. -inf is the production convention.
     # On device: a host fill is quadratic in the two axes deep-cache shapes
     # raise (`total_seq_len * max_num_keys`), and at `s8192 k131072` it runs
     # past a probe's timeout before the kernel launches once.
-    ctx.enqueue_memset(o_device, Scalar[DType.float32](-Float32.MAX))
+    ctx.enqueue_memset(o_device, -Scalar[out_dtype].MAX)
 
     @inline(.always)
     def kernel_launch(launch_ctx: DeviceContext) raises {mut o_tile, imm}:
@@ -380,7 +383,7 @@ def execute_fp8_index_prefill[
         m.bench_function(
             bench_func,
             BenchId(
-                _run_name[num_heads, depth, page_size](
+                _run_name[num_heads, depth, page_size, out_dtype](
                     batch_size, seq_len, cache_len, max_num_keys, spread, label
                 )
             ),
@@ -424,17 +427,21 @@ def main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        execute_fp8_index_prefill[num_heads, depth, page_size](
-            ctx,
-            m,
-            batch_size,
-            seq_len,
-            cache_len,
-            max_num_keys,
-            spread,
-            label,
-            run_benchmark,
-        )
+        # Both score dtypes in ONE process: the ratio is paired, so it carries
+        # no cross-run clock or cache drift. The FOLD dtype is a module-level
+        # `-D`, so a fold A/B is still two builds.
+        comptime for out_dtype in [DType.float32, DType.bfloat16]:
+            execute_fp8_index_prefill[num_heads, depth, page_size, out_dtype](
+                ctx,
+                m,
+                batch_size,
+                seq_len,
+                cache_len,
+                max_num_keys,
+                spread,
+                label,
+                run_benchmark,
+            )
 
     if run_benchmark:
         m.dump_report()

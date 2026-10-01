@@ -26,6 +26,9 @@
 #
 # `$label` names the group a row came from; it reaches the benchmark name and
 # nothing branches on it.
+#
+# Each shape reports TWO rows, `out_dtype=float32` and `out_dtype=bfloat16`,
+# scored back to back in one process so the ratio is paired.
 
 name: bench_fp8_index_prefill
 file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_fp8_index_prefill.mojo

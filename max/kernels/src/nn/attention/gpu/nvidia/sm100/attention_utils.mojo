@@ -21,6 +21,7 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 - Masking utilities (apply_mask, apply_oob_mask)
 """
 
+from std.builtin.dtype import _unsigned_integral_type_of
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType, get_defined_bool
@@ -2603,6 +2604,35 @@ def add_ftz_rm(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
 
 
 @inline(.always)
+def relu_cvt_bf16x2(hi: Float32, lo: Float32) -> SIMD[.bfloat16, 2]:
+    """Returns `{relu(lo), relu(hi)}` as a packed `bf16x2`, in one instruction.
+
+    `cvt.rn.relu.bf16x2.f32` fuses the clamp-at-zero into the narrowing convert
+    and lowers to a single `F2FP.RELU.BF16.F32.PACK_AB` on SM100, so a relu that
+    costs one `FMNMX` per lane in f32 (PTX has no `max.f32x2` at any ISA
+    version) becomes free. Pairs with a `bf16x2` `.fma()` to fold two columns in
+    two instructions instead of three.
+
+    Inline asm rather than `max(...).cast[bfloat16]()` because LLVM emits the
+    plain `cvt.rn.bf16x2.f32` and leaves the two `max` instructions standing.
+
+    Args:
+        hi: Value converted into the HIGH half of the result -- lane 1. PTX
+            names the packed halves high-first, the reverse of the SIMD index
+            order, so swapping these silently misaligns every lane downstream.
+        lo: Value converted into the LOW half of the result -- lane 0.
+    """
+    return bitcast[DType.bfloat16, 2](
+        inlined_assembly[
+            "cvt.rn.relu.bf16x2.f32 $0, $1, $2;",
+            UInt32,
+            constraints="=r,f,f",
+            has_side_effect=False,
+        ](hi, lo)
+    )
+
+
+@inline(.always)
 def fma_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
     return intrin["fma.rn.ftz"](a, b, c)
 
@@ -2917,7 +2947,7 @@ def store_global_pred[
     not read back what they store here without an explicit fence.
 
     Parameters:
-        dtype: Element dtype of the store; must be 4 or 8 bytes (inferred).
+        dtype: Element dtype of the store; must be 2, 4 or 8 bytes (inferred).
         address_space: Address space of `ptr` (inferred).
 
     Args:
@@ -2931,17 +2961,17 @@ def store_global_pred[
         address_space == .GENERIC or address_space == .GLOBAL
     ), "store_global_pred emits `st.global`; the pointer must address gmem"
     comptime size = size_of[dtype]()
-    comptime assert size in (4, 8), (
-        "store_global_pred handles 4- and 8-byte scalars; got a "
+    comptime assert size in (2, 4, 8), (
+        "store_global_pred handles 2-, 4- and 8-byte scalars; got a "
         + String(size)
         + "-byte dtype"
     )
-    comptime bits = "b32" if size == 4 else "b64"
+    comptime bits = "b" + String(8 * size)
     # Bitcast to the same-width unsigned integer so one `.bXX`/register-class
     # pair covers float and integer dtypes alike; `st.global.bXX` is
     # bit-preserving.
-    comptime word_type = DType.uint32 if size == 4 else DType.uint64
-    comptime word_constraint = "r" if size == 4 else "l"
+    comptime word_type = _unsigned_integral_type_of[dtype]()
+    comptime word_constraint = "h" if size == 2 else ("r" if size == 4 else "l")
 
     inlined_assembly[
         """{

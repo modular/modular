@@ -100,7 +100,12 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from std.bit import next_power_of_two
 from std.math import align_down, align_up, ceildiv, clamp, lcm
-from std.sys import get_defined_bool, get_defined_int, size_of
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    size_of,
+)
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -131,6 +136,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect_mma_arrive,
     expect_bytes_pred,
     llvm_opaque_tid,
+    relu_cvt_bf16x2,
     splitk_window,
     store_global_pred,
 )
@@ -335,6 +341,29 @@ def _prefill_prod_warps() -> Int:
     comptime if _PROD_WARPS_FORCE > 0:
         return _PROD_WARPS_FORCE
     return 4
+
+
+# Element type of the epilogue fold -- the relu'd scores, the q-scales held in
+# `qs_reg`, and the running per-token accumulator.
+#
+# The relu is the fold's dominant cost and f32 cannot make it cheaper: PTX has
+# no `max.f32x2` at any ISA version (ptxas 12.9 for sm_100a rejects it as
+# "unexpected instruction types"), so `SIMD[f32, W].max` lowers to one FMNMX per
+# column. At bf16 the clamp is a MODIFIER on the narrowing convert, so a lane
+# pair costs `1 F2FP.RELU + 1 HFMA2` against `2 FMNMX + 1 FFMA2`, and staging
+# `qs_smem` in the same type halves the `LDS` bytes per group and drops the
+# `MMA_N / 2` prologue converts. Registers fall 27% at the nh=32 MMA_N=128 tile,
+# counted in equivalents (`b32 + 2*b64`, an f32 pair being one `.b64` and a bf16
+# pair one `.b32`), with no spill either way.
+#
+# The cost is accuracy: every accumulate step rounds to an 8-bit mantissa, so a
+# `num_heads`-long chain drifts 0.5-0.8% against an f32 fold, moving
+# tie-adjacent keys. That is a RANKING decision, which a score tolerance cannot
+# judge -- grade it against an exact host top-k before touching the fold
+# arithmetic.
+comptime _FOLD_DTYPE = get_defined_dtype[
+    "FP8_INDEX_FOLD_DTYPE", DType.bfloat16
+]()
 
 
 # Consumer warpgroups. A tile wide enough to own the whole SM gets all of its
@@ -705,7 +734,7 @@ struct IndexPrefillConfig[
             * Self.mma_n
             * Self.depth
             * size_of[Scalar[Self.dtype]]()
-            + Self.q_copies * Self.mma_n * size_of[Float32]()
+            + Self.q_copies * Self.mma_n * size_of[Scalar[_FOLD_DTYPE]]()
             + Self.fixed_mbars * size_of[SharedMemBarrier]()
             + size_of[UInt32]()
         )
@@ -834,6 +863,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     KSOperand: MHAOperand,
     VLLT: TensorLayout,
     QSLT: TensorLayout,
+    out_dtype: DType,
     OutLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -855,7 +885,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
+    output: TileTensor[out_dtype, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     num_key_parts_dev: Int32,
@@ -889,6 +919,21 @@ def _fp8_index_score_prefill_kernel_sm100[
         + String(MMA_N)
     )
     comptime AT = DType.float32
+    # The accumulator stays f32 whatever the output is; only the final store
+    # converts. bf16 halves the score buffer and its write traffic, and shares
+    # f32's exponent range so nothing finite clips.
+    comptime assert out_dtype in (
+        DType.float32,
+        DType.bfloat16,
+    ), "the score buffer must be f32 or bf16; got " + String(out_dtype)
+    # Fold element type, independent of `out_dtype` -- the store converts from
+    # whatever the fold produced.
+    comptime FT = _FOLD_DTYPE
+    comptime assert FT in (
+        DType.float32,
+        DType.bfloat16,
+    ), "the epilogue fold must be f32 or bf16; got " + String(FT)
+
     comptime SW = _INDEX_SWIZZLE
     comptime KS_DTYPE = KSOperand.dtype
     comptime KS_ALIGN = scale_align_elems[KS_DTYPE]()
@@ -1093,7 +1138,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     var q_smem = smem
     var k_smem = smem + Q_COPIES * q_elems
     var ks_smem = (k_smem + NSTAGE * k_elems).bitcast[Scalar[KS_DTYPE]]()
-    var qs_smem = (ks_smem + NSTAGE * KS_SLOT).bitcast[Float32]()
+    var qs_smem = (ks_smem + NSTAGE * KS_SLOT).bitcast[Scalar[FT]]()
     var mbar = (qs_smem + Q_COPIES * MMA_N).bitcast[SharedMemBarrier]()
     # Offsets are named because the lane-parallel init below maps a thread index
     # to an arrival count, which makes them part of the layout contract rather
@@ -1400,11 +1445,11 @@ def _fp8_index_score_prefill_kernel_sm100[
                 qs_tok = Int32(col // num_heads)
                 qs_head = col % num_heads
             if my_tok0 + qs_tok < seq_len:
-                my_qs_smem[col] = q_s[start_of_seq + my_tok0 + qs_tok, qs_head][
-                    0
-                ]
+                my_qs_smem[col] = rebind[Scalar[FT]](
+                    q_s[start_of_seq + my_tok0 + qs_tok, qs_head][0].cast[FT]()
+                )
             else:
-                my_qs_smem[col] = 0.0
+                my_qs_smem[col] = Scalar[FT](0)
 
         comptime for w in range(ceildiv(MMA_N, STAGE_THREADS)):
             comptime col_base = w * STAGE_THREADS
@@ -1484,7 +1529,11 @@ def _fp8_index_score_prefill_kernel_sm100[
         # reads coalesce into one 16-byte access and an explicit width-2 load does not
         # re-merge. Every index MUST stay comptime -- a runtime index forces the array
         # to local memory. Each warpgroup loads its OWN q-scales (Q0's or Q1's).
-        var qs_reg = Array[Scalar[AT], MMA_N](uninitialized=True)
+        #
+        # Held as LANE PAIRS so that at `FT == bfloat16` one slot is one packed
+        # register: `MMA_N` scales become `MMA_N / 2`. At f32 the pairing is
+        # pure spelling -- same storage, same `fma.rn.f32x2` operands.
+        var qs_reg = Array[SIMD[FT, 2], MMA_N // 2](uninitialized=True)
 
         # The epilogue stores in place today because a token's sum is final at
         # its last column, which collapses the accumulator to one f32x2. That
@@ -1499,9 +1548,11 @@ def _fp8_index_score_prefill_kernel_sm100[
         # experiment instead of a scheduling one.
         comptime if CFG.hoist_q_scales:
             comptime for j in range(MMA_N // 4):
-                var qs4 = my_qs_smem.unsafe_load[width=4, alignment=16](4 * j)
-                comptime for e in range(4):
-                    qs_reg[4 * j + e] = qs4[e]
+                var qs4 = my_qs_smem.unsafe_load[
+                    width=4, alignment=4 * size_of[Scalar[FT]]()
+                ](4 * j)
+                qs_reg[2 * j] = qs4.slice[2, offset=0]().cast[FT]()
+                qs_reg[2 * j + 1] = qs4.slice[2, offset=2]().cast[FT]()
 
         # `k_scale` now comes out of SMEM, staged by the TMA warp into this
         # tile's own K ring slot. What it replaces was a TWO-HOP dependent global
@@ -1597,7 +1648,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                 col: Int
             ](
                 frag: Array[Scalar[AT], EPI_CHUNK],
-                mut acc: Array[SIMD[AT, ACCW], ACC_SLICES],
+                mut acc: Array[SIMD[FT, ACCW], ACC_SLICES],
             ) {mut qs_reg, imm}:
                 # Read FOUR scales at a time: adjacent scalar reads coalesce
                 # into one 16-byte access and an explicit width-2 load does not
@@ -1605,28 +1656,59 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # forces `qs_reg` to local memory.
                 comptime if not CFG.hoist_q_scales:
                     # Below ACCW=4 the group that opens a 4-column block fills
-                    # the whole block, so the load stays 16 bytes rather than
+                    # the whole block, so the load stays one vector rather than
                     # narrowing with the group (which doubles the `LDS` count).
                     comptime if col % 4 == 0:
                         comptime for q in range(ceildiv(ACCW, 4)):
                             var qsg = my_qs_smem.unsafe_load[
-                                width=4, alignment=16
+                                width=4, alignment=4 * size_of[Scalar[FT]]()
                             ](col + 4 * q)
-                            comptime for e in range(4):
-                                qs_reg[col + 4 * q + e] = qsg[e]
-                # `ACCW / 2` disjoint lane pairs, so this one `.fma` is `ACCW / 2`
-                # independent `fma.rn.f32x2` -- the chains differ, the
-                # instruction count does not. `.fma()` is required over
-                # `a * b + c`: LLVM does not contract an f32 pair into one
-                # FFMA2. The relu is a vector op but PTX has no `max.f32x2` at
-                # any ISA version, so it lowers to one FMNMX per column.
-                var raw = SIMD[AT, ACCW]()
-                var qsv = SIMD[AT, ACCW]()
-                comptime for e in range(ACCW):
-                    raw[e] = frag[col % EPI_CHUNK + e]
-                    qsv[e] = qs_reg[col + e]
+                            # Four scalars land as two pairs, so the pair index
+                            # advances by 2 per group.
+                            comptime pair = col // 2 + 2 * q
+                            qs_reg[pair] = qsg.slice[2, offset=0]().cast[FT]()
+                            qs_reg[pair + 1] = qsg.slice[2, offset=2]().cast[
+                                FT
+                            ]()
+                # `ACCW / 2` disjoint lane pairs either way, so the chains
+                # differ but the accumulate count does not.
+                comptime base = col % EPI_CHUNK
                 comptime k = (col % ACC_LANES) // ACCW
-                acc[k] = max(raw, SIMD[AT, ACCW](0)).fma(qsv, acc[k])
+                comptime if FT == DType.bfloat16:
+                    # `relu_cvt_bf16x2` takes the HIGH lane first, the reverse
+                    # of the SIMD index order.
+                    #
+                    # `FT` comes from `get_defined_dtype`, which the parser does
+                    # not fold, so `SIMD[FT, 2]` needs a `rebind` even inside the
+                    # arm that pins `FT` to bf16.
+                    comptime for h in range(ACCW // 2):
+                        var folded = relu_cvt_bf16x2(
+                            frag[base + 2 * h + 1], frag[base + 2 * h]
+                        ).fma(
+                            rebind[SIMD[.bfloat16, 2]](qs_reg[col // 2 + h]),
+                            rebind[SIMD[.bfloat16, 2]](
+                                acc[k].slice[2, offset=2 * h]()
+                            ),
+                        )
+                        acc[k] = acc[k].insert[offset=2 * h](
+                            rebind[SIMD[FT, 2]](folded)
+                        )
+                else:
+                    # `.fma()` is required over `a * b + c`: LLVM does not
+                    # contract an f32 pair into one FFMA2. The relu is a vector
+                    # op but PTX has no `max.f32x2` at any ISA version, so it
+                    # lowers to one FMNMX per column.
+                    #
+                    # `frag` stays element-addressed: it is a register-resident
+                    # `tcgen05.ld` result, and taking a pointer to it to load a
+                    # pair would put it in local memory.
+                    var raw = SIMD[FT, ACCW]()
+                    var qsv = SIMD[FT, ACCW]()
+                    comptime for e in range(ACCW):
+                        raw[e] = rebind[Scalar[FT]](frag[base + e])
+                    comptime for h in range(ACCW // 2):
+                        qsv = qsv.insert[offset=2 * h](qs_reg[col // 2 + h])
+                    acc[k] = max(raw, SIMD[FT, ACCW](0)).fma(qsv, acc[k])
                 # Legacy closes a token at its last column; interleaved, every
                 # token is still open until the tile's last group.
                 comptime closes = (col + ACCW == MMA_N) if Q_INTERLEAVE else (
@@ -1635,20 +1717,28 @@ def _fp8_index_score_prefill_kernel_sm100[
                 comptime if closes:
                     comptime for s in range(N_TOKENS if Q_INTERLEAVE else 1):
                         comptime t = s if Q_INTERLEAVE else col // num_heads
+                        # The token sum is taken in f32 whatever `FT` is.
                         var tok_sum: Scalar[AT]
                         comptime if Q_INTERLEAVE:
-                            tok_sum = acc[t // ACCW][t % ACCW]
+                            tok_sum = acc[t // ACCW][t % ACCW].cast[AT]()
                             comptime for l in range(
                                 t + N_TOKENS, ACC_LANES, N_TOKENS
                             ):
-                                tok_sum += acc[l // ACCW][l % ACCW]
+                                tok_sum += acc[l // ACCW][l % ACCW].cast[AT]()
                         else:
-                            tok_sum = acc[0].reduce_add()
+                            tok_sum = acc[0].cast[AT]().reduce_add()
                         var tok_local = my_tok0 + Int32(t)
                         # Fused causal mask (branchless): token tok_local sees
                         # keys up to cache_len + tok_local, so forbidden slots
-                        # are left for the caller (the MLA caller pre-fills
-                        # -Float32.MAX) and the separate mask pass is skipped.
+                        # are left unwritten and the separate mask pass is
+                        # skipped. What carries the mask downstream is the
+                        # top-k's per-row bound, not a sentinel:
+                        # `topk_row_bounds_kernel` computes this same
+                        # `indexer_key_bound` and the bounded top-k pads past it
+                        # in-register, so the buffer is left uninitialized. The
+                        # `topk_gpu` arm (top_k > 2048) is the exception -- it
+                        # scans the whole row behind the caller's -Float32.MAX
+                        # fill, so an over-range write there WOULD be selected.
                         # The liveness half is memory safety rather than
                         # masking -- a dead token's row belongs to the NEXT
                         # batch entry.
@@ -1658,7 +1748,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                         # `BSSY`/`BRA`/`NOP`/`BSYNC` quartet per token per key
                         # tile: 4.6% of the instruction stream at 96 columns,
                         # 10.6% at 128. store_global_pred folds it into a PTX
-                        # `@%p st.global.b32` instead, measured at -5.4% to
+                        # `@%p st.global.bXX` instead, measured at -5.4% to
                         # 0.0% wall clock over five shapes with none
                         # regressing. Predicating only the STORE leaves every
                         # register dependency intact, so ptxas does NOT hoist
@@ -1668,12 +1758,13 @@ def _fp8_index_score_prefill_kernel_sm100[
                             num_keys - (seq_len - 1 - tok_local) * causal
                         ) // Int32(kpool)
                         # The OFFSET must be 64-bit: the score buffer is
-                        # `total_seq_len * max_num_keys` f32, so the flat index
-                        # passes 2^31 at ~13.1K tokens x 163840 keys and 2^32
-                        # at 32K x 163840, both reachable by configuration with
-                        # no allocation guard on that path. Both factors are
-                        # `Int32` though, so this is one `IMAD.WIDE` (32x32->64)
-                        # rather than a 64-bit multiply. Do NOT narrow it.
+                        # `total_seq_len * max_num_keys` elements, so the flat
+                        # index passes 2^31 at ~13.1K tokens x 163840 keys and
+                        # 2^32 at 32K x 163840, both reachable by configuration
+                        # with no allocation guard on that path. Both factors
+                        # are `Int32` though, so this is one `IMAD.WIDE`
+                        # (32x32->64) rather than a 64-bit multiply. Do NOT
+                        # narrow it.
                         var out_row = out_row0 + tok_local
                         store_global_pred(
                             out_base
@@ -1681,18 +1772,18 @@ def _fp8_index_score_prefill_kernel_sm100[
                                 Int(out_row) * Int(max_num_keys)
                                 + Int(key_local)
                             ),
-                            k_scale * tok_sum,
+                            (k_scale * tok_sum).cast[out_dtype](),
                             Int32(key_local < key_bound and tok_local < tok_hi),
                         )
                     comptime if not Q_INTERLEAVE:
-                        acc[0] = SIMD[AT, ACCW](0)
+                        acc[0] = SIMD[FT, ACCW](0)
 
             # Drain this thread's key row in `EPI_CHUNK`-column chunks. The
             # chunk loads carry no wait between them, so they pipeline against
             # the folds: `tcgen05.ld` register outputs are automatically
             # ordered, and the single `tcgen05_load_wait` is only the WAR fence
             # before the stage is released.
-            var acc = Array[SIMD[AT, ACCW], ACC_SLICES](fill=SIMD[AT, ACCW](0))
+            var acc = Array[SIMD[FT, ACCW], ACC_SLICES](fill=SIMD[FT, ACCW](0))
             comptime for c in range(MMA_N // EPI_CHUNK):
                 var frag = TMemTile[AT, BM_key, EPI_CHUNK](
                     s_it + UInt32(c * EPI_CHUNK)
@@ -2127,6 +2218,8 @@ def _create_prefill_q_tma[
 
 
 def fp8_index_score_sm100_prefill[
+    out_dtype: DType,
+    //,
     dtype: DType,
     KOperand: MHAOperand,
     KSOperand: MHAOperand,
@@ -2148,7 +2241,7 @@ def fp8_index_score_sm100_prefill[
     ks_operand: KSOperand,
     valid_length: TileTensor[mut=False, .uint32, ..., Engine=VLEngine],
     q_s: TileTensor[mut=False, .float32, ..., Engine=QSEngine],
-    output: TileTensor[.float32, ..., Engine=OutEngine],
+    output: TileTensor[out_dtype, ..., Engine=OutEngine],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -2170,6 +2263,9 @@ def fp8_index_score_sm100_prefill[
     output.dim[0]())`, so a caller that cannot afford the whole
     `total_seq_len x max_num_keys` score matrix can fill it a row-window at a
     time. The default covers every row and is the unwindowed launch.
+
+    `out_dtype` is inferred from `output` and may be f32 or bf16; the
+    accumulator is f32 either way and only the final store converts.
     """
     # The window bounds the token blocks any entry can contribute, so a chunked
     # launch does not pay for a grid sized to the whole batch.
@@ -2265,6 +2361,7 @@ def fp8_index_score_sm100_prefill[
         KSOperand,
         type_of(valid_length.as_imm()).LayoutType,
         type_of(q_s).LayoutType,
+        output.dtype,
         type_of(output).LayoutType,
         num_heads,
         depth,

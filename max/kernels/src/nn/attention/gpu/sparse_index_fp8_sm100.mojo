@@ -225,6 +225,7 @@ def _fp8_index_body[
     KSOperand: MHAOperand,
     VLLT: TensorLayout,
     QSLT: TensorLayout,
+    out_dtype: DType,
     OutLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -244,7 +245,7 @@ def _fp8_index_body[
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
+    output: TileTensor[out_dtype, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys: Int,
     causal: Int,
     nt_start: Int,
@@ -595,7 +596,7 @@ def _fp8_index_body[
                             var out_row = out_row0 + tok_local
                             output.raw_store(
                                 out_row * max_num_keys + key_local,
-                                k_scale * (acc[0] + acc[1]),
+                                (k_scale * (acc[0] + acc[1])).cast[out_dtype](),
                             )
                         acc = SIMD[AT, 2](0)
         tcgen05_load_wait()
@@ -623,6 +624,7 @@ def _fp8_index_score_kernel_sm100[
     KSOperand: MHAOperand,
     VLLT: TensorLayout,
     QSLT: TensorLayout,
+    out_dtype: DType,
     OutLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -641,7 +643,7 @@ def _fp8_index_score_kernel_sm100[
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
+    output: TileTensor[out_dtype, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -678,6 +680,7 @@ def _fp8_index_score_kernel_sm100[
         KSOperand,
         VLLT,
         QSLT,
+        out_dtype,
         OutLT,
         num_heads,
         depth,
@@ -717,6 +720,7 @@ def _fp8_index_score_kernel_sm100_split[
     KSOperand: MHAOperand,
     VLLT: TensorLayout,
     QSLT: TensorLayout,
+    out_dtype: DType,
     OutLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -735,7 +739,7 @@ def _fp8_index_score_kernel_sm100_split[
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
+    output: TileTensor[out_dtype, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -778,6 +782,7 @@ def _fp8_index_score_kernel_sm100_split[
         KSOperand,
         VLLT,
         QSLT,
+        out_dtype,
         OutLT,
         num_heads,
         depth,
@@ -807,6 +812,7 @@ def _fp8_index_score_kernel_sm100_split[
 
 @inline(.always)
 def fp8_index_score_sm100[
+    out_dtype: DType,
     output_layout: TensorLayout,
     q_layout: TensorLayout,
     qs_layout: TensorLayout,
@@ -821,7 +827,7 @@ def fp8_index_score_sm100[
     N_TOKENS_ALT: Int = 0,
     kpool: Int = 1,
 ](
-    output: MutTileTensor[.float32, output_layout, _],
+    output: MutTileTensor[out_dtype, output_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
     q_s: ImmTileTensor[.float32, qs_layout, _],
     k_operand: KOperand,
@@ -839,10 +845,13 @@ def fp8_index_score_sm100[
 
     NVIDIA SM100 only: uses SS-UMMA, tcgen05 TMEM, and TMA staging. Writes the
     same `[total_seq, max_num_keys]` score buffer as the scalar
-    `nn.index_fp8.fp8_index_kernel`. Out-of-range keys are left untouched (the
-    caller's `-inf` fill covers them).
+    `nn.index_fp8.fp8_index_kernel`. Out-of-range keys are left untouched --
+    the bounded top-k derives the same per-row bound and never reads past it,
+    so the buffer needs no fill; only the unbounded `topk_gpu` arm relies on
+    the caller's `-inf` fill.
 
     Parameters:
+        out_dtype: Element type of the score buffer, f32 or bf16 (inferred).
         output_layout: Layout of the score buffer.
         q_layout: Layout of the query tensor.
         qs_layout: Layout of the query scales.
@@ -869,7 +878,7 @@ def fp8_index_score_sm100[
             pool-granular.
 
     Args:
-        output: Score buffer `[total_seq, max_num_keys]`, f32.
+        output: Score buffer `[total_seq, max_num_keys]`, f32 or bf16.
         q: Query tensor `[total_seq, num_heads, depth]`, fp8.
         q_s: Query scales `[total_seq, num_heads]`, f32.
         k_operand: K values as an `MHAOperand`.
@@ -1136,6 +1145,7 @@ def fp8_index_score_sm100[
             KSOperand,
             vl_layout,
             qs_layout,
+            out_dtype,
             output_layout,
             num_heads,
             depth,
@@ -1150,6 +1160,7 @@ def fp8_index_score_sm100[
             KSOperand,
             vl_layout,
             qs_layout,
+            out_dtype,
             output_layout,
             num_heads,
             depth,

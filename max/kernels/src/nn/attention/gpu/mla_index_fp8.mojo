@@ -42,6 +42,7 @@ from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.attention.mha_utils import dispatch_mask, indexer_key_bound
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
+    _elems_per_16b,
     persistent_topk_block_split,
 )
 from nn.topk import topk_gpu
@@ -55,6 +56,17 @@ from std.utils.index import Index
 comptime _SCORES_BUDGET_BYTES = (
     get_defined_int["MLA_INDEX_SCORES_BUDGET_MB", 512]() * 1024 * 1024
 )
+
+# Default element type of the transient score matrix. Scores never leave this
+# op -- its only output is the int32 index tensor -- so this is an internal
+# bandwidth choice, not a numerical contract, and `scores_dtype` below keeps
+# both arms in one binary.
+#
+# What bf16 buys is the top-k's READ and the doubled rows per chunk, not the
+# scorer, which is a wash either way. It inverts on a decode shape whose score
+# matrix is small next to a graph-capture-frozen row stride, where the extra
+# convert per store outruns the bytes saved.
+comptime _SCORES_DTYPE = DType.bfloat16
 
 
 # ===----------------------------------------------------------------------=== #
@@ -374,7 +386,7 @@ def mla_indexer_ragged_float8_paged[
     depth: Int,
     top_k: Int,
     mask_str: StaticString,
-    scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
+    scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
@@ -384,6 +396,7 @@ def mla_indexer_ragged_float8_paged[
     k_collection: KCollectionT,
     layer_idx: UInt32,
     ctx: DeviceContext,
+    scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
 ) raises:
     """Compute FP8 indexed attention scores using paged KV cache and return top-k indices.
 
@@ -406,10 +419,11 @@ def mla_indexer_ragged_float8_paged[
             token.
         mask_str: Name of the mask to apply, either `MaskName.NULL` or
             `MaskName.CAUSAL`.
-        scores_budget_bytes: Peak bytes the transient score matrix may occupy.
-            Longer batches are scored a row-window at a time to stay under it
-            (see the chunking below). Exposed so tests can force a window small
-            enough to exercise the multi-chunk path on toy shapes.
+        scores_dtype: Element type of the transient score matrix. `float32` or
+            `bfloat16`; the latter halves the buffer, so a row window under a
+            fixed byte budget holds twice the rows. Honoured only on the SM100
+            scorers -- the scalar fallback is f32-only and resolves to it, which
+            no caller can observe because the matrix is internal.
         kpool: Tokens per pooled cache row. `1` scores one row per token;
             `k > 1` scores one pooled key per `k` consecutive tokens, so
             every candidate count and the caller's `top_k` are
@@ -426,6 +440,13 @@ def mla_indexer_ragged_float8_paged[
             K scales are accessed via k_cache.scales (quantization_granularity=head_size).
         layer_idx: Layer index for retrieving cache.
         ctx: Device context.
+        scores_budget_bytes: Peak bytes the transient score matrix may occupy.
+            Longer batches are scored a row-window at a time to stay under it
+            (see the chunking below). Runtime rather than comptime because
+            nothing below it is specialized on the value -- it reaches only the
+            `rows_per_chunk` arithmetic -- so a sweep over budgets costs no
+            recompiles. Exposed so tests can force a window small enough to
+            exercise the multi-chunk path on toy shapes.
     """
     # Verify that k_collection has scales enabled (required for MLA k_s).
     # For MLA, scales should have head_dim_granularity == 1 (one scale per token
@@ -455,18 +476,6 @@ def mla_indexer_ragged_float8_paged[
     # max_new_tokens is used for grid dimensions (maximum possible new tokens)
     var max_new_tokens = Int(k_cache.max_prompt_length())
 
-    # An upper bound on the candidate rows per token. Under graph-capture
-    # replay this holds the capture-time bound, far above the batch's real
-    # lengths, so use it only to size allocations and grid dims, never to size
-    # per-step work. With `kpool > 1` a cache row is a pooled key covering
-    # `kpool` tokens, so counts from here down are pool-granular, `top_k`
-    # included.
-    var max_num_keys = (
-        Int(k_cache.max_context_length()) + max_new_tokens
-    ) // kpool
-
-    var effective_k = min(top_k, max_num_keys)
-
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
 
@@ -484,6 +493,38 @@ def mla_indexer_ragged_float8_paged[
         "pooled indexing (kpool > 1) is implemented only on the SM100"
         " tensor-core scorer; the scalar fallback walks token rows"
     )
+
+    # The scalar fallback and its mask pass are f32-only, so `scores_dtype` is
+    # a preference, not a contract: no caller can observe which arm ran, and an
+    # assert would reject every non-SM100 instantiation of a bf16 default. Must
+    # resolve BEFORE `scores_align` below, which keys the row stride -- and
+    # through it the scorer's dispatch -- on it.
+    comptime scores_dt = (scores_dtype if use_sm100_scorer else DType.float32)
+
+    # An upper bound on the candidate rows per token. Under graph-capture
+    # replay this holds the capture-time bound, far above the batch's real
+    # lengths, so use it only to size allocations and grid dims, never to size
+    # per-step work. With `kpool > 1` a cache row is a pooled key covering
+    # `kpool` tokens, so counts from here down are pool-granular, `top_k`
+    # included.
+    #
+    # Rounded UP to whole 16-byte groups of the score dtype: this number is the
+    # buffer's ROW STRIDE and the top-k reads each row as 16-byte vectors based
+    # at `row * stride`, so a partial group under-aligns every odd row and drops
+    # it to the scalar path. The round-up adds at most `scores_align - 1`
+    # columns and stays a valid upper bound -- `row_bounds` clamps each row to
+    # its real key count and `fill_invalid_topk` masks past it.
+    #
+    # It can move the scorer's dispatch: `_is_keysplit_shape` compares
+    # `ceildiv(max_num_keys, 128)`, so a depth landing in a 128-key tile's last
+    # `scores_align - 1` columns reads as one tile deeper.
+    comptime scores_align = _elems_per_16b[scores_dt]()
+    var max_num_keys = align_up(
+        (Int(k_cache.max_context_length()) + max_new_tokens) // kpool,
+        scores_align,
+    )
+
+    var effective_k = min(top_k, max_num_keys)
 
     # Per-batch KV cache lengths (cached-prefix length). Needed by the row-bound
     # kernel below, by the causal mask pass on the scalar path (to map a local
@@ -514,7 +555,7 @@ def mla_indexer_ragged_float8_paged[
     comptime chunk_scores = use_sm100_scorer and top_k <= PERSISTENT_TOPK_MAX_N
     var rows_per_chunk = total_seq_len
     comptime if chunk_scores:
-        var row_bytes = max_num_keys * size_of[DType.float32]()
+        var row_bytes = max_num_keys * size_of[scores_dt]()
         # Largest window the budget allows, remainder to a short final chunk.
         # Spreading the rows evenly instead -- same chunk count, no runt --
         # reads better and measured 8% SLOWER at 2048 and 4096 tokens: a chunk's
@@ -526,7 +567,7 @@ def mla_indexer_ragged_float8_paged[
             scores_budget_bytes // row_bytes, 1, total_seq_len
         )
 
-    var scores_buf = ctx.enqueue_create_buffer[.float32](
+    var scores_buf = ctx.enqueue_create_buffer[scores_dt](
         rows_per_chunk * max_num_keys
     )
 
@@ -558,7 +599,7 @@ def mla_indexer_ragged_float8_paged[
     # topk_gpu strides its index output by effective_k, so when effective_k <
     # top_k we use a compact buffer here and scatter into the top_k-strided
     # output_indices in fill_invalid (writing directly would misplace rows).
-    var topk_vals_buf = ctx.enqueue_create_buffer[.float32](
+    var topk_vals_buf = ctx.enqueue_create_buffer[scores_dt](
         total_seq_len * effective_k
     )
     var topk_vals_tile = TileTensor(
@@ -586,7 +627,7 @@ def mla_indexer_ragged_float8_paged[
         # write every live slot and the bounded top-k reads only those, so there
         # the fill would be max_num_keys-proportional waste.
         if not use_sm100_scorer or effective_k > PERSISTENT_TOPK_MAX_N:
-            scores_buf.enqueue_fill(-Float32.MAX)
+            scores_buf.enqueue_fill(-Scalar[scores_dt].MAX)
 
         comptime if use_sm100_scorer:
             # The split `(block, row_in_block)` descriptor: folding the block
