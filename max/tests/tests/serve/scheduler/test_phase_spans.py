@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The scheduler's phase spans must follow each request from prefill to decode."""
+"""The scheduler's phase and batch spans must describe each request and pass."""
 
 from __future__ import annotations
 
 import pytest
 from max.pipelines.context import TextContext
-from max.pipelines.modeling.types import RequestID
+from max.pipelines.modeling.types import RequestID, TextGenerationInputs
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
@@ -60,6 +60,18 @@ def _spans(
         if span.name == name
         and (span.attributes or {}).get("max.request_id") == str(request_id)
     ]
+
+
+def _batch_counts(exporter: InMemorySpanExporter) -> list[tuple[int, int]]:
+    counts = []
+    for span in exporter.get_finished_spans():
+        if span.name == "max.batch":
+            attributes = span.attributes or {}
+            ce_count = attributes["max.ce_count"]
+            tg_count = attributes["max.tg_count"]
+            assert isinstance(ce_count, int) and isinstance(tg_count, int)
+            counts.append((ce_count, tg_count))
+    return counts
 
 
 def _run_until_idle(scheduler: TokenGenerationScheduler) -> None:
@@ -176,3 +188,68 @@ def test_preempted_request_restarts_its_decode_span(
         )
     assert not scheduler._prefill_spans
     assert not scheduler._decode_spans
+
+
+def test_batch_span_counts_the_pass_requests(
+    finished: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        f"{_SCHEDULER_MODULE}.batch_spans_enabled", lambda: True
+    )
+    scheduler, request_queue = create_paged_scheduler(
+        max_seq_len=128, num_blocks=64, page_size=8
+    )
+    request_queue.put_nowait(create_text_context(16, max_seq_len=40))
+    scheduler.run_iteration()
+    # Without in-flight batching this prefill pass leaves the first request,
+    # already decoding, out of the batch.
+    request_queue.put_nowait(create_text_context(16, max_seq_len=40))
+    scheduler.run_iteration()
+    scheduler.run_iteration()
+
+    assert _batch_counts(finished) == [(1, 0), (1, 0), (0, 2)]
+
+
+def test_batch_span_skips_dp_padding(
+    finished: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        f"{_SCHEDULER_MODULE}.batch_spans_enabled", lambda: True
+    )
+    scheduler, request_queue = create_paged_scheduler(
+        max_seq_len=128, num_blocks=64, page_size=8
+    )
+    request_queue.put_nowait(create_text_context(16, max_seq_len=40))
+    scheduler.run_iteration()
+
+    # Pads the decode pass as DPBatchPadder does, then hides the dummy from
+    # the fake pipeline, which unlike real pipelines would allocate KV for it.
+    constructor = scheduler.batch_constructor
+    construct_batch = constructor.construct_batch
+
+    def padded_batch() -> TextGenerationInputs[TextContext]:
+        inputs = construct_batch()
+        dummy = TextContext.new_padding_context(
+            max_length=40, model_name="test"
+        )
+        dummy.update(0)
+        inputs.batches[0].append(dummy)
+        return inputs
+
+    execute = scheduler.pipeline.execute
+    monkeypatch.setattr(constructor, "construct_batch", padded_batch)
+    monkeypatch.setattr(
+        scheduler.pipeline,
+        "execute",
+        lambda inputs: execute(
+            TextGenerationInputs(
+                batches=[
+                    [ctx for ctx in batch if not ctx._is_padding_ctx]
+                    for batch in inputs.batches
+                ]
+            )
+        ),
+    )
+    scheduler.run_iteration()
+
+    assert _batch_counts(finished) == [(1, 0), (0, 1)]

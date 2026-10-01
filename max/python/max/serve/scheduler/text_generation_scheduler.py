@@ -297,12 +297,11 @@ class TokenGenerationScheduler(Scheduler):
         batch_id = self._batch_counter
         self._batch_counter += 1
 
-        # Capture which of this batch's requests are in the CE (prefill) phase
-        # so we can detect the CE→TG transition and end their prefill spans
-        # below. They are the ones not already decoding; all_ce_reqs no longer
-        # holds them, as construct_batch() popped them off the CE queue.
-        # Skipped when tracing is disabled: computing this set costs real
-        # CPU every batch even though the spans it feeds would be no-ops.
+        # This pass's CE (prefill) requests: those not already decoding, less
+        # DP padding. They feed the batch span's counts and the CE→TG
+        # prefill-span transition below. all_ce_reqs no longer holds them, as
+        # construct_batch() popped them. Skipped when tracing is disabled:
+        # building the set costs CPU every pass.
         ce_ids_before = (
             {
                 ctx.request_id
@@ -310,7 +309,8 @@ class TokenGenerationScheduler(Scheduler):
                     inputs.batches, self.batch_constructor.replicas, strict=True
                 )
                 for ctx in batch
-                if ctx.request_id not in replica.tg_reqs
+                if not ctx._is_padding_ctx
+                and ctx.request_id not in replica.tg_reqs
             }
             if tracing_enabled
             else None
@@ -320,12 +320,13 @@ class TokenGenerationScheduler(Scheduler):
         # too much export volume to be always-on.
         batch_span: otel_trace.Span = otel_trace.INVALID_SPAN
         if tracing_enabled and batch_spans_enabled():
+            assert ce_ids_before is not None
             batch_span = _tracer.start_span(
                 "max.batch",
                 attributes={
                     "max.batch_id": batch_id,
-                    "max.ce_count": len(self.batch_constructor.all_ce_reqs),
-                    "max.tg_count": len(self.batch_constructor.all_tg_reqs),
+                    "max.ce_count": len(ce_ids_before),
+                    "max.tg_count": inputs.batch_size - len(ce_ids_before),
                 },
             )
 
