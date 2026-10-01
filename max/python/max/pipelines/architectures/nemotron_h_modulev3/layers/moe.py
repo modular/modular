@@ -91,8 +91,11 @@ def _nvfp4_expert_matmul(
         ),
         DType.bfloat16,
     )
+    # Float32 division is slow when the numerator is zero, and relu2 makes
+    # about half of these zero, so multiply by the reciprocal instead.
     scaled = ops.cast(
-        ops.cast(x, DType.float32) / ops.cast(row_scales, DType.float32),
+        ops.cast(x, DType.float32)
+        * (1.0 / ops.cast(row_scales, DType.float32)),
         DType.bfloat16,
     )
     row_scales = ops.reshape(row_scales, [-1])
