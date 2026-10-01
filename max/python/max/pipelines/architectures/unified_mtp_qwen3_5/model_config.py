@@ -10,7 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The fused Qwen3.5 MTP graph's config: what it reads, allocates and prices."""
+"""The fused Qwen3.5 MTP graph's config: what it reads, allocates and prices.
+
+The DFlash2 graph builds its target from this config too, for the ring.
+"""
 
 from __future__ import annotations
 

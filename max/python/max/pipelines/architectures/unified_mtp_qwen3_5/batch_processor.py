@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for the fused Qwen3.5 MTP graph."""
+"""Input batching for the fused Qwen3.5 MTP and DFlash2 graphs."""
 
 from __future__ import annotations
 
@@ -75,11 +75,12 @@ def merged_position_rows(
 
 
 class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
-    """Builds a batch for the fused graph.
+    """Builds a batch for either fused Qwen3.5 speculative graph.
 
-    The cache's attention children go in the KV slice and its state child,
-    the verify ring included, goes in the trailing tail.
-    Image prompts are rejected because the graph has no vision encoder.
+    The MTP and DFlash2 graphs take the same inputs, and only MTP can declare
+    M-RoPE positions. The cache's attention children go in the KV slice and
+    its state child, the verify ring included, goes in the trailing tail.
+    Image prompts are rejected because neither graph has a vision encoder.
     """
 
     def __init__(
@@ -103,8 +104,8 @@ class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
         # preparation.
         if any(getattr(ctx, "images", None) for ctx in contexts):
             raise ValueError(
-                "Qwen3.5 MTP cannot serve image prompts because its"
-                " speculative graph has no vision encoder. Drop"
+                "Speculative Qwen3.5 cannot serve image prompts because its"
+                " fused graph has no vision encoder. Drop"
                 " --speculative-method to serve images on Qwen3_5."
             )
 

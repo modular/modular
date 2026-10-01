@@ -121,6 +121,7 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "zai-org/GLM-5.3-Flash__tpep": _8xB200,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": _2xB200,
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": _1xB200,
+    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": _1xB200,
     "MiniMaxAI/MiniMax-M3-MXFP8__mtp": _8xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": _2xB200,
 }

@@ -49,9 +49,16 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     MultiKVCacheParams,
+    RecurrentStateParams,
 )
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
+from max.pipelines.architectures.qwen3_5.state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    linear_state_regions,
+    ring_len_for_window,
+)
 from max.pipelines.architectures.unified_dflash2_qwen3_5.model import GRAPH_NAME
 from max.pipelines.architectures.unified_dflash2_qwen3_5.model_config import (
     UnifiedDflash2Qwen3_5Config,
@@ -60,6 +67,7 @@ from max.pipelines.architectures.unified_dflash2_qwen3_5.unified_dflash2_qwen3_5
     UnifiedDflash2Qwen3_5,
 )
 from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
+    graph_kv_params,
     state_tail,
 )
 from max.pipelines.speculative.config import (
@@ -107,7 +115,26 @@ def make_config() -> UnifiedDflash2Qwen3_5Config:
         dtype=DType.float32,
         model_quantization_encoding=None,
         quantization_config=None,
-        kv_params=tkv,
+        kv_params=MultiKVCacheParams.from_params(
+            {
+                ATTN_CACHE_KEY: tkv,
+                STATE_CACHE_KEY: RecurrentStateParams(
+                    devices=[gpu],
+                    data_parallel_degree=1,
+                    regions=linear_state_regions(
+                        num_linear_layers=NUM_LINEAR,
+                        key_head_dim=LKD,
+                        num_key_heads=LK,
+                        value_head_dim=LVD,
+                        num_value_heads=LV,
+                        conv_kernel_dim=CONV_KERNEL,
+                        dtype=DType.float32,
+                        num_devices=1,
+                        ring_len=ring_len_for_window(BLOCK),
+                    ),
+                ),
+            }
+        ),
         norm_dtype=DType.float32,
         rms_norm_eps=1e-6,
         attention_multiplier=16**-0.5,
@@ -198,8 +225,8 @@ def _build() -> Step:
     registry = nn.state_dict()
     ring_row_shape = nn.state_regions[2].row_shape
 
-    kvp = cfg.get_kv_params()
-    assert isinstance(kvp, MultiKVCacheParams)
+    # The graph's view of the cache: the tail declares the state.
+    kvp = graph_kv_params(cfg.get_kv_params())
     dev = Accelerator()
     session = InferenceSession(devices=[dev])
 
