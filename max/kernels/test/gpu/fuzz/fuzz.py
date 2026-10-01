@@ -167,6 +167,20 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="memcheck",
     ),
+    "mamba2_ssd_scan": FuzzTarget(
+        name="mamba2_ssd_scan",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_mamba2_ssd_scan.mojo.test",
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_mamba2_ssd_scan.mojo.test"
+        ),
+        description=(
+            "B200 Mamba-2 SSD scan (Nemotron-H SSM): decode + short ragged"
+            " prefill over strided views, scattered slots and mixed initial"
+            " states; ref checks y and the whole state pool vs the CPU"
+            " reference"
+        ),
+        default_oracle="ref",
+    ),
     "gemv_split_k": FuzzTarget(
         name="gemv_split_k",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_gemv_split_k.mojo.test",

@@ -24,6 +24,10 @@ from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.random import rand
 from state_space.mamba2_ssd_scan import (
+    Strides1D,
+    Strides2D,
+    Strides3D,
+    Strides4D,
     mamba2_ssd_chunk_scan_varlen_fwd_cpu,
     mamba2_ssd_chunk_scan_varlen_fwd_gpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
@@ -603,6 +607,7 @@ def run_mamba2_ssd_inplace_vs_functional[
     seq_lengths: IndexList,
     ctx: DeviceContext,
     rtol: Float64 = 0.02,
+    row_pad: Int = 0,
 ) raises:
     """Verify the inplace variant matches the functional variant.
 
@@ -634,12 +639,17 @@ def run_mamba2_ssd_inplace_vs_functional[
     for i in range(batch):
         total_len += seq_lengths[i]
 
+    # `row_pad` widens the token stride of x, B and C, like the column slices
+    # of the conv output the model passes.
+    var x_row = nheads * head_dim + row_pad
+    var bc_row = ngroups * dstate + row_pad
+
     # Allocate host inputs shared by both variants.
-    var x_h = alloc[Scalar[dtype]](total_len * nheads * head_dim)
+    var x_h = alloc[Scalar[dtype]](total_len * x_row)
     var dt_h = alloc[Scalar[dtype]](total_len * nheads)
     var A_h = alloc[Scalar[dtype]](nheads)
-    var B_h = alloc[Scalar[dtype]](total_len * ngroups * dstate)
-    var C_h = alloc[Scalar[dtype]](total_len * ngroups * dstate)
+    var B_h = alloc[Scalar[dtype]](total_len * bc_row)
+    var C_h = alloc[Scalar[dtype]](total_len * bc_row)
     var D_h = alloc[Scalar[dtype]](nheads)
     var dt_bias_h = alloc[Scalar[dtype]](nheads)
     var his_h = alloc[Scalar[.bool]](batch)
@@ -649,11 +659,11 @@ def run_mamba2_ssd_inplace_vs_functional[
     # ssm_pool: [max_slots, nheads, head_dim, dstate] — zero-initialised.
     var pool_h = alloc[Float32](max_slots * nheads * head_dim * dstate)
 
-    rand(x_h, total_len * nheads * head_dim)
+    rand(x_h, total_len * x_row)
     rand(dt_h, total_len * nheads)
     rand(A_h, nheads)
-    rand(B_h, total_len * ngroups * dstate)
-    rand(C_h, total_len * ngroups * dstate)
+    rand(B_h, total_len * bc_row)
+    rand(C_h, total_len * bc_row)
     rand(D_h, nheads)
     rand(dt_bias_h, nheads)
     for i in range(nheads):
@@ -692,23 +702,23 @@ def run_mamba2_ssd_inplace_vs_functional[
         cum += seq_lengths[i]
         qsl_h.store(i + 1, Int32(cum))
 
-    var x_strides = IndexList[3](nheads * head_dim, head_dim, 1)
-    var dt_strides = IndexList[2](nheads, 1)
-    var A_strides = IndexList[1](1)
-    var B_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var C_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var D_strides = IndexList[1](1)
-    var dt_bias_strides = IndexList[1](1)
-    var y_strides = IndexList[3](nheads * head_dim, head_dim, 1)
-    var fs_strides = IndexList[4](
-        nheads * head_dim * dstate, head_dim * dstate, dstate, 1
+    var x_strides: Strides3D = (x_row, head_dim, 1)
+    var dt_strides: Strides2D = (nheads, 1)
+    var A_strides: Strides1D = (1,)
+    var B_strides: Strides3D = (bc_row, dstate, 1)
+    var C_strides: Strides3D = (bc_row, dstate, 1)
+    var D_strides: Strides1D = (1,)
+    var dt_bias_strides: Strides1D = (1,)
+    var y_strides: Strides3D = (nheads * head_dim, head_dim, 1)
+    var state_strides: Strides4D = (
+        nheads * head_dim * dstate,
+        head_dim * dstate,
+        dstate,
+        1,
     )
-    var pool_strides = IndexList[4](
-        nheads * head_dim * dstate, head_dim * dstate, dstate, 1
-    )
-    var is_strides = IndexList[4](
-        nheads * head_dim * dstate, head_dim * dstate, dstate, 1
-    )
+    var fs_strides = state_strides
+    var pool_strides = state_strides
+    var is_strides = state_strides
 
     # ---- Functional variant (CPU reference) ----
     var y_ref_h = alloc[Scalar[dtype]](total_len * nheads * head_dim)
@@ -832,11 +842,11 @@ def run_mamba2_ssd_inplace_vs_functional[
             )
 
     # ---- GPU inplace variant ----
-    var x_d = ctx.enqueue_create_buffer[dtype](total_len * nheads * head_dim)
+    var x_d = ctx.enqueue_create_buffer[dtype](total_len * x_row)
     var dt_d = ctx.enqueue_create_buffer[dtype](total_len * nheads)
     var A_d = ctx.enqueue_create_buffer[dtype](nheads)
-    var B_d = ctx.enqueue_create_buffer[dtype](total_len * ngroups * dstate)
-    var C_d = ctx.enqueue_create_buffer[dtype](total_len * ngroups * dstate)
+    var B_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
+    var C_d = ctx.enqueue_create_buffer[dtype](total_len * bc_row)
     var D_d = ctx.enqueue_create_buffer[dtype](nheads)
     var dt_bias_d = ctx.enqueue_create_buffer[dtype](nheads)
     var qsl_d = ctx.enqueue_create_buffer[.int32](batch + 1)
@@ -1206,6 +1216,31 @@ def test_mamba2_ssd_inplace_dstate_split_vs_functional() raises:
                 max_slots=8,
                 seq_lengths=Index(6, 4),
                 ctx=ctx,
+            )
+            # Nemotron-3.5-Lightning decode: batch 64, one token each, a
+            # seeded initial state, and x/B/C as strided column slices.
+            run_mamba2_ssd_inplace_vs_functional[
+                .bfloat16, 128, 8, init_state=True
+            ](
+                nheads=64,
+                head_dim=64,
+                ngroups=8,
+                max_slots=64,
+                seq_lengths=IndexList[64](1),
+                ctx=ctx,
+                row_pad=32,
+            )
+            # Short ragged prefill with the same strided views.
+            run_mamba2_ssd_inplace_vs_functional[
+                .bfloat16, 128, 8, init_state=True
+            ](
+                nheads=64,
+                head_dim=64,
+                ngroups=8,
+                max_slots=4,
+                seq_lengths=Index(5, 1, 17, 2),
+                ctx=ctx,
+                row_pad=32,
             )
 
 

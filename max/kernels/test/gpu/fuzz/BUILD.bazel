@@ -35,6 +35,7 @@ build_test(
         ":fuzz_grouped_matmul_mxfp8.mojo.test",
         ":fuzz_grouped_matmul_sm100_w4a8.mojo.test",
         ":fuzz_layer_norm.mojo.test",
+        ":fuzz_mamba2_ssd_scan.mojo.test",
         ":fuzz_matmul.mojo.test",
         ":fuzz_mha_causal.mojo.test",
         ":fuzz_mha_nullmask.mojo.test",
@@ -111,6 +112,37 @@ mojo_test(
         "//max:linalg",
         "//max:nn",
         "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+# Target: B200 Mamba-2 SSD scan (`mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split`),
+# the Nemotron-H SSM layer. Decode and short ragged prefill over strided x/B/C/dt
+# views, scattered `cache_indices`, and a random mix of initial states. DSTATE is
+# compile-time (`-D ssd_dstate=16|64|128|256`); `ref` (--check 1) checks y and the
+# whole state pool against the CPU in-place reference.
+mojo_test(
+    name = "fuzz_mamba2_ssd_scan.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_mamba2_ssd_scan.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_mamba2_ssd_scan.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max/kernels/src/state_space",
         "@mojo//:std",
     ],
 )

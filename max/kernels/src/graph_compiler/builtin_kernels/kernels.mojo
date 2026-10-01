@@ -4853,6 +4853,17 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             ), "non-fp32 SSM state is only supported on the Apple GPU kernel"
 
             comptime if use_dstate_split:
+                # The split kernel moves each thread's dstate run as one SIMD
+                # access, so it needs unit dstate strides.
+                if (
+                    B_strides[2] != 1
+                    or C_strides[2] != 1
+                    or ssm_pool_strides[3] != 1
+                ):
+                    raise Error(
+                        "the B200 Mamba-2 SSD scan needs unit strides on the"
+                        " dstate axis of B, C and ssm_pool"
+                    )
                 # Cooperative DSTATE-split: DSTATE_SPLIT threads cooperate on
                 # each head_dim channel's DSTATE recurrence (lifts decode bs=1
                 # occupancy; v1 one-thread-per-channel was ~4% achieved occupancy

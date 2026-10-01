@@ -547,34 +547,25 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
         ssm_pool.raw_store(off, state[n])
 
 
-# NVIDIA B200 (sm_100) launch-bounds occupancy floor. This kernel is only ever
-# launched with a 128-thread block (production kernels.mojo and the unit test
-# both use `block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1)` with
+# NVIDIA B200 (sm_100) launch bounds. This kernel is only ever launched with a
+# 128-thread block (production kernels.mojo and the unit test both use
+# `block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1)` with
 # DSTATE_SPLIT*CH_PER_BLOCK == 128), so `.maxntid 128` is exact.
 #
-# At the c32 (batch-32) decode regime this is the #1 decode GPU kernel and is
-# REGISTER-capped, not launch-bound. For the production tile L == DSTATE //
-# DSTATE_SPLIT == 128 // 8 == 16, the kernel allocates 149 registers uncapped
-# (3 CTAs/SM, ~16% occupancy) yet fits a 128-register budget with ZERO spill
-# (the 149->128 is dead slack; measured via `_ptxas_info_verbose`). Setting
-# `.minnctapersm 4` forces that 128-reg budget: 4 CTAs * 128 threads * 128 regs
-# == the 65536-register SM file, i.e. 4 CTAs/SM (~25% occupancy). Because the
-# kernel is Long-Scoreboard / latency-bound (DRAM ~15% SoL, not bandwidth-
-# bound), the extra resident CTAs hide global-load latency -- occupancy is the
-# lever, and the zero-spill 128-reg point is the one that pays off.
+# The kernel is latency-bound, so resident CTAs matter. `.minnctapersm 6` caps
+# it at 80 registers per thread (6 CTAs/SM), which the L == 16 production tile
+# meets without spills. Decode at batch 64 is 5% faster than with a 4-CTA
+# floor and prefill is 33% faster.
 #
-# The floor is GATED on `L <= 16`: for larger tiles (e.g. DSTATE==256, split 8
-# -> L==32) the hot fp32 state/B/C SIMD vectors of width L do NOT fit 128
-# registers (they spill even uncapped at 255), so a 128-reg floor would only
-# add spill traffic. Those tiles keep `.minnctapersm 1` (a no-op floor) and
-# ptxas's natural register budget. This is a codegen (regalloc) hint only --
-# output is bit-identical to the un-annotated kernel; the correctness gate is
-# `test_mamba2_ssd_inplace_dstate_split_vs_functional`.
+# The floor is gated on `L <= 16`: for larger tiles (DSTATE == 256 at split 8,
+# L == 32) the state/B/C vectors spill under that cap, so they keep
+# `.minnctapersm 1`. This is a register allocation hint only; the output is
+# bit-identical to the un-annotated kernel.
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(128))
 )
 @__llvm_metadata(
-    `nvvm.minctasm`=SIMDLength(4) if (DSTATE // DSTATE_SPLIT)
+    `nvvm.minctasm`=SIMDLength(6) if (DSTATE // DSTATE_SPLIT)
     <= 16 else SIMDLength(1)
 )
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
@@ -700,22 +691,12 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     var active = p < head_dim
     var n_base = Int(tx) * L  # first DSTATE lane owned by this thread
 
-    # Vectorized contiguous I/O lever (B200 decode). Each thread's L-lane
-    # sub-tile of the ssm_pool state and of B/C is a contiguous run whenever the
-    # innermost (dstate) stride is 1 -- the standard row-major layout every
-    # caller uses. Move that run in ONE SIMD load/store instead of L scalar
-    # raw_loads: this is the fix for the split=8 decode kernel being
-    # L1TEX/mem-pipe-bound on many small scalar loads (ncu at the served decode
-    # shape: SM SoL ~18%, DRAM SoL ~10% so NOT bandwidth-bound, mem-pipe SoL
-    # ~75%, top stall Long Scoreboard ~9 cyc). The `*_contig` guards fall back
-    # to the exact scalar path when a caller passes a non-contiguous stride, so
-    # the result is bit-identical. `n_base` is a multiple of L and dstate is a
-    # multiple of L, so the row-major base offset is L-aligned -- the SIMD
-    # alignment below is satisfied for every dispatched DSTATE (16/64/128/256).
+    # Each thread's L-lane sub-tile of the ssm_pool state and of B/C is a
+    # contiguous run (the wrapper rejects non-unit dstate strides), so it moves
+    # in one SIMD load/store. `n_base` and DSTATE are multiples of L, so the
+    # row-major offset is L-aligned for every dispatched DSTATE (16/64/128/256).
     comptime pool_align = align_of[SIMD[.float32, L]]()
     comptime bc_align = align_of[SIMD[kernel_dtype, L]]()
-    var pool_contig = ssm_pool_strides[3] == 1
-    var bc_contig = (B_strides[2] == 1) and (C_strides[2] == 1)
 
     var has_D = Int(D.dim[0]()) > 0
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0
@@ -756,26 +737,14 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     if has_init_tensor:
         use_initial = Bool(has_initial_state.raw_load(b))
     if active and use_initial:
-        # Read this thread's contiguous L-lane sub-tile of the initial state
-        # from ssm_pool[slot, h, p, n_base ..].
-        if pool_contig:
-            state = ssm_pool.raw_load[width=L, alignment=pool_align](
-                Int(
-                    slot * ssm_pool_strides[0]
-                    + h * ssm_pool_strides[1]
-                    + p * ssm_pool_strides[2]
-                    + n_base * ssm_pool_strides[3]
-                )
+        state = ssm_pool.raw_load[width=L, alignment=pool_align](
+            Int(
+                slot * ssm_pool_strides[0]
+                + h * ssm_pool_strides[1]
+                + p * ssm_pool_strides[2]
+                + n_base
             )
-        else:
-            comptime for i in range(L):
-                var off = Int(
-                    slot * ssm_pool_strides[0]
-                    + h * ssm_pool_strides[1]
-                    + p * ssm_pool_strides[2]
-                    + (n_base + i) * ssm_pool_strides[3]
-                )
-                state[i] = ssm_pool.raw_load(off)
+        )
 
     for t in range(seq_len):
         var gt = seq_start + t
@@ -806,42 +775,12 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
             dt_x = dt_val * x_val
 
             # This thread only loads B/C lanes for its own DSTATE sub-tile.
-            if bc_contig:
-                B_vals = B.raw_load[width=L, alignment=bc_align](
-                    UInt32(
-                        gt * B_strides[0]
-                        + group_id * B_strides[1]
-                        + n_base * B_strides[2]
-                    )
-                ).cast[.float32]()
-                C_vals = C.raw_load[width=L, alignment=bc_align](
-                    UInt32(
-                        gt * C_strides[0]
-                        + group_id * C_strides[1]
-                        + n_base * C_strides[2]
-                    )
-                ).cast[.float32]()
-            else:
-                comptime for i in range(L):
-                    var n = n_base + i
-                    B_vals[i] = Scalar[kernel_dtype](
-                        B.raw_load(
-                            UInt32(
-                                gt * B_strides[0]
-                                + group_id * B_strides[1]
-                                + n * B_strides[2]
-                            )
-                        )
-                    ).cast[.float32]()
-                    C_vals[i] = Scalar[kernel_dtype](
-                        C.raw_load(
-                            UInt32(
-                                gt * C_strides[0]
-                                + group_id * C_strides[1]
-                                + n * C_strides[2]
-                            )
-                        )
-                    ).cast[.float32]()
+            B_vals = B.raw_load[width=L, alignment=bc_align](
+                UInt32(gt * B_strides[0] + group_id * B_strides[1] + n_base)
+            ).cast[.float32]()
+            C_vals = C.raw_load[width=L, alignment=bc_align](
+                UInt32(gt * C_strides[0] + group_id * C_strides[1] + n_base)
+            ).cast[.float32]()
 
         state = state * dA + B_vals * dt_x
 
@@ -866,25 +805,15 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     # Write this thread's DSTATE sub-tile of the final state into ssm_pool at
     # slot cache_indices[b] (the DSTATE_SPLIT threads cover disjoint lanes).
     if active:
-        if pool_contig:
-            ssm_pool.raw_store[width=L, alignment=pool_align](
-                Int(
-                    slot * ssm_pool_strides[0]
-                    + h * ssm_pool_strides[1]
-                    + p * ssm_pool_strides[2]
-                    + n_base * ssm_pool_strides[3]
-                ),
-                state,
-            )
-        else:
-            comptime for i in range(L):
-                var off = Int(
-                    slot * ssm_pool_strides[0]
-                    + h * ssm_pool_strides[1]
-                    + p * ssm_pool_strides[2]
-                    + (n_base + i) * ssm_pool_strides[3]
-                )
-                ssm_pool.raw_store(off, state[i])
+        ssm_pool.raw_store[width=L, alignment=pool_align](
+            Int(
+                slot * ssm_pool_strides[0]
+                + h * ssm_pool_strides[1]
+                + p * ssm_pool_strides[2]
+                + n_base
+            ),
+            state,
+        )
 
 
 struct DStateVecLoader[
