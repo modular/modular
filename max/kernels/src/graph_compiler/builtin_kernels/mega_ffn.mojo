@@ -53,7 +53,7 @@ See KERN-3085.
 Modeled on the sibling `msa.mojo` / `linalg.mojo` registrations (private
 `//Kernels` kernels registered in dedicated builtin_kernels files). MegaFFN is
 internal-only: unlike `msa` / `matmul_rs` it is NOT shipped in the OSS wheel, so
-open-source builds drop the `//Kernels/src/mega_ffn` dep (in `api.bzl`) and
+open-source builds drop the `//Kernels/lib/mega_ffn` dep (in `api.bzl`) and
 exclude this file from the public export (copybara).
 
 On-chip scratch (the composite op does not expose these): `c_packed` and
