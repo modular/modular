@@ -81,6 +81,18 @@ This version is still a work in progress.
   running, so one run lists every offending load instead of stopping at the
   first. The default, `abort`, is unchanged. On Apple GPUs, `report`
   currently aborts without printing.
+- Improved out-of-memory error messages for the VMM defragmenting device
+  allocator. An allocation failure is now classified by cause -- genuinely out
+  of memory, a shortfall recoverable from memory awaiting a stream synchronize
+  or stranded in partially-used pages, memory held outside the manager's own
+  accounting, virtual-address fragmentation, an unreserved arena, or a request
+  that reached an unbacked region during a graph capture, where mapping is
+  illegal -- and the message reports what each recovery lever may return, and
+  names the setting that turns it, instead of a single often-misleading `free`
+  figure. This applies to allocations that fall through to the device driver
+  as well: such a failure previously surfaced the driver's refusal alone, and
+  now leads with why the memory manager missed, carrying the driver's refusal
+  as a note.
 - `max serve` gained a `--cascade` flag that routes the request to the
   experimental Cascade server (`max.experimental.cascade.serve.main.serve`)
   instead of the standard API server + model worker. The resolved `PipelineArgs`
