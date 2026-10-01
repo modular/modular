@@ -992,114 +992,6 @@ def _fp8_index_score_prefill_kernel_sm100[
     var max_num_keys = max_num_keys_dev
     var causal = causal_dev
     var tid = Int(thread_idx.x)
-    var b = Int(block_idx.x)
-
-    var start_of_seq = Int32(valid_length[b])
-    var end_of_seq = Int32(valid_length[b + 1])
-    var seq_len = end_of_seq - start_of_seq
-
-    # This launch owns global token rows `[out_row_begin, out_row_end)` and writes
-    # them to `output` rows `[0, out_row_end - out_row_begin)`. The caller chunks
-    # that window to bound the score buffer, which is the whole point of the
-    # split; unchunked it is `[0, total_seq_len)` and everything below reduces to
-    # the unwindowed form.
-    #
-    # Clamping to the window here (rather than predicating the store) is what
-    # keeps the epilogue free: token blocks are indexed from `tok_lo`, so no block
-    # straddles a chunk boundary, no token is scored twice, and the store's
-    # liveness test just swaps `seq_len` for `tok_hi`. `seq_len` itself stays the
-    # TRUE sequence length -- the causal bound is an absolute position and must
-    # not see the window.
-    var tok_lo = max(Int32(0), out_row_begin_dev - start_of_seq)
-    var tok_hi = min(seq_len, out_row_end_dev - start_of_seq)
-    # The CTA's first token block. `tok0` is warpgroup 0's base; a distinct-Q
-    # warpgroup g adds `g * N_TOKENS` to it (see `my_tok0` in the consumer).
-    var tok0 = tok_lo + Int32(block_idx.y) * Int32(CTA_TOKEN_STRIDE)
-    # Folded once here so the store's row arithmetic is the same single add it
-    # was before the window existed.
-    var out_row0 = start_of_seq - out_row_begin_dev
-
-    var num_keys = Int32(k_operand.cache_length(b))
-    comptime if not _is_cache_length_accurate:
-        num_keys += seq_len
-    # `num_keys` counts tokens, for the causal bounds below. `num_rows` counts
-    # what the cache holds, one pooled key per `kpool` tokens.
-    var num_rows = num_keys // Int32(kpool)
-    # The host bounds `max_num_keys`, but the per-entry count is device data the
-    # host never sees, and on the ragged path it rests on a caller contract. So
-    # check it here, in cache rows, which is what `max_num_keys` measures.
-    # Keep the default assert mode. A "safe" assert in this kernel pulls in
-    # `vprintf`, which inflates the emitted PTX and perturbs register
-    # allocation.
-    debug_assert(
-        num_rows <= max_num_keys_dev,
-        "fp8 index prefill: per-entry candidate rows exceed max_num_keys",
-    )
-
-    # Bail uniformly (every thread) before any collective op (TMA mbar / tcgen05
-    # alloc); a divergent early return deadlocks them. A token block past the
-    # sequence -- or outside this launch's row window -- produces no output (the
-    # caller's -inf fill covers those rows). Uses WG0's base: if WG0 is past
-    # `tok_hi` then WG1 (a later block) is too, so both WGs retire.
-    #
-    # A chunked launch retires most of its CTAs here, since the grid is sized by
-    # the whole batch, so hoisting this above the `cache_length` load to save
-    # them a global read looks free. It measured neutral (4096 tokens, 5 chunks)
-    # -- the chunking overhead is not where those CTAs spend it -- so the load
-    # stays where it was.
-    if tok0 >= tok_hi or seq_len <= 0:
-        return
-
-    # Keys this CTA must stream: bounded by the deepest LIVE token under the
-    # causal mask. ONE K stream feeds every consumer warpgroup, so the bound is
-    # the last token of the CTA's whole token span -- the DEEPEST warpgroup's
-    # block, not warpgroup 0's. Each token still gets its own per-key guard in
-    # the epilogue; this only trims the triangle a zero-prefix fresh prefill
-    # leaves off the end.
-    var last_tok = min(tok0 + Int32(CTA_TOKEN_STRIDE), tok_hi) - 1
-    var block_key_bound = (
-        num_keys - (seq_len - 1 - last_tok) * causal
-    ) // Int32(kpool)
-    # `block_key_bound` can be <= 0 (a causal bound that trims the whole block), so the
-    # SUBTRACTION above stays signed. The `ceildiv` does not: `SIMD.__ceildiv__`
-    # branches at COMPTIME on the dtype -- signed lowers to `-(x // -d)` with a
-    # ~9-instruction correction chain, unsigned to an add and a shift. So the clamp has
-    # to sit ABOVE the ceildiv; moving it below leaves the expensive form in place.
-    var n_key_tiles = ceildiv(
-        UInt32(max(block_key_bound, Int32(0))), UInt32(BM_key)
-    )
-
-    # grid.z splits that tile range across CTAs. Scores carry no cross-key reduction,
-    # and a thread's store address is `global_token * max_num_keys + it * BM_key + row`,
-    # so disjoint tile windows write disjoint elements -- no combine pass and no
-    # workspace. `splitk_window` front-loads, so only trailing parts come up empty.
-    #
-    # The launcher sizes `num_key_parts_dev` from `max_num_keys`, a batch MAXIMUM, so on
-    # a ragged batch it over-splits every entry but the deepest. Each CTA therefore
-    # narrows the part count to what its OWN tile count can feed, and the surplus CTAs
-    # return here, before any collective. `p_eff` depends only on CTA-uniform values, so
-    # all three warp roles derive the same trip count from it -- load-bearing, because
-    # windowing the consumer alone unbalances the k/s mbar handshakes and HANGS.
-    var p_eff = clamp(
-        ceildiv(n_key_tiles, UInt32(_MIN_TILES_PER_PART)),
-        UInt32(1),
-        UInt32(num_key_parts_dev),
-    )
-    if UInt32(block_idx.z) >= p_eff:
-        return
-    var win = splitk_window(
-        n_key_tiles,
-        p_eff,
-        UInt32(block_idx.z),
-    )
-    var tile_begin = Int32(win[0])
-    var n_tiles_local = Int32(win[1]) - tile_begin
-
-    # Second uniform bail (an empty trailing part, or a batch entry whose causal
-    # bound left it no keys). Uniform for the same reason as the one above, and
-    # likewise ahead of every collective.
-    if n_tiles_local <= 0:
-        return
 
     # FA4 stateless S = K @ Q^T accumulator. `MMA_M = BM_key = 128 > 64` keeps
     # `use_ws` False (the standard, non-packed TMEM datapath). It carries no
@@ -1329,6 +1221,119 @@ def _fp8_index_score_prefill_kernel_sm100[
         + "), which exceeds the SM's 512 at CTAS_PER_SM="
         + String(CTAS_PER_SM)
     )
+
+    # The mbarrier init above is plain per-thread stores, so it runs before the
+    # header loads below and overlaps their global round trip instead of
+    # queuing behind it; a CTA that retires early just discards it. On a
+    # 6-token decode that moves the CTA barrier ~100 ns earlier.
+    var b = Int(block_idx.x)
+
+    var start_of_seq = Int32(valid_length[b])
+    var end_of_seq = Int32(valid_length[b + 1])
+    var seq_len = end_of_seq - start_of_seq
+
+    # This launch owns global token rows `[out_row_begin, out_row_end)` and writes
+    # them to `output` rows `[0, out_row_end - out_row_begin)`. The caller chunks
+    # that window to bound the score buffer, which is the whole point of the
+    # split; unchunked it is `[0, total_seq_len)` and everything below reduces to
+    # the unwindowed form.
+    #
+    # Clamping to the window here (rather than predicating the store) is what
+    # keeps the epilogue free: token blocks are indexed from `tok_lo`, so no block
+    # straddles a chunk boundary, no token is scored twice, and the store's
+    # liveness test just swaps `seq_len` for `tok_hi`. `seq_len` itself stays the
+    # TRUE sequence length -- the causal bound is an absolute position and must
+    # not see the window.
+    var tok_lo = max(Int32(0), out_row_begin_dev - start_of_seq)
+    var tok_hi = min(seq_len, out_row_end_dev - start_of_seq)
+    # The CTA's first token block. `tok0` is warpgroup 0's base; a distinct-Q
+    # warpgroup g adds `g * N_TOKENS` to it (see `my_tok0` in the consumer).
+    var tok0 = tok_lo + Int32(block_idx.y) * Int32(CTA_TOKEN_STRIDE)
+    # Folded once here so the store's row arithmetic is the same single add it
+    # was before the window existed.
+    var out_row0 = start_of_seq - out_row_begin_dev
+
+    var num_keys = Int32(k_operand.cache_length(b))
+    comptime if not _is_cache_length_accurate:
+        num_keys += seq_len
+    # `num_keys` counts tokens, for the causal bounds below. `num_rows` counts
+    # what the cache holds, one pooled key per `kpool` tokens.
+    var num_rows = num_keys // Int32(kpool)
+    # The host bounds `max_num_keys`, but the per-entry count is device data the
+    # host never sees, and on the ragged path it rests on a caller contract. So
+    # check it here, in cache rows, which is what `max_num_keys` measures.
+    # Keep the default assert mode. A "safe" assert in this kernel pulls in
+    # `vprintf`, which inflates the emitted PTX and perturbs register
+    # allocation.
+    debug_assert(
+        num_rows <= max_num_keys_dev,
+        "fp8 index prefill: per-entry candidate rows exceed max_num_keys",
+    )
+
+    # Bail uniformly (every thread) before any collective op (TMA mbar / tcgen05
+    # alloc); a divergent early return deadlocks them. A token block past the
+    # sequence -- or outside this launch's row window -- produces no output (the
+    # caller's -inf fill covers those rows). Uses WG0's base: if WG0 is past
+    # `tok_hi` then WG1 (a later block) is too, so both WGs retire.
+    #
+    # A chunked launch retires most of its CTAs here, since the grid is sized by
+    # the whole batch, so hoisting this above the `cache_length` load to save
+    # them a global read looks free. It measured neutral (4096 tokens, 5 chunks)
+    # -- the chunking overhead is not where those CTAs spend it -- so the load
+    # stays where it was.
+    if tok0 >= tok_hi or seq_len <= 0:
+        return
+
+    # Keys this CTA must stream: bounded by the deepest LIVE token under the
+    # causal mask. ONE K stream feeds every consumer warpgroup, so the bound is
+    # the last token of the CTA's whole token span -- the DEEPEST warpgroup's
+    # block, not warpgroup 0's. Each token still gets its own per-key guard in
+    # the epilogue; this only trims the triangle a zero-prefix fresh prefill
+    # leaves off the end.
+    var last_tok = min(tok0 + Int32(CTA_TOKEN_STRIDE), tok_hi) - 1
+    var block_key_bound = (
+        num_keys - (seq_len - 1 - last_tok) * causal
+    ) // Int32(kpool)
+    # `block_key_bound` can be <= 0 (a causal bound that trims the whole block), so the
+    # SUBTRACTION above stays signed. The `ceildiv` does not: `SIMD.__ceildiv__`
+    # branches at COMPTIME on the dtype -- signed lowers to `-(x // -d)` with a
+    # ~9-instruction correction chain, unsigned to an add and a shift. So the clamp has
+    # to sit ABOVE the ceildiv; moving it below leaves the expensive form in place.
+    var n_key_tiles = ceildiv(
+        UInt32(max(block_key_bound, Int32(0))), UInt32(BM_key)
+    )
+
+    # grid.z splits that tile range across CTAs. Scores carry no cross-key reduction,
+    # and a thread's store address is `global_token * max_num_keys + it * BM_key + row`,
+    # so disjoint tile windows write disjoint elements -- no combine pass and no
+    # workspace. `splitk_window` front-loads, so only trailing parts come up empty.
+    #
+    # The launcher sizes `num_key_parts_dev` from `max_num_keys`, a batch MAXIMUM, so on
+    # a ragged batch it over-splits every entry but the deepest. Each CTA therefore
+    # narrows the part count to what its OWN tile count can feed, and the surplus CTAs
+    # return here, before any collective. `p_eff` depends only on CTA-uniform values, so
+    # all three warp roles derive the same trip count from it -- load-bearing, because
+    # windowing the consumer alone unbalances the k/s mbar handshakes and HANGS.
+    var p_eff = clamp(
+        ceildiv(n_key_tiles, UInt32(_MIN_TILES_PER_PART)),
+        UInt32(1),
+        UInt32(num_key_parts_dev),
+    )
+    if UInt32(block_idx.z) >= p_eff:
+        return
+    var win = splitk_window(
+        n_key_tiles,
+        p_eff,
+        UInt32(block_idx.z),
+    )
+    var tile_begin = Int32(win[0])
+    var n_tiles_local = Int32(win[1]) - tile_begin
+
+    # Second uniform bail (an empty trailing part, or a batch entry whose causal
+    # bound left it no keys). Uniform for the same reason as the one above, and
+    # likewise ahead of every collective.
+    if n_tiles_local <= 0:
+        return
     var wid = warp_id[broadcast=True]()
     barrier()
 
@@ -1723,6 +1728,12 @@ def _fp8_index_score_prefill_kernel_sm100[
             var mslot = 0
             comptime if MMA_WARPS > 1:
                 mslot = Int(wid) - MMA_WARP
+            # Release registers BEFORE the TMEM alloc: the consumers'
+            # `setmaxnreg.inc` blocks until this warp's `.dec`, and they must
+            # stage the q-scales before the barrier this warp waits on below.
+            # Deallocating after the alloc put its latency on that path,
+            # ~0.13-0.19 us per launch on decode.
+            warpgroup_reg_dealloc[CFG.reg_producer]()
             # ONE warp allocates TMEM for the whole CTA; the others read the
             # address after the barrier below publishes it.
             if mslot == 0:
@@ -1733,7 +1744,6 @@ def _fp8_index_score_prefill_kernel_sm100[
             # address from lane 0 (`shfl.sync` over the full warp mask), so
             # calling it from a single-lane region hangs the warp on a
             # convergence barrier the other 31 lanes never reach.
-            warpgroup_reg_dealloc[CFG.reg_producer]()
             named_barrier[Int32(CONS_THREADS + MMA_WARPS * WARP_SIZE)](
                 _CONSUMER_BAR
             )
