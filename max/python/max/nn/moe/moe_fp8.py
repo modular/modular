@@ -641,7 +641,7 @@ class MoEQuantized(MoE):
         x: TensorValue,
         router_idx: TensorValue,
         router_weight: TensorValue | None = None,
-    ) -> TensorValue:
+    ) -> tuple[TensorValue, TensorValue]:
         """Runs the quantized expert matmuls for one flat expert assignment.
 
         Overrides :meth:`MoE._expert_matmuls`; same contract. Without a
@@ -658,8 +658,6 @@ class MoEQuantized(MoE):
 
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
-
-        seq_len = x.shape[0]
 
         create_indices_result = moe_create_indices(
             ops.cast(router_idx, DType.int32),
@@ -774,6 +772,4 @@ class MoEQuantized(MoE):
             estimated_total_m=total_m,
         )
 
-        return ops.gather(down, restore_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, down.shape[-1]]
-        )
+        return down, restore_order

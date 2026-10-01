@@ -28,7 +28,11 @@ from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import grouped_matmul_ragged, moe_create_indices
+from ..kernels import (
+    grouped_matmul_ragged,
+    moe_create_indices,
+    moe_finalize,
+)
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
 from ..quant_config import QuantConfig
@@ -825,22 +829,20 @@ class MoE(Module, Shardable):
         if self.pre_expert_norm is not None:
             x = self.pre_expert_norm(x)
 
-        down_projs = self._expert_matmuls(
+        down_projs, restore_order = self._expert_matmuls(
             x, ops.reshape(router_idx, [-1]), router_weight
         )
 
         if not self.apply_router_weight_first:
-            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = (
-                ops.unsqueeze(router_weight, axis=1) @ down_projs
-            )
-            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
+            routed_expert_out = moe_finalize(
+                down_projs, restore_order, router_weight, x.dtype
             )
         else:
-            routed_expert_out = down_projs.transpose(1, 2)
+            down_projs = ops.gather(down_projs, restore_order, axis=0).reshape(
+                [x.shape[0], self.num_experts_per_token, self.hidden_dim]
+            )
             routed_expert_out = ops.squeeze(
-                ops.sum(routed_expert_out, axis=2), axis=2
+                ops.sum(down_projs, axis=1), axis=1
             ).cast(x.dtype)
 
         if self.has_shared_experts:
@@ -853,7 +855,7 @@ class MoE(Module, Shardable):
         x: TensorValue,
         router_idx: TensorValue,
         router_weight: TensorValue | None = None,
-    ) -> TensorValue:
+    ) -> tuple[TensorValue, TensorValue]:
         """Runs the unquantized expert matmuls for one flat expert assignment.
 
         Args:
@@ -864,16 +866,17 @@ class MoE(Module, Shardable):
                 read only when ``apply_router_weight_first`` is set.
 
         Returns:
-            ``[seq_len, num_experts_per_token, hidden_dim]``, each selected
-            expert's output before the router weights are applied.
+            ``(down, restore_order)``: the down projection output in
+            expert-permuted (``token_expert_order``) row order, shape
+            ``[seq_len * num_experts_per_token, hidden_dim]``, and the
+            ``uint32`` permutation mapping token-major index
+            ``t * num_experts_per_token + k`` back to its row in ``down``.
 
         A subclass whose router carries state beyond the ids and weights
         overrides ``__call__`` and calls this from there. ``MoEQuantized``
         overrides it with the quantized expert matmuls, so such a subclass
         works against either base.
         """
-        seq_len = x.shape[0]
-
         (
             token_expert_order,
             expert_start_indices,
@@ -926,6 +929,4 @@ class MoE(Module, Shardable):
             expert_usage_stats,
         )
 
-        return ops.gather(down_projs, restore_token_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, self.hidden_dim]
-        )
+        return down_projs, restore_token_order

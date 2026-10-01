@@ -5888,6 +5888,52 @@ def moe_create_indices(
     )
 
 
+def moe_finalize(
+    down_projs: TensorValue,
+    restore_token_order: TensorValue,
+    router_weight: TensorValue,
+    out_type: DType,
+) -> TensorValue:
+    """Fuses the MoE unpermute gather with the top-k weighted row sum.
+
+    Reads each token's ``num_experts_per_token`` expert-permuted rows through
+    ``restore_token_order``, scales each by its ``router_weight``, and sums
+    them, so the ``[num_tokens, num_experts_per_token, hidden]`` unpermuted
+    tensor never materializes in HBM.
+
+    Args:
+        down_projs: Expert outputs in expert-permuted (``token_expert_order``)
+            row order. Shape: ``[num_tokens * num_experts_per_token, hidden]``.
+        restore_token_order: Maps token-major index
+            ``i = token * num_experts_per_token + k`` to its row in
+            ``down_projs``. Shape: ``[num_tokens * num_experts_per_token]``,
+            dtype ``uint32``.
+        router_weight: Per-(token, expert) routing weight applied before the
+            sum. Shape: ``[num_tokens, num_experts_per_token]``.
+        out_type: Output dtype.
+
+    Returns:
+        The combined per-token output. Shape: ``[num_tokens, hidden]``,
+        dtype ``out_type``.
+    """
+    seq_len = router_weight.shape[0]
+    hidden = down_projs.shape[1]
+
+    result = ops.custom(
+        "mo.moe.finalize",
+        device=down_projs.device,
+        values=[down_projs, restore_token_order, router_weight],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[seq_len, hidden],
+                device=down_projs.device,
+            )
+        ],
+    )
+    return result[0].tensor
+
+
 def moe_router_group_limited(
     expert_scores: TensorValue,
     expert_bias: TensorValue,

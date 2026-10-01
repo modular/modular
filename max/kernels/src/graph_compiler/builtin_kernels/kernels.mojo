@@ -89,6 +89,7 @@ from nn.mhc import hyper_connection_gates
 from nn.moe import (
     eplb_remap,
     moe_create_indices,
+    moe_finalize,
     router_group_limited,
     sink_gate_router,
     single_group_router,
@@ -2010,6 +2011,34 @@ struct Struct_moe_create_indices:
             expert_ids.to_tile_tensor[.int64](),
             expert_usage_stats.to_tile_tensor[.int64](),
             topk_ids.to_tile_tensor[.int64](),
+            context,
+        )
+
+
+@extensibility.register("mo.moe.finalize")
+struct Struct_moe_finalize:
+    """Registers the `mo.moe.finalize` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        out_type: DType,
+        down_type: DType,
+        weight_type: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_type, rank=2, ...],
+        down: InputTensor[dtype=down_type, rank=2, ...],
+        restore_token_order: InputTensor[dtype=.uint32, rank=1, ...],
+        router_weight: InputTensor[dtype=weight_type, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        moe_finalize[target=target](
+            output.to_tile_tensor[.int64](),
+            down.to_tile_tensor[.int64](),
+            restore_token_order.to_tile_tensor[.int64](),
+            router_weight.to_tile_tensor[.int64](),
             context,
         )
 

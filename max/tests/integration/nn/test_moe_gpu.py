@@ -21,7 +21,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import moe_create_indices
+from max.nn.kernels import moe_create_indices, moe_finalize
 from torch.utils.dlpack import from_dlpack
 
 
@@ -151,3 +151,40 @@ def test_moe_create_indices() -> None:
     ).numpy()
     results_2 = model.execute(Buffer.from_numpy(topk_ids_2).to(device0))
     validate_moe_indices(results_2, topk_ids_2, 1)
+
+
+def test_moe_finalize() -> None:
+    """Checks the fused unpermute + weighted sum against a torch reference."""
+    torch.manual_seed(0)
+    seq_len, top_k, hidden = 37, 6, 1024
+    total_m = seq_len * top_k
+
+    down = torch.randn(total_m, hidden, dtype=torch.bfloat16)
+    restore_order = torch.randperm(total_m, dtype=torch.int32)
+    weight = torch.rand(seq_len, top_k, dtype=torch.float32)
+    expected = (
+        down.float()[restore_order].view(seq_len, top_k, hidden)
+        * weight.unsqueeze(-1)
+    ).sum(dim=1)
+
+    device = Accelerator(0)
+    session = InferenceSession(devices=[device])
+    input_types = (
+        TensorType(DType.bfloat16, [total_m, hidden], device=DeviceRef.GPU()),
+        TensorType(DType.uint32, [total_m], device=DeviceRef.GPU()),
+        TensorType(DType.float32, [seq_len, top_k], device=DeviceRef.GPU()),
+    )
+    with Graph("test_moe_finalize", input_types=input_types) as g:
+        down_v, restore_v, weight_v = (v.tensor for v in g.inputs)
+        g.output(moe_finalize(down_v, restore_v, weight_v, DType.bfloat16))
+    model = session.load(g)
+
+    result = model.execute(
+        Buffer.from_dlpack(down).to(device),
+        Buffer.from_dlpack(restore_order.to(torch.uint32)).to(device),
+        Buffer.from_dlpack(weight).to(device),
+    )[0]
+    assert isinstance(result, Buffer)
+    torch.testing.assert_close(
+        from_dlpack(result).cpu().float(), expected, atol=2e-2, rtol=2e-2
+    )

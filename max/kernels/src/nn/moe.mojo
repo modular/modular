@@ -20,11 +20,12 @@ from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic, Ordering
 from shmem.ep_comm import BLOCK_SCOPE
-from std.sys import has_apple_gpu_accelerator
+from std.sys import has_apple_gpu_accelerator, simd_width_of
 from std.sys.info import is_amd_gpu, is_nvidia_gpu
 
 import max.gpu.primitives.warp as warp
 import max.gpu.primitives.block as block
+from max.algorithm import elementwise
 from std.bit import pop_count, log2_floor
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -35,7 +36,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -330,6 +331,80 @@ def moe_create_indices[
             scales_offset_p,
             grid_dim=1,
             block_dim=_BLOCK_THREADS,
+        )
+
+
+def moe_finalize[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+    target: StaticString,
+](
+    output: TileTensor[mut=True, out_type, ...],
+    down: TileTensor[mut=False, down_type, ...],
+    restore_order: TileTensor[mut=False, .uint32, ...],
+    router_weight: TileTensor[mut=False, weight_type, ...],
+    context: DeviceContext,
+) raises:
+    """Fuses the MoE unpermute gather with the top-k weighted row sum.
+
+    Each output element reads its token's `num_experts_per_token` rows of
+    `down` through `restore_order`, scales each by its router weight and
+    accumulates in fp32, so the `[num_tokens, num_experts_per_token, hidden]`
+    unpermuted tensor never materializes.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+        target: The target device to run the kernel on.
+
+    Args:
+        output: One combined row per token. Shape: [num_tokens, hidden].
+        down: Expert outputs in expert-permuted (`token_expert_order`) row
+            order. Shape: [num_tokens * num_experts_per_token, hidden].
+        restore_order: Maps token-major index
+            `i = token * num_experts_per_token + k` to its row in `down`.
+            Shape: [num_tokens * num_experts_per_token].
+        router_weight: Per-(token, expert) routing weight applied before the
+            sum. Shape: [num_tokens, num_experts_per_token].
+        context: The device context.
+    """
+    comptime assert is_gpu[target](), "MoE finalize is only supported on GPU"
+
+    var num_experts_per_token = Int(router_weight.dim(1))
+
+    @inline(.always)
+    def finalize[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var token = Int(idx[0].value())
+        var col = Int(idx[1].value())
+        var acc = SIMD[.float32, width](0)
+        for k in range(num_experts_per_token):
+            var row = Int(
+                restore_order[Coord(token * num_experts_per_token + k)]
+            )
+            var weight = router_weight.load[width=1](Coord(token, k)).cast[
+                .float32
+            ]()
+            acc += (
+                down.load[width=width](Coord(row, col)).cast[.float32]()
+                * weight
+            )
+        output.store[width=width](Coord(token, col), acc.cast[out_type]())
+
+    comptime simd_width = simd_width_of[down_type, target=get_gpu_target()]()
+    var shape = output.layout.shape_coord()
+
+    # `down` rows are only vector-aligned when the row width is a multiple of
+    # `simd_width`; every other shape runs scalar.
+    if Int(down.dim(1)) % simd_width == 0:
+        elementwise[
+            simd_width, target=target, _trace_description="mo.moe.finalize"
+        ](finalize, shape, context)
+    else:
+        elementwise[1, target=target, _trace_description="mo.moe.finalize"](
+            finalize, shape, context
         )
 
 
