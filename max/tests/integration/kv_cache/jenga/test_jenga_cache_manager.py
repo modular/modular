@@ -567,7 +567,7 @@ def test_a_small_row_addressed_page_does_not_widen_the_paged_table() -> None:
     assert row_blocks > paged_blocks
 
     # Replica 0's staged page table, as the stager declares it.
-    declared = mgr._stager._declared[f"0/{attn_id}"].descriptor
+    declared = mgr._stager._slots[f"0/{attn_id}"].descriptor
     assert declared.max_shape == (
         max_batch_size,
         padded_lut_cols(paged_blocks),
