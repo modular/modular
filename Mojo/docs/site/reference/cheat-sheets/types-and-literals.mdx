@@ -31,7 +31,8 @@ v[0] = 5.0 # write one lane
 print(v.reduce_add()) # sum of lanes (14.0)
 ```
 
-Width must be a power of two and is part of the type; its parameter type is **SIMDLength**.
+Width must be a power of two and is part of the type; its parameter type is
+`SIMDLength`.
 
 </Panel>
 
@@ -42,9 +43,9 @@ SIMD[DType.float32, 4] # DType picks the lane type
 Scalar[DType.int] # == Int
 ```
 
-Names mirror the types: **DType.float32** ↔ **Float32**,
-**DType.int8** ↔ **Int8**, **DType.bool** ↔ **Bool**. A
-**DType** is a name, not a type. It parameterizes **SIMD**, which
+Names mirror the types: `DType.float32` ↔ `Float32`,
+`DType.int8` ↔ `Int8`, `DType.bool` ↔ `Bool`. A
+`DType` is a name, not a type. It parameterizes `SIMD`, which
 stores the data.
 
 </Panel>
@@ -65,7 +66,8 @@ var big: Int64 = -9_000_000_000
 | UInt8 … UInt256 | sized unsigned                  |
 | Byte            | alias for UInt8                 |
 
-Use **Int** for counts and indices; sized types when bit width is part of the contract. Each is an alias for a 1-lane SIMD.
+Use `Int` for counts and indices; sized types when bit width is part of the
+contract. Each is an alias for a 1-lane SIMD.
 
 </Panel>
 
@@ -80,7 +82,7 @@ Use **Int** for counts and indices; sized types when bit width is part of the co
 | Float8_e4m3fn … | 8-bit (GPU, ML)           |
 | Float4_e2m1fn   | 4-bit (Blackwell+)        |
 
-No bare **Float** type. Each is an alias for a 1-lane SIMD.
+No bare `Float` type. Each is an alias for a 1-lane SIMD.
 
 </Panel>
 
@@ -94,7 +96,7 @@ No bare **Float** type. Each is an alias for a 1-lane SIMD.
 | Float32.MAX_FINITE    | largest finite                           |
 | Float32.MAX           | may be inf                               |
 
-IEEE floats carry **inf**, **-inf**, **nan**, **-0.0**.
+IEEE floats carry `inf`, `-inf`, `nan`, `-0.0`.
 
 </Panel>
 
@@ -126,7 +128,7 @@ convert only when it can prove the result is exact.
 | 2 ** 200             | comptime IntLiteral, comptime arbitrary precision |
 
 Leading zeros on base-10 integers are rejected. At runtime literals
-materialize to **Int** / **Float64**.
+materialize to `Int` / `Float64`.
 
 </Panel>
 
@@ -138,8 +140,8 @@ materialize to **Int** / **Float64**.
 (1, "a", 2.0) # Tuple, mixed types
 ```
 
-Unannotated, a bracket literal defaults to **Array**. It adapts to the
-type you ask for: **var x: List[Int] = [1, 2, 3]**.
+Unannotated, a bracket literal defaults to `Array`. It adapts to the
+type you ask for: `var x: List[Int] = [1, 2, 3]`.
 
 </Panel>
 
@@ -173,7 +175,8 @@ Escapes:
 | \uHHHH     | Unicode (4 hex digits) |
 | \UHHHHHHHH | Unicode (8 hex digits) |
 
-Source is UTF-8. **\u** and **\U** reject surrogate code points (U+D800 to U+DFFF); code points above U+FFFF need **\U**, not a surrogate pair.
+Source is UTF-8. `\u` and `\U` reject surrogate code points (U+D800 to
+U+DFFF); code points above U+FFFF need `\U`, not a surrogate pair.
 
 </Panel>
 
@@ -211,11 +214,12 @@ Interpolations evaluate at runtime.
 
 <Panel title="Sharp edges">
 
-- **Int width is platform-dependent** — use Int64 for a fixed width.
-- **Integer overflow wraps** — Int8(127) + 1 is -128.
-- **Float-to-int truncates toward zero** — Int(Float64(3.9)) is 3.
-- **Float8 needs a GPU** — no runtime CPU arithmetic.
-- **Int128 / Int256 are software-emulated.**
+- *Int width is platform-dependent* — use Int64 for a fixed width.
+- *Integer overflow wraps* — Int8(127) + 1 is -128. A shift (`<<` or
+  `>>`) at or above the bit width has no defined result.
+- *Float-to-int truncates toward zero* — Int(Float64(3.9)) is 3.
+- *Float8 needs a GPU* — no runtime CPU arithmetic.
+- *Int128 / Int256 are software-emulated.*
 
 </Panel>
 
@@ -224,20 +228,19 @@ Interpolations evaluate at runtime.
 - No implicit numeric conversion: `Int + Float64` is an error. Cast with
   `Float64(n)`, `Int(x)`.
 - Numbers are fixed-width SIMD scalars, not arbitrary-precision `int`; only
-  a **comptime** **IntLiteral** is unbounded.
-- No bare `float` or `int` — pick **Int**, **Float64**, or a
+  a `comptime` `IntLiteral` is unbounded.
+- No bare `float` or `int` — pick `Int`, `Float64`, or a
   sized type.
 
 </Panel>
 
 <Panel title="Coming from C++ / Rust">
 
-- Every scalar is a 1-lane **SIMD**; vectorizing widens the lane count, not a new
-  type.
-- Integer overflow **wraps** (defined), not C++ undefined behavior or a Rust debug
-  panic.
-- **DType** is a value-level tag that parameterizes **SIMD**, not a type alias.
-- **Int** is C++ `ssize_t` / Rust `isize`, not C++ `int`, which is usually 32-bit.
+- Every scalar is a 1-lane `SIMD`; vectorizing widens the lane count, not a
+  new type.
+- `DType` is a value-level tag that parameterizes `SIMD`, not a type alias.
+- `Int` is C++ `ssize_t` / Rust `isize`, not C++ `int`, which is usually
+  32-bit.
 
 </Panel>
 
