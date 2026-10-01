@@ -192,7 +192,9 @@ async def test_the_carrier_reaching_the_pipeline_names_the_request_span(
     # tasks, so the set has to precede it.
     seen: list[otel_trace.Span] = []
 
-    async def all_tokens(request: object) -> list[TokenGeneratorOutput]:
+    async def all_tokens(
+        request: object, *, parse_reasoning: bool = True
+    ) -> list[TokenGeneratorOutput]:
         context = _text_context()
         inject_trace_carrier(context)
         parent = _parent_trace_context(context)
@@ -282,7 +284,9 @@ async def test_tracing_off_leaves_the_phase_parent_unset(
     )
     seen: list[tuple[Context | None, int]] = []
 
-    async def all_tokens(request: object) -> list[TokenGeneratorOutput]:
+    async def all_tokens(
+        request: object, *, parse_reasoning: bool = True
+    ) -> list[TokenGeneratorOutput]:
         context = _text_context()
         inject_trace_carrier(context)
         carried = otel_trace.get_current_span(_parent_trace_context(context))
