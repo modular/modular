@@ -1077,6 +1077,7 @@ def bench_dispatch_all() raises:
         for bs in batch_sizes:
             for v in vocab_sizes:
                 bench_dispatch[dtype, -1](b, ctx, bs, v)
+                bench_dispatch[dtype, 1](b, ctx, bs, v)
                 bench_dispatch[dtype, 5](b, ctx, bs, v)
                 bench_dispatch[dtype, 20](b, ctx, bs, v)
                 bench_dispatch[dtype, 50](b, ctx, bs, v)
