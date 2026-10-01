@@ -121,6 +121,8 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": _1xB200,
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": _8xB200,
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": _8xB200,
+    # MI355: the sparse-MLA and k-pool indexer kernels are SM100-only.
+    "zai-org/GLM-5.3-Flash__tpep": _8xB200,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": _2xB200,
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": _1xB200,
     "RadixArk/Qwen3.8-27B-NVFP4__mtp_ring": _1xB200,
