@@ -33,10 +33,9 @@ namespace M {
 ///     attachToNewRemoteDebugSession();
 ///     do something else...
 ///   }
+/// ```
 ///
 /// This uses `mojo debug --vscode` under the hood.
-///
-/// ```
 ///
 /// The optional parameter quiet suppresses the output of the child process.
 void attachToNewRemoteDebugSession(bool quiet = false);
