@@ -381,20 +381,30 @@ def _elementwise_impl[
 
 @inline(.always)
 def dual_elementwise[
-    func_0: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
-    func_1: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
     *,
     target: StaticString = "gpu",
     _trace_description: StaticString = "dual_elementwise",
-](shape_0: Coord, shape_1: Coord, context: DeviceContext,) raises:
+](
+    shape_0: Coord,
+    shape_1: Coord,
+    context: DeviceContext,
+    func_0: Some[
+        ImplicitlyCopyable
+        & RegisterPassable
+        & (def[width: Int, alignment: Int = 1](Coord) -> None)
+    ],
+    func_1: Some[
+        ImplicitlyCopyable
+        & RegisterPassable
+        & (def[width: Int, alignment: Int = 1](Coord) -> None)
+    ],
+) raises:
     """Executes two elementwise functions over their respective shapes in a
     single GPU kernel launch. Each thread processes elements from both shapes,
     fusing two independent elementwise passes into one.
 
     Parameters:
-        func_0: The first body function.
-        func_1: The second body function.
         simd_width: The SIMD vector width to use.
         target: The target to run on (must be GPU).
         _trace_description: Description of the trace.
@@ -403,22 +413,18 @@ def dual_elementwise[
         shape_0: The shape for the first function.
         shape_1: The shape for the second function.
         context: The device context to use.
+        func_0: The first body function.
+        func_1: The second body function.
 
     Raises:
         If the operation fails.
     """
 
-    def func_0_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
-        func_0[width, alignment](indices)
-
-    def func_1_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
-        func_1[width, alignment](indices)
-
     _dual_elementwise_impl[
         simd_width,
         target=target,
         trace_description=_trace_description,
-    ](func_0_unified, func_1_unified, shape_0, shape_1, context)
+    ](func_0, func_1, shape_0, shape_1, context)
 
 
 @inline(.always)

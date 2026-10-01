@@ -68,11 +68,10 @@ def test_concat() raises:
         x3.make_dynamic[.int64]().as_unsafe_any_origin().as_imm(),
     )
 
-    @__parameter
     @inline(.always)
     def epilogue_plus_one[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output}:
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](
@@ -80,10 +79,11 @@ def test_concat() raises:
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    concat[dtype, epilogue_fn=epilogue_plus_one](
-        output.make_dynamic[.int64](),
+    concat[dtype](
+        output.make_dynamic[.int64]().as_unsafe_any_origin(),
         concat_axis,
         input_tuple,
+        epilogue_plus_one,
         DeviceContext(api="cpu"),
     )
 
@@ -139,11 +139,10 @@ def test_concat_parallel() raises:
         x3_dyn.as_unsafe_any_origin().as_imm(),
     )
 
-    @__parameter
     @inline(.always)
     def epilogue_plus_one[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output}:
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](
@@ -152,8 +151,11 @@ def test_concat_parallel() raises:
         )
 
     var input_vec = _tuple_to_list(input_tuple)
-    _concat_parallel[dtype, epilogue_plus_one](
-        output.make_dynamic[.int64](), concat_axis, input_vec
+    _concat_parallel[dtype, has_epilogue=True](
+        output.make_dynamic[.int64]().as_unsafe_any_origin(),
+        concat_axis,
+        input_vec,
+        epilogue_plus_one,
     )
 
     # CHECK: == test_concat_parallel
@@ -211,11 +213,10 @@ def test_concat_inner() raises:
 
     var input_vec = _tuple_to_list(input_tuple)
 
-    @__parameter
     @inline(.always)
     def epilogue_plus_one[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output}:
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](
@@ -223,8 +224,11 @@ def test_concat_inner() raises:
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    _concat_serial[dtype, epilogue_plus_one](
-        output.make_dynamic[.int64](), concat_axis, input_vec
+    _concat_serial[dtype, has_epilogue=True](
+        output.make_dynamic[.int64]().as_unsafe_any_origin(),
+        concat_axis,
+        input_vec,
+        epilogue_plus_one,
     )
 
     # CHECK-COUNT-4: 1.0

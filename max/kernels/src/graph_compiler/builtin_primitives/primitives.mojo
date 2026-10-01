@@ -960,7 +960,7 @@ def mgp_buffer_concat[
             .as_unsafe_any_origin()
             .as_imm()
         )
-    concat[.int8, bDevice, None](output_lt, 0, input_tensors, context=call_ctx)
+    concat[.int8, bDevice](output_lt, 0, input_tensors, context=call_ctx)
 
 
 @register_internal("mgp.buffer.device_to_host")
