@@ -4001,14 +4001,36 @@ def test_xml_properties_beside_pattern_properties_unchanged(
         assert isinstance(compiled, xgr.CompiledGrammar)
 
 
+@pytest.mark.parametrize("style", ["minimax_xml", "glm_xml", "deepseek_xml"])
 @pytest.mark.parametrize("pattern", ["^.+$", "^[^/]+$", "^[a-z</>]+$"])
 def test_xml_nested_key_pattern_that_can_spell_the_close_is_refused(
-    pattern: str,
+    style: _XmlStyle, pattern: str
 ) -> None:
-    # A reader may scan a parameter's value to its first `</parameter>`, so
-    # no key below the tag may spell it.
+    # These styles' readers may scan a parameter's value to its first close
+    # delimiter, so no key below the tag may spell it.
     with pytest.raises(Exception, match="closing delimiter"):
-        _compile_xml_arguments(_one_parameter(_pattern_keyed(pattern)))
+        _compile_xml_arguments(
+            _one_parameter(_pattern_keyed(pattern)), style=style
+        )
+
+
+@pytest.mark.parametrize(
+    "pattern,key",
+    [
+        ("^.*$", "</parameter>"),
+        ("^.+$", "</parameter>"),
+        ("^[^/]+$", "<parameter=m>"),
+        ("^[a-z</>]+$", "</parameter>"),
+    ],
+)
+def test_xml_qwen_nested_key_pattern_may_spell_the_close(
+    pattern: str, key: str
+) -> None:
+    # FormatSpec's Qwen reader reads an object-valued parameter as one
+    # balanced JSON value, so a key inside it may spell `</parameter>`, as a
+    # string value already may.
+    compiled = _compile_xml_arguments(_one_parameter(_pattern_keyed(pattern)))
+    assert _accepts(compiled, f'<parameter=m>\n{{"{key}":"x"}}\n</parameter>')
 
 
 @pytest.mark.parametrize(
