@@ -97,6 +97,7 @@ def _local_expert_matmul(
     usage_stats: Tensor | None = None,
     quant_config: QuantConfig | None = None,
     scales_offset: Tensor | None = None,
+    estimated_total_m: Tensor | None = None,
 ) -> Tensor:
     """Runs local expert matmuls on dispatched tokens."""
     down_in = quant_ops.grouped_matmul_silu(
@@ -108,6 +109,7 @@ def _local_expert_matmul(
         usage_stats,
         quant_config,
         scales_offset=scales_offset,
+        estimated_total_m=estimated_total_m,
     )
     return quant_ops.grouped_matmul(
         down_in,
@@ -116,6 +118,7 @@ def _local_expert_matmul(
         expert_ids,
         usage_stats,
         scales_offset=scales_offset,
+        estimated_total_m=estimated_total_m,
     )
 
 
@@ -586,7 +589,10 @@ class ExpertParallelMoE(QuantizedMoE):
         return F.max(gate_scales, axis=0)
 
     def _local_compute(
-        self, payload: EPDispatchPayload, global_scale: Tensor | None
+        self,
+        payload: EPDispatchPayload,
+        global_scale: Tensor | None,
+        estimated_total_m: Tensor,
     ) -> list[TensorValue]:
         """Runs the per-device expert matmuls on dispatched tokens."""
         # The EP dispatch hands back one bundle per device, so each device's
@@ -608,6 +614,7 @@ class ExpertParallelMoE(QuantizedMoE):
                         payload.expert_ids[i],
                         usage_stats[i] if usage_stats is not None else None,
                         quant_config=self.quant_config,
+                        estimated_total_m=estimated_total_m,
                     )
                 )
                 for i in range(len(tokens))
@@ -663,11 +670,21 @@ class ExpertParallelMoE(QuantizedMoE):
                 x_shards, topk_id_shards, device_ids, input_scales=input_scales
             )
 
+        # Estimated total token-expert pairs across all devices.
+        total_tokens = F.shape_to_tensor(x_shards[0].shape)[0]
+        for shard in x_shards[1:]:
+            total_tokens = total_tokens + F.shape_to_tensor(shard.shape)[0]
+        estimated_total_m = (
+            total_tokens * self.num_experts_per_token // config.n_gpus_per_node
+        ).cast(DType.uint32)
+
         # Now each device runs its own experts on the tokens it was sent.
         payload = EPDispatchPayload.from_dispatch(
             dispatch_results, self.quant_config, config
         )
-        down_shards = self._local_compute(payload, global_scale)
+        down_shards = self._local_compute(
+            payload, global_scale, estimated_total_m
+        )
 
         # Combine expert outputs back to their source devices.
         if config.use_allreduce:

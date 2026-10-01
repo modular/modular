@@ -445,6 +445,27 @@ def test_print_symbolic(capfd: pytest.CaptureFixture[str]) -> None:
     assert "graph_tensor" in capfd.readouterr().out
 
 
+def test_shape_to_tensor() -> None:
+    result = F.shape_to_tensor([2, 3])
+    assert result.dtype == DType.int64
+    assert list(result.shape) == [2]
+    np.testing.assert_array_equal(np.from_dlpack(result), [2, 3])
+
+
+def test_shape_to_tensor_symbolic() -> None:
+    @module_dataclass
+    class ShapeModule(Module[[Tensor], Tensor]):
+        def forward(self, x: Tensor) -> Tensor:
+            return F.shape_to_tensor(x.shape)
+
+    input_type = TensorType(
+        DType.float32, ["n", 4], device=DeviceRef.from_device(DEVICE)
+    )
+    compiled = ShapeModule().compile(input_type)
+    result = compiled(Tensor.ones([5, 4], dtype=DType.float32, device=DEVICE))
+    np.testing.assert_array_equal(np.from_dlpack(result), [5, 4])
+
+
 def test_arange() -> None:
     device_ref = DeviceRef.from_device(DEVICE)
     result = F.arange(0, 10, 1, dtype=DType.int32, device=device_ref)
