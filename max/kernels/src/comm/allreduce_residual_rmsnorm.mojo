@@ -1242,8 +1242,7 @@ def _dispatch_fused_kernel[
         else:
             use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
-    @__parameter
-    def launch_1stage[sw: Int]() raises:
+    def launch_1stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch[
             sw,
             in_dtype,
@@ -1269,8 +1268,7 @@ def _dispatch_fused_kernel[
             residual_output,
         )
 
-    @__parameter
-    def launch_2stage[sw: Int]() raises:
+    def launch_2stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch_2stage[
             sw,
             in_dtype,

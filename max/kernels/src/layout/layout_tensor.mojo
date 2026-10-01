@@ -7160,8 +7160,7 @@ def _copy_dram_to_local[
     ), "src_fragments must have known layout."
 
     @inline(.always)
-    @__parameter
-    def offset_helper(offset_val: Int):
+    def offset_helper(offset_val: Int) {imm}:
         var src_frag_offset = Int32(
             src_fragments.distance(src.ptr)
             + Scalar[src.linear_idx_type](offset_val)

@@ -1661,7 +1661,6 @@ def flash_attention_dispatch[
                     # the split-K launch go through this one ladder, so their
                     # instantiation sets cannot drift. Returns whether a launch
                     # happened.
-                    @__parameter
                     def launch_mha_decoding[
                         out_dtype: DType
                     ](
@@ -1669,7 +1668,7 @@ def flash_attention_dispatch[
                         exp_sum_buf: DeviceBuffer[accum_type],
                         qk_max_buf: DeviceBuffer[accum_type],
                         grid_x: Int,
-                    ) raises -> Bool:
+                    ) raises {imm} -> Bool:
                         comptime for S in range(1, _MHA_DECODE_FOLD_MAX_S + 1):
                             comptime if S == 1 or _mha_decode_fold_ok[
                                 dtype,

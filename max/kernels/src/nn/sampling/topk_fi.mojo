@@ -456,8 +456,7 @@ def topk_mask_logits[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int]() raises:
+        def launch_kernel[vec_size: Int]() raises {imm}:
             comptime kernel = TopKMaskLogitsKernel[
                 block_size,
                 vec_size,
@@ -1210,8 +1209,7 @@ def topk_sampling_from_prob[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+        def launch_kernel[vec_size: Int, deterministic: Bool]() raises {imm}:
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmOrigin(probs.origin),
@@ -1238,8 +1236,7 @@ def topk_sampling_from_prob[
             )
 
         # Runtime dispatch to compile-time parameter.
-        @__parameter
-        def dispatch_vec_size[deterministic: Bool]() raises:
+        def dispatch_vec_size[deterministic: Bool]() raises {imm}:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
                     return launch_kernel[param_vec_size, deterministic]()
@@ -2748,10 +2745,9 @@ def topk_topp_sampling_from_prob[
             ctx.enqueue_memset(coop_buf, 0)
             coop_ptr = coop_buf.unsafe_ptr().as_unsafe_any_origin()
 
-        @__parameter
         def launch_kernel[
             vec_size: Int, deterministic: Bool, coop_size: Int
-        ]() raises:
+        ]() raises {imm}:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmOrigin(probs.origin),
@@ -2789,8 +2785,7 @@ def topk_topp_sampling_from_prob[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        @__parameter
-        def dispatch_vec_size[deterministic: Bool]() raises:
+        def dispatch_vec_size[deterministic: Bool]() raises {imm}:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
                     comptime if coop_capable:
@@ -3166,8 +3161,7 @@ def topk_softmax_sample[
         if seed:
             seed_ptr = seed.unsafe_value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int]() raises:
+        def launch_kernel[vec_size: Int]() raises {imm}:
             comptime kernel = topk_softmax_sample_kernel[
                 block_size,
                 vec_size,
@@ -3546,8 +3540,7 @@ def topk_topp_masked_probs[
             ctx.enqueue_memset(coop_buf, 0)
             coop_ptr = coop_buf.unsafe_ptr().as_unsafe_any_origin()
 
-        @__parameter
-        def launch_kernel[vec_size: Int, coop_size: Int]() raises:
+        def launch_kernel[vec_size: Int, coop_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,
                 vec_size,

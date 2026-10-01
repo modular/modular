@@ -997,11 +997,10 @@ def concat_shape_impl[
     """
     var axis = normalize_neg_index(axis0, rank)
 
-    @__parameter
     @inline(.always)
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
-    ) -> Bool:
+    ) {imm} -> Bool:
         comptime for i in range(rank):
             if i != axis and s1[i] != s2[i]:
                 return False
@@ -1055,11 +1054,10 @@ def concat_from_list_shape_impl[
     """
     var axis = normalize_neg_index(axis0, rank)
 
-    @__parameter
     @inline(.always)
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
-    ) -> Bool:
+    ) {imm} -> Bool:
         for i in range(rank):
             if i != axis and s1[i] != s2[i]:
                 return False
@@ -1661,8 +1659,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         ctx: DeviceContext,
     ) capturing raises:
         @inline(.always)
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             return String(";").join(
                 Span(
                     [
@@ -1739,8 +1736,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         ctx: DeviceContext,
     ) capturing raises:
         @inline(.always)
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             return String(";").join(
                 Span(
                     [
@@ -4649,9 +4645,8 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 + ". Expected 16, 64, 128, or 256."
             )
 
-        @__parameter
         @inline(.always)
-        def launch_cpu[DSTATE_VAL: Int]() raises:
+        def launch_cpu[DSTATE_VAL: Int]() raises {imm}:
             mamba2_ssd_chunk_scan_varlen_fwd_cpu[dtype, DSTATE_VAL](
                 nheads,
                 head_dim,
@@ -4684,9 +4679,8 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 Optional[DeviceContext](ctx),
             )
 
-        @__parameter
         @inline(.always)
-        def launch_gpu[DSTATE_VAL: Int]() raises:
+        def launch_gpu[DSTATE_VAL: Int]() raises {imm}:
             comptime BLOCK_SIZE = 64
             var num_p_blocks = ceildiv(head_dim, BLOCK_SIZE)
             comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_gpu[
@@ -4955,9 +4949,8 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 + ". Expected 16, 64, 128, or 256."
             )
 
-        @__parameter
         @inline(.always)
-        def launch_cpu[DSTATE_VAL: Int]() raises:
+        def launch_cpu[DSTATE_VAL: Int]() raises {imm}:
             # The CPU kernel stores fp32 state only; bf16 state is wired on
             # the Apple GPU kernel alone. The `comptime if` keeps the bf16
             # instantiation from elaborating this branch, but the direct call
@@ -5006,9 +4999,8 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     " kernel"
                 )
 
-        @__parameter
         @inline(.always)
-        def launch_gpu[DSTATE_VAL: Int]() raises:
+        def launch_gpu[DSTATE_VAL: Int]() raises {imm}:
             # NVIDIA B200 (sm_100) gets the cooperative DSTATE-split
             # decode-occupancy variant (r7); every other device (AMD MI355
             # gfx950, Hopper, Apple, ...) runs the portable v1
@@ -5463,9 +5455,8 @@ struct CausalConv1DVarlenFwd[
             comptime TILE_SEQ = 128
             var silu_activation_int8 = Int8(silu_activation)
 
-            @__parameter
             @inline(.always)
-            def launch_gpu[kWidth: Int]() raises:
+            def launch_gpu[kWidth: Int]() raises {imm}:
                 # Prefill/mixed segments (at least one sequence has >1
                 # token) route to the grid-z sequence-tiled kernel; pure
                 # decode (every sequence has exactly 1 token, so

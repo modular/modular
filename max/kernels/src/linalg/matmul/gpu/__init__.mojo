@@ -422,8 +422,7 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     )
 
     @inline(.always)
-    @__parameter
-    def process_m(m: Int):
+    def process_m(m: Int) {mut emit_block_shape, imm}:
         var best_score = Int.MAX
         var best_idx = 0
         var idx = 0
@@ -578,8 +577,7 @@ def _matmul_gpu[
 
     # Helper for gemv_gpu dispatch — passes TileTensor directly.
     @inline(.always)
-    @__parameter
-    def _gemv_dispatch() raises:
+    def _gemv_dispatch() raises {imm}:
         gemv_gpu[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
@@ -1430,7 +1428,6 @@ def _matmul_gpu[
         DType.bfloat16,
     ):
 
-        @__parameter
         @inline(.always)
         def _enqueue_rdna_kernel[
             BLOCK_K: Int,
@@ -1440,7 +1437,7 @@ def _matmul_gpu[
             WARPS_N: Int,
             WARP_TILE_M: Int,
             WARP_TILE_N: Int,
-        ]() raises:
+        ]() raises {imm}:
             comptime NUM_WARPS = WARPS_M * WARPS_N
             comptime rdna_kernel = gemm_kernel_rdna[
                 c_type,
@@ -1690,9 +1687,8 @@ def multistage_gemm[
                 mma_shape=Index(16, 16, 128),
             )
 
-            @__parameter
             @inline(.always)
-            def _launch_pingpong() raises:
+            def _launch_pingpong() raises {imm}:
                 var pp_grid = (
                     ceildiv(N, pingpong_config.block_shape[1]),
                     ceildiv(M, pingpong_config.block_shape[0]),
@@ -1721,9 +1717,8 @@ def multistage_gemm[
                     block_dim=pp_threads,
                 )
 
-            @__parameter
             @inline(.always)
-            def _launch_skinny() raises:
+            def _launch_skinny() raises {imm}:
                 var sk_grid = (
                     ceildiv(N, skinny_config.block_shape[1]),
                     ceildiv(M, skinny_config.block_shape[0]),
@@ -1752,9 +1747,8 @@ def multistage_gemm[
                     block_dim=sk_threads,
                 )
 
-            @__parameter
             @inline(.always)
-            def _launch_standard() raises:
+            def _launch_standard() raises {imm}:
                 comptime std_config = MatmulConfig[
                     a_type, b_type, c_type, True
                 ](
@@ -2010,9 +2004,8 @@ def multistage_gemm[
                 mma_shape=Index(16, 16, 128),
             )
 
-            @__parameter
             @inline(.always)
-            def _launch_pingpong() raises:
+            def _launch_pingpong() raises {imm}:
                 var pp_grid = (
                     ceildiv(N, pingpong_config.block_shape[1]),
                     ceildiv(M, pingpong_config.block_shape[0]),
@@ -2041,9 +2034,8 @@ def multistage_gemm[
                     block_dim=pp_threads,
                 )
 
-            @__parameter
             @inline(.always)
-            def _launch_skinny() raises:
+            def _launch_skinny() raises {imm}:
                 var sk_grid = (
                     ceildiv(N, skinny_config.block_shape[1]),
                     ceildiv(M, skinny_config.block_shape[0]),
@@ -2072,9 +2064,8 @@ def multistage_gemm[
                     block_dim=sk_threads,
                 )
 
-            @__parameter
             @inline(.always)
-            def _launch_standard() raises:
+            def _launch_standard() raises {imm}:
                 comptime std_config = MatmulConfig[
                     a_type, b_type, c_type, True
                 ](

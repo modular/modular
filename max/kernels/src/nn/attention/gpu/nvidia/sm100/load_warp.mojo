@@ -293,7 +293,6 @@ def fa4_load[
         CacheEviction.EVICT_NORMAL if pair_cta else CacheEviction.EVICT_FIRST
     )
 
-    @__parameter
     @inline(.always)
     def q_async_copy[
         eviction_policy: CacheEviction = q_default_eviction,
@@ -301,7 +300,7 @@ def fa4_load[
         smem_dst: QType,
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         depth_idx: UInt32 = 0,
-    ):
+    ) {imm}:
         """Issue Q TMA elect-predicated on `e`. Caller no longer needs
         `if e != 0:` around the call; the TMA fires only on the elected
         lane via the PTX predicate inside `_elect`."""
@@ -386,9 +385,8 @@ def fa4_load[
         row_major=v_row_major,
     ]()
 
-    @__parameter
     @inline(.always)
-    def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+    def _k_num_valid_pages(current_kv_row: UInt32) {imm} -> UInt32:
         """Valid K sub-tile pages at `current_kv_row` (per-CTA range)."""
         if current_kv_row >= num_keys:
             return UInt32(0)
@@ -399,9 +397,8 @@ def fa4_load[
             ),
         )
 
-    @__parameter
     @inline(.always)
-    def _v_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+    def _v_num_valid_pages(current_kv_row: UInt32) {imm} -> UInt32:
         """Valid V sub-tile pages at `current_kv_row` (full BN range)."""
         return min(
             UInt32(KVPagedRows.num_pages),
@@ -508,7 +505,6 @@ def fa4_load[
     # `k_nvp_peer`, `kv_head_idx`, `v_col_offset`, `k_tma_op`,
     # `v_tma_op`, `config`. Caller owns `populate`, `smem_ptr`, and the
     # producer-pipeline acquire/step lifecycle.
-    @__parameter
     @inline(.always)
     def _produce_k[
         partial: Bool,
@@ -519,7 +515,7 @@ def fa4_load[
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
         k_num_valid_pages: UInt32,
-    ):
+    ) {imm}:
         comptime d_idx = qk_stage * config.BK0
         comptime if is_leader:
             comptime q_term = (cta_group * q_bytes if with_q else 0)
@@ -667,7 +663,6 @@ def fa4_load[
     comptime v_e_rows_per_page = config.v_tma_box_rows(page_size)
     comptime v_e_pages_per_chunk = config.v_e_chunk_rows() // v_e_rows_per_page
 
-    @__parameter
     @inline(.always)
     def _produce_v_e[
         partial: Bool,
@@ -677,7 +672,7 @@ def fa4_load[
         kv_row_base: UInt32,
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
-    ):
+    ) {imm}:
         # `_produce_v_e` is Layout-E-only (m_pack==2 => use_ws), so the non-WS
         # per-page byte count `_produce_v` carries never applies: V bytes are
         # always the full `v_expect_bytes`, and OOB-fill reduces to `partial`.
@@ -747,7 +742,6 @@ def fa4_load[
         is_leader=True,
     ]
 
-    @__parameter
     @inline(.always)
     def _produce_v_sk[
         partial: Bool,
@@ -757,7 +751,7 @@ def fa4_load[
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
         chunk_valid_pages: UInt32,
-    ):
+    ) {imm}:
         # Always the FULL slot: a chunk that reaches here is live, and at the
         # production page sizes `v_sk_pages_per_chunk == 1`, so one issue
         # delivers the whole box. The dead chunks contribute no bytes because
@@ -833,13 +827,12 @@ def fa4_load[
         # first peeled K slot passes `acquire=False` (initial phase=1).
         # The caller still owns `populate` (K computes `rows`, V reuses it)
         # and any interleaved Q TMA.
-        @__parameter
         @inline(.always)
         def _emit_k[
             partial: Bool,
             with_q: Bool = False,
             acquire: Bool = True,
-        ](rows: KVPagedRows, k_num_valid_pages: UInt32):
+        ](rows: KVPagedRows, k_num_valid_pages: UInt32) {mut kv_pipeline, imm}:
             # WS shared sub-tile ring: emit num_qk_stages K depth-half sub-tiles
             # (each a 32768-B ring slot with its own barrier); Q (when with_q)
             # rides every K sub-tile (q_elements is per-sub-tile). Folds to one

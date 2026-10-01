@@ -638,12 +638,11 @@ def concat_shape[
     # extract hyper parameters
     var normalized_axis = normalize_neg_index(axis, InputLayoutType.rank)
 
-    @__parameter
     @inline(.always)
     def shape_equal_ignore_axis(
         s1: IndexList[InputLayoutType.rank],
         s2: IndexList[InputLayoutType.rank],
-    ) -> Bool:
+    ) {imm} -> Bool:
         for i in range(InputLayoutType.rank):
             if i != axis and s1[i] != s2[i]:
                 return False
@@ -1125,9 +1124,8 @@ def _concat_gpu[
         # Use input[0], all dims should be equal except axis.
         outer_dims *= Int(inputs[0].dim(i))
 
-    @__parameter
     @inline(.always)
-    def _concat_buffers_contiguously() raises:
+    def _concat_buffers_contiguously() raises {imm}:
         var input_size = 0
 
         comptime for i in range(num_inputs):

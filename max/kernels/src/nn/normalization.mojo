@@ -727,8 +727,7 @@ def rms_norm_gpu_warp_tiling[
             var col = (c * bdim + tid) * simd_width
 
             @inline(.always)
-            @__parameter
-            def _normalize() -> SIMD[dtype, simd_width]:
+            def _normalize() {imm} -> SIMD[dtype, simd_width]:
                 comptime if multiply_before_cast:
                     var gamma_accum = (
                         gamma_val[c].cast[accum_type]() + weight_offset_accum
@@ -983,9 +982,8 @@ def rms_norm_gpu[
     # warps, capped at the device max), each owning `eff_simd * chunks` columns.
     # Single source of truth for both the launcher and the warp-per-row gate
     # below.
-    @__parameter
     @inline(.always)
-    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
+    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() {imm} -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
         return min(
             align_up(threads, WARP_SIZE),
@@ -994,9 +992,8 @@ def rms_norm_gpu[
 
     # `exact` means every thread is fully active (the block tiles the row with
     # no ragged tail), so the unguarded kernel can be used.
-    @__parameter
     @inline(.always)
-    def _wt_exact[eff_simd: Int, chunks: Int]() -> Bool:
+    def _wt_exact[eff_simd: Int, chunks: Int]() {imm} -> Bool:
         return (
             _wt_threads_per_block[eff_simd, chunks]() * eff_simd * chunks
         ) == cols
@@ -1043,15 +1040,13 @@ def rms_norm_gpu[
     # Launch the multi-chunk warp-tiling kernel. `exact_fit` (every thread
     # fully active, no ragged tail) is decided at runtime and selects the
     # unguarded instantiation.
-    @__parameter
     @inline(.always)
-    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises:
+    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises {imm}:
         var threads_per_block = _wt_threads_per_block[eff_simd, chunks]()
         var exact = _wt_exact[eff_simd, chunks]()
 
-        @__parameter
         @inline(.always)
-        def _enqueue[exact_fit: Bool]() raises:
+        def _enqueue[exact_fit: Bool]() raises {imm}:
             comptime kernel = rms_norm_gpu_warp_tiling[
                 mut=gamma.mut,
                 LayoutType=gamma.LayoutType,

@@ -1890,8 +1890,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         scales_tensor.dim[1]()
     )
 
-    @__parameter
-    def launch_quant_fp4_kernel[k_tiles_per_block: Int]() raises:
+    def launch_quant_fp4_kernel[k_tiles_per_block: Int]() raises {imm}:
         comptime kernel = grouped_quantize_dynamic_scaled_fp4_async_kernel[
             output_dtype,
             scales_dtype,
