@@ -464,6 +464,7 @@ class NvMxf4f8Strategy:
         use_swigluoai: bool = False,
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
+        a_row_scales: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the fused quantized grouped matmul + SwiGLU + quant kernel.
 
@@ -494,6 +495,8 @@ class NvMxf4f8Strategy:
                 function.
             swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
             swiglu_limit: The limit value for the clamped SwiGLU activation function.
+            a_row_scales: Optional BF16 scale per ``hidden`` row, applied with
+                the expert scale before the SwiGLU. NVFP4 only.
 
         Returns:
             Tuple ``(c_packed, c_swiglu_scales)`` matching the chained
@@ -521,6 +524,7 @@ class NvMxf4f8Strategy:
             clamp_activation=use_swigluoai,
             swiglu_alpha=swiglu_alpha,
             swiglu_limit=swiglu_limit,
+            a_row_scales=a_row_scales,
         )
 
 
