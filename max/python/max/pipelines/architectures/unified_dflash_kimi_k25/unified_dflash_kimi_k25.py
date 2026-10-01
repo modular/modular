@@ -81,6 +81,7 @@ class UnifiedDflashKimiK25(BlockDriver[list[TensorValue], list[TensorValue]]):
             speculative_config=config.speculative_config,
             enable_structured_output=enable_structured_output,
             ctx_at_draft_cache_length=True,
+            vocab_size=config.target.vocab_size,
         )
         self.config = config
         self.target_layer_ids = list(config.target_layer_ids)

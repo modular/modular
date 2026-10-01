@@ -14,10 +14,15 @@
 
 from __future__ import annotations
 
-from max.graph import TensorValue
+from max.dtype import DType
+from max.graph import TensorValue, ops
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import PagedCacheValues
-from max.pipelines.speculative.block_driver import Accepted, BlockBatch
+from max.pipelines.speculative.block_driver import (
+    Accepted,
+    BlockBatch,
+    DraftSampler,
+)
 
 from ..dspark_draft.dspark_speculators_draft import DSparkSpeculatorsDraft
 from ..gemma4.block_spec_adapters import block_kv_with_dispatch
@@ -77,10 +82,39 @@ class DSparkGemma4_31BProposer:
         )
 
     def head(
-        self, batch: BlockBatch, block_hs: TensorValue, accepted: Accepted
+        self,
+        batch: BlockBatch,
+        block_hs: TensorValue,
+        accepted: Accepted,
+        sampler: DraftSampler,
     ) -> TensorValue:
         block_hs_2d = block_hs.reshape(
             ("batch_size", self.block_size, self.hidden_size)
         )
         base_logits = self.draft.lm_head(block_hs_2d[:, 1:, :])
-        return self.draft.sample_draft_tokens(base_logits, accepted.next_tokens)
+        # The draft scores its pruned vocabulary; each draft id sits at
+        # ``id + d2t[id]`` in the target's.
+        d2t = TensorValue(self.draft.d2t)
+        draft_vocab = d2t.shape[0]
+        target_ids = ops.broadcast_to(
+            ops.unsqueeze(
+                ops.range(
+                    0,
+                    draft_vocab,
+                    1,
+                    draft_vocab,
+                    dtype=DType.int64,
+                    device=d2t.device,
+                )
+                + d2t,
+                axis=0,
+            ),
+            ["batch_size", draft_vocab],
+        )
+        return self.draft.sample_draft_tokens(
+            base_logits,
+            accepted.next_tokens,
+            sampler=lambda logits, step: sampler.sample_next(
+                logits, step, token_ids=target_ids
+            ),
+        )

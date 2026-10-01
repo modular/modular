@@ -16,7 +16,11 @@ from __future__ import annotations
 
 from max.graph import TensorValue, ops
 from max.nn.kv_cache import PagedCacheValues
-from max.pipelines.speculative.block_driver import Accepted, BlockBatch
+from max.pipelines.speculative.block_driver import (
+    Accepted,
+    BlockBatch,
+    DraftSampler,
+)
 
 from ..dflash_llama3 import DFlashLlama3
 from ..gemma4.block_spec_adapters import block_kv_with_dispatch
@@ -77,7 +81,11 @@ class DFlashGemma4_31BProposer:
         )
 
     def head(
-        self, batch: BlockBatch, block_hs: TensorValue, accepted: Accepted
+        self,
+        batch: BlockBatch,
+        block_hs: TensorValue,
+        accepted: Accepted,
+        sampler: DraftSampler,
     ) -> TensorValue:
         del accepted
         k = self.block_size
@@ -85,4 +93,7 @@ class DFlashGemma4_31BProposer:
         draft_logits = self.target.lm_head(
             [block_hs_2d[:, 1:, :]], batch.signal_buffers
         )[0]
-        return ops.argmax(draft_logits, axis=-1).reshape(("batch_size", k - 1))
+        softcap = self.target.logit_softcapping
+        if softcap is not None:
+            draft_logits = ops.tanh(draft_logits / softcap) * softcap
+        return sampler.sample_all(draft_logits)

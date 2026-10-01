@@ -76,6 +76,7 @@ class UnifiedDSparkGemma4_12B(BlockDriver[TensorValue, TensorValue]):
                 include_signal_buffers=True,
             ),
             speculative_config=config.speculative_config,
+            vocab_size=config.target.text_config.vocab_size,
         )
         self.config = config
         self.target_layer_ids = list(config.target_layer_ids)

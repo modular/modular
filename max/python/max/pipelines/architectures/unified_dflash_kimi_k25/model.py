@@ -114,7 +114,7 @@ class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
             *self.ep_inputs,
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=False
+            include_in_thinking_phase=False,
         )
 
 
@@ -421,6 +421,7 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                     pinned_bitmask=graph_inputs.pinned_bitmask,
                     wait_payload=graph_inputs.wait_payload,
                     device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+                    draft_probs_full=graph_inputs.draft_probs_full,
                 )
                 graph.output(*outputs)
 

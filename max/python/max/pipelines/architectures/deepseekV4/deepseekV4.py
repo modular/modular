@@ -40,7 +40,7 @@ no Sinkhorn step and keeps the checkpoint's flat ``hc_head_*`` names.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from max.dtype import DType
 from max.graph import (
@@ -440,6 +440,7 @@ class DSparkBlock(DeepseekV4Block):
         x: TensorValue,
         anchor_ids: TensorValue,
         head: Linear,
+        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Draft tokens and their logits out of the last stage.
 
@@ -456,6 +457,8 @@ class DSparkBlock(DeepseekV4Block):
             x: ``[1, b * K, hc, d]`` the last stage's output stream.
             anchor_ids: ``[b]`` the token each block starts with.
             head: The trunk's LM head, shared not copied.
+            sampler: Draws step ``i``'s ``[b]`` token from its ``[b, vocab]``
+                biased logits in place of the argmax.
 
         Returns:
             ``[b, K]`` draft token ids and ``[b, K, vocab]`` float32 biased
@@ -489,8 +492,11 @@ class DSparkBlock(DeepseekV4Block):
         for i in range(k):
             step = logits[:, i] + self.markov_head(current, projection)
             biased.append(step)
-            current = ops.cast(ops.argmax(step, axis=-1), anchor_ids.dtype)
-            current = ops.squeeze(current, axis=-1)
+            if sampler is None:
+                current = ops.squeeze(ops.argmax(step, axis=-1), axis=-1)
+            else:
+                current = sampler(step, i)
+            current = ops.cast(current, anchor_ids.dtype)
             out_ids.append(current)
         return ops.stack(out_ids, axis=1), ops.stack(biased, axis=1)
 
@@ -891,10 +897,13 @@ class DeepseekV4(Module):
         return xs[0]
 
     def dspark_head(
-        self, x: TensorValue, anchor_ids: TensorValue
+        self,
+        x: TensorValue,
+        anchor_ids: TensorValue,
+        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """``[b, K]`` draft ids and ``[b, K, vocab]`` logits off
         :meth:`dspark_block`'s output (:meth:`DSparkBlock.forward_head`)."""
         last = self.mtp[-1]
         assert isinstance(last, DSparkBlock)
-        return last.forward_head(x, anchor_ids, self.head)
+        return last.forward_head(x, anchor_ids, self.head, sampler)

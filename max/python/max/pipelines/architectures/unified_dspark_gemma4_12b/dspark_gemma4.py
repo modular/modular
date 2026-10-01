@@ -23,6 +23,7 @@ proportional RoPE, the 4-norm decoder sandwich, and a per-layer scalar.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -209,6 +210,7 @@ class DSparkMarkovHead(Module):
         self,
         base_logits: TensorValue,
         first_prev_tokens: TensorValue,
+        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> TensorValue:
         """Greedily samples the markov-corrected block tokens.
 
@@ -222,6 +224,8 @@ class DSparkMarkovHead(Module):
             base_logits: Soft-capped base draft logits ``[batch, block, vocab]``
                 with a static block axis.
             first_prev_tokens: Anchor token ids ``[batch]``.
+            sampler: Draws step ``k``'s ``[batch]`` token from its
+                ``[batch, vocab]`` corrected logits in place of the argmax.
 
         Returns:
             The sampled draft tokens ``[batch, block]`` (int64).
@@ -231,7 +235,10 @@ class DSparkMarkovHead(Module):
         sampled: list[TensorValue] = []
         for k in range(block):
             step_logits = base_logits[:, k, :] + self.compute_step_bias(prev)
-            prev = ops.squeeze(ops.argmax(step_logits, axis=-1), axis=-1)
+            if sampler is None:
+                prev = ops.squeeze(ops.argmax(step_logits, axis=-1), axis=-1)
+            else:
+                prev = sampler(step_logits, k)
             sampled.append(ops.unsqueeze(prev, axis=1))
         return ops.concat(sampled, axis=1)
 

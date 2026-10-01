@@ -241,6 +241,13 @@ This version is still a work in progress.
 
 ### Inference server
 
+- `--draft-proposal sampled` now works with block speculative decoding
+  (DFlash, DFlash2 and DSpark drafts). The draft samples each proposal at the
+  request's temperature, top-k and top-p and hands the verifier the
+  distribution it sampled from, so acceptance runs true speculative sampling
+  instead of typical acceptance. Previously these drafts ignored the flag and
+  kept proposing their argmax.
+
 - A speculative architecture that can't sample its draft now refuses
   `--draft-proposal sampled` at startup rather than silently drafting by
   argmax.

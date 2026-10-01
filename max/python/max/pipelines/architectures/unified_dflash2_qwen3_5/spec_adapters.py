@@ -39,6 +39,7 @@ from max.nn.transformer.transformer import (
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,
+    DraftSampler,
     block_kv_with_dispatch,
 )
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
@@ -164,7 +165,11 @@ class DFlash2Qwen3_5Proposer:
         )
 
     def head(
-        self, batch: BlockBatch, block_hs: TensorValue, accepted: Accepted
+        self,
+        batch: BlockBatch,
+        block_hs: TensorValue,
+        accepted: Accepted,
+        sampler: DraftSampler,
     ) -> TensorValue:
         k = self.block_size
         # Anchor drop: slot 0 holds the committed token and is untrained.
@@ -188,5 +193,9 @@ class DFlash2Qwen3_5Proposer:
             candidate_ids, unary_logits, mask_hidden, accepted.next_tokens
         )
         return self.draft.candidate_selector.select_path(
-            scores, candidate_ids
+            scores,
+            candidate_ids,
+            sampler=lambda row, step: sampler.sample_next(
+                row, step, token_ids=candidate_ids[:, step]
+            ),
         ).rebind(["batch_size", k - 1])
