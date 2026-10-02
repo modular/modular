@@ -473,6 +473,16 @@ This version is still a work in progress.
   width drops from ~650 us to ~32 us per layer, and 8192 tokens from
   ~4.3 ms to ~112 us, bit-identically, with decode shapes unchanged.
 
+- The KDA / gated-DeltaNet chunk prefill now routes the production
+  configuration (fp32 output, bf16 `K_FIRST` state pool, original softplus
+  gate, probability beta, GVA head grouping on SM100) to the two-kernel bt16
+  pair instead of the fused kernel: a prep pass materialises gate-rebased
+  tiles per chunk group, then a chain kernel walks chunks per
+  (sequence, value-head) with tcgen05 MMA and drains fp32 output directly.
+  At the Qwen3.5 prefill shape (16 key / 48 value heads, 128 dims, 2048
+  tokens per forward) the op drops from 0.59 ms to 0.23 ms per layer, and the
+  fused kernel remains the fallback for other configurations.
+
 - Added `max.nn.state_space.kda_chunk`, the chunk-blocked form of the KDA /
   gated-DeltaNet recurrence, alongside the existing `kda_decode`. Its launcher
   can now reach the fused Blackwell kernel instead of only the three-stage scan
