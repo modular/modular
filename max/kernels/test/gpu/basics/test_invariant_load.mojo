@@ -14,7 +14,7 @@
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
 from max.gpu.intrinsics import ldg
-from layout import Layout, LayoutTensor
+from layout import ComptimeInt, RowMajorLayout, TileTensor
 from std.testing import assert_true
 
 
@@ -23,7 +23,7 @@ def ldg_kernel(i8: MutPointer[Int8, MutAnyOrigin]):
 
 
 def layout_kernel(
-    a: LayoutTensor[mut=False, .int8, Layout.row_major(1), _],
+    a: TileTensor[mut=False, .int8, RowMajorLayout[ComptimeInt[1]], _],
     mut b: type_of(a[0]),
 ):
     b = a[0]

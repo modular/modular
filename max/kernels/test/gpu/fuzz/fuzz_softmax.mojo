@@ -22,15 +22,7 @@ from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
 from nn.softmax import _softmax_gpu
 from std.utils import IndexList
 from std.utils.numerics import isinf, isnan
@@ -152,17 +144,14 @@ def run_one_case(
     var out_dev = ctx.enqueue_create_buffer[sm_type](length)
     ctx.enqueue_copy(in_dev, in_host)
 
-    comptime layout_dyn = Layout.row_major[sm_rank]()
-    var in_tt = LayoutTensor[sm_type, layout_dyn](
-        in_dev.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
-    )
+    var in_tt = TileTensor(in_dev.unsafe_ptr(), row_major(Coord(shape)))
 
     @__parameter
     @__copy_capture(in_tt)
     def input_fn_device[
         _simd_width: Int
     ](coords: Coord) -> SIMD[sm_type, _simd_width]:
-        return in_tt.load[width=_simd_width](coord_to_index_list(coords))
+        return in_tt.load[width=_simd_width](coords)
 
     _softmax_gpu[sm_type, 1, sm_rank, input_fn_device](
         Coord(shape),
