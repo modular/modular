@@ -180,10 +180,14 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     // The bucket is keyed by the target's leaf name only, so extensions of
     // distinct types that share a name land together; keep only those whose
     // resolved target is this type's own decl, as
-    // findExtensionsInScopeForStruct does.
+    // findExtensionsInScopeForStruct does. An import re-exports every
+    // extension visible in its source module, so one extension can be found in
+    // several enclosing scopes; count it once, or its methods tie with
+    // themselves in overload resolution.
     auto extOp =
         dyn_cast_or_null<ExtensionDeclOp>(foundAstDecl->getIfOperation());
-    if (extOp && extOp.getTargetStructAttr() == typeSymbol)
+    if (extOp && extOp.getTargetStructAttr() == typeSymbol &&
+        !llvm::is_contained(result, foundAstDecl))
       result.push_back(foundAstDecl);
   }
 
