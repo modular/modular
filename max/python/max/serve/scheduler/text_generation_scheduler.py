@@ -44,7 +44,10 @@ from max.serve.queue import (
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
-from max.serve.telemetry.common import batch_spans_enabled
+from max.serve.telemetry.common import (
+    _batch_id_ctx,
+    batch_spans_enabled,
+)
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.context import Context as OtelContext
 
@@ -106,6 +109,8 @@ class TokenGenerationScheduler(Scheduler):
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
+        # The model worker configures tracing before it builds the scheduler.
+        self._tracing = _tracing_enabled()
 
         self.request_queue = request_queue
         self.response_queue = response_queue
@@ -334,9 +339,16 @@ class TokenGenerationScheduler(Scheduler):
             # Execute the batch. C++ telemetry that opts in reads the batch id
             # set here.
             _request_context.set_batch_id(batch_id)
+            # Only the JSON log formatters read ``_batch_id_ctx``, and only
+            # with tracing on.
+            batch_id_token = (
+                _batch_id_ctx.set(batch_id) if self._tracing else None
+            )
             try:
                 responses = self.pipeline.execute(inputs)
             finally:
+                if batch_id_token is not None:
+                    _batch_id_ctx.reset(batch_id_token)
                 _request_context.clear_batch_id()
 
             # Filter out all responses for requests that are already released.

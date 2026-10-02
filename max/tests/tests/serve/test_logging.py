@@ -18,15 +18,25 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable, Iterator
+import queue
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from max.pipelines.context import TextContext, TextGenerationOutput
+from max.pipelines.kv_cache import DummyKVCache
+from max.pipelines.modeling.types import RequestID, TextGenerationInputs
 from max.serve import request as request_module
 from max.serve.config import KernelTraceLevel, Settings
 from max.serve.request import register_request
+from max.serve.scheduler import text_generation_scheduler
+from max.serve.scheduler.config import TokenGenerationSchedulerConfig
+from max.serve.scheduler.text_generation_scheduler import (
+    TokenGenerationScheduler,
+)
 from max.serve.telemetry import common
 from max.serve.telemetry.common import (
     batch_spans_enabled,
@@ -129,11 +139,13 @@ def reset_request_context() -> Iterator[None]:
     """Stops one test's request context leaking into the next."""
     trace_token = common.request_trace_ctx.set(None)
     id_token = common._request_id_ctx.set(None)
+    batch_token = common._batch_id_ctx.set(None)
     try:
         yield
     finally:
         common.request_trace_ctx.reset(trace_token)
         common._request_id_ctx.reset(id_token)
+        common._batch_id_ctx.reset(batch_token)
 
 
 def _configure_structured(log_path: Path) -> None:
@@ -226,6 +238,76 @@ def test_middleware_stamps_both_ids_on_an_arbitrary_route(
     record = json.loads(lines[0])
     assert record["request_id"] == response.headers["X-Request-ID"]
     assert record["dd.trace_id"] == _TRACE_ID_HEX
+
+
+def _run_forward_pass(
+    execute: Callable[
+        [TextGenerationInputs[TextContext]],
+        dict[RequestID, TextGenerationOutput],
+    ],
+) -> None:
+    """Schedules one empty batch, numbered 41, through ``execute``."""
+    pipeline = Mock()
+    pipeline.execute = Mock(side_effect=execute)
+    scheduler = TokenGenerationScheduler(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=1, target_tokens_per_batch_ce=32
+        ),
+        pipeline=pipeline,
+        request_queue=queue.Queue(),
+        response_queue=queue.Queue(),
+        cancel_queue=queue.Queue(),
+        kv_cache=DummyKVCache(),
+    )
+    scheduler._batch_counter = 41
+    scheduler._schedule(TextGenerationInputs(batches=[[]]))
+
+
+def test_batch_id_is_scoped_to_the_forward_pass(
+    structured: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record the pipeline logs mid-pass carries the batch ID; one logged
+    # after the pass must not keep the finished batch's ID.
+    monkeypatch.setattr(
+        text_generation_scheduler, "_tracing_enabled", lambda: True
+    )
+
+    def execute(
+        inputs: TextGenerationInputs[TextContext],
+    ) -> dict[RequestID, TextGenerationOutput]:
+        logging.getLogger("max.pipelines").warning("in-batch")
+        return {}
+
+    _run_forward_pass(execute)
+    _emit("max.serve", logging.WARNING, "after-batch")
+
+    records = {
+        record["message"]: record
+        for record in map(json.loads, structured.read_text().splitlines())
+    }
+    assert records["in-batch"]["batch_id"] == 41
+    assert records["after-batch"]["batch_id"] is None
+
+
+def test_batch_id_is_not_set_without_tracing(
+    structured: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nothing reads it then, even with structured logging on, so a forward
+    # pass must not pay to set it.
+    monkeypatch.setattr(
+        text_generation_scheduler, "_tracing_enabled", lambda: False
+    )
+    seen: list[int | None] = []
+
+    def execute(
+        inputs: TextGenerationInputs[TextContext],
+    ) -> dict[RequestID, TextGenerationOutput]:
+        seen.append(common._batch_id_ctx.get())
+        return {}
+
+    _run_forward_pass(execute)
+
+    assert seen == [None]
 
 
 @pytest.mark.parametrize("tracing", [False, True], ids=["off", "tracing"])
@@ -371,11 +453,14 @@ def test_otlp_export_carries_no_correlation_ids(
     )
     _set_inbound_context()
     common._request_id_ctx.set("req-1234")
+    common._batch_id_ctx.set(7)
     _emit("max.serve", logging.WARNING, "handled")
 
     rendered = json.loads(log_path.read_text().splitlines()[0])
     assert rendered["dd.trace_id"] == _TRACE_ID_HEX
+    assert rendered["batch_id"] == 7
     assert exported, "expected the handler to export a record"
     for attributes in exported:
         assert "dd.trace_id" not in attributes, attributes
         assert "request_id" not in attributes, attributes
+        assert "batch_id" not in attributes, attributes

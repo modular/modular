@@ -121,6 +121,13 @@ _request_id_ctx: ContextVar[str | None] = ContextVar(
 pipeline request per prompt, whose ``RequestID`` and ``max.request_id`` span
 attribute append ``_<index>`` to this."""
 
+_batch_id_ctx: ContextVar[int | None] = ContextVar(
+    "max.serve.batch_id_ctx", default=None
+)
+"""The ID of the forward pass the text-generation scheduler is executing, or
+None. It is set around ``pipeline.execute`` only when tracing is enabled; the
+API process and the disaggregated workers never set it."""
+
 
 def _tracing_enabled() -> bool:
     """Whether a real TracerProvider is installed, vs. the OTel no-op default."""
@@ -405,17 +412,20 @@ class PrefixFormatter(logging.Formatter):
         return f"{self.prefix} {formatted_message}"
 
 
-def _correlation_fields() -> dict[str, str]:
-    """Returns the ambient request correlation IDs for a log line.
+def _correlation_fields() -> dict[str, str | int]:
+    """Returns the ambient request and batch correlation IDs for a log line.
 
     ``dd.trace_id`` is the key Datadog's correlator reads, as 32 hex digits.
     No span ID: ``request_trace_ctx`` holds the caller's context, so one
     would attach MAX's logs to the caller's span.
     """
-    fields: dict[str, str] = {}
+    fields: dict[str, str | int] = {}
     request_id = _request_id_ctx.get()
     if request_id is not None:
         fields["request_id"] = request_id
+    batch_id = _batch_id_ctx.get()
+    if batch_id is not None:
+        fields["batch_id"] = batch_id
     context = request_trace_ctx.get()
     if context is not None:
         span_context = trace.get_current_span(context).get_span_context()
@@ -425,7 +435,7 @@ def _correlation_fields() -> dict[str, str]:
 
 
 class _CorrelatedJsonFormatter(jsonlogger.JsonFormatter):
-    """Renders the request correlation IDs into this handler's JSON only.
+    """Renders the correlation IDs into this handler's JSON only.
 
     ``configure_logging`` uses it only with tracing on. The IDs go into the
     output dict, never onto the record: every handler shares one record, and

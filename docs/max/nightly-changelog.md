@@ -357,6 +357,10 @@ This version is still a work in progress.
   carries a `traceparent`. Structured logging is on by default in the MAX
   container images; elsewhere, set `MODULAR_STRUCTURED_LOGGING=1`.
 
+- Populated `batch_id` in structured log records that a text-generation model
+  worker logs during a forward pass while tracing is enabled. It was previously
+  always empty, and still is on disaggregated prefill and decode workers.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured
