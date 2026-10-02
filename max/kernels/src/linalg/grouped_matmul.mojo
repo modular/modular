@@ -58,6 +58,9 @@ from .matmul.gpu import (
 )
 from .matmul.gpu.amd import AMDMatmul
 from .matmul.gpu.apple.matmul2d_fp8 import enqueue_grouped_matmul2d_fp8
+from .matmul.gpu.apple.grouped_matmul import (
+    enqueue_apple_grouped_matmul,
+)
 from std.algorithm import vectorize
 
 
@@ -657,6 +660,18 @@ def grouped_matmul[
         and is_expert_shape_static
         and not elementwise_lambda_fn
     )
+    # Apple bf16 x bf16 or fp16 x fp16: grouped GEMV at decode, grouped
+    # simdgroup MMA at prefill. Same epilogue restriction as the fp8 branch;
+    # the plane select is only implemented by the naive kernel. Compiled out
+    # off Apple.
+    comptime is_apple_grouped_matmul_applicable = (
+        has_apple_gpu_accelerator()
+        and a_type == b_type
+        and (a_type == .bfloat16 or a_type == .float16)
+        and is_expert_shape_static
+        and not elementwise_lambda_fn
+        and not a_plane_select_on
+    )
 
     @inline(.always)
     def description_fn() {var c, var a, var b, imm} -> String:
@@ -840,6 +855,32 @@ def grouped_matmul[
                 naive_grouped_matmul[
                     elementwise_lambda_fn=elementwise_lambda_fn
                 ](
+                    c,
+                    a,
+                    b,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+        elif is_apple_grouped_matmul_applicable:
+            var stats = resolve_usage_stats()
+            var max_num_tokens_per_expert = stats[0]
+            var num_active_experts = stats[1]
+            if ctx.compute_capability() == 5:
+                enqueue_apple_grouped_matmul(
+                    c,
+                    a,
+                    b,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+            else:
+                naive_grouped_matmul(
                     c,
                     a,
                     b,
