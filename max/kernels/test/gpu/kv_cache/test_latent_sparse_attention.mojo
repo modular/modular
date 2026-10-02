@@ -20,16 +20,14 @@ Covers a ragged prefill batch, a decode batch with non-zero cache lengths,
 """
 
 from std.math import ceildiv, exp
-from std.memory import unsafe_memset_zero
 from std.random import randn_float64, seed
 from std.testing import assert_almost_equal
-from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.latent_sparse_attention import (
     latent_sparse_attention_ragged_paged,
 )
@@ -46,26 +44,22 @@ comptime NUM_LAYERS = 2
 comptime kv_params = KVCacheStaticParams(
     num_heads=1, head_size=HEAD_DIM, is_mla=True
 )
+comptime Collection[page_size: Int] = PagedKVCacheCollection[
+    dtype,
+    kv_params,
+    page_size,
+    MutAnyOrigin,
+    ImmutAnyOrigin,
+    ImmutAnyOrigin,
+    MutAnyOrigin,
+]
 
 
-def _fill_random[dt: DType](tensor: LayoutTensor[mut=True, dt, ...]):
-    for i in range(tensor.size()):
-        tensor.ptr.unsafe_store(i, Scalar[dt](randn_float64()))
-
-
-def _managed[
-    dt: DType, L: Layout, rank: Int
-](shape: IndexList[rank], ctx: DeviceContext) raises -> ManagedLayoutTensor[
-    dt, L
-]:
-    """Builds a managed tensor whose runtime layout matches its index types."""
-    comptime M = ManagedLayoutTensor[dt, L]
-    return M(
-        RuntimeLayout[
-            L, element_type=M.element_type, linear_idx_type=M.index_type
-        ].row_major(shape),
-        ctx,
-    )
+def _fill_random(tensor: TileTensor[mut=True, ...]):
+    for i in range(tensor.num_elements()):
+        tensor.unsafe_ptr().unsafe_store(
+            i, Scalar[tensor.dtype](randn_float64())
+        )
 
 
 def run_case(
@@ -86,12 +80,21 @@ def run_case(
     var swa_pages = (
         ceildiv(swa_lengths.max_full_context_length, PAGE_SIZE) * batch_size
     )
-    var swa_shape = IndexList[6](
-        swa_pages, 1, NUM_LAYERS, PAGE_SIZE, 1, HEAD_DIM
+    var swa_blocks = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(swa_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[1],
+                Idx[HEAD_DIM],
+            )
+        ),
+        ctx,
     )
-    comptime blocks_layout = Layout.row_major[6]()
-    var swa_blocks = _managed[dtype, blocks_layout](swa_shape, ctx)
-    _fill_random(swa_blocks.tensor())
+    _fill_random(swa_blocks.host_tensor())
+    swa_blocks.to_device()
     var swa_lut = PagedLookupTable[PAGE_SIZE].build(
         prompt_lens,
         cache_lens,
@@ -113,11 +116,21 @@ def run_case(
     var comp_pages = (
         ceildiv(comp_lengths.max_full_context_length, COMP_SLOTS) * batch_size
     )
-    var comp_shape = IndexList[6](
-        comp_pages, 1, NUM_LAYERS, COMP_SLOTS, 1, HEAD_DIM
+    var comp_blocks = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(comp_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[COMP_SLOTS],
+                Idx[1],
+                Idx[HEAD_DIM],
+            )
+        ),
+        ctx,
     )
-    var comp_blocks = _managed[dtype, blocks_layout](comp_shape, ctx)
-    _fill_random(comp_blocks.tensor())
+    _fill_random(comp_blocks.host_tensor())
+    comp_blocks.to_device()
     var comp_lut = PagedLookupTable[COMP_SLOTS].build(
         comp_prompt,
         comp_cache,
@@ -127,29 +140,29 @@ def run_case(
     )
 
     # --- q, sink, compressed indices -------------------------------------
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, NUM_HEADS, HEAD_DIM)
-    var q_shape = IndexList[3](total_rows, NUM_HEADS, HEAD_DIM)
-    var q = _managed[dtype, q_layout](q_shape, ctx)
-    _fill_random(q.tensor())
-    var out = _managed[dtype, q_layout](q_shape, ctx)
-    unsafe_memset_zero(out.tensor().ptr, out.tensor().size())
-
-    comptime sink_layout = Layout.row_major(NUM_HEADS)
-    var sink = _managed[DType.float32, sink_layout](
-        IndexList[1](NUM_HEADS), ctx
+    var q_layout = row_major(
+        Coord(Int64(total_rows), Idx[NUM_HEADS], Idx[HEAD_DIM])
     )
-    _fill_random(sink.tensor())
+    var q = HostDeviceTileTensor[dtype](q_layout, ctx)
+    _fill_random(q.host_tensor())
+    q.to_device()
+    var out = HostDeviceTileTensor[dtype](q_layout, ctx)
+    _ = out.host_tensor().fill(0)
+    out.to_device()
 
-    comptime idx_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var sink = HostDeviceTileTensor[.float32](row_major[NUM_HEADS](), ctx)
+    _fill_random(sink.host_tensor())
+    sink.to_device()
+
     var idx_cols = max(num_comp, 1)
-    var idx = _managed[DType.int32, idx_layout](
-        IndexList[2](total_rows, idx_cols), ctx
+    var idx = HostDeviceTileTensor[.int32](
+        row_major(Coord(Int64(total_rows), Int64(idx_cols))), ctx
     )
-    var idx_host = idx.tensor()
-    var row_offsets_host = swa_lengths.input_row_offsets.host_tensor()
+    var idx_host = idx.host_tensor()
+    var row_offsets_host = swa_lengths.input_row_offsets.host_tile_tensor()
     for t in range(total_rows):
         var b = 0
-        while UInt32(t) >= row_offsets_host[b + 1][0]:
+        while UInt32(t) >= row_offsets_host[b + 1]:
             b += 1
         for j in range(idx_cols):
             # Cycle through this sequence's entries; every other row drops
@@ -159,19 +172,29 @@ def run_case(
                 idx_host[t, j] = Int32((t * 7 + j * 3) % comp_total[b])
             else:
                 idx_host[t, j] = Int32(-1)
+    idx.to_device()
 
     # --- device run --------------------------------------------------------
-    var swa_dev = PagedKVCacheCollection[dtype, kv_params, PAGE_SIZE](
-        swa_blocks.device_tensor(),
-        swa_lengths.cache_lengths.device_tensor(),
-        swa_lut.device_tensor(),
+    # The collections spell their block strides symbolically in `kv_params`,
+    # which the compiler cannot fold against `row_major`'s; the two layouts
+    # are structurally identical.
+    comptime SwaCollection = Collection[PAGE_SIZE]
+    comptime CompCollection = Collection[COMP_SLOTS]
+    var swa_dev = SwaCollection(
+        rebind[SwaCollection.blocks_tt_type](
+            swa_blocks.device_tensor().as_unsafe_any_origin()
+        ),
+        swa_lengths.cache_lengths.device_tile_tensor(),
+        swa_lut.device_tile_tensor(),
         UInt32(swa_lengths.max_seq_length_batch),
         UInt32(swa_lengths.max_full_context_length),
     )
-    var comp_dev = PagedKVCacheCollection[dtype, kv_params, COMP_SLOTS](
-        comp_blocks.device_tensor(),
-        comp_lengths.cache_lengths.device_tensor(),
-        comp_lut.device_tensor(),
+    var comp_dev = CompCollection(
+        rebind[CompCollection.blocks_tt_type](
+            comp_blocks.device_tensor().as_unsafe_any_origin()
+        ),
+        comp_lengths.cache_lengths.device_tile_tensor(),
+        comp_lut.device_tile_tensor(),
         UInt32(comp_lengths.max_seq_length_batch),
         UInt32(comp_lengths.max_full_context_length),
     )
@@ -180,7 +203,7 @@ def run_case(
     latent_sparse_attention_ragged_paged[target="gpu", window=WINDOW](
         out.device_tensor(),
         q.device_tensor(),
-        swa_lengths.input_row_offsets.device_tensor(),
+        swa_lengths.input_row_offsets.device_tile_tensor(),
         idx.device_tensor(),
         sink.device_tensor(),
         swa_dev.get_key_cache(layer_swa),
@@ -189,33 +212,38 @@ def run_case(
         ctx,
     )
     ctx.synchronize()
+    out.to_host()
 
     # --- host reference: plain two-pass softmax ------------------------------
-    var swa_host = PagedKVCacheCollection[dtype, kv_params, PAGE_SIZE](
-        swa_blocks.tensor(),
-        swa_lengths.cache_lengths.host_tensor(),
-        swa_lut.host_tensor(),
+    var swa_host = SwaCollection(
+        rebind[SwaCollection.blocks_tt_type](
+            swa_blocks.host_tensor().as_unsafe_any_origin()
+        ),
+        swa_lengths.cache_lengths.host_tile_tensor(),
+        swa_lut.host_tile_tensor(),
         UInt32(swa_lengths.max_seq_length_batch),
         UInt32(swa_lengths.max_full_context_length),
     ).get_key_cache(layer_swa)
-    var comp_host = PagedKVCacheCollection[dtype, kv_params, COMP_SLOTS](
-        comp_blocks.tensor(),
-        comp_lengths.cache_lengths.host_tensor(),
-        comp_lut.host_tensor(),
+    var comp_host = CompCollection(
+        rebind[CompCollection.blocks_tt_type](
+            comp_blocks.host_tensor().as_unsafe_any_origin()
+        ),
+        comp_lengths.cache_lengths.host_tile_tensor(),
+        comp_lut.host_tile_tensor(),
         UInt32(comp_lengths.max_seq_length_batch),
         UInt32(comp_lengths.max_full_context_length),
     ).get_key_cache(layer_comp)
-    var q_host = q.tensor()
-    var out_host = out.tensor()
-    var sink_host = sink.tensor()
+    var q_host = q.host_tensor()
+    var out_host = out.host_tensor()
+    var sink_host = sink.host_tensor()
 
     var max_keys = WINDOW + idx_cols
     var scores = List[Float64](capacity=max_keys)
     for t in range(total_rows):
         var b = 0
-        while UInt32(t) >= row_offsets_host[b + 1][0]:
+        while UInt32(t) >= row_offsets_host[b + 1]:
             b += 1
-        var pos = cache_lens[b] + t - Int(row_offsets_host[b][0])
+        var pos = cache_lens[b] + t - Int(row_offsets_host[b])
         var start = max(pos - WINDOW + 1, 0)
         for h in range(NUM_HEADS):
             scores.clear()
@@ -224,25 +252,25 @@ def run_case(
             for p in range(start, pos + 1):
                 var s = Float64(0)
                 for d in range(HEAD_DIM):
-                    s += Float64(q_host[t, h, d][0]) * Float64(
+                    s += Float64(q_host[t, h, d]) * Float64(
                         swa_host.load[width=1](b, 0, p, d)[0]
                     )
                 s *= Float64(scale)
                 scores.append(s)
                 m = max(m, s)
             for j in range(num_comp):
-                var e = Int(idx_host[t, j][0])
+                var e = Int(idx_host[t, j])
                 if e < 0:
                     continue
                 var s = Float64(0)
                 for d in range(HEAD_DIM):
-                    s += Float64(q_host[t, h, d][0]) * Float64(
+                    s += Float64(q_host[t, h, d]) * Float64(
                         comp_host.load[width=1](b, 0, e, d)[0]
                     )
                 s *= Float64(scale)
                 scores.append(s)
                 m = max(m, s)
-            var den = exp(Float64(sink_host[h][0]) - m)
+            var den = exp(Float64(sink_host[h]) - m)
             for i in range(len(scores)):
                 den += exp(scores[i] - m)
             for d in range(HEAD_DIM):
@@ -254,7 +282,7 @@ def run_case(
                     )
                     i += 1
                 for j in range(num_comp):
-                    var e = Int(idx_host[t, j][0])
+                    var e = Int(idx_host[t, j])
                     if e < 0:
                         continue
                     o += exp(scores[i] - m) * Float64(
@@ -262,7 +290,7 @@ def run_case(
                     )
                     i += 1
                 assert_almost_equal(
-                    Float64(out_host[t, h, d][0]),
+                    Float64(out_host[t, h, d]),
                     o / den,
                     rtol=1e-4,
                     atol=1e-5,
@@ -274,12 +302,13 @@ def run_case(
                     + String(d),
                 )
 
+    # The collections and `row_offsets_host` hold untracked views of these.
     _ = swa_blocks^
     _ = comp_blocks^
-    _ = q^
-    _ = out^
-    _ = sink^
-    _ = idx^
+    _ = swa_lengths^
+    _ = comp_lengths^
+    _ = swa_lut^
+    _ = comp_lut^
 
 
 def main() raises:

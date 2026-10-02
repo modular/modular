@@ -4643,11 +4643,11 @@ struct Struct_latent_sparse_attention_ragged_paged:
             comp_max_cache_length,
         )
         latent_sparse_attention_ragged_paged[target=target, window=window](
-            output.to_layout_tensor(),
-            q.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            comp_indices.to_layout_tensor(),
-            attn_sink.to_layout_tensor(),
+            output.to_tile_tensor(),
+            q.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            comp_indices.to_tile_tensor(),
+            attn_sink.to_tile_tensor(),
             swa_collection.get_key_cache(Int(layer_swa)),
             comp_collection.get_key_cache(Int(layer_comp)),
             scale,
