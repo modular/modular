@@ -445,6 +445,26 @@ def test_print_symbolic(capfd: pytest.CaptureFixture[str]) -> None:
     assert "graph_tensor" in capfd.readouterr().out
 
 
+def test_side_stream() -> None:
+    @module_dataclass
+    class SideStreamModule(Module[[Tensor], Tensor]):
+        def forward(self, x: Tensor) -> Tensor:
+            def body(t: Tensor) -> Tensor:
+                assert isinstance(t, Tensor)
+                return t * 2
+
+            (y,) = F.side_stream([x], body, result_types=[x.type])
+            assert isinstance(y, Tensor)
+            return y + 1
+
+    input_type = TensorType(
+        DType.float32, [2, 2], device=DeviceRef.from_device(DEVICE)
+    )
+    compiled = SideStreamModule().compile(input_type)
+    result = compiled(Tensor.ones([2, 2], dtype=DType.float32, device=DEVICE))
+    np.testing.assert_equal(np.from_dlpack(result.to(CPU())), 3.0)
+
+
 def test_shape_to_tensor() -> None:
     result = F.shape_to_tensor([2, 3])
     assert result.dtype == DType.int64

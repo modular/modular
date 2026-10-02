@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from unittest.mock import MagicMock
 
 from max.driver import CPU, Device
@@ -32,6 +33,7 @@ from max.experimental.sharding import (
     Replicated,
 )
 from max.experimental.tensor import Tensor, default_device, default_dtype
+from max.graph import Graph
 from max.nn.comm.ep import EPConfig
 from max.nn.comm.ep.ep_config import NUM_GROUPS
 from max.nn.comm.ep.ep_manager import (
@@ -363,6 +365,53 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
 
         assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
         assert out.mapping.mesh == mesh
+
+
+def test_expert_parallel_moe_allreduce_shared_expert_on_side_stream(
+    mock_accelerator: MagicMock,
+) -> None:
+    """Under allreduce the shared expert runs on rank 0, on a side stream.
+
+    It is the only extra work that rank carries, so on the default stream it
+    lands directly on rank 0's critical path and every other rank spins in the
+    post-MoE Lamport allreduce waiting for it.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        num_devices = len(devices)
+        mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(DType.bfloat16, num_devices, use_allreduce=True),
+            devices,
+        )
+
+        with default_device(mesh), default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                has_shared_experts=True,
+                shared_experts_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            )
+
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            out = layer(x, comm_buffers)
+            ir = str(Graph.current._mlir_op)
+
+    assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+    # One region, fed by exactly one shard. The MOGG->MGP lowering derives its
+    # side-stream views from the region's operands and results, so a single
+    # rank-0 operand keeps it to one view instead of one per device.
+    assert ir.count('"mo.sequence"') == 1
+    assert re.search(r'"mo\.sequence"\(%\w+\) <\{streamId = 1 : ui64\}>', ir)
 
 
 def test_expert_parallel_moe_fp8_weights(

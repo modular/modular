@@ -16,8 +16,11 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
+from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -42,6 +45,7 @@ from max.experimental.tensor import (
 )
 from max.graph import DimLike, TensorValue
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.moe.expert_parallel import _SHARED_EXPERT_STREAM_ID
 from max.nn.quant_config import QuantConfig
 from typing_extensions import Self
 
@@ -54,6 +58,15 @@ from .quant_ops import (
     routed_weight_dtype,
 )
 from .quant_tensor import FP8BlockTensor, NVFP4Tensor, QuantAwareTensor
+
+_M = TypeVar("_M", bound=Module[..., Any])
+
+
+def _on_device(module: _M, device: int) -> _M:
+    """Returns a copy of ``module`` holding only its weights on ``device``."""
+    return tree.map(
+        lambda t: t.local_shards[device], module, leaf=Tensor, shared=True
+    )
 
 
 def _mesh(target: Device | DeviceMesh | DeviceMapping) -> DeviceMesh:
@@ -639,6 +652,37 @@ class ExpertParallelMoE(QuantizedMoE):
                 for i in range(len(tokens))
             ]
 
+    def _compute_shared_experts(
+        self, x: Tensor, devices: Sequence[int]
+    ) -> list[TensorValue]:
+        """Runs the shared expert for ``devices``.
+
+        Returns:
+            One shared-expert output per entry of ``devices``, in order.
+        """
+        shared_experts = self.shared_experts
+        assert shared_experts is not None
+        devices = list(devices)
+
+        def run_shared_experts(*inputs: Tensor) -> list[Tensor]:
+            return [
+                _on_device(shared_experts, device)(shard)
+                for device, shard in zip(devices, inputs, strict=True)
+            ]
+
+        inputs = [x.local_shards[device] for device in devices]
+        if os.environ.get("MODULAR_OVERLAP_SHARED_EXPERT", "1") == "0":
+            outputs = run_shared_experts(*inputs)
+        else:
+            outputs = F.side_stream(
+                inputs,
+                run_shared_experts,
+                result_types=[shard.type for shard in inputs],
+                stream_id=_SHARED_EXPERT_STREAM_ID,
+            )
+
+        return [TensorValue(output) for output in outputs]
+
     def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
         """Expert-parallel forward: gate -> dispatch -> local compute -> combine.
 
@@ -689,6 +733,21 @@ class ExpertParallelMoE(QuantizedMoE):
                 x_shards, topk_id_shards, device_ids, input_scales=input_scales
             )
 
+        # Under allreduce, combine outputs are per-device partial sums that get
+        # summed later, so add the replicated shared expert on one device only.
+        shared_by_device: dict[int, TensorValue] = {}
+        if self.shared_experts is not None and not config.fused_shared_expert:
+            devices = (
+                [0] if config.use_allreduce else range(self.mesh.num_devices)
+            )
+            shared_by_device = dict(
+                zip(
+                    devices,
+                    self._compute_shared_experts(x, devices),
+                    strict=True,
+                )
+            )
+
         # Estimated total token-expert pairs across all devices.
         total_tokens = F.shape_to_tensor(x_shards[0].shape)[0]
         for shard in x_shards[1:]:
@@ -721,30 +780,13 @@ class ExpertParallelMoE(QuantizedMoE):
                 down_shards, router_weight_shards, device_ids
             )
 
-        # Optional (unfused) shared-expert add, then cast back to input dtype.
-        # TODO(kathywu): the replicated shared expert recomputes the same
-        # MLP on every device. Tensor-parallelize it (as ``TensorParallelMoE``
-        # does) once the mixed-precision EP path has a numerical regression
-        # test.
-        shared_shards: list[TensorValue] | None = None
-        if self.shared_experts is not None and not config.fused_shared_expert:
-            shared_shards = [
-                TensorValue(s) for s in self.shared_experts(x).local_shards
-            ]
-
         # ``ep_combine`` returns each device exactly the tokens it dispatched,
         # so the output placement matches the input's.
         placement = DeviceMapping(self.mesh, x.placements)
         outputs: list[TensorValue] = []
         for i in range(self.mesh.num_devices):
             out = combine_results[i]
-            # Under allreduce every device holds a partial sum over its own
-            # experts, which the layer reduces afterwards; the replicated
-            # shared expert therefore contributes on exactly one device. (The
-            # fused path splits its tokens across ranks for the same reason.)
-            if shared_shards is not None and not (
-                config.use_allreduce and i != 0
-            ):
-                out = out + shared_shards[i]
+            if i in shared_by_device:
+                out = out + shared_by_device[i]
             outputs.append(out.cast(x_shards[i].dtype))
         return Tensor.from_shard_values(outputs, mapping=placement)
