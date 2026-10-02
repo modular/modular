@@ -62,10 +62,6 @@ struct StructDecl {
   SmallVector<std::pair<StringAttr, Type>> fields;
   /// The symbol ref for the type-value generator.
   SymbolRefAttr symRef;
-
-  /// True if this struct lies on a lowering-recursion cycle and therefore needs
-  /// a pre-generated shallow (erased) layout for the AsType cycle breaker.
-  bool needsErasure = false;
 };
 
 struct StructDecls {

@@ -266,3 +266,9 @@ This version is still a work in progress.
 
 - Splitting on an empty separator no longer puts the trailing empty slice out
   of bounds.
+
+- Struct layouts that recurse only through a parametric indirection now
+  compile. A field such as `Optional[List[Pointer[Node, origin]]]` or
+  `Tuple[Pointer[Node, origin], Int]` inside `struct Node` was spuriously
+  rejected with `struct has recursive reference to itself`, despite the
+  recursion being behind a pointer.

@@ -620,3 +620,33 @@ kgen.generator @type_values() {
 
   hlcf.return
 }
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// A struct instantiated at a type parameter, with no recursion anywhere. The
+// argument is a type constant, so it carries both halves, and the
+// instantiation reads a different half for each of its own: `@Box`'s value
+// half is built from `typevalue<ty>` and its layout half from `ty`. That is
+// why `@Inner`'s built layout shows up nested inside `@Use`'s value half - it
+// is the argument's layout half, which the instantiation needs in order to
+// substitute into `array<2, ty>`.
+//===----------------------------------------------------------------------===//
+
+lit.struct.decl @Inner {
+  lit.struct.field x : !kgen.scalar<index>
+}
+
+// CHECK-LABEL: kgen.struct.generator @Box
+// CHECK-SAME:    (v: [array<2, typevalue<ty>>, array<2, ty>])
+lit.struct.decl @Box<ty: type> {
+  lit.struct.field v : !kgen.array<2, ty>
+}
+
+// CHECK-LABEL: kgen.struct.generator @Use
+// CHECK-SAME:    (b: [typevalue<#kgen.genref<@Box<:type
+// CHECK-SAME:      [typevalue<#kgen.genref<@Inner>>, struct<(scalar<index>) memoryOnly>]
+// CHECK-SAME:      struct<(array<2, struct<(scalar<index>) memoryOnly>>) memoryOnly>])
+lit.struct.decl @Use {
+  lit.struct.field b : !lit.struct<@Box<:type !lit.struct<@Inner>>>
+}
