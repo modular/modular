@@ -119,34 +119,35 @@ conservative defaults (4096 tokens).
 
 ### Fuzz scenarios (adversarial, crash-focused)
 
-| Scenario                           | Tests | What it attacks                                                                        |
-|------------------------------------|-------|----------------------------------------------------------------------------------------|
-| `malformed_payloads`               | ~40   | Missing fields, broken JSON, wrong types, truncated bodies, binary junk                |
-| `content_edge_cases`               | ~60   | Unicode surrogates, control chars, zero-width joiners, emoji clusters, extreme lengths |
-| `parameter_abuse`                  | ~50   | NaN/Infinity, negative max_tokens, temperature extremes, conflicting params            |
-| `concurrency_attacks`              | ~8    | Thundering herd (100 identical), burst patterns, ramp 1-100                            |
-| `streaming_attacks`                | ~14   | Cancel after 0/1/3 chunks, cancel storms, random cancel points                         |
-| `structured_output`                | ~15   | JSON mode state corruption (CVE), invalid schemas, rapid alternation                   |
-| `tool_calling`                     | ~25   | Malformed tools, empty args (vLLM #19419), streaming divergence                        |
-| `protocol_abuse`                   | ~20   | Wrong Content-Type, huge headers, slowloris, encoding attacks                          |
-| `resource_exhaustion`              | ~12   | Context boundary probing, logprobs amplification, concurrent large contexts            |
-| `state_interaction`                | ~18   | Cross-request state leaks, seed consistency, model switching                           |
-| `kv_cache_pressure`                | ~42   | Prefix cache pollution, page boundary probing, concurrent KV fill                      |
-| `thinking_tokens`                  | ~11   | DeepSeek `<think>` abuse: unbounded reasoning, mid-think cancellation                  |
-| `pipeline_stall`                   | ~8    | Prefill/decode imbalance, streaming cancel during KV transfer                          |
-| `connection_exhaustion`            | ~10   | Half-open connections, TCP resets, slowloris, pipelining                               |
-| `endurance_soak`                   | ~5    | Sustained load, error rate windows, latency degradation detection                      |
-| `endpoint_abuse`                   | ~30   | /metrics flooding, path traversal, method abuse, CORS probing                          |
-| `openai_spec_compliance`           | ~27   | Response structure, finish_reason, usage math, streaming chunks                        |
-| `output_correctness`               | ~13   | Concurrent prompts with quality validation, cross-contamination detection              |
-| `openrouter_tests`                 | ~59   | OpenRouter provider validation (49 text-only tests)                                    |
-| `tool_schema_validation`           | ~24   | K2VV-style tool call schema validation                                                 |
-| `json_schema_compliance`           | ~100  | 100-run cache-busted guided decoding validation                                        |
-| `tool_arguments_json_stability`    | 32x   | Repeated forced tool calls, arguments must parse as JSON                               |
-| `streaming_reasoning_monotonicity` | 30x   | Reasoning/content monotonicity in streaming                                            |
-| `schema_admission_policy`          | 12    | Admission verdict (serve vs refuse) for production-shaped, unenforceable JSON schemas  |
-| `reasoning_under_constraint`       | 4     | Gemma 4-only reasoning + document conformance (run with `--model-profile gemma4`)      |
-| `zombie_horde`                     | all   | Chaos mode, all scenarios in random parallel waves                                     |
+| Scenario                           | Tests    | What it attacks                                                                        |
+|------------------------------------|----------|----------------------------------------------------------------------------------------|
+| `malformed_payloads`               | ~40      | Missing fields, broken JSON, wrong types, truncated bodies, binary junk                |
+| `content_edge_cases`               | ~60      | Unicode surrogates, control chars, zero-width joiners, emoji clusters, extreme lengths |
+| `parameter_abuse`                  | ~50      | NaN/Infinity, negative max_tokens, temperature extremes, conflicting params            |
+| `concurrency_attacks`              | ~8       | Thundering herd (100 identical), burst patterns, ramp 1-100                            |
+| `streaming_attacks`                | ~14      | Cancel after 0/1/3 chunks, cancel storms, random cancel points                         |
+| `structured_output`                | ~15      | JSON mode state corruption (CVE), invalid schemas, rapid alternation                   |
+| `tool_calling`                     | ~25      | Malformed tools, empty args (vLLM #19419), streaming divergence                        |
+| `protocol_abuse`                   | ~20      | Wrong Content-Type, huge headers, slowloris, encoding attacks                          |
+| `resource_exhaustion`              | ~12      | Context boundary probing, logprobs amplification, concurrent large contexts            |
+| `state_interaction`                | ~18      | Cross-request state leaks, seed consistency, model switching                           |
+| `kv_cache_pressure`                | ~42      | Prefix cache pollution, page boundary probing, concurrent KV fill                      |
+| `thinking_tokens`                  | ~11      | DeepSeek `<think>` abuse: unbounded reasoning, mid-think cancellation                  |
+| `pipeline_stall`                   | ~8       | Prefill/decode imbalance, streaming cancel during KV transfer                          |
+| `connection_exhaustion`            | ~10      | Half-open connections, TCP resets, slowloris, pipelining                               |
+| `endurance_soak`                   | ~5       | Sustained load, error rate windows, latency degradation detection                      |
+| `endpoint_abuse`                   | ~30      | /metrics flooding, path traversal, method abuse, CORS probing                          |
+| `openai_spec_compliance`           | ~27      | Response structure, finish_reason, usage math, streaming chunks                        |
+| `output_correctness`               | ~13      | Concurrent prompts with quality validation, cross-contamination detection              |
+| `openrouter_tests`                 | ~59      | OpenRouter provider validation (49 text-only tests)                                    |
+| `tool_schema_validation`           | ~24      | K2VV-style tool call schema validation                                                 |
+| `json_schema_compliance`           | ~100     | 100-run cache-busted guided decoding validation                                        |
+| `constrained_decoding`             | 1.6-2.2k | Full draft-7 suite via tool-call (auto/required/named x strict) + response_format      |
+| `tool_arguments_json_stability`    | 32x      | Repeated forced tool calls, arguments must parse as JSON                               |
+| `streaming_reasoning_monotonicity` | 30x      | Reasoning/content monotonicity in streaming                                            |
+| `schema_admission_policy`          | 12       | Admission verdict (serve vs refuse) for production-shaped, unenforceable JSON schemas  |
+| `reasoning_under_constraint`       | 4        | Gemma 4-only reasoning + document conformance (run with `--model-profile gemma4`)      |
+| `zombie_horde`                     | all      | Chaos mode, all scenarios in random parallel waves                                     |
 
 ### Validation scenarios (correctness, OpenAI SDK-based)
 

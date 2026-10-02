@@ -10,15 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared machinery for the draft 7 JSON Schema Test Suite fuzz scenarios.
+"""Scenario: constrained-decoding conformance over the draft 7 JSON Schema suite.
 
-Both ``json_schema_draft7`` and ``json_schema_openrouter`` drive every vendored
-draft 7 schema four ways (tools auto/required/named, ``response_format``) with an
-adversarial break-the-schema prompt and validate output with the ``jsonschema``
-``Draft7Validator``. They differ only in two knobs on
-``JsonSchemaSuiteScenario``: ``reject_400_is_pass`` (whether a 400 counts as the
-server cleanly refusing the schema) and ``wrap_tool_modes`` (whether each
-tool-calling request is also issued with the schema wrapped in a root object).
+Drives every vendored draft 7 schema through MAX's constrained-decoding paths --
+tool calls (tool_choice auto/required/named, with strict swept on the
+``required`` choice) and ``response_format`` -- with an adversarial
+break-the-schema prompt. ``strict=true`` tool calls and ``response_format``
+must conform to the schema (envelope + arguments); ``strict=false`` tool calls
+need only a well-formed tool-call envelope (free-form arguments). The sweep is
+an explicit, filterable list of ``SweepCase`` combinations (``_build_sweeps``).
+Output is validated with the ``jsonschema`` ``Draft7Validator``; remote
+``$ref``s are inlined from the vendored ``remotes/``.
+
+The scenario assumes the server enables ``reject_unsupported`` -- a schema it
+cannot enforce is cleanly rejected with a 400 rather than silently falling back to
+unconstrained decoding -- so a 400 counts as a pass.
 
 Vendored data attribution
 --------------------------
@@ -51,14 +57,15 @@ the terms of its MIT license:
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from jsonschema import Draft7Validator
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT7
 
-from scenarios import BaseScenario, ScenarioResult, Verdict
+from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
 from scenarios._constrained_stream import leading_json, overrun_detail
 
 if TYPE_CHECKING:
@@ -69,8 +76,6 @@ _DATA_DIR = (
 )
 _SCHEMA_DIR = _DATA_DIR / "draft7"
 _REMOTES_DIR = _DATA_DIR / "remotes"
-
-_MODES = ("tools_auto", "tools_required", "tools_named", "response_format")
 
 
 def _build_registry() -> Registry[Any]:
@@ -238,91 +243,6 @@ def _apply_reasoning(body: dict[str, Any], enable: bool) -> None:
     }
 
 
-def _payload(
-    model: str,
-    schema: Any,
-    mode: str,
-    max_tokens: int,
-    *,
-    reasoning: bool | None,
-) -> dict[str, Any]:
-    # No sampling overrides -- use the model's trained generation defaults.
-    base: dict[str, Any] = {
-        "model": model,
-        "max_tokens": max_tokens,
-    }
-    if reasoning is not None:
-        _apply_reasoning(base, reasoning)
-    if mode == "response_format":
-        base["messages"] = [
-            {"role": "user", "content": _prompt(schema, via_tool=False)}
-        ]
-        base["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "target",
-                "schema": schema,
-            },
-        }
-    else:  # tool modes
-        base["messages"] = [
-            {"role": "user", "content": _prompt(schema, via_tool=True)}
-        ]
-        base["tools"] = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "emit",
-                    "description": "Emit a JSON value for the target schema.",
-                    "parameters": schema,
-                    "strict": True,
-                },
-            }
-        ]
-        if mode == "tools_auto":
-            base["tool_choice"] = "auto"
-        elif mode == "tools_required":
-            base["tool_choice"] = "required"
-        else:  # tools_named
-            base["tool_choice"] = {
-                "type": "function",
-                "function": {"name": "emit"},
-            }
-    return base
-
-
-def _extract_output(
-    mode: str, data: dict[str, Any]
-) -> tuple[list[str] | None, str]:
-    """Pull every ``output`` string to validate from the response.
-
-    Returns one element for ``response_format`` (the message content) and one
-    per tool call otherwise -- every call must conform, so all are returned,
-    not just the first. ``None`` => nothing to validate.
-    """
-    choices = data.get("choices") or []
-    if not choices:
-        return None, "no choices in response"
-    msg = choices[0].get("message") or {}
-    if mode == "response_format":
-        content = msg.get("content")
-        if not content:
-            return None, "empty message content"
-        return [content], ""
-    tool_calls = msg.get("tool_calls") or []
-    if not tool_calls:
-        return None, "no tool_calls in response"
-    # Callers gate on every call being `emit`, so collect them all.
-    args = [
-        a
-        for c in tool_calls
-        if (a := (c.get("function") or {}).get("arguments")) is not None
-    ]
-    if not args:
-        return None, "tool call missing arguments"
-    return args, ""
-
-
 def _jsonschema_check(schema: Any, instance: Any) -> tuple[bool | None, str]:
     """Authoritative semantic check. ``None`` => oracle could not be built."""
     try:
@@ -349,136 +269,9 @@ def _jsonschema_check(schema: Any, instance: Any) -> tuple[bool | None, str]:
 _SEVERITY = {Verdict.PASS: 0, Verdict.INTERESTING: 1, Verdict.FAIL: 2}
 
 
-def _check_one(
-    schema: Any, output: str, *, truncated: bool
-) -> tuple[Verdict, str]:
-    """Validate a single output string against ``schema``."""
-    parsed = leading_json(output)
-    if parsed is None:
-        if truncated:
-            return (
-                Verdict.INTERESTING,
-                "output truncated at max_tokens (incomplete JSON)",
-            )
-        return Verdict.FAIL, f"output is not valid JSON: {output[:200]!r}"
-
-    # Trailing text means the constraint was dropped, not that the budget
-    # ran out -- "Extra data" would otherwise read as truncation.
-    instance, trailing = parsed
-    if trailing:
-        return Verdict.FAIL, overrun_detail(trailing)
-
-    js_ok, js_detail = _jsonschema_check(schema, instance)
-    if js_ok is None:
-        return Verdict.INTERESTING, f"schema not judgeable: {js_detail}"
-
-    # Output must conform to the schema as sent.
-    if js_ok is False:
-        if truncated:
-            return (
-                Verdict.INTERESTING,
-                f"output truncated at max_tokens; strict schema check "
-                f"inconclusive ({js_detail})",
-            )
-        return Verdict.FAIL, f"output violates schema: {js_detail}"
-    return Verdict.PASS, "output conforms to schema"
-
-
 def _extract_reasoning(data: dict[str, Any]) -> str:
     msg = (data.get("choices") or [{}])[0].get("message") or {}
     return msg.get("reasoning_content") or msg.get("reasoning") or ""
-
-
-def _evaluate(
-    mode: str,
-    schema: Any,
-    body: str,
-    status: int,
-    error: str | None,
-    *,
-    reject_400_is_pass: bool,
-    reasoning: bool | None,
-) -> tuple[Verdict, str]:
-    if error:
-        return Verdict.FAIL, f"transport error: {error}"
-    # When ``reject_400_is_pass``, a 400 (the server rejecting the schema up
-    # front) is accepted as a PASS rather than a FAIL: the OpenRouter-style
-    # variant tests that the server either constrains output to the schema or
-    # cleanly refuses it. Other non-200 statuses remain FAILs. When the flag is
-    # off, the server must accept every draft 7 schema, so any non-200 is a FAIL.
-    if reject_400_is_pass and status == 400:
-        return Verdict.PASS, f"server rejected schema with 400: {body[:200]}"
-    if status != 200:
-        return Verdict.FAIL, f"server returned {status}: {body[:400]}"
-    try:
-        data = json.loads(body)
-    except Exception:
-        return Verdict.FAIL, f"response body not JSON: {body[:200]}"
-
-    # A length-capped generation is truncated, not a conformance failure.
-    truncated = (data.get("choices") or [{}])[0].get(
-        "finish_reason"
-    ) == "length"
-
-    # `emit` is the only offered tool; any other tool name is a server defect,
-    # so every call must be `emit` (a value split across non-emit calls fails).
-    if mode != "response_format":
-        msg = (data.get("choices") or [{}])[0].get("message") or {}
-        tool_calls = msg.get("tool_calls") or []
-        bad = [
-            name
-            for c in tool_calls
-            if (name := (c.get("function") or {}).get("name")) != "emit"
-        ]
-        if bad:
-            return Verdict.FAIL, f"non-emit tool call(s): {bad}"
-
-    outputs, note = _extract_output(mode, data)
-    if outputs is None:
-        # Declining the tool is legitimate only under tool_choice=auto, but
-        # worth surfacing since the prompt explicitly asked to call it.
-        if mode == "tools_auto":
-            return Verdict.INTERESTING, f"model declined tool ({note})"
-        if truncated:
-            return (
-                Verdict.INTERESTING,
-                f"output truncated at max_tokens ({note})",
-            )
-        # A forced tool_choice must always yield a tool call.
-        if mode in ("tools_required", "tools_named"):
-            return Verdict.FAIL, f"{mode} produced no tool call: {note}"
-        return Verdict.FAIL, f"no constrained output: {note}"
-
-    # Every output (each tool call, or the lone response_format content) must
-    # conform, so check them all and keep the worst verdict.
-    checks = [_check_one(schema, out, truncated=truncated) for out in outputs]
-    verdict, detail = max(checks, key=lambda c: _SEVERITY[c[0]])
-    if len(outputs) > 1:
-        detail = f"{len(outputs)} tool calls; worst: {detail}"
-
-    if reasoning is not None and verdict == Verdict.PASS and not truncated:
-        span = _extract_reasoning(data)
-        if reasoning and not span:
-            return (
-                Verdict.INTERESTING,
-                "reasoning requested but response reasoning empty",
-            )
-        if not reasoning and span:
-            return (
-                Verdict.INTERESTING,
-                "reasoning disabled but response reasoned",
-            )
-
-    # A named tool is grammar-constrained to only one occurrence.
-    if mode != "response_format" and verdict == Verdict.PASS and not truncated:
-        expected = 1 if mode == "tools_named" else 2
-        if len(outputs) != expected:
-            return (
-                Verdict.INTERESTING,
-                f"expected {expected} tool call(s), got {len(outputs)}",
-            )
-
-    return verdict, detail
 
 
 async def _probe_reasoning(
@@ -501,40 +294,325 @@ async def _probe_reasoning(
     return bool(_extract_reasoning(data))
 
 
-class JsonSchemaSuiteScenario(BaseScenario):
-    """Shared driver for the draft 7 JSON Schema Test Suite scenarios.
+@dataclass(frozen=True)
+class SweepCaseToolMode:
+    """A tool-calling sweep mode: a tool_choice plus a strict setting."""
 
-    Subclasses set two knobs:
-        wrap_tool_modes: also issue each tool-calling request with the schema
-            wrapped in a root object (exercises array/non-object root schemas).
-        reject_400_is_pass: treat a 400 (schema rejected up front) as a PASS
-            rather than a FAIL.
+    choice: Literal["auto", "required", "named"]  # the OpenAI tool_choice
+    strict: bool  # envelope-only (False) vs envelope + arguments (True)
+
+    @property
+    def label(self) -> str:
+        return f"tool_{self.choice}_{'strict' if self.strict else 'nonstrict'}"
+
+
+@dataclass(frozen=True)
+class SweepCaseResponseFormatMode:
+    """The response_format sweep mode; always enforces the full schema."""
+
+    @property
+    def label(self) -> str:
+        return "response_format"
+
+
+SweepCaseMode = SweepCaseToolMode | SweepCaseResponseFormatMode
+
+
+@dataclass(frozen=True)
+class SweepCase:
+    mode: SweepCaseMode
+    reasoning: bool | None  # requested reasoning toggle; None = model default
+    reject_400_is_pass: bool  # a clean up-front 400 counts as a pass
+
+
+def _build_sweeps() -> list[SweepCase]:
+    """Build the curated (mode, reasoning) sweep.
+
+    strict controls the argument grammar and is orthogonal to tool_choice, so it
+    is swept only on the ``required`` choice, which forces a call and so always
+    yields a tool call to check. ``auto`` and ``named`` exercise tool_choice
+    plumbing (decline handling, the named single-call grammar), not the argument
+    grammar, so each runs at a single strict value.
+    """
+    # A 400 means the server cleanly rejected an unenforceable schema up front.
+    # We assume reject_unsupported is enabled on the server, so that is a pass
+    # rather than a silent unconstrained fallback that emits non-conforming output.
+    reject_unsupported = True
+    cases: list[SweepCase] = []
+    for reasoning in (False, True):
+        for mode in (
+            SweepCaseToolMode("required", strict=True),
+            SweepCaseResponseFormatMode(),
+        ):
+            cases.append(SweepCase(mode, reasoning, reject_unsupported))
+    for mode in (
+        SweepCaseToolMode("required", strict=False),
+        SweepCaseToolMode("auto", strict=True),
+        SweepCaseToolMode("named", strict=True),
+    ):
+        cases.append(SweepCase(mode, None, reject_unsupported))
+    return cases
+
+
+def _payload(
+    model: str,
+    schema: Any,
+    mode: SweepCaseMode,
+    max_tokens: int,
+    *,
+    reasoning: bool | None,
+) -> dict[str, Any]:
+    # No sampling overrides -- use the model's trained generation defaults.
+    base: dict[str, Any] = {"model": model, "max_tokens": max_tokens}
+    if reasoning is not None:
+        _apply_reasoning(base, reasoning)
+    if isinstance(mode, SweepCaseResponseFormatMode):
+        base["messages"] = [
+            {"role": "user", "content": _prompt(schema, via_tool=False)}
+        ]
+        base["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {"name": "target", "schema": schema},
+        }
+    else:  # SweepCaseToolMode
+        base["messages"] = [
+            {"role": "user", "content": _prompt(schema, via_tool=True)}
+        ]
+        base["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "emit",
+                    "description": "Emit a JSON value for the target schema.",
+                    "parameters": schema,
+                    "strict": mode.strict,
+                },
+            }
+        ]
+        if mode.choice == "auto":
+            base["tool_choice"] = "auto"
+        elif mode.choice == "required":
+            base["tool_choice"] = "required"
+        else:  # named
+            base["tool_choice"] = {
+                "type": "function",
+                "function": {"name": "emit"},
+            }
+    return base
+
+
+def _extract_output(
+    mode: SweepCaseMode, data: dict[str, Any]
+) -> tuple[list[str] | None, str]:
+    """Pull every ``output`` string to validate from the response.
+
+    Returns one element for ``response_format`` (the message content) and one
+    per tool call otherwise -- every call must conform, so all are returned.
+    ``None`` => nothing to validate.
+    """
+    choices = data.get("choices") or []
+    if not choices:
+        return None, "no choices in response"
+    msg = choices[0].get("message") or {}
+    if isinstance(mode, SweepCaseResponseFormatMode):
+        content = msg.get("content")
+        if not content:
+            return None, "empty message content"
+        return [content], ""
+    tool_calls = msg.get("tool_calls") or []
+    if not tool_calls:
+        return None, "no tool_calls in response"
+    args = [
+        a
+        for c in tool_calls
+        if (a := (c.get("function") or {}).get("arguments")) is not None
+    ]
+    if not args:
+        return None, "tool call missing arguments"
+    return args, ""
+
+
+def _check_one(
+    schema: Any, output: str, *, truncated: bool, check_arguments: bool
+) -> tuple[Verdict, str]:
+    """Validate a single output string.
+
+    When ``check_arguments`` is False (an envelope-only ``strict=false`` tool
+    call), a well-formed JSON value passes regardless of the schema.
+    """
+    parsed = leading_json(output)
+    if parsed is None:
+        if truncated:
+            return (
+                Verdict.INTERESTING,
+                "output truncated at max_tokens (incomplete JSON)",
+            )
+        return Verdict.FAIL, f"output is not valid JSON: {output[:200]!r}"
+
+    instance, trailing = parsed
+    if trailing:
+        return Verdict.FAIL, overrun_detail(trailing)
+
+    if not check_arguments:
+        return (
+            Verdict.PASS,
+            "well-formed JSON envelope",
+        )
+
+    js_ok, js_detail = _jsonschema_check(schema, instance)
+    if js_ok is None:
+        return Verdict.INTERESTING, f"schema not judgeable: {js_detail}"
+    if js_ok is False:
+        if truncated:
+            return (
+                Verdict.INTERESTING,
+                f"output truncated at max_tokens; strict schema check "
+                f"inconclusive ({js_detail})",
+            )
+        return Verdict.FAIL, f"output violates schema: {js_detail}"
+    return Verdict.PASS, "output conforms to schema"
+
+
+def _evaluate(
+    mode: SweepCaseMode,
+    schema: Any,
+    body: str,
+    status: int,
+    error: str | None,
+    *,
+    reject_400_is_pass: bool,
+    reasoning: bool | None,
+) -> tuple[Verdict, str]:
+    if error:
+        return Verdict.FAIL, f"transport error: {error}"
+    # A 400 (the server rejecting the schema up front) is a pass when the
+    # scenario assumes reject_unsupported; other non-200 statuses are FAILs.
+    if reject_400_is_pass and status == 400:
+        return Verdict.PASS, f"server rejected schema with 400: {body[:200]}"
+    if status != 200:
+        return Verdict.FAIL, f"server returned {status}: {body[:400]}"
+    try:
+        data = json.loads(body)
+    except Exception:
+        return Verdict.FAIL, f"response body not JSON: {body[:200]}"
+
+    truncated = (data.get("choices") or [{}])[0].get(
+        "finish_reason"
+    ) == "length"
+
+    # `emit` is the only offered tool; any other tool name is a server defect.
+    if isinstance(mode, SweepCaseToolMode):
+        msg = (data.get("choices") or [{}])[0].get("message") or {}
+        tool_calls = msg.get("tool_calls") or []
+        bad = [
+            name
+            for c in tool_calls
+            if (name := (c.get("function") or {}).get("name")) != "emit"
+        ]
+        if bad:
+            return Verdict.FAIL, f"non-emit tool call(s): {bad}"
+
+    outputs, note = _extract_output(mode, data)
+    if outputs is None:
+        if isinstance(mode, SweepCaseToolMode) and mode.choice == "auto":
+            return Verdict.INTERESTING, f"model declined tool ({note})"
+        if truncated:
+            return (
+                Verdict.INTERESTING,
+                f"output truncated at max_tokens ({note})",
+            )
+        # A forced required/named choice must always yield a tool call.
+        if isinstance(mode, SweepCaseToolMode):
+            return Verdict.FAIL, f"{mode.label} produced no tool call: {note}"
+        return Verdict.FAIL, f"no constrained output: {note}"
+
+    # response_format always checks the full schema; a tool mode checks
+    # arguments only when strict, otherwise just the envelope.
+    check_arguments = (
+        mode.strict if isinstance(mode, SweepCaseToolMode) else True
+    )
+    checks = [
+        _check_one(
+            schema, out, truncated=truncated, check_arguments=check_arguments
+        )
+        for out in outputs
+    ]
+    verdict, detail = max(checks, key=lambda c: _SEVERITY[c[0]])
+    if len(outputs) > 1:
+        detail = f"{len(outputs)} tool calls; worst: {detail}"
+
+    if reasoning is not None and verdict == Verdict.PASS and not truncated:
+        span = _extract_reasoning(data)
+        if reasoning and not span:
+            return (
+                Verdict.INTERESTING,
+                "reasoning requested but response reasoning empty",
+            )
+        if not reasoning and span:
+            return (
+                Verdict.INTERESTING,
+                "reasoning disabled but response reasoned",
+            )
+
+    if (
+        isinstance(mode, SweepCaseToolMode)
+        and verdict == Verdict.PASS
+        and not truncated
+    ):
+        expected = 1 if mode.choice == "named" else 2
+        if len(outputs) != expected:
+            return (
+                Verdict.INTERESTING,
+                f"expected {expected} tool call(s), got {len(outputs)}",
+            )
+
+    return verdict, detail
+
+
+@register_scenario
+class ConstrainedDecodingScenario(BaseScenario):
+    """Fuzz scenario for tool-call and response_format constrained decoding.
+
+    Drives every draft 7 JSON Schema Test Suite schema through both paths,
+    sweeping tool_choice, strict, and reasoning.
     """
 
-    wrap_tool_modes: bool = False
-    reject_400_is_pass: bool = False
+    name = "constrained_decoding"
+    description = (
+        "Drive every draft 7 JSON Schema Test Suite schema through the "
+        "constrained-decoding paths -- tool calls (auto/required/named, strict "
+        "swept on required, schema always root-wrapped) and response_format -- "
+        "with an adversarial break-the-schema prompt. strict=true tool calls "
+        "and response_format must conform (envelope + arguments); strict=false "
+        "tool calls need only a well-formed envelope. Validated with the "
+        "jsonschema Draft7Validator. Assumes reject_unsupported, so a 400 is "
+        "a pass."
+    )
+    tags = [
+        "constrained_decoding",
+        "structured",
+        "tools",
+        "response_format",
+        "strict",
+        "schema",
+    ]
+    scenario_type = "fuzz"
 
-    def _build_jobs(
-        self,
-        schemas: list[tuple[str, Any]],
-        reasoning_variants: list[bool | None],
-    ) -> list[tuple[str, Any, str, bool | None]]:
-        jobs: list[tuple[str, Any, str, bool | None]] = []
-        for label, schema in schemas:
-            for mode in _MODES:
-                variants = [(f"{label}::{mode}", schema)]
-                if self.wrap_tool_modes and mode != "response_format":
-                    # Issue the tool-calling request a second time with the
-                    # schema wrapped in a root object, so non-object / array-root
-                    # schemas are still exercised through the tool-calling path.
-                    variants.append(
-                        (f"{label}::{mode}::wrapped", _wrap_root(schema))
-                    )
-                for test_id, sch in variants:
-                    for r in reasoning_variants:
-                        vid = f"{test_id}::think" if r else test_id
-                        jobs.append((vid, sch, mode, r))
-        return jobs
+    sweeps = _build_sweeps()
+
+    def _effective_sweeps(self, reasoning_supported: bool) -> list[SweepCase]:
+        """The sweep list to run, collapsing the reasoning axis when the model
+        cannot toggle reasoning."""
+        if reasoning_supported:
+            return list(self.sweeps)
+        seen: set[SweepCase] = set()
+        collapsed: list[SweepCase] = []
+        for case in self.sweeps:
+            no_reasoning = SweepCase(case.mode, None, case.reject_400_is_pass)
+            if no_reasoning not in seen:
+                seen.add(no_reasoning)
+                collapsed.append(no_reasoning)
+        return collapsed
 
     async def run(
         self, client: FuzzClient, config: RunConfig
@@ -546,28 +624,39 @@ class JsonSchemaSuiteScenario(BaseScenario):
 
         on = await _probe_reasoning(client, model, enable=True)
         off = await _probe_reasoning(client, model, enable=False)
-        reasoning_variants: list[bool | None] = (
-            [False, True] if (on and off is False) else [None]
-        )
+        sweeps = self._effective_sweeps(bool(on and off is False))
 
-        jobs = self._build_jobs(schemas, reasoning_variants)
+        jobs: list[tuple[str, Any, SweepCase]] = []
+        for label, schema in schemas:
+            for case in sweeps:
+                if isinstance(case.mode, SweepCaseToolMode):
+                    sent = _wrap_root(schema)
+                else:
+                    sent = schema
+                test_id = f"{label}::{case.mode.label}"
+                if case.reasoning:
+                    test_id = f"{test_id}::think"
+                jobs.append((test_id, sent, case))
+
         payloads = [
-            _payload(model, schema, mode, max_tokens, reasoning=r)
-            for _, schema, mode, r in jobs
+            _payload(
+                model, sent, case.mode, max_tokens, reasoning=case.reasoning
+            )
+            for _, sent, case in jobs
         ]
         responses = await client.concurrent_requests(payloads)
 
-        for (test_id, schema, mode, r), payload, resp in zip(
+        for (test_id, sent, case), payload, resp in zip(
             jobs, payloads, responses, strict=True
         ):
             verdict, detail = _evaluate(
-                mode,
-                schema,
+                case.mode,
+                sent,
                 resp.body,
                 resp.status,
                 resp.error,
-                reject_400_is_pass=self.reject_400_is_pass,
-                reasoning=r,
+                reject_400_is_pass=case.reject_400_is_pass,
+                reasoning=case.reasoning,
             )
             results.append(
                 self.make_result(

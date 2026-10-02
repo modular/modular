@@ -16,10 +16,11 @@ Target: Expose which JSON-schema feature classes the constrained-decoding
 backend fails to enforce.
 
 Unlike ``json_schema_compliance`` (one fixed schema, pass/fail on a rate) and
-``json_schema_draft7`` (the full draft-7 suite driven verbatim, where any 400 is
-a failure), this groups probes by feature class and reports a per-feature
-breakdown, so a failure pinpoints the exact construct. It also encodes the
-honest-rejection contract for constructs no grammar can enforce (see
+``constrained_decoding`` (the full draft-7 suite driven through the tool-call
+and response_format constrained-decoding paths, where any 400 is a pass under
+``reject_unsupported``), this groups probes by feature class and reports a
+per-feature breakdown, so a failure pinpoints the exact construct. It also
+encodes the honest-rejection contract for constructs no grammar can enforce (see
 ``array_unique_unenforceable`` below, where a 400 is the PASS, not a failure).
 The classes target schema features that are easy to under-enforce
 (``$ref``/``$defs``, ``anyOf``, ``type``-lists) plus the constraints a complete
@@ -53,7 +54,7 @@ def _schema_violations(instance: Any, schema: dict[str, Any]) -> list[str]:
     """Return the schema violations for ``instance`` (empty when conformant).
 
     Uses the ``jsonschema`` ``Draft7Validator`` (the oracle the sibling
-    ``tool_schema_validation`` / ``json_schema_draft7`` scenarios use) so the
+    ``tool_schema_validation`` / ``constrained_decoding`` scenarios use) so the
     check matches canonical JSON Schema semantics rather than a hand-rolled
     subset.
     """
