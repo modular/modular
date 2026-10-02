@@ -83,18 +83,16 @@ def fp8_index_kernel[
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    output_tt: TileTensor[
-        .float32, OutputLT, MutAnyOrigin, Engine=OutputEngine
-    ],
+    output: TileTensor[.float32, OutputLT, MutAnyOrigin, Engine=OutputEngine],
     # [total_seq_len, num_heads, depth]
-    q_tt: TileTensor[dtype, QLT, ImmutAnyOrigin, Engine=QEngine],
+    q: TileTensor[dtype, QLT, ImmutAnyOrigin, Engine=QEngine],
     # [total_seq_len, num_heads]
-    q_s_tt: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
     # MHAOperand for K values
     k_operand: k_operand_type,
     # MHAOperand for K scales
     ks_operand: ks_operand_type,
-    valid_length_tt: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
+    valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
 ):
     """Computes the scalar FP8 index/gather score kernel as a Blackwell tensor-core fallback.
 
@@ -120,22 +118,18 @@ def fp8_index_kernel[
         VLEngine: Engine of the `valid_length_tt` tile.
 
     Args:
-        output_tt: Output score tensor of shape `[total_seq_len, num_keys]`.
-        q_tt: Query tensor of shape `[total_seq_len, num_heads, depth]`.
-        q_s_tt: Per-query scale tensor of shape `[total_seq_len, num_heads]`.
+        output: Output score tensor of shape `[total_seq_len, num_keys]`.
+        q: Query tensor of shape `[total_seq_len, num_heads, depth]`.
+        q_s: Per-query scale tensor of shape `[total_seq_len, num_heads]`.
         k_operand: Ragged paged operand providing key rows.
         ks_operand: Ragged paged operand providing per-key scales.
-        valid_length_tt: Cumulative sequence offsets of shape `[batch_size + 1]`.
+        valid_length: Cumulative sequence offsets of shape `[batch_size + 1]`.
     """
-    # Convert TileTensor inputs to LayoutTensor for internal use,
-    # which relies on LayoutTensor-specific APIs (tile, indexing).
-    var output = output_tt.to_layout_tensor()
-    var q = q_tt.to_layout_tensor()
-    var q_s = q_s_tt.to_layout_tensor()
-    var valid_length = valid_length_tt.to_layout_tensor()
 
-    comptime valid_length_layout = type_of(valid_length).layout
-    comptime assert valid_length_layout.rank() == 1, "valid_length must be 1D"
+    comptime assert q.flat_rank == 3
+    comptime assert q_s.flat_rank == 2
+    comptime assert output.flat_rank == 2
+    comptime assert valid_length.flat_rank == 1, "valid_length must be 1D"
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
 
@@ -181,10 +175,10 @@ def fp8_index_kernel[
         Scalar[dtype], origin_of(k_smem), address_space=.SHARED
     ] = k_smem.unsafe_ptr()
 
-    var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0, 0))
-    var q_s_ptr = q_s.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0))
+    var q_ptr = q.ptr_at_offset(Coord(start_of_seq + UInt32(seq_offset), 0, 0))
+    var q_s_ptr = q_s.ptr_at_offset(Coord(start_of_seq + UInt32(seq_offset), 0))
     var o_ptr = output.ptr_at_offset(
-        Index(start_of_seq + UInt32(seq_offset), UInt32(key_offset))
+        Coord(start_of_seq + UInt32(seq_offset), UInt32(key_offset))
     )
 
     var q_tile = TileTensor(q_ptr, row_major[num_heads, depth]())
