@@ -9443,3 +9443,33 @@ index 6a8e674..1a24754 100644
    );
 
    VocabType GetVocabType() const;
+diff --git a/cpp/grammar_matcher.cc b/cpp/grammar_matcher.cc
+--- a/cpp/grammar_matcher.cc
++++ b/cpp/grammar_matcher.cc
+@@ -853,8 +866,26 @@
+     }
+   }
+
++  // A kRejected-stored mask with no rejected or uncertain indices accepts
++  // every token, so one such state already forces the full final mask and the
++  // deferred uncertain re-checks cannot change a bit: skip them.
++  bool some_state_accepts_all = false;
++  for (const auto& state_with_mask : latest_states_with_masks) {
++    const auto& adaptive_token_mask = state_with_mask.second->second;
++    if (adaptive_token_mask.store_type == StoreType::kRejected &&
++        adaptive_token_mask.rejected_indices.empty() &&
++        adaptive_token_mask.uncertain_indices.empty()) {
++      some_state_accepts_all = true;
++      break;
++    }
++  }
++  if (some_state_accepts_all) {
++    tmp_rejected_indices_.clear();
++  }
++
+   for (const auto& [state, adaptive_token_mask_it] : latest_states_with_masks) {
+     const auto& adaptive_token_mask = adaptive_token_mask_it->second;
++    if (some_state_accepts_all) break;
+
+     // For each ParserState, we will check every uncertain token and put them into the accepted or
+     // rejected list.
