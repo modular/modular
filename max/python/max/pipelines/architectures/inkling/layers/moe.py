@@ -325,9 +325,15 @@ class InklingMoE(MoEQuantized):
     def __call__(self, x: TensorValue) -> TensorValue:
         assert isinstance(self.gate, InklingGate)
         routing = self.gate.route(x)
-        return self._routed_experts(x, routing) + self._sink_experts(
-            x, routing.sink_weights
+        routed = self._routed_experts(x, routing)
+        # Side_stream is a perf-optimization, after we noticed under
+        # profiling that these two computations could be overlapped
+        (sink,) = ops.side_stream(
+            [x, routing.sink_weights],
+            self._sink_experts,
+            result_types=[x.type],
         )
+        return routed + sink
 
     def _routed_experts(
         self, x: TensorValue, routing: InklingRouting
