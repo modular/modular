@@ -16,6 +16,7 @@ from std.math import sqrt
 from std.sys.info import CompilationTarget
 
 from layout import (
+    Coord,
     Idx,
     Layout,
     LayoutTensor,
@@ -27,6 +28,7 @@ from std.random import Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_cpu
 from std.testing import TestSuite, assert_almost_equal
 
+from std.utils.coord import coord_to_index_list
 from std.utils.index import Index, IndexList
 
 
@@ -43,15 +45,21 @@ def compute_rms_ref[
     return sqrt((sum_of_squares / Float32(size)) + eps)
 
 
-def run_rms_norm_fused_residual_cpu[
-    dtype: DType, rank: Int
+def _run_rms_norm_fused_residual_cpu_impl[
+    dtype: DType
 ](
-    shape: IndexList[rank],
+    shape_coord: Coord,
     rtol: Float64 = 0.001,
     dropout_p: Float64 = 0.0,
     seed: UInt64 = 0,
 ) raises:
-    """Test rms_norm_fused_residual CPU implementation."""
+    """Test rms_norm_fused_residual CPU implementation.
+
+    Takes the shape as a `Coord` so a caller can supply statically known
+    leaves, as the op registrations' `shape_coord()` does.
+    """
+    comptime rank = type_of(shape_coord).rank
+    var shape = coord_to_index_list(shape_coord)
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
@@ -98,32 +106,36 @@ def run_rms_norm_fused_residual_cpu[
     # Define input functions
     @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {input_tensor} -> SIMD[dtype, width]:
-        return input_tensor.load[width=width](rebind[IndexList[rank]](coords))
+        width: Int
+    ](coords: Coord) {input_tensor} -> SIMD[dtype, width]:
+        return input_tensor.load[width=width](
+            rebind[IndexList[rank]](coord_to_index_list(coords))
+        )
 
     @inline(.always)
     def residual_input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {residual_tensor} -> SIMD[dtype, width]:
+        width: Int
+    ](coords: Coord) {residual_tensor} -> SIMD[dtype, width]:
         return residual_tensor.load[width=width](
-            rebind[IndexList[rank]](coords)
+            rebind[IndexList[rank]](coord_to_index_list(coords))
         )
 
     # Define output functions
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {output_tensor} -> None:
-        output_tensor.store[width=width](coords, val)
+    ](coords: Coord, val: SIMD[dtype, width]) {output_tensor} -> None:
+        output_tensor.store[width=width](
+            rebind[IndexList[rank]](coord_to_index_list(coords)), val
+        )
 
     @inline(.always)
     def residual_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-        residual_output_tensor
-    } -> None:
-        residual_output_tensor.store[width=width](coords, val)
+    ](coords: Coord, val: SIMD[dtype, width]) {residual_output_tensor} -> None:
+        residual_output_tensor.store[width=width](
+            rebind[IndexList[rank]](coord_to_index_list(coords)), val
+        )
 
     # Read back the (input + residual) buffer the kernel wrote in its first pass.
     # This reader and the writable `residual_output_fn` alias it; as runtime args
@@ -135,10 +147,10 @@ def run_rms_norm_fused_residual_cpu[
 
     @inline(.always)
     def residual_read_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {residual_output_immut} -> SIMD[dtype, width]:
+        width: Int
+    ](coords: Coord) {residual_output_immut} -> SIMD[dtype, width]:
         return residual_output_immut.load[width=width](
-            rebind[IndexList[rank]](coords)
+            rebind[IndexList[rank]](coord_to_index_list(coords))
         )
 
     var dropout_p_scalar = Scalar[dtype](dropout_p)
@@ -150,7 +162,7 @@ def run_rms_norm_fused_residual_cpu[
         output_fn,
         residual_output_fn,
         residual_read_fn,
-        shape,
+        shape_coord,
         gamma_tensor,
         epsilon,
         weight_offset,
@@ -204,6 +216,20 @@ def run_rms_norm_fused_residual_cpu[
             assert_almost_equal(expected_norm, output_ptr[idx], rtol=rtol)
 
 
+def run_rms_norm_fused_residual_cpu[
+    dtype: DType, rank: Int
+](
+    shape: IndexList[rank],
+    rtol: Float64 = 0.001,
+    dropout_p: Float64 = 0.0,
+    seed: UInt64 = 0,
+) raises:
+    """Drive the CPU path with an all-dynamic shape `Coord`."""
+    _run_rms_norm_fused_residual_cpu_impl[dtype](
+        Coord(shape), rtol=rtol, dropout_p=dropout_p, seed=seed
+    )
+
+
 def test_rms_norm_fused_residual_float32_2d() raises:
     """Test rms_norm_fused_residual with float32 and 2D shape."""
     run_rms_norm_fused_residual_cpu[.float32](Index(4, 16), rtol=1e-3)
@@ -222,6 +248,19 @@ def test_rms_norm_fused_residual_float32_large_cols() raises:
 def test_rms_norm_fused_residual_float32_3d() raises:
     """Test rms_norm_fused_residual with 3D shape."""
     run_rms_norm_fused_residual_cpu[.float32](Index(2, 3, 16), rtol=1e-3)
+
+
+def test_rms_norm_fused_residual_float32_static_dims() raises:
+    """Drive the CPU path with statically known inner dims.
+
+    Every other CPU case builds `Coord(shape)` from a runtime `IndexList`, so
+    each leaf is dynamic and the `is_static_value` branch of the row -> rank-N
+    translation is never taken here; the op registrations reach this path with
+    `shape_coord()`, whose leaves can be static.
+    """
+    _run_rms_norm_fused_residual_cpu_impl[.float32](
+        Coord(Idx[2], Idx[3], Int64(16)), rtol=1e-3
+    )
 
 
 def test_rms_norm_fused_residual_bfloat16() raises:
