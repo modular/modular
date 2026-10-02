@@ -1206,7 +1206,7 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
 
   // TODO: Consider extracting the operand-parsing loop below into a helper
   // (e.g. parseDecoratorArgs) that returns a struct {TypedAttr rawName,
-  // std::optional<std::string> exportABI, std::optional<bool> mangle}, to
+  // std::optional<std::string> exportABI, TriBool mangle}, to
   // separate argument parsing from the semantic actions that follow.
   TypedAttr linkageName;
   std::optional<std::string> exportABI;

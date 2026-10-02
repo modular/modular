@@ -1943,7 +1943,7 @@ static PromotedSignature buildPromotedSignature(
     SharedState &shared, FnTypeGeneratorType sig,
     ArrayRef<ParamDeclAttr> params, ArrayRef<ParamDeclAttr> prependedParams,
     std::optional<ClosureEmitter::PromotedClosureSelfArg> selfArg,
-    std::optional<bool> capturingOverride = std::nullopt) {
+    TriBool capturingOverride = TriBool::unknown()) {
   MLIRContext *ctx = shared.getContext();
   size_t oldNumImplicitOrigins =
       sig.getFnMetaOriginData().getNumImplicitOriginDecls();
@@ -1994,8 +1994,8 @@ static PromotedSignature buildPromotedSignature(
       sig.getValues(), explicitParamDecls, implicitOriginDecls);
 
   bool shouldBeCapturing;
-  if (capturingOverride)
-    shouldBeCapturing = *capturingOverride;
+  if (capturingOverride.isDefinite())
+    shouldBeCapturing = capturingOverride.isTrue();
   else
     shouldBeCapturing =
         sig.isCapturing() ||
@@ -2029,8 +2029,8 @@ static PromotedSignature buildPromotedSignature(
 
 ASTDecl *ClosureEmitter::promoteClosure(
     ASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> prependedParams,
-    std::optional<PromotedClosureSelfArg> selfArg,
-    std::optional<bool> capturingOverride, ASTDecl *targetParent) {
+    std::optional<PromotedClosureSelfArg> selfArg, TriBool capturingOverride,
+    ASTDecl *targetParent) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
   // Mark dead unparsed code as resolved to prevent resolution dependent on
@@ -2153,8 +2153,8 @@ ASTDecl *ClosureEmitter::promoteClosure(
 
 ASTDecl *ClosureEmitter::promoteClosure(
     ASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> prependedParamRefs,
-    std::optional<PromotedClosureSelfArg> selfArg,
-    std::optional<bool> capturingOverride, ASTDecl *targetParent) {
+    std::optional<PromotedClosureSelfArg> selfArg, TriBool capturingOverride,
+    ASTDecl *targetParent) {
   SmallVector<ParamDeclAttr> prependedParams =
       llvm::map_to_vector(prependedParamRefs, [](ParamDeclRefAttr paramRef) {
         return ParamDeclAttr::get(paramRef);
@@ -2617,7 +2617,8 @@ ASTDecl *ClosureEmitter::liftClosureIntoMethod(
   // live on the storage struct, so do not prepend them to the method.
   ASTDecl *promotedDecl = promoteClosure(
       nestedFnDecl, ArrayRef<ParamDeclAttr>{}, /*selfArg=*/selfArg,
-      /*capturingOverride=*/true, /*targetParent=*/&storageStructDecl);
+      /*capturingOverride=*/TriBool::yes(),
+      /*targetParent=*/&storageStructDecl);
   FnOp promotedCallFunction = cast<FnOp>(promotedDecl->getIfOperation());
   assert(concreteFieldDecls.size() == concreteFieldCaptures.size() &&
          "expected one capture value per closure field");
@@ -3487,15 +3488,15 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   /// the properties of the value in the body of the closure.
   CValue captureValue;
 
-  auto captureByRef = [&](CValue value,
-                          std::optional<bool> mutability) -> CValue {
+  auto captureByRef = [&](CValue value, TriBool mutability) -> CValue {
     // Ensure we are not capturing an immutable reference by mutable
     // reference.
     if (auto refType = sugarDynCast<RefType>(value.getType().mlirType)) {
       // If the mutability is not specified or the reference type match the
       // specified mutability, return the original value.
       OriginType originType = refType.getOriginType();
-      if (!mutability.has_value() || originType.isMutableKnown(*mutability))
+      if (mutability.isUnknown() ||
+          originType.isMutableKnown(mutability.isTrue()))
         return value;
 
       if (originType.isMutableKnown(false)) {
@@ -3514,12 +3515,12 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     }
 
     // Not a reference capture, then it must be a read effect.
-    if (mutability.has_value() && *mutability == false)
+    if (mutability.isFalse())
       return value;
 
     shared.emitError(location, "register passible value '")
         << name << "' can not be captured by "
-        << (mutability.has_value() ? "'mut'" : "'ref'")
+        << (mutability.isDefinite() ? "'mut'" : "'ref'")
         << ". Do you mean 'imm'?";
     return {};
   };
@@ -3610,10 +3611,10 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   case CaptureConvention::kConventionRead:
   case CaptureConvention::kConventionRef: {
     convention = parsedConvention;
-    auto mutability = [convention]() -> std::optional<bool> {
+    auto mutability = [convention]() -> TriBool {
       if (convention == CaptureConvention::kConventionRef)
-        return std::nullopt;
-      return convention == CaptureConvention::kConventionMut;
+        return TriBool::unknown();
+      return TriBool::fromBool(convention == CaptureConvention::kConventionMut);
     }();
     captureValue = captureByRef(valueInParent, mutability);
     if (!captureValue)

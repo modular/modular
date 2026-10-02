@@ -964,13 +964,12 @@ doesNominalTypeConformToCached(ASTDecl *self, TraitType trait,
     // If user requested failure details, we use the cached only if the verdict
     // was true.
     if (mayBeCached) {
-      std::optional<bool> conforms =
-          self->getShared().getCachedNominalConformance(self, trait,
-                                                        concreteType);
-      if (conforms.has_value() && (!details || *conforms)) {
+      TriBool conforms = self->getShared().getCachedNominalConformance(
+          self, trait, concreteType);
+      if (conforms.isDefinite() && (!details || conforms.isTrue())) {
         if (details)
           details->clear();
-        return TriBool::fromBool(*conforms);
+        return conforms;
       }
     }
 

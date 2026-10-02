@@ -2099,11 +2099,10 @@ static TriBool classifyImplicitConversionImpl(
 
   // Check to see if we already cached this convertibility check. If the caller
   // asked why, we use the cached value only if the verdict was true.
-  std::optional<bool> cache =
-      shared.getCachedImplicitConvertibility(rvType, requiredType);
+  TriBool cache = shared.getCachedImplicitConvertibility(rvType, requiredType);
 
-  if (cache.has_value() && (!reason || cache.value()))
-    return TriBool::fromBool(cache.value());
+  if (cache.isDefinite() && (!reason || cache.isTrue()))
+    return cache;
 
   // Cache and return a convertibility verdict. When `scopeDependent` is true
   // the verdict was derived from this scope's assumptions rather than being a

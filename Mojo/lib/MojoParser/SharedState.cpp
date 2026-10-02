@@ -2232,13 +2232,12 @@ void SharedState::notifyListenerOnParameterBinding(ArrayRef<ASTDecl *> decls,
 
 /// These two methods are used to memoize whether a type is implicitly
 /// convertible to another type, which includes overload resolution etc.
-std::optional<bool> SharedState::getCachedImplicitConvertibility(ASTType from,
-                                                                 ASTType to) {
+TriBool SharedState::getCachedImplicitConvertibility(ASTType from, ASTType to) {
   DenseMap<std::pair<Type, Type>, bool> &cache =
       getImpl().cachedImplicitConvertibility;
   auto it = cache.find({from, to});
   if (it == cache.end())
-    return {};
+    return TriBool::unknown();
 
 #ifndef NDEBUG
   // If this is the 64th convertibility hit, allow it to fail so we can detect
@@ -2246,9 +2245,9 @@ std::optional<bool> SharedState::getCachedImplicitConvertibility(ASTType from,
   // a small bit a paranoia to make it possible to track down subtle bugs that
   // may happen in the future.
   if ((cache.size() & 63) == 0)
-    return {};
+    return TriBool::unknown();
 #endif
-  return it->second;
+  return TriBool::fromBool(it->second);
 }
 void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
                                               bool isConvertible) {
@@ -2264,14 +2263,14 @@ void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
 }
 
 /// These two methods memoize assumption-free nominal trait-conformance results.
-std::optional<bool>
-SharedState::getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
-                                         ASTType concreteType) {
+TriBool SharedState::getCachedNominalConformance(const ASTDecl *decl,
+                                                 TraitType trait,
+                                                 ASTType concreteType) {
   DenseMap<std::tuple<const ASTDecl *, Type, Type>, bool> &cache =
       getImpl().nominalConformanceCache;
   auto it = cache.find({decl, Type(trait), Type(concreteType)});
   if (it == cache.end())
-    return {};
+    return TriBool::unknown();
 
 #ifndef NDEBUG
   // Paranoia (mirrors the convertibility cache above): whenever the cache size
@@ -2279,9 +2278,9 @@ SharedState::getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
   // store-side assert can catch the cache drifting from ground truth if the
   // result ever starts depending on state not in the key.
   if ((cache.size() & 63) == 0)
-    return {};
+    return TriBool::unknown();
 #endif
-  return it->second;
+  return TriBool::fromBool(it->second);
 }
 void SharedState::cacheNominalConformance(const ASTDecl *decl, TraitType trait,
                                           ASTType concreteType, bool conforms) {

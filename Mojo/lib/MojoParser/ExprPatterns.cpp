@@ -27,6 +27,7 @@
 #include "Mojo/MojoParser/CallOperands.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/POPDialect/POPAttrs.h"
+#include "Mojo/Support/TriBool.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 
@@ -495,9 +496,9 @@ getEnumCaseNames(IREmitter &emitter, ASTType subjectType, SMLoc loc) {
   return std::nullopt;
 }
 
-/// Read `SubjectType._enum_is_exhaustive` as a concrete Bool.
-static std::optional<bool> getEnumIsExhaustive(IREmitter &emitter,
-                                               ASTType subjectType, SMLoc loc) {
+/// Read `SubjectType._enum_is_exhaustive` when it is statically known.
+static TriBool getEnumIsExhaustive(IREmitter &emitter, ASTType subjectType,
+                                   SMLoc loc) {
   SyntheticNode typeNode(loc, PValue(subjectType));
   AttributeRefNode exhaustiveRef(&typeNode, loc, "_enum_is_exhaustive");
   PValue exhaustiveValue =
@@ -508,8 +509,8 @@ static std::optional<bool> getEnumIsExhaustive(IREmitter &emitter,
                           EC_OperatorOperandValue)
           .getIfPValue();
   if (auto boolAttr = sugarDynCastIfPresent<SIMDAttr>(scalarBool.get()))
-    return boolAttr.getAsBool();
-  return std::nullopt;
+    return TriBool::fromBool(boolAttr.getAsBool());
+  return TriBool::unknown();
 }
 
 /// When processing `Type.Case` patterns, require them to be the subject's
@@ -1434,7 +1435,14 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
     IREmitter emitter = builder.getParamEmitter();
     auto names = getEnumCaseNames(emitter, type, loc);
     auto isExhaustive = getEnumIsExhaustive(emitter, type, loc);
-    if (!names || names->empty() || !isExhaustive || !*isExhaustive)
+    if (isExhaustive.isUnknown()) {
+      builder.emitError(
+          loc,
+          "'_enum_is_exhaustive' must be statically known when matching an "
+          "EnumLike type");
+      return false;
+    }
+    if (!names || names->empty() || isExhaustive.isFalse())
       return false;
     dims.push_back({path, names->size(), *names});
     return true;
@@ -1487,11 +1495,18 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
     IREmitter emitter = builder.getParamEmitter();
     auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
     auto isExhaustive = getEnumIsExhaustive(emitter, subjectType, matchLoc);
-    if (!names || names->empty() || !isExhaustive)
+    if (!names || names->empty())
       return space; // Opaque — incomplete reflection metadata
+    if (isExhaustive.isUnknown()) {
+      builder.emitError(
+          matchLoc,
+          "'_enum_is_exhaustive' must be statically known when matching an "
+          "EnumLike type");
+      return space;
+    }
 
-    space->kind = *isExhaustive ? MatchCoveringSpace::Kind::FiniteCtors
-                                : MatchCoveringSpace::Kind::OpenCtors;
+    space->kind = isExhaustive.isTrue() ? MatchCoveringSpace::Kind::FiniteCtors
+                                        : MatchCoveringSpace::Kind::OpenCtors;
     space->numCtors = names->size();
     space->caseNames = *names;
     space->remaining = builder.allocator.Allocate<bool>(space->numCtors);

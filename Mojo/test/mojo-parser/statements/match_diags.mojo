@@ -295,11 +295,44 @@ struct OpenColor(ImplicitlyCopyable, EnumLike):
             pass
 
 
+struct ParametricExhaustivityColor[
+    is_exhaustive: Bool
+](ImplicitlyCopyable, EnumLike):
+    comptime _enum_case_names = ParameterList.of[
+        "red".value, "green".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
+    comptime _enum_is_exhaustive = Self.is_exhaustive
+
+    def __init__(out self):
+        pass
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
+
+
 def match_open_enum_duplicate(color: OpenColor):
     __match color:
     case .red:
         pass
     # expected-warning @+1 {{case is unreachable; 'red' is already covered by a previous case}}
+    case .red:
+        pass
+
+
+def match_parametric_exhaustivity[is_exhaustive: Bool](
+    color: ParametricExhaustivityColor[is_exhaustive]
+):
+    # expected-error @+1 {{'_enum_is_exhaustive' must be statically known when matching an EnumLike type}}
+    __match color:
     case .red:
         pass
 

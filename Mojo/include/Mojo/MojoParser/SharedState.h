@@ -24,6 +24,7 @@
 #include "Mojo/MojoParser/IRValues.h"
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/MojoDiags.h"
+#include "Mojo/Support/TriBool.h"
 
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/ErrorOr.h"
@@ -679,18 +680,16 @@ public:
 
   /// These two methods are used to memoize whether a type is implicitly
   /// convertible to another type, which includes overload resolution etc.
-  std::optional<bool> getCachedImplicitConvertibility(ASTType from, ASTType to);
+  TriBool getCachedImplicitConvertibility(ASTType from, ASTType to);
   void cacheImplicitConvertibility(ASTType from, ASTType to,
                                    bool isConvertible);
 
   /// These two methods memoize ASTDecl::doesNominalTypeConformTo for the
   /// common, assumption-free case, keyed by (type decl, required trait,
   /// concrete type). Only definitive (yes/no) results are cached; `unknown` is
-  /// phase-dependent and never stored. `conforms` is the `yes`/`no` result as a
-  /// bool.
-  std::optional<bool> getCachedNominalConformance(const ASTDecl *decl,
-                                                  TraitType trait,
-                                                  ASTType concreteType);
+  /// phase-dependent and never stored.
+  TriBool getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
+                                      ASTType concreteType);
   void cacheNominalConformance(const ASTDecl *decl, TraitType trait,
                                ASTType concreteType, bool conforms);
 
