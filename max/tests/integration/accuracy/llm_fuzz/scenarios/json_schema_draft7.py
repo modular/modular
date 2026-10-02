@@ -14,10 +14,11 @@
 
 Every vendored draft 7 schema is sent verbatim (no filtering, no wrapping),
 driven four ways (tools auto/required/named, ``response_format``) with an
-adversarial break-the-schema prompt. The ``strict`` flag is never sent: the
-server is expected to match the schema regardless, so output is validated with
-the ``jsonschema`` ``Draft7Validator`` and a non-conforming output or a 4xx is
-always a FAIL. Remote ``$ref``s are inlined from the vendored ``remotes/``.
+adversarial break-the-schema prompt. Tool-calling requests include
+``strict: true`` so the server enforces the schema on the tool-call path.
+Output is validated with the ``jsonschema`` ``Draft7Validator`` and a
+non-conforming output or a 4xx is always a FAIL. Remote ``$ref``s are inlined
+from the vendored ``remotes/``.
 
 The shared driver and vendored-data attribution live in
 ``scenarios._json_schema_suite``.
@@ -37,9 +38,9 @@ class JsonSchemaTestSuiteDraft7(JsonSchemaSuiteScenario):
         "(tools auto/required/named, response_format) using an adversarial "
         "break-the-schema prompt; validate with the jsonschema Draft7Validator. "
         "Faithful reproduction of the suite: no keyword/format filtering and no "
-        "object wrapping -- schemas are sent verbatim. The strict flag is never "
-        "sent; the server must constrain output regardless, so 400s and "
-        "non-conforming output are always FAILs."
+        "object wrapping -- schemas are sent verbatim. Tool-calling requests "
+        "include strict=true so the server enforces the schema on the tool path; "
+        "400s and non-conforming output are always FAILs."
     )
     tags = ["json", "schema", "structured", "tools", "response_format"]
     scenario_type = "fuzz"

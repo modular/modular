@@ -297,6 +297,13 @@ This version is still a work in progress.
 - Removed `--enable-tool-call-constrained-decode`. Use
   `--tool-call-policy=force_unconstrained` for tool calls without a grammar.
 
+- The default tool-call policy is now `default_strict_false`: tool-call
+  arguments are constrained only to the tool-call envelope (free-form
+  arguments) unless a request sends `strict: true` for a tool or the server
+  is configured with a stricter `--tool-call-policy`. This aligns with the
+  behavior of OpenAI, vLLM, and sglang. Deployments that require full
+  argument-schema enforcement should set `--tool-call-policy force_strict_true`.
+
 - Added `--prefill-coalesce-min-pending` (default 0, off): under in-flight
   batching, hold pending fresh prefills until that many can share one mixed
   step instead of admitting them one by one. With data parallelism the count

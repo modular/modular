@@ -72,8 +72,8 @@ class TextGenerationRequestFunction(TypedDict):
     """Whether constrained decoding enforces ``parameters`` for this tool.
 
     ``False`` constrains only the tool-call envelope and leaves the arguments
-    free-form. ``True``, or an absent or ``None`` value, enforces the full
-    argument schema.
+    free-form; ``True`` enforces the full argument schema. The default value,
+    and any potential override, depends on the server's tool-call policy.
     """
 
 

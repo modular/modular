@@ -147,7 +147,7 @@ class SamplingConfig(ConfigFileModel):
     )
 
     tool_call_policy: ToolCallPolicy = Field(
-        default=ToolCallPolicy.FORCE_STRICT_TRUE,
+        default=ToolCallPolicy.DEFAULT_STRICT_FALSE,
         description=(
             "Policy applied to tool-call constrained decoding. "
             "force_unconstrained builds no grammar, so tool_choice=required "

@@ -275,6 +275,7 @@ def _payload(
                     "name": "emit",
                     "description": "Emit a JSON value for the target schema.",
                     "parameters": schema,
+                    "strict": True,
                 },
             }
         ]

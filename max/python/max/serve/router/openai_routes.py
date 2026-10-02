@@ -2557,7 +2557,7 @@ async def openai_create_chat_completion(
 def _convert_chat_completion_tools_to_token_generator_tools(
     chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
     valid_tool_name_re: re.Pattern[str] = _DEFAULT_VALID_TOOL_NAME_RE,
-    policy: ToolCallPolicy = ToolCallPolicy.FORCE_STRICT_TRUE,
+    policy: ToolCallPolicy = ToolCallPolicy.DEFAULT_STRICT_FALSE,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:

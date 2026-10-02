@@ -312,6 +312,8 @@ class TCSchemaEnforcement(BaseScenario):
             tool_choice = self._tool_choice
         if tools is None:
             tools = [make_tool(tool_name, schema, tool_desc)]
+        for t in tools:
+            t["function"]["strict"] = True
         chat_kwargs: dict[str, Any] = {
             "tool_choice": tool_choice,
             "max_tokens": max_tokens,
@@ -438,7 +440,9 @@ class TCSchemaEnforcement(BaseScenario):
             "required": ["location", "unit"],
             "additionalProperties": False,
         }
-        tool = make_tool("get_temperature", schema, "Get temperature")
+        tool = make_tool(
+            "get_temperature", schema, "Get temperature", strict=True
+        )
 
         # Run 5 times to increase chance of catching non-deterministic violations
         enum_pass = 0
@@ -518,6 +522,7 @@ class TCSchemaEnforcement(BaseScenario):
             "get_status",
             int_schema,
             "Return an HTTP status code for a URL check",
+            strict=True,
         )
 
         try:
@@ -769,6 +774,7 @@ class TCSchemaEnforcement(BaseScenario):
             "submit_form",
             schema,
             "Submit a form with fields a (string), b (integer), c (boolean)",
+            strict=True,
         )
 
         n_runs = 5
@@ -2312,6 +2318,7 @@ class TCSchemaEnforcement(BaseScenario):
                     "required": ["id"],
                     "additionalProperties": False,
                 },
+                "strict": True,
             },
         }
 

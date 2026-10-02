@@ -16,11 +16,12 @@ Every vendored draft 7 schema is driven four ways (tools auto/required/named,
 ``response_format``) with an adversarial break-the-schema prompt. Each
 tool-calling request is issued twice: once with the schema verbatim and once
 wrapped in a root object, so schemas with array or non-object root types are
-still exercised through the tool-calling path. The ``strict`` flag is never sent:
-the server is expected to match the schema regardless, so output is validated
-with the ``jsonschema`` ``Draft7Validator``. A non-conforming output is a FAIL,
-while a 400 (the server rejecting the schema up front) is a PASS. Remote
-``$ref``s are inlined from the vendored ``remotes/``.
+still exercised through the tool-calling path. Tool-calling requests include
+``strict: true`` so the server enforces the schema on the tool-call path.
+Output is validated with the ``jsonschema`` ``Draft7Validator``. A
+non-conforming output is a FAIL, while a 400 (the server rejecting the schema
+up front) is a PASS. Remote ``$ref``s are inlined from the vendored
+``remotes/``.
 
 The shared driver and vendored-data attribution live in
 ``scenarios._json_schema_suite``.
@@ -41,9 +42,9 @@ class JsonSchemaOpenRouter(JsonSchemaSuiteScenario):
         "break-the-schema prompt; validate with the jsonschema Draft7Validator. "
         "Each tool-calling request is issued twice -- schema verbatim and "
         "wrapped in a root object -- so array/non-object root schemas are "
-        "exercised through tool calls. The strict flag is never sent; "
-        "non-conforming output is a FAIL, while a 400 (schema rejected up "
-        "front) is a PASS."
+        "exercised through tool calls. Tool-calling requests include strict=true "
+        "so the server enforces the schema on the tool path; non-conforming "
+        "output is a FAIL, while a 400 (schema rejected up front) is a PASS."
     )
     tags = ["json", "schema", "structured", "tools", "response_format"]
     scenario_type = "fuzz"
