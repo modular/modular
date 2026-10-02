@@ -17,7 +17,7 @@ import queue
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import Any, TypeVar, get_args
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -43,7 +43,10 @@ from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
 )
-from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.config import (
+    SpeculativeConfig,
+    SpeculativeMethod,
+)
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
@@ -2366,8 +2369,11 @@ def test_spec_decode_prefill_decode_receives_draft_tokens() -> None:
     )
 
 
-def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
-    """load_prefill_scheduler returns a PrefillScheduler for eagle spec decode.
+@pytest.mark.parametrize("method", get_args(SpeculativeMethod))
+def test_load_prefill_scheduler_accepts_spec_method(
+    method: SpeculativeMethod,
+) -> None:
+    """load_prefill_scheduler returns a PrefillScheduler for every spec method.
 
     PrefillScheduler is patched so the test stays a unit — it would otherwise
     need a full KV cache, transfer engine, and NIXL agent.
@@ -2375,7 +2381,7 @@ def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
     pipeline = MagicMock()
     pipeline.kv_manager = MagicMock()
     config = MagicMock()
-    config.speculative = SpeculativeConfig(speculative_method="eagle")
+    config.speculative = SpeculativeConfig(speculative_method=method)
     sentinel = MagicMock(name="PrefillScheduler")
 
     with (
@@ -2401,29 +2407,6 @@ def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
     from_pipeline_config.assert_called_once_with(
         config, pipeline.max_batch_size, None
     )
-
-
-def test_load_prefill_scheduler_accepts_mtp_spec_decode() -> None:
-    """load_prefill_scheduler accepts mtp spec decode just like eagle."""
-    pipeline = MagicMock()
-    pipeline.kv_manager = MagicMock()
-    config = MagicMock()
-    config.speculative = SpeculativeConfig(speculative_method="mtp")
-
-    with (
-        patch("max.serve.scheduler.prefill_scheduler.PrefillScheduler"),
-        patch("max.serve.scheduler.prefill_scheduler.PrefillDispatcherServer"),
-        patch(
-            "max.serve.scheduler.prefill_scheduler."
-            "TokenGenerationSchedulerConfig.from_pipeline_config",
-        ),
-        patch(
-            "max.serve.scheduler.prefill_scheduler."
-            "PIPELINE_REGISTRY.retrieve_context_type",
-            return_value=TextContext,
-        ),
-    ):
-        load_prefill_scheduler(pipeline, config, MagicMock(), None)
 
 
 # Overlap + speculative decoding on the prefill side: CE deferral and

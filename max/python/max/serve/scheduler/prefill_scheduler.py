@@ -322,11 +322,11 @@ class PrefillScheduler(Scheduler):
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
 
-        # Extract draft tokens from Eagle/MTP speculative decoding state.
-        # These let the decode node seed its first spec-decode iteration
-        # instead of starting with an empty draft cache.  When speculative
-        # decoding is active, the unified Eagle/MTP model always populates
-        # draft_tokens_to_verify during CE; error if it hasn't.
+        # Extract the draft tokens CE proposed. These let the decode node
+        # seed its first spec-decode iteration instead of starting with an
+        # empty draft cache. When speculative decoding is active, the unified
+        # target+draft graph always populates draft_tokens_to_verify during
+        # CE; error if it hasn't.
         draft_tokens: list[int] | None = None
         if (
             self.scheduler_config.num_speculative_tokens > 0
@@ -339,8 +339,8 @@ class PrefillScheduler(Scheduler):
                 raise ValueError(
                     f"Expected draft tokens on context {req_id} after CE "
                     f"with speculative decoding enabled, but none were "
-                    f"populated. Check that the unified Eagle/MTP pipeline "
-                    f"is wired in for prefill_only."
+                    f"populated. Check that the unified speculative "
+                    f"pipeline is wired in for prefill_only."
                 )
             draft_tokens = context.spec_decoding_state.draft_tokens_to_verify
 
@@ -523,16 +523,8 @@ def load_prefill_scheduler(
     settings: Settings,
     memory_plan: MemoryPlan | None,
 ) -> PrefillScheduler:
-    # Validate speculative decoding configuration for prefill-only mode.
     spec_config = pipeline_config.speculative
     if spec_config is not None:
-        if not (spec_config.is_eagle() or spec_config.is_mtp()):
-            raise ValueError(
-                f"Unsupported speculative method "
-                f"'{spec_config.speculative_method}' with "
-                f"pipeline_role='prefill_only'. Only 'eagle' and 'mtp' "
-                f"are supported."
-            )
         logger.info(
             "Prefill-only mode with speculative decoding "
             f"(method={spec_config.speculative_method})."

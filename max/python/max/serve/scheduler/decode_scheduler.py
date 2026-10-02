@@ -272,7 +272,7 @@ class DecodeScheduler(Scheduler):
             # Update the context with the generated token
             context.update(message.generated_token_id)
 
-            # Restore draft tokens from Eagle/MTP prefill so the first
+            # Restore draft tokens from speculative prefill so the first
             # decode iteration can verify them without re-running draft
             # prefill. When speculative decoding is active, the prefill
             # worker always sends draft tokens.
