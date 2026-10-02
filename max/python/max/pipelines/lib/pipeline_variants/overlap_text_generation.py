@@ -154,6 +154,10 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
 )
+from max.pipelines.speculative.adaptive_width import (
+    AdaptiveVerifyWidth,
+    parse_adaptive_widths,
+)
 from max.pipelines.speculative.config import (
     MAGIC_DRAFT_TOKEN_ID,
     SpeculativeConfig,
@@ -219,7 +223,7 @@ def _verify_widths_by_batch_size(
 
     Args:
         spec_config: The pipeline's speculative config, which carries the
-            schedule.
+            schedule or the adaptive widths.
         num_speculative_tokens: The configured draft depth, which caps every
             width. For block drafters this is the checkpoint's fixed block
             width; narrowing changes only how much of that block the target
@@ -232,6 +236,11 @@ def _verify_widths_by_batch_size(
     num_rows = max(1, max_batch_size) + 1
     if spec_config is None or num_speculative_tokens <= 0:
         return [[num_speculative_tokens]] * num_rows
+    if spec_config.adaptive_speculative_widths is not None:
+        widths = parse_adaptive_widths(
+            spec_config.adaptive_speculative_widths, num_speculative_tokens
+        )
+        return [widths] * num_rows
     schedule = spec_config.verify_width_schedule
     if schedule is None:
         return [[num_speculative_tokens]] * num_rows
@@ -248,7 +257,19 @@ def _verify_width_candidates(
     num_speculative_tokens: int,
     max_batch_size: int,
 ) -> list[int]:
-    """Returns every number of drafts a pure decode step could verify."""
+    """Returns every number of drafts a pure decode step could verify.
+
+    Graph capture, the bitmask buffers, and the adaptive controller all read
+    this, so none can reach a width another was not prepared for.
+    """
+    if spec_config is None or num_speculative_tokens <= 0:
+        return [num_speculative_tokens]
+    # Independent of the batch ceiling: the bitmask is sized at a higher
+    # ceiling than graph capture.
+    if spec_config.adaptive_speculative_widths is not None:
+        return parse_adaptive_widths(
+            spec_config.adaptive_speculative_widths, num_speculative_tokens
+        )
     table = _verify_widths_by_batch_size(
         spec_config, num_speculative_tokens, max_batch_size
     )
@@ -1814,6 +1835,10 @@ class OverlapTextGenerationPipeline(
     """Every width a pure decode step may verify, from
     :func:`_verify_width_candidates`."""
 
+    _adaptive_width: AdaptiveVerifyWidth | None = None
+    """Picks the width by measured tokens per second. ``None`` keeps it
+    static."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -1999,6 +2024,16 @@ class OverlapTextGenerationPipeline(
                 self._spec_decode_state.num_speculative_tokens,
                 self._max_batch_size,
             )
+            if (
+                spec_config is not None
+                and spec_config.adaptive_speculative_widths is not None
+            ):
+                logger.info(
+                    "Choosing among %s drafts to verify by measured tokens "
+                    "per second.",
+                    self._verify_widths,
+                )
+                self._adaptive_width = AdaptiveVerifyWidth(self._verify_widths)
             if (
                 spec_config is not None
                 and spec_config.verify_width_schedule is not None
@@ -2325,8 +2360,8 @@ class OverlapTextGenerationPipeline(
         spec_decode_metrics: _SpeculativeDecodingMetrics | None,
         sync_monotonic: float,
         early_sync_duration_s: float | None = None,
-    ) -> None:
-        """Records stats for a batch whose outputs were just synchronized.
+    ) -> CompletedBatchStats:
+        """Records and returns stats for a batch whose outputs just synced.
 
         The execution time is estimated host-side as the interval from when
         the batch could have started executing — the later of its enqueue
@@ -2369,6 +2404,7 @@ class OverlapTextGenerationPipeline(
             )
         self._completed_batch_stats = stats
         self._last_sync_monotonic = sync_monotonic
+        return stats
 
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
@@ -2603,8 +2639,9 @@ class OverlapTextGenerationPipeline(
                 "Device graph synthesis records one decode shape, at verify "
                 f"width {num_speculative_tokens}, so a step verifying "
                 f"{unservable} cannot be served. Drop "
-                "--num-speculative-tokens-per-batch-size, or disable "
-                "--experimental-device-graph-synthesis to keep it."
+                "--num-speculative-tokens-per-batch-size and "
+                "--adaptive-speculative-widths, or disable "
+                "--experimental-device-graph-synthesis to keep them."
             )
         self._synthesis_aligner = SynthesisBucketAligner(
             kv_params=self._kv_manager.params,
@@ -2813,9 +2850,45 @@ class OverlapTextGenerationPipeline(
         ):
             return self._mixed_verify_width
         batch_size = max((len(b) for b in inputs.batches), default=0)
+        if self._adaptive_width is not None:
+            return self._adaptive_width.next_step_width(batch_size)
         return self._widths_by_batch_size[
             min(max(batch_size, 1), len(self._widths_by_batch_size) - 1)
         ][0]
+
+    def _record_spec_decode_metrics(
+        self,
+        batch: AsyncBatch[TextGenerationContextType],
+        metrics: _SpeculativeDecodingMetrics | None,
+        stats: CompletedBatchStats | None,
+    ) -> None:
+        """Publishes one synced batch's metrics and trains the adaptive width.
+
+        Without ``stats`` the step is untimed, and only acceptance trains.
+        """
+        assert self._spec_decode_state is not None
+        assert metrics is not None
+        self._spec_decode_state.batch_metrics = metrics
+        # A mixed batch runs eager, so it says nothing about a decode step.
+        if (
+            self._adaptive_width is not None
+            and batch.inputs.batch_type == BatchType.TG
+            and metrics.num_verifications
+        ):
+            assert metrics.accepted_per_position is not None
+            # An early sync's time includes the forced sync.
+            step_time_s = (
+                None
+                if stats is None or stats.early_sync_duration_s is not None
+                else stats.execution_time_s
+            )
+            self._adaptive_width.record_step(
+                max(len(b) for b in batch.inputs.batches),
+                metrics.num_speculative_tokens,
+                metrics.accepted_per_position,
+                metrics.num_verifications,
+                step_time_s,
+            )
 
     def _replay_batch_characteristics(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
@@ -4136,12 +4209,7 @@ class OverlapTextGenerationPipeline(
                     sampling_processor=sampling_processor,
                 )
 
-            if self._spec_decode_state is not None:
-                assert wrapped_outputs.spec_decode_metrics is not None
-                self._spec_decode_state.batch_metrics = (
-                    wrapped_outputs.spec_decode_metrics
-                )
-            self._record_completed_batch_stats(
+            stats = self._record_completed_batch_stats(
                 self._prev_batch,
                 wrapped_outputs.spec_decode_metrics,
                 sync_monotonic=_early_sync_monotonic
@@ -4149,6 +4217,10 @@ class OverlapTextGenerationPipeline(
                 else time.monotonic(),
                 early_sync_duration_s=_early_sync_duration_s,
             )
+            if self._spec_decode_state is not None:
+                self._record_spec_decode_metrics(
+                    self._prev_batch, wrapped_outputs.spec_decode_metrics, stats
+                )
             outputs = wrapped_outputs.output_dict
             self._prev_batch = None
 
@@ -4206,9 +4278,8 @@ class OverlapTextGenerationPipeline(
                 # results of the current batch.
                 wrapped_outputs = curr_batch.sync_and_process_outputs()
                 if self._spec_decode_state is not None:
-                    assert wrapped_outputs.spec_decode_metrics is not None
-                    self._spec_decode_state.batch_metrics = (
-                        wrapped_outputs.spec_decode_metrics
+                    self._record_spec_decode_metrics(
+                        curr_batch, wrapped_outputs.spec_decode_metrics, None
                     )
                 # Merge current batch outputs with any previous batch outputs
                 outputs.update(wrapped_outputs.output_dict)

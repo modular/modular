@@ -32,6 +32,7 @@ from pydantic import (
 )
 from typing_extensions import Self
 
+from .adaptive_width import parse_adaptive_widths
 from .depth_schedule import DepthScheduleEntry, normalize_depth_schedule
 
 __all__ = [
@@ -117,6 +118,7 @@ class SpeculativeConfig(ConfigFileModel):
     The CLI surfaces these fields as ``--speculative-method``,
     ``--num-speculative-tokens``,
     ``--num-speculative-tokens-per-batch-size``,
+    ``--adaptive-speculative-widths``,
     ``--num-speculative-tokens-mixed-batch``,
     ``--rejection-sampling-strategy``, and ``--synthetic-acceptance-rate``.
     Construct the config directly when configuring a pipeline
@@ -233,6 +235,40 @@ class SpeculativeConfig(ConfigFileModel):
             VerifyWidthRange(batch_start=start, batch_end=end, num_tokens=count)
             for start, end, count in normalized
         ]
+
+    adaptive_speculative_widths: str | None = Field(
+        default=None,
+        description=(
+            "Verify widths to choose among at runtime by measured decode "
+            "tokens per second, as a comma-separated list such as "
+            '"1,3,5", or "all" for every width from 1 to '
+            "num_speculative_tokens. Unset keeps the width static. Cannot be "
+            "combined with num_speculative_tokens_per_batch_size."
+        ),
+    )
+    """The verify widths a throughput-driven controller chooses among.
+
+    ``None`` keeps the width static. Cannot be combined with
+    :attr:`num_speculative_tokens_per_batch_size`. Startup cost scales with
+    how many widths are named.
+    """
+
+    @model_validator(mode="after")
+    def _validate_adaptive_speculative_widths(self) -> Self:
+        if self.adaptive_speculative_widths is None:
+            return self
+        if self.num_speculative_tokens_per_batch_size is not None:
+            raise ValueError(
+                "adaptive_speculative_widths and "
+                "num_speculative_tokens_per_batch_size both choose the verify "
+                "width; set only one."
+            )
+        # dflash reads its ceiling from the checkpoint later, so only the
+        # syntax is checked for it here; the pipeline checks the ceiling.
+        parse_adaptive_widths(
+            self.adaptive_speculative_widths, self.num_speculative_tokens
+        )
+        return self
 
     num_speculative_tokens_mixed_batch: int | None = Field(
         default=None,

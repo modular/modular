@@ -386,6 +386,11 @@ This version is still a work in progress.
   worker logs during a forward pass while tracing is enabled. It was previously
   always empty, and still is on disaggregated prefill and decode workers.
 
+- Added `--adaptive-speculative-widths` to pick how many drafts
+  speculative decoding verifies by measured decode tokens per second,
+  instead of a fixed width. Takes a list such as `1,3,5`, or `all`. Each
+  width adds graph capture time at startup.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured
