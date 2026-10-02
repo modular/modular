@@ -383,7 +383,7 @@ static LogicalResult verifyCallOp(OpT op, FuncType sig, ValueRange operands,
              << expected.size() << " " << kind << "s but got " << types.size();
     }
     for (auto [i, type, exp] : llvm::enumerate(types, expected)) {
-      if (type == exp)
+      if (isEqualCanon(type, exp))
         continue;
       return op.emitOpError("callee expected call ")
              << kind << " #" << i << " to be " << exp << " but got " << type;
