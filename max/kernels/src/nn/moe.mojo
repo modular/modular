@@ -72,6 +72,12 @@ from max.gpu.memory import (
 # expert count in use today fits in a single chunk.
 comptime _BLOCK_THREADS = 512
 
+# A full Metal threadgroup. The kernel runs one threadgroup and strides both
+# token passes over it, once per chunk, so wider is faster: on M5 Max decode
+# sits at the ~8 us launch floor from 256 threads up, and 65536 ids over 896
+# experts take 104 us at 512 threads but 35 us at 1024.
+comptime _APPLE_BLOCK_THREADS = 1024
+
 
 @inline(.always)
 def _cta_atomic_scope() -> StaticString:
@@ -89,7 +95,7 @@ def _cta_atomic_scope() -> StaticString:
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(_BLOCK_THREADS))
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
 )
 @__name(t"moe_create_indices_{input_type}")
 def moe_create_indices_kernel[
@@ -100,6 +106,7 @@ def moe_create_indices_kernel[
     ExpertIdsLayoutType: TensorLayout,
     ExpertUsageStatsLayoutType: TensorLayout,
     TopkIdsLayoutType: TensorLayout,
+    block_threads: Int = _BLOCK_THREADS,
     _scale_alignment: UInt32 = 128,
 ](
     token_expert_order: TileTensor[
@@ -145,7 +152,7 @@ def moe_create_indices_kernel[
     var tid = Int(thread_idx.x)
 
     var counts = tensor_alloc[.uint32, address_space=.SHARED](
-        row_major[_BLOCK_THREADS]()
+        row_major[block_threads]()
     )
 
     # Tokens, and aligned scale slots, placed by the preceding expert chunks.
@@ -153,8 +160,8 @@ def moe_create_indices_kernel[
     var scale_carry = UInt32(0)
     var max_count = UInt32(0)
 
-    for base in range(0, num_experts, _BLOCK_THREADS):
-        var chunk_experts = min(_BLOCK_THREADS, num_experts - base)
+    for base in range(0, num_experts, block_threads):
+        var chunk_experts = min(block_threads, num_experts - base)
         var expert = base + tid
 
         counts[Coord(tid)] = 0
@@ -167,7 +174,7 @@ def moe_create_indices_kernel[
         # counts to their readers. That holds on NVIDIA, where the barrier
         # fences shared memory; on AMD it rests on the backend emitting
         # s_waitcnt lgkmcnt(0) ahead of s_barrier.
-        for i in range(tid, total_tokens, _BLOCK_THREADS):
+        for i in range(tid, total_tokens, block_threads):
             var e = Int(topk_ids[i]) - base
             if e < 0 or e >= chunk_experts:
                 continue
@@ -182,12 +189,12 @@ def moe_create_indices_kernel[
         # These collectives do not leave the block synchronized, so each needs
         # a barrier before the next reuses its scratch.
         var g_offset = token_carry + block.prefix_sum[
-            block_size=_BLOCK_THREADS, exclusive=True
+            block_size=block_threads, exclusive=True
         ](count_val)
         barrier()
 
         var aligned_g_offset = scale_carry + block.prefix_sum[
-            block_size=_BLOCK_THREADS, exclusive=True
+            block_size=block_threads, exclusive=True
         ](aligned_val)
         barrier()
 
@@ -197,7 +204,7 @@ def moe_create_indices_kernel[
         # changes which thread holds the result, that write has to follow.
         max_count = max(
             max_count,
-            block.max[block_size=_BLOCK_THREADS, broadcast=False](count_val),
+            block.max[block_size=block_threads, broadcast=False](count_val),
         )
 
         if expert < num_experts:
@@ -220,14 +227,14 @@ def moe_create_indices_kernel[
         # A block collective does not leave the block synchronized and its
         # scratch is private to the primitive, so every pair of them gets a
         # barrier between. That is what the three here are for.
-        if base + _BLOCK_THREADS < num_experts:
+        if base + block_threads < num_experts:
             barrier()
-            token_carry = block.broadcast[block_size=_BLOCK_THREADS](
-                g_offset + count_val, src_thread=_BLOCK_THREADS - 1
+            token_carry = block.broadcast[block_size=block_threads](
+                g_offset + count_val, src_thread=block_threads - 1
             )
             barrier()
-            scale_carry = block.broadcast[block_size=_BLOCK_THREADS](
-                aligned_g_offset + aligned_val, src_thread=_BLOCK_THREADS - 1
+            scale_carry = block.broadcast[block_size=block_threads](
+                aligned_g_offset + aligned_val, src_thread=block_threads - 1
             )
             barrier()
 
@@ -236,7 +243,7 @@ def moe_create_indices_kernel[
         counts[Coord(tid)] = g_offset
         barrier()
 
-        for i in range(tid, total_tokens, _BLOCK_THREADS):
+        for i in range(tid, total_tokens, block_threads):
             var e = Int(topk_ids[i]) - base
             if e < 0 or e >= chunk_experts:
                 continue
@@ -297,16 +304,9 @@ def moe_create_indices[
         target
     ](), "Creating MoE indices is only supported on GPU"
 
-    comptime if has_apple_gpu_accelerator():
-        # Above one chunk the kernel repeats its block collectives in a loop,
-        # which desynchronizes warps on Metal (see the Apple path in
-        # `nn/sampling/topk_fi.mojo`). Apple rejected these expert counts
-        # before this kernel existed too, so nothing that worked is lost.
-        if expert_ids.dim(0) > _BLOCK_THREADS:
-            raise Error(
-                t"Apple MoE: num_experts={expert_ids.dim(0)} exceeds the"
-                t" 512-expert single-chunk cap"
-            )
+    comptime block_threads = (
+        _APPLE_BLOCK_THREADS if has_apple_gpu_accelerator() else _BLOCK_THREADS
+    )
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.id())
@@ -319,6 +319,7 @@ def moe_create_indices[
             expert_ids.LayoutType,
             expert_usage_stats.LayoutType,
             topk_ids.LayoutType,
+            block_threads,
         ]
 
         context.enqueue_function[kernel](
@@ -330,7 +331,7 @@ def moe_create_indices[
             topk_ids,
             scales_offset_p,
             grid_dim=1,
-            block_dim=_BLOCK_THREADS,
+            block_dim=block_threads,
         )
 
 
