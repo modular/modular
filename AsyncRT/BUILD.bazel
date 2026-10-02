@@ -146,3 +146,13 @@ modular_cc_library(
         "@llvm-project//llvm:Support",
     ],
 )
+
+# Carries jemalloc's malloc/free definitions so the `max` CLI can LD_PRELOAD
+# them. Linux only: replacing malloc this way is a glibc-specific path.
+modular_shared_library(
+    name = "JemallocPreload",
+    srcs = ["lib/JemallocPreload/JemallocPreload.cpp"],
+    output_name = "jemalloc_preload",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = ["//bazel/internal:jemalloc_global"],
+)

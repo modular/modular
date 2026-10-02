@@ -195,12 +195,18 @@ def _handle_import_error(
 )
 @click.pass_context
 def main(ctx: click.Context, log_level: str = "INFO") -> None:
+    from max._entrypoints.allocator import reexec_with_jemalloc
     from max._entrypoints.cli.entrypoint import configure_cli_logging
 
     # Configure logging first, before any other initialization
     configure_cli_logging(
         level=log_level, log_prefix=os.getenv("MAX_SERVE_LOG_PREFIX")
     )
+
+    # Swapping the allocator restarts the process, so it has to happen before
+    # anything with a side effect. Logging is set up first only so that the
+    # decision is visible at debug level.
+    reexec_with_jemalloc()
 
     # Some subcommands opt out of telemetry.
     if ctx.invoked_subcommand not in _TELEMETRY_OPT_OUT_COMMANDS:

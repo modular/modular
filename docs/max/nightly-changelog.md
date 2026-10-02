@@ -64,6 +64,19 @@ This version is still a work in progress.
 - Added `max.profiler.oneshot.cuda_profiler_region()`, a context manager that
   brackets a region with `cudaProfilerStart`/`cudaProfilerStop` so `nsys`/`ncu`
   capture only the wrapped region.
+
+- The `max` CLI now allocates through jemalloc on Linux instead of glibc
+  malloc. The graph compiler and the Mojo compiler run inside the CLI process,
+  so the allocator the process starts with is the one they use. A cold
+  `max warm-cache` compile is roughly 7 percent faster and its peak memory
+  17 to 22 percent lower, measured on Llama 3.2 1B, Llama 3.1 8B and
+  Gemma 3 12B on a 128-core host. The CLI restarts itself once at startup
+  with the allocator preloaded, and model-worker subprocesses inherit it. Set
+  `MODULAR_MAX_ALLOCATOR=system` to keep glibc malloc; sanitizer builds and
+  non-Linux platforms are unaffected. Scripts that use `InferenceSession`
+  directly are not affected either; to run one on jemalloc, add the installed
+  `modular/lib/libjemalloc_preload.so` to `LD_PRELOAD` before starting Python.
+
 - Added the `pre-jit` debug option (`MODULAR_DEBUG=pre-jit`,
   `[max-debug] pre-jit`, or `InferenceSession.debug.pre_jit`). It stops graph
   compilation once the Mojo for the graph has been emitted into

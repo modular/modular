@@ -9,6 +9,7 @@ modular_py_library(
     srcs = glob(
         ["**/*.py"],
         exclude = [
+            "allocator.py",
             "gpu_query.py",
             "pipelines.py",
             "replay_recording.py",
@@ -58,6 +59,7 @@ modular_py_library(
         "pipelines.py",
     ],
     deps = [
+        ":allocator",
         "//max/python/max/_entrypoints",
         "//max/python/max:_core",
         "//max/python/max:_eager_policy",
@@ -79,6 +81,12 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "allocator",
+    srcs = ["allocator.py"],
+    deps = ["@mojo//:python"],
+)
+
 modular_py_binary(
     name = "pipelines",
     srcs = [
@@ -86,7 +94,10 @@ modular_py_binary(
     ],
     data = [
         "@nvshmem_prebuilt//:host",
-    ],
+    ] + select({
+        "@platforms//os:linux": ["//AsyncRT:JemallocPreload"],
+        "//conditions:default": [],
+    }),
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
@@ -101,6 +112,7 @@ modular_py_binary(
     mojo_deps = PROD_MOJOPKGS,
     deps = ALL_ARCHITECTURES + [
         ":_entrypoints",
+        ":allocator",
         "//max/python/max:_core",
         "//max/python/max:_eager_policy",
         "//max/python/max/_interpreter_ops",
@@ -127,6 +139,10 @@ modular_py_binary(
         "cli/entrypoint.py",
         "pipelines.py",
     ],
+    data = select({
+        "@platforms//os:linux": ["//AsyncRT:JemallocPreload"],
+        "//conditions:default": [],
+    }),
     main = "pipelines.py",
     tags = [
         # Tons of lazy imports
@@ -134,6 +150,7 @@ modular_py_binary(
         "no-pydeps",
     ],
     deps = [
+        ":allocator",
         "//max/python/max:_eager_policy",
         "//max/python/max/benchmark:benchmark_serving_lib",
         requirement("rich"),
