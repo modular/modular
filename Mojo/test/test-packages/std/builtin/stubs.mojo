@@ -1345,11 +1345,11 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
 
     # GPU address spaces
     comptime GLOBAL = AddressSpace(1)
-    comptime SHARED = AddressSpace(3)
-    comptime CONSTANT = AddressSpace(4)
-    comptime LOCAL = AddressSpace(5)
-    comptime SHARED_CLUSTER = AddressSpace(7)
-    comptime BUFFER_RESOURCE = AddressSpace(8)
+    comptime SHARED = AddressSpace(2)
+    comptime CONSTANT = AddressSpace(3)
+    comptime LOCAL = AddressSpace(4)
+    comptime SHARED_CLUSTER = AddressSpace(5)
+    comptime BUFFER_RESOURCE = AddressSpace(6)
 
     comptime _enum_case_names = ParameterList.of[
         "GENERIC".value,
@@ -1362,27 +1362,13 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[
         AnyType
-    ] = TypeList.splat[7, NoneType].values
+    ] = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
     comptime _enum_is_exhaustive = False
 
     def _get_enum_discriminant(self) -> Int:
-        __match Int(mlir_value=self._value.__mlir_index__()):
-            case 0:
-                return 0
-            case 1:
-                return 1
-            case 3:
-                return 2
-            case 4:
-                return 3
-            case 5:
-                return 4
-            case 7:
-                return 5
-            case 8:
-                return 6
-            case _:
-                return -1
+        return 0  # Stubbed
 
     def _unsafe_get_enum_payload[
         id: Int

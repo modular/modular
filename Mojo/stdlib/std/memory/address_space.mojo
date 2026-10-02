@@ -52,6 +52,7 @@ struct AddressSpace(
     comptime GLOBAL = AddressSpace(
         __mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDLength]
     )
+    # Address space numbers are required to align with LLVM IR.
     """Global GPU memory address space."""
     comptime SHARED = AddressSpace(3)
     """Shared GPU memory address space (per thread block/workgroup)."""
@@ -73,15 +74,8 @@ struct AddressSpace(
         "SHARED_CLUSTER".value,
         "BUFFER_RESOURCE".value,
     ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
     ].values
     comptime _enum_is_exhaustive = False
 
