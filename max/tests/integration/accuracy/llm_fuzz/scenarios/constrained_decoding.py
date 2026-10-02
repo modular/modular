@@ -235,6 +235,25 @@ def _wrap_root(schema: Any) -> dict[str, Any]:
     }
 
 
+_ROOT_SCOPED_KEYWORDS = frozenset({"$ref", "$id", "$schema"})
+
+
+def _is_root_scoped(node: Any) -> bool:
+    """Whether ``node`` contains a keyword tied to its document root."""
+    if isinstance(node, dict):
+        return bool(_ROOT_SCOPED_KEYWORDS & node.keys()) or any(
+            _is_root_scoped(v) for v in node.values()
+        )
+    if isinstance(node, list):
+        return any(_is_root_scoped(v) for v in node)
+    return False
+
+
+def _tool_parameters(schema: Any) -> Any:
+    """Return the tool ``parameters`` that exercise ``schema``."""
+    return schema if _is_root_scoped(schema) else _wrap_root(schema)
+
+
 def _apply_reasoning(body: dict[str, Any], enable: bool) -> None:
     # Models differ on the key name, so set both.
     body["chat_template_kwargs"] = {
@@ -581,12 +600,12 @@ class ConstrainedDecodingScenario(BaseScenario):
     description = (
         "Drive every draft 7 JSON Schema Test Suite schema through the "
         "constrained-decoding paths -- tool calls (auto/required/named, strict "
-        "swept on required, schema always root-wrapped) and response_format -- "
-        "with an adversarial break-the-schema prompt. strict=true tool calls "
-        "and response_format must conform (envelope + arguments); strict=false "
-        "tool calls need only a well-formed envelope. Validated with the "
-        "jsonschema Draft7Validator. Assumes reject_unsupported, so a 400 is "
-        "a pass."
+        "swept on required, schema root-wrapped unless it has a $ref/$id) and "
+        "response_format -- with an adversarial break-the-schema prompt. "
+        "strict=true tool calls and response_format must conform (envelope + "
+        "arguments); strict=false tool calls need only a well-formed envelope. "
+        "Validated with the jsonschema Draft7Validator. Assumes "
+        "reject_unsupported, so a 400 is a pass."
     )
     tags = [
         "constrained_decoding",
@@ -630,7 +649,7 @@ class ConstrainedDecodingScenario(BaseScenario):
         for label, schema in schemas:
             for case in sweeps:
                 if isinstance(case.mode, SweepCaseToolMode):
-                    sent = _wrap_root(schema)
+                    sent = _tool_parameters(schema)
                 else:
                     sent = schema
                 test_id = f"{label}::{case.mode.label}"

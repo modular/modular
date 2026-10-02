@@ -437,45 +437,14 @@ modular_py_test(
 )
 
 modular_py_library(
-    name = "llm_fuzz_constrained_stream",
-    testonly = True,
-    srcs = ["llm_fuzz/scenarios/_constrained_stream.py"],
-    imports = ["llm_fuzz"],
-    deps = [requirement("jsonschema")],
-)
-
-modular_py_test(
-    name = "test_llm_fuzz_constrained_stream",
-    size = "small",
-    srcs = ["llm_fuzz/test_constrained_stream.py"],
-    imports = ["llm_fuzz"],
-    deps = [":llm_fuzz_constrained_stream"],
-)
-
-modular_py_library(
-    name = "llm_fuzz_needle",
-    testonly = True,
-    srcs = ["llm_fuzz/scenarios/_needle.py"],
-    imports = ["llm_fuzz"],
-)
-
-modular_py_test(
-    name = "test_llm_fuzz_needle",
-    size = "small",
-    srcs = ["llm_fuzz/test_needle.py"],
-    imports = ["llm_fuzz"],
-    deps = [":llm_fuzz_needle"],
-)
-
-modular_py_binary(
-    name = "llm-fuzz",
+    name = "llm_fuzz",
     testonly = True,
     srcs = glob(
         ["llm_fuzz/**/*.py"],
         exclude = [
             "llm_fuzz/.venv/**",
-            "llm_fuzz/scenarios/_constrained_stream.py",
-            "llm_fuzz/scenarios/_needle.py",
+            "llm_fuzz/__main__.py",
+            "llm_fuzz/fuzz.py",
             "llm_fuzz/test_*.py",
         ],
     ),
@@ -485,15 +454,32 @@ modular_py_binary(
         "referencing.jsonschema",
     ],
     imports = ["llm_fuzz"],
-    main = "llm_fuzz/fuzz.py",
-    visibility = ["//max_private:__subpackages__"],
     deps = [
-        ":llm_fuzz_constrained_stream",
-        ":llm_fuzz_needle",
         requirement("openai"),
         requirement("jsonschema"),
         requirement("pydantic"),
     ],
+)
+
+modular_py_test(
+    name = "test_llm_fuzz",
+    size = "small",
+    srcs = glob(["llm_fuzz/test_*.py"]),
+    imports = ["llm_fuzz"],
+    deps = [":llm_fuzz"],
+)
+
+modular_py_binary(
+    name = "llm-fuzz",
+    testonly = True,
+    srcs = [
+        "llm_fuzz/__main__.py",
+        "llm_fuzz/fuzz.py",
+    ],
+    imports = ["llm_fuzz"],
+    main = "llm_fuzz/fuzz.py",
+    visibility = ["//max_private:__subpackages__"],
+    deps = [":llm_fuzz"],
 )
 
 modular_py_library(
