@@ -50,8 +50,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import numpy as np
+from max._core.dialects import kgen
 from max.dtype import DType
 from max.graph import (
+    AlgebraicDim,
     BufferValue,
     DeviceRef,
     ShardingStrategy,
@@ -67,7 +69,7 @@ from max.nn.kernels import (
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig, ceildiv
 
 from ..model_config import DeepseekV4Config
 from .quantization import LINEAR_QUANT_BLOCK, linear_for
@@ -303,8 +305,7 @@ class DeepseekV4RoutedExperts(Module):
     ``a_scale_offsets`` (``start // 128 + offset`` is the group's first
     tile, the layout ``ep_comm``'s ``pad_expert_offsets`` builds). So the
     quantize and the GEMMs touch the slots only, and the padding -- up to
-    127 rows per group, over every group, whether or not it has a token --
-    costs one scale gather.
+    127 rows per non-empty group -- costs one scale gather.
     """
 
     def __init__(self, config: DeepseekV4Config, device: DeviceRef) -> None:
@@ -440,8 +441,14 @@ class DeepseekV4RoutedExperts(Module):
         # value derived from it is read at run time.
         tokens = x.shape[0]
         slots = tokens * self.topk
-        # Scale rows only: every group's scales start on a 128-row tile.
-        padded = slots + SF_ROWS * groups
+        # Scale rows only: every group's scales start on a 128-row tile. Only
+        # non-empty groups take tiles, and there are at most min(groups,
+        # slots) of them, so a decode step lays out a few tiles, not one per
+        # group.
+        padded = SF_ROWS * (
+            ceildiv(slots, SF_ROWS)
+            + AlgebraicDim.apply(kgen.POC.min, groups, slots)
+        )
         i32 = DType.int32
 
         order, start, restore, expert_ids, _usage = moe_create_indices(
