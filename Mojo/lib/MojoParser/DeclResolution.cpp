@@ -1666,10 +1666,8 @@ isCapturingByDefault(SharedState &shared, FnOp funcOp, TraitType canonicalTrait,
       return WalkResult::advance();
     TraitDeclOp traitDeclOp =
         dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
-    if (traitDeclOp && (traitDeclOp.getDefinesClosure() ||
-                        shared.isUniversalParametricClosureTrait(traitDecl)))
+    if (traitDeclOp && shared.isUniversalParametricClosureTrait(traitDecl))
       return WalkResult::interrupt();
-
     return WalkResult::advance();
   });
   bool isInterrupted = false;
@@ -1723,10 +1721,10 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
   return true;
 }
 
-static MLValue emitClosureInstance(ArrayRef<Capture> captures,
-                                   ASTDecl &nestedFnDecl, SharedState &shared,
-                                   ArrayRef<ParamDeclRefAttr> bodyParamCaptures,
-                                   bool useParametricTrait) {
+static MLValue
+emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
+                    SharedState &shared,
+                    ArrayRef<ParamDeclRefAttr> bodyParamCaptures) {
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -1740,25 +1738,6 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureSig);
 
-  // Register captured external parameter references so that call sites can
-  // pre-seed auxiliary parameters during overload fitness evaluation.
-  if (!capturedRefs.empty()) {
-    ASTDecl *enclosingDecl =
-        nestedFnDecl.getParentDecl()->getNearestDeclOfType<FnOp>();
-    if (enclosingDecl) {
-      SmallVector<ClosureParamCapture> paramCaptures;
-      for (ParamDeclRefAttr ref : capturedRefs)
-        paramCaptures.push_back({ref.getName(), ref.getType()});
-      shared.addClosureParamCaptures(*enclosingDecl,
-                                     nestedFn.getSourceNameAttr(),
-                                     std::move(paramCaptures));
-    }
-  }
-
-  ASTDecl *closureTrait =
-      useParametricTrait
-          ? shared.getUniversalParametricClosureTrait()
-          : shared.getOrCreateClosureTrait(loc, *moduleDecl, closureSig);
   bool isCopyable = allCopyable(captures, shared, loc, nestedFnDecl);
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
@@ -1774,9 +1753,8 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
         capturedRefs.push_back(ref);
     }
   }
-  Value closureInstance =
-      emitter.emitClosure(*moduleDecl, nestedFnDecl, captures, *closureTrait,
-                          mlirLoc, isCopyable, capturedRefs);
+  Value closureInstance = emitter.emitClosure(
+      *moduleDecl, nestedFnDecl, captures, mlirLoc, isCopyable, capturedRefs);
   if (!closureInstance)
     return {};
   return MLValue(closureInstance);
@@ -1835,13 +1813,11 @@ static BodyCaptures collectBodyCaptures(SharedState &shared, ASTDecl &decl,
 /// Construct the runtime value for a fully-resolved non-legacy nested-`def`
 /// closure: promote a stateless closure to a top-level function, or otherwise
 /// materialize a storage-struct instance. Sets the decl's IR value on success.
-static LogicalResult
-constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
-                 ArrayRef<Capture> captures,
-                 ArrayRef<ParamDeclRefAttr> paramCaptures,
-                 const ParsedCaptureList &captureSignature,
-                 ArrayRef<ConstraintAttr> closureExternalRefConstraints,
-                 FnTypeGeneratorType signature, bool useParametricTrait) {
+static LogicalResult constructClosure(SharedState &shared, ASTDecl &decl,
+                                      FnOp funcOp, ArrayRef<Capture> captures,
+                                      ArrayRef<ParamDeclRefAttr> paramCaptures,
+                                      const ParsedCaptureList &captureSignature,
+                                      FnTypeGeneratorType signature) {
   // abi("C") functions must be bare function pointers with no captured
   // state, even in closure form.
   if (signature.getFnEffects().isCABI() && !captures.empty()) {
@@ -1853,15 +1829,13 @@ constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
   // Stateless nested defs (no runtime captures) are still promoted to thin
   // functions so they remain usable as parameter values (e.g.
   // `_reflection_write_to[f=call_write_to]`).
-  if (closureExternalRefConstraints.empty() &&
-      captureSignature.parsedCaptures.empty() &&
+  if (captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {
     shared.closureEmitter->promoteClosure(decl, paramCaptures);
     return success();
   }
 
-  MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures,
-                                         useParametricTrait);
+  MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures);
   if (!instance)
     return failure();
   decl.setIRValue(instance);
@@ -1902,81 +1876,20 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
   return didFail ? failure() : success();
 }
 
-/// Registers the closure-typed parameters in `params` whose signatures capture
-/// other parameters in the same list (e.g. `F: def[w: Int]() -> SIMD[dtype, w]`
-/// captures `dtype`) and returns the type-equality `where` clauses that bind
-/// each closure alias to the captured parameter (e.g. `eq(F.dtype, dtype)`).
-static SmallVector<ConstraintAttr>
-registerClosureParamCaptures(ArrayRef<ParamDeclAttr> params, ASTDecl &decl,
-                             SharedState &shared, OpBuilder &builder) {
-  SmallVector<ClosureExternalRef> closureExternalRefs;
-  for (ParamDeclAttr param : params)
-    shared.getClosureEmitter().collectClosureExternalRefs(param,
-                                                          closureExternalRefs);
-
-  SmallVector<ConstraintAttr> constraints;
-  if (closureExternalRefs.empty())
-    return constraints;
-
-  ClosureParamCaptures closureParamCaptures;
-  for (const ClosureExternalRef &ref : closureExternalRefs)
-    closureParamCaptures[ref.closureParam.getName()].push_back(
-        {ref.externalName, ref.externalType});
-  shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
-
-  // Emit a type-equality constraint for each external reference so the closure
-  // alias binds to the captured parameter.
-  for (const ClosureExternalRef &ref : closureExternalRefs) {
-    TypedAttr rhs = ParamDeclRefAttr::get(ref.externalName, ref.externalType);
-
-    ParamDeclAttr closureParam = ref.closureParam;
-
-    std::optional<TraitDeclOp> closureTraitOr = ClosureEmitter::getClosureDecl(
-        shared, getCanonicalType(closureParam.getType()));
-    assert(closureTraitOr && "expected closure type");
-
-    // Get the trait symbol for the GetWitnessAttr.
-    TraitDeclOp closureTrait = *closureTraitOr;
-    auto traitSymbol =
-        TraitSymbolAttr::get(getFullyResolvedSymbolRef(closureTrait));
-
-    // LHS: C.T - GetWitnessAttr accessing the alias on the closure param.
-    TypedAttr witnessAttr =
-        GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitSymbol,
-                            ref.externalName, ref.externalType);
-
-    TypedAttr idConstraint = ParamIdenticalAttr::get(witnessAttr, rhs);
-    Location loc = shared.diags.translateLocation(decl.getLoc());
-    constraints.push_back(
-        ConstraintAttr::get(idConstraint, loc, /*message=*/StringAttr()));
-  }
-  return constraints;
-}
-
 /// Finalizes a fully type-checked function/closure signature onto `funcOp`:
-/// registers closure-parameter captures (with their `eq(C.T, T)` where
-/// clauses), builds the generator signature, and writes the params /
-/// function-type / generator / mangled-symbol attributes. Returns the
-/// (implicit-origin-indexed) generator signature, or null on failure.
-static FnTypeGeneratorType finalizeResolvedFnOp(
-    SharedState &shared, FnOp funcOp, ASTDecl &decl,
-    TypeCheckedFnSignature &tcSignature, TypeCheckedParamList &paramList,
-    StringAttr baseName,
-    SmallVectorImpl<ConstraintAttr> &closureExternalRefConstraints) {
+/// builds the generator signature, and writes the params / function-type /
+/// generator / mangled-symbol attributes. Returns the (implicit-origin-indexed)
+/// generator signature, or null on failure.
+static FnTypeGeneratorType
+finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, ASTDecl &decl,
+                     TypeCheckedFnSignature &tcSignature,
+                     TypeCheckedParamList &paramList, StringAttr baseName) {
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
-
-  // Register closure-parameter captures and their `eq(C.T, T)` where clauses.
-  closureExternalRefConstraints = registerClosureParamCaptures(
-      paramList.paramDeclAttrs, decl, shared, builder);
-  llvm::append_range(tcSignature.paramList.emittedBodyConstraints,
-                     closureExternalRefConstraints);
 
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return {};
-
-  decl.insertKnownAssumptions(closureExternalRefConstraints);
 
   /// configure FnOp
 
@@ -2145,13 +2058,9 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
 
   // 5. Build the generator signature and write the signature attributes onto
   //    the FnOp (shared with resolveSignature via finalizeResolvedFnOp), then
-  //    register the symbol. The closure-param-capture constraints output is
-  //    unused here: the lambda materializes its instance directly via
-  //    emitClosureInstance.
-  SmallVector<ConstraintAttr> closureExternalRefConstraints;
-  FnTypeGeneratorType signature =
-      finalizeResolvedFnOp(shared, funcOp, decl, tcSignature, paramList,
-                           baseName, closureExternalRefConstraints);
+  //    register the symbol.
+  FnTypeGeneratorType signature = finalizeResolvedFnOp(
+      shared, funcOp, decl, tcSignature, paramList, baseName);
   if (!signature)
     return {};
   for (ParsedArgument &arg : tcSignature.argList.parsedArgs)
@@ -2242,9 +2151,8 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     return emitter.emitResult(AnyValue(literal), node, dest);
   }
 
-  MLValue instance =
-      emitClosureInstance(bodyCaptures.values, decl, shared,
-                          bodyCaptures.paramRefs, useParametricClosureTrait());
+  MLValue instance = emitClosureInstance(bodyCaptures.values, decl, shared,
+                                         bodyCaptures.paramRefs);
   if (!instance)
     return {};
 
@@ -2519,10 +2427,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Handle argument effects, build the ASTDecls for the arguments, and write
   // the finalized signature attributes onto the FnOp (shared with the lambda
   // desugaring via finalizeResolvedFnOp).
-  SmallVector<ConstraintAttr> closureExternalRefConstraints;
-  FnTypeGeneratorType signature =
-      finalizeResolvedFnOp(shared, funcOp, decl, tcSignature, paramList,
-                           baseName, closureExternalRefConstraints);
+  FnTypeGeneratorType signature = finalizeResolvedFnOp(
+      shared, funcOp, decl, tcSignature, paramList, baseName);
   if (!signature)
     return failure();
 
@@ -2629,8 +2535,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   if (isNonlegacyClosure)
     return constructClosure(shared, decl, funcOp, captures, paramCaptures,
-                            captureSignature, closureExternalRefConstraints,
-                            signature, useParametricClosureTrait());
+                            captureSignature, signature);
 
   if (captures.empty() && captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {
@@ -4010,16 +3915,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   paramSignature.emitBodyConstraints();
 
-  // Register closure-parameter captures and their `eq(F.dtype, dtype)` where
-  // clauses.
-  OpBuilder structBuilder = decl.getDeclEndBuilder();
-  SmallVector<ConstraintAttr> closureExternalRefConstraints =
-      registerClosureParamCaptures(paramSignature.paramDeclAttrs, decl, shared,
-                                   structBuilder);
-  llvm::append_range(paramSignature.emittedBodyConstraints,
-                     closureExternalRefConstraints);
-  sigDecl.insertKnownAssumptions(closureExternalRefConstraints);
-
   // Look up traits the compiler unconditionally injects into every struct.
   // These lookups are reused below both for constraint building (to skip
   // propagated constraints) and for the actual injection into parentTraits,
@@ -4898,20 +4793,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                              shared, immediateParents))
     return failure();
   SmallVector<TraitSymbolAttr> parentTraits;
-  bool definesClosure = traitOp.getDefinesClosure();
   if (auto *inheritedFrom = decl.getTraitConformanceLineage()) {
-    for (auto [symbol, _] : *inheritedFrom) {
+    for (auto [symbol, _] : *inheritedFrom)
       parentTraits.push_back(symbol);
-      if (definesClosure)
-        continue;
-      ASTDecl &type = getDeclForTypeSymbol(symbol.getSymbol());
-      if (auto traitDecl =
-              dyn_cast_if_present<TraitDeclOp>(type.getIfOperation()))
-        if (traitDecl.getDefinesClosure())
-          definesClosure = true;
-    }
   }
-  traitOp.setDefinesClosure(definesClosure);
 
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();

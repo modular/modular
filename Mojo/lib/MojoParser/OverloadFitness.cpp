@@ -281,72 +281,6 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   return fitness;
 }
 
-/// Extract the closure name from a self operand. This handles two cases:
-/// (1) Closure parameters: the type is a ParamType wrapping a ParamDeclRefAttr,
-///     and the name is the parameter name (e.g. "C").
-/// (2) Closure instances: the value is defined by a VarDeclOp (a nested
-///     function materialized as a closure), and the name is the variable name
-///     (e.g. "kernel").
-static StringAttr closureNameFromSelfOperand(SharedState &shared,
-                                             CValue selfCValue) {
-  auto paramType = sugarDynCast<ParamType>(selfCValue.getRValueType().mlirType);
-  if (paramType) {
-    auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam());
-    if (paramRef) {
-      if (ClosureEmitter::isClosureType(shared, paramRef.getType()))
-        return paramRef.getName();
-    }
-  }
-  Value mlirValue = selfCValue.getMlirValue();
-  if (mlirValue) {
-    if (auto varDecl = mlirValue.getDefiningOp<VarDeclOp>()) {
-      if (ClosureEmitter::isClosureType(shared, varDecl.getType()))
-        return varDecl.getNameAttr();
-    }
-  }
-  return {};
-}
-
-static ArrayRef<ClosureParamCapture>
-closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
-                              const CallOperands &operands,
-                              const OverloadSet &callable) {
-  if (!funcIfDirect)
-    return {};
-
-  StringRef declNames = [=]() -> StringRef {
-    if (auto witness = funcIfDirect->getIfWitness())
-      return witness->getWitnessEntry().witnessName;
-    return cast<FnOp>(funcIfDirect->getIfOperation()).getDeclName();
-  }();
-  if (!declNames.starts_with("__call__"))
-    return {};
-
-  if (operands.empty())
-    return {};
-  auto selfCValue = operands[0].ir.getIfCValue();
-  if (!selfCValue)
-    return {};
-  StringAttr closureName =
-      closureNameFromSelfOperand(funcIfDirect->getShared(), selfCValue);
-  if (!closureName)
-    return {};
-
-  // Look up the captures registered for the closure. The captures live on the
-  // operation that owns the closure definition:
-  //  - closure instances and closure-typed function parameters register on the
-  //    enclosing function (the closure is called within that function's body);
-  //  - closure-typed struct parameters/fields register on the struct (the
-  //    closure is callable from any of the struct's methods).
-  Value mlirValue = selfCValue.getMlirValue();
-  if (!mlirValue)
-    return {};
-
-  SharedState &shared = funcIfDirect->getShared();
-  return shared.lookupClosureCaptureFromOp(
-      mlirValue.getParentBlock()->getParentOp(), closureName);
-}
-
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `callOperands`.
@@ -415,40 +349,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       signature.getParamListAttrs(), allowImplicitConversions, funcIfDirect,
       /*discardError=*/false, signature, operands, pogAssignment,
       operandsNeedingOrigins, callable.additionalAssumptions);
-  // Check if we're calling a closure's __call__ method and need to set
-  // captured closure parameters. Only applies to method call syntax on a
-  // __call__ method — not direct calls that happen to pass a closure as an
-  // argument.
-  ArrayRef<ClosureParamCapture> implicitParams =
-      closureParamCapturesIfClosure(funcIfDirect, operands, callable);
-  if (!implicitParams.empty()) {
-    // Capture slots are at the front of the method's own parameter list
-    // (Inferred PassingKind), but getFullSignature() prepends contextual
-    // params (e.g. the trait's _Self). Skip past them.
-    //
-    // TODO: we won't be needing this after migrating to parametric trait.
-    size_t contextualParams = [&]() -> size_t {
-      if (funcIfDirect->getIfWitness())
-        return 1; // _Self param for trait witness
-      auto fnOp = cast<FnOp>(funcIfDirect->getIfOperation());
-      return signature.getInputParamTypes().size() -
-             fnOp.getFuncTypeGenerator().getInputParamTypes().size();
-    }();
-    const CallOperands &paramBindings = callable.paramBindings.getParameters();
-    size_t paramIdx = contextualParams;
-    for (const auto &[paramName, paramType] : implicitParams) {
-      // These capture slots are inferred parameters, but a user is allowed to
-      // bind them explicitly by keyword. Only seed the captured value when the
-      // user hasn't already provided it
-      StringAttr slotName = signature.getParamName(paramIdx);
-      if (!slotName || !paramBindings.findKwArg(slotName)) {
-        TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
-        inference.setInitialInferredValue(paramIdx, paramValue);
-      }
-      ++paramIdx;
-    }
-  }
-
   VerifiedParamBindings verifiedBindings = inference.inferForCall();
   if (!verifiedBindings) {
     // Failed inference must have emitted a diagnostic.

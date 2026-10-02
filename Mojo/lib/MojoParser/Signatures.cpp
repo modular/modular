@@ -39,13 +39,10 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
-
-bool LIT::useParametricClosureTrait() { return true; }
 
 TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
                                       SMLoc loc, SharedState &shared) {
@@ -1128,17 +1125,6 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTType type;
     if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
-
-      auto fnType = dyn_cast<FnTypeGeneratorType>(type);
-      auto *fnTypeExpr = dyn_cast<FunctionTypeNode>(arg.typeExpr);
-      if (fnType && fnTypeExpr && !fnTypeExpr->isThin &&
-          !fnTypeExpr->effects.isCapturing()) {
-        ASTDecl *closureTrait = result.shared.getOrCreateClosureTrait(
-            declScope.getLoc(), *declScope.getNearestDeclOfType<FileModuleOp>(),
-            fnType);
-        type = TraitType::get(getFullyResolvedSymbolRef(
-            cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
-      }
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;

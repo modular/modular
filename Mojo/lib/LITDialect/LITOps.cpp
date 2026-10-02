@@ -1446,11 +1446,10 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         TypeAttr::get(TraitType::get(ctx, {})),
         /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*moveInit=*/{},
-        /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
-        /*closureThunkKey=*/{},
+        /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureThunkKey=*/{},
         /*docString=*/{}, /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
-        /*minAlignment=*/{}, /*convention=*/{}, /*definesClosure=*/{},
+        /*minAlignment=*/{}, /*convention=*/{},
         /*registerPassableConstraint=*/{}, /*annotations=*/{});
   result.regions[0]->push_back(new Block());
 }
@@ -2062,19 +2061,16 @@ DebugInfo::DIScopeAttr TraitDeclOp::getLocScope() {
 void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
-  UnitAttr none;
   build(builder, result, name, /*sym_visibility=*/nullptr,
         TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
         TraitSymbolArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
-        /*definesClosure=*/none,
         /*docString=*/{},
         /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{},
-        /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {},
-        /*sourceName=*/{});
+        /*linearTypeErrorMsg*/ {}, /*sourceName=*/{});
   result.regions[0]->push_back(new Block());
 }
 

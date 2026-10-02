@@ -1441,17 +1441,8 @@ LogicalResult LIT::checkAtMostOneClosureTrait(SharedState &shared,
                                               SMLoc loc, SourceRange range) {
   SmallVector<TraitSymbolAttr> closures;
   for (TraitSymbolAttr symbol : symbols) {
-    if (shared.isUniversalParametricClosureTrait(symbol)) {
+    if (shared.isUniversalParametricClosureTrait(symbol))
       closures.push_back(symbol);
-    } else {
-      ASTDecl &decl =
-          shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-      auto traitOp = dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation());
-      // Leaf closure trait is put in the top decl.
-      if (traitOp && traitOp.getDefinesClosure() &&
-          decl.getParentDecl() == &shared.getTopLevelDecl())
-        closures.push_back(symbol);
-    }
     if (closures.size() > 1)
       break;
   }

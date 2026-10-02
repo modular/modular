@@ -128,9 +128,7 @@ buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
     pushOpsOntoWorklist(MutableArrayRef(*func));
   }
   for (auto trait : theModule.getOps<LIT::TraitDeclOp>()) {
-    if (trait.getClosureSignature().has_value())
-      pushOpsOntoWorklist(MutableArrayRef(*trait));
-    else if (trait.getSymName() == "##__mojo_closure__##")
+    if (trait.getSymName() == "##__mojo_closure__##")
       pushOpsOntoWorklist(MutableArrayRef(*trait));
   }
   for (auto structOp : theModule.getOps<LIT::StructDeclOp>())

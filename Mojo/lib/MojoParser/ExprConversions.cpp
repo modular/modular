@@ -913,32 +913,6 @@ struct ConversionResult {
 };
 } // namespace
 
-static ASTDecl *getFileModuleForValue(SharedState &shared, ASTDecl &declScope,
-                                      const CValue &value) {
-  if (ASTDecl *fileModule = declScope.getNearestDeclOfType<FileModuleOp>())
-    return fileModule;
-
-  Value mlirValue = value.getMlirValue();
-  if (!mlirValue)
-    return nullptr;
-
-  Operation *op = mlirValue.getDefiningOp();
-  if (!op) {
-    if (Block *block = mlirValue.getParentBlock())
-      op = block->getParentOp();
-  }
-  if (!op)
-    return nullptr;
-
-  auto fileMod = op->getParentOfType<FileModuleOp>();
-  if (!fileMod)
-    return nullptr;
-
-  SymbolRefAttr fileSym = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(fileMod.getOperation()));
-  return shared.getDeclResolver().getDeclForTypeSymbolIfExists(fileSym);
-}
-
 static ConversionResult
 classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
                              ASTDecl &declScope,
@@ -1179,8 +1153,7 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
       return TriBool::fromBool(
           canZeroCostConvertParamTypes(fromParamType, toParamType, shared));
 
-  // Check for closure structs and dig out their underlying signature types to
-  // check whether the conversion can occur.
+  // Check for struct types that differ only in their parameter bindings.
   auto fromDecl = fromType.getDecl(shared);
   auto toDecl = toType.getDecl(shared);
   if (fromDecl && toDecl) {
@@ -1188,22 +1161,7 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
         dyn_cast_or_null<StructDeclOp>(fromDecl->getIfOperation());
     auto toDeclOp = dyn_cast_or_null<StructDeclOp>(toDecl->getIfOperation());
     if (fromDeclOp && toDeclOp) {
-      FuncTypeGeneratorType fromSig =
-          fromDeclOp.getClosureSignature().value_or(nullptr);
-      FuncTypeGeneratorType toSig =
-          toDeclOp.getClosureSignature().value_or(nullptr);
-      if (fromSig && toSig) {
-        // Compare the specialized signatures.
-        fromSig = fromSig.getSpecializedGenerator(
-            fromType.getParamBindings(), &shared.getEvaluationContext());
-        toSig = toSig.getSpecializedGenerator(toType.getParamBindings(),
-                                              &shared.getEvaluationContext());
-        return canZeroCostConvertImpl(fromSig, toSig, shared, declScope,
-                                      additionalAssumptions,
-                                      unprovenConstraints);
-      }
-
-      // Otherwise, if both types reference the same struct declaration (e.g.
+      // If both types reference the same struct declaration (e.g.
       // `Iter[X]` vs `Iter[Y]`), the conversion is zero-cost as long as each
       // pair of parameter bindings is zero-cost convertible. We conservatively
       // require both sides to be `StructType` here, though in principle this
@@ -1745,23 +1703,6 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
 // Generalized Implicit Conversions
 //===----------------------------------------------------------------------===//
 
-static ASTDecl *getClosureTraitDecl(SharedState &shared,
-                                    const TraitType &traitTy) {
-  for (const auto &symbol : traitTy.getSymbols()) {
-    auto &symbolDecl =
-        shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-    if (symbolDecl.isErroneous())
-      continue;
-
-    if (auto traitDeclOp =
-            dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-        traitDeclOp && traitDeclOp.getDefinesClosure())
-      return &symbolDecl;
-  }
-
-  return nullptr;
-}
-
 /// Returns failure when a struct cannot rebind to one of the closure traits,
 /// which rules out the conversion outright. Otherwise return a TraitType with
 /// the verified closure trait dropped.
@@ -1794,26 +1735,8 @@ static FailureOr<TraitType> verifyClosureTrait(SharedState &shared,
       }
     }
 
-    auto &symbolDecl =
-        shared.declResolver->getDeclForTypeSymbol(tgt.getSymbol());
-    auto traitDeclOp =
-        dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-    if (!traitDeclOp || !traitDeclOp.getDefinesClosure()) {
-      // Non closure traits are checked separately.
-      toCheck.push_back(tgt);
-      continue;
-    }
-
-    // If this is a struct, check whether we can do lazy conformance.
-    if (sugarIsa<StructMetaType>(concreteType) &&
-        failed(
-            shared.closureEmitter->isCompatibleWith(concreteType, &symbolDecl)))
-      return failure();
-
-    if (sugarIsa<TraitType>(concreteType) &&
-        failed(shared.closureEmitter->isTraitCompatibleWith(
-            concreteType, traitDeclOp, declScope)))
-      toCheck.push_back(tgt); // maybe don't need extension.
+    // Non closure traits are checked separately.
+    toCheck.push_back(tgt);
   }
 
   return TraitType::get(shared.getContext(), toCheck);
@@ -1915,16 +1838,6 @@ canMetaTypeUpCastToImpl(SharedState &shared, SMLoc loc, ASTType fromType,
   auto canFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
                                        AnyTraitType anyTrait) {
     TraitType closureTrait = anyTrait.getTraitType();
-    if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
-      Type concreteWrapperType =
-          shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
-              *declScope, loc, fnPValue);
-      if (!concreteWrapperType)
-        return false;
-      return succeeded(shared.getClosureEmitter().isCompatibleWith(
-          concreteWrapperType, traitDecl));
-    }
-
     if (TraitSymbolAttr tgtInst = extractClosureSymbol(shared, closureTrait)) {
       auto srcSig = cast<FnTypeGeneratorType>(fnPValue.getType());
       auto tgtSig = shared.getClosureFnSigWithoutSelf(tgtInst);
@@ -2217,9 +2130,7 @@ static TriBool classifyImplicitConversionImpl(
       PValue target = value.ir.getIfPValue();
       if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
         target = PValue(fnLiteral.getSymbolConstantAttr());
-      if (shared.getClosureEmitter().isWrapperStructForFnSymbol(target,
-                                                                structTy) ||
-          shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
+      if (shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
                                                                   structTy))
         return cacheAndReturnVal(rvType, requiredType, true);
     }
@@ -2282,17 +2193,6 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
   auto emitFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
                                         AnyTraitType anyTrait) {
     TraitType closureTrait = anyTrait.getTraitType();
-    if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
-      ASTType structWrapper =
-          shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
-              declScope, valueExpr.expr->getLoc(), fnPValue);
-      if (!structWrapper)
-        return PValue();
-      (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-          structWrapper, traitDecl);
-      return emitMetaTypeToTraitConversion(
-          {PValue(structWrapper), valueExpr.expr}, closureTrait);
-    }
     if (auto tgtTrait = extractClosureSymbol(shared, closureTrait)) {
       LIT::StructType structType =
           shared.getClosureEmitter().getInflatedClosureForFnSymbol(
@@ -2320,35 +2220,6 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
 
     if (sugarIsa<StructMetaMetaType, AnyTraitType>(
             fromType.extractMetaType())) {
-      // Augment the witness table of closure wrapper with rebind if
-      // necessary. We do this for every closure trait in the type.
-      //
-      // TODO: delete this!
-      for (const auto &symbol : trait.getSymbols()) {
-        auto &symbolDecl =
-            shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-        if (auto traitDeclOp =
-                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-            traitDeclOp && traitDeclOp.getDefinesClosure()) {
-          if (failed(shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-                  fromType, &symbolDecl))) {
-            // Augmentation failed. Only treat this as fatal for a *genuine*
-            // trait-to-trait extension: a trait-view source that does not
-            // already expose this (structurally compatible but distinct) trait
-            // symbol. Failing here lets the caller's extension branch
-            // synthesize the `#kgen.extension`. When the source already exposes
-            // the trait (subset conversion, e.g. `A & B` -> `B`) or is a
-            // struct, fall through to the normal conversion below (baseline
-            // behavior).
-            if (auto fromTrait =
-                    sugarDynCast<AnyTraitType>(fromType.extractMetaType());
-                fromTrait && !llvm::is_contained(
-                                 fromTrait.getTraitType().getSymbols(), symbol))
-              return failure();
-          }
-        }
-      }
-
       auto closureConvert = emitClosureTraitConversion(valueExpr, trait);
       // Inapplicable, fails back to the simple case.
       if (failed(closureConvert))
@@ -2393,18 +2264,6 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
 
     if (concreteType) {
       TraitType traitType = anyTrait.getTraitType();
-      // Augment the witness table of a closure wrapper with a rebind if
-      // necessary, mirroring the AnyTraitType-metatype branch above.
-      for (const auto &symbol : traitType.getSymbols()) {
-        auto &symbolDecl =
-            shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-        if (auto traitDeclOp =
-                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-            traitDeclOp && traitDeclOp.getDefinesClosure()) {
-          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-              concreteType, &symbolDecl);
-        }
-      }
       auto closureConvert = emitClosureTraitConversion(valueExpr, traitType);
       if (succeeded(closureConvert)) {
         if (auto converted = closureConvert->get())
@@ -2494,31 +2353,11 @@ CValue IREmitter::emitImplicitConversionToType(
       auto target = valueExpr.ir.getIfPValue();
       if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
         target = PValue(fnLiteral.getSymbolConstantAttr());
-      if (shared.getClosureEmitter().isWrapperStructForFnSymbol(target,
-                                                                structTy) ||
-          shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
+      if (shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
                                                                   structTy)) {
         return emitConstructorCall(
             structTy,
             CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));
-      }
-    }
-  }
-
-  // Extend one parametric closure trait to a structurally compatible one.
-  if (auto anyTrait =
-          sugarDynCast<AnyTraitType>(requiredType.extractMetaType())) {
-    if (sugarIsa<AnyTraitType>(rvType.extractMetaType())) {
-      if (std::optional<TraitDeclOp> targetTrait =
-              ClosureEmitter::getClosureDecl(shared, anyTrait.getTraitType())) {
-        ASTDecl *fileModule =
-            getFileModuleForValue(shared, getDeclScope(), valueExpr.ir);
-        if (fileModule) {
-          if (CValue extension = shared.getClosureEmitter().createExtensionType(
-                  *fileModule, valueExpr.ir, anyTrait.getTraitType(),
-                  *targetTrait))
-            return extension;
-        }
       }
     }
   }

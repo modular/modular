@@ -341,24 +341,14 @@ struct SharedState::Impl {
   /// The parser configuration used when loading bytecode.
   mlir::ParserConfig bytecodeParserContext;
 
-  /// Closure traits have a unique generator type and are global to the module.
-  /// Cache previously built traits.
-  DenseMap<GeneratorType, ASTDecl *> closureTraits;
-
   /// The decl corresponding to the universal parametric closure trait.
   ASTDecl *parametricClosureTrait = nullptr;
-
-  /// Stateless closure extension structs, keyed by the (source trait,
-  /// target trait) operation pair and the owning file module.
-  DenseMap<std::pair<std::pair<Operation *, Operation *>, ASTDecl *>, ASTDecl *>
-      closureExtensions;
 
   /// The capture values and decls associated with their enclosing nested
   /// function. This data structure is populated during the parsing of the FnOp
   /// the key ASTDecl wraps.
   DenseMap<ASTDecl *, llvm::MapVector<StringRef, Capture>> capturesInScope;
   DenseMap<ASTDecl *, CaptureConvention> captureConventionForScope;
-  DenseMap<Operation *, ClosureParamCaptures> closureParamCaptures;
 
   /// Function type conversion thunks in each module.
   // The key is an ArrayAttr containing two elements:
@@ -1796,19 +1786,6 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 
-ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
-                                              FnTypeGeneratorType sig) {
-  auto [key, numPrependedCaptures] = closureEmitter->getClosureTraitKey(sig);
-  auto ptr = impl->closureTraits.find(key);
-  if (ptr == impl->closureTraits.end()) {
-    auto result = closureEmitter->createClosureTrait(moduleDecl, sig, key,
-                                                     numPrependedCaptures, loc);
-    impl->closureTraits.insert({key, result});
-    return result;
-  }
-  return ptr->second;
-}
-
 ASTDecl *SharedState::getUniversalParametricClosureTrait() {
   if (!impl->parametricClosureTrait) {
     auto *closureTrait = IREmitter::createParametricClosureTrait(*this);
@@ -1837,20 +1814,6 @@ SharedState::getClosureFnSigWithoutSelf(TraitSymbolAttr closureInst) {
 bool SharedState::isUniversalParametricClosureTrait(TraitSymbolAttr symbol) {
   return getUniversalParametricClosureTrait()->getSymbolRef() ==
          symbol.getSymbol();
-}
-
-ASTDecl *SharedState::getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
-                                           TraitDeclOp targetTrait,
-                                           ASTType sourceMetaType,
-                                           ASTDecl *moduleDecl) {
-  auto key = std::make_pair(
-      std::make_pair(sourceTrait.getOperation(), targetTrait.getOperation()),
-      moduleDecl);
-  auto &extension = impl->closureExtensions[key];
-  if (!extension)
-    extension = closureEmitter->createExtensionStruct(
-        *moduleDecl, sourceTrait, targetTrait, sourceMetaType, loc);
-  return extension;
 }
 
 FnOp SharedState::getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
@@ -1921,53 +1884,6 @@ bool SharedState::captureInstanceExistsInScope(ASTDecl &scope,
     return false;
   auto capturePtr = ptr->second.find(spelling);
   return capturePtr != ptr->second.end();
-}
-
-ClosureParamCaptures *SharedState::getClosureParamCapturesForOp(Operation *op) {
-  auto ptr = getImpl().closureParamCaptures.find(op);
-  if (ptr == getImpl().closureParamCaptures.end())
-    return nullptr;
-  return &ptr->second;
-}
-
-ArrayRef<ClosureParamCapture>
-SharedState::lookupClosureCaptureFromOp(Operation *startOp,
-                                        StringAttr closureName) {
-  auto lookup = [&](Operation *op) -> ArrayRef<ClosureParamCapture> {
-    if (ClosureParamCaptures *captures = getClosureParamCapturesForOp(op)) {
-      auto ptr = captures->find(closureName);
-      if (ptr != captures->end())
-        return ptr->second;
-    }
-    return {};
-  };
-
-  StructDeclOp structScope;
-  for (Operation *op = startOp; op; op = op->getParentOp()) {
-    if (isa<FnOp>(op)) {
-      if (ArrayRef<ClosureParamCapture> captures = lookup(op);
-          !captures.empty())
-        return captures;
-    } else if (auto structOp = dyn_cast<StructDeclOp>(op)) {
-      structScope = structScope ? structScope : structOp;
-    }
-  }
-  if (structScope)
-    return lookup(structScope);
-  return {};
-}
-
-void SharedState::setClosureParamCaptures(
-    ASTDecl &functionDecl, ClosureParamCaptures closureParamCaptures) {
-  getImpl().closureParamCaptures[functionDecl.getIfOperation()] =
-      std::move(closureParamCaptures);
-}
-
-void SharedState::addClosureParamCaptures(
-    ASTDecl &functionDecl, StringAttr closureName,
-    SmallVector<ClosureParamCapture> captures) {
-  getImpl().closureParamCaptures[functionDecl.getIfOperation()][closureName] =
-      std::move(captures);
 }
 
 //===----------------------------------------------------------------------===//

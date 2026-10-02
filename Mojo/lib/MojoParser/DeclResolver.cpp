@@ -1350,21 +1350,7 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
     if (decls.empty())
       return success();
 
-    auto shouldImportWildcardDecl = [](ASTDecl *decl) {
-      auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
-      if (!structOp || !structOp.isSynthetic() || !structOp.getDefinesClosure())
-        return true;
-      return false;
-    };
-
-    SmallVector<ASTDecl *> filteredDecls;
-    llvm::copy_if(decls, std::back_inserter(filteredDecls),
-                  shouldImportWildcardDecl);
-    if (filteredDecls.empty())
-      return success();
-
-    return aliasImportDecls(filteredDecls, name, name, moduleName, loc, context,
-                            false);
+    return aliasImportDecls(decls, name, name, moduleName, loc, context, false);
   };
 
   // Resolve pending wildcard imports in the scope we are about to iterate

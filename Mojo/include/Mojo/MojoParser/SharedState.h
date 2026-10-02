@@ -104,11 +104,6 @@ private:
   StringRef spelling;
 };
 
-/// Store a list of parameter captures per closure type.
-using ClosureParamCapture = std::pair<StringAttr, Type>;
-using ClosureParamCaptures =
-    DenseMap<StringAttr, SmallVector<ClosureParamCapture>>;
-
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : uint8_t {
@@ -587,15 +582,6 @@ public:
   struct Impl;
   Impl &getImpl() const { return *impl; }
 
-  /// Given a signature [Int](y:Int) -> Int for example, return the trait. If
-  /// there is not a trait already generated, the compiler will generate the
-  /// following:
-  ///  trait Closure_Int_yInt_Int(Movable, AnyType):
-  ///      def __call__(mut self, y: Int) -> Int:
-  ///         ...
-  ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
-                                   FnTypeGeneratorType sig);
-
   /// Get or create the universal closure trait, we don't care about the
   /// signatures and we can adapt the trait to any signature.
   ASTDecl *getUniversalParametricClosureTrait();
@@ -611,11 +597,6 @@ public:
     return trait == getUniversalParametricClosureTrait();
   }
 
-  /// Get or create a struct that defines conformance of targetTrait in terms of
-  /// sourceTrait.
-  ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
-                                TraitDeclOp targetTrait, ASTType sourceMetaType,
-                                ASTDecl *moduleDecl);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
@@ -660,23 +641,6 @@ public:
   /// Override the default capture convention for captures in this scope.
   void setDefaultCaptureForScope(ASTDecl &scope,
                                  CaptureConvention defaultConvention);
-
-  /// Return the captured parameters map for all closures defined in the
-  /// function represented by \p op. Returns nullptr if no captures have been
-  /// registered for this op.
-  ClosureParamCaptures *getClosureParamCapturesForOp(Operation *op);
-
-  /// Look up the captures registered for the closure named \p closureName as
-  /// visible from \p startOp.
-  ArrayRef<ClosureParamCapture>
-  lookupClosureCaptureFromOp(Operation *startOp, StringAttr closureName);
-  /// Set the captured parameters map for a given function.
-  void setClosureParamCaptures(ASTDecl &functionDecl,
-                               ClosureParamCaptures closureParamCaptures);
-
-  /// Add an entry to the captured closures map of the given function.
-  void addClosureParamCaptures(ASTDecl &functionDecl, StringAttr closureName,
-                               SmallVector<ClosureParamCapture> captures);
 
   /// These two methods are used to memoize whether a type is implicitly
   /// convertible to another type, which includes overload resolution etc.

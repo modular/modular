@@ -1895,19 +1895,6 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
   if (!newBindings)
     return {};
 
-  // Applying arguments to a parametric alias whose right-hand side is a closure
-  // type must substitute the arguments into the closure trait's captured
-  // aliases and yield a freshly specialized closure trait.
-  if (ASTDecl *moduleDecl =
-          emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>()) {
-    if (TraitType specialized =
-            emitter.shared.getClosureEmitter().getSpecializedClosureTrait(
-                sig, newBindings.getValues(), *moduleDecl, expr->getLoc())) {
-      return PValue(
-          TypeParamAttr::get(specialized, AnyTraitType::get(specialized)));
-    }
-  }
-
   return newBindings.specializeGenerator(callable);
 }
 
@@ -4900,16 +4887,8 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       tcSignature.implicitOriginDecls);
 
   if (argList.isClosureTrait()) {
-    ASTDecl *moduleDecl =
-        emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>();
-    if (useParametricClosureTrait()) {
-      TraitType traitType = emitter.shared.declResolver->getCanonicalTrait(
-          emitter.bindParamsToClosureTraitFromSig(signature));
-      return emitter.emitResult(ASTType(traitType), this, dest);
-    }
-    ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
-        getLoc(), *moduleDecl, signature);
-    Type traitType = trait->getTypeDeclSelf().extractMetaType();
+    TraitType traitType = emitter.shared.declResolver->getCanonicalTrait(
+        emitter.bindParamsToClosureTraitFromSig(signature));
     return emitter.emitResult(ASTType(traitType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);

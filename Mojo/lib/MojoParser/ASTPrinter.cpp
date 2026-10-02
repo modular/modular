@@ -1684,30 +1684,6 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
 }
 
-/// If `decl` is a closure (struct or trait), print its readable source name and
-/// return true. A closure may have no source name (it is only set when the
-/// signature is available), in which case this returns false and the caller
-/// prints the mangled form.
-static bool tryPrintClosureSourceName(raw_ostream &os, ASTDecl *decl) {
-  if (!decl)
-    return false;
-  Operation *op = decl->getIfOperation();
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(op)) {
-    if (structOp.getDefinesClosure())
-      if (auto sourceName = structOp.getSourceName()) {
-        os << sourceName->getName().getValue();
-        return true;
-      }
-  } else if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(op)) {
-    if (traitOp.getDefinesClosure())
-      if (auto sourceName = traitOp.getSourceName()) {
-        os << sourceName->getName().getValue();
-        return true;
-      }
-  }
-  return false;
-}
-
 static bool tryPrintParamClosureSourceName(ASTTypePrinterContext ctx,
                                            raw_ostream &os,
                                            LIT::StructType closureStruct) {
@@ -1859,8 +1835,6 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(type).getDecl(*diagShared);
-    if (tryPrintClosureSourceName(os, decl))
-      return;
     if (tryPrintParamClosureSourceName(ctx, os, structTy))
       return;
     printUserType(structTy.getSymbol(), structTy.getParamValues(), decl);
@@ -1868,8 +1842,6 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(anyStruct.getType()).getDecl(*diagShared);
-    if (tryPrintClosureSourceName(os, decl))
-      return;
     if (tryPrintParamClosureSourceName(ctx, os, anyStruct.getType()))
       return;
     os << "AnyStruct[";
@@ -1885,13 +1857,6 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
         reduced, os,
         [&](TraitSymbolAttr traitSymbol) {
           SymbolRefAttr symbol = traitSymbol.getSymbol();
-          ASTDecl *decl =
-              diagShared
-                  ? diagShared->declResolver->getDeclForTypeSymbolIfExists(
-                        symbol)
-                  : nullptr;
-          if (tryPrintClosureSourceName(os, decl))
-            return;
           if (tryPrintParamClosureSourceName(ctx, os, traitSymbol))
             return;
           printSymbol(os, symbol, diagShared);

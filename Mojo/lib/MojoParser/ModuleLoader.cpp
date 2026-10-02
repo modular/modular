@@ -1221,35 +1221,6 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
         DeclResolvedness::body);
     shared.declResolver->finalizeFuncSignature(thunk, thunkDecl);
   }
-  for (auto trait :
-       llvm::make_early_inc_range(tmpModule.getOps<TraitDeclOp>())) {
-    if (!trait.getClosureSignature().has_value())
-      continue;
-
-    FnTypeGeneratorType key = *trait.getClosureSignature();
-    auto creation = [&]() -> ASTDecl * {
-      if (failed(bytecodeReader->materialize(trait)))
-        return nullptr;
-      // A closure trait with no methods is a stub from a package that
-      // references but does not define the closure type. Skip it so the cache
-      // slot stays empty and a later package with the full body can fill it.
-      if (trait.getOps<FnOp>().empty())
-        return nullptr;
-      trait->remove();
-      theModule.push_back(trait);
-      ASTDecl &traitDecl = shared.declResolver->addBytecodeDecl(
-          &*trait, trait.getSymNameAttr(), &shared.getTopLevelDecl(),
-          DeclResolvedness::body);
-      traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(trait));
-      // Ensure that the trait's methods are registered, too.
-      for (auto fn : trait.getOps<FnOp>()) {
-        shared.declResolver->addBytecodeDecl(
-            fn, fn.getSourceNameAttr(), &traitDecl, DeclResolvedness::body);
-      }
-      return &traitDecl;
-    };
-    shared.getClosureEmitter().getOrCreateClosureTrait(key, creation);
-  }
   for (auto structOp :
        llvm::make_early_inc_range(tmpModule.getOps<StructDeclOp>())) {
     auto creation = [&]() -> StructDeclOp {
