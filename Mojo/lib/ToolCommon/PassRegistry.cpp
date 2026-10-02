@@ -35,6 +35,7 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerArgPromotion();
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
+  KGEN::registerDecomposeFunctionArguments();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerEliminateDuplicateFunctions();
   KGEN::registerEnsureNoParameters();

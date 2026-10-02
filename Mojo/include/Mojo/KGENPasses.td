@@ -924,6 +924,25 @@ def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// DecomposeFunctionArguments
+//===----------------------------------------------------------------------===//
+
+def DecomposeFunctionArguments
+    : Pass<"decompose-function-arguments", "ModuleOp"> {
+  let summary = "Flatten struct arguments into their leaf fields";
+  let description = [{
+    The `decompose-function-arguments` pass flattens `kgen.struct` arguments
+    of every `kgen.func` into leaf fields and rewrites the body and the
+    surviving `kgen.call` sites to match. Which arguments to flatten, and
+    each leaf's attributes and convention, come from a
+    `FunctionArgumentDecompositionPolicy`; the pipeline-registered form uses
+    the default policy, which flattens every struct argument.
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // SROA
 //===----------------------------------------------------------------------===//
 
