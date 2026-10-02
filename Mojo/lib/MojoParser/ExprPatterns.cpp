@@ -229,6 +229,13 @@ LogicalResult StringLiteralNode::buildCheckList(
   return success();
 }
 
+LogicalResult SetInitLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
+  out.push_back(builder.createEqual(path, this));
+  return success();
+}
+
 LogicalResult DeclRefNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
@@ -793,7 +800,10 @@ RValue PatternEmitState::emitTestForValue(IREmitter &emitter,
       return {};
     rhs = caseIdxInt;
   } else {
-    rhs = emitter.emitExpr(expr, EC_MatchSubject);
+    if (isa<SetInitLiteralNode>(expr))
+      rhs = emitter.emitExpr(expr, EC_MatchSubject, value.getRValueType());
+    else
+      rhs = emitter.emitExpr(expr, EC_MatchSubject);
     if (!rhs)
       return {};
   }

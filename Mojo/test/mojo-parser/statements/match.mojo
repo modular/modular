@@ -17,6 +17,19 @@
 # code is put out in the right place.
 def case_callee[p: Int](): pass
 
+struct InitPattern(ImplicitlyCopyable):
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+    def __init__(out self, value: Int, *, offset: Int = 0):
+        self.value = value + offset
+
+    def __eq__(self, other: Self) -> Bool:
+        return self.value == other.value
+
+
 # CHECK-LABEL: lit.fn @"match_trivial
 def match_trivial(i: Int):
     # Irrefutable `case _` is not a match: the body is emitted inline.
@@ -161,6 +174,21 @@ def match_tuple_subject(point: Tuple[Int, Int]):
     case (0, 0):
         case_callee[0]()
     case _:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"match_initializer_list
+# CHECK:       lit.call {{.*}}@InitPattern::@"__init__()"
+# CHECK:       lit.call {{.*}}@"__eq__({{.*}}InitPattern
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
+# CHECK:       lit.call {{.*}}@InitPattern::@"__init__(
+# CHECK:       lit.call {{.*}}@"__eq__({{.*}}InitPattern
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
+def match_initializer_list(value: InitPattern):
+    __match value:
+    case {}:
+        case_callee[0]()
+    case {1, offset=2}:
         case_callee[1]()
 
 

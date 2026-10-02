@@ -642,6 +642,10 @@ struct SetInitLiteralNode final : public ExprNode {
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
+  LogicalResult
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 

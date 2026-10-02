@@ -12,12 +12,14 @@ This version is still a work in progress.
 
 - Added experimental `__match` / `case` pattern matching for early testing,
   including `comptime __match` for compile-time subjects. Patterns include
-  literals, or-patterns (`|`), guards (`if`), `as` / bare name bindings,
-  tuples, structs, and `EnumLike` types such as `Optional`. Dynamic match also
-  supports `var` / `ref` bindings; comptime match binds names as parameter
-  values and rejects `var` / `ref`. Nested patterns can dig through several
-  layers in one case — for example matching an optional point at runtime, or
-  specializing a kernel path on a compile-time tile size:
+  literals, contextual initializer lists such as `{}` and `{1, offset=2}`,
+  or-patterns (`|`), guards (`if`), `as` / bare name bindings, tuples, structs,
+  and `EnumLike` types such as `Optional`. An initializer-list pattern
+  constructs a value of the subject type and compares it to the subject.
+  Dynamic match also supports `var` / `ref` bindings; comptime match binds
+  names as parameter values and rejects `var` / `ref`. Nested patterns can dig
+  through several layers in one case—for example, matching an optional point
+  at runtime or specializing a kernel path on a compile-time tile size:
 
   ```mojo
   def describe(p: Optional[Point]) -> String:
