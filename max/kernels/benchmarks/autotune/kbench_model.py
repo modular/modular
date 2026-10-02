@@ -92,6 +92,7 @@ ScalarValue = str | int | float | bool
 _WRAPPER_SOURCE = """\
 from {module_name} import main as _bench_main
 from std.builtin._startup import _ensure_runtime_init
+from std.sys import stderr
 
 
 @export
@@ -105,7 +106,8 @@ def benchmark_entry() abi("C") -> Int32:
     try:
         _bench_main()
         return 0
-    except:
+    except e:
+        print("Unhandled exception caught during execution:", e, file=stderr)
         return 1
 """
 
