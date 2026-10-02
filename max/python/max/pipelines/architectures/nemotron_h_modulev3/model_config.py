@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import enum
 import logging
 import math
 from collections.abc import Sequence
@@ -48,15 +49,25 @@ logger = logging.getLogger("max.pipelines")
 ATTN_CACHE_KEY = "attn"
 STATE_CACHE_KEY = "state"
 
+
+class LayerKind(enum.Enum):
+    """The mixer of a Nemotron-H layer."""
+
+    MAMBA = "mamba"
+    ATTENTION = "attention"
+    MOE = "moe"
+    MLP = "mlp"
+
+
 # transformers main renamed the block types; both spellings name the same
 # mixers.
-_BLOCK_KINDS: dict[str, str] = {
-    "mamba": "mamba",
-    "linear_attention": "mamba",
-    "attention": "attention",
-    "full_attention": "attention",
-    "moe": "moe",
-    "mlp": "mlp",
+_BLOCK_KINDS: dict[str, LayerKind] = {
+    "mamba": LayerKind.MAMBA,
+    "linear_attention": LayerKind.MAMBA,
+    "attention": LayerKind.ATTENTION,
+    "full_attention": LayerKind.ATTENTION,
+    "moe": LayerKind.MOE,
+    "mlp": LayerKind.MLP,
 }
 
 # The only values of these fields this implementation builds.
@@ -77,10 +88,8 @@ _REQUIRED: dict[str, object] = {
 }
 
 
-def parse_layer_kinds(block_types: Sequence[str]) -> list[str]:
+def parse_layer_kinds(block_types: Sequence[str]) -> list[LayerKind]:
     """Maps a ``layers_block_type`` list to per-layer mixer kinds.
-
-    Returns ``"mamba"``, ``"attention"``, ``"moe"`` or ``"mlp"`` per layer.
 
     Raises:
         ValueError: If a block type is not one of the known spellings.
@@ -124,7 +133,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     hidden_size: int
     vocab_size: int
-    layer_kinds: list[str]
+    layer_kinds: list[LayerKind]
     layer_norm_epsilon: float
 
     num_attention_heads: int
@@ -167,7 +176,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         return frozenset(
             mixer
             for i, kind in enumerate(self.layer_kinds)
-            if kind == "moe"
+            if kind == LayerKind.MOE
             and self.quant_scheme.has_nvfp4_routed_experts(
                 mixer := f"backbone.layers.{i}.mixer", self.num_experts
             )
@@ -209,12 +218,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
-            num_layers=kinds.count("attention"),
+            num_layers=kinds.count(LayerKind.ATTENTION),
             devices=devices,
             data_parallel_degree=data_parallel_degree,
         )
         hf = huggingface_config
-        num_mamba_layers = kinds.count("mamba")
+        num_mamba_layers = kinds.count(LayerKind.MAMBA)
         state = RecurrentStateParams(
             # Separate leaves because the conv and SSM kernels each index
             # their own uniformly strided pool, at different dtypes.

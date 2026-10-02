@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
@@ -28,6 +29,10 @@ from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
 )
 from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import (
     NemotronH,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
+    ModuleFormat,
+    NemotronHQuantScheme,
 )
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     plan_jenga_geometry,
@@ -184,3 +189,18 @@ def test_loading_is_strict() -> None:
     stray = "backbone.layers.0.mixer.in_proj"
     with pytest.raises(ValueError, match=stray):
         config.quant_scheme.check_weights(names | {f"{stray}.weight_scale"})
+
+
+def test_w4a4_selects_the_moe_mixers_with_nvfp4_experts() -> None:
+    config = _config(_TINY_LAYERS, _TINY)
+    nvfp4 = {
+        f"backbone.layers.1.mixer.experts.{e}.{proj}": (
+            ModuleFormat.NVFP4_WEIGHT_ONLY
+        )
+        for e in range(config.num_experts)
+        for proj in ("up_proj", "down_proj")
+    }
+    config = replace(
+        config, w4a4_experts=True, quant_scheme=NemotronHQuantScheme(nvfp4)
+    )
+    assert config.w4a4_mixers() == {"backbone.layers.1.mixer"}

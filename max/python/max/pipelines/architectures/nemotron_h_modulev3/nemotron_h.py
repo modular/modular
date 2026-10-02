@@ -41,7 +41,12 @@ from max.nn.transformer import ReturnLogits
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import MambaStateAccess, NemotronHMamba2Mixer
 from .layers.moe import NemotronHMLP, NemotronHMoE
-from .model_config import ATTN_CACHE_KEY, STATE_CACHE_KEY, NemotronHConfig
+from .model_config import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    LayerKind,
+    NemotronHConfig,
+)
 
 
 class NemotronHBlock(Module[..., Tensor]):
@@ -65,20 +70,22 @@ class NemotronHBackbone(Module[..., Tensor]):
         w4a4_mixers = config.w4a4_mixers()
         for i, kind in enumerate(self.layer_kinds):
             mixer: Module[..., Tensor]
-            if kind == "mamba":
-                mixer = NemotronHMamba2Mixer(config)
-            elif kind == "attention":
-                attn_idx = self.layer_kinds[:i].count("attention")
-                mixer = NemotronHAttention(config, attn_params, attn_idx)
-            elif kind == "moe":
-                mixer = NemotronHMoE(
-                    config,
-                    w4a4_experts=f"backbone.layers.{i}.mixer" in w4a4_mixers,
-                )
-            else:
-                mixer = NemotronHMLP(
-                    config.hidden_size, config.intermediate_size
-                )
+            match kind:
+                case LayerKind.MAMBA:
+                    mixer = NemotronHMamba2Mixer(config)
+                case LayerKind.ATTENTION:
+                    attn_idx = self.layer_kinds[:i].count(LayerKind.ATTENTION)
+                    mixer = NemotronHAttention(config, attn_params, attn_idx)
+                case LayerKind.MOE:
+                    mixer = NemotronHMoE(
+                        config,
+                        w4a4_experts=f"backbone.layers.{i}.mixer"
+                        in w4a4_mixers,
+                    )
+                case LayerKind.MLP:
+                    mixer = NemotronHMLP(
+                        config.hidden_size, config.intermediate_size
+                    )
             layers.append(NemotronHBlock(mixer, config))
         self.layers = ModuleList(layers)
         self.norm_f = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
@@ -102,15 +109,15 @@ class NemotronHBackbone(Module[..., Tensor]):
         )
         mamba_idx = 0
         for kind, layer in zip(self.layer_kinds, self.layers, strict=True):
-            if kind == "attention":
+            if kind is LayerKind.ATTENTION:
                 h = layer(h, kv_collection, input_row_offsets)
                 continue
             # The blocks of each other kind share one subgraph, and each call
             # resolves its own layer's weights. Attention layers bake their
             # KV-cache layer index in as a constant, so they can't share a
             # subgraph.
-            call: Callable[..., Tensor] = as_subgraph(layer, name=kind)
-            if kind == "mamba":
+            call: Callable[..., Tensor] = as_subgraph(layer, name=kind.value)
+            if kind is LayerKind.MAMBA:
                 # The rows are selected here rather than inside the layer, so
                 # the Mamba layers can share one subgraph.
                 access = MambaStateAccess(
