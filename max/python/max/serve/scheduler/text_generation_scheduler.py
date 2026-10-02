@@ -78,11 +78,11 @@ def _parent_trace_context(context: TextContext) -> OtelContext | None:
     """Re-extracts the phase spans' parent from ``context.trace_carrier``.
 
     That is the request's ``max.request`` span where the handler set one,
-    otherwise the inbound caller's context. ``trace_carrier`` was serialized
-    by the API process (see ``_trace_context.inject_trace_carrier``) since a
-    live ``Context`` can't cross the process boundary. Returns None (a root
-    span) when neither was present, or the request arrived before this
-    propagation existed.
+    otherwise its HTTP server span. ``trace_carrier`` was serialized by the
+    API process (see ``_trace_context.inject_trace_carrier``) since a live
+    ``Context`` can't cross the process boundary. Returns None (a root span)
+    when neither was present, or the request arrived before this propagation
+    existed.
     """
     if context.trace_carrier is None:
         return None

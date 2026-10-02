@@ -37,7 +37,7 @@ from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
-from max.serve.telemetry import common
+from max.serve.telemetry import _trace_context, common
 from max.serve.telemetry.common import (
     batch_spans_enabled,
     configure_kernel_tracing,
@@ -46,6 +46,7 @@ from max.serve.telemetry.common import (
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.sdk._logs import LogData
 from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
+from opentelemetry.sdk.trace import TracerProvider
 
 
 @pytest.fixture(autouse=True)
@@ -215,8 +216,12 @@ def test_middleware_stamps_both_ids_on_an_arbitrary_route(
 ) -> None:
     # The tests above set the ContextVars by hand, so only a real request
     # covers the wiring. This route builds no max.request span, which is what
-    # makes it a test of "every route".
+    # makes it a test of "every route". The server span needs a real tracer
+    # to continue the inbound trace.
     monkeypatch.setattr(request_module, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(
+        _trace_context, "_tracer", TracerProvider().get_tracer("test")
+    )
     app = FastAPI()
     register_request(app)
 

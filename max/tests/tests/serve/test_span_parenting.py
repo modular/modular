@@ -98,7 +98,7 @@ def _text_context() -> TextContext:
     )
 
 
-def test_carrier_falls_back_to_the_inbound_context(
+def test_carrier_falls_back_to_the_request_trace_context(
     tracer: otel_trace.Tracer,
 ) -> None:
     span = tracer.start_span("caller")
@@ -234,11 +234,11 @@ async def test_the_carrier_reaching_the_pipeline_names_the_request_span(
 
 
 @pytest.mark.asyncio
-async def test_complete_leaves_the_inbound_context_alone(
+async def test_complete_leaves_the_request_trace_context_alone(
     tracer: otel_trace.Tracer,
 ) -> None:
-    # The caller's context has to survive the call, for anything that reads it
-    # later in the request.
+    # The request's trace context has to survive the call, for anything that
+    # reads it later in the request.
     caller = tracer.start_span("caller")
     inbound = otel_trace.set_span_in_context(caller)
     request_trace_ctx.set(inbound)

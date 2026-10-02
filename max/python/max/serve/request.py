@@ -20,12 +20,12 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from max.serve._error_envelope import openai_error_body
-from max.serve.telemetry._trace_context import extract_inbound_context
-from max.serve.telemetry.common import (
-    _capture_request_context,
-    _request_id_ctx,
-    _tracing_enabled,
+from max.serve.telemetry._trace_context import (
+    end_span_after,
+    record_server_span_status,
+    start_server_span,
 )
+from max.serve.telemetry.common import _request_id_ctx, _tracing_enabled
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
 
@@ -55,9 +55,14 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
         request_id = uuid.uuid4().hex
         request.state.request_id = request_id
         request.state.request_timer = StopWatch()
+        server_span = None
         if tracing:
-            _capture_request_context(
-                request_id, extract_inbound_context(request.headers)
+            server_span = start_server_span(
+                request_id,
+                method=request.method,
+                path=request.url.path,
+                scheme=request.url.scheme,
+                headers=request.headers,
             )
         elif structured_logging:
             _request_id_ctx.set(request_id)
@@ -68,10 +73,18 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
         # generator, and it reflects the code actually sent to the client
         # rather than a value guessed mid-stream.
         status_code = 500
+        span_ends_with_body = False
         try:
             response: Response = await call_next(request)
             status_code = response.status_code
             response.headers["X-Request-ID"] = request_id
+            # Ending with the headers would make a stream's span cover only
+            # the time to its first byte.
+            if server_span is not None and hasattr(response, "body_iterator"):
+                response.body_iterator = end_span_after(
+                    response.body_iterator, server_span
+                )
+                span_ends_with_body = True
             return response
         except HTTPException as e:
             status_code = e.status_code
@@ -92,3 +105,12 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
         finally:
             if _should_count_request(request.url.path):
                 METRICS.request_count(status_code, request.url.path)
+            if server_span is not None:
+                record_server_span_status(
+                    server_span,
+                    request.method,
+                    request.scope.get("route"),
+                    status_code,
+                )
+                if not span_ends_with_body:
+                    server_span.end()

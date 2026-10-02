@@ -108,11 +108,12 @@ def _telemetry_disabled(settings: Settings) -> bool:
 request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
     "max.serve.request_trace_ctx", default=None
 )
-"""The OTel context extracted from the current request's inbound W3C
-traceparent/tracestate headers (or None). Set by the ``request_session``
-middleware while tracing is on, so it is already populated by the time
-TextContext is constructed in llm.py — ``call_next`` runs the route in a
-child task, which inherits a copy of the context set here."""
+"""The OTel context holding the current request's HTTP server span (or None),
+which continues the inbound W3C traceparent where there is one. For a probe it
+is the inbound context itself, and with tracing off it is None. Set by the
+``request_session`` middleware, so it is already populated by the time
+TextContext is constructed in llm.py — ``call_next`` runs the route in a child
+task, which inherits a copy of the context set here."""
 
 _request_id_ctx: ContextVar[str | None] = ContextVar(
     "max.serve.request_id_ctx", default=None
@@ -136,14 +137,23 @@ def _tracing_enabled() -> bool:
     )
 
 
-def _capture_request_context(request_id: str, inbound: OtelContext) -> None:
+def _capture_request_context(
+    request_id: str, inbound: OtelContext, server_span: trace.Span | None
+) -> None:
     """Sets the ambient correlation IDs for the request being handled.
 
-    ``request_session`` calls this before ``call_next``, so the downstream
-    task's context copy carries them onto every route's records.
+    ``request_session`` calls this, through ``start_server_span``, before
+    ``call_next``, so the downstream task's context copy carries them onto
+    every route's records. The span is not made current: the OTLP log handler
+    would stamp its trace ID, the caller's where a traceparent arrived, onto
+    records sent to Modular.
     """
     _request_id_ctx.set(request_id)
-    request_trace_ctx.set(inbound)
+    request_trace_ctx.set(
+        trace.set_span_in_context(server_span, inbound)
+        if server_span is not None
+        else inbound
+    )
 
 
 def _getCloudProvider() -> str:
@@ -416,8 +426,8 @@ def _correlation_fields() -> dict[str, str | int]:
     """Returns the ambient request and batch correlation IDs for a log line.
 
     ``dd.trace_id`` is the key Datadog's correlator reads, as 32 hex digits.
-    No span ID: ``request_trace_ctx`` holds the caller's context, so one
-    would attach MAX's logs to the caller's span.
+    No span ID: for a probe, ``request_trace_ctx`` holds the caller's context,
+    so one would attach MAX's logs to the caller's span.
     """
     fields: dict[str, str | int] = {}
     request_id = _request_id_ctx.get()

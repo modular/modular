@@ -385,9 +385,9 @@ This version is still a work in progress.
 
 - Added correlation IDs to structured log records on every route:
   `request_id`, previously always empty, and, while tracing is enabled with
-  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set, `dd.trace_id` when the request
-  carries a `traceparent`. Structured logging is on by default in the MAX
-  container images; elsewhere, set `MODULAR_STRUCTURED_LOGGING=1`.
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set, `dd.trace_id`, except on a probe
+  that arrives without a `traceparent`. Structured logging is on by default in
+  the MAX container images; elsewhere, set `MODULAR_STRUCTURED_LOGGING=1`.
 
 - Populated `batch_id` in structured log records that a text-generation model
   worker logs during a forward pass while tracing is enabled. It was previously
@@ -397,6 +397,13 @@ This version is still a work in progress.
   speculative decoding verifies by measured decode tokens per second,
   instead of a fixed width. Takes a list such as `1,3,5`, or `all`. Each
   width adds graph capture time at startup.
+
+- With `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set, MAX Serve starts an HTTP
+  server span for each request except health, version, ping and metrics
+  probes, such as `/v1/health`. It continues any inbound `traceparent` and
+  parents the request's `max.request` span, so the request's logs carry a
+  trace ID without a `traceparent`. It ends when the response body finishes,
+  so a streamed response's span covers the whole stream.
 
 ### Server metrics
 
