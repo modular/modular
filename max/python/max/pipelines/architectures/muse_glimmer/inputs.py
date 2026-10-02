@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from max import tree
 from max.driver import Buffer
 from max.pipelines.lib import ModelInputs
 
@@ -39,3 +40,19 @@ class MuseGlimmerInputs(ModelInputs):
 
     return_n_logits: Buffer
     """Number of logits to return."""
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Flat language-graph input tuple in compile ABI order."""
+        return (
+            self.tokens,
+            self.return_n_logits,
+            self.input_row_offsets,
+            self.vision_embeddings[0],
+            self.vision_scatter_indices[0],
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs is not None
+                else ()
+            ),
+        )

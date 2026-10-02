@@ -22,12 +22,34 @@ MUSE_GLIMMER_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
     "lm_head.weight": "language_model.lm_head.weight",
 }
 
-# TODO: map these once the vision encoder exists.
-MUSE_GLIMMER_VISION_PREFIXES = (
-    "model.vision_tower.",
-    "model.vision_adapter.",
-    "model.vision_projection.",
-)
+MUSE_GLIMMER_VISION_SAFETENSOR_MAP: dict[str, str] = {
+    # A bare Tensor in the module, an nn.Embedding in the checkpoint.
+    "model.vision_tower.patch_embedder.position_embedding_table.weight": (
+        "vision_tower.patch_embedder.position_embedding_table"
+    ),
+    "model.vision_tower.": "vision_tower.",
+    "model.vision_adapter.": "vision_adapter.",
+    "model.vision_projection.": "vision_projection.",
+}
+
+
+def _rename(
+    state_dict: dict[str, Weights],
+    name_map: dict[str, str],
+    skip_prefixes: tuple[str, ...],
+) -> dict[str, WeightData]:
+    new_state_dict: dict[str, WeightData] = {}
+    for weight_name, value in state_dict.items():
+        if weight_name.startswith(skip_prefixes):
+            continue
+        for before, after in name_map.items():
+            if weight_name.startswith(before):
+                max_name = after + weight_name.removeprefix(before)
+                new_state_dict[max_name] = value.data()
+                break
+        else:
+            raise ValueError(f"Unexpected checkpoint key: {weight_name}")
+    return new_state_dict
 
 
 def convert_safetensor_language_state_dict(
@@ -43,15 +65,23 @@ def convert_safetensor_language_state_dict(
             ``Module.compile(weights=...)`` ignores extra keys, so this is
             where an unmapped checkpoint key surfaces.
     """
-    new_state_dict: dict[str, WeightData] = {}
-    for weight_name, value in state_dict.items():
-        if weight_name.startswith(MUSE_GLIMMER_VISION_PREFIXES):
-            continue
-        for before, after in MUSE_GLIMMER_LANGUAGE_SAFETENSOR_MAP.items():
-            if weight_name.startswith(before):
-                max_name = after + weight_name.removeprefix(before)
-                new_state_dict[max_name] = value.data()
-                break
-        else:
-            raise ValueError(f"Unexpected checkpoint key: {weight_name}")
-    return new_state_dict
+    return _rename(
+        state_dict,
+        MUSE_GLIMMER_LANGUAGE_SAFETENSOR_MAP,
+        tuple(MUSE_GLIMMER_VISION_SAFETENSOR_MAP),
+    )
+
+
+def convert_safetensor_vision_state_dict(
+    state_dict: dict[str, Weights], **unused_kwargs
+) -> dict[str, WeightData]:
+    """Renames the vision checkpoint keys onto ``MuseGlimmerVisionModel``.
+
+    Raises:
+        ValueError: If a key is neither a text nor a vision key.
+    """
+    return _rename(
+        state_dict,
+        MUSE_GLIMMER_VISION_SAFETENSOR_MAP,
+        tuple(MUSE_GLIMMER_LANGUAGE_SAFETENSOR_MAP),
+    )

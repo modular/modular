@@ -30,6 +30,7 @@ from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -248,8 +249,13 @@ class MuseGlimmerVisionConfig:
         return config
 
 
+# processor_config.json's ``max_image_tokens``: merged tokens of the largest
+# image the processor emits.
+_MAX_IMAGE_TOKENS = 4096
+
+
 @dataclass(kw_only=True)
-class MuseGlimmerConfig(ArchConfigWithKVCache):
+class MuseGlimmerConfig(ArchConfigWithKVCache, ArchConfigWithVisionCache):
     """Top-level Muse Glimmer configuration composing text and vision."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
@@ -272,6 +278,27 @@ class MuseGlimmerConfig(ArchConfigWithKVCache):
     def get_max_seq_len(self) -> int:
         """Returns the maximum sequence length of the text decoder."""
         return self.text_config.get_max_seq_len()
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Bytes of one max-resolution image's embeddings, or ``0`` for a
+        checkpoint without a vision tower."""
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden, dtype = spec
+        return _MAX_IMAGE_TOKENS * hidden * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """One bfloat16 row of the text hidden size per merged image token."""
+        if getattr(huggingface_config, "vision_config", None) is None:
+            return None
+        return (huggingface_config.text_config.hidden_size, DType.bfloat16)
 
     @staticmethod
     def construct_kv_params(

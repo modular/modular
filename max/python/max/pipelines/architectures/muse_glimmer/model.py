@@ -10,17 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Muse Glimmer ModuleV3 pipeline model (text only; vision comes later)."""
+"""Muse Glimmer ModuleV3 pipeline model."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
-from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.experimental import functional as F
+from max.experimental.compilation import CompiledCallable
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef
@@ -44,10 +44,15 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from transformers import AutoConfig
 
 from .batch_processor import MuseGlimmerBatchProcessor
+from .batch_vision_inputs import pack_uncached_images
 from .inputs import MuseGlimmerInputs
 from .model_config import MuseGlimmerConfig
 from .muse_glimmer import MuseGlimmer
-from .weight_adapters import convert_safetensor_language_state_dict
+from .vision import MuseGlimmerVisionModel, vision_input_types
+from .weight_adapters import (
+    convert_safetensor_language_state_dict,
+    convert_safetensor_vision_state_dict,
+)
 
 
 def _to_buffer(t: Tensor) -> Buffer:
@@ -61,10 +66,10 @@ class MuseGlimmerModel(
 ):
     """The Muse Glimmer pipeline model (ModuleV3).
 
-    Only the language tower is compiled. The vision hooks of
-    :class:`SupportsVisionEncoding` are implemented so the pipeline's
-    ``VisionEncoderCache`` supplies the zero-row image embeddings the
-    language graph takes on every step.
+    The vision and language towers are compiled as two graphs. The
+    pipeline's ``VisionEncoderCache`` drives the
+    :class:`SupportsVisionEncoding` hooks and scatters the image embeddings
+    into the ``<|patch|>`` positions.
     """
 
     model_config_cls: ClassVar[type[Any]] = MuseGlimmerConfig
@@ -74,11 +79,11 @@ class MuseGlimmerModel(
 
     config: MuseGlimmerConfig
 
-    language_model: Callable[..., Any]
+    language_model: CompiledCallable[Any, Any]
     """The compiled language tower."""
 
     vision_model: Callable[..., Any] | None
-    """``None`` until the vision tower lands."""
+    """The compiled vision tower; ``None`` for a checkpoint without one."""
 
     def __init__(
         self,
@@ -104,17 +109,31 @@ class MuseGlimmerModel(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
-        self.vision_model, self.language_model = self.load_model()
+        self.vision_model, language_model = self.load_model()
+        assert isinstance(language_model, CompiledCallable)
+        self.language_model = language_model
+
+    @property
+    def model(self) -> CompiledCallable[Any, Any]:
+        """The language tower, for device graph capture and replay.
+
+        Vision runs at prefill through :meth:`vision_execute`, so only the
+        language tower is captured.
+        """
+        return self.language_model
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers
 
     def _load_state_dict(self) -> dict[str, Any]:
+        weights = dict(self.weights.items())
         self._language_weights_dict = convert_safetensor_language_state_dict(
-            dict(self.weights.items())
+            weights
         )
-        self._vision_weights_dict = {}
+        self._vision_weights_dict = convert_safetensor_vision_state_dict(
+            weights
+        )
         return self._language_weights_dict
 
     def _create_model_config(
@@ -135,12 +154,29 @@ class MuseGlimmerModel(
 
     def _compile_vision_model(  # type: ignore[override]
         self, model_config: MuseGlimmerConfig, state_dict: dict[str, Any]
-    ) -> None:
-        """Returns ``None``: the vision tower is not implemented yet.
+    ) -> Callable[..., Any] | None:
+        """Compiles the vision tower, or returns ``None`` when the checkpoint
+        has none.
 
-        The override narrows the base hook's return type, hence the ignore.
+        The override widens the base hook's return type, hence the ignore.
         """
-        return
+        vision_config = model_config.vision_config
+        if vision_config is None:
+            return None
+        text_config = model_config.text_config
+        with F.lazy(), default_dtype(model_config.dtype):
+            vision_nn = MuseGlimmerVisionModel(
+                vision_config,
+                text_config.hidden_size,
+                text_config.rms_norm_eps,
+            )
+            vision_nn.to(self.devices[0])
+        input_types = vision_input_types(
+            vision_config,
+            DeviceRef.from_device(self.devices[0]),
+            model_config.dtype,
+        )
+        return vision_nn.compile(*input_types, weights=state_dict)
 
     def _compile_language_model(
         self, model_config: MuseGlimmerConfig, state_dict: dict[str, Any]
@@ -167,9 +203,13 @@ class MuseGlimmerModel(
             tuple[TextAndVisionContext, Sequence[ImageMetadata]]
         ],
         devices: list[Device],
-    ) -> None:
-        """Returns ``None``: there are no pixels to pack without a vision tower."""
-        return
+    ) -> list[Buffer] | None:
+        """Packs the pipeline-selected uncached images to device."""
+        if self.config.vision_config is None:
+            return None
+        return pack_uncached_images(
+            selection, devices[0], self.config.vision_config, self.config.dtype
+        )
 
     def vision_execute(
         self,
@@ -177,17 +217,20 @@ class MuseGlimmerModel(
             tuple[TextAndVisionContext, Sequence[ImageMetadata]]
         ],
         devices: list[Device],
-        packed: None,
+        packed: list[Buffer] | None,
     ) -> VisionEncodeResult:
-        """Returns zero-row embeddings; image inputs are not supported yet."""
-        if any(images for _, images in selection):
-            raise NotImplementedError(
-                "Muse Glimmer is served text-only; image inputs are not"
-                " supported yet."
+        """Runs the vision tower on the images :meth:`pack_vision_inputs`
+        packed."""
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(devices)
             )
-        return VisionEncodeResult(
-            embeddings=self.empty_vision_embeddings(self.devices)
+        assert self.vision_model is not None, (
+            "This checkpoint has no vision tower; image inputs are not"
+            " supported."
         )
+        embeddings = _to_buffer(self.vision_model(*packed))
+        return VisionEncodeResult(embeddings=embeddings.to(devices))
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
         """Per-device zero-row image embeddings for text-only batches.
@@ -207,26 +250,19 @@ class MuseGlimmerModel(
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the language tower with the prepared inputs."""
         assert isinstance(model_inputs, MuseGlimmerInputs)
-        kv_cache_inputs = model_inputs.kv_cache_inputs
-        assert kv_cache_inputs is not None
+        assert model_inputs.kv_cache_inputs is not None
         assert len(model_inputs.vision_embeddings) == len(self.devices)
         assert len(model_inputs.vision_scatter_indices) == len(self.devices)
 
-        model_outputs = self.language_model(
-            model_inputs.tokens,
-            model_inputs.return_n_logits,
-            model_inputs.input_row_offsets,
-            model_inputs.vision_embeddings[0],
-            model_inputs.vision_scatter_indices[0],
-            *tree.leaves(kv_cache_inputs),
-        )
+        # Replay feeds the same buffers, so eager and captured share one ABI.
+        model_outputs = self.language_model.execute_raw(*model_inputs.buffers)
         if len(model_outputs) == 3:
             return ModelOutputs(
-                logits=_to_buffer(model_outputs[1]),
-                next_token_logits=_to_buffer(model_outputs[0]),
-                logit_offsets=_to_buffer(model_outputs[2]),
+                logits=model_outputs[1],
+                next_token_logits=model_outputs[0],
+                logit_offsets=model_outputs[2],
             )
         return ModelOutputs(
-            logits=_to_buffer(model_outputs[0]),
-            next_token_logits=_to_buffer(model_outputs[0]),
+            logits=model_outputs[0],
+            next_token_logits=model_outputs[0],
         )

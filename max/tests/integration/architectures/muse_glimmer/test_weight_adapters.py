@@ -20,6 +20,7 @@ keys renamed onto one parameter, where the second silently wins.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -30,24 +31,24 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_dtype
-from max.graph.weights import SafetensorWeights
+from max.graph.weights import SafetensorWeights, WeightData
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.muse_glimmer import MuseGlimmerConfig
 from max.pipelines.architectures.muse_glimmer.muse_glimmer import (
     MuseGlimmerTextModel,
 )
+from max.pipelines.architectures.muse_glimmer.vision import (
+    MuseGlimmerVisionModel,
+)
 from max.pipelines.architectures.muse_glimmer.weight_adapters import (
     convert_safetensor_language_state_dict,
+    convert_safetensor_vision_state_dict,
 )
 from max.pipelines.lib import KVCacheConfig
 from transformers import AutoConfig
 
 TESTDATA = Path(__file__).parent / "testdata"
-VISION_PREFIXES = (
-    "model.vision_tower.",
-    "model.vision_adapter.",
-    "model.vision_projection.",
-)
+Converter = Callable[..., dict[str, WeightData]]
 
 
 def _pipeline_config() -> Mock:
@@ -70,19 +71,41 @@ def checkpoint_keys() -> list[str]:
 
 
 @pytest.fixture(scope="module")
-def expected_names() -> set[str]:
+def config() -> MuseGlimmerConfig:
     hf = AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
     config = MuseGlimmerConfig.initialize_from_config(
         _pipeline_config(), hf, max_seq_len=8192
     )
     assert config.text_config.num_hidden_layers == 52
+    assert config.vision_config is not None
+    assert config.vision_config.num_hidden_layers == 50
+    return config
+
+
+@pytest.fixture(scope="module")
+def expected_names(config: MuseGlimmerConfig) -> set[str]:
     mesh = DeviceMesh((CPU(),), (1,), ("tp",))
     with F.lazy(), default_dtype(DType.bfloat16):
         model = MuseGlimmerTextModel(config, mesh)
     return {f"language_model.{name}" for name, _ in model.parameters}
 
 
-def _convert(keys: list[str]) -> set[str]:
+@pytest.fixture(scope="module")
+def vision_names(config: MuseGlimmerConfig) -> set[str]:
+    assert config.vision_config is not None
+    with F.lazy(), default_dtype(DType.bfloat16):
+        tower = MuseGlimmerVisionModel(
+            config.vision_config,
+            config.text_config.hidden_size,
+            config.text_config.rms_norm_eps,
+        )
+    return set(dict(tower.parameters))
+
+
+def _convert(
+    keys: list[str],
+    converter: Converter = convert_safetensor_language_state_dict,
+) -> set[str]:
     placeholder = Buffer.from_numpy(np.zeros(1, dtype=np.float32))
     weights = SafetensorWeights(
         [],
@@ -90,20 +113,30 @@ def _convert(keys: list[str]) -> set[str]:
         tensors_to_file_idx={},
         _st_weight_map=dict.fromkeys(keys, placeholder),
     )
-    return set(convert_safetensor_language_state_dict(dict(weights.items())))
+    return set(converter(dict(weights.items())))
 
 
 def test_checkpoint_keys_cover_module(
-    checkpoint_keys: list[str], expected_names: set[str]
+    checkpoint_keys: list[str],
+    expected_names: set[str],
+    vision_names: set[str],
 ) -> None:
     converted = _convert(checkpoint_keys)
     assert converted == expected_names
-    text_keys = [
-        k for k in checkpoint_keys if not k.startswith(VISION_PREFIXES)
-    ]
-    assert len(text_keys) == len(converted)
+    vision = _convert(checkpoint_keys, convert_safetensor_vision_state_dict)
+    assert vision == vision_names
+    # Each converter raises on a key neither of them owns, so the two
+    # outputs account for every checkpoint key exactly when the sizes add up.
+    assert len(converted) + len(vision) == len(checkpoint_keys)
 
 
-def test_unknown_key_raises() -> None:
+@pytest.mark.parametrize(
+    "converter",
+    [
+        convert_safetensor_language_state_dict,
+        convert_safetensor_vision_state_dict,
+    ],
+)
+def test_unknown_key_raises(converter: Converter) -> None:
     with pytest.raises(ValueError, match="Unexpected checkpoint key"):
-        _convert(["model.mtp.weight"])
+        _convert(["model.mtp.weight"], converter)
