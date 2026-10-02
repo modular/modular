@@ -1,0 +1,15 @@
+{
+  "target": "gated_group_rmsnorm",
+  "spec": {
+    "rows": 64,
+    "num_groups": 8,
+    "gate_pad": 6208,
+    "gate_off": 1,
+    "data_seed": 2,
+    "dist": 1
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "same shape with an odd gate offset, which forces the scalar fallback",
+  "findings": []
+}

@@ -141,6 +141,22 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "gated_group_rmsnorm": FuzzTarget(
+        name="gated_group_rmsnorm",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_gated_group_rmsnorm.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_gated_group_rmsnorm.mojo.test"
+        ),
+        description=(
+            "gated_group_rmsnorm_gpu: Mamba-2 silu-gated group RMSNorm over a"
+            " strided, possibly misaligned gate view (vector and scalar"
+            " paths); memcheck/ref"
+        ),
+        default_oracle="ref",
+    ),
     "rms_norm": FuzzTarget(
         name="rms_norm",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_rms_norm.mojo.test",

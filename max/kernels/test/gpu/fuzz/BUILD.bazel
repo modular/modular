@@ -32,6 +32,7 @@ build_test(
         ":fuzz_fused_rope_rmsnorm.mojo.test",
         ":fuzz_fused_swiglu_dispatch.mojo.test",
         ":fuzz_fused_swiglu_mxfp8.mojo.test",
+        ":fuzz_gated_group_rmsnorm.mojo.test",
         ":fuzz_gemv_split_k.mojo.test",
         ":fuzz_grouped_matmul_mxfp8.mojo.test",
         ":fuzz_grouped_matmul_sm100_w4a8.mojo.test",
@@ -644,6 +645,35 @@ mojo_test(
     deps = [
         "//max:algorithm",
         "//max:layout",
+        "@mojo//:std",
+    ],
+)
+
+# Target: gated_group_rmsnorm_gpu (Mamba-2 gated group RMSNorm; vectorized
+# NVIDIA/AMD path plus the scalar fallback). group_size is compile-time
+# (`-D ggr_group_size=512|520|960|100`); rows, group count and the gate view's
+# row padding and base offset are the runtime axes. memory-safety and `ref`.
+mojo_test(
+    name = "fuzz_gated_group_rmsnorm.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_gated_group_rmsnorm.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_gated_group_rmsnorm.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:nn",
+        "//max/kernels/src/state_space",
         "@mojo//:std",
     ],
 )

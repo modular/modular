@@ -5604,14 +5604,13 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 eps,
             )
         elif is_gpu[target]():
-            gated_group_rmsnorm_gpu[dtype, gate_dtype](
+            gated_group_rmsnorm_gpu[dtype, gate_dtype, gs](
                 output_tt,
                 y_tt,
                 gate_tt,
                 weight_tt,
                 n_rows,
                 num_groups,
-                gs,
                 eps,
                 ctx,
             )

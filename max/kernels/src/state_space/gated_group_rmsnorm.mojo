@@ -49,11 +49,29 @@ so no divisibility constraint is needed. All memory access is through TileTensor
 indexing (`.load`/`.store` with `Coord`) -- no raw pointer arithmetic -- so a
 strided `y`/`gate`/`output` view (a split of the fused in-proj) is read correctly
 with no host-side stride plumbing.
+
+On NVIDIA and AMD the launcher takes a vectorized single-pass path when every
+operand is 16-byte aligned and `group_size` is a multiple of the vector width:
+each lane loads `y`, `gate` and `weight` vectors once, keeps the gated values in
+registers, and reuses them after the group reduction. The vector width is chosen
+so the wider of `y` and `gate` is 16 bytes. The fp32 sum of squares is
+accumulated per lane in a different order than the scalar path, so `nf` can
+differ in the last ulp; the formulas are otherwise identical.
 """
 
-from max.gpu import WARP_SIZE, global_idx, lane_id
+from max.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    global_idx,
+    lane_id,
+)
 from max.gpu.host import DeviceContext
 from std.math import ceildiv, rsqrt
+from std.collections import Array
+from std.sys import size_of
+from std.sys.info import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.utils.index import StaticTuple
+from std.utils.numerics import get_accum_type
 import max.gpu.primitives.warp as warp
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
@@ -138,10 +156,116 @@ def gated_group_rmsnorm_kernel[
         jj += WARP_SIZE
 
 
+# ===----------------------------------------------------------------------=== #
+# NVIDIA/AMD GPU kernel: one warp per (row, group), vectorized, single pass
+# ===----------------------------------------------------------------------=== #
+
+
+comptime VEC_BLK = 128
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(VEC_BLK))
+)
+@__name(t"gated_group_rmsnorm_vec_{dtype}_{gate_dtype}")
+def gated_group_rmsnorm_vec_kernel[
+    dtype: DType,
+    gate_dtype: DType,
+    group_size: Int,
+    width: Int,
+    OutLayout: TensorLayout,
+    YLayout: TensorLayout,
+    GateLayout: TensorLayout,
+    WeightLayout: TensorLayout,
+    OutEngine: TensorEngine,
+    YEngine: TensorEngine,
+    GateEngine: TensorEngine,
+    WeightEngine: TensorEngine,
+](
+    output: TileTensor[dtype, OutLayout, MutAnyOrigin, Engine=OutEngine],
+    y: TileTensor[dtype, YLayout, ImmutAnyOrigin, Engine=YEngine],
+    gate: TileTensor[gate_dtype, GateLayout, ImmutAnyOrigin, Engine=GateEngine],
+    weight: TileTensor[
+        .float32, WeightLayout, ImmutAnyOrigin, Engine=WeightEngine
+    ],
+    n_rows_dev: Int32,
+    num_groups_dev: Int32,
+    eps: Float32,
+):
+    comptime assert output.flat_rank == 2 and y.flat_rank == 2
+    comptime assert gate.flat_rank == 2 and weight.flat_rank == 1
+    comptime num_vecs = group_size // width
+    comptime iters = ceildiv(num_vecs, WARP_SIZE)
+    comptime has_tail = num_vecs % WARP_SIZE != 0
+    comptime accum_type = get_accum_type[dtype]()
+    comptime Vec = SIMD[accum_type, width]
+    comptime y_align = min(16, width * size_of[dtype]())
+    comptime gate_align = min(16, width * size_of[gate_dtype]())
+    comptime w_align = min(16, width * size_of[DType.float32]())
+
+    var num_groups = Int(num_groups_dev)
+    var group_flat = global_idx.x // WARP_SIZE
+    if group_flat >= Int(n_rows_dev) * num_groups:
+        return
+    var n = group_flat // num_groups
+    var base = (group_flat % num_groups) * group_size
+    var lane = lane_id()
+
+    var gated = Array[Vec, iters](uninitialized=True)
+    var w = Array[Vec, iters](uninitialized=True)
+    var acc = Scalar[accum_type](0)
+    comptime for k in range(iters):
+        var col = base + (lane + k * WARP_SIZE) * width
+        comptime if has_tail:
+            if lane + k * WARP_SIZE >= num_vecs:
+                gated[k] = Vec(0)
+                w[k] = Vec(0)
+                continue
+        var yv = y.load[width=width, alignment=y_align](Coord(n, col))
+        var gv = gate.load[width=width, alignment=gate_align](Coord(n, col))
+        w[k] = weight.load[width=width, alignment=w_align](Coord(col)).cast[
+            accum_type
+        ]()
+        gated[k] = yv.cast[accum_type]() * silu(gv.cast[accum_type]())
+
+    comptime for k in range(iters):
+        acc += (gated[k] * gated[k]).reduce_add()
+    var m2 = warp.sum(acc)
+    var nf = rsqrt(m2 / Scalar[accum_type](group_size) + eps.cast[accum_type]())
+
+    comptime for k in range(iters):
+        comptime if has_tail:
+            if lane + k * WARP_SIZE >= num_vecs:
+                continue
+        var col = base + (lane + k * WARP_SIZE) * width
+        var t_in = (gated[k] * nf).cast[dtype]()
+        var prod = w[k] * t_in.cast[accum_type]()
+        output.store[width=width, alignment=y_align](
+            Coord(n, col), prod.cast[dtype]()
+        )
+
+
+@inline(.always)
+def _is_vec_ok(t: TileTensor) -> Bool:
+    """Returns whether `t` can be read as aligned 16-byte vectors along rows."""
+    comptime rank = t.flat_rank
+    var row_ok = True
+    comptime if rank > 1:
+        row_ok = (
+            Int(t.layout.stride[0]().value()) * size_of[t.dtype]() % 16 == 0
+        )
+    return (
+        Int(t.unsafe_ptr()) % 16 == 0
+        and Int(t.layout.stride[rank - 1]().value()) == 1
+        and row_ok
+    )
+
+
 @inline(.always)
 def gated_group_rmsnorm_gpu[
     dtype: DType,
     gate_dtype: DType,
+    group_size: Int,
 ](
     output: TileTensor[mut=True, dtype, ...],
     y: TileTensor[dtype, ...],
@@ -149,13 +273,68 @@ def gated_group_rmsnorm_gpu[
     weight: TileTensor[.float32, ...],
     n_rows: Int,
     num_groups: Int,
-    group_size: Int,
     eps: Float32,
     ctx: DeviceContext,
 ) raises:
-    """Enqueues the fused gated group-RMSNorm; one warp per `(row, group)`."""
-    comptime BLK = 256  # 8 warps / threadgroup
+    """Enqueues the fused gated group-RMSNorm; one warp per `(row, group)`.
+
+    Parameters:
+        dtype: Element type of `y` and `output`.
+        gate_dtype: Element type of `gate`.
+        group_size: Width of each independently normalized group.
+
+    Args:
+        output: The `[n_rows, num_groups * group_size]` result.
+        y: The `[n_rows, num_groups * group_size]` SSD scan output.
+        gate: The gate projection; its row stride may exceed the logical width.
+        weight: The fp32 RMSNorm weight.
+        n_rows: Number of rows.
+        num_groups: Number of groups per row.
+        eps: Epsilon inside `rsqrt(mean_sq + eps)`.
+        ctx: Device context to enqueue on.
+    """
     var total_warps = n_rows * num_groups
+
+    comptime vec_width = 16 // max(size_of[dtype](), size_of[gate_dtype]())
+    comptime if (
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+    ) and group_size % vec_width == 0:
+        # Vector loads read contiguous elements, so every operand needs a
+        # unit inner stride as well as 16-byte aligned rows.
+        if (
+            _is_vec_ok(output)
+            and _is_vec_ok(y)
+            and _is_vec_ok(gate)
+            and _is_vec_ok(weight)
+        ):
+            comptime vec_kernel = gated_group_rmsnorm_vec_kernel[
+                dtype,
+                gate_dtype,
+                group_size,
+                vec_width,
+                type_of(output).LayoutType,
+                type_of(y).LayoutType,
+                type_of(gate).LayoutType,
+                type_of(weight).LayoutType,
+                type_of(output).Engine,
+                type_of(y).Engine,
+                type_of(gate).Engine,
+                type_of(weight).Engine,
+            ]
+            ctx.enqueue_function[vec_kernel](
+                output,
+                y,
+                gate,
+                weight,
+                Int32(n_rows),
+                Int32(num_groups),
+                eps,
+                grid_dim=ceildiv(total_warps * WARP_SIZE, VEC_BLK),
+                block_dim=VEC_BLK,
+            )
+            return
+
+    comptime BLK = 256  # 8 warps / threadgroup
     var grid = ceildiv(total_warps * WARP_SIZE, BLK)
 
     comptime kernel = gated_group_rmsnorm_kernel[
