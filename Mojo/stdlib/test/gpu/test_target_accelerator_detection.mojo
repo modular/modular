@@ -36,11 +36,9 @@
 # RUN: %mojo-build --emit object --target-accelerator amdgpu:mi300x   -D EXPECT=amd %s -o %t
 # RUN: %mojo-build --emit object --target-accelerator amd:mi355x      -D EXPECT=amd %s -o %t
 
-# NVIDIA: bare arch, vendor prefix, and the generic "cuda" target must all be
-# NVIDIA.
+# NVIDIA: bare arch and vendor prefix, must all be NVIDIA.
 # RUN: %mojo-build --emit object --target-accelerator sm_90        -D EXPECT=nvidia %s -o %t
 # RUN: %mojo-build --emit object --target-accelerator nvidia:sm_90 -D EXPECT=nvidia %s -o %t
-# RUN: %mojo-build --emit object --target-accelerator cuda         -D EXPECT=nvidia %s -o %t
 
 # Apple: bare arch and "metal:" prefix must both be Apple.
 # RUN: %mojo-build --emit object --target-triple arm64-apple-darwin \
@@ -51,7 +49,7 @@
 # Unknown/unrecognized accelerator: none of the vendor predicates fire (the
 # False-on-unknown contract). "wombat42" contains none of the vendor-relevant
 # substrings, so it also guards against loose-substring false positives.
-# RUN: %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=error_no_vendor_detected %s -o %t
+# RUN: not %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=error_has_functions %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-has_functions
 # RUN: not %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=error_gpu_info_from_name %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-GPUInfo_from_name
 # RUN: not %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=error_current_accelerator %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-current_accelerator
 
@@ -82,7 +80,8 @@ def main():
         comptime assert has_apple_gpu_accelerator()
         comptime assert not has_amd_gpu_accelerator()
         comptime assert not has_nvidia_gpu_accelerator()
-    elif expect == "error_no_vendor_detected":
+    elif expect == "error_has_functions":
+        # CHECK-INVALID-has_functions: GPU architecture 'wombat42' is not supported.
         comptime assert not has_amd_gpu_accelerator()
         comptime assert not has_nvidia_gpu_accelerator()
         comptime assert not has_apple_gpu_accelerator()

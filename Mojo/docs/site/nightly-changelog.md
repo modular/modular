@@ -153,6 +153,15 @@ This version is still a work in progress.
   - `CompilationTarget.current_accelerator()` — the default accelerator target,
     either determined automatically or as specified by `--target-accelerator`.
 
+  Additionally, `CompilationTarget` provides predicate methods for checking the
+  vendor identity of a given target. (The preexisting free functions with the
+  same name are now implemented in terms of these new methods.) These include:
+
+  - `.is_nvidia_gpu()` for checking whether a compilation target is an NVIDIA
+    GPU.
+  - `.is_amd_gpu()` and `.is_apple_gpu()` provide the equivalent checks for AMD
+    and Apple GPUs respectively.
+
 - Added new `TargetAccelerator` type for representing accelerator metadata at
   compile time, combining `GPUInfo` and `CompilationTarget` values.
 

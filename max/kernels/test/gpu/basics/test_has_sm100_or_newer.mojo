@@ -14,7 +14,7 @@
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm90 %s | FileCheck --check-prefix=CHECK-NV90 %s
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm100 %s | FileCheck --check-prefix=CHECK-NV100 %s
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm120 %s | FileCheck --check-prefix=CHECK-NV120 %s
-# RUN: %mojo-no-debug --target-accelerator=some_amd:300 %s | FileCheck --check-prefix=CHECK-A300 %s
+# RUN: %mojo-no-debug --target-accelerator=amd:mi355x %s | FileCheck --check-prefix=CHECK-A300 %s
 
 from std.sys.info import (
     _has_sm_8x_or_newer,

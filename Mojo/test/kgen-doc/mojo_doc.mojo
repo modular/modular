@@ -59,7 +59,7 @@ comptime alias_construct = IntTuple(0, 1, 2, 3, 4)
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_cond",
 # CHECK:  "path": "/mojo_doc/#alias_cond",
-# CHECK:  "value": "Int(2) if is_nvidia_gpu() else Int(1)"
+# CHECK:  "value": "Int(2) if CompilationTarget.is_nvidia_gpu() else Int(1)"
 comptime alias_cond = 2 if is_nvidia_gpu() else 1
 
 # CHECK:  "kind": "alias",

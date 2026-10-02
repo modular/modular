@@ -2851,11 +2851,11 @@ struct DeviceEvent(ImplicitlyCopyable):
 
 
 def _is_nvidia_gpu[target: CompilationTarget]() -> Bool:
-    return is_triple["nvptx64-nvidia-cuda", target]()
+    return target.is_triple["nvptx64-nvidia-cuda"]()
 
 
 def _is_apple_gpu[target: CompilationTarget]() -> Bool:
-    return is_triple["air64-apple-macosx", target]()
+    return target.is_triple["air64-apple-macosx"]()
 
 
 @inline(.never)
