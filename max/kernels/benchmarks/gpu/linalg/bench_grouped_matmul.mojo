@@ -209,6 +209,28 @@ def bench_grouped_matmul[
         eid_str,
         sep="",
     )
+    if (
+        len(num_tokens_by_expert) != num_active_experts
+        or len(expert_ids_input) != num_active_experts
+    ):
+        raise Error(
+            String(
+                "num_tokens_by_expert and expert_ids need ",
+                num_active_experts,
+                " entries each (num_active_experts)",
+            )
+        )
+    for expert_id in expert_ids_input:
+        if expert_id < 0 or expert_id >= num_experts:
+            raise Error(
+                String(
+                    "expert id ",
+                    expert_id,
+                    " is outside [0, ",
+                    num_experts,
+                    ")",
+                )
+            )
 
     def _ri(v: Int) -> Int64:
         return Int64(v)
