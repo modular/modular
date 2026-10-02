@@ -67,18 +67,18 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
     @staticmethod
     def from_str(str: String) raises -> Self:
         __match str:
-        case "zero":
-            return InitializationType.zero
-        case "one":
-            return InitializationType.one
-        case "uniform_distribution":
-            return InitializationType.uniform_distribution
-        case "arange":
-            return InitializationType.arange
-        case "fill":
-            return InitializationType.fill
-        case _:
-            raise Error("Invalid initialization type")
+            case "zero":
+                return InitializationType.zero
+            case "one":
+                return InitializationType.one
+            case "uniform_distribution":
+                return InitializationType.uniform_distribution
+            case "arange":
+                return InitializationType.arange
+            case "fill":
+                return InitializationType.fill
+            case _:
+                raise Error("Invalid initialization type")
 
 
 # TODO: refactor the following to run exactly once.

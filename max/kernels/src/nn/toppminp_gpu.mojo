@@ -248,21 +248,21 @@ def normalize(
     comptime dtype = value.dtype
 
     comptime __match dtype:
-    case .int32:
-        return normalize(rebind[Int32](value)).cast[result.dtype]()
-    case .uint32:
-        return normalize(rebind[UInt32](value)).cast[result.dtype]()
-    case .float32:
-        return normalize(rebind[Float32](value)).cast[result.dtype]()
-    # TODO: These below don't return uint32 so must generalize and fix
-    case .uint16:
-        return normalize(rebind[UInt16](value)).cast[result.dtype]()
-    case .float16:
-        return normalize(rebind[Float16](value)).cast[result.dtype]()
-    case .bfloat16:
-        return normalize(rebind[BFloat16](value)).cast[result.dtype]()
-    case _:
-        comptime assert False, "unhandled normalize type"
+        case .int32:
+            return normalize(rebind[Int32](value)).cast[result.dtype]()
+        case .uint32:
+            return normalize(rebind[UInt32](value)).cast[result.dtype]()
+        case .float32:
+            return normalize(rebind[Float32](value)).cast[result.dtype]()
+        # TODO: These below don't return uint32 so must generalize and fix
+        case .uint16:
+            return normalize(rebind[UInt16](value)).cast[result.dtype]()
+        case .float16:
+            return normalize(rebind[Float16](value)).cast[result.dtype]()
+        case .bfloat16:
+            return normalize(rebind[BFloat16](value)).cast[result.dtype]()
+        case _:
+            comptime assert False, "unhandled normalize type"
 
 
 @inline(.always)

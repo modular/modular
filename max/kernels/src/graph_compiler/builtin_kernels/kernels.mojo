@@ -4590,24 +4590,24 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
 
         comptime if is_cpu[target]():
             __match dstate:
-            case 256:
-                launch_cpu[256]()
-            case 128:
-                launch_cpu[128]()
-            case 64:
-                launch_cpu[64]()
-            case _:
-                launch_cpu[16]()
+                case 256:
+                    launch_cpu[256]()
+                case 128:
+                    launch_cpu[128]()
+                case 64:
+                    launch_cpu[64]()
+                case _:
+                    launch_cpu[16]()
         elif is_gpu[target]():
             __match dstate:
-            case 256:
-                launch_gpu[256]()
-            case 128:
-                launch_gpu[128]()
-            case 64:
-                launch_gpu[64]()
-            case _:
-                launch_gpu[16]()
+                case 256:
+                    launch_gpu[256]()
+                case 128:
+                    launch_gpu[128]()
+                case 64:
+                    launch_gpu[64]()
+                case _:
+                    launch_gpu[16]()
         else:
             raise Error("Unsupported target device")
 
@@ -5060,24 +5060,24 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 
         comptime if is_cpu[target]():
             __match dstate:
-            case 256:
-                launch_cpu[256]()
-            case 128:
-                launch_cpu[128]()
-            case 64:
-                launch_cpu[64]()
-            case _:
-                launch_cpu[16]()
+                case 256:
+                    launch_cpu[256]()
+                case 128:
+                    launch_cpu[128]()
+                case 64:
+                    launch_cpu[64]()
+                case _:
+                    launch_cpu[16]()
         elif is_gpu[target]():
             __match dstate:
-            case 256:
-                launch_gpu[256]()
-            case 128:
-                launch_gpu[128]()
-            case 64:
-                launch_gpu[64]()
-            case _:
-                launch_gpu[16]()
+                case 256:
+                    launch_gpu[256]()
+                case 128:
+                    launch_gpu[128]()
+                case 64:
+                    launch_gpu[64]()
+                case _:
+                    launch_gpu[16]()
         else:
             raise Error("Unsupported target device")
 
@@ -5454,19 +5454,19 @@ struct CausalConv1DVarlenFwd[
                 )
 
             __match width:
-            case 1:
-                launch_gpu[1]()
-            case 2:
-                launch_gpu[2]()
-            case 3:
-                launch_gpu[3]()
-            case 4:
-                launch_gpu[4]()
-            case _:
-                raise Error(
-                    "Unsupported kernel width: only widths 1, 2, 3, 4 are"
-                    " supported"
-                )
+                case 1:
+                    launch_gpu[1]()
+                case 2:
+                    launch_gpu[2]()
+                case 3:
+                    launch_gpu[3]()
+                case 4:
+                    launch_gpu[4]()
+                case _:
+                    raise Error(
+                        "Unsupported kernel width: only widths 1, 2, 3, 4 are"
+                        " supported"
+                    )
         else:
             raise Error("Unsupported target device")
 

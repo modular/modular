@@ -4394,61 +4394,61 @@ def _scalar_repr_alias[dtype: DType]() -> Optional[StaticString]:
         no scalar alias.
     """
     comptime __match dtype:
-    case .int:
-        return StaticString("Int")
-    case .uint:
-        return StaticString("UInt")
-    case .int8:
-        return StaticString("Int8")
-    case .uint8:
-        return StaticString("UInt8")
-    case .int16:
-        return StaticString("Int16")
-    case .uint16:
-        return StaticString("UInt16")
-    case .int32:
-        return StaticString("Int32")
-    case .uint32:
-        return StaticString("UInt32")
-    case .int64:
-        return StaticString("Int64")
-    case .uint64:
-        return StaticString("UInt64")
-    case .int128:
-        return StaticString("Int128")
-    case .uint128:
-        return StaticString("UInt128")
-    case .int256:
-        return StaticString("Int256")
-    case .uint256:
-        return StaticString("UInt256")
-    case .float4_e2m1fn:
-        return StaticString("Float4_e2m1fn")
-    case .float8_e5m2:
-        return StaticString("Float8_e5m2")
-    case .float8_e5m2fnuz:
-        return StaticString("Float8_e5m2fnuz")
-    case .float8_e4m3fn:
-        return StaticString("Float8_e4m3fn")
-    case .float8_e4m3fnuz:
-        return StaticString("Float8_e4m3fnuz")
-    case .float8_e8m0fnu:
-        return StaticString("Float8_e8m0fnu")
-    case .bfloat16:
-        return StaticString("BFloat16")
-    case .float16:
-        return StaticString("Float16")
-    case .float32:
-        return StaticString("Float32")
-    case .float64:
-        return StaticString("Float64")
-    case .bool | .float8_e3m4:
-        return None
-    case _:
-        comptime assert False, (
-            "unhandled dtype in `_scalar_repr_alias`: add a `Scalar` alias"
-            " branch or an explicit `None` case"
-        )
+        case .int:
+            return StaticString("Int")
+        case .uint:
+            return StaticString("UInt")
+        case .int8:
+            return StaticString("Int8")
+        case .uint8:
+            return StaticString("UInt8")
+        case .int16:
+            return StaticString("Int16")
+        case .uint16:
+            return StaticString("UInt16")
+        case .int32:
+            return StaticString("Int32")
+        case .uint32:
+            return StaticString("UInt32")
+        case .int64:
+            return StaticString("Int64")
+        case .uint64:
+            return StaticString("UInt64")
+        case .int128:
+            return StaticString("Int128")
+        case .uint128:
+            return StaticString("UInt128")
+        case .int256:
+            return StaticString("Int256")
+        case .uint256:
+            return StaticString("UInt256")
+        case .float4_e2m1fn:
+            return StaticString("Float4_e2m1fn")
+        case .float8_e5m2:
+            return StaticString("Float8_e5m2")
+        case .float8_e5m2fnuz:
+            return StaticString("Float8_e5m2fnuz")
+        case .float8_e4m3fn:
+            return StaticString("Float8_e4m3fn")
+        case .float8_e4m3fnuz:
+            return StaticString("Float8_e4m3fnuz")
+        case .float8_e8m0fnu:
+            return StaticString("Float8_e8m0fnu")
+        case .bfloat16:
+            return StaticString("BFloat16")
+        case .float16:
+            return StaticString("Float16")
+        case .float32:
+            return StaticString("Float32")
+        case .float64:
+            return StaticString("Float64")
+        case .bool | .float8_e3m4:
+            return None
+        case _:
+            comptime assert False, (
+                "unhandled dtype in `_scalar_repr_alias`: add a `Scalar` alias"
+                " branch or an explicit `None` case"
+            )
 
 
 def _write_scalar[

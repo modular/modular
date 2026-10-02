@@ -248,12 +248,12 @@ def _count_slice_dims[
     var count = 0
     comptime for i in range(slices.size):
         __match slices[i]:
-        case .slice:
-            count += 1
-        case .index:
-            pass
-        case .static:
-            pass
+            case .slice:
+                count += 1
+            case .index:
+                pass
+            case .static:
+                pass
     return count
 
 
@@ -269,14 +269,14 @@ def _kept_slice_axis_for_output[
     var kept_axes_seen = 0
     comptime for axis in range(slices.size):
         __match slices[axis]:
-        case .slice:
-            if kept_axes_seen == out_axis:
-                return axis
-            kept_axes_seen += 1
-        case .index:
-            pass
-        case .static:
-            pass
+            case .slice:
+                if kept_axes_seen == out_axis:
+                    return axis
+                kept_axes_seen += 1
+            case .index:
+                pass
+            case .static:
+                pass
     abort("invalid sliced-axis mapping")
 
 
@@ -308,12 +308,12 @@ def _slice_start[
     """Returns the first element of `axis` that the view selects: a slice's
     start, or the index a rank-reducing (`Int`) argument fixes the axis to."""
     __match slices[axis]:
-    case .slice:
-        return slices[axis].unsafe_get_slice().start.or_else(0)
-    case .index:
-        return slices[axis].unsafe_get_index()
-    case .static:
-        return slices[axis].unsafe_get_index()
+        case .slice:
+            return slices[axis].unsafe_get_slice().start.or_else(0)
+        case .index:
+            return slices[axis].unsafe_get_index()
+        case .static:
+            return slices[axis].unsafe_get_index()
 
 
 @inline(.nodebug)

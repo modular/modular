@@ -26,10 +26,10 @@ def test_write_to() raises:
     assert_equal(String(Endian.little), "Endian.little")
 
     __match Endian.native():
-    case .big:
-        assert_equal(String(Endian.native()), "Endian.big")
-    case .little:
-        assert_equal(String(Endian.native()), "Endian.little")
+        case .big:
+            assert_equal(String(Endian.native()), "Endian.big")
+        case .little:
+            assert_equal(String(Endian.native()), "Endian.little")
 
 
 def main() raises:

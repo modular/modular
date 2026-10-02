@@ -161,16 +161,16 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         __match self._value:
-        case 0:
-            writer.write("naive-attention")
-        case 1:
-            writer.write("flash-attention-1")
-        case 2:
-            writer.write("flash-attention-2")
-        case 3:
-            writer.write("flash-attention-3")
-        case _:
-            writer.write("invalid algorithm")
+            case 0:
+                writer.write("naive-attention")
+            case 1:
+                writer.write("flash-attention-1")
+            case 2:
+                writer.write("flash-attention-2")
+            case 3:
+                writer.write("flash-attention-3")
+            case _:
+                writer.write("invalid algorithm")
 
 
 struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):

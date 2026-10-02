@@ -40,12 +40,12 @@ def add_two(a: Int, b: Int) -> Int:
 
 def describe(x: Int) -> String:
     __match x:
-    case 2:
-        return "is exactly two"
-    case _ if x.is_power_of_two():
-        return "power of two"
-    case _:
-        return "not power of two"
+        case 2:
+            return "is exactly two"
+        case _ if x.is_power_of_two():
+            return "power of two"
+        case _:
+            return "not power of two"
 
 
 @fieldwise_init

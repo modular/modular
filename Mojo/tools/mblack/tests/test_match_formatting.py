@@ -16,7 +16,7 @@ from tests.util import assert_format, assert_mojo_format
 import mblack
 
 
-def test_mojo_unindents_cases_from_python_style():
+def test_mojo_keeps_case_indent():
     source = """\
 def f(x):
     match x:
@@ -25,18 +25,10 @@ def f(x):
         case _:
             return "other"
 """
-    expected = """\
-def f(x):
-    match x:
-    case 1:
-        return "one"
-    case _:
-        return "other"
-"""
-    assert_mojo_format(source, expected)
+    assert_mojo_format(source, source)
 
 
-def test_mojo_preserves_unindented_cases():
+def test_mojo_indents_flat_cases():
     source = """\
 def f(x):
     match x:
@@ -48,10 +40,10 @@ def f(x):
     expected = """\
 def f(x):
     match x:
-    case 1:
-        return "one"
-    case _:
-        return "other"
+        case 1:
+            return "one"
+        case _:
+            return "other"
 """
     assert_mojo_format(source, expected)
 
@@ -70,12 +62,12 @@ def f(x):
     expected = """\
 def f(x):
     __match x:
-    case 1:
-        return "one"
-    case 2 if x > 0:
-        return "two"
-    case _:
-        return "other"
+        case 1:
+            return "one"
+        case 2 if x > 0:
+            return "two"
+        case _:
+            return "other"
 """
     assert_mojo_format(source, expected)
 
@@ -123,15 +115,15 @@ def classify_point(p: Point) -> String:
     expected = """\
 def classify_point(p: Point) -> String:
     __match p:
-    case Point(x=var x, y=0):
-        return String("x-axis:", x)
-    case Point(x=0, y=ref y):
-        return String("y-axis:", y)
-    case Point(var x, 0):
-        return String("x:", x)
-    case (var x, var y):
-        return String(x, y)
-    case _:
-        return "other"
+        case Point(x=var x, y=0):
+            return String("x-axis:", x)
+        case Point(x=0, y=ref y):
+            return String("y-axis:", y)
+        case Point(var x, 0):
+            return String("x:", x)
+        case (var x, var y):
+            return String(x, y)
+        case _:
+            return "other"
 """
     assert_mojo_format(source, expected)

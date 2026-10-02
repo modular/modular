@@ -113,12 +113,12 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer: The writer to output the result code to.
         """
         __match self:
-        case .PASS:
-            writer.write(Text[Color.GREEN]("PASS"))
-        case .FAIL:
-            writer.write(Text[Color.RED]("FAIL"))
-        case .SKIP:
-            writer.write(Text[Color.YELLOW]("SKIP"))
+            case .PASS:
+                writer.write(Text[Color.GREEN]("PASS"))
+            case .FAIL:
+                writer.write(Text[Color.RED]("FAIL"))
+            case .SKIP:
+                writer.write(Text[Color.YELLOW]("SKIP"))
 
     @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -129,12 +129,12 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
         """
         writer.write_string("TestResult.")
         __match self:
-        case .PASS:
-            writer.write_string("PASS")
-        case .FAIL:
-            writer.write_string("FAIL")
-        case .SKIP:
-            writer.write_string("SKIP")
+            case .PASS:
+                writer.write_string("PASS")
+            case .FAIL:
+                writer.write_string("FAIL")
+            case .SKIP:
+                writer.write_string("SKIP")
 
 
 struct TestReport(Copyable, Writable):

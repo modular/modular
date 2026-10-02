@@ -22,31 +22,31 @@ This version is still a work in progress.
   ```mojo
   def describe(p: Optional[Point]) -> String:
       __match p:
-      case .Some(Point(x=0, y=0)):
-          return "origin"
-      case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
-          return String("axis:", x)
-      case .Some(Point(x=x, y=y)) if x == y:
-          return "diagonal"
-      case .None:
-          return "missing"
-      case _:
-          return "unreachable"
+          case .Some(Point(x=0, y=0)):
+              return "origin"
+          case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
+              return String("axis:", x)
+          case .Some(Point(x=x, y=y)) if x == y:
+              return "diagonal"
+          case .None:
+              return "missing"
+          case _:
+              return "unreachable"
 
   # comptime match is guaranteed evaluated at compile time.  The subject must be
   # a parameter and the bound names are also parameters. var and ref specifiers
   # are not allowed in comptime match, because they are not meaningful.
   def matmul_tile[m: Int, n: Int, k: Int](...):
       comptime __match (m, n, k):
-      case (16, 16, 16):
-          # Hand-tuned 16³ path.
-          ...
-      case (m_tile, n_tile, k_tile) if m_tile * n_tile <= 256:
-          # Small-tile path; bound sizes stay available as parameters.
-          ...
-      case _:
-          # Generic fallback.
-          ...
+          case (16, 16, 16):
+              # Hand-tuned 16³ path.
+              ...
+          case (m_tile, n_tile, k_tile) if m_tile * n_tile <= 256:
+              # Small-tile path; bound sizes stay available as parameters.
+              ...
+          case _:
+              # Generic fallback.
+              ...
   ```
 
   Both forms warn on non-exhaustive `EnumLike` subjects (including `Bool` and

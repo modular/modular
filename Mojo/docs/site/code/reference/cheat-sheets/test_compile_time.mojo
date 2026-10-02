@@ -206,19 +206,19 @@ def small_tile[mt: Int, nt: Int]() -> String where mt * nt <= 256:
 
 def tile_path[m: Int, n: Int]() -> String:
     comptime __match (m, n):
-    case (16, 16):
-        return "tuned 16x16"
-    case (mt, nt) if mt * nt <= 256:  # the guard proves small_tile's where
-        return small_tile[mt, nt]()
-    case _:
-        return "generic"
+        case (16, 16):
+            return "tuned 16x16"
+        case (mt, nt) if mt * nt <= 256:  # the guard proves small_tile's where
+            return small_tile[mt, nt]()
+        case _:
+            return "generic"
 
 
 def tile_count[m: Int]() -> Int:
     var hits = 0
     comptime __match m:
-    case 16:
-        hits += 1
+        case 16:
+            hits += 1
     # no case _: an unmatched subject compiles to nothing
     return hits
 

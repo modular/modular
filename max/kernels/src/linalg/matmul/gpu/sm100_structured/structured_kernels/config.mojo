@@ -109,31 +109,31 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
             writer: The writer to write the GEMM kind to.
         """
         __match self:
-        case .GEMM:
-            writer.write("kind::gemm")
-        case .BMM:
-            writer.write("kind::bmm")
-        case .GMM:
-            writer.write("kind::gmm")
-        case .BLOCK_SCALED_1D2D_FP8:
-            writer.write("kind::block_scaled_1d2d_fp8")
-        case _:
-            writer.write("kind::unknown")
+            case .GEMM:
+                writer.write("kind::gemm")
+            case .BMM:
+                writer.write("kind::bmm")
+            case .GMM:
+                writer.write("kind::gmm")
+            case .BLOCK_SCALED_1D2D_FP8:
+                writer.write("kind::block_scaled_1d2d_fp8")
+            case _:
+                writer.write("kind::unknown")
 
     @inline(.always)
     def __str__(self) -> String:
         """Convert GEMM kind to a string."""
         __match self:
-        case .GEMM:
-            return "gemm"
-        case .BMM:
-            return "bmm"
-        case .GMM:
-            return "gmm"
-        case .BLOCK_SCALED_1D2D_FP8:
-            return "block_scaled_1d2d_fp8"
-        case _:
-            return "unknown"
+            case .GEMM:
+                return "gemm"
+            case .BMM:
+                return "bmm"
+            case .GMM:
+                return "gmm"
+            case .BLOCK_SCALED_1D2D_FP8:
+                return "block_scaled_1d2d_fp8"
+            case _:
+                return "unknown"
 
 
 # ============================================================================
@@ -254,12 +254,12 @@ def _compute_swizzle_modes(
             var elem_size = 2 if c_type == DType.bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
             __match row_bytes:
-            case 128:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-            case 64:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-            case 32:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+                case 128:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_128B
+                case 64:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+                case 32:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
@@ -444,14 +444,14 @@ def _write_common_config[
 
 def _get_dtype_name(dtype: DType) -> String:
     __match dtype:
-    case .bfloat16:
-        return "bf16"
-    case .float8_e4m3fn:
-        return "e4m3"
-    case .uint8:
-        return "e2m1"
-    case _:
-        return String(dtype)
+        case .bfloat16:
+            return "bf16"
+        case .float8_e4m3fn:
+            return "e4m3"
+        case .uint8:
+            return "e2m1"
+        case _:
+            return String(dtype)
 
 
 def _get_common_config_string[

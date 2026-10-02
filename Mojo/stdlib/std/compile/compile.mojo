@@ -193,18 +193,18 @@ def _get_emission_kind_id[emission_kind: StaticString]() -> Int:
     )
 
     comptime __match emission_kind:
-    case "llvm":
-        return _EMISSION_KIND_LLVM
-    case "llvm-bitcode":
-        return _EMISSION_KIND_LLVM_BITCODE
-    case "llvm-opt":
-        return _EMISSION_KIND_LLVM_OPT
-    case "llvm-opt-bitcode":
-        return _EMISSION_KIND_LLVM_OPT_BITCODE
-    case "object":
-        return _EMISSION_KIND_OBJECT
-    case _:
-        return _EMISSION_KIND_ASM
+        case "llvm":
+            return _EMISSION_KIND_LLVM
+        case "llvm-bitcode":
+            return _EMISSION_KIND_LLVM_BITCODE
+        case "llvm-opt":
+            return _EMISSION_KIND_LLVM_OPT
+        case "llvm-opt-bitcode":
+            return _EMISSION_KIND_LLVM_OPT_BITCODE
+        case "object":
+            return _EMISSION_KIND_OBJECT
+        case _:
+            return _EMISSION_KIND_ASM
 
 
 @inline(.always)

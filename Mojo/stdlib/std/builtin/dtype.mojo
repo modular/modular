@@ -353,64 +353,64 @@ struct DType(
             return Self._from_str(str.removeprefix("DType."))
 
         __match str:
-        case "bool":
-            return DType.bool
-        case "int":
-            return DType.int
-        case "uint":
-            return DType.uint
-        case "uint8":
-            return DType.uint8
-        case "int8":
-            return DType.int8
-        case "uint16":
-            return DType.uint16
-        case "int16":
-            return DType.int16
-        case "uint32":
-            return DType.uint32
-        case "int32":
-            return DType.int32
-        case "uint64":
-            return DType.uint64
-        case "int64":
-            return DType.int64
-        case "uint128":
-            return DType.uint128
-        case "int128":
-            return DType.int128
-        case "uint256":
-            return DType.uint256
-        case "int256":
-            return DType.int256
-        case "float4_e2m1fn":
-            return DType.float4_e2m1fn
-        case "float6_e2m3fn":
-            return DType.float6_e2m3fn
-        case "float6_e3m2fn":
-            return DType.float6_e3m2fn
-        case "float8_e3m4":
-            return DType.float8_e3m4
-        case "float8_e4m3fn":
-            return DType.float8_e4m3fn
-        case "float8_e4m3fnuz":
-            return DType.float8_e4m3fnuz
-        case "float8_e8m0fnu":
-            return DType.float8_e8m0fnu
-        case "float8_e5m2":
-            return DType.float8_e5m2
-        case "float8_e5m2fnuz":
-            return DType.float8_e5m2fnuz
-        case "bfloat16":
-            return DType.bfloat16
-        case "float16":
-            return DType.float16
-        case "float32":
-            return DType.float32
-        case "float64":
-            return DType.float64
-        case _:
-            return None
+            case "bool":
+                return DType.bool
+            case "int":
+                return DType.int
+            case "uint":
+                return DType.uint
+            case "uint8":
+                return DType.uint8
+            case "int8":
+                return DType.int8
+            case "uint16":
+                return DType.uint16
+            case "int16":
+                return DType.int16
+            case "uint32":
+                return DType.uint32
+            case "int32":
+                return DType.int32
+            case "uint64":
+                return DType.uint64
+            case "int64":
+                return DType.int64
+            case "uint128":
+                return DType.uint128
+            case "int128":
+                return DType.int128
+            case "uint256":
+                return DType.uint256
+            case "int256":
+                return DType.int256
+            case "float4_e2m1fn":
+                return DType.float4_e2m1fn
+            case "float6_e2m3fn":
+                return DType.float6_e2m3fn
+            case "float6_e3m2fn":
+                return DType.float6_e3m2fn
+            case "float8_e3m4":
+                return DType.float8_e3m4
+            case "float8_e4m3fn":
+                return DType.float8_e4m3fn
+            case "float8_e4m3fnuz":
+                return DType.float8_e4m3fnuz
+            case "float8_e8m0fnu":
+                return DType.float8_e8m0fnu
+            case "float8_e5m2":
+                return DType.float8_e5m2
+            case "float8_e5m2fnuz":
+                return DType.float8_e5m2fnuz
+            case "bfloat16":
+                return DType.bfloat16
+            case "float16":
+                return DType.float16
+            case "float32":
+                return DType.float32
+            case "float64":
+                return DType.float64
+            case _:
+                return None
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
@@ -429,68 +429,68 @@ struct DType(
         # `String`, so all 27 arms would carry a stack slot, a small-string
         # branch and a refcounted teardown.
         __match self:
-        case .bool:
-            return writer.write_string("bool")
-        case .int:
-            return writer.write_string("int")
-        case .uint:
-            return writer.write_string("uint")
+            case .bool:
+                return writer.write_string("bool")
+            case .int:
+                return writer.write_string("int")
+            case .uint:
+                return writer.write_string("uint")
 
-        case .uint8:
-            return writer.write_string("uint8")
-        case .int8:
-            return writer.write_string("int8")
-        case .uint16:
-            return writer.write_string("uint16")
-        case .int16:
-            return writer.write_string("int16")
-        case .uint32:
-            return writer.write_string("uint32")
-        case .int32:
-            return writer.write_string("int32")
-        case .uint64:
-            return writer.write_string("uint64")
-        case .int64:
-            return writer.write_string("int64")
-        case .uint128:
-            return writer.write_string("uint128")
-        case .int128:
-            return writer.write_string("int128")
-        case .uint256:
-            return writer.write_string("uint256")
-        case .int256:
-            return writer.write_string("int256")
+            case .uint8:
+                return writer.write_string("uint8")
+            case .int8:
+                return writer.write_string("int8")
+            case .uint16:
+                return writer.write_string("uint16")
+            case .int16:
+                return writer.write_string("int16")
+            case .uint32:
+                return writer.write_string("uint32")
+            case .int32:
+                return writer.write_string("int32")
+            case .uint64:
+                return writer.write_string("uint64")
+            case .int64:
+                return writer.write_string("int64")
+            case .uint128:
+                return writer.write_string("uint128")
+            case .int128:
+                return writer.write_string("int128")
+            case .uint256:
+                return writer.write_string("uint256")
+            case .int256:
+                return writer.write_string("int256")
 
-        case .float4_e2m1fn:
-            return writer.write_string("float4_e2m1fn")
-        case .float6_e2m3fn:
-            return writer.write_string("float6_e2m3fn")
-        case .float6_e3m2fn:
-            return writer.write_string("float6_e3m2fn")
+            case .float4_e2m1fn:
+                return writer.write_string("float4_e2m1fn")
+            case .float6_e2m3fn:
+                return writer.write_string("float6_e2m3fn")
+            case .float6_e3m2fn:
+                return writer.write_string("float6_e3m2fn")
 
-        case .float8_e3m4:
-            return writer.write_string("float8_e3m4")
-        case .float8_e4m3fn:
-            return writer.write_string("float8_e4m3fn")
-        case .float8_e4m3fnuz:
-            return writer.write_string("float8_e4m3fnuz")
-        case .float8_e8m0fnu:
-            return writer.write_string("float8_e8m0fnu")
-        case .float8_e5m2:
-            return writer.write_string("float8_e5m2")
-        case .float8_e5m2fnuz:
-            return writer.write_string("float8_e5m2fnuz")
+            case .float8_e3m4:
+                return writer.write_string("float8_e3m4")
+            case .float8_e4m3fn:
+                return writer.write_string("float8_e4m3fn")
+            case .float8_e4m3fnuz:
+                return writer.write_string("float8_e4m3fnuz")
+            case .float8_e8m0fnu:
+                return writer.write_string("float8_e8m0fnu")
+            case .float8_e5m2:
+                return writer.write_string("float8_e5m2")
+            case .float8_e5m2fnuz:
+                return writer.write_string("float8_e5m2fnuz")
 
-        case .bfloat16:
-            return writer.write_string("bfloat16")
-        case .float16:
-            return writer.write_string("float16")
+            case .bfloat16:
+                return writer.write_string("bfloat16")
+            case .float16:
+                return writer.write_string("float16")
 
-        case .float32:
-            return writer.write_string("float32")
+            case .float32:
+                return writer.write_string("float32")
 
-        case .float64:
-            return writer.write_string("float64")
+            case .float64:
+                return writer.write_string("float64")
 
         return writer.write_string("<<unknown>>")
 
@@ -716,14 +716,14 @@ struct DType(
             dtype.is_floating_point()
         ), "dtype must be floating point"
         comptime __match dtype:
-        case DType.float4_e2m1fn:
-            return 1
-        case DType.float6_e2m3fn:
-            return 3
-        case DType.float6_e3m2fn:
-            return 2
-        case _:
-            return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
+            case DType.float4_e2m1fn:
+                return 1
+            case DType.float6_e2m3fn:
+                return 3
+            case DType.float6_e3m2fn:
+                return 2
+            case _:
+                return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
     @inline(.nodebug)
@@ -973,18 +973,18 @@ def _int_type_of_width[width: Int]() -> DType:
     ), "width must be either 8, 16, 32, 64, 128, or 256"
 
     comptime __match width:
-    case 8:
-        return DType.int8
-    case 16:
-        return DType.int16
-    case 32:
-        return DType.int32
-    case 64:
-        return DType.int64
-    case 128:
-        return DType.int128
-    case _:
-        return DType.int256
+        case 8:
+            return DType.int8
+        case 16:
+            return DType.int16
+        case 32:
+            return DType.int32
+        case 64:
+            return DType.int64
+        case 128:
+            return DType.int128
+        case _:
+            return DType.int256
 
 
 # ===-------------------------------------------------------------------===#

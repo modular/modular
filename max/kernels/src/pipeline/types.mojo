@@ -59,18 +59,18 @@ struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         __match self:
-        case .GLOBAL_MEM:
-            writer.write("GLOBAL_MEM")
-        case .LDS:
-            writer.write("LDS")
-        case .MMA_UNIT:
-            writer.write("MMA_UNIT")
-        case .VALU:
-            writer.write("VALU")
-        case .SCALAR:
-            writer.write("SCALAR")
-        case _:
-            writer.write("NONE")
+            case .GLOBAL_MEM:
+                writer.write("GLOBAL_MEM")
+            case .LDS:
+                writer.write("LDS")
+            case .MMA_UNIT:
+                writer.write("MMA_UNIT")
+            case .VALU:
+                writer.write("VALU")
+            case .SCALAR:
+                writer.write("SCALAR")
+            case _:
+                writer.write("NONE")
 
 
 # =============================================================================

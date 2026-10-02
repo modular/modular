@@ -223,32 +223,32 @@ struct AMDScheduleBarrierMask(
             writer: The object to write to.
         """
         __match self:
-        case .NONE:
-            return writer.write_string("NONE")
-        case .ALL_ALU:
-            return writer.write_string("ALL_ALU")
-        case .VALU:
-            return writer.write_string("VALU")
-        case .SALU:
-            return writer.write_string("SALU")
-        case .MFMA:
-            return writer.write_string("MFMA")
-        case .ALL_VMEM:
-            return writer.write_string("ALL_VMEM")
-        case .VMEM_READ:
-            return writer.write_string("VMEM_READ")
-        case .VMEM_WRITE:
-            return writer.write_string("VMEM_WRITE")
-        case .ALL_DS:
-            return writer.write_string("ALL_DS")
-        case .DS_READ:
-            return writer.write_string("DS_READ")
-        case .DS_WRITE:
-            return writer.write_string("DS_WRITE")
-        case .TRANS:
-            return writer.write_string("TRANS")
-        case _:
-            abort("invalid AMDScheduleBarrierMask value")
+            case .NONE:
+                return writer.write_string("NONE")
+            case .ALL_ALU:
+                return writer.write_string("ALL_ALU")
+            case .VALU:
+                return writer.write_string("VALU")
+            case .SALU:
+                return writer.write_string("SALU")
+            case .MFMA:
+                return writer.write_string("MFMA")
+            case .ALL_VMEM:
+                return writer.write_string("ALL_VMEM")
+            case .VMEM_READ:
+                return writer.write_string("VMEM_READ")
+            case .VMEM_WRITE:
+                return writer.write_string("VMEM_WRITE")
+            case .ALL_DS:
+                return writer.write_string("ALL_DS")
+            case .DS_READ:
+                return writer.write_string("DS_READ")
+            case .DS_WRITE:
+                return writer.write_string("DS_WRITE")
+            case .TRANS:
+                return writer.write_string("TRANS")
+            case _:
+                abort("invalid AMDScheduleBarrierMask value")
 
     def __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.

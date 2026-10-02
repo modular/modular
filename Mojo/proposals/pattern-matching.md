@@ -26,14 +26,14 @@ parts of a tuple and bind others:
 ```mojo
 def inspect(point: Tuple[Int, Int]):
     match point:
-    case 0, 0:
-        print("origin")
-    case x, 0:
-        print("on the x axis:", x)
-    case 0, y:
-        print("on the y axis:", y)
-    case x, y:
-        print("point:", x, y)
+        case 0, 0:
+            print("origin")
+        case x, 0:
+            print("on the x axis:", x)
+        case 0, y:
+            print("on the y axis:", y)
+        case x, y:
+            print("point:", x, y)
 ```
 
 The essential operation here is structural: compare parts of a value against
@@ -185,17 +185,17 @@ the `[a, b, c]` pattern which matches against a list of a specific length:
 
 ```mojo
 match values:
-case []:
-    print("empty")
+    case []:
+        print("empty")
 
-case [x]:
-    print("one element:", x)
+    case [x]:
+        print("one element:", x)
 
-case [x, y]:
-    print("two elements:", x, y)
+    case [x, y]:
+        print("two elements:", x, y)
 
-case _:
-    print("many elements")
+    case _:
+        print("many elements")
 ```
 
 Conceptually, `match` evaluates its subject once and considers its cases in
@@ -232,11 +232,11 @@ Value patterns are another important refutable form:
 
 ```mojo
 match point:
-case 0, 0:
-    print("origin")
+    case 0, 0:
+        print("origin")
 
-case x, 0:
-    print("on the x axis:", x)
+    case x, 0:
+        print("on the x axis:", x)
 ```
 
 Here `var x, 0` first decomposes the tuple, binds its first element to `x`,
@@ -248,14 +248,14 @@ Patterns compose recursively, so refutability naturally composes as well:
 
 ```mojo
 match values:
-case [(x, 0), a_pair]:
-    handle_special_value(x, a_pair)
+    case [(x, 0), a_pair]:
+        handle_special_value(x, a_pair)
 
-case [x]:
-    handle_one_value(x)
+    case [x]:
+        handle_one_value(x)
 
-case _:
-    handle_other_lengths(values)
+    case _:
+        handle_other_lengths(values)
 ```
 
 A pattern is therefore **irrefutable when the compiler can prove that it matches
@@ -329,28 +329,28 @@ space. After the space is closed, every subsequent case is unreachable.
 ```mojo
 # Finite EnumLike: both ctors required (or a catch-all).
 match flag:  # warning: not exhaustive; missing case for 'False'
-case True:
-    ...
+    case True:
+        ...
 
 # Product of EnumLike: correlated wildcards can finish the space.
 match flag, flag:
-case True, True:
-    ...
-case False, True:
-    ...
-case _, False:
-    ...
-case _:  # warning: unreachable; previous cases cover every value
-    ...
+    case True, True:
+        ...
+    case False, True:
+        ...
+    case _, False:
+        ...
+    case _:  # warning: unreachable; previous cases cover every value
+        ...
 
 # Open literals: duplicates warn; no exhaustivity requirement.
 match n:
-case 0:
-    ...
-case 0:  # warning: '0' is already covered by a previous case
-    ...
-case 1:
-    ...
+    case 0:
+        ...
+    case 0:  # warning: '0' is already covered by a previous case
+        ...
+    case 1:
+        ...
 ```
 
 #### Intentional Limitations
