@@ -197,6 +197,37 @@ _CPU_TESTS = glob(
     for src in _CPU_TESTS
 ]
 
+# Qwen3.8 spec-decode verify attention at the prod shape: 24 q / 4 kv heads
+# (GQA group 6, which divides no SM100 MMA_M), head dim 256, fp8 e4m3 KV,
+# bf16 out, page 256. Timed via `run_benchmark=True`; `verify=True` prints a
+# digest for packed-vs-unpacked A/B comparison across builds. Built as a
+# dedicated target because the defines are shape facts, not defaults.
+mojo_binary(
+    name = "gpu/nn/bench_qwen38_decode_attn",
+    srcs = ["gpu/nn/bench_qwen38_decode_attn.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "dtype=DType.float8_e4m3fn",
+        "-D",
+        "head_dim=256",
+        "-D",
+        "num_q_heads=24",
+        "-D",
+        "num_kv_heads=4",
+        "-D",
+        "page_size=256",
+    ],
+    enable_assertions = False,
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
@@ -259,6 +290,9 @@ _CPU_TESTS = glob(
             # Same reason: `--sweep=1` takes the whole top-k A/B grid in
             # one process, and timing that needs a test target.
             "gpu/nn/bench_topk_mt.mojo",
+            # Dedicated target below: the Qwen3.8 prod shape is carried in
+            # `-D` defines, which the generic glob cannot pass.
+            "gpu/nn/bench_qwen38_decode_attn.mojo",
         ],
     )
 ]
@@ -285,6 +319,9 @@ _CPU_TESTS = glob(
             # Same reason: `--sweep=1` takes the whole top-k A/B grid in
             # one process, and timing that needs a test target.
             "gpu/nn/bench_topk_mt.mojo",
+            # Dedicated target below: the Qwen3.8 prod shape is carried in
+            # `-D` defines, which the generic glob cannot pass.
+            "gpu/nn/bench_qwen38_decode_attn.mojo",
         ],
     )
 ]

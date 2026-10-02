@@ -702,7 +702,13 @@ def q_smem_shape[
     comptime if decoding:
         return {1, 1, max(group, 8), swizzle_granularity}
     elif fuse_gqa:
-        comptime if num_qk_stages == 1:
+        comptime if BM % group != 0:
+            # Packed tile with `BM % group` pad rows. A multi-block TMA box
+            # strides its swizzle blocks by the box rows (`BM // group * group`)
+            # rather than `BM`, so the box covers one swizzle block and the
+            # caller issues one TMA per block at the `BM`-row stride.
+            return {BM // group, 1, group, swizzle_granularity}
+        elif num_qk_stages == 1:
             return {BM // group, 1, group, depth}
         else:
             return {

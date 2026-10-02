@@ -2676,7 +2676,9 @@ def fa4_softmax[
     var head_idx: UInt32 = seq_info.head_idx
     var q_head_idx: UInt32 = head_idx
     comptime if config.fuse_gqa:
-        q_head_idx = UInt32(config.group) * head_idx + row % UInt32(
+        # `thread_tile_row`, not `row`: `tid % 128` folds in the WS key
+        # partition, which only agrees mod `group` when `group` divides 128.
+        q_head_idx = UInt32(config.group) * head_idx + thread_tile_row % UInt32(
             config.group
         )
 

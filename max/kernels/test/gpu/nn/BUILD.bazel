@@ -358,6 +358,10 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "attention/test_mha_sm100_d256_pack_gqa.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -475,6 +479,8 @@ _EXTRA_DEPS = {
 }
 
 _GPU_MEMORY = {
+    # The bs22 x 35k-context case needs ~3 GiB beyond the 4 GiB default.
+    "attention/test_mha_sm100_d256_pack_gqa.mojo": "16",
     "test_cudnn_conv.mojo": "7",
 }
 
