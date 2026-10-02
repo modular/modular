@@ -189,6 +189,36 @@ class TestBinaryElementwiseOps:
         expected = np.divide(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
 
+    @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
+    def test_floor_div_integer(self, dtype: DType) -> None:
+        """Int ``//`` stays integral and matches numpy on the interpreter.
+
+        Integer ``floor_div`` emits a raw ``DivOp`` on the integer operands, so
+        Div must sweep integer dtypes or the eager executor falls back to a
+        full graph compile.
+        """
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(12, dtype=np_dtype).reshape(shape)
+        if dtype.is_signed_integral():
+            a_np = a_np - 6
+        b_np = np.full(shape, 4, dtype=np_dtype)
+        if dtype.is_signed_integral():
+            b_np[0] = -4
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            c = a // b
+
+        assert c.dtype == dtype
+        np.testing.assert_array_equal(
+            np.from_dlpack(c), np.floor_divide(a_np, b_np)
+        )
+
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_pow(self, dtype: DType) -> None:
         """Test pow op matches numpy."""
@@ -211,7 +241,7 @@ class TestBinaryElementwiseOps:
 
     @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
     def test_pow_integer(self, dtype: DType) -> None:
-        """Int ``pow`` matches numpy; Pow sweeps integer dtypes (``div`` does not)."""
+        """Int ``pow`` matches numpy; Pow sweeps integer dtypes."""
         shape = [3, 4]
         np_dtype = dtype.to_numpy()
         # Small bases / exponent 2 keep the result within every int width.
@@ -9637,14 +9667,14 @@ class TestLazyGCModelCompilation:
         assert model is not None
 
     def test_binary_model_unsupported_dtype_raises(self) -> None:
-        """Div sweeps floats only; an int dtype is outside the supported set."""
+        """And sweeps bool only; an int dtype is outside the supported set."""
         with pytest.raises(
             KeyError, match="Unsupported binary op/device/dtype"
         ):
-            elementwise_binary_gc.binary_model(mo.DivOp, CPU(), DType.int32)
+            elementwise_binary_gc.binary_model(mo.AndOp, CPU(), DType.int32)
 
     def test_binary_model_pow_integer_supported(self) -> None:
-        """Pow sweeps NUMERIC, so an int Pow compiles (not the Div case)."""
+        """Pow sweeps NUMERIC, so an int Pow compiles."""
         model = elementwise_binary_gc.binary_model(mo.PowOp, CPU(), DType.int32)
         assert model is not None
 
