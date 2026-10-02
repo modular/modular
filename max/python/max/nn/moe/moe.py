@@ -294,8 +294,6 @@ class MoE(Module, Shardable):
         ep_size: The expert parallelism size. Defaults to ``1``.
         dtype: The data type of the MoE. Defaults to
             ``DType.bfloat16``.
-        apply_router_weight_first: Whether to apply the router weight
-            first. Defaults to ``False``.
         ep_batch_manager: The expert parallel batch manager. Defaults to
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
@@ -364,7 +362,6 @@ class MoE(Module, Shardable):
         shared_experts_dim: int = 0,
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
-        apply_router_weight_first: bool = False,
         use_swigluoai: bool = False,
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
@@ -391,7 +388,6 @@ class MoE(Module, Shardable):
         self.shared_experts_dim = shared_experts_dim
         self.ep_size = ep_size
         self.dtype = dtype
-        self.apply_router_weight_first = apply_router_weight_first
         self.use_swigluoai = use_swigluoai
         self.swiglu_alpha = swiglu_alpha
         self.swiglu_limit = swiglu_limit
@@ -449,10 +445,6 @@ class MoE(Module, Shardable):
             )
 
         if ep_batch_manager:
-            assert not apply_router_weight_first, (
-                "apply_router_weight_first is not supported for expert parallel strategy"
-            )
-
             self._ep_batch_manager = ep_batch_manager
 
         if not is_sharding:
@@ -604,7 +596,6 @@ class MoE(Module, Shardable):
                 shared_experts_dim=sharded_shared_experts_dim,
                 ep_size=self.ep_size,
                 dtype=self.dtype,
-                apply_router_weight_first=self.apply_router_weight_first,
                 use_swigluoai=self.use_swigluoai,
                 swiglu_alpha=self.swiglu_alpha,
                 swiglu_limit=self.swiglu_limit,
@@ -830,20 +821,11 @@ class MoE(Module, Shardable):
             x = self.pre_expert_norm(x)
 
         down_projs, restore_order = self._expert_matmuls(
-            x, ops.reshape(router_idx, [-1]), router_weight
+            x, ops.reshape(router_idx, [-1])
         )
-
-        if not self.apply_router_weight_first:
-            routed_expert_out = moe_finalize(
-                down_projs, restore_order, router_weight, x.dtype
-            )
-        else:
-            down_projs = ops.gather(down_projs, restore_order, axis=0).reshape(
-                [x.shape[0], self.num_experts_per_token, self.hidden_dim]
-            )
-            routed_expert_out = ops.squeeze(
-                ops.sum(down_projs, axis=1), axis=1
-            ).cast(x.dtype)
+        routed_expert_out = moe_finalize(
+            down_projs, restore_order, router_weight, x.dtype
+        )
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x)
@@ -854,7 +836,6 @@ class MoE(Module, Shardable):
         self,
         x: TensorValue,
         router_idx: TensorValue,
-        router_weight: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the unquantized expert matmuls for one flat expert assignment.
 
@@ -862,8 +843,6 @@ class MoE(Module, Shardable):
             x: ``[seq_len, hidden_dim]`` expert input.
             router_idx: ``[seq_len * num_experts_per_token]`` selected expert
                 ids, in token-major order.
-            router_weight: ``[seq_len, num_experts_per_token]`` router weights,
-                read only when ``apply_router_weight_first`` is set.
 
         Returns:
             ``(down, restore_order)``: the down projection output in
@@ -895,14 +874,6 @@ class MoE(Module, Shardable):
             ),
             axis=0,
         )
-
-        if self.apply_router_weight_first:
-            assert router_weight is not None, (
-                "router_weight is required when apply_router_weight_first is set"
-            )
-            permutated_states = permutated_states * ops.gather(
-                router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(x.dtype)
 
         gate_up_projs = grouped_matmul_ragged(
             permutated_states,

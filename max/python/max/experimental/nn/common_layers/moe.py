@@ -28,6 +28,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     fused_silu,
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
     shard_and_stack,
     stack_device_shards,
 )
@@ -103,7 +104,6 @@ class MoE(Module[[Tensor], Tensor]):
         gate_cls: Callable[..., MoEGate] = MoEGate,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
-        apply_router_weight_first: bool = False,
     ):
         """Initialize MoE layer.
 
@@ -115,13 +115,11 @@ class MoE(Module[[Tensor], Tensor]):
             gate_cls: The model specific gate implementation.
             has_shared_experts: Whether to use shared experts.
             shared_experts_dim: The dimension of the shared experts.
-            apply_router_weight_first: Whether to apply the router weight first.
         """
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
-        self.apply_router_weight_first = apply_router_weight_first
         self.gate = gate_cls(
             hidden_dim=hidden_dim,
             num_experts=num_experts,
@@ -238,8 +236,6 @@ class MoE(Module[[Tensor], Tensor]):
         Returns:
             Tensor with shape (seq_len, hidden_dim)
         """
-        seq_len = x.shape[0]
-
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
         router_idx = F.reshape(
@@ -265,11 +261,6 @@ class MoE(Module[[Tensor], Tensor]):
             axis=0,
         )
 
-        if self.apply_router_weight_first:
-            permutated_states = permutated_states * F.gather(
-                router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(x.dtype)
-
         down_projs = self._grouped_expert_compute(
             permutated_states,
             expert_start_indices,
@@ -277,21 +268,9 @@ class MoE(Module[[Tensor], Tensor]):
             expert_usage_stats,
         )
 
-        down_projs = F.gather(down_projs, restore_token_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, -1]
+        routed_expert_out = moe_finalize(
+            down_projs, restore_token_order, router_weight, x.dtype
         )
-
-        if not self.apply_router_weight_first:
-            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = F.unsqueeze(router_weight, axis=1) @ down_projs
-            routed_expert_out = F.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
-        else:
-            routed_expert_out = down_projs.transpose(1, 2)
-            routed_expert_out = F.squeeze(
-                F.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
 
         if self.shared_experts is not None:
             routed_expert_out += self.shared_experts(x)

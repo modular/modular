@@ -226,7 +226,6 @@ def test_ep_moe_mxfp8_nvidia(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=mxfp8_config,
     )
@@ -403,7 +402,6 @@ def _build_ep_moe(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=ep_config.dispatch_dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=EPBatchManager(ep_config),
         quant_config=quant_config,
         use_swigluoai=True,

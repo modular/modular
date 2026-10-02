@@ -640,7 +640,6 @@ class MoEQuantized(MoE):
         self,
         x: TensorValue,
         router_idx: TensorValue,
-        router_weight: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the quantized expert matmuls for one flat expert assignment.
 
@@ -650,11 +649,7 @@ class MoEQuantized(MoE):
         some of its MoE layers.
         """
         if self.quant_config is None:
-            return super()._expert_matmuls(x, router_idx, router_weight)
-
-        assert not self.apply_router_weight_first, (
-            "apply_router_weight_first must be False for quantized MoE"
-        )
+            return super()._expert_matmuls(x, router_idx)
 
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None

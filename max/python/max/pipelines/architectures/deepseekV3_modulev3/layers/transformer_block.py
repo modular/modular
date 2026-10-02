@@ -82,7 +82,6 @@ def _get_mlp(
             has_shared_experts=True,
             shared_experts_dim=config.n_shared_experts
             * config.moe_intermediate_size,
-            apply_router_weight_first=False,
             quant_config=config.quant_config,
         )
         if ep_batch_manager is not None:

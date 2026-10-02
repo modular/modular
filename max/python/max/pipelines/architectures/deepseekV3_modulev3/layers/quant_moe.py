@@ -27,6 +27,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.functional_kernels import (
     moe_create_indices,
+    moe_finalize,
     shard_and_stack,
 )
 from max.experimental.nn.common_layers.moe import MoEGate
@@ -168,14 +169,12 @@ class QuantizedMoE(Module[..., Tensor]):
         gate_cls: Callable[..., MoEGate] = MoEGate,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
-        apply_router_weight_first: bool = False,
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
-        self.apply_router_weight_first = apply_router_weight_first
         self.moe_dim = moe_dim
         self.quant_config = quant_config
 
@@ -247,16 +246,9 @@ class QuantizedMoE(Module[..., Tensor]):
         dtype: DType,
     ) -> Tensor:
         """Restores token order and weight-combines the per-token expert outputs."""
-        seq_len = router_weight.shape[0]
-        gathered = F.gather(down_projs, restore_token_order, axis=0)
-        down_projs = gathered.reshape(
-            [seq_len, self.num_experts_per_token, gathered.shape[-1]]
+        return moe_finalize(
+            down_projs, restore_token_order, router_weight, dtype
         )
-        if not self.apply_router_weight_first:
-            out = F.unsqueeze(router_weight, axis=1) @ down_projs
-            return F.squeeze(out, axis=1).cast(dtype)
-        out = down_projs.transpose(1, 2)
-        return F.squeeze(F.sum(out, axis=2), axis=2).cast(dtype)
 
     def apply_experts(
         self,
@@ -328,11 +320,6 @@ class QuantizedMoE(Module[..., Tensor]):
             ),
             axis=0,
         )
-
-        if self.apply_router_weight_first:
-            permuted_states = permuted_states * F.gather(
-                router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(x.dtype)
 
         routed_expert_out = self.apply_experts(
             permuted_states,

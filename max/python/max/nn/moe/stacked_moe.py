@@ -34,6 +34,7 @@ from typing_extensions import Self
 from ..kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
 )
 from ..layer import Module, Shardable
 from ..linear import MLP
@@ -227,7 +228,7 @@ class StackedMoE(Module, Shardable):
     - Optional bias support for projections.
     - Optional FP8 quantization with block scaling.
     - Optional MXFP4 weights, run W4A16, or W4A8 with MXFP8 activations.
-    - Optional float32 router input and float32 weighted combine.
+    - Optional float32 router input.
     - Optional shared experts.
 
     .. code-block:: python
@@ -283,10 +284,6 @@ class StackedMoE(Module, Shardable):
             to. ``None`` (default) builds a BF16 gate and passes the input
             through unchanged. Use ``DType.float32`` for a router whose
             selection is sensitive to BF16 rounding.
-        combine_dtype: The dtype the routing weights and expert outputs are
-            multiplied and summed in. ``None`` (default) combines with a
-            batched matmul. The combine is elementwise when set, since a
-            float32 GPU matmul runs at TF32 and would truncate the weights.
         mxfp8_activations: Whether MXFP4 experts run W4A8: activations are
             quantized to MXFP8 per expert, with the routed-row gather fused
             into the quantize, for the SM100 block-scaled grouped matmul.
@@ -320,7 +317,6 @@ class StackedMoE(Module, Shardable):
         quant_config: QuantConfig | None = None,
         apply_router_weight_first: bool = False,
         router_dtype: DType | None = None,
-        combine_dtype: DType | None = None,
         mxfp8_activations: bool = False,
         is_sharding: bool = False,
     ) -> None:
@@ -342,7 +338,6 @@ class StackedMoE(Module, Shardable):
         self.quant_config = quant_config
         self.apply_router_weight_first = apply_router_weight_first
         self.router_dtype = router_dtype
-        self.combine_dtype = combine_dtype
         self.mxfp8_activations = mxfp8_activations
         self.tp_size = 1
 
@@ -632,8 +627,6 @@ class StackedMoE(Module, Shardable):
         Returns:
             The output tensor of shape ``(seq_len, hidden_dim)``.
         """
-        seq_len = x.shape[0]
-
         # Route tokens to experts
         router_input = (
             x if self.router_dtype is None else x.cast(self.router_dtype)
@@ -641,10 +634,10 @@ class StackedMoE(Module, Shardable):
         router_idx, router_weight = self.gate(router_input)
 
         if self.mxfp8_activations:
-            down_projs = self._forward_w4a8(x, router_idx).reshape(
-                [seq_len, self.num_experts_per_token, self.hidden_dim]
+            down_projs, restore_token_order = self._forward_w4a8(x, router_idx)
+            return self._combine(
+                x, down_projs, restore_token_order, router_weight
             )
-            return self._combine(x, down_projs, router_weight)
 
         routing = self._prepare_routing(router_idx)
 
@@ -669,25 +662,25 @@ class StackedMoE(Module, Shardable):
         else:
             down_projs = self._forward_bf16(permuted_states, routing)
 
-        # Restore original token order and combine expert outputs
-        down_projs = ops.gather(
-            down_projs, routing.restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, self.hidden_dim])
-
-        return self._combine(x, down_projs, router_weight)
+        return self._combine(
+            x, down_projs, routing.restore_token_order, router_weight
+        )
 
     def _combine(
         self,
         x: TensorValue,
         down_projs: TensorValue,
+        restore_token_order: TensorValue,
         router_weight: TensorValue,
     ) -> TensorValue:
         """Weights and sums each token's expert outputs, adding shared experts.
 
         Args:
             x: The ``[seq_len, hidden_dim]`` layer input.
-            down_projs: The ``[seq_len, num_experts_per_token, hidden_dim]``
-                expert outputs, in token order.
+            down_projs: The ``[seq_len * num_experts_per_token, hidden_dim]``
+                expert outputs, in expert-permuted order.
+            restore_token_order: Maps each token-major routing slot to its
+                row of ``down_projs``.
             router_weight: The ``[seq_len, num_experts_per_token]`` routing
                 weights.
 
@@ -695,24 +688,16 @@ class StackedMoE(Module, Shardable):
             The ``[seq_len, hidden_dim]`` layer output, in ``x.dtype``.
         """
         if self.apply_router_weight_first:
-            routed_expert_out = down_projs.transpose(1, 2)
-            routed_expert_out = ops.squeeze(
-                ops.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
-        elif self.combine_dtype is not None:
-            weighted = down_projs.cast(self.combine_dtype) * ops.unsqueeze(
-                router_weight.cast(self.combine_dtype), -1
+            # The experts already applied the router weights.
+            router_weight = ops.broadcast_to(
+                ops.constant(
+                    1, router_weight.dtype, device=router_weight.device
+                ),
+                router_weight.shape,
             )
-            routed_expert_out = ops.squeeze(
-                ops.sum(weighted, axis=1), axis=1
-            ).cast(x.dtype)
-        else:
-            routed_expert_out = (
-                ops.unsqueeze(router_weight, axis=1) @ down_projs
-            )
-            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
+        routed_expert_out = moe_finalize(
+            down_projs, restore_token_order, router_weight, x.dtype
+        )
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x)
@@ -776,7 +761,7 @@ class StackedMoE(Module, Shardable):
         x: TensorValue,
         router_idx: TensorValue,
         estimated_total_m: TensorValue | None = None,
-    ) -> TensorValue:
+    ) -> tuple[TensorValue, TensorValue]:
         """Runs the MXFP4 experts W4A8 and returns each routed row's output.
 
         Each projection quantizes its input to MXFP8 per expert, padded to
@@ -793,8 +778,10 @@ class StackedMoE(Module, Shardable):
                 ``seq_len * num_experts_per_token``, the step's real row count.
 
         Returns:
-            The ``[seq_len * num_experts_per_token, hidden_dim]`` expert
-            outputs, in token-major routing order.
+            ``(down, restore_token_order)``: the
+            ``[seq_len * num_experts_per_token, hidden_dim]`` expert outputs
+            in expert-permuted order, and the map from each token-major
+            routing slot to its row of ``down``.
 
         Raises:
             ValueError: If the accelerator is not an NVIDIA SM100 GPU.
@@ -866,7 +853,7 @@ class StackedMoE(Module, Shardable):
         hidden = self._apply_gated_activation(gate_up, routing)
         down = experts(quantize(hidden), self._down_weight, self._down_scale)
         down = self._apply_down_bias(down, routing)
-        return ops.gather(down, routing.restore_token_order, axis=0)
+        return down, routing.restore_token_order
 
     def _forward_quantized(
         self,
@@ -1120,7 +1107,6 @@ class StackedMoE(Module, Shardable):
             quant_config=self.quant_config,
             apply_router_weight_first=self.apply_router_weight_first,
             router_dtype=self.router_dtype,
-            combine_dtype=self.combine_dtype,
             mxfp8_activations=self.mxfp8_activations,
             is_sharding=True,
         )

@@ -19,7 +19,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from max.driver import Device
+from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn.common_layers.functional_kernels import moe_finalize
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.common_layers.moe import (
     MoE,
@@ -29,7 +31,9 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
+    Placement,
     Replicated,
+    Sharded,
 )
 from max.experimental.tensor import Tensor, default_device
 
@@ -144,3 +148,27 @@ def test_tensor_parallel_layer(mock_accelerator: MagicMock) -> None:
     assert out.mapping.mesh == mesh
     # Output is a partial sum that must be all-reduced across TP ranks.
     assert out.mapping.placements == (Partial(),)
+
+
+@pytest.mark.parametrize("placement", [Replicated(), Sharded(1), Partial()])
+def test_moe_finalize_keeps_down_placement(
+    mock_accelerator: MagicMock, placement: Placement
+) -> None:
+    """The top-k combine is linear in the expert outputs, so it keeps their
+    hidden-axis sharding and passes a partial sum through."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        rows = _SEQ_LEN * _NUM_EXPERTS_PER_TOKEN
+
+        down = Tensor.zeros([rows, _HIDDEN_DIM], device=replicated)
+        down = down.rebind_mapping(DeviceMapping(mesh, (placement,)))
+        restore = Tensor.zeros([rows], dtype=DType.uint32, device=replicated)
+        weights = Tensor.zeros(
+            [_SEQ_LEN, _NUM_EXPERTS_PER_TOKEN], device=replicated
+        )
+        out = moe_finalize(down, restore, weights, DType.bfloat16)
+
+    assert out.mapping.placements == (placement,)
+    assert out.dtype == DType.bfloat16

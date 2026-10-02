@@ -16,6 +16,7 @@
 from collections.abc import Sequence
 from typing import Any
 
+from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.sharding import (
     DeviceMapping,
@@ -67,6 +68,9 @@ from max.nn.kernels import (
 )
 from max.nn.kernels import (
     moe_create_indices as _moe_create_indices,
+)
+from max.nn.kernels import (
+    moe_finalize as _moe_finalize,
 )
 from max.nn.kernels import (
     moe_router_group_limited as _moe_router_group_limited,
@@ -127,6 +131,33 @@ moe_create_indices = F.functional(
     _moe_create_indices, rule=_moe_create_indices_rule
 )
 
+
+def moe_finalize_rule(
+    down_projs: TensorLayout,
+    restore_token_order: TensorLayout,
+    router_weight: TensorLayout,
+    out_type: DType,
+) -> ActionSet:
+    """Strategies for ``moe_finalize``: linear in ``down_projs``.
+
+    The weighted row sum keeps ``down_projs``' hidden-axis sharding and
+    passes a partial sum through. ``restore_token_order`` and
+    ``router_weight`` are per-token routing state, always ``Replicated``.
+    """
+    rows = [
+        AxisAssignment((R, R, R), R),
+        AxisAssignment((Sharded(1), R, R), Sharded(1)),
+        AxisAssignment((P, R, R), P),
+    ]
+    return build_action_set(
+        rows,
+        layouts=(down_projs, restore_token_order, router_weight),
+        extras=(out_type,),
+    )
+
+
+moe_finalize = F.functional(_moe_finalize, rule=moe_finalize_rule)
+
 inplace_custom = F.functional(ops.inplace_custom)
 shard_and_stack = F.functional(ops.shard_and_stack)
 
@@ -186,6 +217,7 @@ __all__ = [
     "grouped_matmul_ragged",
     "hyper_connection_gates",
     "moe_create_indices",
+    "moe_finalize",
     "moe_router_group_limited",
     "rms_norm_key_cache",
     "rope_split_store_ragged",

@@ -85,7 +85,6 @@ def _moe(
         gate_cls=functools.partial(SigmoidTopKRouter, norm_topk_prob=True),
         quant_config=_mxfp4(scale_dtype),
         router_dtype=DType.float32,
-        combine_dtype=DType.float32,
         mxfp8_activations=True,
     )
 
@@ -196,7 +195,6 @@ def test_shards_keep_the_router_and_its_correction_bias() -> None:
         assert shard.moe_dim == WIDTH // 2
         assert shard.mxfp8_activations
         assert shard.router_dtype == DType.float32
-        assert shard.combine_dtype == DType.float32
         assert shard.gate.e_score_correction_bias.dtype == DType.float32
 
 

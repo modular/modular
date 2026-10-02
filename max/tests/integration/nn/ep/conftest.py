@@ -615,7 +615,6 @@ def _build_compiled_ep_models(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         gated_activation_fn=make_concatenated_gated_activation_fn(
             ops.silu, swiglu_limit
         )
@@ -764,7 +763,6 @@ def _build_compiled_allreduce_ep_models(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)

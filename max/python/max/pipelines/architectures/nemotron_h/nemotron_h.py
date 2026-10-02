@@ -54,6 +54,7 @@ from max.nn.kernels import (
     flash_attention_ragged,
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
@@ -410,7 +411,6 @@ class NemotronHMoE(MoE):
         # per-expert scalar ``weight_scale`` is folded post-matmul. A per-tensor
         # scalar factors out of the sum, so the fold is exact (not merely within
         # tolerance) -- the grouped analog of the dense Apple FP8 Linear.
-        seq_len = x.shape[0]
         router_idx, router_weight = self.gate(x)
         router_idx = ops.reshape(router_idx, [-1])
 
@@ -482,11 +482,9 @@ class NemotronHMoE(MoE):
         )
         down = (down.cast(DType.float32) * down_scale).cast(x.dtype)
 
-        down = ops.gather(down, restore_token_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, self.hidden_dim]
+        routed_expert_out = moe_finalize(
+            down, restore_token_order, router_weight, x.dtype
         )
-        routed_expert_out = ops.unsqueeze(router_weight, axis=1) @ down
-        routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(x.dtype)
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x)
@@ -888,7 +886,6 @@ class NemotronHBlock(Module):
                 has_shared_experts=True,
                 shared_experts_dim=config.moe_shared_expert_intermediate_size,
                 dtype=config.dtype,
-                apply_router_weight_first=False,
                 quant_config=quant_config,
                 # Non-gated: relu2 over the whole up-projection (the moe_dim
                 # split arg from the base MoE is ignored).

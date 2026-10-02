@@ -44,7 +44,7 @@ import numpy.typing as npt
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
+from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType, ops
 from max.nn.kernels import block_scales_interleave
 from max.nn.moe import StackedMoE, quant_strategy
 from max.pipelines.architectures.mimo_v2.layers.moe import mimo_v2_moe
@@ -204,9 +204,12 @@ def build_serving(moe: StackedMoE) -> tuple[Graph, list[dict[str, Any]]]:
         ) as graph:
             shard = moe.shard([DeviceRef.GPU(0)])[0]
             x, idx, element_0 = (v.tensor for v in graph.inputs)
-            derived = shard._forward_w4a8(x, idx)
+            derived = ops.gather(*shard._forward_w4a8(x, idx), axis=0)
             labels = ["derived"] * spy.call_count
-            one = shard._forward_w4a8(x, idx, estimated_total_m=element_0)
+            one = ops.gather(
+                *shard._forward_w4a8(x, idx, estimated_total_m=element_0),
+                axis=0,
+            )
             labels += ["one"] * (spy.call_count - len(labels))
             calls = [
                 {
@@ -287,8 +290,13 @@ def build_timed(moe: StackedMoE, given_element_0: bool) -> Graph:
         shard = moe.shard([DeviceRef.GPU(0)])[0]
         x, idx, *element_0 = (v.tensor for v in graph.inputs)
         graph.output(
-            shard._forward_w4a8(
-                x, idx, estimated_total_m=element_0[0] if element_0 else None
+            ops.gather(
+                *shard._forward_w4a8(
+                    x,
+                    idx,
+                    estimated_total_m=element_0[0] if element_0 else None,
+                ),
+                axis=0,
             )
         )
     return graph

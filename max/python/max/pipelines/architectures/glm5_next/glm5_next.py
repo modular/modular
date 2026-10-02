@@ -377,7 +377,6 @@ class Glm5Next(Module):
             dtype=mlp_dtype,
             ep_size=ep_size,
             ep_batch_manager=self.ep_manager,
-            apply_router_weight_first=False,
             quant_config=layer_quant_config,
             shared_experts_dtype=(
                 quant_cfg.shared_experts_dtype(mlp_dtype)

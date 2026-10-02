@@ -51,6 +51,5 @@ def mimo_v2_moe(
         ),
         quant_config=quant_config,
         router_dtype=DType.float32,
-        combine_dtype=DType.float32,
         mxfp8_activations=True,
     )
