@@ -215,14 +215,14 @@ struct SBValue(RegisterPassable):
     pass
 
 # expected-error @below {{TODO: read-only non-trivial register-passable arguments are not yet supported in async functions}}
-async def invalid_sb_value(value: SBValue):
+__async def invalid_sb_value(value: SBValue):
     pass
 
 # expected-error @below {{TODO: read-only non-trivial register-passable arguments are not yet supported in async functions}}
-async def invalid_sb_value_variadic(*value: SBValue):
+__async def invalid_sb_value_variadic(*value: SBValue):
     pass
 
-async def borrowed_generic_arg[T: AnyType](value: T):
+__async def borrowed_generic_arg[T: AnyType](value: T):
     pass
 
 def valid_sbvalue_borrow(value: SBValue):

@@ -97,7 +97,7 @@ Init documentation.
       {
         contents: {
           kind: "markdown",
-          value: `\`\`\`mojo\n(function) async def async_function(mut self)\n\`\`\``,
+          value: `\`\`\`mojo\n(function) __async def async_function(mut self)\n\`\`\``,
         },
         range: doc.findFirstRange("async_function"),
       }

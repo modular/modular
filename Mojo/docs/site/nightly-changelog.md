@@ -129,6 +129,11 @@ This version is still a work in progress.
 
 ## Language changes
 
+- The `async` and `await` keywords are renamed to `__async` and `__await` to
+  mark async support as unstable. Write `__async def` and `__await expr`. The
+  unprefixed spellings are no longer keywords, so `async` and `await` are now
+  ordinary identifiers, and existing `async def` code no longer parses.
+
 ## Library stabilizations
 
 ## Library changes

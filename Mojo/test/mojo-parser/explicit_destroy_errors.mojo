@@ -97,7 +97,7 @@ def callsWith():
 
 
 # CHECK-LABEL: lit.fn @"testAsyncVoid
-async def testAsyncVoid():
+__async def testAsyncVoid():
     pass
 
 

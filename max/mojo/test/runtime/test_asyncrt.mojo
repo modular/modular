@@ -38,7 +38,7 @@ def test_create_task_with_affinity_runs_coroutine() raises:
     """
     print("== test_create_task_with_affinity_runs_coroutine")
 
-    async def compute() -> Int:
+    __async def compute() -> Int:
         return 42
 
     var worker_id = task_id_for_device(0)

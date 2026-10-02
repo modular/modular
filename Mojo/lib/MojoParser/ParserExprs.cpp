@@ -409,7 +409,7 @@ bool ParserBase::isPrimaryExprStart(Token::Kind tokKind) {
   case Token::minus:
   case Token::tilde:
   case Token::star:
-  case Token::kw_await:
+  case Token::kw___await:
   case Token::kw_not:
   case Token::kw_var:
   case Token::kw_ref:
@@ -430,7 +430,7 @@ bool ParserBase::isPrimaryExprStart(Token::Kind tokKind) {
   case Token::l_paren:
   case Token::l_square:
   case Token::l_brace:
-  case Token::kw_async:
+  case Token::kw___async:
   case Token::kw_def:
   case Token::kw_lambda:
   case Token::kw_fn:
@@ -455,14 +455,14 @@ bool ParserBase::isPrimaryExprStart(Token::Kind tokKind) {
   }
 }
 
-/// Given a token for a unary operator like await or ~, return the ExprNode
+/// Given a token for a unary operator like __await or ~, return the ExprNode
 /// code to use along with the precedence of the subexpression we should parse.
 static std::pair<ExprNode::Kind, Precedence>
 getUnaryOpInfo(Token::Kind tokKind) {
   switch (tokKind) {
   default:
     llvm_unreachable("invalid unary token");
-  case Token::kw_await:
+  case Token::kw___await:
     return {ExprNode::kAwait, Precedence::kPrimary};
   case Token::kw_not:
     return {ExprNode::kBoolNot, Precedence::kBoolNot};
@@ -506,7 +506,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::star:
   case Token::minus:
   case Token::tilde:
-  case Token::kw_await:
+  case Token::kw___await:
   case Token::kw_var:
   case Token::kw_ref:
   case Token::kw_comptime:
@@ -643,7 +643,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     break;
   }
 
-  case Token::kw_async:
+  case Token::kw___async:
   case Token::kw_def:
   case Token::kw_fn:
     if (failed(parseFunctionType(result)))
@@ -1391,7 +1391,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   return success();
 }
 
-/// function_type ::= ["async"] "def" [parameter_list] argument_list [effects]
+/// function_type ::= ["__async"] "def" [parameter_list] argument_list [effects]
 ///                   [origin_set] ["->" result_type] [constraint_clauses]
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
@@ -1399,7 +1399,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   ParsedArgumentList fnSignature;
 
   // Parse the function effects from the leading keyword.
-  fnSignature.effects.setAsync(consumeIf(Token::kw_async));
+  fnSignature.effects.setAsync(consumeIf(Token::kw___async));
   // TODO(26.5): Remove support for 'fn' entirely.
   if (getToken().is(Token::kw_fn)) {
     emitError(getToken().getLoc(), "'fn' has been removed; use 'def' instead")

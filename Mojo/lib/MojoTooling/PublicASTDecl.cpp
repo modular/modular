@@ -911,7 +911,7 @@ std::string PublicFunctionDecl::getDeclarationSnippet(
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   if (isAsync())
-    os << "async ";
+    os << "__async ";
 
   unsigned returnOffset = 0;
   std::string signature =

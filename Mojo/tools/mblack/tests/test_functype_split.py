@@ -68,7 +68,7 @@ def test_async_ffi_functype_is_stable():
         "\n"
         "\n"
         "comptime version_query_callback = Optional[\n"
-        '    async def() thin abi("C") -> UnsafePointer[\n'
+        '    __async def() thin abi("C") -> UnsafePointer[\n'
         "        UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
         "    ]\n"
         "]\n"

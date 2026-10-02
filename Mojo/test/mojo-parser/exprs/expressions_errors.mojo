@@ -188,8 +188,8 @@ def throws_int() raises Int:
 def test_func_type():
     # expected-error @below {{def(Int) thin -> Int}}
     comptime float0: def(Int) thin -> Int = test_func_type
-    # expected-error @below {{async def() thin -> None}}
-    comptime float1: async def() thin -> None = test_func_type
+    # expected-error @below {{__async def() thin -> None}}
+    comptime float1: __async def() thin -> None = test_func_type
     # expected-error @below {{def[a: Int]() thin -> MemType}}
     comptime float2: def[a: Int]() thin -> MemType = test_func_type
     # expected-error @below {{def[a: Int](var Int) thin -> MemType}}
@@ -572,7 +572,7 @@ def unused_assignments():
   a = a  # ok of course.
   a := a # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
 
-async def async_function() -> Int:
+__async def async_function() -> Int:
     return 0
 
 # See Issue #15578

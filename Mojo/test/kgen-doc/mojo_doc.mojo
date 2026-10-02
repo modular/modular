@@ -160,7 +160,7 @@ comptime __double_underscore_private_member = ""
 # CHECK:      "summary": "This is a function summary."
 
 
-async def fn_that_async() -> Int:
+__async def fn_that_async() -> Int:
     """This is a function summary.
 
     The is some kind of description.

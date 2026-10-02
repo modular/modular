@@ -1546,7 +1546,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   bool isClosureSignature = ctx.isClosureSignature;
   ctx.isClosureSignature = false;
   if (type.isAsync())
-    os << "async ";
+    os << "__async ";
   os << "def";
   if (auto fnLiteralGen = type.getIfFnLiteralTypeGenerator()) {
     os << " "

@@ -112,7 +112,7 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_try:
   case Token::kw_with:
   case Token::kw___match:
-  case Token::kw_async:
+  case Token::kw___async:
   case Token::kw_def:
   case Token::kw_fn:
   case Token::kw_struct:
@@ -598,9 +598,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // TODO: This should be handled with linear types.
   if (shared.typeHasMember(valueType, "__await__", expr->getLoc())) {
     shared.emitWarning(expr->getLoc())
-        << valueType << " value is not awaited; use 'await' to get its result"
+        << valueType << " value is not awaited; use '__await' to get its result"
         << expr->getRange()
-        << FixIt::insertBeforeToken(expr->getRangeStart(), "await ");
+        << FixIt::insertBeforeToken(expr->getRangeStart(), "__await ");
     return;
   }
 
@@ -778,7 +778,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (rejectInNonFunctionScope())
       return success();
     return parseWithStmt(stmtIndent);
-  case Token::kw_async:
+  case Token::kw___async:
   case Token::kw_def:
   case Token::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
@@ -4387,7 +4387,7 @@ StmtParser::parseImportModuleName(SharedState::ImportPath &parsedName,
 
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
-  if (consumeIf(Token::kw_async) && rejectTokenAtStartOfLine("'def' keyword"))
+  if (consumeIf(Token::kw___async) && rejectTokenAtStartOfLine("'def' keyword"))
     return failure();
   consumeToken(); // Consume either 'def' or 'fn'.
 

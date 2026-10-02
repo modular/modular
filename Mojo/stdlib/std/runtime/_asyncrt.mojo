@@ -253,8 +253,8 @@ struct Task[type: Deinitable, origins: OriginSet](not Movable):
         result becomes available. This function must be force inlined into the
         calling async function.
 
-        This method enables the use of the 'await' keyword with Task objects in
-        async functions.
+        This method enables the use of the '__await' keyword with Task objects
+        in async functions.
 
         Returns:
             A reference to the result value produced by the task.
@@ -415,7 +415,7 @@ struct RaisingTask[type: Movable, origins: OriginSet](
         Consumes the task. On success, moves the result out. On failure,
         raises the error from the coroutine.
 
-        This enables `await task^` syntax in async functions.
+        This enables `__await task^` syntax in async functions.
 
         Returns:
             The `result` output parameter receives the task's result value.
@@ -583,7 +583,7 @@ struct TaskGroup(Defaultable):
     def __await__(mut self):
         """Make TaskGroup awaitable in async contexts.
 
-        This allows using 'await task_group' syntax in async functions.
+        This allows using '__await task_group' syntax in async functions.
         """
 
         @inline(.always)

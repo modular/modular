@@ -5337,7 +5337,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "enqueue_cpu_function is only supported on CPU DeviceContexts"
             )
 
-        async def wrapper() capturing -> None:
+        __async def wrapper() capturing -> None:
             func()
 
         var coro = wrapper()
@@ -5383,7 +5383,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         var handles = List[AnyCoroutine](capacity=count)
 
-        async def wrapper(idx: Int) capturing -> None:
+        __async def wrapper(idx: Int) capturing -> None:
             func(idx)
 
         for j in range(count):

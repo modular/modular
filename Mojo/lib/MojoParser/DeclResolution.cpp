@@ -2167,9 +2167,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
+  assert(p.getToken().isAny(Token::kw___async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
-  bool isAsync = p.consumeIf(Token::kw_async);
+  bool isAsync = p.consumeIf(Token::kw___async);
   // FIXME(26.5): Remove support for 'fn'.
   if (p.getToken().is(Token::kw_fn)) {
     shared.emitError(p.getToken().getLoc(),
@@ -2281,7 +2281,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       // TODO(MOCO-2287): Support async defaulted trait methods
       shared.emitError(funcOp.getLoc())
           << "async defaulted trait methods are not supported; remove the "
-             "method or remove 'async'";
+             "method or remove '__async'";
       return failure();
     }
   }

@@ -29,14 +29,6 @@ def as():
 def assert():
     pass
 
-# expected-error @+1 {{'async' cannot be used as a function name in this context}}
-def async():
-    pass
-
-# expected-error @+1 {{'await' cannot be used as a function name in this context}}
-def await():
-    pass
-
 # expected-error @+1 {{'break' cannot be used as a function name in this context}}
 def break():
     pass
@@ -163,6 +155,21 @@ def struct():
 
 # expected-error @+1 {{'trait' cannot be used as a function name in this context}}
 def trait():
+    pass
+
+# expected-error @+1 {{'__async' cannot be used as a function name in this context}}
+def __async():
+    pass
+
+# expected-error @+1 {{'__await' cannot be used as a function name in this context}}
+def __await():
+    pass
+
+# Unprefixed `async` and `await` are ordinary identifiers.
+def async():
+    pass
+
+def await():
     pass
 
 # expected-error @+1 {{'__extension' cannot be used as a function name in this context}}
