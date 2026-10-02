@@ -517,7 +517,12 @@ class JengaBlockManager:
 
     @traced
     def offload(self, replica_idx: int = 0) -> None:
-        """Offloads the recently produced KV states to the connector."""
+        """Offloads the recently committed blocks to the connector.
+
+        A run stops at the first hash an attention leaf has evicted. A
+        recurrent leaf holds only checkpoint boundaries, so its missing hashes
+        are skipped.
+        """
         connector = self._connector
         if connector is None:
             return
@@ -526,20 +531,25 @@ class JengaBlockManager:
             src: dict[str, list[LittleKVCacheBlock]] = {
                 leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
-            block_hashes: list[bytes] = []
+            block_hashes: dict[str, list[bytes]] = {
+                leaf_id: [] for leaf_id in self._cacheable_leaf_ids
+            }
             for block_hash in hashes:
-                if any(
-                    block_hash not in pool.prefix_caches[leaf_id]
+                held = {
+                    leaf_id: pool.prefix_caches[leaf_id].get(block_hash)
                     for leaf_id in self._cacheable_leaf_ids
+                }
+                if any(
+                    block is None
+                    for leaf_id, block in held.items()
+                    if not self._groups[leaf_id].group_id.is_recurrent()
                 ):
-                    # Evicted from at least one leaf since it was committed, so
-                    # the row is no longer whole: truncate the run here.
                     break
-                for leaf_id in self._cacheable_leaf_ids:
-                    block = pool.prefix_caches[leaf_id][block_hash]
-                    src[leaf_id].append(block)
-                block_hashes.append(block_hash)
-            if not block_hashes:
+                for leaf_id, block in held.items():
+                    if block is not None:
+                        src[leaf_id].append(block)
+                        block_hashes[leaf_id].append(block_hash)
+            if not any(block_hashes.values()):
                 continue
             bids = {
                 leaf_id: [b.bid for b in bids] for leaf_id, bids in src.items()

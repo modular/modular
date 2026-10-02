@@ -144,7 +144,7 @@ class _TierStubConnector:
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
     ) -> None:
         raise NotImplementedError("must not be called by count paths")
 
@@ -204,7 +204,7 @@ class _ReusableTierStubConnector:
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> None:
         raise NotImplementedError("this stub does not exercise offload")

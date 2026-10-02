@@ -30,6 +30,9 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.paged_kv_cache.block_utils import (
+    LittleKVCacheBlock,
+)
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
     KVLeafInfo,
@@ -691,6 +694,104 @@ def test_a_hybrid_hit_settles_on_the_deepest_run_every_group_accepts(
         assert (
             bm._find_longest_device_prefix_cache_hit(keys, 0, False) == expected
         ), f"seed={seed} keys={len(keys)}"
+
+
+# ===--------------------------------------------------------------------=== #
+# The checkpoint an external tier is copying in
+# ===--------------------------------------------------------------------=== #
+
+
+def splice_landing_state(
+    bm: JengaBlockManager, ctx: TextContext, depth: int
+) -> dict[str, LittleKVCacheBlock]:
+    """Hands each state leaf a checkpoint a connector is still loading."""
+    pool = bm.pools[0]
+    landing: dict[str, LittleKVCacheBlock] = {}
+    for group in state_groups(bm):
+        leaf_id = group.leaf_id
+        block = pool.alloc_block(leaf_id)
+        row = [pool.null_little_blocks[leaf_id]] * (depth - 1) + [block]
+        group.extend(ctx.request_id, {leaf_id: []}, {leaf_id: row}, 0)
+        landing[leaf_id] = block
+    ctx.tokens.skip_processing(depth * BLOCK_SIZE)
+    return landing
+
+
+def test_a_state_still_landing_is_not_the_block_the_recurrence_runs_in() -> (
+    None
+):
+    """A loading checkpoint is resumed from, never run in."""
+    bm = make_manager()
+    ctx = make_ctx(3 * BLOCK_SIZE)
+    bm.claim(ctx)
+    landing = splice_landing_state(bm, ctx, depth=2)
+
+    bm.alloc(ctx)
+
+    runs_in = live(bm, ctx)
+    assert runs_in is not None
+    for leaf_id, block in landing.items():
+        assert runs_in[leaf_id] != block.bid, (
+            f"{leaf_id} would run in the block its hit is still copying into"
+        )
+    # The scheduler holds the request out of the batch until the copy lands.
+    assert resume(bm, ctx) == {
+        leaf_id: (block.bid, runs_in[leaf_id])
+        for leaf_id, block in landing.items()
+    }
+
+
+def test_a_landing_state_holds_up_no_successor() -> None:
+    """A loading checkpoint does not stop admission drawing the successor."""
+    bm = make_manager()
+    ctx = make_ctx(3 * BLOCK_SIZE)
+    bm.claim(ctx)
+    landing = splice_landing_state(bm, ctx, depth=2)
+    bm.alloc(ctx)
+    # Landing block, live block and the successor, as a device hit holds.
+    assert held_state_blocks(bm, ctx) == 3 * len(state_groups(bm))
+
+    # The forward runs to the next boundary, so it checkpoints.
+    resume(bm, ctx)
+    ctx.update(42)
+    fills = checkpoint(bm, ctx)
+    bm.step(ctx)
+
+    assert set(fills) == set(landing), "the boundary found no successor"
+    for group in state_groups(bm):
+        assert landing[group.leaf_id].block_hash is not None
+        assert ctx.request_id not in group.loading
+
+
+def test_a_row_cut_back_forgets_the_state_that_was_landing() -> None:
+    """A rolled-back hit frees the landing block; its copy keeps its own pin."""
+    bm = make_manager()
+    ctx = make_ctx(3 * BLOCK_SIZE)
+    bm.claim(ctx)
+    landing = splice_landing_state(bm, ctx, depth=2)
+
+    for group in state_groups(bm):
+        group.shrink_to_fit(ctx.request_id, 0, 0)
+
+    for group in state_groups(bm):
+        assert ctx.request_id not in group.loading
+    assert all(block.ref_cnt == 0 for block in landing.values())
+    # The request starts over as a plain miss.
+    ctx.tokens.rewind_processing(2 * BLOCK_SIZE)
+    bm.alloc(ctx)
+    assert live(bm, ctx) is not None
+
+
+def test_an_external_tier_is_asked_for_the_state_at_the_hits_depth() -> None:
+    """A hit loads one state block and claims only the deepest hash."""
+    bm = make_manager()
+    keys = [f"k{idx}".encode() for idx in range(5)]
+    for group in state_groups(bm):
+        assert group.blocks_held_of_connector_hit(5) == 1
+        assert group.blocks_held_of_connector_hit(1) == 1
+        assert group.blocks_held_of_connector_hit(0) == 0
+        assert list(group.claimable_hashes(keys)) == keys[-1:]
+        assert list(group.claimable_hashes([])) == []
 
 
 # A speculative step commits 1 to K+1 tokens, so with prefix caching on a

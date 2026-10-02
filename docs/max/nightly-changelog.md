@@ -273,6 +273,13 @@ This version is still a work in progress.
 
 ### Inference server
 
+- A model with recurrent state, such as Qwen3.5 and the other hybrid
+  architectures on the recurrent cache group, can now use a KV connector.
+  The host and disk tiers hold each state checkpoint beside the KV blocks of
+  the boundary it was taken at, and a prompt that has left the device cache
+  resumes from the deepest checkpoint the tiers still hold. Configuring
+  `--kv-connector-config` beside such a model used to be refused at startup.
+
 - `--draft-proposal sampled` now works with block speculative decoding
   (DFlash, DFlash2 and DSpark drafts). The draft samples each proposal at the
   request's temperature, top-k and top-p and hands the verifier the

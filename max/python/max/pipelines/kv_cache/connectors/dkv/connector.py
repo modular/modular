@@ -1605,14 +1605,14 @@ class DKVConnector(KVConnector):
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
 
-        Each ``block_hashes`` element follows the same 8-or-32 byte
-        contract as :meth:`load` (truncated to its first 8 bytes at the
-        dkv boundary; see :func:`_to_dkv_u64`).
+        Each hash follows the same 8-or-32 byte contract as :meth:`load`
+        (truncated to its first 8 bytes at the dkv boundary; see
+        :func:`_to_dkv_u64`).
 
         The dKV store dedups by composite key ``(tp_shard_id, group,
         seq_hash)`` and does not chain blocks under a parent, so the Rust
@@ -1628,23 +1628,25 @@ class DKVConnector(KVConnector):
             source out of the eviction path until this reads complete rather
             than letting a D2H drain into a page that has been reused.
         """
-        if set(block_ids) != set(self._leaves):
+        if set(block_ids) != set(self._leaves) or set(block_hashes) != set(
+            self._leaves
+        ):
             raise ValueError(
-                "DKVConnector.offload block IDs must match its leaf mapping. "
-                f"Expected {self._leaves}, got {block_ids}"
+                "DKVConnector.offload block IDs and hashes must match its leaf "
+                f"mapping. Expected {self._leaves}, got {block_ids} and "
+                f"{block_hashes}"
             )
-        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        # Every leaf commits the same run in lockstep, so a leaf whose row is
-        # not one block per hash would pair ids with the wrong hashes.
+        # Ids and hashes pair positionally within a leaf, so a leaf given a
+        # different number of each would write blocks under the wrong keys.
         ragged = {
-            leaf_id: len(ids)
+            leaf_id: (len(ids), len(block_hashes[leaf_id]))
             for leaf_id, ids in block_ids.items()
-            if len(ids) != len(dkv_hashes)
+            if len(ids) != len(block_hashes[leaf_id])
         }
         if ragged:
             raise ValueError(
                 "DKVConnector.offload needs one block per hash on every leaf; "
-                f"got {ragged} for {len(dkv_hashes)} hashes"
+                f"got (blocks, hashes) of {ragged}"
             )
         clients = self._clients[replica_idx]
         # Offload every block in the run for every leaf, sliding ones included.
@@ -1659,7 +1661,7 @@ class DKVConnector(KVConnector):
             clients[leaf_id].offload(
                 group_id=self._wire_ids[leaf_id],
                 block_ids=list(block_ids[leaf_id]),
-                block_hashes=dkv_hashes,
+                block_hashes=[_to_dkv_u64(h) for h in block_hashes[leaf_id]],
             )
             for leaf_id in self._leaves
         ]

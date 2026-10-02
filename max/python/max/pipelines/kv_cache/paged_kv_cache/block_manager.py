@@ -1004,7 +1004,7 @@ class BlockManager:
             if block_hashes:
                 event = connector.offload(
                     {leaf_id: block_ids for leaf_id in connector.leaves},
-                    block_hashes,
+                    {leaf_id: block_hashes for leaf_id in connector.leaves},
                     replica_idx=replica_idx,
                 )
                 # Pin the device source blocks until the D2H lands so they are

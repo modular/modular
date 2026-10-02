@@ -32,9 +32,10 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     """A group whose entry is one state, held in the last slot of a row.
 
     ``row[-1]`` is the block the recurrence runs in, and it carries no hash.
-    Every block behind it is null or a published checkpoint. The recurrence
-    reads and writes one block, so reaching a boundary publishes the block it
-    ran in and copies it into a successor rather than snapshotting it.
+    Every block behind it is null, a published checkpoint, or one a
+    connector hit is still loading. The recurrence reads and writes one
+    block, so reaching a boundary publishes the block it ran in and copies
+    it into a successor rather than snapshotting it.
     """
 
     page_size: int = 0
@@ -57,28 +58,69 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     instead would be a draw no admission check priced.
     """
 
+    loading: dict[RequestID, LittleKVCacheBlock] = field(
+        default_factory=dict, kw_only=True
+    )
+    """The checkpoint a connector hit is still loading, per request.
+
+    Hashless until its copy lands, so without this it reads as the live block.
+    """
+
+    def _loading(self, req_id: RequestID) -> LittleKVCacheBlock | None:
+        """Returns the loading checkpoint, forgetting it once published."""
+        block = self.loading.get(req_id)
+        if block is None:
+            return None
+        if block.block_hash is not None:
+            del self.loading[req_id]
+            return None
+        return block
+
     def _live(
-        self, row: Sequence[LittleKVCacheBlock]
+        self, req_id: RequestID, row: Sequence[LittleKVCacheBlock]
     ) -> LittleKVCacheBlock | None:
         """Returns the block the recurrence runs in, if the row has one."""
         if not row or row[-1].block_hash is not None:
             return None
+        if row[-1] is self._loading(req_id):
+            return None
         return row[-1]
 
     def _resumed_from(
-        self, row: Sequence[LittleKVCacheBlock]
+        self, req_id: RequestID, row: Sequence[LittleKVCacheBlock]
     ) -> LittleKVCacheBlock | None:
-        """Returns the published block a hit left for this request to read."""
+        """Returns the checkpoint a hit left for this request to read."""
+        loading = self._loading(req_id)
         for block in reversed(row):
             if block.is_null:
                 continue
-            if block.block_hash is not None:
+            if block.block_hash is not None or block is loading:
                 return block
         return None
+
+    def _awaits_hash(self, req_id: RequestID) -> bool:
+        """Whether this request's own last checkpoint still lacks its hash.
+
+        A loading checkpoint is unhashed too, but it belongs to a hit.
+        """
+        row = self.rows[req_id][self.leaf_id]
+        loading = self._loading(req_id)
+        return any(
+            not block.is_null
+            and block.block_hash is None
+            and block is not loading
+            for block in row[:-1]
+        )
 
     # ============================================================================
     # The hit
     # ============================================================================
+
+    def claimable_hashes(
+        self, desired_hashes: Sequence[bytes]
+    ) -> Sequence[bytes]:
+        """Returns the deepest hash: a state is one boundary, not a run."""
+        return desired_hashes[-1:]
 
     def claim_hit_blocks(
         self, desired_hashes: Sequence[bytes], replica_idx: int
@@ -104,15 +146,26 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         rows[leaf_id] = row
         return rows
 
+    def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
+        """Returns one block, the state at the hit's depth."""
+        return min(num_hit_blocks, 1)
+
+    def extend(
+        self,
+        req_id: RequestID,
+        hit_blocks: Mapping[str, Sequence[LittleKVCacheBlock]],
+        loaded_blocks: Mapping[str, Sequence[LittleKVCacheBlock]],
+        replica_idx: int,
+    ) -> None:
+        """Appends the hit, recording a loaded checkpoint as loading."""
+        super().extend(req_id, hit_blocks, loaded_blocks, replica_idx)
+        for block in loaded_blocks.get(self.leaf_id, ()):
+            if not block.is_null and block.block_hash is None:
+                self.loading[req_id] = block
+
     # ============================================================================
     # Demand
     # ============================================================================
-
-    def _num_blocks_to_allocate(
-        self, row: Sequence[LittleKVCacheBlock], num_required_blocks: int
-    ) -> int:
-        """Returns one block until the row holds a live one, then none."""
-        return 0 if self._live(row) is not None else 1
 
     def _needs_successor(self, req_id: RequestID) -> bool:
         """Whether admission must draw the request's successor.
@@ -122,19 +175,17 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         """
         if not self.enable_prefix_caching or req_id in self.successors:
             return False
-        row = self.rows[req_id][self.leaf_id]
-        return not any(
-            not block.is_null and block.block_hash is None for block in row[:-1]
-        )
+        return not self._awaits_hash(req_id)
 
     def blocks_to_allocate(
         self, req_id: RequestID, num_required_blocks: int
     ) -> dict[str, int]:
         """Returns the live block the row lacks, and its missing successor."""
-        demand = super().blocks_to_allocate(req_id, num_required_blocks)
+        row = self.rows[req_id][self.leaf_id]
+        demand = 0 if self._live(req_id, row) is not None else 1
         if self._needs_successor(req_id):
-            demand[self.leaf_id] += 1
-        return demand
+            demand += 1
+        return {self.leaf_id: demand}
 
     def grow(
         self, req_id: RequestID, num_required_blocks: int, replica_idx: int
@@ -146,9 +197,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         pool = self.pools[replica_idx]
         leaf_id = self.leaf_id
         row = self.rows[req_id][leaf_id]
-        draws_live = bool(
-            self._num_blocks_to_allocate(row, num_required_blocks)
-        )
+        draws_live = self._live(req_id, row) is None
         draws_successor = self._needs_successor(req_id)
         # Checked up front so a pool with room for one of the two blocks
         # draws neither.
@@ -167,6 +216,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
 
     def release(self, req_id: RequestID, replica_idx: int) -> None:
         """Frees every block the request holds, its successor too."""
+        self.loading.pop(req_id, None)
         successor = self.successors.pop(req_id, None)
         if successor is not None:
             self.pools[replica_idx].free_block(successor)
@@ -177,15 +227,17 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     ) -> None:
         """Refits the row to the committed blocks, keeping the live block last.
 
-        Frees every other block in the row.
+        Frees every other block in the row. A loading checkpoint's copy
+        holds its own pin.
         """
         pool = self.pools[replica_idx]
         leaf_id = self.leaf_id
         row = self.rows[req_id][leaf_id]
-        live = row.pop() if self._live(row) is not None else None
+        live = row.pop() if self._live(req_id, row) is not None else None
         for block in reversed(row):
             pool.free_block(block)
         row.clear()
+        self.loading.pop(req_id, None)
         # Nothing live means nothing to refit around, so the row stays empty.
         if live is not None:
             null_block = pool.null_little_blocks[leaf_id]
@@ -202,7 +254,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         row = self.rows.get(req_id)
         if row is None:
             return None
-        live = self._live(row[self.leaf_id])
+        live = self._live(req_id, row[self.leaf_id])
         if live is None:
             return None
         return {self.leaf_id: live.bid}
@@ -215,7 +267,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         leaf_id = self.leaf_id
         row = self.rows[req_id][leaf_id]
         null_block = pool.null_little_blocks[leaf_id]
-        live = self._live(row)
+        live = self._live(req_id, row)
         for idx, block in enumerate(row):
             if block is live or block.is_null:
                 continue
@@ -234,10 +286,10 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     ) -> Mapping[str, tuple[int | None, int]]:
         """Returns the block this forward resumes from and the one it fills.
 
-        Filled from a published block when the row holds one: what a prefix
-        hit claimed, or the predecessor a checkpoint published. Filled with
-        zeros when the request has processed nothing and matched no hit, since
-        a drawn block holds whatever its last request wrote.
+        Filled from a checkpoint when the row holds one: what a prefix hit
+        claimed or loaded, or the predecessor a checkpoint published. Filled
+        with zeros when the request has processed nothing and matched no hit,
+        since a drawn block holds whatever its last request wrote.
 
         Empty once the request runs in a block it has written itself.
         """
@@ -248,7 +300,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
             return {}
         fills: dict[str, tuple[int | None, int]] = {}
         leaf_id = self.leaf_id
-        published = self._resumed_from(row[leaf_id])
+        published = self._resumed_from(ctx.request_id, row[leaf_id])
         # Mid-sequence with nothing published means there is no state to
         # resume from, so this leaf contributes no fill.
         if published is not None or ctx.tokens.processed_length == 0:
@@ -287,10 +339,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         )
         if num_committed_blocks == 0 or past_boundary:
             return {}
-        if any(
-            not block.is_null and block.block_hash is None
-            for block in row[self.leaf_id][:-1]
-        ):
+        if self._awaits_hash(ctx.request_id):
             return {}  # one checkpoint at a time
 
         # Admission reserves the successor alongside the block being
@@ -317,12 +366,33 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         return fills
 
     def _is_committable(
-        self, row: Sequence[LittleKVCacheBlock], block_idx: int
+        self,
+        req_id: RequestID,
+        row: Sequence[LittleKVCacheBlock],
+        block_idx: int,
     ) -> bool:
         """The live block is still being written, so it cannot be published."""
-        if row[block_idx] is self._live(row):
+        if row[block_idx] is self._live(req_id, row):
             return False
-        return super()._is_committable(row, block_idx)
+        return super()._is_committable(req_id, row, block_idx)
+
+    def commit(
+        self,
+        req_id: RequestID,
+        hashes: Sequence[bytes],
+        last_block: int,
+        replica_idx: int,
+    ) -> None:
+        """Publishes the checkpoints below ``last_block``.
+
+        Forgets a loading checkpoint that a twin holding its hash replaced.
+        """
+        super().commit(req_id, hashes, last_block, replica_idx)
+        loading = self.loading.get(req_id)
+        if loading is not None and not any(
+            block is loading for block in self.rows[req_id][self.leaf_id]
+        ):
+            del self.loading[req_id]
 
     @traced
     def forward_blocks(

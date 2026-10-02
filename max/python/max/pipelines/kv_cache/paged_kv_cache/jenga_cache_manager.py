@@ -232,17 +232,6 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         bytes_per_page = {
             leaf_id: leaf.bytes_per_page for leaf_id, leaf in leaves.items()
         }
-        is_kv_connector_enabled = (
-            params.kv_connector_config.type.value != "null"
-        )
-        has_unservable_leaf = any(
-            leaf.group_id.is_recurrent() for leaf in leaves.values()
-        )
-        if is_kv_connector_enabled and has_unservable_leaf:
-            raise ValueError(
-                "Recurrent KV cache group is incompatible with KVConnector."
-                " Please disable KVConnector"
-            )
         geometry = cls._plan_geometry(params, available_bytes)
         num_huge_blocks = geometry.num_huge_blocks
         huge_page_bytes = geometry.huge_page_bytes

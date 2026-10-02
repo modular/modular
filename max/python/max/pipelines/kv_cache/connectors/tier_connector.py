@@ -190,11 +190,8 @@ def _default_host_offload_bytes(device_memory_bytes: int) -> int:
 def _validate_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
     """Rejects a leaf tree whose hit the prefix rules cannot decide.
 
-    They cover full attention and sliding windows. A recurrent leaf's hit is
-    the deepest published state rather than a run, so treating it as either
-    shape would claim a prefix whose state pages are not the ones the row
-    needs. Refuse instead of serving wrong KV, as ``_validate_dkv_leaves``
-    does.
+    They cover full attention, sliding windows and recurrent states. Any other
+    shape would serve wrong KV, so refuse, as ``_validate_dkv_leaves`` does.
 
     Called from :meth:`TierConnector.create` before it acquires anything,
     so a tree this connector cannot serve leaks neither the offload directory
@@ -205,12 +202,16 @@ def _validate_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
     unsupported = {
         leaf_id: group_id
         for leaf_id, group_id in leaves.items()
-        if not (group_id.is_full() or group_id.is_sliding_window())
+        if not (
+            group_id.is_full()
+            or group_id.is_sliding_window()
+            or group_id.is_recurrent()
+        )
     }
     if unsupported:
         raise ValueError(
-            "TierConnector supports full-attention and sliding-window "
-            f"leaves only. Found: {unsupported}"
+            "TierConnector supports full-attention, sliding-window and "
+            f"recurrent leaves only. Found: {unsupported}"
         )
 
 
@@ -667,27 +668,39 @@ class TierConnector(KVConnector):
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        if block_ids.keys() != self._leaves.keys():
+        """Offloads each leaf's blocks under that leaf's hashes.
+
+        Raises:
+            ValueError: If the keys do not match the connector's leaves.
+        """
+        if (
+            block_ids.keys() != self._leaves.keys()
+            or block_hashes.keys() != self._leaves.keys()
+        ):
             raise ValueError(
-                f"TierConnector.offload block_ids keys {sorted(block_ids)} do not "
+                f"TierConnector.offload was given block_ids {sorted(block_ids)} "
+                f"and block_hashes {sorted(block_hashes)}, which do not both "
                 f"match the connector's leaves {sorted(self._leaves)}"
             )
-        block_ids_2d = [block_ids[leaf_id] for leaf_id in self.leaves]
+        leaf_ids = list(self._leaves)
+        rows = [list(block_hashes[leaf_id]) for leaf_id in leaf_ids]
         inner = self._native.offload(
-            block_ids_2d, list(block_hashes), replica_idx
+            [list(block_ids[leaf_id]) for leaf_id in leaf_ids],
+            rows,
+            replica_idx,
         )
         # The host pool takes what it has room for and drops the rest, so a
         # starved pool shows up here before it shows up as a lower hit rate.
         # A block the host tier already held was not dropped.
         self._offload_blocks_dropped += (
-            len(block_hashes) * len(block_ids_2d)
+            sum(len(row) for row in rows)
             - sum(len(blocks) for blocks in inner.g0_blocks_per_leaf)
             - inner.already_held
         )
-        return _TierTransfer(inner, list(self.leaves))
+        return _TierTransfer(inner, leaf_ids)
 
     def wait_for_writes(self) -> None:
         """Blocks until all in-flight transfers (incl. disk write-through) drain.

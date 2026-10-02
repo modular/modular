@@ -21,11 +21,18 @@ requests until its copy has actually landed.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 import numpy as np
 import pytest
-from max.nn.kv_cache import KVCacheGroupId, PagedKVLeafRegion
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.kv_cache import (
+    KVCacheGroupId,
+    PagedKVLeafRegion,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
@@ -42,12 +49,16 @@ from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     create_groups,
     create_pools,
 )
+from max.pipelines.kv_cache.paged_kv_cache.recurrent_coordinator import (
+    RecurrentKVGroupCoordinator,
+)
 from max.pipelines.request.base import RequestID
 
 FULL = "full"
 VALUES = "values"
 SCALES = "scales"
 SLIDING = "sliding"
+STATE = "state"
 
 
 class FakeTransfer:
@@ -73,7 +84,7 @@ class FakeTransfer:
 
 
 class FakeConnector:
-    """Serves whatever hashes it has been told it holds, and records calls."""
+    """Serves whatever hashes each leaf holds, and records calls."""
 
     name = "FakeConnector"
 
@@ -87,14 +98,16 @@ class FakeConnector:
             if isinstance(leaves, Mapping)
             else {leaf: KVCacheGroupId.full() for leaf in leaves}
         )
-        self.held: set[bytes] = set()
+        self.held: dict[str, set[bytes]] = {leaf: set() for leaf in self.leaves}
         self.evict_before_load: set[bytes] = set()
         self.asynchronous = asynchronous
         self.lookups: list[tuple[list[bytes], int, bytes | None]] = []
         self.loads: list[
             tuple[dict[str, list[int]], dict[str, list[bytes]], int]
         ] = []
-        self.offloads: list[tuple[dict[str, list[int]], list[bytes]]] = []
+        self.offloads: list[
+            tuple[dict[str, list[int]], dict[str, list[bytes]]]
+        ] = []
         self.touches: list[tuple[list[bytes], int]] = []
         self.transfers: list[FakeTransfer] = []
         self.polls = 0
@@ -112,7 +125,7 @@ class FakeConnector:
         """
         self.lookups.append((list(block_hashes), replica_idx, hint))
         return {
-            leaf_id: [h in self.held for h in block_hashes]
+            leaf_id: [h in self.held[leaf_id] for h in block_hashes]
             for leaf_id in self.leaves
         }
 
@@ -142,7 +155,7 @@ class FakeConnector:
                         leaf_id=leaf_id,
                         block_hash=block_hash,
                     )
-                assert block_hash in self.held, (
+                assert block_hash in self.held[leaf_id], (
                     f"asked for {block_hash!r}, which lookup never reported"
                 )
         transfer = FakeTransfer()
@@ -154,16 +167,22 @@ class FakeConnector:
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
+        for leaf_id, hashes in block_hashes.items():
+            assert len(hashes) == len(block_ids[leaf_id]), (
+                f"leaf {leaf_id!r} got {len(block_ids[leaf_id])} blocks for "
+                f"{len(hashes)} hashes"
+            )
         self.offloads.append(
             (
                 {leaf: list(ids) for leaf, ids in block_ids.items()},
-                list(block_hashes),
+                {leaf: list(hs) for leaf, hs in block_hashes.items()},
             )
         )
-        self.held.update(block_hashes)
+        for leaf_id, hashes in block_hashes.items():
+            self.held[leaf_id].update(hashes)
         transfer = FakeTransfer(
             {leaf: list(ids) for leaf, ids in block_ids.items()},
         )
@@ -181,7 +200,14 @@ class FakeConnector:
         self.polls += 1
 
     def reset_prefix_cache(self) -> None:
-        self.held.clear()
+        for held in self.held.values():
+            held.clear()
+
+    def hold(self, block_hashes: Iterable[bytes]) -> None:
+        """Marks the hashes held by every leaf."""
+        hashes = list(block_hashes)
+        for held in self.held.values():
+            held.update(hashes)
 
     def shutdown(self) -> None:
         return None
@@ -242,6 +268,75 @@ def make_manager(
     )
 
 
+PAGE = 4
+"""Tokens per page, more than one so checkpoints are sparser than the run."""
+
+
+def make_hybrid_manager(
+    connector: KVConnector, num_huge_blocks: int = 64
+) -> JengaBlockManager:
+    """A full-attention leaf beside a recurrent state."""
+    state_params = RecurrentStateParams(
+        devices=[DeviceRef.CPU()],
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=STATE,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+            ),
+        ),
+    )
+    leaf_infos = {
+        FULL: KVLeafInfo(1, KVCacheGroupId.full()),
+        STATE: KVLeafInfo(1, KVCacheGroupId.recurrent()),
+    }
+    pools = create_pools(leaf_infos, num_huge_blocks)
+    return JengaBlockManager(
+        pools=pools,
+        groups=create_groups(
+            leaf_infos, pools, PAGE, enable_prefix_caching=True
+        ),
+        leaves={
+            FULL: PagedKVLeafRegion(
+                leaf_id=FULL,
+                group_id=KVCacheGroupId.full(),
+                bytes_per_page=1,
+                page_size=PAGE,
+            ),
+            **state_params.leaves(),
+        },
+        block_size=PAGE,
+        enable_prefix_caching=True,
+        max_num_input_tokens=None,
+        num_draft_tokens=0,
+        num_draft_tokens_per_step=0,
+        connector=connector,
+    )
+
+
+def hybrid_connector() -> FakeConnector:
+    return FakeConnector(
+        {FULL: KVCacheGroupId.full(), STATE: KVCacheGroupId.recurrent()}
+    )
+
+
+def forward_to_boundary(manager: JengaBlockManager, ctx: TextContext) -> None:
+    """Runs one forward cut at a page boundary, checkpointing the state.
+
+    The cache manager checkpoints in its ``step``; the block manager does not.
+    """
+    end = ctx.tokens.processed_length + ctx.tokens.active_length
+    cut = end - end % PAGE - ctx.tokens.processed_length
+    if 0 < cut < ctx.tokens.active_length:
+        ctx.tokens.chunk(cut)
+    manager.alloc(ctx)
+    ctx.update(9)
+    for group in manager.groups.values():
+        group.checkpoint(ctx, 0)
+    manager.step(ctx)
+
+
 def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
     connector = FakeConnector([FULL])
     manager = make_manager(connector)
@@ -255,7 +350,7 @@ def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
     manager.step(first)
     manager.offload(0)
     assert connector.offloads, "no offload issued"
-    _, offloaded_hashes = connector.offloads[-1]
+    offloaded_hashes = connector.offloads[-1][1][FULL]
     assert manager.pending_transfers_exist(0), "async offload did not pin"
     manager.release(first)
 
@@ -270,7 +365,7 @@ def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
 
     # With the device tier empty, the same prompt must be served by the
     # connector instead.
-    connector.held = set(offloaded_hashes)
+    connector.hold(offloaded_hashes)
     connector.loads.clear()
     second = make_ctx([1, 2, 3, 4])
     manager.claim(second)
@@ -312,8 +407,11 @@ def test_multi_leaf_sends_distinct_per_leaf_block_ids() -> None:
 
     assert connector.offloads, "no offload issued"
     block_ids, hashes = connector.offloads[-1]
-    assert set(block_ids) == {VALUES, SCALES}
-    assert len(block_ids[VALUES]) == len(block_ids[SCALES]) == len(hashes)
+    assert set(block_ids) == set(hashes) == {VALUES, SCALES}
+    assert hashes[VALUES] == hashes[SCALES]
+    assert (
+        len(block_ids[VALUES]) == len(block_ids[SCALES]) == len(hashes[VALUES])
+    )
     assert block_ids[VALUES] != block_ids[SCALES], (
         "leaves shared a page index; they have separate bid spaces"
     )
@@ -330,13 +428,13 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
     first.update(9)
     manager.step(first)
     manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    offloaded = connector.offloads[-1][1][FULL]
     manager.release(first)
 
     # Keep only the leading block on device; the connector still holds the
     # rest, so the two hits have to meet in the middle.
     manager.reset_prefix_cache()
-    connector.held = set(offloaded)
+    connector.hold(offloaded)
     pool = manager.pools[0]
     assert not pool.prefix_caches[FULL]
     replay = make_ctx([1])
@@ -392,7 +490,7 @@ def test_onload_is_skipped_when_the_run_does_not_fit() -> None:
     ctx.update(9)
     filler.step(ctx)
     filler.offload(0)
-    assert connector.held
+    assert any(connector.held.values())
 
     # Two huge blocks between them cannot carve a 4-page run for both leaves.
     tight = make_manager(connector, leaves=(VALUES, SCALES), num_huge_blocks=3)
@@ -444,14 +542,14 @@ def test_last_level_cache_only_forces_every_hit_through_the_connector(
     first.update(9)
     manager.step(first)
     manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    offloaded = connector.offloads[-1][1][FULL]
     manager.release(first)
 
     # The device prefix cache still holds the run; the lookup must ignore it.
     pool = manager.pools[0]
     assert all(h in pool.prefix_caches[FULL] for h in offloaded)
 
-    connector.held = set(offloaded)
+    connector.hold(offloaded)
     connector.loads.clear()
     second = make_ctx([1, 2, 3, 4, 5])
     manager.claim(second)
@@ -526,10 +624,10 @@ def test_swa_connector_onload_null_pads_and_skips_prefix_cache_commit() -> None:
     first.update(9)
     manager.step(first)
     manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    offloaded = connector.offloads[-1][1][FULL]
     manager.release(first)
     manager.reset_prefix_cache()
-    connector.held = set(offloaded)
+    connector.hold(offloaded)
 
     replay = make_ctx([1, 2, 3, 4, 5, 6])
     manager.claim(replay)
@@ -620,14 +718,14 @@ def test_a_failed_poll_unpins_without_publishing() -> None:
     first.update(9)
     manager.step(first)
     manager.offload(0)
-    _, offloaded_hashes = connector.offloads[-1]
+    offloaded_hashes = connector.offloads[-1][1][FULL]
     for pending in connector.transfers:
         pending.synchronize()
     manager.poll_transfers()
     manager.release(first)
     manager.reset_prefix_cache()
 
-    connector.held = set(offloaded_hashes)
+    connector.hold(offloaded_hashes)
     second = make_ctx([1, 2, 3, 4])
     manager.claim(second)
     transfer = manager.alloc(second)
@@ -666,3 +764,81 @@ def test_step_without_a_connector_still_commits() -> None:
     manager.step(ctx)
 
     manager.release(ctx)
+
+
+def test_a_state_offloads_only_where_a_checkpoint_landed() -> None:
+    """The attention run offloads whole, the state only at its checkpoint."""
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+
+    assert connector.offloads, "no offload issued"
+    block_ids, hashes = connector.offloads[-1]
+    assert len(hashes[FULL]) == 2, "the attention run was cut short"
+    assert hashes[STATE] == hashes[FULL][1:], (
+        "the state checkpoints at the boundary the forward ended on"
+    )
+    assert len(block_ids[FULL]) == 2
+    assert len(block_ids[STATE]) == 1
+    assert set(hashes[STATE]) == set(manager.pools[0].prefix_caches[STATE])
+
+
+def test_a_state_reloads_from_the_connector_at_the_deepest_checkpoint() -> None:
+    """With the device tier empty, the connector serves the KV and the state."""
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    pool = manager.pools[0]
+
+    first = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(first)
+    forward_to_boundary(manager, first)
+    manager.offload(0)
+    _, offloaded = connector.offloads[-1]
+    manager.release(first)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.reset_prefix_cache()
+    assert not pool.prefix_caches[FULL] and not pool.prefix_caches[STATE]
+    for leaf_id, hashes in offloaded.items():
+        connector.held[leaf_id].update(hashes)
+
+    # A page longer, so its chain reaches the checkpoint.
+    second = make_ctx(list(range(1, 3 * PAGE + 1)))
+    manager.claim(second)
+    transfer = manager.alloc(second)
+
+    block_ids, asked, _ = connector.loads[-1]
+    assert asked[FULL] == offloaded[FULL]
+    assert asked[STATE] == offloaded[STATE]
+    assert len(block_ids[STATE]) == 1
+    assert second.tokens.processed_length == 2 * PAGE
+    assert second.cached_prefix_external_length == 2 * PAGE
+    assert manager.metrics.cache_tokens == 2 * PAGE
+
+    # Until the copy lands the loaded state is neither published nor run in.
+    state_group = manager.groups[STATE]
+    assert isinstance(state_group, RecurrentKVGroupCoordinator)
+    (loaded_bid,) = block_ids[STATE]
+    runs_in = state_group.live_blocks(second.request_id)
+    assert runs_in is not None
+    assert runs_in[STATE] != loaded_bid, (
+        "the recurrence would run in the block the copy is filling"
+    )
+    assert not transfer.is_complete()
+    assert not pool.prefix_caches[STATE]
+    transfer.synchronize()
+    manager.poll_transfers()
+    (checkpoint_hash,) = offloaded[STATE]
+    assert pool.prefix_caches[STATE][checkpoint_hash].bid == loaded_bid
+    assert state_group.resume(second, 0) == {
+        STATE: (loaded_bid, runs_in[STATE])
+    }
+
+    # The forward ends on the next boundary, and the successor is there.
+    second.update(9)
+    assert state_group.checkpoint(second, 0), "the boundary found no successor"
+    manager.step(second)

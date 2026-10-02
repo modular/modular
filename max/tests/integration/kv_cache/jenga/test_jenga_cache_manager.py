@@ -609,8 +609,17 @@ def test_a_connector_keeps_the_sliding_window_group(
     }
 
 
-def test_a_connector_beside_a_state_is_refused() -> None:
-    """A connector cannot extend a hit past the state's published num_blocks."""
+def test_a_connector_beside_a_state_is_handed_the_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The connector is handed the state leaf and its pages."""
+    seen: dict[str, object] = {}
+
+    def fake_create_connector(**kwargs: object) -> NullConnector:
+        seen.update(kwargs)
+        return NullConnector()
+
+    monkeypatch.setattr(jenga_mod, "create_connector", fake_create_connector)
     attn = make_leaf(n_kv_heads=1, page_size=4)
     attn.enable_prefix_caching = True
     attn.kv_connector_config = KVConnectorConfig(
@@ -630,8 +639,15 @@ def test_a_connector_beside_a_state_is_refused() -> None:
     )
     params = MultiKVCacheParams.from_params({"attn": attn, "state": state})
 
-    with pytest.raises(ValueError, match="incompatible with KVConnector"):
-        create_manager(params, num_huge_blocks=16, max_batch_size=4)
+    mgr = create_manager(params, num_huge_blocks=16, max_batch_size=4)
+
+    assert mgr._connector is not None
+    leaves = seen["leaves"]
+    assert isinstance(leaves, dict)
+    assert leaves["lin/conv"].is_recurrent()
+    memory = seen["replica_kv_memory"]
+    assert isinstance(memory, list)
+    assert "lin/conv" in memory[0], "the state pool is not offload-ready"
 
 
 def _run_once(mgr: JengaKVCacheManager, ctx: TextContext) -> None:

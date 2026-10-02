@@ -347,19 +347,19 @@ class KVConnector(Protocol):
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        """Offload the device blocks to the external cache.
+        """Offloads each leaf's blocks under that leaf's hashes.
 
-        The blocks form one ordered sequence. Every connector keys blocks
-        purely by hash, so the order carries no parentage.
+        ``block_ids[leaf_id][i]`` is written under the hash
+        ``block_hashes[leaf_id][i]``. Leaves may differ in length, since a
+        recurrent leaf publishes only at its checkpoint boundaries.
 
         Args:
-            block_ids: Device block IDs to offload per leaf.
-            block_hashes: Hashes for the blocks being offloaded, in prefix
-                order. Canonical bytes form (8 big-endian bytes for
-                ahash64-family, 32 bytes for SHA-256).
+            block_ids: Device block IDs to offload, per leaf.
+            block_hashes: Hashes per leaf, in prefix order. Canonical bytes
+                form (8 big-endian bytes for ahash64-family, 32 for SHA-256).
             replica_idx: DP replica whose device buffers source the offloaded
                 blocks. The external tier itself is replica-agnostic.
 

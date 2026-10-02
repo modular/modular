@@ -108,17 +108,20 @@ class _FakeRust:
     def offload(
         self,
         block_ids: Sequence[Sequence[int]],
-        block_hashes: Sequence[bytes],
+        hashes_per_leaf: Sequence[Sequence[bytes]],
         replica_idx: int,
     ) -> SimpleNamespace:
         self.calls.append("offload")
-        posts = (
-            len(block_hashes)
-            if self.offload_posts is None
-            else self.offload_posts
-        )
+        g0: list[list[int]] = []
+        for ids, hashes in zip(block_ids, hashes_per_leaf, strict=True):
+            posts = (
+                len(hashes)
+                if self.offload_posts is None
+                else self.offload_posts
+            )
+            g0.append(list(ids[:posts]))
         return SimpleNamespace(
-            g0_blocks_per_leaf=[list(ids[:posts]) for ids in block_ids],
+            g0_blocks_per_leaf=g0,
             already_held=self.offload_already_held,
             is_complete=lambda: True,
             synchronize=lambda: None,
@@ -275,7 +278,8 @@ def test_offload_counts_blocks_the_pool_had_no_room_for_as_dropped() -> None:
     rust.offload_posts = 1
     connector = _connector({"a": FULL, "b": FULL}, rust)
 
-    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, [_h(1), _h(2), _h(3)])
+    run = [_h(1), _h(2), _h(3)]
+    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, {"a": run, "b": run})
 
     assert connector._offload_blocks_dropped == 4
 
@@ -288,7 +292,19 @@ def test_offload_does_not_count_blocks_the_host_tier_already_holds() -> None:
     rust.offload_already_held = 4
     connector = _connector({"a": FULL, "b": FULL}, rust)
 
-    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, [_h(1), _h(2), _h(3)])
+    run = [_h(1), _h(2), _h(3)]
+    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, {"a": run, "b": run})
+
+    assert connector._offload_blocks_dropped == 0
+
+
+def test_leaves_of_different_depth_drop_nothing_they_were_not_given() -> None:
+    rust = _FakeRust(resident=[])
+    connector = _connector({"a": FULL, "b": FULL}, rust)
+
+    connector.offload(
+        {"a": [1, 2, 3], "b": [4]}, {"a": [_h(1), _h(2), _h(3)], "b": [_h(3)]}
+    )
 
     assert connector._offload_blocks_dropped == 0
 
@@ -298,10 +314,13 @@ def test_offload_does_not_count_blocks_the_host_tier_already_holds() -> None:
 # ============================================================================
 
 
-def test_a_recurrent_leaf_is_refused() -> None:
-    # A recurrent leaf's hit is the deepest published state, not a run, so the
-    # manager's rules cannot decide it. Refusing at construction beats claiming
-    # a prefix whose state pages are not the ones the row needs.
-    _validate_leaves({"full": FULL, "window": WINDOW})
-    with pytest.raises(ValueError, match="sliding-window leaves only"):
-        _validate_leaves({"full": FULL, "ssm": KVCacheGroupId.recurrent()})
+def test_a_recurrent_leaf_is_served_and_an_unhashed_one_refused() -> None:
+    # A recurrent leaf is keyed by hash like the attention ones, and the
+    # manager's rules know its hit is the deepest checkpoint rather than a
+    # run. A scratch leaf carries no hash, so refusing at construction beats
+    # claiming it as a shape it is not.
+    _validate_leaves(
+        {"full": FULL, "window": WINDOW, "ssm": KVCacheGroupId.recurrent()}
+    )
+    with pytest.raises(ValueError, match="recurrent leaves only"):
+        _validate_leaves({"full": FULL, "ring": KVCacheGroupId.scratch()})
