@@ -14,9 +14,10 @@
 
 Tests the dispatch function that selects optimal kernel configuration based
 on (N, K) shape. Verifies correctness against vendor_blas reference for:
-- Dispatch-tuned shapes: N=4096,K=7168 and N=7168,K=2048, plus the
-  decode-only entry N=2048,K=4096
-- Fallback path (auto-computed config for unknown shapes)
+- Dispatch-tuned shapes: N=4096,K=7168 and N=7168,K=2048, plus
+  N=2048,K=4096, which decodes at the default decode stages
+- Fallback path for unknown shapes: default decode stages, auto stages
+  otherwise
 - Various active expert counts, token patterns, and -1 expert IDs
 - Per-row input scales (`a_row_scales`) in every dispatch regime
 """
@@ -26,6 +27,13 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from std.memory import Pointer, alloc
 from internal_utils import assert_almost_equal
+from std.testing import assert_equal, assert_false
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.dispatch import (
+    DECODE_AVG_M,
+    DECODE_DEFAULT_STAGES,
+    SMALL_PREFILL_AVG_M,
+    _tuned_stages,
+)
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
@@ -567,7 +575,24 @@ def _test_dispatch[
     _ = expert_scales_device^
 
 
+def test_tuned_stages() raises:
+    """Pins the stage lookup: tuned rows, the decode default, and auto."""
+    # An untuned decode shape, and the decode rows the default replaced.
+    assert_equal(
+        _tuned_stages[1856, 2688, DECODE_AVG_M]().value(),
+        DECODE_DEFAULT_STAGES,
+    )
+    assert_equal(_tuned_stages[4096, 7168, DECODE_AVG_M]().value(), 6)
+    assert_equal(_tuned_stages[7168, 2048, DECODE_AVG_M]().value(), 6)
+    assert_equal(_tuned_stages[2048, 4096, DECODE_AVG_M]().value(), 6)
+    # Tuned prefill rows, and auto stages for untuned prefill.
+    assert_equal(_tuned_stages[4096, 7168, -1]().value(), 7)
+    assert_false(Bool(_tuned_stages[1856, 2688, SMALL_PREFILL_AVG_M]()))
+    assert_false(Bool(_tuned_stages[2048, 4096, -1]()))
+
+
 def main() raises:
+    test_tuned_stages()
     with DeviceContext() as ctx:
         # ============================================================
         # 1. Dispatch-tuned shape: N=4096, K=7168 (DeepSeek V3 up-proj)
@@ -663,9 +688,12 @@ def main() raises:
         )
 
         # ============================================================
-        # 3. Fallback path (unknown shapes, auto-computed stages)
+        # 3. Fallback path (unknown shapes: auto stages, default decode stages)
         # ============================================================
-        print("\n=== Fallback: unknown shapes (auto-computed stages) ===")
+        print(
+            "\n=== Fallback: unknown shapes (auto stages, default decode"
+            " stages) ==="
+        )
 
         # 3a: Standard shape, no dispatch match
         print("  3a: N=2048, K=1024 (auto)")
@@ -700,6 +728,16 @@ def main() raises:
             4,
             [0, 1, 2, 3],
             [0, 3, 2, 4],
+            ctx,
+        )
+
+        # 3e: Decode shape without a tuned row (default decode stages), with
+        # N not a multiple of the 128-row tile and an odd K-iteration count.
+        print("  3e: N=1856, K=2688, decode (default stages)")
+        _test_dispatch[8, 1856, 2688](
+            4,
+            [3, 1, 5, 2],
+            [0, 3, 5, 7],
             ctx,
         )
 
@@ -1025,13 +1063,13 @@ def main() raises:
         )
 
         # ============================================================
-        # 9. Decode-only tuned shape
-        #    N=2048, K=4096 carries a tuned stage count at decode
-        #    (mma_bn=8, cta_group=1) only. The prefill case below is the
+        # 9. Inkling-Small gate+up shape
+        #    N=2048, K=4096 decodes at the default decode stages
+        #    (mma_bn=8, cta_group=1). The prefill case below is the
         #    first time the shape reaches the auto-maximizer, which is
         #    what it exists to pin.
         # ============================================================
-        print("\n=== Decode-only tuned: N=2048, K=4096 ===")
+        print("\n=== Inkling-Small gate+up: N=2048, K=4096 ===")
 
         # 9a: Decode regime: 9 experts at 1 tok each
         print("  9a: N=2048, K=4096, decode 9 experts @ 1 tok")

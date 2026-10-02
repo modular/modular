@@ -36,7 +36,8 @@ NVFP4 routing (B200-tuned via ablation):
     Large prefill (avg_m > 64):    AB_swapped=True, mma_bn=128, cta_group=2
 
   Tuned stages live in `NVFP4_TUNED_STAGES`, one row per (N, K, regime).
-  A (shape, regime) pair with no row there falls through to stages=auto.
+  A decode (shape, regime) pair with no row there uses
+  `DECODE_DEFAULT_STAGES`; the other regimes fall through to stages=auto.
 """
 
 from std.collections import Optional
@@ -70,36 +71,25 @@ from ..structured_kernels.row_scales import NullRowScales, RowScales
 comptime DECODE_AVG_M = 8
 comptime SMALL_PREFILL_AVG_M = 64
 
+# Decode depth for shapes without an `NVFP4_TUNED_STAGES` row. On B200 the
+# auto depth (10 stages) was 3-6% slower than 6 at 8-64 tokens.
+comptime DECODE_DEFAULT_STAGES = 6
+
 # Tuned NVFP4 pipeline depths as (N, K, regime, stages), where `regime` is
 # the regime row's `upper_avg_m` bound (-1 = large prefill). A (shape,
-# regime) pair absent from this table uses stages=auto, which maximizes
-# depth against the SMEM budget. Every row is a B200 ablation result
+# regime) pair absent from this table uses stages=auto (maximum depth
+# against the SMEM budget), except decode, which uses
+# `DECODE_DEFAULT_STAGES`. Every row is a B200 ablation result
 # (bench_grouped_matmul); don't add one without a measurement.
-#
-# (N=7168, K=2048) DeepSeek-V3 down-proj decode: stages 4->6 is a
-# no-regret win that grows with the active expert count -- ~0% at 8
-# active experts (grid too small to benefit), +11% at 12, +5% at 16.
-# The down-proj has only 8 K-iters, so the deeper pipeline overlaps
-# cold-weight loads under more concurrent CTAs as the grid widens; the
-# up-proj (N=4096, K=7168) is already optimal at 6.
-#
-# (N=2048, K=4096) Inkling-Small TP=2 gate+up decode: the K-loop runs
-# only 16 iterations (BK=128 over the packed byte count), too few to fill
-# the 10 stages the auto-maximizer picks, so the extra stages only add
-# prologue latency. A stage sweep puts the minimum at 6.
 comptime NVFP4_TUNED_STAGES = [
     # DeepSeek-V3 up-proj.
-    (4096, 7168, DECODE_AVG_M, 6),
     (4096, 7168, SMALL_PREFILL_AVG_M, 6),
     (4096, 7168, -1, 7),
     # DeepSeek-V3 down-proj.
-    (7168, 2048, DECODE_AVG_M, 6),
     (7168, 2048, SMALL_PREFILL_AVG_M, 6),
     (7168, 2048, -1, 6),
     # Kimi K2.5 TP=8 down-proj.
     (7168, 256, -1, 6),
-    # Inkling-Small TP=2 gate+up.
-    (2048, 4096, DECODE_AVG_M, 6),
 ]
 
 
@@ -112,12 +102,14 @@ def _tuned_stages[N: Int, K: Int, regime: Int]() -> Optional[Int]:
         regime: The regime row's `upper_avg_m` bound (-1 = large prefill).
 
     Returns:
-        The tuned stage count, or None for stages=auto when the table has
-        no row for this (shape, regime).
+        The tuned stage count. Without a table row, the decode regime gets
+        `DECODE_DEFAULT_STAGES` and the other regimes None (stages=auto).
     """
     comptime for row in NVFP4_TUNED_STAGES:
         comptime if row[0] == N and row[1] == K and row[2] == regime:
             return Optional[Int](row[3])
+    comptime if regime == DECODE_AVG_M:
+        return Optional[Int](DECODE_DEFAULT_STAGES)
     return Optional[Int](None)
 
 
