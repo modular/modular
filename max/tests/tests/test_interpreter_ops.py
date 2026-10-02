@@ -56,7 +56,6 @@ from max.experimental import realization_context as rc
 from max.experimental.executor import (
     CompilingExecutor,
     InterpreterExecutor,
-    UnsupportedGraphError,
     set_default_executor,
 )
 from max.experimental.functional import (
@@ -534,11 +533,6 @@ class TestUnaryElementwiseOps:
             np.from_dlpack(y), expected, decimal=5
         )
 
-    @pytest.mark.xfail(
-        raises=UnsupportedGraphError,
-        reason="mo.relu has no interpreter handler",
-        strict=True,
-    )
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_relu(self, dtype: DType) -> None:
         """Test relu op matches numpy maximum(x, 0)."""

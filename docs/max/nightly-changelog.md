@@ -638,6 +638,9 @@ This version is still a work in progress.
   its libkineto kernel trace. The trace is now written when the server stops,
   provided the model worker shuts down within its 5 second grace period.
 
+- `max.experimental.functional.relu()` now runs eagerly on float `Tensor`
+  inputs.
+
 - Fixed a regression where indexing a buffer -- loading it and then gathering
   rows out of it, as a paged KV cache does -- allocated and copied the entire
   source buffer on every execution instead of reading only the rows requested.

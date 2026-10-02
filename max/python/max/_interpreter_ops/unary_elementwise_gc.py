@@ -98,6 +98,7 @@ _UNARY_OPS: dict[type[_core.Operation], UnarySpec] = {
     mo.CosOp: UnarySpec(ops.cos, DTypeClass.FLOAT),
     mo.ErfOp: UnarySpec(ops.erf, DTypeClass.FLOAT),
     mo.SigmoidOp: UnarySpec(ops.sigmoid, DTypeClass.FLOAT),
+    mo.ReluOp: UnarySpec(ops.relu, DTypeClass.FLOAT),
     mo.SiluOp: UnarySpec(ops.silu, DTypeClass.FLOAT),
     mo.GeluOp: UnarySpec(_gelu_none, DTypeClass.FLOAT),
     mo.GeluTanhOp: UnarySpec(_gelu_tanh, DTypeClass.FLOAT),
