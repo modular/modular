@@ -1719,6 +1719,12 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   // After processing the region, make sure any non-signature attributes get
   // resolved.
   refWalker.walk(declOp->getAttrDictionary());
+
+  // A precompiled importer reaches this module by symbol, so its import op is
+  // never resolved and importDeclFromModule never pulls in our extensions.
+  if (isa<FileModuleOp>(declOp))
+    declResolver->expandWildcardsForName(decl, extensionsScopeMarker);
+
   return success();
 }
 
