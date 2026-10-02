@@ -82,6 +82,10 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_split_k_kernel,
 )
 from .apple import enqueue_apple_matmul
+from .apple.gemv import (
+    apple_gemv_small_batch_supported,
+    enqueue_apple_gemv,
+)
 from .amd import (
     AMDMatmul,
     AMDPingPongMatmul,
@@ -630,9 +634,31 @@ def _matmul_gpu[
     )
     comptime if apple_supported:
         comptime f32_in = a_type == DType.float32
+        # Single `in_type`: rebind B to A's dtype (equal under the guard).
+        comptime BAsAType = TileTensor[
+            a_type,
+            type_of(b).LayoutType,
+            type_of(b).origin,
+            address_space=type_of(b).address_space,
+            linear_idx_type=type_of(b).linear_idx_type,
+            Engine=type_of(b).Engine,
+        ]
+        # Small-batch decode: the tiled GEMM below pads M to a 64-row tile and
+        # reads the weight at ~2/3 of DRAM bandwidth there, while the
+        # register-resident GEMV streams it at the ceiling.
+        comptime if transpose_b and a_type in (DType.bfloat16, DType.float16):
+            # Shape first: `compute_capability()` is a runtime query, and M == 1
+            # decode reaches this line on every matmul.
+            if (
+                apple_gemv_small_batch_supported(m, k)
+                and ctx.compute_capability() == 5
+            ):
+                logger.info("Executing: Apple M5 small-batch GEMV kernel")
+                enqueue_apple_gemv[
+                    elementwise_lambda_fn=elementwise_lambda_wrapper
+                ](c, a, rebind[BAsAType](b), ctx)
+                return
         if (
-            ctx.compute_capability() == 5
-            and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
             # m > 1 (not m >= 64): the kernel already handles a partial M tile
             # (per-simdgroup `_bounded_load`/`_bounded_store` + the row_base>=M
             # early return), so 1 < m < 64 (concurrent-decode batch widths) is
@@ -640,20 +666,15 @@ def _matmul_gpu[
             # co-batched GEMM is 6-27x faster at real Llama decode shapes
             # (microbench, M5 Max). m == 1 stays on the gemv path: a rank-1
             # update wastes the simdgroup MMA, so per-row gemv wins there.
-            and m > 1
+            # The shape tests come first so m == 1 skips the ~2 us
+            # `compute_capability()` query.
+            m > 1
             and n >= 64
             and k >= 16
+            and ctx.compute_capability() == 5
+            and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
         ):
             logger.info("Executing: Apple M5 simdgroup-tiled MATMUL kernel")
-            # Single `in_type`: rebind B to A's dtype (equal under the guard).
-            comptime BAsAType = TileTensor[
-                a_type,
-                type_of(b).LayoutType,
-                type_of(b).origin,
-                address_space=type_of(b).address_space,
-                linear_idx_type=type_of(b).linear_idx_type,
-                Engine=type_of(b).Engine,
-            ]
             enqueue_apple_matmul[
                 a_type,
                 c_type=c_type,
@@ -670,10 +691,16 @@ def _matmul_gpu[
             DType.bfloat16,
             DType.float32,
         ):
-            var route_8x8 = (ctx.compute_capability() != 5) or (
-                f32_in and not _apple_m5_allow_lossy_f32_matmul()
-            )
-            if route_8x8 and m > 1 and n > 1 and k >= 16 and k % 16 == 0:
+            if (
+                m > 1
+                and n > 1
+                and k >= 16
+                and k % 16 == 0
+                and (
+                    ctx.compute_capability() != 5
+                    or (f32_in and not _apple_m5_allow_lossy_f32_matmul())
+                )
+            ):
                 logger.info("Executing: Apple GPU 8x8 simdgroup MATMUL kernel")
                 comptime apple_kernel = gemm_kernel_apple_8x8[
                     c_type,
