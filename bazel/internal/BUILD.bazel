@@ -6,6 +6,7 @@ load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_b
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
+load(":jemalloc.bzl", "jemalloc_with_lg_page")
 load(":mojo_toolchain.bzl", "mojo_toolchain")
 
 package(default_visibility = ["//visibility:public"])
@@ -269,6 +270,17 @@ py_binary(
 )
 
 cc_library(name = "empty_lib")
+
+# jemalloc as a process-wide malloc replacement, built for 64 KiB pages on
+# aarch64 so one binary covers every page size those hosts come with.
+jemalloc_with_lg_page(
+    name = "jemalloc_global",
+    src = "@jemalloc",
+    lg_page = select({
+        "@platforms//cpu:aarch64": "16",
+        "//conditions:default": "__auto__",
+    }),
+)
 
 # TCMalloc compiled with NUMA partition support (kNumaPartitions=2).
 alias(

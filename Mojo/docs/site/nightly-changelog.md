@@ -249,6 +249,10 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- The `mojo` compiler now uses jemalloc as its allocator on Linux. Compiling
+  large GPU kernel files is roughly 10 to 13 percent faster, because the
+  compiler spends far less system time in glibc's arena management.
+
 ## Removed
 
 - Removed `sum()` from the `CoordLike` trait and from its implementations
