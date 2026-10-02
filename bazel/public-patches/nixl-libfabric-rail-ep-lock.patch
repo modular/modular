@@ -1,0 +1,217 @@
+Serialize every libfabric endpoint, CQ and AV call on a rail.
+
+NIXL 1.5.0's libfabric rails open their domains with FI_THREAD_COMPLETION,
+under which the provider takes no locks on the endpoint, the completion
+queue or the address vector and the application must serialize them. The
+progress thread posts descriptors in drainPostQueue() and reads the CQ in
+pollForCompletions() without holding ep_mutex_, while caller threads post
+control messages through postSend() holding it, so both paths race.
+
+Take ep_mutex_ around the fi_* calls that were missing it, release it
+before running completion callbacks, and document the two rules the lock
+follows: hold it only around the call itself, never around an FI_EAGAIN
+retry loop, and keep it innermost.
+
+This is a backport of ai-dynamo/nixl#2308, merged upstream after v1.5.0 as
+2c1f6eff71. The diff is that merge's, unchanged.
+
+TODO(GEX-4323): drop once the fix ships in a tagged NIXL release.
+
+diff --git a/src/utils/libfabric/libfabric_rail.cpp b/src/utils/libfabric/libfabric_rail.cpp
+--- a/src/utils/libfabric/libfabric_rail.cpp
++++ b/src/utils/libfabric/libfabric_rail.cpp
+@@ -777,6 +777,8 @@ nixlLibfabricRail::progressCompletionQueue() {
+     struct fi_cq_data_entry completions[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
+ 
+     int ret;
++    struct fi_cq_err_entry err_entry;
++    int err_ret = 0;
+ 
+     // Only protect libfabric CQ hardware operations
+     {
+@@ -786,36 +788,37 @@ nixlLibfabricRail::progressCompletionQueue() {
+         ret = fi_cq_read(cq, completions, NIXL_LIBFABRIC_CQ_BATCH_SIZE);
+ 
+         if (ret < 0 && ret != -FI_EAGAIN) {
+-            NIXL_ERROR << "fi_cq_read returned error " << ret << " on rail " << rail_id << ": "
+-                       << fi_strerror(-ret);
+-
+             // Handle error - but be careful about fi_cq_readerr
+-            struct fi_cq_err_entry err_entry;
+             memset(&err_entry, 0, sizeof(err_entry));
++            err_ret = fi_cq_readerr(cq, &err_entry, 0);
++        }
++    }
++    // CQ lock released here - completion is now local data
+ 
+-            int err_ret = fi_cq_readerr(cq, &err_entry, 0);
+-            if (err_ret > 0) {
+-                NIXL_ERROR << "CQ read failed on rail " << rail_id
+-                           << " with error: " << fi_strerror(err_entry.err)
+-                           << " prov_errno: " << err_entry.prov_errno << " len: " << err_entry.len;
+-
+-                // Notify the owning handle of the error and release the request
+-                if (err_entry.op_context) {
+-                    nixlLibfabricReq *req = findRequestFromContext(err_entry.op_context);
+-                    if (req && req->in_use) {
+-                        if (req->completion_callback) {
+-                            req->completion_callback(NIXL_ERR_BACKEND);
+-                        }
+-                        releaseRequest(req);
++    if (ret < 0 && ret != -FI_EAGAIN) {
++        NIXL_ERROR << "fi_cq_read returned error " << ret << " on rail " << rail_id << ": "
++                   << fi_strerror(-ret);
++        if (err_ret > 0) {
++            NIXL_ERROR << "CQ read failed on rail " << rail_id
++                       << " with error: " << fi_strerror(err_entry.err)
++                       << " prov_errno: " << err_entry.prov_errno << " len: " << err_entry.len;
++
++            // Notify the owning handle of the error and release the request. Done without the
++            // EP lock: the callback and the request pool take their own locks.
++            if (err_entry.op_context) {
++                nixlLibfabricReq *req = findRequestFromContext(err_entry.op_context);
++                if (req && req->in_use) {
++                    if (req->completion_callback) {
++                        req->completion_callback(NIXL_ERR_BACKEND);
+                     }
++                    releaseRequest(req);
+                 }
+-            } else {
+-                NIXL_ERROR << "fi_cq_readerr failed with " << err_ret;
+             }
+-            return NIXL_ERR_BACKEND;
++        } else {
++            NIXL_ERROR << "fi_cq_readerr failed with " << err_ret;
+         }
++        return NIXL_ERR_BACKEND;
+     }
+-    // CQ lock released here - completion is now local data
+ 
+     if (ret == -FI_EAGAIN) {
+         // No completions - fall through to drainPostQueue
+@@ -850,14 +853,20 @@ nixlLibfabricRail::progressCompletionQueue() {
+ void
+ nixlLibfabricRail::pollForCompletions() {
+     struct fi_cq_data_entry cq_buf[16];
+-    int cq_ret = fi_cq_read(cq, cq_buf, 16);
++    struct fi_cq_err_entry err_entry = {};
++    int cq_ret;
++    {
++        const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
++        cq_ret = fi_cq_read(cq, cq_buf, 16);
++        if (cq_ret < 0 && cq_ret != -FI_EAGAIN) {
++            fi_cq_readerr(cq, &err_entry, 0);
++        }
++    }
+     if (cq_ret > 0) {
+         for (int c = 0; c < cq_ret; c++) {
+             processCompletionQueueEntry(&cq_buf[c]);
+         }
+     } else if (cq_ret < 0 && cq_ret != -FI_EAGAIN) {
+-        struct fi_cq_err_entry err_entry = {};
+-        fi_cq_readerr(cq, &err_entry, 0);
+         NIXL_ERROR << "CQ error in drain interleave on rail " << rail_id << ": "
+                    << fi_strerror(err_entry.err);
+     }
+@@ -1312,6 +1321,7 @@ nixlLibfabricRail::drainPostQueue() {
+                 msg.context = &pr.req->ctx;
+                 msg.data = pr.immediate_data;
+ 
++                const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+                 ret = fi_writemsg(endpoint, &msg, pr.fi_flags | FI_REMOTE_CQ_DATA);
+             } else {
+                 struct iovec iov{};
+@@ -1333,6 +1343,7 @@ nixlLibfabricRail::drainPostQueue() {
+                 msg.rma_iov_count = 1;
+                 msg.context = &pr.req->ctx;
+ 
++                const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+                 ret = fi_readmsg(endpoint, &msg, pr.fi_flags);
+             }
+ 
+@@ -1652,6 +1663,8 @@ nixlLibfabricRail::registerMemory(void *buffer,
+     mr_attr.mr_iov = &iov;
+     mr_attr.iov_count = 1;
+ 
++    // fi_mr_regattr is a domain-level call, not tied to the endpoint or CQ, so it runs
++    // without the EP lock.
+     int ret = fi_mr_regattr(domain, &mr_attr, 0, &mr);
+     if (ret) {
+         NIXL_ERROR << "fi_mr_reg failed on rail " << rail_id << ": " << fi_strerror(-ret)
+@@ -1660,7 +1673,9 @@ nixlLibfabricRail::registerMemory(void *buffer,
+         return NIXL_ERR_BACKEND;
+     }
+ 
++    // Only an MR bound to the endpoint (FI_MR_ENDPOINT) needs the lock.
+     if (info->domain_attr->mr_mode & FI_MR_ENDPOINT) {
++        const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+         ret = fi_mr_bind(mr, &endpoint->fid, 0);
+         if (ret) {
+             NIXL_ERROR << "fi_mr_bind failed on rail " << rail_id << ": " << fi_strerror(-ret);
+@@ -1679,7 +1694,7 @@ nixlLibfabricRail::registerMemory(void *buffer,
+     uint64_t key = fi_mr_key(mr);
+     if (key == FI_KEY_NOTAVAIL) {
+         NIXL_ERROR << "fi_mr_key returned FI_KEY_NOTAVAIL on rail " << rail_id;
+-        fi_close(&mr->fid);
++        deregisterMemory(mr);
+         return NIXL_ERR_BACKEND;
+     } else {
+         NIXL_TRACE << "MR key obtained: " << key << " (" << std::hex << key << std::dec << ")";
+@@ -1702,6 +1717,11 @@ nixlLibfabricRail::deregisterMemory(struct fid_mr *mr) const {
+         return NIXL_ERR_INVALID_PARAM;
+     }
+ 
++    // Same rule as registerMemory: only an MR bound to the endpoint needs the EP lock.
++    std::unique_lock<std::mutex> ep_lock(ep_mutex_, std::defer_lock);
++    if (info->domain_attr->mr_mode & FI_MR_ENDPOINT) {
++        ep_lock.lock();
++    }
+     int ret = fi_close(&mr->fid);
+     if (ret) {
+         NIXL_ERROR << "fi_close failed on rail " << rail_id << ": " << fi_strerror(-ret);
+@@ -1724,7 +1744,11 @@ nixlLibfabricRail::insertAddress(const void *addr, fi_addr_t *fi_addr_out) const
+         return NIXL_ERR_BACKEND;
+     }
+ 
+-    int ret = fi_av_insert(av, addr, 1, fi_addr_out, 0, NULL);
++    int ret;
++    {
++        const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
++        ret = fi_av_insert(av, addr, 1, fi_addr_out, 0, NULL);
++    }
+     if (ret != 1) {
+         NIXL_ERROR << "fi_av_insert failed on rail " << rail_id << ": " << fi_strerror(-ret);
+         return NIXL_ERR_BACKEND;
+@@ -1744,7 +1768,11 @@ nixlLibfabricRail::removeAddress(fi_addr_t fi_addr) const {
+         return NIXL_ERR_BACKEND;
+     }
+ 
+-    int ret = fi_av_remove(av, &fi_addr, 1, 0);
++    int ret;
++    {
++        const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
++        ret = fi_av_remove(av, &fi_addr, 1, 0);
++    }
+     if (ret != 0) {
+         NIXL_ERROR << "fi_av_remove failed on rail " << rail_id << ": " << fi_strerror(-ret);
+         return NIXL_ERR_BACKEND;
+diff --git a/src/utils/libfabric/libfabric_rail.h b/src/utils/libfabric/libfabric_rail.h
+--- a/src/utils/libfabric/libfabric_rail.h
++++ b/src/utils/libfabric/libfabric_rail.h
+@@ -584,7 +584,15 @@ class nixlLibfabricRail {
+     struct fid_cq *cq; // from rail_cqs[rail_id]
+     struct fid_av *av; // from rail_avs[rail_id]
+ 
+-    // EP mutex to protect endpoint and CQ operations
++    // Serializes every libfabric call on this rail's endpoint, CQ and AV. The rail opens its
++    // domain with FI_THREAD_COMPLETION, under which the provider takes no locks for these
++    // objects and the application must serialize them. With the progress thread enabled the
++    // PT posts data transfers and reads the CQ while the caller's thread still posts control
++    // messages (postSend), so both paths must hold this lock.
++    //  - Hold it only around the fi_* call itself, never around an FI_EAGAIN retry loop:
++    //    the thread that reaps completions (and so clears EAGAIN) needs the lock too.
++    //  - Keep it innermost: never run completion handling or callbacks while holding it,
++    //    they take other locks and may re-enter (e.g. postRecv from a recv completion).
+     mutable std::mutex ep_mutex_;
+ 
+     // Lock-free MPSC ring: main thread pushes, PT pops and posts

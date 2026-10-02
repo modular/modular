@@ -628,6 +628,12 @@ This version is still a work in progress.
   are unaffected. Code that relied on the float result should cast
   explicitly, for example `(x // n).cast(DType.float64)`.
 
+- MAX now builds against NIXL 1.5.0, whose libfabric (EFA) transport adds a
+  mandatory connection handshake that a NIXL 1.3.0 peer never answers. A MAX
+  built on 1.5.0 cannot exchange KV cache transfers over libfabric with one
+  built on 1.3.0, so disaggregated prefill and decode have to be upgraded
+  together.
+
 ## Fixes
 
 - `ops.floor_div` on mixed integer dtypes such as `uint8 // int16` now

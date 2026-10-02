@@ -37,6 +37,9 @@
 /bazel/public-patches/tomlplusplus-visibility.patch @modular/sdlc
 /bazel/public-patches/torch-cuda-deps.patch @modular/sdlc
 /bazel/public-patches/with_cfg_visibility.patch @modular/sdlc
+/bazel/public-patches/nixl-libfabric-rail-ep-lock.patch @modular/runtime
+/bazel/public-patches/nixl-libfabric-release-inflight.patch @modular/runtime
+/bazel/public-patches/nixl-libfabric-vmm-cuda-ctx.patch @modular/runtime
 /bazel/public-patches/llvm-fix-lldb-dap-console.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/xgrammar.patch @modular/max-serve
