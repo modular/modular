@@ -740,4 +740,10 @@ This version is still a work in progress.
   request and the model worker kept every such request's prefill span in
   memory.
 
+- Fixed `DeviceContext.execution_time()` and `execution_time_iter()` on Apple
+  GPUs reading the host clock without waiting for the timed work, so GPU
+  benchmarks on Metal reported enqueue time instead of execution time. They now
+  return the GPU time between the start and stop points, as on NVIDIA and AMD
+  GPUs.
+
 ## Mojo language
