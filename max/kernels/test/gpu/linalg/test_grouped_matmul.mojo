@@ -808,6 +808,39 @@ def main() raises:
             expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
+        # Decode-shaped routing: every expert has a slot, most are empty, and
+        # the few routed rows sit at scattered (including the highest) ids.
+        var decode_tokens = List[Int]()
+        var decode_ids = List[Int]()
+        for e in range(128):
+            decode_ids.append(e)
+            decode_tokens.append(
+                1 if e == 3 or e == 40 or e == 77 or e == 126 or e == 127 else 0
+            )
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=128,
+            expert_shape=(256, 512),
+        ](128, decode_tokens, decode_ids, ctx)
+
+        # More groups than one warp-wide lookup step, with routed rows on
+        # both sides of the step boundary at 256.
+        var wide_tokens = List[Int]()
+        var wide_ids = List[Int]()
+        for e in range(300):
+            wide_ids.append(e)
+            wide_tokens.append(
+                3 if e == 5
+                or e == 255 else (70 if e == 256 else (1 if e == 299 else 0))
+            )
+        test[
+            .bfloat16,
+            .bfloat16,
+            num_experts=300,
+            expert_shape=(128, 256),
+        ](300, wide_tokens, wide_ids, ctx)
+
         # Multiple matmuls selecting part of experts
         # num_tokesn not multiple of tile size
         # expert N dimension not multiple of 256

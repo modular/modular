@@ -14,6 +14,7 @@
 """Provides grouped matrix multiplication kernels for CPU, AMD, and NVIDIA GPU targets."""
 
 from std.collections import Optional
+from std.bit import count_trailing_zeros
 from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import (
@@ -25,7 +26,8 @@ from std.sys.info import (
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100, _is_sm10x_gpu, is_gpu
-from max.gpu import block_idx, global_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, global_idx, lane_id, thread_idx
+import max.gpu.primitives.warp as warp
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_span import get_static_string
@@ -173,6 +175,69 @@ def naive_grouped_matmul_kernel[
         c_by_expert[m * N + n] = accum.cast[c_type]()
 
 
+@always_inline
+def _find_tile_group[
+    BM: Int,
+    AOffsetsLayout: TensorLayout,
+    a_offsets_engine: TensorEngine,
+](
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
+        MutAnyOrigin,
+        Engine=a_offsets_engine,
+    ],
+    num_groups: Int,
+    tile: Int,
+) -> Tuple[UInt32, Int]:
+    """Finds the group that owns a flat tile index.
+
+    Group ``g`` owns ``ceildiv(M_g, BM)`` consecutive tiles, so the tiles of
+    all groups form one list. Returns the owning group and the tile's index
+    within it, or ``(num_groups, 0)`` if ``tile`` is past the last group.
+
+    Each step covers ``WARP_SIZE`` groups at once, one per lane, so empty
+    groups cost nothing extra. Must be called by every lane of a warp.
+
+    Args:
+        a_offsets: Row offsets of the groups, ``num_groups + 1`` entries.
+        num_groups: Number of groups.
+        tile: Flat tile index.
+
+    Returns:
+        The owning group and the tile's index within it.
+    """
+    var target = UInt32(tile)
+    # Tiles owned by the groups before the current step.
+    var tiles_seen = UInt32(0)
+    for base in range(0, num_groups, WARP_SIZE):
+        var g = base + lane_id()
+        var group_tiles = UInt32(0)
+        if g < num_groups:
+            group_tiles = ceildiv(
+                UInt32(a_offsets[g + 1]) - UInt32(a_offsets[g]), UInt32(BM)
+            )
+        # Inclusive prefix sum: tiles owned by this lane's group and all
+        # groups before it.
+        var tiles_through_group = tiles_seen + warp.prefix_sum(group_tiles)
+        # The first lane that passes `target` owns it; empty groups cannot
+        # be that lane.
+        var passed = warp.vote[.uint64](tiles_through_group > target)
+        if passed != 0:
+            var owner_lane = UInt32(count_trailing_zeros(passed))
+            # Inclusive sum, so subtract the owner's own tiles to get where
+            # its tiles start.
+            var first_tile = warp.shuffle_idx(
+                tiles_through_group - group_tiles, owner_lane
+            )
+            return (UInt32(base) + owner_lane, Int(target - first_tile))
+        tiles_seen = warp.shuffle_idx(
+            tiles_through_group, UInt32(WARP_SIZE - 1)
+        )
+    return (UInt32(num_groups), 0)
+
+
 @__name(t"grouped_matmul_amd_{a_type}_{b_type}_{c_type}")
 def grouped_matmul_amd_kernel_launcher[
     c_type: DType,
@@ -226,21 +291,14 @@ def grouped_matmul_amd_kernel_launcher[
 
     comptime BM = config.block_tile_shape[0]
 
-    # `block_idx.y` indexes a flat list of BM-row tiles over all groups;
-    # the host sizes it with an upper bound in `grouped_matmul_amd`. Find
-    # the group that owns this tile and the tile's index within it.
-    var tile_m = block_idx.y
-    var group = UInt32(0)
-    var M = UInt32(0)
-    while group < UInt32(num_active_experts):
-        M = UInt32(a_offsets[group + 1]) - UInt32(a_offsets[group])
-        var group_tiles = Int(ceildiv(M, UInt32(BM)))
-        if tile_m < group_tiles:
-            break
-        tile_m -= group_tiles
-        group += 1
+    # `block_idx.y` is a flat BM-row tile index over all groups; the host
+    # sizes it with an upper bound in `grouped_matmul_amd`.
+    var group, tile_m = _find_tile_group[BM](
+        a_offsets, Int(num_active_experts), block_idx.y
+    )
     if group == UInt32(num_active_experts):
         return
+    var M = UInt32(a_offsets[group + 1]) - UInt32(a_offsets[group])
 
     comptime N = c_tensor.static_shape[1]
     comptime K = b_tensor.static_shape[1]
@@ -524,11 +582,15 @@ def grouped_matmul_amd[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         # Flat tile grid; sum_g ceildiv(M_g, BM) is bounded both by
-        # ceildiv(total rows, BM) + groups and by groups * ceildiv(max M, BM).
+        # ceildiv(total rows, BM) + nonempty groups and by nonempty groups *
+        # ceildiv(max M, BM). Empty groups own no tiles, and at most one group
+        # per routed row is nonempty, which keeps small-batch decode from
+        # launching a tile per expert.
+        var nonempty_groups = min(num_active_experts, Int(a.dim(0)))
         var grid_y = min(
             ceildiv(Int(a.dim(0)), config.block_tile_shape[0])
-            + num_active_experts,
-            num_active_experts
+            + nonempty_groups,
+            nonempty_groups
             * ceildiv(max_num_tokens_per_expert, config.block_tile_shape[0]),
         )
         ctx.enqueue_function[kernel](
