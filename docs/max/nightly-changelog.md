@@ -466,6 +466,13 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- Reworked the `gated_delta_conv1d_fwd` GPU kernel (Gated DeltaNet
+  causal conv, Qwen3.5/3.8 and GLM-5/Kimi-Delta prefill pass 1) from
+  one thread per channel walking the sequence serially to one thread
+  per token tile. A 2048-token prefill chunk at the Qwen3.8 TP2 conv
+  width drops from ~650 us to ~32 us per layer, and 8192 tokens from
+  ~4.3 ms to ~112 us, bit-identically, with decode shapes unchanged.
+
 - Added `max.nn.state_space.kda_chunk`, the chunk-blocked form of the KDA /
   gated-DeltaNet recurrence, alongside the existing `kda_decode`. Its launcher
   can now reach the fused Blackwell kernel instead of only the three-stage scan

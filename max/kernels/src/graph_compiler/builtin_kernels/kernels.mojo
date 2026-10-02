@@ -115,7 +115,10 @@ from nn.topk import gumbel_sampling_fused_gpu
 from nn.sampling import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
-from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
+from state_space.gated_delta_conv1d import (
+    CONV1D_TOKENS_PER_BLOCK,
+    gated_delta_conv1d_fwd_gpu,
+)
 from state_space.gated_delta import (
     gated_delta_recurrence_fwd_gpu,
     gated_delta_recurrence_verify_ring_gpu,
@@ -3486,8 +3489,16 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
             target
         ](), "gated_delta_conv1d_fwd is only supported on GPU."
 
+        if batch_size == 0 or total_seq_len == 0:
+            return
+
         var gpu_ctx = ctx
-        var grid_dim_batch = batch_size
+        # Average-row-length tiles keep short rows' state updates parallel.
+        var tokens_per_block = min(
+            CONV1D_TOKENS_PER_BLOCK,
+            max(1, ceildiv(total_seq_len, batch_size)),
+        )
+        var grid_dim_tokens = ceildiv(total_seq_len, tokens_per_block)
         var grid_dim_channels = ceildiv(conv_dim, CONV1D_BLOCK_DIM)
 
         # NOTE: Only kernel_size=4 is currently compiled (Qwen3.5 default).
@@ -3514,6 +3525,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                 Int32(batch_size),
                 Int32(total_seq_len),
                 Int32(conv_dim),
+                Int32(tokens_per_block),
                 qkv_input_ragged_tt,
                 conv_weight_tt,
                 conv_state_tt,
@@ -3526,7 +3538,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                 conv_weight_offset_stride,
                 conv_output_seqlen_stride,
                 conv_output_channel_stride,
-                grid_dim=(grid_dim_batch, grid_dim_channels),
+                grid_dim=(grid_dim_tokens, grid_dim_channels),
                 block_dim=(CONV1D_BLOCK_DIM,),
             )
         else:

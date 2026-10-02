@@ -32,9 +32,10 @@ pool pair per layer.
 Both prefill (seq_len > 1) and decode (seq_len == 1) are handled by the
 same two slot-indexed fused GPU kernels:
 
-- Pass 1 (``gated_delta_conv1d_fwd``): one GPU thread per (batch_item,
-  conv_channel). Each thread reads/writes its slot's window in place;
-  no gather/scatter, no working buffers.
+- Pass 1 (``gated_delta_conv1d_fwd``): parallel over (token,
+  conv_channel); one thread per small token tile per channel. Each
+  sequence's head thread reads/writes its slot's window in place; no
+  gather/scatter, no working buffers.
 
 - Pass 2 (``gated_delta_recurrence_fwd``): one GPU thread per (batch_item,
   value_head, value_dim_element). Each thread owns a KD-element state
@@ -527,7 +528,7 @@ class GatedDeltaNet(Module, Shardable):
         )  # [conv_dim, K]
 
         # ---- Two-pass fused kernel path (handles both prefill and decode) ----
-        # Pass 1: causal conv1d — one GPU thread per (batch_item, conv_channel)
+        # Pass 1: causal conv1d — parallel over (token, conv_channel)
         # Pass 2: gated delta recurrence — one GPU thread per
         #         (batch_item, value_head, vd_element); state column lives in
         #         registers. For decode (seqlen=1) both loops execute once.
