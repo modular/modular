@@ -9,7 +9,7 @@ Usage:
 """
 
 load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//max/kernels/benchmarks/misc/blackwell_bench:wheels.bzl", "blackwell_bench_wheel")
 
 package(default_visibility = ["//max:consumers"])
@@ -300,6 +300,95 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "gpu_telemetry",
+    srcs = ["gpu_telemetry.py"],
+    imports = ["."],
+    deps = [requirement("torch")],
+)
+
+modular_py_library(
+    name = "moe_routing",
+    srcs = ["moe_routing.py"],
+    imports = ["."],
+    deps = [requirement("numpy")],
+)
+
+modular_py_test(
+    name = "test_moe_routing",
+    size = "small",
+    srcs = ["test_moe_routing.py"],
+    deps = [
+        ":moe_routing",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_binary(
+    name = "bench_mega_ffn_nvfp4_graph",
+    srcs = ["bench_mega_ffn_nvfp4_graph.py"],
+    main = "bench_mega_ffn_nvfp4_graph.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":gpu_telemetry",
+        ":moe_routing",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "sparse_mla_indices",
+    srcs = ["sparse_mla_indices.py"],
+    imports = ["."],
+    deps = [requirement("numpy")],
+)
+
+modular_py_test(
+    name = "test_sparse_mla_indices",
+    size = "small",
+    srcs = ["test_sparse_mla_indices.py"],
+    deps = [
+        ":sparse_mla_indices",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_binary(
+    name = "bench_mla_sparse_graph",
+    srcs = ["bench_mla_sparse_graph.py"],
+    main = "bench_mla_sparse_graph.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":gpu_telemetry",
+        ":sparse_mla_indices",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
         requirement("torch"),
     ],
 )
