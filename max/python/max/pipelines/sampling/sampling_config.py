@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from enum import Enum
 from typing import Annotated, Any
 
 from max.config import ConfigFileModel
@@ -55,6 +56,43 @@ DEFAULT_STRUCTURED_OUTPUT_BACKEND = "xgrammar"
 # JSON, no whitespace between tokens) is the Gemma-4 runaway mitigation from
 # 0c57a6bd331; flipping it is a product decision, not a per-model tweak.
 DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE = False
+
+
+class ToolCallPolicy(str, Enum):
+    """Policy controlling constrained decoding for tool calls."""
+
+    # Move to StrEnum in Python 3.11. This is for Python 3.10 compatibility.
+    __str__ = str.__str__
+
+    FORCE_UNCONSTRAINED = "force_unconstrained"
+    """Build no tool-call grammar. Arguments are unconstrained and
+    ``tool_choice=required`` cannot force a call."""
+
+    FORCE_STRICT_FALSE = "force_strict_false"
+    """Constrain every tool to an envelope-only grammar with free-form
+    arguments, regardless of the request ``strict`` field."""
+
+    FORCE_STRICT_TRUE = "force_strict_true"
+    """Constrain every tool to its full argument schema, regardless of the
+    request ``strict`` field."""
+
+    DEFAULT_STRICT_FALSE = "default_strict_false"
+    """Constrain only the envelope unless a request sends ``strict: true`` for
+    a tool, which raises that tool to its full argument schema."""
+
+    DEFAULT_STRICT_TRUE = "default_strict_true"
+    """Enforce the full argument schema unless a request sends ``strict: false``
+    for a tool, which lowers that tool to an envelope-only grammar."""
+
+    def resolve_strict(self, requested: bool | None) -> bool:
+        """Return the effective per-tool ``strict`` under this policy."""
+        if self is ToolCallPolicy.FORCE_STRICT_TRUE:
+            return True
+        if self is ToolCallPolicy.FORCE_STRICT_FALSE:
+            return False
+        if requested is not None:
+            return requested
+        return self is ToolCallPolicy.DEFAULT_STRICT_TRUE
 
 
 class SamplingConfig(ConfigFileModel):
@@ -108,20 +146,17 @@ class SamplingConfig(ConfigFileModel):
         ),
     )
 
-    enable_tool_call_constrained_decode: bool = Field(
-        default=True,
+    tool_call_policy: ToolCallPolicy = Field(
+        default=ToolCallPolicy.FORCE_STRICT_TRUE,
         description=(
-            "Whether tool-call requests are constrained to a server-generated "
-            "grammar during decoding. When enabled (the default), a configured "
-            "``runtime.tool_parser`` both produces a decode-time grammar and "
-            "parses the resulting output. Set to ``False`` to keep the parser "
-            "(tool calls are still parsed out of generated text) while skipping "
-            "the constrained-decode/bitmask path for tool calls -- useful when "
-            "the grammar path is undesirable but tool-call parsing is still "
-            "wanted. With this disabled, ``tool_choice=required`` or a named "
-            "function can no longer force a tool call. Independent of "
-            "``enable_structured_output``, which gates user-supplied "
-            "``response_format`` JSON schemas."
+            "Policy applied to tool-call constrained decoding. "
+            "force_unconstrained builds no grammar, so tool_choice=required "
+            "cannot force a call. force_strict_false pins every tool to an "
+            "envelope-only grammar with free-form arguments. force_strict_true "
+            "pins every tool to its full argument schema. default_strict_true "
+            "enforces the full schema unless a request sends strict false. "
+            "default_strict_false constrains only the envelope unless a request "
+            "sends strict true."
         ),
     )
 

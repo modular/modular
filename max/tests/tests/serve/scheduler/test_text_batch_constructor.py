@@ -301,9 +301,9 @@ def test_text_batch_constructor__structured_output_enabled_mirrors_bitmask_const
 ) -> None:
     """``structured_output_enabled`` forwards
     ``PipelineConfig.needs_bitmask_constraints`` -- on for either
-    ``--enable-structured-output`` or a grammar-capable tool parser with
-    ``--enable-tool-call-constrained-decode`` -- and stays off if the
-    pipeline exposes no ``pipeline_config`` at all."""
+    ``--enable-structured-output`` or a grammar-capable tool parser with a
+    ``--tool-call-policy`` other than ``force_unconstrained`` -- and stays off
+    if the pipeline exposes no ``pipeline_config`` at all."""
     batch_constructor = TextBatchConstructor(
         scheduler_config=TokenGenerationSchedulerConfig(
             max_batch_size=5,

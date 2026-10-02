@@ -38,10 +38,10 @@ from max.pipelines.modeling.types import (
 from .tokenizer import TOOL_CALL_JSON_MARKER
 
 # Payload shape: {"name":...,"args":{...}}. The tool-call grammar pins that
-# frame to a const string, but the parser also runs on unconstrained output:
-# with ``enable_tool_call_constrained_decode=False``, or after a rejected token
-# fails enforcement open for the rest of a request. So neither the key order nor
-# ``args`` being the payload's last key is guaranteed here.
+# frame to a const string, but the parser also runs when no grammar is
+# generated (e.g. when ``tool_call_policy`` is ``force_unconstrained``) or
+# after a rejected token causes enforcement to fail open. So neither the key
+# order nor ``args`` being the payload's last key is guaranteed here.
 _ARGS_KEY_RE = re.compile(r'[,{]\s*"args"\s*:\s*')
 
 _DECODER = json.JSONDecoder()

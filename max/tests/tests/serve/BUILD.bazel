@@ -54,6 +54,7 @@ modular_py_test(
         "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",
+        "//max/python/max/pipelines/sampling",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
         "//max/python/max/serve:process_control",

@@ -623,9 +623,9 @@ class TextBatchConstructor:
     @property
     def structured_output_enabled(self) -> bool:
         """Whether constrained decoding can fire at all for this process:
-        ``--enable-structured-output`` (user-supplied JSON schemas) or
-        ``--enable-tool-call-constrained-decode`` with a grammar-capable
-        tool parser (server-generated tool-call grammars).
+        ``--enable-structured-output`` (user-supplied JSON schemas) or a
+        ``--tool-call-policy`` other than ``force_unconstrained`` with a
+        grammar-capable tool parser (server-generated tool-call grammars).
 
         Mirrors ``PipelineConfig.needs_bitmask_constraints`` -- the same
         signal that gates whether the bitmask-aware sampler graph and

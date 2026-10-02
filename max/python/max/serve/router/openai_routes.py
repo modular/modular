@@ -83,6 +83,7 @@ from max.pipelines.modeling.types import (
 )
 from max.pipelines.request import OpenResponsesRequestBody
 from max.pipelines.request.open_responses import OutputAudioContent
+from max.pipelines.sampling import ToolCallPolicy
 from max.profiler import Tracer, traced
 from max.serve._tool_call_validation import (
     check_response_format_conformance,
@@ -2274,7 +2275,7 @@ async def openai_create_chat_completion(
             tools = _convert_chat_completion_tools_to_token_generator_tools(
                 completion_request.tools,
                 valid_tool_name_re,
-                default_strict=getattr(parser, "DEFAULT_TOOL_STRICT", None),
+                policy=pipeline_config.sampling.tool_call_policy,
             )
 
         response_format = _create_response_format(
@@ -2302,7 +2303,8 @@ async def openai_create_chat_completion(
         has_grammar_parser = (
             parser is not None
             and hasattr(parser, "generate_tool_call_grammar")
-            and pipeline_config.sampling.enable_tool_call_constrained_decode
+            and pipeline_config.sampling.tool_call_policy
+            is not ToolCallPolicy.FORCE_UNCONSTRAINED
         )
         if has_grammar_parser:
             (
@@ -2555,15 +2557,9 @@ async def openai_create_chat_completion(
 def _convert_chat_completion_tools_to_token_generator_tools(
     chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
     valid_tool_name_re: re.Pattern[str] = _DEFAULT_VALID_TOOL_NAME_RE,
-    default_strict: bool | None = None,
+    policy: ToolCallPolicy = ToolCallPolicy.FORCE_STRICT_TRUE,
 ) -> list[TextGenerationRequestTool] | None:
-    """Convert ChatCompletionTool list to TextGenerationRequestTool list.
-
-    ``default_strict`` fills in ``strict`` for a tool that omits it. When set,
-    each function is also laid out in a fixed key order (description, name,
-    parameters, strict), so the chat template renders every tool the same
-    way. ``None`` keeps ``strict`` out unless the client sent it.
-    """
+    """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
         return None
 
@@ -2572,28 +2568,17 @@ def _convert_chat_completion_tools_to_token_generator_tools(
         function = tool["function"]
         name = name_from_tool(tool)
         _validate_tool_function_name(name, valid_tool_name_re)
-        description = function.get("description")
-        parameters = dict(function.get("parameters") or {})
-        client_strict = function.get("strict")
-        if default_strict is not None:
-            token_generator_function = TextGenerationRequestFunction(
-                description=description,
-                name=name,
-                parameters=parameters,
-                strict=default_strict
-                if client_strict is None
-                else client_strict,
-            )
-        else:
-            token_generator_function = TextGenerationRequestFunction(
-                name=name, description=description, parameters=parameters
-            )
-            if client_strict is not None:
-                token_generator_function["strict"] = client_strict
-        token_generator_tool = TextGenerationRequestTool(
-            type=tool["type"], function=token_generator_function
+        token_generator_function = TextGenerationRequestFunction(
+            description=function.get("description"),
+            name=name,
+            parameters=dict(function.get("parameters") or {}),
+            strict=policy.resolve_strict(function.get("strict")),
         )
-        token_generator_tools.append(token_generator_tool)
+        token_generator_tools.append(
+            TextGenerationRequestTool(
+                type=tool["type"], function=token_generator_function
+            )
+        )
 
     return token_generator_tools
 

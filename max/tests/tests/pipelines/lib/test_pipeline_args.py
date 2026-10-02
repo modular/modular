@@ -41,6 +41,7 @@ from max.pipelines.lib.pipeline_args import (
     _SHARED_CONFIG_FIELDS,
 )
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.sampling import ToolCallPolicy
 from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import ValidationError
 
@@ -305,11 +306,10 @@ def test_from_args_preserves_every_explicitly_set_field(
     """Every explicitly-set field must survive ``PipelineConfig.from_args``.
 
     Regression guard for the kadabra-v5 incident (ENABLE-2881): ``from_args``
-    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted
-    ``enable_tool_call_constrained_decode``, so production served with the
-    flag reset to its default and ``tool_choice="required"`` was
-    grammar-forced despite ``--no-enable-tool-call-constrained-decode``.
-    Sweeping ``model_fields`` covers future fields the day they are added.
+    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted the
+    tool-call policy field, so production served with it reset to its default
+    and ``tool_choice="required"`` was grammar-forced. Sweeping ``model_fields``
+    covers future fields the day they are added.
     """
     config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(**{field: value})
@@ -321,13 +321,17 @@ def test_from_args_preserves_every_explicitly_set_field(
     )
 
 
-def test_tool_call_constrained_decode_flag_reaches_worker_config() -> None:
+def test_tool_call_policy_reaches_worker_config() -> None:
     """The exact field production lost; kept explicit so the incident's
     reproducer survives even if the matrix's value derivation changes."""
     config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(enable_tool_call_constrained_decode=False)
+        PipelineArgs.from_flat_kwargs(
+            tool_call_policy=ToolCallPolicy.FORCE_UNCONSTRAINED
+        )
     )
-    assert config.sampling.enable_tool_call_constrained_decode is False
+    assert (
+        config.sampling.tool_call_policy is ToolCallPolicy.FORCE_UNCONSTRAINED
+    )
 
 
 def test_pipeline_args_surface_is_frozen() -> None:

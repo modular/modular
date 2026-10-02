@@ -51,6 +51,7 @@ from max.pipelines.sampling import (
     DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
     DEFAULT_STRUCTURED_OUTPUT_BACKEND,
     SamplingConfig,
+    ToolCallPolicy,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.support.host_memory import host_memory_limit
@@ -1202,11 +1203,10 @@ class PipelineConfig(ConfigFileModel):
         server-generated and gated on having a parser that can both produce
         the grammar and parse the resulting output).
 
-        Tool-call constrained decoding can be turned off independently via
-        ``sampling.enable_tool_call_constrained_decode``: when that is
-        ``False`` the tool parser still parses tool calls out of generated
-        text, but no grammar is generated and the bitmask path is not needed
-        on its account.
+        Tool-call constrained decoding is off when ``sampling.tool_call_policy``
+        is ``FORCE_UNCONSTRAINED``: the tool parser still parses tool calls out
+        of generated text, but no grammar is generated and the bitmask path is
+        not needed on its account.
 
         Always ``False`` on a ``prefill_only`` worker. Under disaggregated
         inference the decode worker discards prefill's token for a
@@ -1224,7 +1224,8 @@ class PipelineConfig(ConfigFileModel):
             return False
         return self.sampling.enable_structured_output or (
             self.runtime.tool_parser is not None
-            and self.sampling.enable_tool_call_constrained_decode
+            and self.sampling.tool_call_policy
+            is not ToolCallPolicy.FORCE_UNCONSTRAINED
         )
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")

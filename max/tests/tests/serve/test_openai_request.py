@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.sampling import ToolCallPolicy
 from max.serve.config import Settings
 from max.serve.router.openai_routes import (
     _convert_chat_completion_tools_to_token_generator_tools,
@@ -1697,53 +1698,38 @@ def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
     assert merged[0].function.arguments == ""
 
 
-@pytest.mark.parametrize("strict", [True, False, None, "absent"])
-def test_tool_strict_passes_through_only_when_set(strict: object) -> None:
-    """``strict`` reaches the tool dict only when the client set it; ``null``
-    counts as unset, so the converted value is never ``None``."""
-    function: dict[str, Any] = {
-        "name": "computer",
-        "description": "Control the desktop.",
-        "parameters": {"type": "object", "properties": {}},
-    }
-    if strict != "absent":
-        function["strict"] = strict
-    request = CreateChatCompletionRequest.model_validate(
-        {
-            "model": "test",
-            "messages": [{"role": "user", "content": "hi"}],
-            "tools": [{"type": "function", "function": function}],
-        }
-    )
-
-    tools = _convert_chat_completion_tools_to_token_generator_tools(
-        request.tools
-    )
-
-    assert tools is not None
-    converted = tools[0]["function"]
-    if strict in ("absent", None):
-        assert "strict" not in converted
-    else:
-        assert converted["strict"] is strict
-    assert list(converted) == [k for k in function if function[k] is not None]
-
-
 @pytest.mark.parametrize(
-    "sent,expected",
-    [("absent", False), (None, False), (True, True), (False, False)],
+    "policy,requested,expected",
+    [
+        (ToolCallPolicy.FORCE_UNCONSTRAINED, True, True),
+        (ToolCallPolicy.FORCE_UNCONSTRAINED, False, False),
+        (ToolCallPolicy.FORCE_UNCONSTRAINED, "absent", False),
+        (ToolCallPolicy.FORCE_STRICT_FALSE, True, False),
+        (ToolCallPolicy.FORCE_STRICT_FALSE, False, False),
+        (ToolCallPolicy.FORCE_STRICT_FALSE, "absent", False),
+        (ToolCallPolicy.FORCE_STRICT_TRUE, True, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE, False, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE, "absent", True),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE, True, True),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE, False, False),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE, "absent", False),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE, True, True),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE, False, False),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE, "absent", True),
+    ],
 )
-def test_tool_default_strict_fills_and_orders_tools(
-    sent: object, expected: bool
+def test_tool_call_policy_resolves_strict(
+    policy: ToolCallPolicy, requested: object, expected: bool
 ) -> None:
-    """A parser default fills a missing ``strict`` in the fixed key order."""
+    """Every policy resolves a concrete ``strict`` and the function keys keep a
+    fixed order."""
     function: dict[str, Any] = {
         "name": "computer",
         "description": "Control the desktop.",
         "parameters": {"type": "object", "properties": {}},
     }
-    if sent != "absent":
-        function["strict"] = sent
+    if requested != "absent":
+        function["strict"] = requested
     request = CreateChatCompletionRequest.model_validate(
         {
             "model": "test",
@@ -1753,7 +1739,7 @@ def test_tool_default_strict_fills_and_orders_tools(
     )
 
     tools = _convert_chat_completion_tools_to_token_generator_tools(
-        request.tools, default_strict=False
+        request.tools, policy=policy
     )
 
     assert tools is not None

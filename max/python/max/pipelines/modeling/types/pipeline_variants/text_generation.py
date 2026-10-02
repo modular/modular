@@ -68,13 +68,12 @@ class TextGenerationRequestFunction(TypedDict):
     parameters: dict[str, Any]
     """A dictionary describing the function's parameters, typically following a JSON schema."""
 
-    strict: NotRequired[bool]
+    strict: NotRequired[bool | None]
     """Whether constrained decoding enforces ``parameters`` for this tool.
 
-    Absent or ``True`` enforces the schema; ``False`` constrains only the
-    tool-call envelope and leaves the arguments free-form. Present when the
-    client sent it or the tool parser declares a default, and rendered into
-    the chat template either way.
+    ``False`` constrains only the tool-call envelope and leaves the arguments
+    free-form. ``True``, or an absent or ``None`` value, enforces the full
+    argument schema.
     """
 
 

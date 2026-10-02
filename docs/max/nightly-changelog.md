@@ -284,6 +284,19 @@ This version is still a work in progress.
   `--draft-proposal sampled` at startup rather than silently drafting by
   argmax.
 
+- Added `--tool-call-policy`, which controls how tool-call constrained decoding
+  is applied. The accepted values are `force_unconstrained` (no tool-call
+  grammar is compiled or enforced, regardless of any per-tool `strict` field),
+  `force_strict_false` (every tool's arguments are envelope-only, ignoring the
+  tool's `strict` field), `force_strict_true` (every tool's arguments are fully
+  schema-constrained, ignoring `strict`), `default_strict_false` (the per-tool
+  `strict` field decides, defaulting to envelope-only when absent), and
+  `default_strict_true` (the per-tool `strict` field decides, defaulting to
+  full-schema enforcement when absent).
+
+- Removed `--enable-tool-call-constrained-decode`. Use
+  `--tool-call-policy=force_unconstrained` for tool calls without a grammar.
+
 - Added `--prefill-coalesce-min-pending` (default 0, off): under in-flight
   batching, hold pending fresh prefills until that many can share one mixed
   step instead of admitting them one by one. With data parallelism the count
