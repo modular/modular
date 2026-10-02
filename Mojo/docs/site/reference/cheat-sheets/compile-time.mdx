@@ -5,8 +5,8 @@ description: >
   Reasoning and optimization. What the compiler knows and does with facts.
 hide_title: true
 hide_table_of_contents: true
-compiler_verified: "2026-09-29, Mojo 1.2.0.dev2026092905 (aa3b777f)"
-last_updated: "2026-09-29 (1.2.0.dev nightly update)"
+compiler_verified: "2026-10-02, Mojo 1.2.0.dev2026100205 (7791487a)"
+last_updated: "2026-10-02 (removes comptime __match)"
 build_version: "1.2.0.dev"
 ---
 
@@ -188,24 +188,6 @@ comptime for i in range(4): # fully unrolled
 `comptime if` keeps only the live branch, but calls that depend on
 parameters must be provable in every branch. `comptime for` unrolls,
 removing loop overhead.
-
-</Panel>
-
-<Panel title="comptime __match" summary="specialize by pattern">
-
-```mojo
-comptime __match (m, n): # pick a path by pattern
-case (16, 16):
-    use_tuned_16x16()
-case (mt, nt) if mt * nt <= 256: # names bind as parameters
-    use_small_tile[mt, nt]()
-case _:
-    use_generic()
-```
-
-The subject must be a parameter. A guard is proof for its case, so it
-satisfies a matching `where` on the call. Cases must be exhaustive.
-Without `case _`, an unmatched subject won't compile.
 
 </Panel>
 

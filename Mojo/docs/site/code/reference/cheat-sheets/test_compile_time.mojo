@@ -16,7 +16,7 @@
 # Exercises the card's claims so one that drifts stops compiling or fails an
 # assert: parameters, where clauses (with messages and on thin function
 # types), trait bounds, running a function at compile time, literal
-# precision, comptime if/for/__match, sys.info queries with a
+# precision, comptime if/for, sys.info queries with a
 # CompilationTarget, comptime members, and the inlining decorators, including
 # inlining chosen by a parameter.
 #
@@ -290,7 +290,6 @@ def main() raises:
     test_comptime_for()
     test_comptime_if()
     test_inlining()
-    test_comptime_match()
     test_conditional_availability()
     test_type_of()
     test_conditional_construction()
