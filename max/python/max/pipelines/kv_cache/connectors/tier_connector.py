@@ -11,28 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""KVConnector shim over the Rust ``kv_tier_connector`` extension.
+"""KVConnector shim over a native host/disk tiered connector extension.
 
-The only host/disk tiered connector: it backs the ``rust_tiered`` connector type
-as well as the retired ``tiered`` alias, whose Python implementation it
-replaced. All of the host block pool, disk tier, and copy engine live in Rust
-and run on Rust OS threads with the GIL released, so the connector never
-contends for the GIL on the hot path (the Python lanes' GIL contention was
-starving GPU utilization).
+The only host/disk tiered connector: it backs the ``rust_tiered`` and
+``mojo_tiered`` connector types, as well as the retired ``tiered`` alias for
+``rust_tiered``, whose Python implementation it replaced. The type picks the
+extension, the Rust ``kv_tier_connector`` or the Mojo ``kv_tier_mojo``, which
+take the same arguments and implement the same tiers. Either way the host
+block pool, disk tier, and copy engine run on native OS threads with the GIL
+released, so the connector never contends for the GIL on the hot path (the
+Python lanes' GIL contention was starving GPU utilization).
 
 How it works:
 
-* The Rust connector answers only which blocks it holds (``lookup``) and loads
+* The native connector answers only which blocks it holds (``lookup``) and loads
   exactly the blocks it is handed (``load``), so it carries no notion of
   attention shape, window widths or null blocks. What that presence is worth is
   decided here, with the :mod:`~max.pipelines.kv_cache.prefix_hit` rules the
   device pools and the dKV connector also run.
 * ``load``/``offload`` run on the scheduler thread (GIL released via pyo3) and
   do only cheap host block-pool bookkeeping, then hand the H2D/D2H copies and
-  disk I/O to background Rust lanes. They return immediately with a transfer
-  handle (the Rust ``TierTransfer`` wrapped in :class:`_RustTierTransfer`,
+  disk I/O to background native lanes. They return immediately with a transfer
+  handle (the native ``TierTransfer`` wrapped in :class:`_TierTransfer`,
   which keys ``g0_blocks_per_leaf`` by leaf id so it satisfies
-  :class:`~..kv_connector.KVConnectorTransfer` -- the Rust side has no notion
+  :class:`~..kv_connector.KVConnectorTransfer` -- the native side has no notion
   of leaf names, only positional leaf indices); the block manager pins the
   device blocks and the scheduler cordons the request until the handle polls
   complete, so the GPU runs other ready work while the copy is in flight.
@@ -45,18 +47,24 @@ How it works:
 
 This shim owns the host staging region (allocated the same way as
 ``BlockOffloadEngine``) and passes its address plus the per-replica device
-buffer pointers and compute-stream handles to the Rust connector.
+buffer pointers and compute queues to the native connector.
 """
 
 from __future__ import annotations
 
+import importlib
 import logging
 import time
 from collections.abc import Mapping, Sequence
 from typing import NamedTuple, Protocol
 
 import psutil
-from max.driver import Device, _ChunkedStagingRegion, accelerator_api
+from max.driver import (
+    Device,
+    DeviceQueue,
+    _ChunkedStagingRegion,
+    accelerator_api,
+)
 from max.nn.kv_cache import (
     KVCacheGroupId,
     KVCacheMemory,
@@ -87,6 +95,35 @@ logger = logging.getLogger("max.pipelines")
 # The default host tier is page-locked up front, so cap it below what the
 # process can still allocate, leaving headroom for everything else.
 _HOST_OFFLOAD_MAX_FRACTION_OF_AVAILABLE = 0.9
+
+
+# The extension module behind each connector type. Both are runtime-provided
+# rather than build deps, so OSS MAX imports this module without either.
+_NATIVE_MODULES = {
+    KVConnectorType.tiered: "kv_tier_connector",
+    KVConnectorType.rust_tiered: "kv_tier_connector",
+    KVConnectorType.mojo_tiered: "kv_tier_mojo",
+}
+
+
+def _native_connector_class(connector_type: KVConnectorType) -> type:
+    """Imports the native ``TierConnector`` class behind ``connector_type``.
+
+    Called from :meth:`TierConnector.create` before it acquires anything, so a
+    build that lacks the extension fails before pinning the host staging
+    region or claiming the offload directory.
+    """
+    module_name = _NATIVE_MODULES[connector_type]
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as error:
+        raise ValueError(
+            f"kv_connector '{connector_type.value}' needs the {module_name} "
+            "extension, which this build does not ship"
+        ) from error
+    native_class = module.TierConnector
+    assert isinstance(native_class, type)
+    return native_class
 
 
 def _check_disk_capacity(cache_dir: str, max_disk_size_bytes: int) -> None:
@@ -159,14 +196,12 @@ def _validate_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
     needs. Refuse instead of serving wrong KV, as ``_validate_dkv_leaves``
     does.
 
-    Called from :meth:`RustTierConnector.create` before it acquires anything,
+    Called from :meth:`TierConnector.create` before it acquires anything,
     so a tree this connector cannot serve leaks neither the offload directory
     nor the pinned staging region.
     """
     if not leaves:
-        raise ValueError(
-            "RustTierConnector requires at least one KV cache leaf"
-        )
+        raise ValueError("TierConnector requires at least one KV cache leaf")
     unsupported = {
         leaf_id: group_id
         for leaf_id, group_id in leaves.items()
@@ -174,7 +209,7 @@ def _validate_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
     }
     if unsupported:
         raise ValueError(
-            "RustTierConnector supports full-attention and sliding-window "
+            "TierConnector supports full-attention and sliding-window "
             f"leaves only. Found: {unsupported}"
         )
 
@@ -224,12 +259,14 @@ class _RawTierTransfer(Protocol):
     """
 
     g0_blocks_per_leaf: list[Sequence[int]]
+    already_held: int
+    """Blocks an offload skipped because the host tier already held them."""
 
     def is_complete(self) -> bool: ...
     def synchronize(self) -> None: ...
 
 
-class _RustTierTransfer:
+class _TierTransfer:
     """Wraps the Rust ``TierTransfer`` to key ``g0_blocks_per_leaf`` by leaf id.
 
     ``leaves`` must be in the same order the connector built ``bytes_per_leaf``
@@ -283,8 +320,8 @@ def _alloc_chunked_staging_region(
     return region
 
 
-class RustTierConnector(KVConnector):
-    """KVConnector backed by the Rust host/disk tiered connector."""
+class TierConnector(KVConnector):
+    """KVConnector backed by a native host/disk tiered connector."""
 
     def __init__(
         self,
@@ -298,16 +335,14 @@ class RustTierConnector(KVConnector):
         disk_dir: OffloadDirectory | None,
         disk_offload_max_bytes: int,
         num_disk_workers: int = 32,
+        connector_type: KVConnectorType = KVConnectorType.rust_tiered,
     ) -> None:
         """Initializes the connector over ``replica_kv_memory``'s device buffers.
 
         Takes ownership of ``disk_dir``, releasing it in :py:meth:`shutdown`.
         It is ``None`` for a host-only connector with no disk last level.
         """
-        # Lazy import: OSS MAX can import this module without the extension.
-        from kv_tier_connector import (  # type: ignore[import-not-found]
-            TierConnector,
-        )
+        native_class = _native_connector_class(connector_type)
 
         leaf0 = next(iter(leaves.keys()))
         gpu0 = replica_kv_memory[0][leaf0].buffers[0].device
@@ -325,18 +360,23 @@ class RustTierConnector(KVConnector):
             ]
             replica_memories.append(replica_leaves)
 
-        device_to_stream: dict[int, int] = {}
+        # The queue the model runs on, which every copy orders against. Both
+        # backends take it from here so they cannot disagree about it.
+        devices: dict[int, Device] = {}
         for memories in replica_kv_memory:
             for mem in memories.values():
                 for b in mem.buffers:
-                    device_to_stream[b.device.id] = (
-                        b.device.default_queue.native_stream_handle
-                    )
+                    devices[b.device.id] = b.device
+        compute_queues: dict[int, DeviceQueue] = {
+            device_id: device.default_queue
+            for device_id, device in devices.items()
+        }
 
         self._leaves = leaves
+        self._loads_refused = 0
+        self._offload_blocks_dropped = 0
         self._page_size = page_size
         self._disk_dir = disk_dir
-        self._shutdown = False
 
         bytes_per_leaf = [leaf_cache_sizes[leaf_id] for leaf_id in leaves]
         cache_ratios = [
@@ -353,18 +393,51 @@ class RustTierConnector(KVConnector):
                 "no disk tier the host tier is the last level."
             )
 
-        self._rust = TierConnector(
-            bytes_per_leaf,
-            host_offload_num_huge_blocks,
-            cache_ratios,
-            host_base,
-            replica_memories,
-            device_to_stream,
-            only_last_level,
-            disk_dir.path if disk_dir is not None else None,
-            disk_offload_max_bytes,
-            num_disk_workers,
-        )
+        disk_path = disk_dir.path if disk_dir is not None else None
+        # The two extensions take the same positional arguments except for the
+        # compute stream: Rust records its gate events on the raw driver
+        # stream, while the Mojo copy engine needs the queue itself and the
+        # devices to create its own copy queues on.
+        if connector_type == KVConnectorType.mojo_tiered:
+            self._native = native_class(
+                bytes_per_leaf,
+                host_offload_num_huge_blocks,
+                cache_ratios,
+                host_base,
+                replica_memories,
+                compute_queues,
+                only_last_level,
+                disk_path,
+                disk_offload_max_bytes,
+                num_disk_workers,
+                devices=devices,
+            )
+        else:
+            self._native = native_class(
+                bytes_per_leaf,
+                host_offload_num_huge_blocks,
+                cache_ratios,
+                host_base,
+                replica_memories,
+                {
+                    device_id: queue.native_stream_handle
+                    for device_id, queue in compute_queues.items()
+                },
+                only_last_level,
+                disk_path,
+                disk_offload_max_bytes,
+                num_disk_workers,
+            )
+        # Set only once the native connector exists, so `__del__` on a
+        # half-built instance has nothing to stop.
+        self._shutdown = False
+
+    def __del__(self) -> None:
+        # The native lanes copy into the host region until they are stopped.
+        # A connector dropped without `shutdown` would otherwise free the
+        # region first, since attributes are released in assignment order.
+        if not getattr(self, "_shutdown", True):
+            self.shutdown()
 
     @classmethod
     def create(
@@ -373,7 +446,7 @@ class RustTierConnector(KVConnector):
         replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]],
         params: KVCacheParamInterface,
         device_memory_bytes: int,
-    ) -> RustTierConnector:
+    ) -> TierConnector:
         _validate_leaves(leaves)
         leaf0 = next(iter(leaves.keys()))
         cfg = params.kv_connector_config
@@ -396,7 +469,11 @@ class RustTierConnector(KVConnector):
                 f"found incompatible accelerator API: '{api}'."
             )
 
-        if cfg.type != KVConnectorType.rust_tiered:
+        # After the device checks, so a CPU pipeline reports its device
+        # rather than the missing extension, and before anything is acquired.
+        _native_connector_class(cfg.type)
+
+        if cfg.type == KVConnectorType.tiered:
             logger.warning(
                 "kv_connector '%s' is deprecated: its Python implementation "
                 "was removed and it now runs the Rust 'rust_tiered' connector. "
@@ -443,14 +520,15 @@ class RustTierConnector(KVConnector):
         host_offload_max_bytes = num_huge_blocks * huge_page_bytes
 
         logger.info(
-            "Creating RustTierConnector: "
+            "Creating TierConnector: "
+            f"type={cfg.type.value}, "
             f"host_offload_max_bytes={to_human_readable_bytes(host_offload_max_bytes)}, "
             f"disk_cache_dir={disk_dir.path if disk_dir else 'disabled (host-only)'}, "
             f"disk_offload_max_bytes={to_human_readable_bytes(disk_offload_max_bytes)}, "
             f"num_disk_workers={cfg.num_disk_workers}"
         )
         logger.info(
-            f"RustTierConnector: {num_huge_blocks} huge pages x {to_human_readable_bytes(huge_page_bytes)} = {to_human_readable_bytes(host_offload_max_bytes)}"
+            f"TierConnector: {num_huge_blocks} huge pages x {to_human_readable_bytes(huge_page_bytes)} = {to_human_readable_bytes(host_offload_max_bytes)}"
         )
         max_leaf_id_len = max(len(leaf_id) for leaf_id in leaves)
         for leaf_id in leaves:
@@ -471,6 +549,7 @@ class RustTierConnector(KVConnector):
             disk_dir=disk_dir,
             disk_offload_max_bytes=disk_offload_max_bytes,
             num_disk_workers=cfg.num_disk_workers,
+            connector_type=cfg.type,
         )
 
     @property
@@ -479,7 +558,7 @@ class RustTierConnector(KVConnector):
 
     @property
     def name(self) -> str:
-        return "RustTieredConnector"
+        return "TieredConnector"
 
     def lookup(
         self,
@@ -507,8 +586,8 @@ class RustTierConnector(KVConnector):
         # landed is not in the host prefix cache until its commit event is
         # drained, so a just-written block would read as absent. Moves no
         # data and allocates nothing.
-        self._rust.reclaim()
-        resident = self._rust.lookup(
+        self._native.reclaim()
+        resident = self._native.lookup(
             list(range(len(leaf_ids))), list(block_hashes)
         )
         # O(leaves), not O(blocks): the caller indexes these masks
@@ -547,19 +626,20 @@ class RustTierConnector(KVConnector):
             or block_hashes.keys() != self._leaves.keys()
         ):
             raise ValueError(
-                f"RustTierConnector.load was given block_ids {sorted(block_ids)} "
+                f"TierConnector.load was given block_ids {sorted(block_ids)} "
                 f"and block_hashes {sorted(block_hashes)}, which do not both "
                 f"match the connector's leaves {sorted(self._leaves)}"
             )
         leaf_ids = list(self._leaves)
         rows = [list(block_ids[leaf_id]) for leaf_id in leaf_ids]
         try:
-            inner = self._rust.load(
+            inner = self._native.load(
                 rows,
                 [list(block_hashes[leaf_id]) for leaf_id in leaf_ids],
                 replica_idx,
             )
         except RuntimeError as error:
+            self._loads_refused += 1
             # A vanished hash. The Rust side raises ValueError for a shape
             # mismatch, which is a bug in the caller's sizing and deliberately
             # not caught here.
@@ -577,11 +657,12 @@ class RustTierConnector(KVConnector):
                 f"kv_tier_connector posted a partial load: asked {rows}, "
                 f"it reports {posted}"
             )
+            self._loads_refused += 1
             raise KVLoadRefused(
                 "kv_tier_connector could not stage the load: its host pool is "
                 "saturated by in-flight transfers"
             )
-        return _RustTierTransfer(inner, leaf_ids)
+        return _TierTransfer(inner, leaf_ids)
 
     def offload(
         self,
@@ -591,14 +672,22 @@ class RustTierConnector(KVConnector):
     ) -> KVConnectorTransfer:
         if block_ids.keys() != self._leaves.keys():
             raise ValueError(
-                f"RustTierConnector.offload block_ids keys {sorted(block_ids)} do not "
+                f"TierConnector.offload block_ids keys {sorted(block_ids)} do not "
                 f"match the connector's leaves {sorted(self._leaves)}"
             )
         block_ids_2d = [block_ids[leaf_id] for leaf_id in self.leaves]
-        return _RustTierTransfer(
-            self._rust.offload(block_ids_2d, list(block_hashes), replica_idx),
-            list(self.leaves),
+        inner = self._native.offload(
+            block_ids_2d, list(block_hashes), replica_idx
         )
+        # The host pool takes what it has room for and drops the rest, so a
+        # starved pool shows up here before it shows up as a lower hit rate.
+        # A block the host tier already held was not dropped.
+        self._offload_blocks_dropped += (
+            len(block_hashes) * len(block_ids_2d)
+            - sum(len(blocks) for blocks in inner.g0_blocks_per_leaf)
+            - inner.already_held
+        )
+        return _TierTransfer(inner, list(self.leaves))
 
     def wait_for_writes(self) -> None:
         """Blocks until all in-flight transfers (incl. disk write-through) drain.
@@ -608,7 +697,7 @@ class RustTierConnector(KVConnector):
         need a stable tier state (e.g. asserting disk residency after an
         offload's write-through has landed).
         """
-        self._rust.wait_for_writes()
+        self._native.wait_for_writes()
 
     def touch(
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
@@ -619,7 +708,7 @@ class RustTierConnector(KVConnector):
         if self._shutdown:
             return
         self._shutdown = True
-        self._rust.shutdown()
+        self._native.shutdown()
         # Rust holds a raw pointer, so the shutdown above is what makes the
         # unmap safe.
         del self._host_region
@@ -631,21 +720,21 @@ class RustTierConnector(KVConnector):
     @property
     def host_byte_count(self) -> ByteCount:
         return ByteCount(
-            free=self._rust.free_host_bytes(),
-            total=self._rust.host_bytes(),
+            free=self._native.free_host_bytes(),
+            total=self._native.host_bytes(),
         )
 
     @property
     def disk_byte_count(self) -> ByteCount:
         return ByteCount(
-            free=self._rust.free_disk_bytes(),
-            total=self._rust.disk_bytes(),
+            free=self._native.free_disk_bytes(),
+            total=self._native.disk_bytes(),
         )
 
     def reset_prefix_cache(self) -> None:
-        self._rust.reset_prefix_cache()
+        self._native.reset_prefix_cache()
 
-    def _wrap_rust_metrics(
+    def _wrap_native_metrics(
         self, h2d: int, d2h: int, disk_read: int, disk_write: int
     ) -> KVCacheMetrics:
         return KVCacheMetrics(
@@ -653,12 +742,17 @@ class RustTierConnector(KVConnector):
             d2h_bytes_copied=d2h,
             disk_bytes_read=disk_read,
             disk_bytes_written=disk_write,
-            inflight_disk_ops=self._rust.inflight_disk_ops(),
+            inflight_disk_ops=self._native.inflight_disk_ops(),
+            connector_loads_refused=self._loads_refused,
+            connector_offload_blocks_dropped=self._offload_blocks_dropped,
         )
 
     @property
     def metrics(self) -> KVCacheMetrics:
-        return self._wrap_rust_metrics(*self._rust.metrics())
+        return self._wrap_native_metrics(*self._native.metrics())
 
     def take_metrics(self) -> KVCacheMetrics:
-        return self._wrap_rust_metrics(*self._rust.take_metrics())
+        metrics = self._wrap_native_metrics(*self._native.take_metrics())
+        self._loads_refused = 0
+        self._offload_blocks_dropped = 0
+        return metrics

@@ -18,14 +18,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from max.pipelines.kv_cache.connectors import rust_tier_connector
+from max.pipelines.kv_cache.connectors import tier_connector
 
 
 def _set_available_host_memory(
     monkeypatch: pytest.MonkeyPatch, available: int | None
 ) -> None:
     monkeypatch.setattr(
-        rust_tier_connector, "available_host_memory", lambda: available
+        tier_connector, "available_host_memory", lambda: available
     )
 
 
@@ -35,7 +35,7 @@ def test_host_capacity_rejects_oversized(
     _set_available_host_memory(monkeypatch, 1024)
 
     with pytest.raises(RuntimeError, match="host_offload_max_gb"):
-        rust_tier_connector._check_host_memory_capacity(2048)
+        tier_connector._check_host_memory_capacity(2048)
 
 
 def test_host_capacity_accepts_fitting(
@@ -43,7 +43,7 @@ def test_host_capacity_accepts_fitting(
 ) -> None:
     _set_available_host_memory(monkeypatch, 4096)
 
-    rust_tier_connector._check_host_memory_capacity(4096)
+    tier_connector._check_host_memory_capacity(4096)
 
 
 def test_host_capacity_skips_when_unknown(
@@ -52,7 +52,7 @@ def test_host_capacity_skips_when_unknown(
 ) -> None:
     _set_available_host_memory(monkeypatch, None)
 
-    rust_tier_connector._check_host_memory_capacity(1 << 60)
+    tier_connector._check_host_memory_capacity(1 << 60)
     assert "skipping KV cache host capacity preflight" in caplog.text
 
 
@@ -61,7 +61,7 @@ def test_default_host_offload_is_one_and_a_half_times_the_device_pool(
 ) -> None:
     _set_available_host_memory(monkeypatch, 1 << 40)
 
-    assert rust_tier_connector._default_host_offload_bytes(8 << 30) == 12 << 30
+    assert tier_connector._default_host_offload_bytes(8 << 30) == 12 << 30
 
 
 def test_default_host_offload_is_capped_to_what_the_process_may_use(
@@ -70,7 +70,7 @@ def test_default_host_offload_is_capped_to_what_the_process_may_use(
 ) -> None:
     _set_available_host_memory(monkeypatch, 20 << 30)
 
-    assert rust_tier_connector._default_host_offload_bytes(64 << 30) == 18 << 30
+    assert tier_connector._default_host_offload_bytes(64 << 30) == 18 << 30
     assert "Reduced the default KV cache host offload budget" in caplog.text
 
 
@@ -79,29 +79,29 @@ def test_default_host_offload_uncapped_when_availability_is_unknown(
 ) -> None:
     _set_available_host_memory(monkeypatch, None)
 
-    assert rust_tier_connector._default_host_offload_bytes(64 << 30) == 96 << 30
+    assert tier_connector._default_host_offload_bytes(64 << 30) == 96 << 30
 
 
 def test_disk_capacity_rejects_oversized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        rust_tier_connector.psutil,
+        tier_connector.psutil,
         "disk_usage",
         lambda path: SimpleNamespace(free=1024),
     )
 
     with pytest.raises(RuntimeError, match="disk_offload_max_gb"):
-        rust_tier_connector._check_disk_capacity("/tmp", 2048)
+        tier_connector._check_disk_capacity("/tmp", 2048)
 
 
 def test_disk_capacity_accepts_fitting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        rust_tier_connector.psutil,
+        tier_connector.psutil,
         "disk_usage",
         lambda path: SimpleNamespace(free=4096),
     )
 
-    rust_tier_connector._check_disk_capacity("/tmp", 4096)
+    tier_connector._check_disk_capacity("/tmp", 4096)

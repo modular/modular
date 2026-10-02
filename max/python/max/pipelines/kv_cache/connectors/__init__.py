@@ -14,7 +14,7 @@
 """KV cache connectors for external cache tiers.
 
 - `NullConnector`: No-op connector when external caching is disabled
-- `RustTierConnector`: GPU <-> CPU <-> Disk offloading, backed by the Rust
+- `TierConnector`: GPU <-> CPU <-> Disk offloading, backed by the Rust
   ``kv_tier_connector`` extension. Also serves the ``tiered`` alias, whose
   Python implementation it replaced.
 - `create_connector()`: Factory function
@@ -102,10 +102,14 @@ def create_connector(
 
     # ``tiered`` is a backward-compatible alias for ``rust_tiered``, kept after
     # its Python implementation was deleted.
-    if connector in (KVConnectorType.tiered, KVConnectorType.rust_tiered):
-        from .rust_tier_connector import RustTierConnector
+    if connector in (
+        KVConnectorType.tiered,
+        KVConnectorType.rust_tiered,
+        KVConnectorType.mojo_tiered,
+    ):
+        from .tier_connector import TierConnector
 
-        return RustTierConnector.create(
+        return TierConnector.create(
             leaves=leaves,
             replica_kv_memory=replica_kv_memory,
             params=params,

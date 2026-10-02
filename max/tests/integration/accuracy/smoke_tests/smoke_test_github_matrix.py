@@ -117,6 +117,7 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": _1xB200,
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": _8xB200,
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": _1xB200,
+    "meta-llama/Llama-3.1-8B-Instruct__mojo_tiered_kvconnector": _1xB200,
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": _8xB200,
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": _8xB200,
     "zai-org/GLM-5.3-Flash__tpep": _8xB200,

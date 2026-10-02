@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""What ``RustTierConnector`` asks its Rust tiers for, and what it reports.
+"""What ``TierConnector`` asks its Rust tiers for, and what it reports.
 
 The Rust side knows leaves only by index and hashes only as bytes, so this
 shim's whole job is the translation: the flat lookup answer cut back into a
 mask per leaf, and the per-leaf load lists handed straight through. A fake
 Rust connector stands in for the extension module, so these need no GPU -- the
 real thing is covered in
-``internal/dkv/test_rust_tiered_connector_gpu.py``.
+``internal/dkv/test_tiered_connector_gpu.py``.
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ from types import SimpleNamespace
 
 import pytest
 from max.nn.kv_cache import KVCacheGroupId
-from max.pipelines.kv_cache.connectors.rust_tier_connector import (
-    RustTierConnector,
+from max.pipelines.kv_cache.connectors.tier_connector import (
+    TierConnector,
     _validate_leaves,
 )
 from max.pipelines.kv_cache.kv_connector import KVLoadRefused
@@ -54,6 +54,10 @@ class _FakeRust:
         self.calls: list[str] = []
         self.lookups: list[tuple[list[int], list[bytes]]] = []
         self.loads: list[tuple[list[list[int]], list[list[bytes]]]] = []
+        # How much of each offload the fake takes: blocks posted per leaf
+        # (every block when None), and skips reported as already held.
+        self.offload_posts: int | None = None
+        self.offload_already_held = 0
 
     def reclaim(self) -> None:
         self.calls.append("reclaim")
@@ -101,15 +105,36 @@ class _FakeRust:
             synchronize=lambda: None,
         )
 
+    def offload(
+        self,
+        block_ids: Sequence[Sequence[int]],
+        block_hashes: Sequence[bytes],
+        replica_idx: int,
+    ) -> SimpleNamespace:
+        self.calls.append("offload")
+        posts = (
+            len(block_hashes)
+            if self.offload_posts is None
+            else self.offload_posts
+        )
+        return SimpleNamespace(
+            g0_blocks_per_leaf=[list(ids[:posts]) for ids in block_ids],
+            already_held=self.offload_already_held,
+            is_complete=lambda: True,
+            synchronize=lambda: None,
+        )
+
 
 def _connector(
     leaves: Mapping[str, KVCacheGroupId], rust: _FakeRust
-) -> RustTierConnector:
+) -> TierConnector:
     """A connector wired to ``rust``, with no device buffers behind it."""
-    connector = RustTierConnector.__new__(RustTierConnector)
+    connector = TierConnector.__new__(TierConnector)
     connector._leaves = leaves
     connector._page_size = PAGE_SIZE
-    connector._rust = rust
+    connector._native = rust
+    connector._loads_refused = 0
+    connector._offload_blocks_dropped = 0
     return connector
 
 
@@ -198,17 +223,21 @@ def test_a_short_row_is_a_bug_not_a_miss() -> None:
 def test_a_hash_no_tier_holds_is_refused() -> None:
     leaves = {"a": FULL}
     rust = _FakeRust([(0, _h(1))])
+    connector = _connector(leaves, rust)
 
     with pytest.raises(KVLoadRefused, match="refused a load"):
-        _connector(leaves, rust).load({"a": [7, 8]}, {"a": [_h(1), _h(2)]})
+        connector.load({"a": [7, 8]}, {"a": [_h(1), _h(2)]})
+    assert connector._loads_refused == 1
 
 
 def test_a_declined_load_is_refused_rather_than_reported_short() -> None:
     hashes = [_h(1), _h(2)]
     rust = _FakeRust([(0, h) for h in hashes], decline=True)
+    connector = _connector({"a": FULL}, rust)
 
     with pytest.raises(KVLoadRefused, match="saturated"):
-        _connector({"a": FULL}, rust).load({"a": [7, 8]}, {"a": hashes})
+        connector.load({"a": [7, 8]}, {"a": hashes})
+    assert connector._loads_refused == 1
 
 
 def test_a_partially_posted_load_fails_loudly() -> None:
@@ -234,6 +263,34 @@ def test_load_rejects_keys_that_are_not_the_connectors_leaves() -> None:
 
     with pytest.raises(ValueError, match="do not both match"):
         connector.load({"a": [0]}, {"a": [_h(1)], "b": [_h(1)]})
+
+
+# ============================================================================
+# offload
+# ============================================================================
+
+
+def test_offload_counts_blocks_the_pool_had_no_room_for_as_dropped() -> None:
+    rust = _FakeRust([])
+    rust.offload_posts = 1
+    connector = _connector({"a": FULL, "b": FULL}, rust)
+
+    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, [_h(1), _h(2), _h(3)])
+
+    assert connector._offload_blocks_dropped == 4
+
+
+def test_offload_does_not_count_blocks_the_host_tier_already_holds() -> None:
+    # Re-offloading a prefix the host tier holds is routine: every later turn
+    # of a session commits the blocks its earlier turns already offloaded.
+    rust = _FakeRust([])
+    rust.offload_posts = 1
+    rust.offload_already_held = 4
+    connector = _connector({"a": FULL, "b": FULL}, rust)
+
+    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, [_h(1), _h(2), _h(3)])
+
+    assert connector._offload_blocks_dropped == 0
 
 
 # ============================================================================

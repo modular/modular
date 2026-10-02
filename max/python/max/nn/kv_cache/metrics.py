@@ -60,6 +60,18 @@ class KVCacheMetrics:
     """Bytes of KV read from disk."""
     inflight_disk_ops: int = 0
     """Number of in-flight disk operations."""
+    connector_loads_refused: int = 0
+    """Number of loads the connector's host and disk tiers refused.
+
+    A refused load is served by recomputing its blocks, so a steady rate of
+    these is hit rate the tiers reported and then could not deliver.
+    """
+    connector_offload_blocks_dropped: int = 0
+    """Number of offloaded blocks the connector's host pool had no room for.
+
+    Counted per leaf block. A pool starved by blocks pinned for in-flight
+    transfers drops offloads before its hit rate falls.
+    """
     nixl_read_blocks: int = 0
     """Number of cache blocks read via NIXL (dKV GET)."""
     nixl_write_blocks: int = 0
@@ -259,6 +271,10 @@ class KVCacheMetrics:
             disk_bytes_written=self.disk_bytes_written
             + other.disk_bytes_written,
             disk_bytes_read=self.disk_bytes_read + other.disk_bytes_read,
+            connector_loads_refused=self.connector_loads_refused
+            + other.connector_loads_refused,
+            connector_offload_blocks_dropped=self.connector_offload_blocks_dropped
+            + other.connector_offload_blocks_dropped,
             inflight_disk_ops=self.inflight_disk_ops + other.inflight_disk_ops,
             nixl_read_blocks=self.nixl_read_blocks + other.nixl_read_blocks,
             nixl_write_blocks=self.nixl_write_blocks + other.nixl_write_blocks,

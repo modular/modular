@@ -379,6 +379,12 @@ This version is still a work in progress.
   tokenizer's own cache lookup after tokenization rather than from the
   admission peek, so the two windows differ and the rate isn't comparable
   across architectures.
+- Added `maxserve.cache.connector_loads_refused` and
+  `maxserve.cache.connector_offload_blocks_dropped` for the tiered KV
+  connector. The first counts loads its host and disk tiers refused, each
+  served by recomputing the blocks instead. The second counts offloaded
+  blocks the host pool had no room for, which rises when blocks pinned for
+  in-flight transfers starve the pool, before the hit rate falls.
 
 ### `max` CLI
 
