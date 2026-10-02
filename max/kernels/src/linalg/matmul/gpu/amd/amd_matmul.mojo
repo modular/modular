@@ -50,7 +50,12 @@ from layout.tile_tensor import stack_allocation
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from ....utils import elementwise_epilogue_type
+from ....utils import (
+    ElementwiseEpilogueFn,
+    apply_elementwise_epilogue,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 from ....utils_gpu import MatmulConfig
 
 from .matmul_mma import MmaOp
@@ -194,6 +199,57 @@ struct AMDMatmul[
         """
         Self.run_at_tile(c, a, b, block_idx.y, block_idx.x)
 
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.config.num_threads())
+        )
+    )
+    @__name(
+        t"amd_matmul_epilogue_fn_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
+    @staticmethod
+    def run_with_epilogue_fn[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Same as `run`, storing the output through `epilogue_fn`.
+
+        Launch with `host_arg=epilogue_fn`. Requires
+        `elementwise_lambda_fn` to be unset.
+
+        Parameters:
+            c_layout: Tensor layout of the output C tile.
+            a_layout: Tensor layout of the input A tile.
+            b_layout: Tensor layout of the input B tile.
+            c_engine: Engine of the output C tile.
+            a_engine: Engine of the input A tile.
+            b_engine: Engine of the input B tile.
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            c: Output tile of shape `[M, N]`. Only its shape is read.
+            a: Input A tile of shape `[M, K]`.
+            b: Input B tile of shape `[N, K]`.
+            epilogue_fn: Stores each output element.
+        """
+        comptime assert not Self.elementwise_lambda_fn, (
+            "run_with_epilogue_fn takes the epilogue as a value; leave"
+            " elementwise_lambda_fn unset"
+        )
+        Self._run_at_tile_impl[has_epilogue_fn=True](
+            c, a, b, block_idx.y, block_idx.x, epilogue_fn
+        )
+
     @staticmethod
     def run_at_tile[
         c_layout: TensorLayout,
@@ -210,6 +266,31 @@ struct AMDMatmul[
         tile_n: Int,
     ):
         """Same as `run`, for a grid whose `block_idx` is not the tile index."""
+        Self._run_at_tile_impl[has_epilogue_fn=False](
+            c, a, b, tile_m, tile_n, no_epilogue_fn
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run_at_tile_impl[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        tile_m: Int,
+        tile_n: Int,
+        epilogue_fn: EpilogueFnType,
+    ):
         comptime assert Self.transpose_b, "transpose_b must be True"
         var block_m = tile_m
         var block_n = tile_n
@@ -428,9 +509,8 @@ struct AMDMatmul[
                 return
 
         # === Output ===
-        comptime if Bool(Self.elementwise_lambda_fn):
+        comptime if Bool(Self.elementwise_lambda_fn) or has_epilogue_fn:
             # Epilogue path with OOB masking.
-            comptime epilogue_fn = Self.elementwise_lambda_fn.value()
             var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)
             var warp_tile_m = block_m * BM + warp_m * WM
             var warp_tile_n = block_n * BN + warp_n * WN
@@ -458,11 +538,13 @@ struct AMDMatmul[
                                     + (e % 4)
                                 )
                                 if col < N:
-                                    epilogue_fn[
+                                    apply_elementwise_epilogue[
+                                        Self.elementwise_lambda_fn,
                                         alignment=align_of[
                                             Scalar[Self.c_type]
-                                        ]()
+                                        ](),
                                     ](
+                                        epilogue_fn,
                                         IndexList[2](m, col),
                                         SIMD[Self.c_type, 1](v[e]),
                                     )
@@ -473,11 +555,12 @@ struct AMDMatmul[
                                 + lane_group * c_frag_size
                             )
                             if n < N:
-                                epilogue_fn[
+                                apply_elementwise_epilogue[
+                                    Self.elementwise_lambda_fn,
                                     alignment=align_of[
                                         SIMD[Self.c_type, c_frag_size]
-                                    ]()
-                                ](IndexList[2](m, n), v)
+                                    ](),
+                                ](epilogue_fn, IndexList[2](m, n), v)
         elif N % BN != 0:
             # Boundary path: N not block-aligned, per-element OOB store.
             var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)

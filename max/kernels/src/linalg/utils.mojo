@@ -13,6 +13,7 @@
 
 """Provides shared CPU matmul utilities including tile-consumer traits, kernel shape selection, and partial SIMD load/store helpers."""
 
+from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, iota
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
@@ -145,6 +146,91 @@ at `idx` before the kernel writes it, cast to `dtype`. The kernel reads
 `c_val` from its own output argument, so the closure never captures the
 output and cannot alias it.
 """
+
+
+comptime _elementwise_epilogue_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](IndexList[2], SIMD[dtype, width]) -> None
+
+comptime ElementwiseEpilogueFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_epilogue_fn_signature
+)
+"""Value-taking counterpart of `elementwise_epilogue_type`.
+
+The closure stores the output itself, so a kernel that receives one writes
+nothing to its output argument. Pass it to a named kernel with `host_arg=`.
+`alignment` has no default; pass `alignment=1` where the legacy type relied
+on its default.
+"""
+
+
+@inline(.always)
+def _no_epilogue_body[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](idx: IndexList[2], val: SIMD[dtype, width]):
+    pass
+
+
+@inline(.always)
+def _as_epilogue_fn[
+    EpilogueFnType: ElementwiseEpilogueFn
+](epilogue_fn: EpilogueFnType) -> EpilogueFnType:
+    """Binds a parametric function to its `ElementwiseEpilogueFn` closure type.
+
+    A bare parametric function only converts where a function-type bound gives
+    it context, so neither `type_of` nor a `host_arg` slot accepts it directly.
+
+    Parameters:
+        EpilogueFnType: Type of the epilogue function (inferred).
+
+    Args:
+        epilogue_fn: The epilogue function to bind.
+
+    Returns:
+        `epilogue_fn` as a value of its closure type.
+    """
+    return epilogue_fn
+
+
+comptime no_epilogue_fn = _as_epilogue_fn(_no_epilogue_body)
+"""Stands in for an `ElementwiseEpilogueFn` argument on code paths that store
+the output directly."""
+
+
+@inline(.always)
+def apply_elementwise_epilogue[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    dtype: DType,
+    width: SIMDLength,
+    //,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    *,
+    alignment: Int = 1,
+](epilogue_fn: EpilogueFnType, idx: IndexList[2], val: SIMD[dtype, width],):
+    """Applies the legacy epilogue lambda if set, otherwise `epilogue_fn`.
+
+    Kernels that accept both epilogue forms call this under
+    `comptime if elementwise_lambda_fn or has_epilogue_fn`.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        dtype: Element dtype of `val` (inferred).
+        width: SIMD width of `val` (inferred).
+        elementwise_lambda_fn: Legacy epilogue lambda; takes precedence
+            when set.
+        alignment: Alignment of `val` in elements.
+
+    Args:
+        epilogue_fn: Value epilogue, used when `elementwise_lambda_fn` is
+            unset.
+        idx: Output coordinates.
+        val: Output value.
+    """
+    comptime if elementwise_lambda_fn:
+        comptime elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[dtype, width, alignment=alignment](idx, val)
+    else:
+        epilogue_fn[dtype, width, alignment=alignment](idx, val)
 
 
 @inline(.always)
