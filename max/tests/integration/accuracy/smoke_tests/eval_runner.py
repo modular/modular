@@ -196,6 +196,7 @@ def call_eval(
             "kimi-k2",
             "minimax-m2",
             "minimax-m3",
+            "muse-glimmer",
             "nemotron",
             "step-3.5",
             "glm-5",

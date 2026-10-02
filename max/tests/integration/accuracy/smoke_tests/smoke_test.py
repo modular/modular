@@ -201,6 +201,7 @@ def is_vision_model(model: str) -> bool:
             "kimi-k2",
             "kimi-vl",
             "minimax-m3",
+            "muse-glimmer",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
