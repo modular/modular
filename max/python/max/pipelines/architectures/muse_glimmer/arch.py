@@ -21,7 +21,13 @@ from .batch_processor import MuseGlimmerBatchProcessor
 from .memory_planner import MuseGlimmerMemoryPlanner
 from .model import MuseGlimmerModel
 from .model_config import MuseGlimmerConfig
+from .reasoning import (
+    MuseGlimmerReasoningParser,  # noqa: F401  registers "muse_glimmer"
+)
 from .tokenizer import MuseGlimmerTokenizer
+from .tool_parser import (
+    MuseGlimmerToolParser,  # noqa: F401  registers "muse_glimmer"
+)
 
 muse_glimmer_arch = SupportedArchitecture(
     name="MuseGlimmerForConditionalGeneration_ModuleV3",
@@ -43,4 +49,7 @@ muse_glimmer_arch = SupportedArchitecture(
     memory_planner=MuseGlimmerMemoryPlanner,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
+    tool_parser="muse_glimmer",
+    reasoning_parser="muse_glimmer",
+    default_structured_output_backend="xgrammar",
 )

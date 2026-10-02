@@ -37,6 +37,7 @@ from .structural_tag import (
     JSONSchemaFormat,
     OptionalFormat,
     OrFormat,
+    PlusFormat,
     RegexFormat,
     SequenceFormat,
     StarFormat,
@@ -1597,6 +1598,118 @@ def get_minimax_structural_tag(
             elements=[think_tag, ConstStringFormat(value=THINK_SUFFIX), suffix_tag]
         )
     )
+
+
+@register_model_structural_tag("muse_glimmer")
+def get_muse_glimmer_structural_tag(
+    tools: Optional[List[FunctionToolParam]] = None,
+    builtin_tools: Optional[List[BuiltinToolParam]] = None,
+    tool_choice: Literal["auto", "required", "forced"] = "auto",
+    reasoning: bool = True,
+    **kwargs: Any,
+) -> StructuralTag:
+    """Get Muse Glimmer ATEM style structural tag format.
+
+    Each tool call is its own assistant message,
+    ``<|start|>assistant to=NAME<|message|>`` followed by
+    ``<atem:function_calls><atem:invoke name="NAME">``
+    ``<atem:parameter name="KEY">VALUE</atem:parameter>``
+    ``</atem:invoke></atem:function_calls>``, with one optional newline
+    after each tag.
+
+    Corresponding model key: ``"muse_glimmer"``.
+
+    Values are raw text (lists and objects as JSON) that no XML style can
+    spell, so the grammar constrains the envelope and, for a closed schema,
+    the parameter names, not the values.
+
+    Reasoning is a ``to=self`` message closed by ``<|eom|>``, which is where
+    MAX's thinking region ends, so ``reasoning`` is inert. Under
+    ``required`` and a named tool the header is optional: the section may
+    also start right after ``<|eom|>``, or at the ``<atem:function_calls>``
+    marker, which MAX feeds to the matcher when the model opens a call
+    inside its reasoning.
+
+    Builtin tools have no ATEM wire format and are ignored.
+
+    Returns
+    -------
+    StructuralTag
+        A structural tag for Muse Glimmer function calling format.
+    """
+    SECTION_BEGIN = "<atem:function_calls>"
+    SECTION_END = "</atem:function_calls>"
+    PARAMETER_BEGIN = '<atem:parameter name="'
+    PARAMETER_END = "</atem:parameter>"
+    newline = OptionalFormat(content=ConstStringFormat(value="\n"))
+
+    def _parameters(parameters: Union[Dict[str, Any], bool]) -> Format:
+        keys = []
+        if isinstance(parameters, dict) and parameters.get("additionalProperties") is False:
+            keys = list(parameters.get("properties", {}))
+        if not keys:
+            return TagFormat(
+                begin=PARAMETER_BEGIN,
+                content=SequenceFormat(
+                    elements=[
+                        RegexFormat(pattern=r'[^"<>]+'),
+                        ConstStringFormat(value='">'),
+                        AnyTextFormat(),
+                    ]
+                ),
+                end=PARAMETER_END,
+            )
+        return OrFormat(
+            elements=[
+                TagFormat(
+                    begin=f'{PARAMETER_BEGIN}{key}">', content=AnyTextFormat(), end=PARAMETER_END
+                )
+                for key in keys
+            ]
+        )
+
+    def _invoke(tool: FunctionToolParam) -> TagFormat:
+        parameter = _parameters(_get_function_parameters(tool.function))
+        return TagFormat(
+            begin=f'<atem:invoke name="{tool.function.name}">',
+            content=SequenceFormat(
+                elements=[newline, StarFormat(content=SequenceFormat(elements=[parameter, newline]))]
+            ),
+            end="</atem:invoke>",
+        )
+
+    def _section(calls: List[FunctionToolParam]) -> TagFormat:
+        invoke = OrFormat(elements=[_invoke(tool) for tool in calls])
+        return TagFormat(
+            begin=SECTION_BEGIN,
+            content=SequenceFormat(
+                elements=[newline, PlusFormat(content=SequenceFormat(elements=[invoke, newline]))]
+            ),
+            end=SECTION_END,
+        )
+
+    tools = tools or []
+    if tool_choice == "auto":
+        if not tools:
+            return StructuralTag(format=AnyTextFormat())
+        return StructuralTag(
+            format=TriggeredTagsFormat(triggers=[SECTION_BEGIN], tags=[_section(tools)])
+        )
+
+    if not tools:
+        raise ValueError(f"Tool choice {tool_choice!r} requires at least one function tool.")
+    messages: List[Format] = [
+        SequenceFormat(
+            elements=[
+                TokenFormat(token="<|start|>"),
+                ConstStringFormat(value=f"assistant to={tool.function.name}"),
+                TokenFormat(token="<|message|>"),
+                _section([tool]),
+            ]
+        )
+        for tool in tools
+    ]
+    return StructuralTag(format=OrFormat(elements=[*messages, _section(tools)]))
 
 
 @register_model_structural_tag("glm_4_7")
