@@ -125,6 +125,7 @@ modular_cc_library(
         ":Precompile.inc_files",
         ":REPL.inc_files",
         ":Run.inc_files",
+        "//:accel_registration",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Config",

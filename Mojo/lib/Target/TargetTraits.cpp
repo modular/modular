@@ -107,6 +107,22 @@ void printSupportedEmissionKinds(llvm::raw_ostream &os, unsigned indent) {
        << "- " << row.description << "\n";
 }
 
+llvm::StringRef TargetTraits::extensionFor(EmitAs kind) const {
+  switch (kind) {
+  case EmitAs::ASM:
+    return getAsmExtension();
+  case EmitAs::LLVM:
+  case EmitAs::LLVM_OPT:
+    return getLLVMExtension();
+  case EmitAs::LLVM_BITCODE:
+  case EmitAs::LLVM_OPT_BITCODE:
+    return getBitcodeExtension();
+  case EmitAs::OBJECT:
+    return getObjectExtension();
+  }
+  llvm_unreachable("unhandled EmitAs");
+}
+
 bool TargetTraits::supportsEmissionKind(llvm::StringRef kind) const {
   return llvm::any_of(supportedEmissionKinds(),
                       [&](const EmissionKind &emissionKind) {

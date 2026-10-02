@@ -296,7 +296,9 @@ compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
                         TargetInfoAttr target, ArrayRef<EmitAs> emissionKinds,
                         EmissionOptions emissionOptions,
                         CompilationOptions compilationOptions,
-                        ElaborateGeneratorsOptions elaboratorOptions);
+                        ElaborateGeneratorsOptions elaboratorOptions,
+                        llvm::StringMap<int> &nameCountMap,
+                        SmallVectorImpl<NamedAttribute> &pendingWrites);
 
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func`,
@@ -445,8 +447,8 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
   // pipeline and external toolchain to produce the device artifact; the
   // LLVM-based emission kinds below do not apply.
   if (backendOwnsOffload) {
-    OffloadEmitContext emitCtx{compilationOptions, func.getLoc(), &pmOptions,
-                               compiler->getTransformCache()};
+    OffloadEmitContext emitCtx{compilationOptions, func.getLoc(), emissionKind,
+                               &pmOptions, compiler->getTransformCache()};
     ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> artifactOr =
         backend->lowerAndEmitOffload(*module, emitCtx);
     if (artifactOr.isError())
@@ -529,29 +531,53 @@ compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
                         TargetInfoAttr target, ArrayRef<EmitAs> emissionKinds,
                         EmissionOptions emissionOptions,
                         CompilationOptions compilationOptions,
-                        ElaborateGeneratorsOptions elaboratorOptions) {
+                        ElaborateGeneratorsOptions elaboratorOptions,
+                        llvm::StringMap<int> &nameCountMap,
+                        SmallVectorImpl<NamedAttribute> &pendingWrites) {
   assert(!emissionKinds.empty() && "expected at least one emission kind");
-  // The device artifact an owning backend emits does not vary with the
-  // emission kind, so one compile serves every requested kind.
-  DEFINE_OR_RETURN_ERROR(
-      CompiledStandaloneKernel, compiled,
-      compileStandaloneKernel(func, symbol, name, symtab, target,
-                              emissionKinds[0], emissionOptions,
-                              compilationOptions, elaboratorOptions));
+  // The kind `--emit` writes need not be one the kernel embeds.
+  bool wantsOutputFile = !compilationOptions.offloadOutputPrefix.empty();
+  EmitAs outputKind = compilationOptions.offloadOutputKind;
+  SmallVector<EmitAs> kinds(emissionKinds.begin(), emissionKinds.end());
+  if (wantsOutputFile && !llvm::is_contained(kinds, outputKind))
+    kinds.push_back(outputKind);
 
-  auto populateOp = cast<FuncOp>(compiled.capturesFunc.get());
-  StringAttr moduleName = getXXH3Hash(compiled.contents);
+  // An owning backend's artifact differs by kind, so every kind is compiled.
+  // The captures describe the kernel, not a kind, so the first compile's win.
   DenseMap<EmitAs, StringAttr> contents;
   DenseMap<EmitAs, StringAttr> moduleNames;
-  for (EmitAs kind : emissionKinds) {
+  unsigned numCaptures = 0;
+  mlir::DenseI64ArrayAttr captureSizes;
+  OwningOpRef<Operation *> capturesFunc;
+  for (auto [index, kind] : llvm::enumerate(kinds)) {
+    DEFINE_OR_RETURN_ERROR(
+        CompiledStandaloneKernel, compiled,
+        compileStandaloneKernel(func, symbol, name, symtab, target, kind,
+                                emissionOptions, compilationOptions,
+                                elaboratorOptions));
     contents.insert({kind, compiled.contents});
-    moduleNames.insert({kind, moduleName});
+    moduleNames.insert({kind, getXXH3Hash(compiled.contents)});
+    if (index == 0) {
+      numCaptures = compiled.numCaptures;
+      captureSizes = compiled.captureSizes;
+      capturesFunc = std::move(compiled.capturesFunc);
+    }
   }
 
+  if (wantsOutputFile) {
+    StringAttr outputContent = contents.lookup(outputKind);
+    assert(outputContent && "the output kind is compiled above");
+    if (ErrorOrSuccess err = queueOffloadWrite(target, outputKind, name,
+                                               outputContent.getValue(),
+                                               nameCountMap, pendingWrites))
+      return err.takeError();
+  }
+
+  auto populateOp = cast<FuncOp>(capturesFunc.get());
   OpBuilder b(symbol.getContext());
-  return OffloadCompilationResult{std::move(compiled.capturesFunc),
-                                  b.getIndexAttr(compiled.numCaptures),
-                                  compiled.captureSizes,
+  return OffloadCompilationResult{std::move(capturesFunc),
+                                  b.getIndexAttr(numCaptures),
+                                  captureSizes,
                                   SymbolConstantAttr::get(populateOp),
                                   std::move(contents),
                                   std::move(moduleNames)};
@@ -656,7 +682,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             ErrorOr<OffloadCompilationResult> kernelOr =
                 compileElaboratorKernel(func, symbol, kernelInfo.name, symtab,
                                         target, emissionKinds, perKernelOptions,
-                                        compilationOptions, elabOptions);
+                                        compilationOptions, elabOptions,
+                                        kernelNameCounts, offloadPendingWrites);
             if (kernelOr.isError())
               return kernelOr.takeError();
             targetResult.insert({kernelInfo.kernelId, kernelOr.takeValue()});
@@ -676,9 +703,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             resetOr.isError())
           return resetOr.takeError();
 
-        // TODO(MOCO-4850): this skips the `offloadOutputPrefix` handling
-        // below, so `--offload-output-prefix` writes no sidecar for a backend
-        // that owns its lowering. The artifact itself is still embedded.
         continue;
       }
 
@@ -939,30 +963,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           // cache-hit and cache-miss paths.
           if (!compilationOptions.offloadOutputPrefix.empty() &&
               kind == compilationOptions.offloadOutputKind) {
-            mlir::StringAttr rawName = iter->second.nameForFile;
-            llvm::Triple triple(target.getTripleStr());
-            ErrorOr<const TargetTraits *> traitsOr =
-                TargetTraitsRegistry::get().lookup(triple);
-            if (traitsOr.isError())
-              return Error(traitsOr.getError());
-            const TargetTraits *traits = *traitsOr;
-            EmitAs outKind = compilationOptions.offloadOutputKind;
-            llvm::StringRef ext = outKind == EmitAs::LLVM
-                                      ? traits->getLLVMExtension()
-                                  : outKind == EmitAs::LLVM_BITCODE ||
-                                          outKind == EmitAs::LLVM_OPT_BITCODE
-                                      ? traits->getBitcodeExtension()
-                                      : traits->getAsmExtension();
-            constexpr size_t kFileNameMaxChars = 64;
-            std::string fileName =
-                reserveOffloadOutputBaseName(
-                    sanitizeSymbolToUnderscores(rawName, kFileNameMaxChars),
-                    ext, kernelNameCounts) +
-                ext.str();
-            offloadPendingWrites.push_back(
-                {mlir::StringAttr::get(theModule->getContext(), fileName),
-                 mlir::StringAttr::get(theModule->getContext(),
-                                       kindAndContent.second->getBuffer())});
+            if (ErrorOrSuccess err =
+                    queueOffloadWrite(target, kind, iter->second.nameForFile,
+                                      kindAndContent.second->getBuffer(),
+                                      kernelNameCounts, offloadPendingWrites))
+              return err.takeError();
           }
           StringAttr content =
               StringAttr::get(kindAndContent.second->getBuffer(),
