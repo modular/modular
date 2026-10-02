@@ -1906,8 +1906,9 @@ def test_constrained_split_reaches_result_groups() -> None:
     assert latency is not None
     assert latency.ttft_ms_constrained is not None
     assert latency.tpot_ms_unconstrained is not None
-    summary = metrics.result_groups.summary  # type: ignore[attr-defined]
-    assert summary.constrained_request_rate == 0.5
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.constrained_request_rate == 0.5
 
 
 def test_constrained_split_reaches_the_flat_result_dict() -> None:
@@ -1979,7 +1980,9 @@ def test_conformance_rate_reaches_the_summary_group() -> None:
             )
         ]
     )
-    assert metrics.result_groups.summary.constrained_conformance_rate == 0.0  # type: ignore[attr-defined]
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.constrained_conformance_rate == 0.0
 
 
 def test_aggregate_gpu_stats_disabled_or_empty() -> None:
@@ -2067,16 +2070,17 @@ def test_tool_rates_count_offers_and_calls_separately() -> None:
 
 
 def test_tool_rates_reach_result_groups_and_the_flat_result_dict() -> None:
-    """The console summary and stored JSON read ``result_groups`` and the
-    flat dict, not the aggregates."""
+    """The console and stored JSON read ``result_groups`` and the flat dict,
+    not the aggregates."""
     outputs = _constrained_split_outputs()
     for o in outputs:
         o.tools_offered = True
     outputs[0].tool_call_returned = True
     metrics = _calculate_for(outputs)
-    summary = metrics.result_groups.summary  # type: ignore[attr-defined]
-    assert summary.tool_request_rate == 1.0
-    assert summary.tool_call_response_rate == 0.25
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.tool_request_rate == 1.0
+    assert mix.tool_call_response_rate == 0.25
     d = metrics.text_data.to_result_dict()  # type: ignore[attr-defined]
     assert d["tool_request_rate"] == 1.0
     assert d["tool_call_response_rate"] == 0.25
@@ -2092,3 +2096,22 @@ def test_tool_call_rate_is_none_without_tool_requests() -> None:
     assert text is not None
     assert text.tool_request_rate == 0.0
     assert text.tool_call_response_rate is None
+
+
+def test_image_and_lora_rates_count_over_measured_requests() -> None:
+    outputs = _constrained_split_outputs(pairs=4)
+    for i, o in enumerate(outputs):
+        o.carries_image = i < 2
+        o.lora_id = "adapter-a" if i < 6 else None
+    metrics = _calculate_for(outputs)
+    text = metrics.text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.image_request_rate == 2 / len(outputs)
+    assert text.lora_request_rate == 6 / len(outputs)
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.image_request_rate == text.image_request_rate
+    assert mix.lora_request_rate == text.lora_request_rate
+    d = text.to_result_dict()
+    assert d["image_request_rate"] == text.image_request_rate
+    assert d["lora_request_rate"] == text.lora_request_rate

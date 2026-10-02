@@ -227,6 +227,13 @@ This version is still a work in progress.
   are renamed `fraction` and `turn` to match
   `augment_samples_with_response_format`; the `--image-fraction` and
   `--image-turn` flags are unchanged.
+- `max benchmark` now reports its realized request mix in its own "Request
+  Mix" section and `result_groups.request_mix`, rather than among the headline
+  metrics in `result_groups.summary`. The group holds the structured-output and
+  tool-calling rates, plus two new ones: `image_request_rate`, the share of
+  requests whose payload carried an image (including images resent with a
+  session's earlier turns), and `lora_request_rate`, the share routed to a LoRA
+  adapter. Existing top-level keys in the result JSON are unchanged.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an

@@ -290,6 +290,8 @@ def calculate_metrics(
     judged_constrained_requests = 0
     tool_requests = 0
     tool_call_responses = 0
+    image_requests = 0
+    lora_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -384,6 +386,10 @@ def calculate_metrics(
             tool_requests += 1
             if o.tool_call_returned:
                 tool_call_responses += 1
+        if o.carries_image:
+            image_requests += 1
+        if o.lora_id is not None:
+            lora_requests += 1
         if o.ttft > 0:
             input_throughputs.append(o.prompt_len / o.ttft)
         if (o.latency - o.ttft) > 0:
@@ -595,6 +601,10 @@ def calculate_metrics(
         tool_call_response_rate=(
             tool_call_responses / tool_requests if tool_requests else None
         ),
+        image_request_rate=(
+            image_requests / len(measured) if measured else None
+        ),
+        lora_request_rate=(lora_requests / len(measured) if measured else None),
         step_tpot_ms=StandardPercentileMetrics(
             step_tpots, scale_factor=1000.0, unit="ms"
         )

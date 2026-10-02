@@ -235,6 +235,30 @@ async def test_request_intervals_burstiness_variations() -> None:
     assert std_10 != std_20
 
 
+@pytest.mark.parametrize("lora_id", ["adapter-a", None])
+def test_build_single_turn_request_input_records_the_adapter(
+    lora_id: str | None,
+) -> None:
+    built = build_single_turn_request_input(
+        benchmark_task="text-generation",
+        request=SampledRequest(
+            prompt_formatted="hi",
+            prompt_len=1,
+            output_len=8,
+            encoded_images=[],
+            ignore_eos=True,
+        ),
+        model_id="base-model",
+        lora_id=lora_id,
+        api_url="http://localhost:8000/v1/chat/completions",
+        sampling=SamplingConfig(),
+        max_output_len=None,
+    )
+    assert isinstance(built, RequestFuncInput)
+    assert built.model == (lora_id or "base-model")
+    assert built.lora_id == lora_id
+
+
 @pytest.mark.parametrize(
     ("disable_ignore_eos", "expected"), [(False, True), (True, False)]
 )

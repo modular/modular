@@ -172,6 +172,39 @@ def test_chat_session_driver_constrains_only_the_marked_turns() -> None:
     ]
 
 
+def test_chat_session_driver_tags_every_turn_with_its_adapter() -> None:
+    class OkDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            return RequestFuncOutput(
+                success=True, latency=0.1, ttft=0.05, generated_text="ok"
+            )
+
+    messages = [
+        SessionMessage(source="user", content="one", num_tokens=5),
+        SessionMessage(source="assistant", content="", num_tokens=5),
+        SessionMessage(source="user", content="two", num_tokens=5),
+        SessionMessage(source="assistant", content="", num_tokens=5),
+    ]
+    outputs = asyncio.run(
+        chat_session_driver(
+            model_id="adapter-a",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=OkDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            lora_id="adapter-a",
+        )
+    )
+
+    assert [o.lora_id for o in outputs] == ["adapter-a", "adapter-a"]
+
+
 def test_chat_session_driver_disable_ignore_eos_covers_every_turn() -> None:
     """With the flag, no turn ignores EOS. The session reuses one
     ``RequestFuncInput``, so each value is snapshotted when sent."""

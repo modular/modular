@@ -51,6 +51,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
+    tag_lora_route,
     tag_response_format_outcome,
 )
 from max.benchmark.benchmark_shared.utils import (
@@ -143,6 +144,7 @@ def build_single_turn_request_input(
             ignore_eos=request.ignore_eos and not disable_ignore_eos,
             response_format=request.response_format,
             tools=request.tools,
+            lora_id=lora_id,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
@@ -274,6 +276,7 @@ async def run_single_turn_benchmark(
                     cancelled=True, request_submit_time=time.perf_counter()
                 )
             tag_response_format_outcome(output, request_func_input)
+            tag_lora_route(output, request_func_input)
             return mark_cancelled_if_past_deadline(
                 output, benchmark_should_end_time
             )
