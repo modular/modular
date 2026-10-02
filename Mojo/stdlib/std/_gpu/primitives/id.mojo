@@ -62,7 +62,7 @@ def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
         Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=.CONSTANT],
         has_side_effect=False,
     ]()
-    return Int(ptr.unsafe_load[alignment=4](offset))
+    return Int(ptr.unsafe_load(offset))
 
 
 # ===-----------------------------------------------------------------------===#
